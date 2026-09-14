@@ -13,12 +13,28 @@ import os
 import shutil
 import subprocess
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
 from deixis.models.codex_isolation import isolation_overrides
 from deixis.models.codex_rpc import CodexAppServer, RpcError
+
+# Variables the Codex app-server needs to run and reach the network. Provider keys and other
+# settings loaded from .env are deliberately not passed on.
+CODEX_ENV_ALLOWLIST = frozenset({
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TEMP", "TMP", "LANG", "TERM",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy",
+    "SYSTEMROOT", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "COMSPEC", "PATHEXT",
+})
+
+
+def codex_environment(codex_home: Path, source: Mapping[str, str] | None = None) -> dict[str, str]:
+    source = os.environ if source is None else source
+    env = {k: v for k, v in source.items() if k in CODEX_ENV_ALLOWLIST or k.startswith("LC_")}
+    env["CODEX_HOME"] = str(codex_home)
+    return env
 
 
 @dataclass
@@ -64,7 +80,7 @@ class CodexAdapter:
         self.codex_home.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.workspace.mkdir(parents=True, exist_ok=True)
         overrides, _ = isolation_overrides(config_path=self.codex_home / "config.toml")
-        env = dict(os.environ, CODEX_HOME=str(self.codex_home))
+        env = codex_environment(self.codex_home)
         server = CodexAppServer(["codex", "app-server", *overrides], cwd=str(self.workspace), env=env)
         await server.start()
         await server.initialize("deixis", "0.1.0")

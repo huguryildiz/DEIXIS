@@ -46,18 +46,24 @@ def valid_response(si: dict[str, Any]) -> str:
 class FakeAdapter:
     connection = "fake"
 
-    def __init__(self, responder: Callable[[dict[str, Any]], str] = valid_response, ready: bool = True):
+    def __init__(self, responder: Callable[[dict[str, Any]], str] = valid_response, ready: bool = True,
+                 resolved_model: str | None = None, models: list[str] | None = None):
         self.responder = responder
         self.ready = ready
+        self.resolved_model = resolved_model  # None: answer with the requested model, as a correct connection does
+        self.models = models
         self.calls: list[dict[str, Any]] = []
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
-        return {"connection": "fake", "ready": self.ready, "reason": None if self.ready else "fake not ready"}
+        status = {"connection": "fake", "ready": self.ready, "reason": None if self.ready else "fake not ready"}
+        if self.models is not None:
+            status["models"] = [{"id": m, "display_name": m, "is_default": False} for m in self.models]
+        return status
 
     async def run_step(self, base, developer, message, output_schema, requested_model) -> ModelStepResult:
         si = parse_step_input(message)
         self.calls.append(si)
-        return ModelStepResult("completed", raw_text=self.responder(si), resolved_model="fake-model")
+        return ModelStepResult("completed", raw_text=self.responder(si), resolved_model=self.resolved_model or requested_model)
 
     async def cancel(self) -> bool:
         return False

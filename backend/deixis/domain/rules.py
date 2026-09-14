@@ -37,9 +37,17 @@ def check_expected_version(expected: int, actual: int) -> None:
         raise RevisionConflict(f"expected version {expected}, stored version {actual}")
 
 
-def result_applicability(step_scope_revision: int, current_scope_revision: int) -> str:
-    """A result started under an older scope is kept but not applied as current."""
-    return "current" if step_scope_revision == current_scope_revision else "stale_scope"
+def result_applicability(step_scope_revision: int, current_scope_revision: int,
+                         step_selection_revision: int | None = None, current_selection_revision: int | None = None) -> str:
+    """A result produced under an older question or source selection is kept but not applied as current.
+
+    A missing step selection revision (records from before selection tracking) compares on the question only.
+    """
+    if step_scope_revision != current_scope_revision:
+        return "stale_scope"
+    if step_selection_revision is not None and step_selection_revision != current_selection_revision:
+        return "stale_selection"
+    return "current"
 
 
 def after_invalid_output(repairs_used: int) -> str:

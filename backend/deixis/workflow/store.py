@@ -73,6 +73,13 @@ class Store:
             raise NotFound(research_id)
         return dict(row)
 
+    def selection_revision(self, research_id: str) -> int:
+        return self.research(research_id)["selection_revision"]
+
+    def _bump_selection_revision(self, research_id: str, old_state: str | None, new_state: str) -> None:
+        if old_state != new_state and "included" in (old_state, new_state):
+            self.conn.execute("UPDATE researches SET selection_revision = selection_revision + 1 WHERE id = ?", (research_id,))
+
     def list_researches(self) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT r.*, s.question, s.source_scope, s.effort,"
@@ -235,14 +242,15 @@ class Store:
 
     # ---- model step records ---------------------------------------------------------
     def insert_step_input(self, step_id: str, research_id: str, run_id: str, attempt: int, payload: dict[str, Any],
-                          base: str, developer: str, message: str, output_schema: dict[str, Any]) -> None:
+                          base: str, developer: str, message: str, output_schema: dict[str, Any],
+                          selection_revision: int | None = None) -> None:
         with transaction(self.conn):
             self.conn.execute(
-                "INSERT INTO step_inputs (id, step_id, research_id, run_id, attempt, task_type, scope_revision, skill_package_hash,"
-                " payload_json, base_instructions, developer_instructions, user_message, output_schema_json, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO step_inputs (id, step_id, research_id, run_id, attempt, task_type, scope_revision, selection_revision,"
+                " skill_package_hash, payload_json, base_instructions, developer_instructions, user_message, output_schema_json, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (payload["step_input_id"], step_id, research_id, run_id, attempt, payload["task_type"], payload["scope_revision"],
-                 payload["skill_package_hash"], dumps(payload), base, developer, message, dumps(output_schema), now()),
+                 selection_revision, payload["skill_package_hash"], dumps(payload), base, developer, message, dumps(output_schema), now()),
             )
 
     def start_model_session(self, research_id: str, run_id: str, step_id: str, step_input_id: str,
@@ -269,6 +277,12 @@ class Store:
                 f"UPDATE model_sessions SET {', '.join(f'{k} = ?' for k in encoded)} WHERE id = ?",
                 (*encoded.values(), session_id),
             )
+
+    def complete_model_step(self, session_id: str, session_fields: dict[str, Any], step_id: str, status: str, **step_fields: Any) -> None:
+        """Commit the model session result and the step outcome together, so recovery never finds one without the other."""
+        with transaction(self.conn):
+            self.finish_model_session(session_id, **session_fields)
+            self.finish_step(step_id, status, **step_fields)
 
     # ---- sources ----------------------------------------------------------------------
     def find_source_by_identifier(self, scheme: str, value: str) -> str | None:
@@ -367,6 +381,18 @@ class Store:
         return source
 
     # ---- research corpus -------------------------------------------------------------
+    def record_search(self, search_fields: dict[str, Any], provider: str, records: list[Any], payload_path: str | None,
+                      step_id: str, step_status: str, step_output: dict[str, Any] | None = None, **step_fields: Any) -> str:
+        """Commit the search run, normalized sources, candidates and the step outcome together."""
+        with transaction(self.conn):
+            srid = self.add_search_run(**search_fields)
+            for rank, record in enumerate(records):
+                svid, _ = self.upsert_provider_source(provider, record, payload_path)
+                self.add_to_corpus(search_fields["research_id"], svid, "search", srid, rank, scope_revision=search_fields["scope_revision"])
+            output = {**step_output, "search_run_id": srid} if step_output is not None else None
+            self.finish_step(step_id, step_status, output=output, **step_fields)
+        return srid
+
     def add_search_run(self, **fields: Any) -> str:
         srid = new_id("srn")
         fields = {"id": srid, **fields, "retrieved_at": now()}
@@ -379,7 +405,8 @@ class Store:
         return srid
 
     def add_to_corpus(self, research_id: str, svid: str, added_by: str, search_run_id: str | None = None,
-                      rank: int | None = None, selection_state: str = "pending", selection_origin: str = "default") -> None:
+                      rank: int | None = None, selection_state: str = "pending", selection_origin: str = "default",
+                      scope_revision: int | None = None) -> None:
         ts = now()
         with transaction(self.conn):
             self.conn.execute(
@@ -387,9 +414,12 @@ class Store:
                 (research_id, svid, added_by, ts),
             )
             if added_by == "search":
+                # A record found again under a newer question revision becomes a candidate of that revision.
                 self.conn.execute(
-                    "INSERT OR IGNORE INTO candidates (id, research_id, search_run_id, source_version_id, rank, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    (new_id("cnd"), research_id, search_run_id, svid, rank, ts),
+                    "INSERT INTO candidates (id, research_id, search_run_id, source_version_id, rank, scope_revision, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (research_id, source_version_id) DO UPDATE SET"
+                    " search_run_id = excluded.search_run_id, rank = excluded.rank, scope_revision = excluded.scope_revision",
+                    (new_id("cnd"), research_id, search_run_id, svid, rank, scope_revision, ts),
                 )
             inserted = self.conn.execute(
                 "INSERT OR IGNORE INTO selections (research_id, source_version_id, state, origin, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -400,17 +430,21 @@ class Store:
                     "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, created_at) VALUES (?, ?, NULL, ?, ?, ?)",
                     (research_id, svid, selection_state, selection_origin, ts),
                 )
+                self._bump_selection_revision(research_id, None, selection_state)
 
     def is_member(self, research_id: str, svid: str) -> bool:
         return self.conn.execute(
             "SELECT 1 FROM corpus_memberships WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
         ).fetchone() is not None
 
-    def candidates(self, research_id: str) -> list[dict[str, Any]]:
+    def candidates(self, research_id: str, scope_revision: int | None = None) -> list[dict[str, Any]]:
+        """Candidates of one question revision (all when None); ones without a proposal come first."""
+        revision_filter = " AND c.scope_revision = ?" if scope_revision is not None else ""
+        params = (research_id, scope_revision) if scope_revision is not None else (research_id,)
         rows = self.conn.execute(
             "SELECT c.id AS candidate_id, c.source_version_id, c.rank, s.state, s.origin FROM candidates c"
             " JOIN selections s ON s.research_id = c.research_id AND s.source_version_id = c.source_version_id"
-            " WHERE c.research_id = ? ORDER BY c.created_at, c.rank", (research_id,)
+            f" WHERE c.research_id = ?{revision_filter} ORDER BY s.proposal IS NOT NULL, c.created_at, c.rank", params
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -421,6 +455,8 @@ class Store:
             current = self.conn.execute(
                 "SELECT * FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
             ).fetchone()
+            if current["proposal_step_id"] == step_id:
+                return  # already applied by this step, e.g. when a run resumes after a restart
             if current["origin"] == "user":
                 self.conn.execute(
                     "UPDATE selections SET proposal = ?, proposal_reason = ?, proposal_basis = ?, proposal_step_id = ? WHERE research_id = ? AND source_version_id = ?",
@@ -436,6 +472,7 @@ class Store:
                 "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, reason, created_at) VALUES (?, ?, ?, ?, 'model_proposal', ?, ?)",
                 (research_id, svid, current["state"], state, reason, now()),
             )
+            self._bump_selection_revision(research_id, current["state"], state)
 
     def set_user_selection(self, research_id: str, svid: str, state: str, expected_version: int, reason: str | None) -> dict[str, Any]:
         with transaction(self.conn):
@@ -454,6 +491,7 @@ class Store:
                 "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, reason, created_at) VALUES (?, ?, ?, ?, 'user', ?, ?)",
                 (research_id, svid, current["state"], state, reason, now()),
             )
+            self._bump_selection_revision(research_id, current["state"], state)
             self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (now(), research_id))
             self._event(research_id, "selection_changed", {"source_version_id": svid, "state": state, "origin": "user"})
         return dict(self.conn.execute(
@@ -488,12 +526,17 @@ class Store:
         return dict(row)
 
     # ---- answers --------------------------------------------------------------------------
-    def latest_step_output(self, research_id: str, operation_key: str) -> dict[str, Any] | None:
+    def latest_step_output(self, research_id: str, operation_key: str, scope_revision: int) -> dict[str, Any] | None:
         row = self.conn.execute(
             "SELECT s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ? AND s.operation_key = ?"
-            " AND s.status = 'succeeded' ORDER BY s.finished_at DESC LIMIT 1", (research_id, operation_key)
+            " AND r.scope_revision = ? AND s.status = 'succeeded' ORDER BY s.finished_at DESC LIMIT 1",
+            (research_id, operation_key, scope_revision),
         ).fetchone()
         return json.loads(row["output_json"]) if row and row["output_json"] else None
+
+    def step_input_selection_revision(self, step_input_id: str) -> int | None:
+        row = self.conn.execute("SELECT selection_revision FROM step_inputs WHERE id = ?", (step_input_id,)).fetchone()
+        return row["selection_revision"] if row else None
 
     def step_input_payload(self, step_input_id: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT payload_json FROM step_inputs WHERE id = ?", (step_input_id,)).fetchone()
@@ -506,13 +549,19 @@ class Store:
 
     def save_answer(self, research_id: str, run_id: str, step_id: str | None, step_input_id: str | None, scope_revision: int,
                     status: str, draft: dict[str, Any] | None, validation: dict[str, Any],
-                    links: list[dict[str, Any]] | None = None) -> str:
+                    links: list[dict[str, Any]] | None = None, selection_revision: int | None = None) -> str:
         aid = new_id("ans")
         with transaction(self.conn):
+            existing = self.conn.execute(
+                "SELECT id FROM answers WHERE run_id = ? AND IFNULL(step_input_id, '') = IFNULL(?, '') AND status = ?",
+                (run_id, step_input_id, status),
+            ).fetchone()
+            if existing:
+                return existing["id"]  # saved before a restart; a resumed run must not duplicate it
             self.conn.execute(
-                "INSERT INTO answers (id, research_id, run_id, step_id, step_input_id, scope_revision, status, answer_language,"
-                " draft_json, validation_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (aid, research_id, run_id, step_id, step_input_id, scope_revision, status,
+                "INSERT INTO answers (id, research_id, run_id, step_id, step_input_id, scope_revision, selection_revision, status,"
+                " answer_language, draft_json, validation_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (aid, research_id, run_id, step_id, step_input_id, scope_revision, selection_revision, status,
                  (draft or {}).get("answer_language"), dumps(draft) if draft is not None else None, dumps(validation), now()),
             )
             if status == "structurally_valid" and draft is not None:

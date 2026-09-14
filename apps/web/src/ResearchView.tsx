@@ -61,7 +61,7 @@ export function ResearchPage({ id, dark, onChanged }: { id: string; dark: boolea
   return <section className="research-view legacy-research">
     <div className="section-label">RESEARCH <span> / REVISION {view.research.current_scope_revision}</span></div>
     <h1>{view.scope.question}</h1>
-    <p className="session-meta">{scopeLabels[view.scope.source_scope]} · {view.scope.effort} depth · Codex{view.scope.requested_model ? ` · ${view.scope.requested_model}` : ' · default model'}</p>
+    <p className="session-meta">{scopeLabels[view.scope.source_scope]} · {view.scope.effort} depth · Codex · {view.scope.requested_model ?? 'no model chosen'}</p>
 
     <div className="legacy-progress run-card">
       <div className="legacy-progress-head">
@@ -95,7 +95,7 @@ export function ResearchPage({ id, dark, onChanged }: { id: string; dark: boolea
 
       <TabsContent value="sources">
         <div className="legacy-section-head"><div><div className="section-label">SELECTION</div><h2>Sources and access</h2><p>Your choice always overrides the model’s screening proposal. Access, retrieval and inspection are separate states.</p></div>
-          <Button variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}><FileUp size={14} />Attach PDF</Button></div>
+          {view.scope.source_scope !== 'academic' && <Button variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}><FileUp size={14} />Attach PDF</Button>}</div>
         <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void upload(e.target.files); e.target.value = '' }} />
         {view.search_runs.length > 0 && <div className="search-summary">{view.search_runs.map(s => <div key={s.id}><Search size={13} /><span>“{s.query_text}”</span><small>{s.provider} · {s.status.replace('_', ' ')} · {s.result_count} of {s.provider_total ?? '?'} records · {s.access_mode}</small></div>)}</div>}
         {view.sources.map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
@@ -131,8 +131,9 @@ function AnswerBlock({ answer, onOpen }: { answer: Answer; onOpen: (passageId: s
   const refs = new Map<string, { n: number; e: Answer['claims'][number]['evidence'][number] }>()
   answer.claims.forEach(c => c.evidence.forEach(e => { if (!refs.has(e.passage_id)) refs.set(e.passage_id, { n: refs.size + 1, e }) }))
   return <div className="legacy-answer">
-    <div className="section-label">SOURCE-LINKED ANSWER{answer.applicability === 'stale_scope' ? ' · EARLIER QUESTION REVISION' : ''}</div>
+    <div className="section-label">SOURCE-LINKED ANSWER{answer.applicability === 'stale_scope' ? ' · EARLIER QUESTION REVISION' : answer.applicability === 'stale_selection' ? ' · EARLIER SOURCE SELECTION' : ''}</div>
     {answer.applicability === 'stale_scope' && <div className="legacy-boundary">This answer was produced for revision {answer.scope_revision} of the question and is not applied to the current revision.</div>}
+    {answer.applicability === 'stale_selection' && <div className="legacy-boundary">Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.</div>}
     {answer.capability_notice && <div className="legacy-boundary">{answer.capability_notice}</div>}
     {answer.claims.map(claim => <p className="claim" key={claim.id}>
       {claim.text}{claim.support_type === 'analyst_inference' && <span className="support-badge">interpretation</span>}

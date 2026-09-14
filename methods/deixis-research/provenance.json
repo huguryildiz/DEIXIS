@@ -37,5 +37,5 @@
   ],
   "upstream_update_policy": "Quaestio changes are not imported automatically. A change is compared by diff, recorded here with the new revision and hashes, and re-tested with the behavior cases before the package version changes.",
   "distribution_review": "not_done; required before public distribution of adapted text",
-  "behavioral_validation": "development cases partially run on 2026-09-14 with Codex gpt-5.6-luna; the unsupported-mode rule was tightened after MB06 failed; MB01, MB03, MB04 and MB07 not yet re-run on the current package; see tests/model_behavior/cases.json"
+  "behavioral_validation": "development cases run on 2026-09-14 with Codex gpt-5.6-luna; the unsupported-mode rule was tightened after MB06 failed; each case has one execution on the current runtime manifest, judged by the implementing agent pending user review; no held-out evaluation yet; see tests/model_behavior/cases.json"
 }

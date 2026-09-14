@@ -71,16 +71,21 @@ class ResearchFlow:
                 await self._answer(run, scope)
         except RunStopped:
             return
-        if self.store.run(run_id)["status"] == "running":
+        if self.store.run(run_id)["status"] in ("running", "pause_requested"):
+            # Nothing is left to pause once the last step's result has been applied.
             self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
 
     # ---- run control ---------------------------------------------------------------
-    def _checkpoint(self, run_id: str) -> None:
-        status = self.store.run(run_id)["status"]
-        if status == "pause_requested":
+    def _checkpoint(self, run_id: str, scope_revision: int | None = None) -> None:
+        run = self.store.run(run_id)
+        if run["status"] == "pause_requested":
             self.store.update_run(run_id, event="run_paused", status="paused", pause_reason="user_requested")
             raise RunStopped
-        if status == "cancelled":
+        if run["status"] == "cancelled":
+            raise RunStopped
+        if scope_revision is not None and self.store.research(run["research_id"])["current_scope_revision"] != scope_revision:
+            # Results of an older question revision stay recorded under this run but are not applied.
+            self.store.update_run(run_id, event="run_cancelled", status="cancelled", pause_reason="scope_revised")
             raise RunStopped
 
     def _pause(self, run_id: str, reason: str, detail: Any = None) -> None:
@@ -95,15 +100,16 @@ class ResearchFlow:
 
     # ---- discovery -----------------------------------------------------------------
     async def _discovery(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
-        run_id, rid = run["id"], run["research_id"]
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         if scope["source_scope"] == "attached":
             return
-        self._checkpoint(run_id)
+        self._checkpoint(run_id, revision)
         output = await self._model_step(run, scope, "search_plan", "search_plan")
+        self._checkpoint(run_id, revision)
         if output.get("invalid"):
             self._fail(run_id, "invalid_model_output", {"step": "search_plan", "issues": output["issues"]})
         if output["output_type"] == "ClarificationRequest":
-            self.store.save_answer(rid, run_id, None, output["step_input_id"], run["scope_revision"], "clarification",
+            self.store.save_answer(rid, run_id, None, output["step_input_id"], revision, "clarification",
                                    output["result"], {"ok": True, "issues": []})
             return
         plan = output["result"]
@@ -111,18 +117,20 @@ class ResearchFlow:
         queries = [q for q in plan["queries"] if q["provider_id"] in scope["providers"]][: budget["max_provider_requests"]]
         per_query = max(5, min(25, budget["max_candidates"] // max(1, len(queries))))
         for index, query in enumerate(queries):
-            self._checkpoint(run_id)
+            self._checkpoint(run_id, revision)
             await self._search(run, index, query, per_query)
 
-        self._checkpoint(run_id)
+        self._checkpoint(run_id, revision)
         self.store.update_run(run_id, stage="screening")
-        candidates = [c for c in self.store.candidates(rid)[: budget["max_candidates"]] if c["origin"] != "user"]
+        candidates = [c for c in self.store.candidates(rid, revision) if c["origin"] != "user"][: budget["max_candidates"]]
         if not candidates:
             return
         output = await self._model_step(run, scope, "screening", "screening", candidate_rows=candidates)
+        self._checkpoint(run_id, revision)
         if output.get("invalid"):
             self._fail(run_id, "invalid_model_output", {"step": "screening", "issues": output["issues"]})
-        by_candidate = {c["candidate_id"]: c["source_version_id"] for c in candidates}
+        # Map through all candidates: a resumed run may apply a proposal made for an earlier candidate list.
+        by_candidate = {c["candidate_id"]: c["source_version_id"] for c in self.store.candidates(rid)}
         step = self.store.step(run_id, "screening", "model:screening")
         for decision in output["result"]["decisions"]:
             self.store.apply_screening_proposal(
@@ -155,24 +163,22 @@ class ResearchFlow:
             settings.payloads_dir.mkdir(parents=True, exist_ok=True)
             payload_path = f"{step['id']}.json"
             (settings.payloads_dir / payload_path).write_text(json.dumps(outcome.raw_payload), encoding="utf-8")
-        search_run_id = self.store.add_search_run(
-            research_id=rid, run_id=run_id, step_id=step["id"], provider=openalex.PROVIDER_ID,
+        search_fields = dict(
+            research_id=rid, run_id=run_id, step_id=step["id"], scope_revision=run["scope_revision"], provider=openalex.PROVIDER_ID,
             query_text=query["query_text"], request_description=outcome.request_description,
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
             result_count=len(outcome.records), provider_total=outcome.provider_total, page_limit=per_query,
             error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit}),
             raw_payload_path=payload_path,
         )
-        for rank, record in enumerate(outcome.records):
-            svid, _ = self.store.upsert_provider_source(openalex.PROVIDER_ID, record, payload_path)
-            self.store.add_to_corpus(rid, svid, "search", search_run_id, rank)
         if outcome.status in ("completed", "zero_results"):
-            self.store.finish_step(step["id"], "succeeded", output={"search_run_id": search_run_id, "status": outcome.status,
-                                                                    "result_count": len(outcome.records)})
+            self.store.record_search(search_fields, openalex.PROVIDER_ID, outcome.records, payload_path, step["id"], "succeeded",
+                                     step_output={"status": outcome.status, "result_count": len(outcome.records)})
             return
         final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
-        self.store.finish_step(step["id"], final, error_code=outcome.status,
-                               error={"error": outcome.error, "http_status": outcome.http_status}, delivery_class=outcome.delivery_class)
+        self.store.record_search(search_fields, openalex.PROVIDER_ID, outcome.records, payload_path, step["id"], final,
+                                 error_code=outcome.status, error={"error": outcome.error, "http_status": outcome.http_status},
+                                 delivery_class=outcome.delivery_class)
         self._pause(run_id, f"provider_{outcome.status}", {"provider": "openalex", "http_status": outcome.http_status,
                                                           "retry_after": outcome.rate_limit.get("retry-after")})
 
@@ -180,6 +186,7 @@ class ResearchFlow:
     async def _answer(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
         run_id, rid = run["id"], run["research_id"]
         included = self.store.included_sources(rid)
+        selection_revision = self.store.selection_revision(rid)  # read together with the included set it describes
         if not included:
             self._fail(run_id, "no_included_sources")
         self.store.update_run(run_id, stage="inspection")
@@ -199,11 +206,16 @@ class ResearchFlow:
         passages = self._retrieve(rid, scope, included, run["budget"]["max_answer_passages"])
         if not passages:
             self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
-                                   {"ok": True, "issues": [], "note": "No accessible passages for the included sources."})
+                                   {"ok": True, "issues": [], "note": "No accessible passages for the included sources."},
+                                   selection_revision=selection_revision)
             return
         source_ids = list(dict.fromkeys(p["source_version_id"] for p in passages))
-        output = await self._model_step(run, scope, "grounded_answer", "grounded_answer", source_ids=source_ids, passage_rows=passages)
+        output = await self._model_step(run, scope, "grounded_answer", "grounded_answer", source_ids=source_ids, passage_rows=passages,
+                                        selection_revision=selection_revision)
+        self._checkpoint(run_id)
         step = self.store.step(run_id, "grounded_answer", "model:grounded_answer")
+        # The revision recorded with the StepInput the output came from; a resumed run may reuse an earlier output.
+        step_selection = self.store.step_input_selection_revision(output["step_input_id"])
         if output.get("invalid"):
             try:
                 draft = json.loads(output["raw_output"] or "")
@@ -211,12 +223,12 @@ class ResearchFlow:
             except json.JSONDecodeError:
                 draft = None
             self.store.save_answer(rid, run_id, step["id"], output["step_input_id"], run["scope_revision"], "unverified_draft",
-                                   draft, {"ok": False, "issues": output["issues"]})
+                                   draft, {"ok": False, "issues": output["issues"]}, selection_revision=step_selection)
             return
         payload = self.store.step_input_payload(output["step_input_id"])
         links = contracts.derive_evidence_links(payload, output["result"])
         self.store.save_answer(rid, run_id, step["id"], output["step_input_id"], run["scope_revision"], "structurally_valid",
-                               output["result"], {"ok": True, "issues": []}, links)
+                               output["result"], {"ok": True, "issues": []}, links, selection_revision=step_selection)
 
     async def _fetch_pdf(self, run: dict[str, Any], source: dict[str, Any]) -> None:
         step = self.store.step(run["id"], f"fetch:{source['id']}", "fetch_pdf")
@@ -247,7 +259,7 @@ class ResearchFlow:
 
     def _retrieve(self, research_id: str, scope: dict[str, Any], included: list[str], limit: int) -> list[dict[str, Any]]:
         terms = [t for t in re.findall(r"\w+", scope["question"].lower()) if len(t) > 2 and t not in STOPWORDS]
-        plan = self.store.latest_step_output(research_id, "search_plan")
+        plan = self.store.latest_step_output(research_id, "search_plan", scope["revision"])
         if plan and plan.get("output_type") == "SearchPlan":
             for concept in plan["result"]["concepts"]:
                 for phrase in [concept["label"], *concept["synonyms"]]:
@@ -319,7 +331,7 @@ class ResearchFlow:
 
     async def _model_step(self, run: dict[str, Any], scope: dict[str, Any], operation_key: str, task_type: str,
                           candidate_rows: list[dict[str, Any]] | None = None, source_ids: list[str] | None = None,
-                          passage_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                          passage_rows: list[dict[str, Any]] | None = None, selection_revision: int | None = None) -> dict[str, Any]:
         run_id, rid = run["id"], run["research_id"]
         step = self.store.step(run_id, operation_key, f"model:{task_type}")
         if step["status"] == "succeeded":
@@ -330,6 +342,7 @@ class ResearchFlow:
         health = await adapter.health()
         if not health.get("ready"):
             self._pause(run_id, "model_connection_not_ready", {"connection": scope["model_connection"], "reason": health.get("reason")})
+        self._checkpoint(run_id)  # a pause or cancel may have arrived while the connection was checked
         self.store.start_step(step["id"])
         repair_issues: list[dict[str, Any]] | None = None
         for attempt in range(MAX_SCHEMA_REPAIRS + 1):
@@ -344,34 +357,40 @@ class ResearchFlow:
             base = prompt.BASE_INSTRUCTIONS
             developer = prompt.developer_instructions(self.deps.package, task_type)
             message = prompt.step_message(payload) if repair_issues is None else prompt.repair_message(payload, repair_issues)
-            self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema)
+            self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema, selection_revision)
             session = self.store.start_model_session(rid, run_id, step["id"], payload["step_input_id"],
                                                      scope["model_connection"], scope["requested_model"])
             result = await adapter.run_step(base, developer, message, schema, scope["requested_model"])
-            report = contracts.validate_model_output(payload, result.raw_text or "") if result.status == "completed" else None
-            self.store.finish_model_session(
-                session, status=result.status, resolved_model=result.resolved_model, external_thread_id=result.external_thread_id,
-                raw_output=result.raw_text, token_usage_json=result.token_usage, tool_item_types_json=result.tool_item_types,
-                validation_json={"ok": report.ok, "issues": [vars(i) for i in report.issues]} if report else None,
-            )
+            recorded: dict[str, Any] = {
+                "status": result.status, "resolved_model": result.resolved_model, "external_thread_id": result.external_thread_id,
+                "raw_output": result.raw_text, "token_usage_json": result.token_usage, "tool_item_types_json": result.tool_item_types,
+            }
             if result.status == "isolation_violation" or result.tool_item_types:
-                self.store.finish_step(step["id"], "failed", error_code="model_isolation_violation",
-                                       error={"tool_item_types": result.tool_item_types, "error": result.error})
+                self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_isolation_violation",
+                                               error={"tool_item_types": result.tool_item_types, "error": result.error})
                 self._pause(run_id, "model_isolation_violation", {"tool_item_types": result.tool_item_types, "error": result.error})
             if result.status != "completed":
                 final = "outcome_unknown" if result.delivery_class == "after_send_unknown" else "failed"
-                self.store.finish_step(step["id"], final, error_code=f"model_{result.status}", error=result.error,
-                                       delivery_class=result.delivery_class)
+                self.store.complete_model_step(session, recorded, step["id"], final, error_code=f"model_{result.status}",
+                                               error=result.error, delivery_class=result.delivery_class)
                 self._checkpoint(run_id)
                 self._pause(run_id, "model_call_failed", {"status": result.status, "error": result.error})
+            if not scope["requested_model"] or result.resolved_model != scope["requested_model"]:
+                # Output from any model other than the one chosen for this research is recorded but never used.
+                mismatch = {"requested_model": scope["requested_model"], "resolved_model": result.resolved_model}
+                self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_mismatch", error=mismatch)
+                self._pause(run_id, "model_mismatch", mismatch)
+            report = contracts.validate_model_output(payload, result.raw_text or "")
+            recorded["validation_json"] = {"ok": report.ok, "issues": [vars(i) for i in report.issues]}
             if report.ok:
                 output = {"output_type": report.output_type, "result": report.result,
                           "step_input_id": payload["step_input_id"], "resolved_model": result.resolved_model}
-                self.store.finish_step(step["id"], "succeeded", output=output)
+                self.store.complete_model_step(session, recorded, step["id"], "succeeded", output=output)
                 return output
             repair_issues = [vars(i) for i in report.issues]
             if after_invalid_output(attempt) == "store_unverified_draft":
-                self.store.finish_step(step["id"], "failed", output={"step_input_id": payload["step_input_id"]},
-                                       error_code="invalid_model_output", error=repair_issues)
+                self.store.complete_model_step(session, recorded, step["id"], "failed", output={"step_input_id": payload["step_input_id"]},
+                                               error_code="invalid_model_output", error=repair_issues)
                 return {"invalid": True, "raw_output": result.raw_text, "issues": repair_issues, "step_input_id": payload["step_input_id"]}
+            self.store.finish_model_session(session, **recorded)
         raise AssertionError("unreachable")

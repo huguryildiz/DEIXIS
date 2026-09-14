@@ -20,6 +20,9 @@ def test_package_hash_is_stable_and_content_sensitive(tmp_path):
     shutil.copytree(SKILL_DIR, copy)
     (copy / ".DS_Store").write_bytes(b"ignored")
     assert skill.package_hash(copy) == first
+    provenance = copy / "provenance.json"
+    provenance.write_text(provenance.read_text().replace("not_done", "not done"))
+    assert skill.package_hash(copy) == first  # recording provenance or results must not change the hash they describe
     (copy / "SKILL.md").write_text((copy / "SKILL.md").read_text() + "\nchanged\n")
     assert skill.package_hash(copy) != first
 

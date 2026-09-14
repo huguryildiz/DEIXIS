@@ -39,6 +39,10 @@ def connect(path: Path) -> sqlite3.Connection:
 
 @contextmanager
 def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    if conn.in_transaction:
+        # Nested use joins the outer transaction, which commits or rolls back everything together.
+        yield conn
+        return
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn

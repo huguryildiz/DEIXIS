@@ -57,7 +57,7 @@ async def fake_fetch(url):
 def app_for(tmp_path, adapter=None, http_status=200):
     settings = Settings(data_dir=tmp_path / "data", port=8765)
     return create_app(settings, adapters={"fake": adapter or FakeAdapter()}, http_client=openalex_client(http_status),
-                      fetcher=fake_fetch, extra_hosts=("testserver",))
+                      fetcher=fake_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
 
 
 def session(client):
@@ -78,7 +78,8 @@ def wait_run(client, rid, run_id, statuses=("completed", "failed", "paused", "ca
 
 
 def create(client, **overrides):
-    body = {"question": "How is molecule release scheduling optimized?", "model_connection": "fake", "effort": "quick"} | overrides
+    body = {"question": "How is molecule release scheduling optimized?", "model_connection": "fake",
+            "requested_model": "fake-model", "effort": "quick"} | overrides
     response = client.post("/api/researches", json=body)
     assert response.status_code == 201, response.text
     return response.json()["research"]["id"]
@@ -88,7 +89,7 @@ def test_question_to_cited_answer_and_restart(tmp_path):
     adapter = FakeAdapter()
     with TestClient(app_for(tmp_path, adapter)) as client:
         session(client)
-        rid = create(client)
+        rid = create(client, source_scope="attached_and_academic")
         first = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}, headers={"Idempotency-Key": "k1"}).json()
         again = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}, headers={"Idempotency-Key": "k1"}).json()
         assert first["id"] == again["id"]  # F: double submit does not create a second run
@@ -242,6 +243,127 @@ def test_waiting_instance_takes_over_after_owner_stops(tmp_path):
         second.__exit__(None, None, None)
 
 
+def attached_research(client):
+    rid = create(client, source_scope="attached")
+    client.post(f"/api/researches/{rid}/uploads", files={"file": ("a.pdf", make_pdf(["SYNTHETIC molecule release schedule"]), "application/pdf")})
+    return rid
+
+
+def test_research_requires_an_explicit_listed_model(tmp_path):
+    with TestClient(app_for(tmp_path, FakeAdapter(models=["fake-model"]))) as client:
+        session(client)
+        body = {"question": "How is molecule release scheduling optimized?", "model_connection": "fake"}
+        assert client.post("/api/researches", json=body).status_code == 422
+        assert client.post("/api/researches", json=body | {"requested_model": "unlisted-model"}).status_code == 422
+        assert client.post("/api/researches", json=body | {"requested_model": "fake-model"}).status_code == 201
+
+
+def test_output_from_another_model_is_recorded_but_not_used(tmp_path):
+    adapter = FakeAdapter(resolved_model="some-other-model")
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        rid = attached_research(client)
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        assert (run["status"], run["pause_reason"]) == ("paused", "model_mismatch")
+        assert view["answers"] == [] and len(adapter.calls) == 1
+
+
+def test_pause_during_final_model_call_applies_result_only_after_resume(tmp_path):
+    holder = {}
+
+    def responder(si):
+        if si["task_type"] == "grounded_answer" and not holder.get("paused"):
+            holder["paused"] = True
+            holder["app"].state.store.update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
+                                                 pause_reason="user_requested")
+        return valid_response(si)
+
+    adapter = FakeAdapter(responder)
+    holder["app"] = app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid = attached_research(client)
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        assert (run["status"], run["pause_reason"]) == ("paused", "user_requested") and view["answers"] == []
+        client.post(f"/api/runs/{run['id']}/resume")
+        view, run = wait_run(client, rid, run["id"])
+        assert run["status"] == "completed" and len(view["answers"]) == 1
+        assert len(adapter.calls) == 1  # the recorded output is applied; the model is not called again
+
+
+def test_cancel_during_model_call_keeps_output_unapplied(tmp_path):
+    holder = {}
+
+    def responder(si):
+        if si["task_type"] == "grounded_answer":
+            holder["app"].state.store.update_run(si["run_id"], event="run_cancelled", status="cancelled", pause_reason="user_cancelled")
+        return valid_response(si)
+
+    holder["app"] = app = app_for(tmp_path, FakeAdapter(responder))
+    with TestClient(app) as client:
+        session(client)
+        rid = attached_research(client)
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        assert run["status"] == "cancelled" and view["answers"] == []
+        assert next(s for s in run["steps"] if s["kind"] == "model:grounded_answer")["status"] == "succeeded"
+
+
+def test_selection_change_marks_existing_answer_stale(tmp_path):
+    with TestClient(app_for(tmp_path)) as client:
+        session(client)
+        rid = attached_research(client)
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, _ = wait_run(client, rid, run["id"])
+        assert view["answers"][0]["applicability"] == "current"
+        source = view["sources"][0]
+        client.patch(f"/api/researches/{rid}/selections/{source['source_version_id']}",
+                     json={"state": "excluded", "expected_version": source["selection"]["version"]})
+        assert client.get(f"/api/researches/{rid}").json()["answers"][0]["applicability"] == "stale_selection"
+
+
+def test_resume_after_crash_following_saved_answer_does_not_duplicate_it(tmp_path):
+    with TestClient(app_for(tmp_path)) as client:
+        session(client)
+        rid = attached_research(client)
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        wait_run(client, rid, run["id"])
+    conn = db.connect(tmp_path / "data" / "library.sqlite")
+    conn.execute("UPDATE runs SET status = 'running' WHERE id = ?", (run["id"],))  # crash before completion was recorded
+    conn.close()
+
+    adapter = FakeAdapter()
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        client.post(f"/api/runs/{run['id']}/resume")
+        view, resumed = wait_run(client, rid, run["id"], statuses=("completed", "failed", "cancelled"))
+        assert resumed["status"] == "completed"
+        assert len(view["answers"]) == 1 and adapter.calls == []
+
+
+def test_question_revision_during_discovery_stops_applying_its_results(tmp_path):
+    holder = {}
+
+    def responder(si):
+        if si["task_type"] == "search_plan":
+            store = holder["app"].state.store
+            store.revise_scope(si["research_id"], store.research(si["research_id"])["version"], "A revised molecule release question", None)
+        return valid_response(si)
+
+    adapter = FakeAdapter(responder)
+    holder["app"] = app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid = create(client)
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        assert (run["status"], run["pause_reason"]) == ("cancelled", "scope_revised")
+        assert view["search_runs"] == [] and view["sources"] == []
+        assert [c["task_type"] for c in adapter.calls] == ["search_plan"]
+
+
 def test_mutations_require_csrf_and_known_host(tmp_path):
     with TestClient(app_for(tmp_path)) as client:
         body = {"question": "x question", "model_connection": "fake"}
@@ -250,3 +372,11 @@ def test_mutations_require_csrf_and_known_host(tmp_path):
         assert client.post("/api/researches", json=body, headers={"origin": "http://evil.example"}).status_code == 403
         assert client.get("/api/health", headers={"host": "evil.example"}).status_code == 403
         assert client.post("/api/researches", json=body | {"model_connection": "codex"}).status_code == 422
+        rid = create(client)
+        pdf_file = {"file": ("a.pdf", make_pdf(["SYNTHETIC"]), "application/pdf")}
+        assert client.post(f"/api/researches/{rid}/uploads", files=pdf_file).status_code == 422  # academic-only scope
+
+    remote_app = create_app(Settings(data_dir=tmp_path / "remote", port=8765), adapters={"fake": FakeAdapter()},
+                            http_client=openalex_client(), fetcher=fake_fetch, extra_hosts=("testserver",))
+    with TestClient(remote_app) as remote:
+        assert remote.get("/api/health").status_code == 403  # the test client's peer address is not loopback

@@ -2,6 +2,17 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D5 — Enforce the chosen model, result applicability and local boundaries
+
+**Status**: accepted  
+**Date**: 2026-09-14
+
+**Context**: A read-only review of the initial commit by Codex `gpt-5.6-sol` (high reasoning effort) found that runs could apply results after pause, cancel or a question revision; that a research could start without a model and accept output from another model; that answers stayed "current" after source-selection changes; that a crash between a completed model call or search and its step record could repeat work or duplicate answers; that the package hash covered `provenance.json`; and that `.env` secrets reached the Codex process. Evidence: `.local/review-gpt-5.6-sol-high-2026-09-14.md` (local, not versioned).
+
+**Decision**: A research requires an explicit model that the connection lists; output whose resolved model differs is recorded and the run pauses (`model_mismatch`). Runs check pause and cancel after every external call and before applying results; discovery also stops (`cancelled`, `scope_revised`) when the question is revised. Search runs and candidates carry the question revision, and screening uses only the current revision. A research-level selection revision is stored with answer StepInputs and answers, so later selection changes mark answers `stale_selection`. Model-session and search results commit in the same transaction as their step outcome, and answers and screening proposals are applied at most once per step. The package hash covers only the instruction files loaded into model steps. The Codex process receives an allowlisted environment without provider keys. The API accepts only loopback peers, and attachments only when the source scope includes them.
+
+**Impact**: Migration 0003. Answers created before it keep question-only applicability. The version-family source model, locator assertions inside claim text, upload/extraction memory limits and DNS-rebinding protection remain open review items.
+
 ## D4 — Attach an open-access PDF only to the source version it belongs to
 
 **Status**: accepted  

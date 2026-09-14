@@ -39,7 +39,7 @@ export type Limitation = { kind: string; text: string; source_ids: string[] }
 export type ValidationIssue = { code: string; path: string; message: string }
 export type Answer = {
   id: string; run_id: string; status: 'structurally_valid' | 'unverified_draft' | 'clarification' | 'no_evidence'
-  scope_revision: number; applicability: 'current' | 'stale_scope'; answer_language: string | null; created_at: string
+  scope_revision: number; applicability: 'current' | 'stale_scope' | 'stale_selection'; answer_language: string | null; created_at: string
   claims: Claim[]; limitations: Limitation[]; unanswered_aspects: string[]; capability_notice: string | null
   clarification: { question: string; ambiguity: string; why_it_matters: string; options: string[] } | null
   unverified_draft: { claims?: { claim_label: string; text: string }[] } | null
@@ -106,7 +106,7 @@ const json = (method: string, body: unknown, extra: Record<string, string> = {})
 export const api = {
   researches: () => request<ResearchSummary[]>('/api/researches'),
   research: (id: string) => request<ResearchView>(`/api/researches/${id}`),
-  create: (body: { question: string; source_scope: SourceScope; effort: Effort; model_connection: string; requested_model: string | null }) =>
+  create: (body: { question: string; source_scope: SourceScope; effort: Effort; model_connection: string; requested_model: string }) =>
     request<ResearchView>('/api/researches', json('POST', body)),
   upload: (id: string, file: File) => {
     const form = new FormData()

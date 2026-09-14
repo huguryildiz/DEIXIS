@@ -58,7 +58,8 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         validation = _json(a["validation_json"]) or {}
         answers.append({
             "id": a["id"], "run_id": a["run_id"], "status": a["status"], "scope_revision": a["scope_revision"],
-            "applicability": result_applicability(a["scope_revision"], research["current_scope_revision"]),
+            "applicability": result_applicability(a["scope_revision"], research["current_scope_revision"],
+                                                  a["selection_revision"], research["selection_revision"]),
             "answer_language": a["answer_language"], "created_at": a["created_at"], "claims": claims,
             "limitations": (draft or {}).get("limitations", []) if a["status"] == "structurally_valid" else [],
             "unanswered_aspects": (draft or {}).get("unanswered_aspects", []) if a["status"] == "structurally_valid" else [],

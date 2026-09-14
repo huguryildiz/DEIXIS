@@ -52,10 +52,13 @@ def _package_files(root: Path) -> list[Path]:
 
 
 def package_hash(root: Path = SKILL_DIR) -> str:
+    """Hash of the instruction files loaded into model steps.
+
+    Provenance and validation records are excluded, so recording results does not change the hash they describe.
+    """
     digest = hashlib.sha256()
-    for path in _package_files(root):
-        rel = path.relative_to(root).as_posix()
-        digest.update(f"{rel}\0{hashlib.sha256(path.read_bytes()).hexdigest()}\n".encode())
+    for rel in sorted({name for names in RUNTIME_FILES.values() for name in names}):
+        digest.update(f"{rel}\0{hashlib.sha256((root / rel).read_bytes()).hexdigest()}\n".encode())
     return f"sha256:{digest.hexdigest()}"
 
 

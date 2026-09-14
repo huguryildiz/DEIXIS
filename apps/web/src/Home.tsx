@@ -41,16 +41,18 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
       if (header === '%PDF-') accepted.push(file); else rejected.push(file.name)
     }
     setFiles(old => [...new Map([...old, ...accepted].map(f => [f.name, f])).values()])
+    if (accepted.length && scope === 'academic') setScope('attached_and_academic')  // attachments must be part of the scope
     setError(rejected.length ? `${rejected.join(', ')}: only PDF files can be attached.` : '')
   }
 
   async function submit() {
     if (!question.trim() || busy) return
     if (needsFiles && !files.length) { setError('Attach at least one PDF to use “Attached files”.'); return }
+    if (!model) { setError('Choose a model first. DEIXIS does not pick one for you.'); return }
     setBusy(true)
     setError('')
     try {
-      const view = await api.create({ question: question.trim(), source_scope: scope, effort, model_connection: 'codex', requested_model: model || null })
+      const view = await api.create({ question: question.trim(), source_scope: scope, effort, model_connection: 'codex', requested_model: model })
       const id = view.research.id
       for (const file of files) await api.upload(id, file)
       if (scope !== 'attached') await api.startRun(id, 'discovery', crypto.randomUUID())
@@ -93,12 +95,12 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
               </Select>
             : <span className="composer-model" title={codex?.reason ?? ''}>Model: {connections ? 'Codex not ready' : 'checking…'}</span>}
         </div>
-        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || (needsFiles && !files.length)} aria-label="Start research"><ArrowUpRight size={20} /></Button>
+        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || (needsFiles && !files.length)} aria-label="Start research"><ArrowUpRight size={20} /></Button>
       </div>
     </form>
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void addFiles(e.target.files); e.target.value = '' }} />
     <div className="composer-caption"><span>{busy ? 'Saving research…' : caption}</span><span>⌘ / Ctrl + Enter</span></div>
-    {codex && !codex.ready && <div className="legacy-boundary">Codex is not ready: {codex.reason}. Your research is still saved; model steps pause until the connection is ready. No other model is used instead.</div>}
+    {codex && !codex.ready && <div className="legacy-boundary">Codex is not ready: {codex.reason}. A research needs a model that Codex lists; model steps pause until the connection is ready, and no other model is used instead.</div>}
     {error && <div className="legacy-boundary" role="alert">{error}</div>}
     <div className="resume-section">
       <div className="resume-heading"><h2>Pick up where you left off</h2><span>SAVED ON THIS COMPUTER</span></div>

@@ -4,9 +4,12 @@
 
 A research workspace for source-linked literature synthesis, evidence comparison,
 and candidate-question development. Product name: **DEIXIS** (uppercase).
-A first local-web slice runs: question → OpenAlex search or attached PDF → source selection →
-passage inspection → source-linked answer → reopen after restart. Only OpenAlex and the Codex
-model connection are implemented; the other providers and model connections remain planned.
+A first local-web development slice is implemented: question → OpenAlex search or attached PDF →
+source selection → passage inspection → source-linked answer → reopen after restart. It has been
+exercised manually with live OpenAlex and Codex, but P4 acceptance is pending: no browser-level
+acceptance test, backup/restore test or full behavior run on the current method package is recorded.
+Only OpenAlex and the Codex model connection are implemented; the other providers and model
+connections remain planned.
 
 ## Run the first slice
 

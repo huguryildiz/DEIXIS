@@ -42,7 +42,7 @@ class CreateResearch(BaseModel):
     source_scope: Literal["academic", "attached", "attached_and_academic"] = "academic"
     effort: Literal["quick", "standard", "detailed"] = "standard"
     model_connection: str = "codex"
-    requested_model: str | None = Field(default=None, max_length=120)
+    requested_model: str = Field(min_length=1, max_length=120)  # explicit: the connection never picks a model itself
     language_hint: str | None = Field(default=None, pattern=r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
 
 
@@ -69,11 +69,13 @@ def create_app(
     fetcher: Callable[[str], Awaitable[fetch_module.FetchResult]] | None = None,
     start_worker: bool = True,
     extra_hosts: tuple[str, ...] = (),
+    trusted_clients: tuple[str, ...] = (),
 ) -> FastAPI:
     settings = settings or load_settings()
     ports = {settings.port}
     allowed_hosts = {f"{h}:{p}" for h in ("127.0.0.1", "localhost") for p in ports} | set(extra_hosts)
     allowed_origins = {f"http://{h}" for h in allowed_hosts}
+    local_clients = {"127.0.0.1", "::1", *trusted_clients}
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -125,6 +127,9 @@ def create_app(
 
     @app.middleware("http")
     async def local_guard(request: Request, call_next):
+        # Loopback is enforced per request, not only by the launcher's bind address.
+        if (request.client.host if request.client else "") not in local_clients:
+            return JSONResponse({"detail": "Only local connections are accepted"}, status_code=403)
         if request.headers.get("host", "") not in allowed_hosts:
             return JSONResponse({"detail": "Host not allowed"}, status_code=403)
         if request.method not in ("GET", "HEAD", "OPTIONS"):
@@ -185,8 +190,12 @@ def create_app(
 
     @app.post("/api/researches", status_code=201)
     async def create_research(body: CreateResearch, request: Request) -> dict[str, Any]:
-        if body.model_connection not in request.app.state.adapters:
+        adapter = request.app.state.adapters.get(body.model_connection)
+        if adapter is None:
             raise HTTPException(422, f"Model connection '{body.model_connection}' is not available")
+        listed = (await adapter.health()).get("models")
+        if listed is not None and body.requested_model not in {m["id"] for m in listed}:
+            raise HTTPException(422, f"Model '{body.requested_model}' is not offered by {body.model_connection}")
         providers = ["openalex"] if body.source_scope != "attached" else []
         store = store_of(request)
         rid = store.create_research(body.question, body.source_scope, body.effort, providers,
@@ -249,7 +258,8 @@ def create_app(
     @app.post("/api/researches/{research_id}/uploads", status_code=201)
     async def upload(research_id: str, request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
         store = store_of(request)
-        store.research(research_id)
+        if store.scope(research_id)["source_scope"] == "academic":
+            raise HTTPException(422, "Attached files are not part of this research's source scope")
         data = await file.read(MAX_UPLOAD_BYTES + 1)
         if len(data) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, "PDF larger than 50 MB")

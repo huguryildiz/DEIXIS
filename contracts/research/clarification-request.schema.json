@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/clarification-request.schema.json",
+  "title": "ClarificationRequest",
+  "description": "One ambiguity that would materially change the answer, with a short question. Only when necessary; an open question starts work.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "ambiguity",
+    "question",
+    "why_it_matters",
+    "options"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "deixis.clarification_request.v1" },
+    "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
+    "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
+    "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "ambiguity": { "$ref": "common.schema.json#/$defs/short_text" },
+    "question": { "type": "string", "maxLength": 300 },
+    "why_it_matters": { "$ref": "common.schema.json#/$defs/short_text" },
+    "options": {
+      "type": "array",
+      "maxItems": 4,
+      "items": { "type": "string", "maxLength": 200 }
+    }
+  }
+}

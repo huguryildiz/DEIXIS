@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/common.schema.json",
+  "title": "DEIXIS research contract — shared definitions",
+  "description": "Shared identifiers and envelope fields. Backend-owned values are authoritative; values echoed by a model are compared against them and never grant authority.",
+  "$defs": {
+    "step_input_id": {
+      "type": "string",
+      "pattern": "^sti_[0-9A-Za-z]{8,40}$",
+      "description": "Identifier of the immutable StepInput snapshot the model received. Allocated by the backend."
+    },
+    "scope_revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Research question/scope revision the step was started with."
+    },
+    "skill_package_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Hash of the loaded methods/deixis-research package."
+    },
+    "passage_id": {
+      "type": "string",
+      "pattern": "^psg_[0-9A-Za-z]{8,40}$"
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^srv_[0-9A-Za-z]{8,40}$",
+      "description": "SourceVersion identifier."
+    },
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^cnd_[0-9A-Za-z]{8,40}$",
+      "description": "Search-result candidate identifier."
+    },
+    "provider_id": {
+      "type": "string",
+      "enum": ["openalex", "semantic_scholar", "crossref", "arxiv", "scopus", "ieee_xplore", "serpapi"]
+    },
+    "short_text": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "language_tag": {
+      "type": "string",
+      "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+    }
+  }
+}

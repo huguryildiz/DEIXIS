@@ -1,0 +1,30 @@
+[project]
+name = "deixis"
+version = "0.1.0"
+description = "DEIXIS local research workspace backend"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.115",
+  "httpx>=0.28",
+  "jsonschema>=4.23",
+  "pypdf>=5",
+  "python-multipart>=0.0.20",
+  "referencing>=0.35",
+  "uvicorn>=0.32",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/deixis"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Explicit path: in synced Documents folders the venv's .pth files can receive the
+# macOS hidden flag, which Python's site module skips.
+pythonpath = ["backend"]

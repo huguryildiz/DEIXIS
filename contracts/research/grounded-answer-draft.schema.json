@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/grounded-answer-draft.schema.json",
+  "title": "GroundedAnswerDraft",
+  "description": "Source-linked answer draft. Claims cite only passage IDs from the StepInput allowlist. Locators, reading depth and review status come from backend Passage records, never from this output. Passing structural checks is not semantic verification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "answer_language",
+    "claims",
+    "limitations",
+    "unanswered_aspects",
+    "capability_notice"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "deixis.grounded_answer_draft.v1" },
+    "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
+    "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
+    "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "answer_language": { "$ref": "common.schema.json#/$defs/language_tag" },
+    "claims": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_label", "text", "support_type", "passage_ids"],
+        "properties": {
+          "claim_label": { "type": "string", "pattern": "^c[0-9]{1,3}$" },
+          "text": { "type": "string", "maxLength": 1200 },
+          "support_type": {
+            "type": "string",
+            "enum": ["source_stated", "analyst_inference"],
+            "description": "source_stated: the cited passages state it. analyst_inference: an interpretation drawn from the cited passages."
+          },
+          "passage_ids": {
+            "type": "array",
+            "maxItems": 8,
+            "items": { "$ref": "common.schema.json#/$defs/passage_id" }
+          }
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "text", "source_ids"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["access", "scope", "uncertainty", "conflicting_evidence", "unsupported_request"] },
+          "text": { "$ref": "common.schema.json#/$defs/short_text" },
+          "source_ids": {
+            "type": "array",
+            "maxItems": 20,
+            "items": { "$ref": "common.schema.json#/$defs/source_id" }
+          }
+        }
+      }
+    },
+    "unanswered_aspects": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "$ref": "common.schema.json#/$defs/short_text" }
+    },
+    "capability_notice": {
+      "type": ["string", "null"],
+      "maxLength": 600,
+      "description": "Set when the request asks for a mode this version does not support (synthesis, candidate development, claim-specific kill-search, experiments)."
+    }
+  }
+}

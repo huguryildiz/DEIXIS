@@ -1,0 +1,19 @@
+# Documentation map
+
+Start with the [product decisions and open technical choices](product/README.md), then the [repository layout](layout.md). [D1](decisions.md) records why the documents are separated.
+
+The [implementation plan](product/implementation-plan.md) consolidates the proposed working mechanism, skill package, architecture, milestones and acceptance tests. Its status records the requested Claude Fable 5.1 High review; it is not a claim of implemented features.
+
+The [plan review and finding disposition](product/plan-review-2026-09-14.md) preserves the Fable verdict, reviewed hashes, original report and subsequent corrections. The revised plan has not received a second model review.
+
+| Location | Authority and purpose |
+|---|---|
+| [Product](product/README.md) | Current concise map of accepted product constraints, proposed contracts, and unresolved choices. The [first-slice plan](product/first-slice-plan.md) and [API and data design](product/api-and-data.md) are drafts, not implemented features. |
+| [Methods](methods/research-methods.md) | Research-method comparison and proposed workflow; [domain example](methods/domain-example.md) is illustrative, not the product's fixed scope. |
+| [Dated handoff](desktop/README.md) | Detailed record of the 14 September 2026 conversation and accepted user decisions. Historical names and unimplemented proposals are preserved. |
+| [Reference index](desktop/reference-index.md) | Provenance and limits of the private transfer package, screenshots, and inspected design references. |
+| [Design prompt](desktop/design-prompt.md) | Historical continuation prompt, not an instruction to execute automatically or the canonical implementation plan. |
+| [Decisions](decisions.md) | Durable decisions made after the handoff. An accepted decision is distinct from verified implementation. |
+| [UI prototype](../prototypes/shadcn-ui/README.md) | Run instructions and honest capability boundary for the browser-only demonstration. |
+
+The [root bibliography](../README.md#research-workspace-methodological-references) holds the transferred methodological references. The sibling Quaestio repository is a separate methodological skill, not a DEIXIS runtime dependency already wired in.

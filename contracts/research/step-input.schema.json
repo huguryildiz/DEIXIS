@@ -1,0 +1,401 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/step-input.schema.json",
+  "title": "StepInput",
+  "description": "Immutable, re-readable snapshot of everything given to one model step. Backend-owned; never produced by a model. Output identifiers are checked against this step's allowlist, not against the shared library.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "step_input_id",
+    "research_id",
+    "run_id",
+    "step_id",
+    "task_type",
+    "scope_revision",
+    "skill_package_hash",
+    "skill_files",
+    "output_schema_versions",
+    "question",
+    "user_steering",
+    "capabilities",
+    "enabled_providers",
+    "candidates",
+    "sources",
+    "passages",
+    "allowlist",
+    "human_corrections",
+    "budget",
+    "model",
+    "created_at"
+  ],
+  "properties": {
+    "step_input_id": {
+      "$ref": "common.schema.json#/$defs/step_input_id"
+    },
+    "research_id": {
+      "type": "string",
+      "pattern": "^res_[0-9A-Za-z]{8,40}$"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run_[0-9A-Za-z]{8,40}$"
+    },
+    "step_id": {
+      "type": "string",
+      "pattern": "^stp_[0-9A-Za-z]{8,40}$"
+    },
+    "task_type": {
+      "type": "string",
+      "enum": [
+        "search_plan",
+        "screening",
+        "grounded_answer"
+      ]
+    },
+    "scope_revision": {
+      "$ref": "common.schema.json#/$defs/scope_revision"
+    },
+    "skill_package_hash": {
+      "$ref": "common.schema.json#/$defs/skill_package_hash"
+    },
+    "skill_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "output_schema_versions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "language_hint"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "language_hint": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/language_tag"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "user_steering": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "supported_tasks",
+        "unsupported_tasks"
+      ],
+      "properties": {
+        "supported_tasks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unsupported_tasks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "enabled_providers": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/provider_id"
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "candidate_id",
+          "title",
+          "year",
+          "venue",
+          "abstract",
+          "abstract_origin",
+          "identifiers"
+        ],
+        "properties": {
+          "candidate_id": {
+            "$ref": "common.schema.json#/$defs/candidate_id"
+          },
+          "title": {
+            "type": "string"
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "venue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "abstract": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "abstract_origin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "identifiers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_id",
+          "work_id",
+          "title",
+          "year",
+          "version_label",
+          "access_level"
+        ],
+        "properties": {
+          "source_id": {
+            "$ref": "common.schema.json#/$defs/source_id"
+          },
+          "work_id": {
+            "type": "string",
+            "pattern": "^wrk_[0-9A-Za-z]{8,40}$",
+            "description": "Work family. Versions sharing a work_id are not independent evidence."
+          },
+          "title": {
+            "type": "string"
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "version_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "access_level": {
+            "type": "string",
+            "enum": [
+              "metadata",
+              "abstract",
+              "pdf_available",
+              "inaccessible"
+            ]
+          }
+        }
+      }
+    },
+    "passages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "passage_id",
+          "source_id",
+          "reading_depth",
+          "locator",
+          "abstract_origin",
+          "text"
+        ],
+        "properties": {
+          "passage_id": {
+            "$ref": "common.schema.json#/$defs/passage_id"
+          },
+          "source_id": {
+            "$ref": "common.schema.json#/$defs/source_id"
+          },
+          "reading_depth": {
+            "type": "string",
+            "enum": [
+              "metadata",
+              "abstract",
+              "selected_sections",
+              "full_text"
+            ]
+          },
+          "locator": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "physical_page",
+              "printed_label"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "abstract",
+                  "pdf_page",
+                  "section"
+                ]
+              },
+              "physical_page": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "printed_label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "abstract_origin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Origin of abstract text (for example provider_openalex_inverted_index, publisher_pdf, user). Null for non-abstract passages."
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "allowlist": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_ids",
+        "source_ids",
+        "passage_ids"
+      ],
+      "properties": {
+        "candidate_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/candidate_id"
+          }
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/source_id"
+          }
+        },
+        "passage_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/passage_id"
+          }
+        }
+      }
+    },
+    "human_corrections": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_model_calls",
+        "max_schema_repairs",
+        "max_provider_requests"
+      ],
+      "properties": {
+        "max_model_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_schema_repairs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max_provider_requests": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "connection",
+        "requested_model"
+      ],
+      "properties": {
+        "connection": {
+          "type": "string",
+          "enum": [
+            "codex",
+            "claude",
+            "deepseek",
+            "ollama",
+            "fake"
+          ]
+        },
+        "requested_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "created_at": {
+      "type": "string"
+    }
+  }
+}

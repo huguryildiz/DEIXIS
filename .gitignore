@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.env
+.venv/
+node_modules/
+dist/
+.local/
+
+# Private design evidence; do not publish.
+/local-reference/
+/docs/desktop/screenshots/

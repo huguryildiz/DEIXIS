@@ -1,0 +1,41 @@
+{
+  "package": "deixis-research",
+  "package_version": "0.1.0",
+  "created": "2026-09-14",
+  "runtime_dependency_on_upstream": false,
+  "upstream": {
+    "name": "quaestio",
+    "location_at_adaptation": "sibling local checkout ../quaestio (private repository)",
+    "revision": "037972d5add41d8a62cff45e09785beebc61bb01",
+    "revision_date": "2026-09-07T21:26:36+03:00",
+    "verification": "On 2026-09-14 `shasum -a 256 -c SKILL_MANIFEST.sha256` reported OK for all 10 manifest entries at this revision. The checkout also had an uncommitted README.md change; README.md was not used as a source."
+  },
+  "sources_used": [
+    { "path": "SKILL.md", "sha256": "16b1606e4fa3c16cb93b332372a833eb531633da8215ba7ba8fce4642d6ebb1a" },
+    { "path": "references/search-methods.md", "sha256": "2aede054b71ddecafe700081085b0f3971cae8d7239a8039ab5683c41039f9cd" },
+    { "path": "references/source-audit.md", "sha256": "03b83159498fe43216194ffbfd88398505ab424e9890cac419a11c3b8f8d3f24" }
+  ],
+  "sources_not_used": [
+    { "path": "references/question-discovery.md", "reason": "Candidate question development is P6 scope." },
+    { "path": "references/synthesis-and-checks.md", "reason": "Synthesis and assumption analysis are P6 scope." },
+    { "path": "references/causal-control.md", "reason": "Domain-specific model audit; not part of the first slice." },
+    { "path": "references/evidence-base.md", "reason": "Source register for methodology audits; not loaded at runtime." },
+    { "path": "references/merge-provenance.md", "reason": "Upstream maintenance record." },
+    { "path": "assets/review-workpad.md", "reason": "Application records replace the workpad." }
+  ],
+  "adaptations": [
+    {
+      "deixis_file": "SKILL.md",
+      "derived_from": ["SKILL.md"],
+      "change": "Kept calibration rules (reading depth, absent evidence is not originality, no manufactured positive result, versions not independent). Replaced repository/host-register assumptions with application StepInput records. Added data-versus-instruction boundary, allowlisted identifiers, no-tool statement, explicit unsupported modes and schema echo rules."
+    },
+    {
+      "deixis_file": "references/source-grounded-answer.md",
+      "derived_from": ["references/search-methods.md", "references/source-audit.md"],
+      "change": "Search plan keeps vocabulary families, essential-versus-desired conditions, no AND-everything queries, question-driven date limits and no exhaustiveness claim. Screening adds include/exclude/uncertain proposals with keyword false-positive guard. Grounded answer keeps original-passage checking, access limits and contradiction handling, expressed as claim-to-passage links. Search logging, citation chasing, sentinel sets and bibliometric maps are application or later-stage responsibilities and were not copied."
+    }
+  ],
+  "upstream_update_policy": "Quaestio changes are not imported automatically. A change is compared by diff, recorded here with the new revision and hashes, and re-tested with the behavior cases before the package version changes.",
+  "distribution_review": "not_done; required before public distribution of adapted text",
+  "behavioral_validation": "development cases partially run on 2026-09-14 with Codex gpt-5.6-luna; the unsupported-mode rule was tightened after MB06 failed; MB01, MB03, MB04 and MB07 not yet re-run on the current package; see tests/model_behavior/cases.json"
+}

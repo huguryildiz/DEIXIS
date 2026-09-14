@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/screening-proposal.schema.json",
+  "title": "ScreeningProposal",
+  "description": "Model proposal for the given candidates only. It never overrides a recorded user selection.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "decisions",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "deixis.screening_proposal.v1" },
+    "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
+    "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
+    "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "decisions": {
+      "type": "array",
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "proposal", "reason", "evidence_basis"],
+        "properties": {
+          "candidate_id": { "$ref": "common.schema.json#/$defs/candidate_id" },
+          "proposal": { "type": "string", "enum": ["include", "exclude", "uncertain"] },
+          "reason": { "$ref": "common.schema.json#/$defs/short_text" },
+          "evidence_basis": { "type": "string", "enum": ["metadata_only", "title_only", "title_and_abstract"] }
+        }
+      }
+    },
+    "notes": { "type": "string", "maxLength": 1200 }
+  }
+}

@@ -25,7 +25,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         runs.append(run)
 
     search_runs = [
-        {**{k: r[k] for k in ("id", "run_id", "provider", "query_text", "access_mode", "status", "result_count", "provider_total", "page_limit", "retrieved_at")},
+        {**{k: r[k] for k in ("id", "run_id", "scope_revision", "provider", "query_text", "access_mode", "status", "result_count", "provider_total", "page_limit", "retrieved_at")},
          "error": _json(r["error_json"])}
         for r in conn.execute("SELECT * FROM search_runs WHERE research_id = ? ORDER BY retrieved_at", (research_id,))
     ]
@@ -75,7 +75,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     sources = []
     for row in conn.execute(
         "SELECT m.added_by, s.*, sel.state, sel.origin AS selection_origin, sel.version AS selection_version, sel.proposal,"
-        " sel.proposal_reason, sel.proposal_basis, sel.user_reason, c.rank"
+        " sel.proposal_reason, sel.proposal_basis, sel.user_reason, c.id AS candidate_id, c.rank, c.scope_revision AS found_in_revision"
         " FROM corpus_memberships m JOIN source_versions s ON s.id = m.source_version_id"
         " JOIN selections sel ON sel.research_id = m.research_id AND sel.source_version_id = m.source_version_id"
         " LEFT JOIN candidates c ON c.research_id = m.research_id AND c.source_version_id = m.source_version_id"
@@ -97,6 +97,12 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "year": row["year"], "venue": row["venue"], "doi": row["doi"], "landing_url": row["landing_url"],
             "version_label": row["version_label"], "publication_type": row["publication_type"], "origin": row["origin"],
             "added_by": row["added_by"], "rank": row["rank"],
+            # "other_version": another version of a found record (e.g. its submitted manuscript), stored separately.
+            "version_role": "other_version" if row["origin"] == "provider" and row["candidate_id"] is None else "record",
+            # A search result keeps the question revision it was found for; attached files belong to no revision.
+            "found_in_revision": row["found_in_revision"],
+            "applicability": "current" if row["found_in_revision"] is None
+            else result_applicability(row["found_in_revision"], research["current_scope_revision"]),
             "access": {"abstract_passage_id": abstract["id"] if abstract else None,
                        "abstract_origin": abstract["abstract_origin"] if abstract else None,
                        "oa_pdf_url": row["oa_pdf_url"], "oa_pdf_version": row["oa_pdf_version"], "assets": assets,
@@ -107,15 +113,30 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "cited_in_latest_answer": svid in cited_sources,
         })
 
+    # Other versions follow the record of their work and share its question revision.
+    ordered: list[dict[str, Any]] = []
+    for record in (s for s in sources if s["version_role"] == "record"):
+        ordered.append(record)
+        ordered += [s | {"found_in_revision": record["found_in_revision"], "applicability": record["applicability"]}
+                    for s in sources if s["version_role"] == "other_version" and s["work_id"] == record["work_id"]]
+    placed = {s["source_version_id"] for s in ordered}
+    sources = ordered + [s for s in sources if s["source_version_id"] not in placed]
+
+    # Versions of one work are not independent: unique, included, given and cited count works.
+    work_of = {s["source_version_id"]: s["work_id"] for s in sources}
+
+    def works(ids: Any) -> int:
+        return len({work_of.get(i, i) for i in ids})
+
     latest_given = next((a["inputs_given"] for a in answers if a["inputs_given"]), None)
     counts = {
         "found": sum(s["result_count"] for s in search_runs),
-        "unique": len(sources),
-        "included": sum(s["selection"]["state"] == "included" for s in sources),
+        "unique": works(work_of),
+        "included": works(s["source_version_id"] for s in sources if s["selection"]["state"] == "included"),
         "excluded": sum(s["selection"]["state"] == "excluded" for s in sources),
         "pending": sum(s["selection"]["state"] == "pending" for s in sources),
-        "inspected": latest_given["sources"] if latest_given else 0,
-        "cited": len(cited_sources),
+        "inspected": works(latest_given["source_ids"]) if latest_given else 0,
+        "cited": works(cited_sources),
     }
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
     return {"research": research, "scope": scope, "runs": runs, "search_runs": search_runs, "sources": sources,

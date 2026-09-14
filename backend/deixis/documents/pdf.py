@@ -2,14 +2,22 @@
 
 pypdf extracts embedded text only: scanned pages yield no text (no OCR), and
 equations/tables may be garbled. The original page stays the reference.
+
+The child process is limited in time, pages, total extracted text and memory. The memory
+limit is a watchdog on the child's peak resident size: it stops the child shortly after the
+limit is crossed rather than preventing the allocation. There is no memory limit on Windows yet.
 """
 
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -17,6 +25,9 @@ import pypdf
 
 EXTRACTION_VERSION = f"pypdf-{pypdf.__version__}-chunks-v1"
 MAX_PAGES = 400
+MAX_TEXT_CHARS = 3_000_000
+MAX_MEMORY_BYTES = 1024 * 1024 * 1024
+MEMORY_EXIT_CODE = 3
 TIMEOUT_SECONDS = 90
 CHUNK_CHARS = 1400
 
@@ -36,32 +47,58 @@ class Extraction:
     error: str | None = None
 
 
-def _extract_in_process(path: str) -> dict:
+def _extract_in_process(path: str, max_chars: int) -> dict:
     reader = pypdf.PdfReader(path)
     labels = list(reader.page_labels) if reader.page_labels else []
-    pages, failed = [], 0
+    pages, failed, chars = [], 0, 0
     total = len(reader.pages)
+    truncated = total > MAX_PAGES
     for index, page in enumerate(reader.pages[:MAX_PAGES]):
+        if chars >= max_chars:
+            truncated = True
+            break
         try:
             text = page.extract_text() or ""
         except Exception:  # noqa: BLE001 - one bad page must not lose the rest
             failed += 1
             continue
+        if len(text) > max_chars - chars:
+            text, truncated = text[: max_chars - chars], True
+        chars += len(text)
         label = labels[index] if index < len(labels) else None
         pages.append({"physical_page": index + 1, "printed_label": label if label != str(index + 1) else None, "text": text})
-    return {"page_count": total, "pages": pages, "failed_pages": failed, "truncated": total > MAX_PAGES}
+    return {"page_count": total, "pages": pages, "failed_pages": failed, "truncated": truncated}
 
 
-def extract_pdf(path: Path) -> Extraction:
+def _watch_memory(limit: int) -> None:
+    try:
+        import resource
+    except ImportError:  # Windows
+        return
+    scale = 1 if sys.platform == "darwin" else 1024  # ru_maxrss is bytes on macOS, kilobytes on Linux
+
+    def watch() -> None:
+        while resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale <= limit:
+            time.sleep(0.05)
+        sys.stderr.write("memory limit exceeded\n")
+        sys.stderr.flush()
+        os._exit(MEMORY_EXIT_CODE)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
+def extract_pdf(path: Path, max_chars: int = MAX_TEXT_CHARS, max_memory: int = MAX_MEMORY_BYTES) -> Extraction:
     try:
         completed = subprocess.run(
-            [sys.executable, "-m", "deixis.documents.pdf", str(path)],
+            [sys.executable, "-m", "deixis.documents.pdf", str(path), str(max_chars), str(max_memory)],
             capture_output=True,
             timeout=TIMEOUT_SECONDS,
             env={"PYTHONPATH": str(Path(__file__).resolve().parents[2])},
         )
     except subprocess.TimeoutExpired:
         return Extraction("failed", error="extraction timed out")
+    if completed.returncode == MEMORY_EXIT_CODE:
+        return Extraction("failed", error="extraction exceeded the memory limit")
     if completed.returncode != 0:
         return Extraction("failed", error=completed.stderr.decode(errors="replace")[-400:])
     raw = json.loads(completed.stdout)
@@ -91,4 +128,10 @@ def chunk_page(text: str, limit: int = CHUNK_CHARS) -> list[tuple[int, int, str]
 
 
 if __name__ == "__main__":
-    json.dump(_extract_in_process(sys.argv[1]), sys.stdout)
+    logging.getLogger("pypdf").setLevel(logging.ERROR)  # a malformed file must not flood the parent with warnings
+    _watch_memory(int(sys.argv[3]))
+    try:
+        result = _extract_in_process(sys.argv[1], int(sys.argv[2]))
+    except MemoryError:
+        sys.exit(MEMORY_EXIT_CODE)
+    json.dump(result, sys.stdout)

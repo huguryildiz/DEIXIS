@@ -97,7 +97,7 @@ def test_question_to_cited_answer_and_restart(tmp_path):
         view, run = wait_run(client, rid, first["id"])
         assert run["status"] == "completed", run
         assert view["counts"]["found"] == 3 and view["counts"]["unique"] == 3
-        assert all(s["selection"]["origin"] == "model_proposal" for s in view["sources"])
+        assert all(s["selection"]["origin"] == "model_proposal" for s in view["sources"] if s["version_role"] == "record")
 
         second = next(s for s in view["sources"] if "relay" in s["title"])
         stale = client.patch(f"/api/researches/{rid}/selections/{second['source_version_id']}",
@@ -362,6 +362,105 @@ def test_question_revision_during_discovery_stops_applying_its_results(tmp_path)
         assert (run["status"], run["pause_reason"]) == ("cancelled", "scope_revised")
         assert view["search_runs"] == [] and view["sources"] == []
         assert [c["task_type"] for c in adapter.calls] == ["search_plan"]
+
+
+def test_submitted_and_published_versions_stay_separate_versions_of_one_work(tmp_path):
+    # C: one work family, separate versions; evidence stays with the inspected version; versions are not counted twice.
+    def cite_manuscript(si):
+        if si["task_type"] != "grounded_answer":
+            return valid_response(si)
+        manuscript = next(s["source_id"] for s in si["sources"] if s["version_label"] == "submittedVersion")
+        passage = next(p for p in si["passages"] if p["source_id"] == manuscript)
+        return valid_response(si | {"passages": [passage]})
+
+    adapter = FakeAdapter(cite_manuscript)
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        rid = create(client)
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        view, _ = wait_run(client, rid, run["id"])
+        assert len(view["sources"]) == 4 and view["counts"]["unique"] == 3
+        record, manuscript = [s for s in view["sources"] if "letter" in s["title"]]  # the other version follows its record
+        assert (record["version_role"], manuscript["version_role"]) == ("record", "other_version")
+        assert record["work_id"] == manuscript["work_id"] and record["source_version_id"] != manuscript["source_version_id"]
+        assert (manuscript["version_label"], manuscript["doi"], manuscript["access"]["abstract_passage_id"]) == ("submittedVersion", None, None)
+        assert manuscript["selection"]["origin"] == "default"  # not screened as a separate candidate
+        assert len(adapter.calls[-1]["candidates"]) == 3
+
+        client.patch(f"/api/researches/{rid}/selections/{manuscript['source_version_id']}",
+                     json={"state": "included", "expected_version": manuscript["selection"]["version"]})
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        assert run["status"] == "completed", run
+        given = {s["source_id"]: s for s in adapter.calls[-1]["sources"]}
+        assert given[manuscript["source_version_id"]]["work_id"] == given[record["source_version_id"]]["work_id"]
+
+        evidence = view["answers"][0]["claims"][0]["evidence"][0]
+        assert evidence["source_version_id"] == manuscript["source_version_id"] and evidence["kind"] == "pdf_page"
+        passage = client.get(f"/api/researches/{rid}/passages/{evidence['passage_id']}").json()
+        assert passage["source"]["version_label"] == "submittedVersion"
+        by_id = {s["source_version_id"]: s for s in view["sources"]}
+        assert not by_id[record["source_version_id"]]["access"]["assets"]  # the manuscript PDF is not attached to the published record
+        assert view["counts"]["included"] == 3 and view["counts"]["cited"] == 1
+
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()  # found again
+        view, _ = wait_run(client, rid, run["id"])
+        assert len(view["sources"]) == 4
+        again = next(s for s in view["sources"] if s["source_version_id"] == manuscript["source_version_id"])
+        assert (again["selection"]["state"], again["selection"]["origin"]) == ("included", "user")
+        assert view["answers"][0]["claims"][0]["evidence"][0]["source_version_id"] == manuscript["source_version_id"]
+
+
+def test_sources_found_for_an_earlier_question_revision_are_labelled(tmp_path):
+    with TestClient(app_for(tmp_path)) as client:
+        session(client)
+        rid = create(client, source_scope="attached_and_academic")
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        view, _ = wait_run(client, rid, run["id"])
+        client.post(f"/api/researches/{rid}/uploads", files={"file": ("notes.pdf", make_pdf(["SYNTHETIC notes"]), "application/pdf")})
+        version = client.get(f"/api/researches/{rid}").json()["research"]["version"]
+        client.post(f"/api/researches/{rid}/scope", json={"question": "A narrower molecule release question", "expected_version": version})
+
+        view = client.get(f"/api/researches/{rid}").json()
+        found = [s for s in view["sources"] if s["origin"] == "provider"]
+        uploaded = next(s for s in view["sources"] if s["origin"] == "user_upload")
+        assert found and all((s["applicability"], s["found_in_revision"]) == ("stale_scope", 1) for s in found)
+        assert (uploaded["applicability"], uploaded["found_in_revision"]) == ("current", None)
+        assert {r["scope_revision"] for r in view["search_runs"]} == {1}
+
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        view, _ = wait_run(client, rid, run["id"])
+        assert all((s["applicability"], s["found_in_revision"]) == ("current", 2) for s in view["sources"] if s["origin"] == "provider")
+
+
+def test_quick_find_matches_researches_and_their_sources(tmp_path):
+    with TestClient(app_for(tmp_path)) as client:
+        session(client)
+        rid = create(client, source_scope="attached")
+        client.post(f"/api/researches/{rid}/uploads", files={"file": ("Relay_Budget_Notes.pdf", make_pdf(["SYNTHETIC"]), "application/pdf")})
+        found = client.get("/api/search", params={"q": "MOLECULE release"}).json()
+        assert [r["id"] for r in found["researches"]] == [rid] and found["sources"] == []
+        found = client.get("/api/search", params={"q": "budget notes"}).json()
+        assert [(s["title"], s["research_id"]) for s in found["sources"]] == [("Relay Budget Notes", rid)]
+        assert client.get("/api/search", params={"q": "  "}).json() == {"researches": [], "sources": []}
+        assert client.get("/api/search", params={"q": "%"}).json() == {"researches": [], "sources": []}  # no wildcard matching
+
+
+def test_upload_size_is_bounded_before_and_while_reading(tmp_path, monkeypatch):
+    from deixis.api import app as app_module
+
+    monkeypatch.setattr(app_module, "MAX_UPLOAD_BYTES", 10_000)
+    with TestClient(app_for(tmp_path)) as client:
+        session(client)
+        rid = create(client, source_scope="attached")
+        declared_too_large = make_pdf(["SYNTHETIC"]) + b"%" * 100_000
+        response = client.post(f"/api/researches/{rid}/uploads", files={"file": ("big.pdf", declared_too_large, "application/pdf")})
+        assert response.status_code == 413  # refused from the declared length, before the body is parsed
+        over_limit = make_pdf(["SYNTHETIC"]) + b"%" * 20_000  # within the multipart allowance, over the file limit
+        response = client.post(f"/api/researches/{rid}/uploads", files={"file": ("big.pdf", over_limit, "application/pdf")})
+        assert response.status_code == 413
+        assert not list((tmp_path / "data" / "papers").glob("*"))  # no partial file left behind
+        assert client.get(f"/api/researches/{rid}").json()["sources"] == []
 
 
 def test_mutations_require_csrf_and_known_host(tmp_path):

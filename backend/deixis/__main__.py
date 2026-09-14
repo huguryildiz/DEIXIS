@@ -8,11 +8,13 @@ import sys
 import threading
 import time
 import webbrowser
+from pathlib import Path
 
 import uvicorn
 
 from deixis.api.app import create_app
 from deixis.config import Settings, load_settings
+from deixis.storage import backup
 
 
 def port_available(host: str, port: int) -> bool:
@@ -62,8 +64,23 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--port", type=int)
     run.add_argument("--no-browser", action="store_true")
     run.add_argument("--dev", action="store_true", help="Also accept requests proxied from the Vite dev server (port 5178)")
+    save = sub.add_parser("backup", help="Write a consistent backup of the local library (safe while serving)")
+    save.add_argument("destination", type=Path, help="Folder in which a new dated backup folder is created")
+    load = sub.add_parser("restore", help="Restore a backup into a data directory that has no library yet")
+    load.add_argument("backup", type=Path, help="A backup folder created by `deixis backup`")
     args = parser.parse_args(argv)
     settings = load_settings()
+    if args.command in ("backup", "restore"):
+        try:
+            if args.command == "backup":
+                print(f"Backup written to {backup.create_backup(settings, args.destination)}")
+            else:
+                result = backup.restore_backup(args.backup, settings)
+                print(f"Restored {result['researches']} researches and {result['files']} files into {settings.data_dir}")
+        except backup.BackupError as exc:
+            print(f"{args.command} failed: {exc}", file=sys.stderr)
+            return 1
+        return 0
     if args.port:
         settings = Settings(data_dir=settings.data_dir, host=settings.host, port=args.port)
     dev_hosts = ("127.0.0.1:5178", "localhost:5178") if args.dev else ()

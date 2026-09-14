@@ -5,14 +5,16 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import re
 import secrets
+import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal
 
 import httpx
-from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -31,6 +33,8 @@ from deixis.workflow.views import passage_view, research_view
 from deixis.workflow.worker import Worker
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+MULTIPART_OVERHEAD_BYTES = 64 * 1024
+UPLOAD_CHUNK_BYTES = 1024 * 1024
 CSRF_COOKIE = "deixis_csrf"
 CSRF_HEADER = "x-deixis-csrf"
 IMPLEMENTED_PROVIDERS = {"openalex"}
@@ -60,6 +64,32 @@ class ScopeRevision(BaseModel):
     question: str = Field(min_length=3, max_length=4000)
     steering: str | None = Field(default=None, max_length=2000)
     expected_version: int
+
+
+async def store_upload(file: UploadFile, papers_dir: Path) -> tuple[str, int, Path]:
+    """Copy an upload into the papers folder in chunks while hashing, without holding the whole file in memory."""
+    digest, size, head = hashlib.sha256(), 0, b""
+    fd, partial = tempfile.mkstemp(dir=papers_dir, suffix=".partial")
+    try:
+        with os.fdopen(fd, "wb") as out:
+            while chunk := await file.read(UPLOAD_CHUNK_BYTES):
+                head = head or chunk[:5]
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, "PDF larger than 50 MB")
+                digest.update(chunk)
+                out.write(chunk)
+        if head != b"%PDF-":
+            raise HTTPException(422, "Only PDF files are supported")
+        path = papers_dir / f"{digest.hexdigest()}.pdf"
+        if path.exists():
+            os.unlink(partial)
+        else:
+            os.replace(partial, path)
+        return digest.hexdigest(), size, path
+    except BaseException:
+        Path(partial).unlink(missing_ok=True)
+        raise
 
 
 def create_app(
@@ -139,6 +169,13 @@ def create_app(
             cookie = request.cookies.get(CSRF_COOKIE, "")
             if not cookie or not secrets.compare_digest(cookie, request.headers.get(CSRF_HEADER, "")):
                 return JSONResponse({"detail": "Missing or invalid CSRF token"}, status_code=403)
+            if request.url.path.endswith("/uploads"):
+                # Checked before the multipart body is read and spooled to disk.
+                length = request.headers.get("content-length", "")
+                if not length.isdigit():
+                    return JSONResponse({"detail": "Upload size must be declared"}, status_code=411)
+                if int(length) > MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_BYTES:
+                    return JSONResponse({"detail": "PDF larger than 50 MB"}, status_code=413)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -187,6 +224,12 @@ def create_app(
     @app.get("/api/researches")
     async def list_researches(request: Request) -> list[dict[str, Any]]:
         return store_of(request).list_researches()
+
+    @app.get("/api/search")
+    async def quick_search(request: Request, q: str = Query(max_length=200)) -> dict[str, Any]:
+        if not q.strip():
+            return {"researches": [], "sources": []}
+        return store_of(request).quick_search(q.strip())
 
     @app.post("/api/researches", status_code=201)
     async def create_research(body: CreateResearch, request: Request) -> dict[str, Any]:
@@ -260,16 +303,8 @@ def create_app(
         store = store_of(request)
         if store.scope(research_id)["source_scope"] == "academic":
             raise HTTPException(422, "Attached files are not part of this research's source scope")
-        data = await file.read(MAX_UPLOAD_BYTES + 1)
-        if len(data) > MAX_UPLOAD_BYTES:
-            raise HTTPException(413, "PDF larger than 50 MB")
-        if not data.startswith(b"%PDF-"):
-            raise HTTPException(422, "Only PDF files are supported")
-        sha = hashlib.sha256(data).hexdigest()
         settings.papers_dir.mkdir(parents=True, exist_ok=True)
-        path = settings.papers_dir / f"{sha}.pdf"
-        if not path.exists():
-            path.write_bytes(data)
+        sha, size, path = await store_upload(file, settings.papers_dir)
         existing = store.conn.execute(
             "SELECT a.source_version_id FROM source_assets a JOIN source_versions s ON s.id = a.source_version_id"
             " WHERE a.sha256 = ? AND s.origin = 'user_upload' LIMIT 1", (sha,)
@@ -281,7 +316,7 @@ def create_app(
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             title = re.sub(r"[_\s]+", " ", Path(filename).stem).strip()[:200] or "Uploaded PDF"
             svid = store.create_upload_source(title)
-            store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", None, filename,
+            store.add_asset_with_pages(svid, sha, size, path.name, "user_upload", None, filename,
                                        extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
         store.add_to_corpus(research_id, svid, "user_upload", selection_state="included", selection_origin="user")
         return research_view(store, research_id)

@@ -18,7 +18,7 @@ export type Run = {
   created_at: string; updated_at: string; version: number; steps?: Step[]
 }
 export type SearchRun = {
-  id: string; run_id: string; provider: string; query_text: string; access_mode: string; status: string
+  id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null } | null
 }
 export type Asset = { id: string; extraction_status: string; page_count: number | null; origin: string; byte_size: number }
@@ -26,6 +26,7 @@ export type Source = {
   source_version_id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null
   doi: string | null; landing_url: string | null; version_label: string | null; publication_type: string | null
   origin: 'provider' | 'user_upload'; added_by: string; rank: number | null
+  found_in_revision: number | null; applicability: 'current' | 'stale_scope'; version_role: 'record' | 'other_version'
   access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; fetch: { status: string; error_code: string | null } | null }
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null }
   cited_in_latest_answer: boolean
@@ -67,7 +68,11 @@ export type ModelHealth = {
   isolation?: { instruction_sources: number; live_mcp_servers: string[] }
 }
 export type Connections = { models: Record<string, ModelHealth>; providers: { id: string; implemented: boolean; access_mode: string | null; note: string }[] }
-export type ActivityEvent = { id: number; type: string; run_id: string | null; payload: Record<string, unknown>; created_at: string }
+export type QuickFindResult = {
+  researches: { id: string; title: string; question: string; updated_at: string }[]
+  sources: { source_version_id: string; title: string; year: number | null; version_label: string | null; research_id: string; research_title: string }[]
+}
+export type ActivityEvent ={ id: number; type: string; run_id: string | null; payload: Record<string, unknown>; created_at: string }
 
 export class ApiError extends Error {
   status: number
@@ -105,6 +110,7 @@ const json = (method: string, body: unknown, extra: Record<string, string> = {})
 
 export const api = {
   researches: () => request<ResearchSummary[]>('/api/researches'),
+  search: (q: string) => request<QuickFindResult>(`/api/search?q=${encodeURIComponent(q)}`),
   research: (id: string) => request<ResearchView>(`/api/researches/${id}`),
   create: (body: { question: string; source_scope: SourceScope; effort: Effort; model_connection: string; requested_model: string }) =>
     request<ResearchView>('/api/researches', json('POST', body)),

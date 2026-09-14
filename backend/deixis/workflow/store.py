@@ -90,6 +90,21 @@ class Store:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def quick_search(self, text: str, limit: int = 8) -> dict[str, list[dict[str, Any]]]:
+        """Substring match (ASCII case-insensitive) over research titles/questions and the titles of each research's sources."""
+        researches = self.conn.execute(
+            "SELECT r.id, r.title, s.question, r.updated_at FROM researches r"
+            " JOIN scope_revisions s ON s.research_id = r.id AND s.revision = r.current_scope_revision"
+            " WHERE instr(lower(r.title), lower(?)) > 0 OR instr(lower(s.question), lower(?)) > 0"
+            " ORDER BY r.updated_at DESC LIMIT ?", (text, text, limit)
+        ).fetchall()
+        sources = self.conn.execute(
+            "SELECT v.id AS source_version_id, v.title, v.year, v.version_label, m.research_id, r.title AS research_title"
+            " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id JOIN researches r ON r.id = m.research_id"
+            " WHERE instr(lower(v.title), lower(?)) > 0 ORDER BY r.updated_at DESC, v.title LIMIT ?", (text, limit * 2)
+        ).fetchall()
+        return {"researches": [dict(r) for r in researches], "sources": [dict(r) for r in sources]}
+
     def scope(self, research_id: str, revision: int | None = None) -> dict[str, Any]:
         if revision is None:
             revision = self.research(research_id)["current_scope_revision"]
@@ -292,30 +307,62 @@ class Store:
         return row["source_version_id"] if row else None
 
     def upsert_provider_source(self, provider: str, record: Any, payload_path: str | None) -> tuple[str, bool]:
-        """Reuse only an exact provider-record mapping; DOI or title matches never merge records here."""
+        """Reuse only an exact provider-record mapping; DOI or title matches never merge records here.
+
+        Other versions the provider lists for the record become separate source versions of the same work.
+        """
         existing = self.find_source_by_identifier(provider, record.provider_record_id)
-        if existing:
-            return existing, False
+        with transaction(self.conn):
+            if existing:
+                svid, wid = existing, self.source(existing)["work_id"]
+            else:
+                svid, wid = self._insert_provider_record(provider, record, payload_path)
+            for other in record.other_versions:
+                self._insert_other_version(provider, record, wid, other, payload_path)
+        return svid, existing is None
+
+    def other_version_ids(self, provider: str, record: Any) -> list[str]:
+        return [self.find_source_by_identifier(f"{provider}_version", f"{record.provider_record_id}:{o.version_label}")
+                for o in record.other_versions]
+
+    def _insert_other_version(self, provider: str, record: Any, wid: str, other: Any, payload_path: str | None) -> None:
+        # The DOI identifies the record's version and the provider abstract describes the record, so neither is copied.
+        key = f"{record.provider_record_id}:{other.version_label}"
+        if self.find_source_by_identifier(f"{provider}_version", key):
+            return
+        ts, oid = now(), new_id("srv")
+        self.conn.execute(
+            "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label, publication_type, doi,"
+            " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at)"
+            " VALUES (?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, ?, 'provider', ?, ?)",
+            (oid, wid, record.title, dumps(record.authors), other.venue, other.version_label, record.publication_type,
+             other.landing_url, other.pdf_url, other.version_label, payload_path, ts),
+        )
+        self.conn.execute(
+            "INSERT INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at) VALUES (?, ?, ?, ?, ?)",
+            (oid, f"{provider}_version", key, provider, ts),
+        )
+
+    def _insert_provider_record(self, provider: str, record: Any, payload_path: str | None) -> tuple[str, str]:
         ts = now()
         wid, svid = new_id("wrk"), new_id("srv")
-        with transaction(self.conn):
-            self.conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (wid, ts))
+        self.conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (wid, ts))
+        self.conn.execute(
+            "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label, publication_type, doi,"
+            " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provider', ?, ?)",
+            (svid, wid, record.title, dumps(record.authors), record.year, record.venue, record.version_label,
+             record.publication_type, record.doi, record.landing_url, record.oa_pdf_url, record.oa_pdf_version, payload_path, ts),
+        )
+        mappings = [(provider, record.provider_record_id)] + ([("doi", record.doi)] if record.doi else [])
+        for scheme, value in mappings:
             self.conn.execute(
-                "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label, publication_type, doi,"
-                " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provider', ?, ?)",
-                (svid, wid, record.title, dumps(record.authors), record.year, record.venue, record.version_label,
-                 record.publication_type, record.doi, record.landing_url, record.oa_pdf_url, record.oa_pdf_version, payload_path, ts),
+                "INSERT OR IGNORE INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at) VALUES (?, ?, ?, ?, ?)",
+                (svid, scheme, value, provider, ts),
             )
-            mappings = [(provider, record.provider_record_id)] + ([("doi", record.doi)] if record.doi else [])
-            for scheme, value in mappings:
-                self.conn.execute(
-                    "INSERT OR IGNORE INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at) VALUES (?, ?, ?, ?, ?)",
-                    (svid, scheme, value, provider, ts),
-                )
-            if record.abstract:
-                self._insert_passage(svid, None, "abstract", None, None, record.abstract_origin, payload_path, None, record.abstract)
-        return svid, True
+        if record.abstract:
+            self._insert_passage(svid, None, "abstract", None, None, record.abstract_origin, payload_path, None, record.abstract)
+        return svid, wid
 
     def create_upload_source(self, title: str) -> str:
         ts, wid, svid = now(), new_id("wrk"), new_id("srv")
@@ -389,6 +436,8 @@ class Store:
             for rank, record in enumerate(records):
                 svid, _ = self.upsert_provider_source(provider, record, payload_path)
                 self.add_to_corpus(search_fields["research_id"], svid, "search", srid, rank, scope_revision=search_fields["scope_revision"])
+                for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
+                    self.add_to_corpus(search_fields["research_id"], other, "search", srid, candidate=False)
             output = {**step_output, "search_run_id": srid} if step_output is not None else None
             self.finish_step(step_id, step_status, output=output, **step_fields)
         return srid
@@ -406,14 +455,14 @@ class Store:
 
     def add_to_corpus(self, research_id: str, svid: str, added_by: str, search_run_id: str | None = None,
                       rank: int | None = None, selection_state: str = "pending", selection_origin: str = "default",
-                      scope_revision: int | None = None) -> None:
+                      scope_revision: int | None = None, candidate: bool = True) -> None:
         ts = now()
         with transaction(self.conn):
             self.conn.execute(
                 "INSERT OR IGNORE INTO corpus_memberships (research_id, source_version_id, added_by, created_at) VALUES (?, ?, ?, ?)",
                 (research_id, svid, added_by, ts),
             )
-            if added_by == "search":
+            if added_by == "search" and candidate:
                 # A record found again under a newer question revision becomes a candidate of that revision.
                 self.conn.execute(
                     "INSERT INTO candidates (id, research_id, search_run_id, source_version_id, rank, scope_revision, created_at)"

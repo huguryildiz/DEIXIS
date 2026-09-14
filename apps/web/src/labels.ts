@@ -49,12 +49,17 @@ export function locatorText(e: Pick<Evidence, 'kind' | 'physical_page' | 'printe
   return 'section'
 }
 
+const versionNames: Record<string, string> = {
+  publishedVersion: 'published version', acceptedVersion: 'accepted manuscript', submittedVersion: 'submitted manuscript',
+}
+export const versionText = (label: string | null) => (label ? versionNames[label] ?? label : 'version not stated')
+
 export function accessText(source: Source) {
   const parts: string[] = []
   const asset = source.access.assets[0]
   if (asset) parts.push(asset.extraction_status === 'no_text' ? 'PDF without a text layer (no OCR in this version)' : `PDF · ${asset.page_count ?? '?'} pages · text ${asset.extraction_status}`)
   else if (source.access.fetch?.status === 'failed') parts.push(`PDF not retrieved (${source.access.fetch.error_code?.replace('fetch_', '').replace('_', ' ')})`)
-  else if (source.access.oa_pdf_url && source.access.oa_pdf_version !== source.version_label) parts.push(`Open-access PDF is a different version (${source.access.oa_pdf_version ?? 'version not stated'}) · not used`)
+  else if (source.access.oa_pdf_url && source.access.oa_pdf_version !== source.version_label) parts.push(`Open-access PDF is a different version (${versionText(source.access.oa_pdf_version)}) · not used for this version`)
   else if (source.access.oa_pdf_url) parts.push('Open-access PDF listed · not yet retrieved')
   if (source.access.abstract_passage_id) parts.push(source.access.abstract_origin === 'provider_openalex_inverted_index' ? 'Abstract (rebuilt from OpenAlex index)' : 'Abstract')
   if (!parts.length) parts.push('Metadata only')

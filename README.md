@@ -6,8 +6,9 @@ A research workspace for source-linked literature synthesis, evidence comparison
 and candidate-question development. Product name: **DEIXIS** (uppercase).
 A first local-web development slice is implemented: question → OpenAlex search or attached PDF →
 source selection → passage inspection → source-linked answer → reopen after restart. It has been
-exercised manually with live OpenAlex and Codex, but P4 acceptance is pending: no browser-level
-acceptance test, backup/restore test or full behavior run on the current method package is recorded.
+exercised manually with live OpenAlex and Codex, and a backup/restore test is automated, but P4
+acceptance is pending: no recorded browser-level A–G acceptance run or evaluation on a user-known
+source set exists yet.
 Only OpenAlex and the Codex model connection are implemented; the other providers and model
 connections remain planned.
 
@@ -21,7 +22,13 @@ uv sync
 CODEX_HOME="$HOME/Library/Application Support/DEIXIS/codex-home" codex login   # once
 PYTHONPATH=backend uv run python -m deixis serve                                  # opens http://127.0.0.1:8765/
 PYTHONPATH=backend uv run pytest                                                   # deterministic tests
+PYTHONPATH=backend uv run python -m deixis backup ~/DEIXIS-backups                # safe while serving
+DEIXIS_DATA_DIR=/new/empty/dir PYTHONPATH=backend uv run python -m deixis restore ~/DEIXIS-backups/deixis-backup-…
 ```
+
+Backups hold the database snapshot, referenced PDFs and provider payloads with a SHA-256 manifest; the
+DEIXIS Codex home (model sign-in) is never copied. Restore verifies every hash and refuses a data
+directory that already has a library. Press Cmd/Ctrl+K in the UI to find research, source titles or pages.
 
 Optional keys go in an untracked `.env` (see [providers.env.example](docs/product/providers.env.example)).
 

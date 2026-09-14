@@ -3,17 +3,17 @@ import { ChevronDown, FileUp, Pause, Play, Search, Sparkles, X } from 'lucide-re
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, subscribe, type ActivityEvent, type Answer, type ResearchView, type Run, type Source } from './api'
-import { accessText, locatorText, pauseReasonText, runStatusLabels, scopeLabels, stepLabel } from './labels'
+import { accessText, locatorText, pauseReasonText, runStatusLabels, scopeLabels, stepLabel, versionText } from './labels'
 import { PassageSheet } from './PassageSheet'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
-export function ResearchPage({ id, dark, onChanged }: { id: string; dark: boolean; onChanged: () => void }) {
+export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; initialTab?: string; dark: boolean; onChanged: () => void }) {
   const [view, setView] = useState<ResearchView | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [tab, setTab] = useState('answer')
+  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'activity' ? initialTab : 'answer')
   const [passageId, setPassageId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [events, setEvents] = useState<ActivityEvent[]>([])
@@ -77,9 +77,9 @@ export function ResearchPage({ id, dark, onChanged }: { id: string; dark: boolea
       </div>
       {run?.status === 'paused' && unknownSteps.length > 0 && <p className="legacy-mini-note run-warning">Unfinished: {unknownSteps.map(s => stepLabel(s.kind, s.operation_key)).join(', ')}. Resuming repeats it; a repeated model call counts against your account usage.</p>}
       <div className="legacy-counts run-counts">
-        {([['found', 'Found'], ['unique', 'Unique records'], ['included', 'Included'], ['inspected', 'Given to the model'], ['cited', 'Cited']] as const).map(([key, label]) => <div key={key}><strong>{view.counts[key]}</strong><span>{label}</span></div>)}
+        {([['found', 'Found'], ['unique', 'Unique works'], ['included', 'Included'], ['inspected', 'Given to the model'], ['cited', 'Cited']] as const).map(([key, label]) => <div key={key}><strong>{view.counts[key]}</strong><span>{label}</span></div>)}
       </div>
-      {run?.steps && run.steps.length > 0 && <details><summary>Processing steps <ChevronDown size={14} /></summary><ol>{run.steps.map((step, index) => <li key={step.id}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{stepLabel(step.kind, step.operation_key)}</strong><p>{step.status.replace('_', ' ')}{step.error_code ? ` · ${step.error_code}` : ''}{step.attempt > 1 ? ` · attempt ${step.attempt}` : ''}</p></div><small>{step.finished_at ? new Date(step.finished_at).toLocaleTimeString() : ''}</small></li>)}</ol><p className="legacy-mini-note">Counts use DEIXIS source versions. “Given to the model” counts sources whose passages were sent in the latest answer step; it is not a full-text reading claim.</p></details>}
+      {run?.steps && run.steps.length > 0 && <details><summary>Processing steps <ChevronDown size={14} /></summary><ol>{run.steps.map((step, index) => <li key={step.id}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{stepLabel(step.kind, step.operation_key)}</strong><p>{step.status.replace('_', ' ')}{step.error_code ? ` · ${step.error_code}` : ''}{step.attempt > 1 ? ` · attempt ${step.attempt}` : ''}</p></div><small>{step.finished_at ? new Date(step.finished_at).toLocaleTimeString() : ''}</small></li>)}</ol><p className="legacy-mini-note">Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.</p></details>}
     </div>
 
     <Tabs value={tab} onValueChange={value => setTab(String(value))}>
@@ -97,7 +97,7 @@ export function ResearchPage({ id, dark, onChanged }: { id: string; dark: boolea
         <div className="legacy-section-head"><div><div className="section-label">SELECTION</div><h2>Sources and access</h2><p>Your choice always overrides the model’s screening proposal. Access, retrieval and inspection are separate states.</p></div>
           {view.scope.source_scope !== 'academic' && <Button variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}><FileUp size={14} />Attach PDF</Button>}</div>
         <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void upload(e.target.files); e.target.value = '' }} />
-        {view.search_runs.length > 0 && <div className="search-summary">{view.search_runs.map(s => <div key={s.id}><Search size={13} /><span>“{s.query_text}”</span><small>{s.provider} · {s.status.replace('_', ' ')} · {s.result_count} of {s.provider_total ?? '?'} records · {s.access_mode}</small></div>)}</div>}
+        {view.search_runs.length > 0 && <div className="search-summary">{view.search_runs.map(s => <div key={s.id}><Search size={13} /><span>“{s.query_text}”</span><small>{s.provider} · {s.status.replace('_', ' ')} · {s.result_count} of {s.provider_total ?? '?'} records · {s.access_mode}{s.scope_revision !== view.research.current_scope_revision ? ` · for question revision ${s.scope_revision}` : ''}</small></div>)}</div>}
         {view.sources.map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
           onSelect={state => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
           onAbstract={() => source.access.abstract_passage_id && setPassageId(source.access.abstract_passage_id)} />)}
@@ -149,12 +149,15 @@ function AnswerBlock({ answer, onOpen }: { answer: Answer; onOpen: (passageId: s
 
 function SourceRow({ source, busy, onSelect, onAbstract }: { source: Source; busy: boolean; onSelect: (state: Source['selection']['state']) => void; onAbstract: () => void }) {
   const s = source.selection
-  const meta = [source.authors.slice(0, 3).join(', ') + (source.authors.length > 3 ? ' et al.' : ''), source.year, source.venue, source.version_label].filter(Boolean).join(' · ')
-  return <div className={`source-row is-${s.state}`}>
+  const other = source.version_role === 'other_version'
+  const meta = [source.authors.slice(0, 3).join(', ') + (source.authors.length > 3 ? ' et al.' : ''), source.year, source.venue, source.version_label && versionText(source.version_label)].filter(Boolean).join(' · ')
+  return <div className={`source-row is-${s.state}${other ? ' is-other-version' : ''}`}>
     <div className="source-main">
+      {other && <span className="version-note">Another version of the record above: {versionText(source.version_label)}. It is not screened separately; passages cited from it are labelled with this version.</span>}
       <strong>{source.title}</strong>
       <small>{meta || (source.origin === 'user_upload' ? 'Uploaded PDF' : 'No bibliographic details from the provider')}</small>
       <small className="access-line">{accessText(source)}{source.cited_in_latest_answer ? ' · cited in the latest answer' : ''}</small>
+      {source.applicability === 'stale_scope' && <p className="proposal is-stale">Found for question revision {source.found_in_revision}{s.proposal ? '; the proposal below was made for that question' : ''}. Search again to screen it for the current question.</p>}
       {s.proposal && <p className="proposal">Model proposal: <em>{s.proposal}</em> — {s.proposal_reason} <span>({s.proposal_basis?.replaceAll('_', ' ')})</span>{s.origin === 'user' ? ' · overridden by you' : ''}</p>}
       <div className="source-links">
         {source.access.abstract_passage_id && <button onClick={onAbstract}>Read abstract</button>}

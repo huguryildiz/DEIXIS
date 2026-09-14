@@ -46,6 +46,7 @@ def test_success_normalizes_record_and_reconstructs_abstract():
     assert record.abstract_origin == openalex.ABSTRACT_ORIGIN
     assert record.version_label == "publishedVersion" and record.oa_pdf_url.endswith(".pdf")
     assert record.oa_pdf_version == "acceptedVersion"  # kept separate from the primary location's version
+    assert [(o.version_label, o.pdf_url) for o in record.other_versions] == [("acceptedVersion", "https://example.org/a.pdf")]
     assert "search.title_and_abstract=molecular" in seen["url"]
     assert "SECRET-KEY-VALUE" not in seen["url"]
     assert "SECRET-KEY-VALUE" not in outcome.request_description

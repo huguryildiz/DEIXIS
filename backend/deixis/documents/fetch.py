@@ -1,8 +1,10 @@
 """Bounded retrieval of source files with private-network protection.
 
 Every hop (including redirects) must use http(s) and resolve only to public
-addresses. Limitation: the resolved address is checked before connecting but not
-pinned for the connection itself, so DNS rebinding is not fully excluded.
+addresses. The connection is made to the address that was checked (the host name
+is kept for the Host header and TLS verification), so a second DNS answer cannot
+redirect it (DNS rebinding). Proxy settings from the environment are ignored,
+because a proxy would make the connection itself.
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ import asyncio
 import ipaddress
 import socket
 from dataclasses import dataclass
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -35,7 +37,13 @@ class BlockedUrl(Exception):
     pass
 
 
-async def check_public_url(url: str) -> None:
+async def _resolve(host: str, port: int) -> list[str]:
+    infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    return [info[4][0].split("%")[0] for info in infos]
+
+
+async def check_public_url(url: str) -> str:
+    """Return the public address to connect to; refuse if any resolved address is not public."""
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https"):
         raise BlockedUrl(f"scheme {parts.scheme!r} not allowed")
@@ -44,11 +52,13 @@ async def check_public_url(url: str) -> None:
     if parts.username or parts.password:
         raise BlockedUrl("credentials in URL not allowed")
     try:
-        infos = await asyncio.get_running_loop().getaddrinfo(parts.hostname, parts.port or 443, type=socket.SOCK_STREAM)
+        addresses = await _resolve(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80))
     except socket.gaierror as exc:
         raise BlockedUrl(f"host does not resolve: {exc}") from exc
-    for info in infos:
-        address = ipaddress.ip_address(info[4][0].split("%")[0])
+    if not addresses:
+        raise BlockedUrl("host does not resolve")
+    for text in addresses:
+        address = ipaddress.ip_address(text)
         if (
             address.is_private
             or address.is_loopback
@@ -59,19 +69,32 @@ async def check_public_url(url: str) -> None:
             or (address.version == 6 and address.ipv4_mapped and not address.ipv4_mapped.is_global)
         ):
             raise BlockedUrl(f"{parts.hostname} resolves to non-public address")
+    return addresses[0]
+
+
+def _pinned_request(url: str, address: str) -> tuple[str, dict[str, str], dict[str, str]]:
+    """URL addressed to the checked IP, with the original host for the Host header and TLS server name."""
+    parts = urlsplit(url)
+    ip_host = f"[{address}]" if ipaddress.ip_address(address).version == 6 else address
+    name = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    port = f":{parts.port}" if parts.port else ""
+    pinned = urlunsplit((parts.scheme, ip_host + port, parts.path or "/", parts.query, ""))
+    extensions = {"sni_hostname": parts.hostname} if parts.scheme == "https" else {}
+    return pinned, {"Host": name + port}, extensions
 
 
 async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None) -> FetchResult:
     own_client = client is None
-    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT})
+    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}, trust_env=False)
     try:
         current = url
         for _ in range(MAX_REDIRECTS + 1):
             try:
-                await check_public_url(current)
+                address = await check_public_url(current)
             except BlockedUrl as exc:
                 return FetchResult("blocked_url", final_url=current, error=str(exc))
-            async with client.stream("GET", current, follow_redirects=False) as response:
+            target, headers, extensions = _pinned_request(current, address)
+            async with client.stream("GET", target, headers=headers, extensions=extensions, follow_redirects=False) as response:
                 if response.is_redirect:
                     location = response.headers.get("location")
                     if not location:

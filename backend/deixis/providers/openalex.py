@@ -33,6 +33,16 @@ RATE_LIMIT_HEADERS = (
 
 
 @dataclass
+class OtherVersion:
+    """An open-access copy the provider labels with a different version than the record's primary location."""
+
+    version_label: str
+    pdf_url: str
+    landing_url: str | None
+    venue: str | None
+
+
+@dataclass
 class ProviderRecord:
     provider_record_id: str
     title: str
@@ -49,6 +59,7 @@ class ProviderRecord:
     abstract_origin: str | None
     identifiers: dict[str, str]
     raw: dict[str, Any] = field(repr=False)
+    other_versions: list[OtherVersion] = field(default_factory=list)
 
 
 @dataclass
@@ -87,6 +98,10 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
     best_oa = work.get("best_oa_location") or {}
     ids = {k: str(v) for k, v in (work.get("ids") or {}).items() if v}
     abstract = reconstruct_abstract(work.get("abstract_inverted_index"))
+    other_versions = []
+    if best_oa.get("pdf_url") and best_oa.get("version") and best_oa["version"] != primary.get("version"):
+        other_versions.append(OtherVersion(best_oa["version"], best_oa["pdf_url"], best_oa.get("landing_page_url"),
+                                           (best_oa.get("source") or {}).get("display_name")))
     return ProviderRecord(
         provider_record_id=str(work["id"]).rsplit("/", 1)[-1],
         title=work.get("display_name") or "(untitled)",
@@ -107,6 +122,7 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
         abstract_origin=ABSTRACT_ORIGIN if abstract else None,
         identifiers=ids,
         raw=work,
+        other_versions=other_versions,
     )
 
 

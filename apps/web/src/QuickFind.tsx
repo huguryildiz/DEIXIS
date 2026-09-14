@@ -3,14 +3,17 @@ import { Dialog } from '@base-ui/react/dialog'
 import { FileText, FlaskConical, Plus, Search, Settings2 } from 'lucide-react'
 import { api, type QuickFindResult, type ResearchSummary } from './api'
 import { versionText } from './labels'
+import { t } from './i18n'
 
 type Item = { key: string; group: 'Pages' | 'Research' | 'Sources'; label: string; detail?: string; hash: string }
 
-const PAGES: Item[] = [
-  { key: 'page-new', group: 'Pages', label: 'New research', hash: '/' },
-  { key: 'page-connections', group: 'Pages', label: 'Connections', detail: 'Model and academic source connections', hash: '/connections' },
+// Built on each render so page names follow the interface language.
+const pages = (): Item[] => [
+  { key: 'page-new', group: 'Pages', label: t('New research'), hash: '/' },
+  { key: 'page-connections', group: 'Pages', label: t('Connections'), detail: t('Model and academic source connections'), hash: '/connections' },
 ]
 const ICONS = { Pages: Settings2, Research: FlaskConical, Sources: FileText }
+const GROUP_HEADINGS = { Pages: 'PAGES', Research: 'RESEARCH', Sources: 'SOURCES' }
 
 export function QuickFind({ open, onOpenChange, recent, dark }: {
   open: boolean; onOpenChange: (open: boolean) => void; recent: ResearchSummary[]; dark: boolean
@@ -27,7 +30,7 @@ export function QuickFind({ open, onOpenChange, recent, dark }: {
     const timer = setTimeout(() => {
       api.search(text)
         .then(result => { if (!cancelled) { setFound({ text, result }); setError('') } })
-        .catch((e: Error) => { if (!cancelled) setError(`Search is unavailable: ${e.message}`) })
+        .catch((e: Error) => { if (!cancelled) setError(t('Search is unavailable: {message}', { message: e.message })) })
     }, 120)
     return () => { cancelled = true; clearTimeout(timer) }
   }, [text])
@@ -35,7 +38,7 @@ export function QuickFind({ open, onOpenChange, recent, dark }: {
   const result = found && found.text === text ? found.result : null
   const lower = text.toLowerCase()
   const items: Item[] = [
-    ...PAGES.filter(p => !lower || p.label.toLowerCase().includes(lower)),
+    ...pages().filter(p => !lower || p.label.toLowerCase().includes(lower)),
     ...(text ? result?.researches ?? [] : recent.slice(0, 6)).map(r => ({
       key: `research-${r.id}`, group: 'Research' as const, label: r.title, detail: r.question !== r.title ? r.question : undefined, hash: `/research/${r.id}`,
     })),
@@ -68,22 +71,22 @@ export function QuickFind({ open, onOpenChange, recent, dark }: {
     <Dialog.Portal>
       <Dialog.Backdrop className="quick-find-backdrop" />
       <Dialog.Popup className={`quick-find ${dark ? 'dark' : ''}`}>
-        <Dialog.Title className="sr-only">Quick find</Dialog.Title>
+        <Dialog.Title className="sr-only">{t('Quick find')}</Dialog.Title>
         <div className="quick-find-field">
           <Search size={16} aria-hidden="true" />
           <input autoFocus role="combobox" aria-expanded="true" aria-controls="quick-find-list" aria-autocomplete="list"
-            aria-activedescendant={items[current] ? `qf-${items[current].key}` : undefined} aria-label="Find research, sources or pages"
-            placeholder="Find research, sources or pages" value={query} onKeyDown={onKeyDown}
+            aria-activedescendant={items[current] ? `qf-${items[current].key}` : undefined} aria-label={t('Find research, sources or pages')}
+            placeholder={t('Find research, sources or pages')} value={query} onKeyDown={onKeyDown}
             onChange={e => { setQuery(e.target.value); setActive(0) }} />
           <kbd>Esc</kbd>
         </div>
-        <div id="quick-find-list" role="listbox" aria-label="Results" className="quick-find-list">
+        <div id="quick-find-list" role="listbox" aria-label={t('Results')} className="quick-find-list">
           {(['Pages', 'Research', 'Sources'] as const).map(group => {
             const entries = items.map((item, index) => ({ item, index })).filter(e => e.item.group === group)
             if (!entries.length) return null
             const Icon = ICONS[group]
             return <div role="group" aria-labelledby={`qf-group-${group}`} key={group}>
-              <div id={`qf-group-${group}`} className="quick-find-group">{group === 'Research' && !text ? 'RECENT RESEARCH' : group.toUpperCase()}</div>
+              <div id={`qf-group-${group}`} className="quick-find-group">{t(group === 'Research' && !text ? 'RECENT RESEARCH' : GROUP_HEADINGS[group])}</div>
               {entries.map(({ item, index }) => <div key={item.key} id={`qf-${item.key}`} role="option" aria-selected={index === current}
                 className="quick-find-option" onMouseMove={() => setActive(index)} onClick={() => choose(item)}>
                 {item.key === 'page-new' ? <Plus size={15} aria-hidden="true" /> : <Icon size={15} aria-hidden="true" />}
@@ -92,9 +95,9 @@ export function QuickFind({ open, onOpenChange, recent, dark }: {
             </div>
           })}
           {text && !searching && (error || (result && !result.researches.length && !result.sources.length)) &&
-            <p className="quick-find-empty">{error || 'No research question or source title matches.'}</p>}
+            <p className="quick-find-empty">{error || t('No research question or source title matches.')}</p>}
         </div>
-        <p className="quick-find-note">Matches research titles, questions and source titles in this workspace. Passage text is not searched.</p>
+        <p className="quick-find-note">{t('Matches research titles, questions and source titles in this workspace. Passage text is not searched.')}</p>
       </Dialog.Popup>
     </Dialog.Portal>
   </Dialog.Root>

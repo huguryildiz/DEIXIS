@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, FileUp, Pause, Play, Search, Sparkles, X } from 'lucide-react'
+import { ArrowUpDown, BadgeCheck, BookOpen, BookOpenText, CalendarDays, Download, ExternalLink, FileText, FileUp, Link2, MessageSquareQuote, Pause, Play, Quote, ScanSearch, Search, ShieldCheck, Sparkles, UserPen, Users, X, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { api, subscribe, type ActivityEvent, type Answer, type ResearchView, type Run, type Source } from './api'
-import { accessText, locatorText, pauseReasonText, runStatusLabels, scopeLabels, stepLabel, versionText } from './labels'
+import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type ModelOption, type ResearchView, type Run, type RunStatus, type Source, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
+import { accessParts, citedText, locatorText, pauseReasonText, providerName, runStatusLabels, scopeLabels, stepLabel, verdictLabels, versionText } from './labels'
 import { PassageSheet } from './PassageSheet'
+import { MathText } from './MathText'
+import { Transcript } from './Transcript'
+import { ZoteroPanel } from './ZoteroPanel'
+import { useToast } from './Toast'
+import { ConnectionIcon } from './connectionIcons'
+import { effortLabels, effortOptions, Option, scopeOptions } from './Home'
+import { citationStyles, formatReference, type CitationStyle } from './citations'
+import { t, uiLocale } from './i18n'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -12,20 +21,35 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; initialTab?: string; dark: boolean; onChanged: () => void }) {
   const [view, setView] = useState<ResearchView | null>(null)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
+  const toast = useToast()
   const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'activity' ? initialTab : 'answer')
   const [passageId, setPassageId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [events, setEvents] = useState<ActivityEvent[]>([])
+  const [zoteroOpen, setZoteroOpen] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const firstEvent = useRef<number | null>(null)
+  const tabsRef = useRef<HTMLDivElement>(null)
+  const jumped = useRef(false)
+  const lastRun = useRef<{ id: string; status: RunStatus } | null>(null)
 
   const load = useCallback(async () => {
     try { const next = await api.research(id); setView(next); setError(''); if (firstEvent.current === null) firstEvent.current = next.last_event_id } catch (e) { setError(errorText(e)) }
   }, [id])
   useEffect(() => { void load() }, [load])
+  // Codex lists each model's default effort; a research created without an effort runs at that default.
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
+  useEffect(() => { api.connections().then(c => setModelOptions(Object.values(c.models).flatMap(h => h.models ?? []))).catch(() => { /* efforts stay unlabelled */ }) }, [])
 
   const loaded = view !== null
+  useEffect(() => {
+    // Opened at a tab (e.g. from quick find): bring the tabs into view and put keyboard focus on the chosen tab.
+    if (!loaded || !initialTab || jumped.current) return
+    jumped.current = true
+    tabsRef.current?.scrollIntoView({ block: 'start' })
+    tabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true })
+  }, [loaded, initialTab])
+
   useEffect(() => {
     if (!loaded) return
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -35,138 +59,351 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
   useEffect(() => {
     if (tab !== 'activity') return
-    api.events(id).then(setEvents).catch(e => setNotice(errorText(e)))
-  }, [tab, id, view?.last_event_id])
+    api.events(id).then(setEvents).catch(e => toast('error', t('Could not load activity: {error}', { error: errorText(e) })))
+  }, [tab, id, view?.last_event_id, toast])
+
+  // Runs finish in the background, often while another tab is open: announce each status change of the latest run.
+  useEffect(() => {
+    const current = view?.runs[0]
+    if (!view || !current) return
+    const previous = lastRun.current
+    lastRun.current = { id: current.id, status: current.status }
+    if (!previous || (previous.id === current.id && previous.status === current.status)) return
+    const label = t(current.kind === 'discovery' ? 'Search & screening' : 'Answer generation')
+    const reason = pauseReasonText(current.pause_reason)
+    if (previous.id !== current.id) { if (ACTIVE.has(current.status)) toast('success', t('{label} started.', { label })); return }
+    switch (current.status) {
+      case 'completed': {
+        const answer = view.answers.find(a => a.run_id === current.id)
+        if (current.kind === 'discovery') toast('success', t('Search & screening finished. Review the sources and include the ones to use.'))
+        else if (answer?.status === 'structurally_valid') toast('success', t('Answer ready.'))
+        else if (answer?.status === 'clarification') toast('warning', t('The model needs a clarification before it can answer.'))
+        else if (answer?.status === 'no_evidence') toast('warning', t('No answer: no text passages were available for the included sources.'))
+        else toast('warning', t('The answer failed validation; it is kept as an unverified draft.'))
+        break
+      }
+      case 'paused': toast(current.pause_reason === 'user_requested' ? 'success' : 'warning', t('{label} paused. {reason}', { label, reason })); break
+      case 'failed': toast('error', t('{label} failed. {reason}', { label, reason })); break
+      case 'cancelled': toast('success', t('{label} cancelled.', { label })); break
+      case 'pause_requested': toast('success', t('Pause requested: the run stops after the current call.')); break
+      case 'queued': case 'running': if (previous.status === 'paused') toast('success', t('{label} resumed.', { label })); break
+    }
+  }, [view, toast])
 
   async function act(action: () => Promise<unknown>, success?: string) {
     setBusy(true)
-    setNotice('')
-    try { await action(); if (success) setNotice(success); await load(); onChanged() } catch (e) { setNotice(errorText(e)) } finally { setBusy(false) }
+    try { await action(); if (success) toast('success', success); await load(); onChanged() }
+    catch (e) {
+      // 409: the research or run changed after this page loaded (another tab, or a run that moved on).
+      if (e instanceof ApiError && e.status === 409) { toast('warning', t('Not applied: {message}. The page now shows the latest state.', { message: e.message })); await load() }
+      else toast('error', errorText(e))
+    } finally { setBusy(false) }
   }
 
-  if (error && !view) return <section className="research-view"><div className="legacy-boundary">Could not open this research: {error}</div></section>
-  if (!view) return <section className="research-view"><p className="session-meta">Loading research…</p></section>
+  if (error && !view) return <section className="research-view"><div className="legacy-boundary">{t('Could not open this research: {error}', { error })}</div></section>
+  if (!view) return <section className="research-view"><p className="session-meta">{t('Loading research…')}</p></section>
 
   const run = view.runs[0] as Run | undefined
   const active = run ? ACTIVE.has(run.status) : false
   const answer = view.answers[0] as Answer | undefined
   const hasAcademic = view.scope.source_scope !== 'attached'
   const included = view.counts.included
-  const unknownSteps = run?.steps?.filter(s => s.status === 'outcome_unknown') ?? []
 
   const startAnswer = () => act(() => api.startRun(id, 'answer', crypto.randomUUID()))
   const startDiscovery = () => act(() => api.startRun(id, 'discovery', crypto.randomUUID()))
-  const upload = (list: FileList | null) => list && act(async () => { for (const file of Array.from(list)) await api.upload(id, file) }, 'PDF added and included. Its text was extracted page by page (no OCR).')
+  const upload = (list: FileList | null) => list && act(async () => { for (const file of Array.from(list)) await api.upload(id, file) }, t('PDF added and included. Its text was extracted page by page (no OCR).'))
+  const importZotero = (source: ZoteroSource, key: string) => act(async () => {
+    const { items, pdfs_added: pdfs, notes } = (await api.zoteroImport(id, source, key)).zotero_import
+    setZoteroOpen(false)
+    const added = `${t(items === 1 ? '{n} Zotero item added and included;' : '{n} Zotero items added and included;', { n: items })} ${t(pdfs === 1 ? '{n} PDF read page by page (no OCR).' : '{n} PDFs read page by page (no OCR).', { n: pdfs })}`
+    if (notes.length) toast('warning', `${added} ${notes.map(n => `${n.title}: ${n.note}.`).join(' ')}`)
+    else toast('success', added)
+  })
 
+  const ScopeIcon = scopeOptions[view.scope.source_scope].icon
+  const EffortIcon = effortOptions[view.scope.effort].icon
+  const modelText = (model: string | null, effort: string | null) => {
+    if (!model) return t('no model chosen')
+    const eff = effort || modelOptions.find(m => m.id === model)?.default_reasoning_effort
+    return eff ? `${model}-${eff}` : model
+  }
   return <section className="research-view legacy-research">
-    <div className="section-label">RESEARCH <span> / REVISION {view.research.current_scope_revision}</span></div>
+    <div className="section-label">{t('RESEARCH')} <span> {t('/ REVISION {n}', { n: view.research.current_scope_revision })}</span></div>
     <h1>{view.scope.question}</h1>
-    <p className="session-meta">{scopeLabels[view.scope.source_scope]} · {view.scope.effort} depth · Codex · {view.scope.requested_model ?? 'no model chosen'}</p>
+    <div className="session-meta session-chips">
+      <span className="meta-chip" title={t('Where DEIXIS looks for sources')}><ScopeIcon size={14} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
+      <span className="meta-chip" title={t('How much searching and reading a run may do')}><EffortIcon size={14} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
+      <span className="meta-chip" title={t('Writes the source-linked answer')}><ConnectionIcon id={view.scope.model_connection} />{t('Answer')} · Codex · {modelText(view.scope.requested_model, view.scope.reasoning_effort)}</span>
+      {/* A research without a literature model (created before model roles) searches with its research model. */}
+      <span className="meta-chip" title={t('Plans the searches and screens the candidates')}><ScanSearch size={14} aria-hidden />{t('Literature')} · {modelText(view.scope.literature_model ?? view.scope.requested_model, view.scope.literature_model ? view.scope.literature_reasoning_effort : view.scope.reasoning_effort)}</span>
+      <span className="meta-chip" title={t('Reviews each claim against its cited passages when an answer completes; never changes the answer')}><ShieldCheck size={14} aria-hidden />{view.reviewer.model ? `${t('Reviewer')} · ${modelText(view.reviewer.model, view.reviewer.reasoning_effort)}${view.reviewer.mode === 'default' ? ` ${t('(default)')}` : ''}` : t(view.reviewer.mode === 'off' ? 'Reviewer off' : 'No reviewer set')}</span>    </div>
 
-    <div className="legacy-progress run-card">
-      <div className="legacy-progress-head">
-        <div>
-          <strong>{run ? `${run.kind === 'discovery' ? 'Search & screening' : 'Answer'} · ${runStatusLabels[run.status]}` : 'Nothing has run yet'}</strong>
-          <small>{run ? (pauseReasonText(run.pause_reason) || `Stage: ${run.stage}`) : hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.'}</small>
-        </div>
-        <div className="run-actions">
-          {run && active && run.status !== 'pause_requested' && <Button variant="outline" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />Pause</Button>}
-          {run && run.status === 'paused' && <Button variant="outline" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'resume'))}><Play size={14} />Resume</Button>}
-          {run && (active || run.status === 'paused') && <Button variant="ghost" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'cancel'))}><X size={14} />Cancel</Button>}
-        </div>
+    {/* Counts and run controls sit above the tabs so they stay reachable from Sources and Activity; the Answer tab tells the run step by step. */}
+    {(run || view.sources.length > 0) && <div className={`legacy-progress run-card${run ? ` is-${run.status}` : ''}`}>
+      {run && <div className="legacy-progress-head">
+        <strong>{t(run.kind === 'discovery' ? 'Search & screening' : 'Answer')} · {t(runStatusLabels[run.status])}</strong>
+        {(active || run.status === 'paused') && <div className="run-actions">
+          {active && run.status !== 'pause_requested' && <Button variant="outline" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />{t('Pause')}</Button>}
+          {run.status === 'paused' && <Button variant="default" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'resume'))}><Play size={14} />{t('Resume')}</Button>}
+          <Button variant="destructive" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'cancel'))}><X size={14} />{t('Cancel')}</Button>
+        </div>}
+      </div>}
+      <div className="legacy-counts run-counts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
+        {([['found', 'Found'], ['unique', 'Unique works'], ['included', 'Included'], ['inspected', 'Given to the model'], ['cited', 'Cited']] as const).map(([key, label]) => <div key={key}><strong>{view.counts[key]}</strong><span>{t(label)}</span></div>)}
       </div>
-      {run?.status === 'paused' && unknownSteps.length > 0 && <p className="legacy-mini-note run-warning">Unfinished: {unknownSteps.map(s => stepLabel(s.kind, s.operation_key)).join(', ')}. Resuming repeats it; a repeated model call counts against your account usage.</p>}
-      <div className="legacy-counts run-counts">
-        {([['found', 'Found'], ['unique', 'Unique works'], ['included', 'Included'], ['inspected', 'Given to the model'], ['cited', 'Cited']] as const).map(([key, label]) => <div key={key}><strong>{view.counts[key]}</strong><span>{label}</span></div>)}
-      </div>
-      {run?.steps && run.steps.length > 0 && <details><summary>Processing steps <ChevronDown size={14} /></summary><ol>{run.steps.map((step, index) => <li key={step.id}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{stepLabel(step.kind, step.operation_key)}</strong><p>{step.status.replace('_', ' ')}{step.error_code ? ` · ${step.error_code}` : ''}{step.attempt > 1 ? ` · attempt ${step.attempt}` : ''}</p></div><small>{step.finished_at ? new Date(step.finished_at).toLocaleTimeString() : ''}</small></li>)}</ol><p className="legacy-mini-note">Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.</p></details>}
-    </div>
+    </div>}
 
-    <Tabs value={tab} onValueChange={value => setTab(String(value))}>
-      <TabsList><TabsTrigger value="answer">Answer</TabsTrigger><TabsTrigger value="sources">Sources ({view.sources.length})</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList>
+    <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => setTab(String(value))}>
+      <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
 
       <TabsContent value="answer">
-        {answer ? <AnswerBlock answer={answer} onOpen={setPassageId} /> : <div className="empty-inline"><p>{included ? `${included} source${included === 1 ? ' is' : 's are'} included. Generate an answer when your selection is ready.` : view.sources.length ? 'Include at least one source on the Sources tab.' : 'No sources yet.'}</p></div>}
+        <Transcript view={view} modelText={modelText}
+          emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
+          latestAnswer={answer ? <AnswerBlock researchId={id} answer={answer} sources={view.sources} onOpen={setPassageId} /> : null} />
         <div className="answer-actions">
-          <Button disabled={busy || active || !included} onClick={startAnswer}><Sparkles size={15} />{answer ? 'Generate a new answer' : 'Generate source-linked answer'}</Button>
-          {hasAcademic && <Button variant="outline" disabled={busy || active} onClick={startDiscovery}><Search size={15} />{view.search_runs.length ? 'Search again' : 'Search OpenAlex'}</Button>}
+          <Button disabled={busy || active || !included} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
+          {hasAcademic && <Button variant="outline" disabled={busy || active} onClick={startDiscovery}><Search size={15} />{t(view.search_runs.length ? 'Search again' : 'Search providers')}</Button>}
         </div>
       </TabsContent>
 
       <TabsContent value="sources">
-        <div className="legacy-section-head"><div><div className="section-label">SELECTION</div><h2>Sources and access</h2><p>Your choice always overrides the model’s screening proposal. Access, retrieval and inspection are separate states.</p></div>
-          {view.scope.source_scope !== 'academic' && <Button variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}><FileUp size={14} />Attach PDF</Button>}</div>
+        <div className="legacy-section-head"><div><div className="section-label">{t('SELECTION')}</div><h2>{t('Sources and access')}</h2><p>{t('Your choice always overrides the model’s screening proposal. Access, retrieval and inspection are separate states.')}</p></div>
+          <div className="section-actions">
+            {included > 0 && <ExportLinks researchId={id} sources="included" />}
+            {view.scope.source_scope !== 'academic' && <>
+              <Button variant="outline" disabled={busy} aria-expanded={zoteroOpen} onClick={() => setZoteroOpen(open => !open)}><ConnectionIcon id="zotero" />{t('Add from Zotero')}</Button>
+              <Button variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}><FileUp size={14} />{t('Attach PDF')}</Button>
+            </>}
+          </div></div>
+        {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
         <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void upload(e.target.files); e.target.value = '' }} />
-        {view.search_runs.length > 0 && <div className="search-summary">{view.search_runs.map(s => <div key={s.id}><Search size={13} /><span>“{s.query_text}”</span><small>{s.provider} · {s.status.replace('_', ' ')} · {s.result_count} of {s.provider_total ?? '?'} records · {s.access_mode}{s.scope_revision !== view.research.current_scope_revision ? ` · for question revision ${s.scope_revision}` : ''}</small></div>)}</div>}
-        {view.sources.map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
-          onSelect={state => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
-          onAbstract={() => source.access.abstract_passage_id && setPassageId(source.access.abstract_passage_id)} />)}
-        {!view.sources.length && <p className="empty-inline">No sources yet.</p>}
+        {view.search_runs.length > 0 && <div className="search-summary">{view.search_runs.map(s => <div key={s.id}><Search size={13} /><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {t(s.status.replace('_', ' '))} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div>}
+        <SourceList sources={view.sources} busy={busy}
+          onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
+          onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
+          onAbstract={source => source.access.abstract_passage_id && setPassageId(source.access.abstract_passage_id)} />
       </TabsContent>
 
       <TabsContent value="activity">
-        <ol className="activity-list">{events.slice().reverse().map(event => <li key={event.id}><time>{new Date(event.created_at).toLocaleString()}</time><span>{describeEvent(event)}</span></li>)}</ol>
-        {!events.length && <p className="empty-inline">No recorded activity.</p>}
+        <ol className="activity-list">{events.slice().reverse().map(event => <li key={event.id}><time>{new Date(event.created_at).toLocaleString(uiLocale())}</time><span>{describeEvent(event)}</span></li>)}</ol>
+        {!events.length && <p className="empty-inline">{t('No recorded activity.')}</p>}
       </TabsContent>
-    </Tabs>
+    </Tabs></div>
 
     <RevisionForm key={view.research.version} question={view.scope.question} disabled={busy || active}
-      onSubmit={text => act(() => api.reviseScope(id, text, view.research.version), 'Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.')} />
-    {notice && <div role="status" className="notice">{notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')}><X size={16} /></button></div>}
+      onSubmit={text => act(() => api.reviseScope(id, text, view.research.version), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />
     <PassageSheet researchId={id} passageId={passageId} dark={dark} onClose={() => setPassageId(null)} />
   </section>
 }
 
-function AnswerBlock({ answer, onOpen }: { answer: Answer; onOpen: (passageId: string) => void }) {
+const versionTones: Record<string, string> = { publishedVersion: 'published', acceptedVersion: 'accepted', submittedVersion: 'submitted' }
+
+function AnswerBlock({ researchId, answer, sources, onOpen }: { researchId: string; answer: Answer; sources: Source[]; onOpen: (passageId: string) => void }) {
+  const [style, setStyle] = useState<CitationStyle>(() => { try { const saved = localStorage.getItem('deixis-citation-style'); return saved && Object.keys(citationStyles).includes(saved) ? saved as CitationStyle : 'apa' } catch { return 'apa' } })
+  const chooseStyle = (next: CitationStyle) => { setStyle(next); try { localStorage.setItem('deixis-citation-style', next) } catch { /* the choice still applies for this tab */ } }
   if (answer.status === 'clarification' && answer.clarification) {
-    return <div className="legacy-answer"><div className="section-label">CLARIFICATION NEEDED</div><h2>{answer.clarification.question}</h2><p>{answer.clarification.why_it_matters}</p>{answer.clarification.options.length > 0 && <ul className="plain-list">{answer.clarification.options.map(o => <li key={o}>{o}</li>)}</ul>}<p className="legacy-mini-note">Revise the question below to continue.</p></div>
+    return <div className="legacy-answer"><div className="section-label">{t('CLARIFICATION NEEDED')}</div><h2>{answer.clarification.question}</h2><p>{answer.clarification.why_it_matters}</p>{answer.clarification.options.length > 0 && <ul className="plain-list">{answer.clarification.options.map(o => <li key={o}>{o}</li>)}</ul>}<p className="legacy-mini-note">{t('Revise the question below to continue.')}</p></div>
   }
   if (answer.status === 'no_evidence') {
-    return <div className="legacy-boundary">No text passages were available for the included sources (no abstract, no retrievable PDF text). No answer was generated.</div>
+    return <div className="legacy-boundary">{t('No text passages were available for the included sources (no abstract, no retrievable PDF text). No answer was generated.')}</div>
   }
   if (answer.status === 'unverified_draft') {
-    return <div className="legacy-answer"><div className="legacy-boundary">The model output failed validation after one repair attempt, so it is not shown as a cited answer.<ul className="plain-list">{answer.validation.issues?.map(i => <li key={`${i.code}${i.path}`}>{i.code} at {i.path}</li>)}</ul></div>
-      {answer.unverified_draft?.claims?.map(c => <p className="claim is-unverified" key={c.claim_label}>{c.text}</p>)}</div>
+    return <div className="legacy-answer"><div className="legacy-boundary">{t('The model output failed validation after one repair attempt, so it is not shown as a cited answer.')}<ul className="plain-list">{answer.validation.issues?.map(i => <li key={`${i.code}${i.path}`}>{t('{code} at {path}', { code: i.code, path: i.path })}</li>)}</ul></div>
+      {answer.unverified_draft?.claims?.map(c => <p className="claim is-unverified" key={c.claim_label}><MathText text={c.text} /></p>)}</div>
   }
   const refs = new Map<string, { n: number; e: Answer['claims'][number]['evidence'][number] }>()
   answer.claims.forEach(c => c.evidence.forEach(e => { if (!refs.has(e.passage_id)) refs.set(e.passage_id, { n: refs.size + 1, e }) }))
+  // Consecutive claims with the same heading form one report section; answers saved before sections have no heading.
+  const sections: { heading: string | null; claims: Answer['claims'] }[] = []
+  answer.claims.forEach(c => { const last = sections[sections.length - 1]; if (last && last.heading === c.section) last.claims.push(c); else sections.push({ heading: c.section, claims: [c] }) })
   return <div className="legacy-answer">
-    <div className="section-label">SOURCE-LINKED ANSWER{answer.applicability === 'stale_scope' ? ' · EARLIER QUESTION REVISION' : answer.applicability === 'stale_selection' ? ' · EARLIER SOURCE SELECTION' : ''}</div>
-    {answer.applicability === 'stale_scope' && <div className="legacy-boundary">This answer was produced for revision {answer.scope_revision} of the question and is not applied to the current revision.</div>}
-    {answer.applicability === 'stale_selection' && <div className="legacy-boundary">Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.</div>}
+    <div className="section-label">{t('SOURCE-LINKED ANSWER')}{answer.applicability === 'stale_scope' ? ` ${t('· EARLIER QUESTION REVISION')}` : answer.applicability === 'stale_selection' ? ` ${t('· EARLIER SOURCE SELECTION')}` : ''}</div>
+    {answer.applicability === 'stale_scope' && <div className="legacy-boundary">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</div>}
+    {answer.applicability === 'stale_selection' && <div className="legacy-boundary">{t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}</div>}
     {answer.capability_notice && <div className="legacy-boundary">{answer.capability_notice}</div>}
-    {answer.claims.map(claim => <p className="claim" key={claim.id}>
-      {claim.text}{claim.support_type === 'analyst_inference' && <span className="support-badge">interpretation</span>}
-      {claim.evidence.map(e => <button key={e.passage_id} className="cite-chip" title={`${e.title} · ${locatorText(e)}`} onClick={() => onOpen(e.passage_id)}>[{refs.get(e.passage_id)?.n}]</button>)}
-    </p>)}
-    {!answer.claims.length && <p>No claim could be linked to the passages given to the model.</p>}
-    {answer.unanswered_aspects.length > 0 && <><h3>Not answered by the inspected passages</h3><ul className="plain-list">{answer.unanswered_aspects.map(a => <li key={a}>{a}</li>)}</ul></>}
-    {answer.limitations.length > 0 && <><h3>Limits</h3><ul className="plain-list">{answer.limitations.map((l, i) => <li key={i}><em>{l.kind.replace('_', ' ')}:</em> {l.text}</li>)}</ul></>}
-    {refs.size > 0 && <><h3>Cited passages</h3><ol className="reference-list">{[...refs.values()].map(({ n, e }) => <li key={e.passage_id}><button onClick={() => onOpen(e.passage_id)}><span>[{n}]</span> {e.title} — {locatorText(e)}{e.reading_depth === 'abstract' ? ' · abstract only' : ''}</button></li>)}</ol></>}
-    <p className="legacy-mini-note">Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked. {answer.model ? `Model: ${answer.model.connection} · ${answer.model.resolved_model ?? answer.model.requested_model ?? 'unknown'}.` : ''} {answer.inputs_given ? `${answer.inputs_given.passages} passages from ${answer.inputs_given.sources} sources were provided.` : ''}</p>
+    {sections.map(({ heading, claims }, index) => <section className="answer-section" key={index}>
+      {heading && <h3>{heading}</h3>}
+      {claims.map(claim => <p className="claim" key={claim.id}>
+        <MathText text={claim.text} />{claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}
+        {claim.evidence.map(e => <button key={e.passage_id} className="cite-chip" title={`${e.title} · ${versionText(e.version_label)} · ${locatorText(e)}`} onClick={() => onOpen(e.passage_id)}>[{refs.get(e.passage_id)?.n}]</button>)}
+        {claim.review && <span className={`review-badge is-${claim.review.verdict}`} title={t('Reviewer: {reason}', { reason: claim.review.reason })}><ShieldCheck size={11} aria-hidden />{t(verdictLabels[claim.review.verdict])}</span>}
+        {claim.review && claim.review.verdict !== 'supported' && <small className="review-reason">{t('Reviewer: {reason}', { reason: claim.review.reason })}</small>}
+      </p>)}
+    </section>)}
+    {!answer.claims.length && <p>{t('No claim could be linked to the passages given to the model.')}</p>}
+    {answer.unanswered_aspects.length > 0 && <><h3>{t('Not answered by the inspected passages')}</h3><ul className="plain-list">{answer.unanswered_aspects.map(a => <li key={a}><MathText text={a} /></li>)}</ul></>}
+    {answer.limitations.length > 0 && <><h3>{t('Limits')}</h3><ul className="plain-list">{answer.limitations.map((l, i) => <li key={i}><em>{t(l.kind.replace('_', ' '))}:</em> <MathText text={l.text} /></li>)}</ul></>}
+    {refs.size > 0 && <>
+      <div className="reference-head"><h3>{t('Cited passages')}</h3>
+        <div className="reference-tools"><ExportLinks researchId={researchId} sources="cited" />
+        <Select value={style} onValueChange={value => { if (value) chooseStyle(value as CitationStyle) }}>
+          <SelectTrigger aria-label={t('Citation style')} title={t('How the cited sources are written')}><SelectValue>{(value: string) => <><Quote size={14} />{t(citationStyles[value as CitationStyle].label)}</>}</SelectValue></SelectTrigger>
+          <SelectContent className="intake-select-content has-details" align="end" alignItemWithTrigger={false}>
+            <div className="intake-select-heading" aria-hidden="true">{t('CITATION STYLE')}</div>
+            {(Object.keys(citationStyles) as CitationStyle[]).map(k => <SelectItem key={k} value={k}><Option icon={Quote} title={t(citationStyles[k].label)} detail={t(citationStyles[k].detail)} /></SelectItem>)}
+          </SelectContent>
+        </Select></div>
+      </div>
+      <ol className="reference-list">{[...refs.values()].map(({ n, e }) => {
+        const source = sources.find(s => s.source_version_id === e.source_version_id)
+        const locator = locatorText(e)
+        return <li key={e.passage_id}><button onClick={() => onOpen(e.passage_id)}>
+          <span className="ref-num">[{n}]</span>
+          <span className="ref-body">
+            <span className="ref-text">{source ? formatReference(style, source) : e.title}</span>
+            <span className="ref-pills">
+              <span className={`ref-pill ${e.kind === 'abstract' ? 'is-abstract' : 'is-text'}`}>{e.kind === 'abstract' ? <BookOpenText size={12} aria-hidden /> : <FileText size={12} aria-hidden />}{locator.charAt(0).toUpperCase() + locator.slice(1)}</span>
+              <span className={`ref-pill is-${versionTones[e.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(e.version_label)}</span>
+            </span>
+          </span>
+        </button></li>
+      })}</ol>
+    </>}
+    <p className="legacy-mini-note">{t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.')} {answer.model ? t('Model: {connection} · {model}.', { connection: answer.model.connection, model: answer.model.resolved_model ?? answer.model.requested_model ?? t('unknown') }) : ''} {answer.inputs_given ? t('{passages} passages from {sources} sources were provided.', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }) : ''}</p>
+    <ReviewNote review={answer.review} />
+    <ChecksNote warnings={answer.validation.warnings} />
   </div>
 }
 
-function SourceRow({ source, busy, onSelect, onAbstract }: { source: Source; busy: boolean; onSelect: (state: Source['selection']['state']) => void; onAbstract: () => void }) {
+const phrasingCodes = new Set(['sentence_without_phrasebank_frame', 'own_work_phrase_in_claim', 'plural_sources_for_one_source'])
+const mathLabels: Record<string, string> = {
+  math_not_well_formed: 'Math is not well formed',
+  math_without_full_text: 'Math cites abstract text only',
+}
+const checkCodes = new Set([...phrasingCodes, ...Object.keys(mathLabels)])
+
+// Prose and math findings are listed with the answer; they never reject it (D19).
+function ChecksNote({ warnings }: { warnings?: ValidationIssue[] }) {
+  const found = (warnings ?? []).filter(w => checkCodes.has(w.code))
+  if (!found.length) return null
+  const phrasingOnly = found.every(w => phrasingCodes.has(w.code))
+  const summary = phrasingOnly
+    ? (found.length === 1 ? 'Phrasing check: {n} finding. It does not reject the answer.' : 'Phrasing check: {n} findings. They do not reject the answer.')
+    : (found.length === 1 ? 'Answer checks: {n} finding. It does not reject the answer.' : 'Answer checks: {n} findings. They do not reject the answer.')
+  return <details className="legacy-mini-note phrasing-note">
+    <summary>{t(summary, { n: found.length })}</summary>
+    <ul className="plain-list">{found.map((w, i) => <li key={i}>{mathLabels[w.code] && <strong>{t(mathLabels[w.code])}: </strong>}{w.message}</li>)}</ul>
+  </details>
+}
+
+
+function ReviewNote({ review }: { review: Answer['review'] }) {
+  if (!review) return null
+  const model = review.model ? review.model.resolved_model ?? review.model.requested_model : null
+  if (review.status === 'failed') {
+    return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden />{model ? t('The reviewer ({model}) did not produce a usable review.', { model }) : t('The reviewer did not produce a usable review.')} {pauseReasonText(review.failure_reason)} {t('The answer is unchanged.')}</p>
+  }
+  const counts = (Object.keys(verdictLabels) as Verdict[]).map(v => [v, review.reviews.filter(r => r.verdict === v).length] as const).filter(([, n]) => n > 0)
+  return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span><strong>{t('Reviewer')}{model ? ` · ${model}` : ''}:</strong> {counts.map(([v, n]) => `${n} ${t(verdictLabels[v])}`).join(' · ')}. {review.notes && `${review.notes} `}{t('This is an additional model’s reading of each claim against its cited passages. It does not change the answer and is not independent verification.')}</span></p>
+}
+
+// Bibliography files for reference managers, downloaded from the local API.
+function ExportLinks({ researchId, sources }: { researchId: string; sources: 'included' | 'cited' }) {
+  const label = t(sources === 'included' ? 'included sources' : 'cited sources')
+  return <span className="export-links" role="group" aria-label={t('Export {label}', { label })}>
+    <Download size={14} aria-hidden />{t(sources === 'included' ? 'Export included' : 'Export cited')}
+    <a href={bibliographyUrl(researchId, 'bibtex', sources)} download title={t('BibTeX file of the {label} (LaTeX, Zotero, JabRef)', { label })}>.bib</a>
+    <a href={bibliographyUrl(researchId, 'ris', sources)} download title={t('RIS file of the {label} (Zotero, EndNote, Mendeley)', { label })}>.ris</a>
+  </span>
+}
+
+function ReasonForm({ busy, onSave }: { busy: boolean; onSave: (reason: string) => void }) {
+  const [text, setText] = useState('')
+  return <form className="reason-form" onSubmit={e => { e.preventDefault(); if (text.trim()) onSave(text.trim()) }}>
+    <input aria-label={t('Reason for excluding this source')} placeholder={t('Why exclude it? Optional; kept with your choice.')} maxLength={1000} value={text} onChange={e => setText(e.target.value)} />
+    <Button type="submit" variant="outline" size="sm" disabled={busy || !text.trim()}>{t('Save reason')}</Button>
+  </form>
+}
+
+type SourceSort = 'found' | 'relevant' | 'cited' | 'newest' | 'oldest' | 'title'
+const sourceSorts: Record<SourceSort, string> = { found: 'Order found', relevant: 'Most relevant', cited: 'Most cited', newest: 'Newest first', oldest: 'Oldest first', title: 'Title A–Z' }
+// There is no relevance score comparable across queries: the model's screening verdict decides, then the best position in the searches that found it.
+const verdictOrder: Record<string, number> = { include: 0, uncertain: 1, exclude: 2 }
+const verdictRank = (s: Source) => verdictOrder[s.selection.proposal ?? ''] ?? 3
+const stateFilters = [['all', 'All'], ['included', 'Included'], ['pending', 'Undecided'], ['excluded', 'Excluded']] as const
+type StateFilter = typeof stateFilters[number][0]
+// Sources without the value (no year, no citation count) go last in either direction.
+const byNumber = (a: number | null, b: number | null, dir: 1 | -1) => a === null ? (b === null ? 0 : 1) : b === null ? -1 : dir * (a - b)
+const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
+  found: () => 0,
+  relevant: (a, b) => verdictRank(a) - verdictRank(b) || byNumber(a.rank, b.rank, 1),
+  cited: (a, b) => byNumber(a.cited_by_count, b.cited_by_count, -1),
+  newest: (a, b) => byNumber(a.year, b.year, -1),
+  oldest: (a, b) => byNumber(a.year, b.year, 1),
+  title: (a, b) => a.title.localeCompare(b.title),
+}
+
+type SourceActions = { onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void }
+
+function SourceList({ sources, busy, onSelect, onReason, onAbstract }: { sources: Source[]; busy: boolean } & SourceActions) {
+  const [filter, setFilter] = useState<StateFilter>('all')
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<SourceSort>('found')
+  // Other versions follow their record and move with it; the filter and sort look at the record.
+  const families: Source[][] = []
+  for (const source of sources) {
+    const last = families[families.length - 1]
+    if (source.version_role === 'other_version' && last?.[0].work_id === source.work_id) last.push(source)
+    else families.push([source])
+  }
+  const counts = { all: families.length, included: 0, pending: 0, excluded: 0 }
+  families.forEach(([record]) => counts[record.selection.state]++)
+  const needle = query.trim().toLocaleLowerCase()
+  const matches = (s: Source) => [s.title, s.venue, s.doi, ...s.authors].some(text => text?.toLocaleLowerCase().includes(needle))
+  const shown = families.filter(f => (filter === 'all' || f[0].selection.state === filter) && (!needle || f.some(matches)))
+    .sort((a, b) => sourceCompare[sort](a[0], b[0]))
+  if (!sources.length) return <p className="empty-inline">{t('No sources yet.')}</p>
+  return <>
+    {families.length > 1 && <div className="source-toolbar">
+      <div className="source-filters" role="group" aria-label={t('Show sources')}>
+        {stateFilters.map(([key, label]) => <button key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}>{t(label)}<span>{counts[key]}</span></button>)}
+      </div>
+      <label className="source-search"><Search size={14} aria-hidden /><input type="search" aria-label={t('Filter sources')} placeholder={t('Title, author, venue or DOI')} value={query} onChange={e => setQuery(e.target.value)} /></label>
+      <Select value={sort} onValueChange={value => { if (value) setSort(value as SourceSort) }}>
+        <SelectTrigger aria-label={t('Sort sources')}><SelectValue>{(value: string) => <><ArrowUpDown size={14} />{t(sourceSorts[value as SourceSort])}</>}</SelectValue></SelectTrigger>
+        <SelectContent className="intake-select-content" align="end" alignItemWithTrigger={false}>
+          {(Object.keys(sourceSorts) as SourceSort[]).map(k => <SelectItem key={k} value={k}>{k === 'relevant' ? <span className="sort-option">{t(sourceSorts[k])}<small>{t('Model’s screening verdict first, then search position')}</small></span> : t(sourceSorts[k])}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>}
+    {shown.flat().map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
+      onSelect={state => onSelect(source, state)} onReason={reason => onReason(source, reason)} onAbstract={() => onAbstract(source)} />)}
+    {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { setFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
+  </>
+}
+
+function SourceRow({ source, busy, onSelect, onReason, onAbstract }: { source: Source; busy: boolean; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void }) {
   const s = source.selection
   const other = source.version_role === 'other_version'
-  const meta = [source.authors.slice(0, 3).join(', ') + (source.authors.length > 3 ? ' et al.' : ''), source.year, source.venue, source.version_label && versionText(source.version_label)].filter(Boolean).join(' · ')
+  const authors = source.authors.slice(0, 3).join(', ') + (source.authors.length > 3 ? ' et al.' : '')
+  const meta: [LucideIcon, string | number | null | false][] = [[Users, authors], [CalendarDays, source.year], [BookOpen, source.venue], [Quote, citedText(source.cited_by_count)], [Search, source.provider_records.map(providerName).join(', ')]]
+  const shown = meta.filter(([, text]) => text)
   return <div className={`source-row is-${s.state}${other ? ' is-other-version' : ''}`}>
     <div className="source-main">
-      {other && <span className="version-note">Another version of the record above: {versionText(source.version_label)}. It is not screened separately; passages cited from it are labelled with this version.</span>}
+      {other && <span className="version-note">{t('Another version of the record above: {version}. It is not screened separately; passages cited from it are labelled with this version.', { version: versionText(source.version_label) })}</span>}
       <strong>{source.title}</strong>
-      <small>{meta || (source.origin === 'user_upload' ? 'Uploaded PDF' : 'No bibliographic details from the provider')}</small>
-      <small className="access-line">{accessText(source)}{source.cited_in_latest_answer ? ' · cited in the latest answer' : ''}</small>
-      {source.applicability === 'stale_scope' && <p className="proposal is-stale">Found for question revision {source.found_in_revision}{s.proposal ? '; the proposal below was made for that question' : ''}. Search again to screen it for the current question.</p>}
-      {s.proposal && <p className="proposal">Model proposal: <em>{s.proposal}</em> — {s.proposal_reason} <span>({s.proposal_basis?.replaceAll('_', ' ')})</span>{s.origin === 'user' ? ' · overridden by you' : ''}</p>}
+      <div className="source-meta">
+        {shown.length ? shown.map(([Icon, text], i) => <span key={i}><Icon size={13} aria-hidden />{text}</span>)
+          : <span>{t(source.origin === 'user_upload' ? 'Uploaded PDF' : 'No bibliographic details from the provider')}</span>}
+      </div>
+      <div className="ref-pills source-pills">
+        {source.version_label && <span className={`ref-pill is-${versionTones[source.version_label] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(source.version_label)}</span>}
+        {accessParts(source).map(part => <span key={part.text} className={`ref-pill is-${part.tone}`}>{part.tone === 'abstract' ? <BookOpenText size={12} aria-hidden /> : <FileText size={12} aria-hidden />}{part.text}</span>)}
+        {source.suspected_duplicates.length > 0 && <span className="ref-pill is-unstated" title={source.suspected_duplicates.map(d => t(d.basis === 'published_doi' ? 'a preprint that names the other record’s DOI' : 'same title')).join('; ')}><FileText size={12} aria-hidden />{t(source.suspected_duplicates.length === 1 ? 'may duplicate {n} other source · not merged' : 'may duplicate {n} other sources · not merged', { n: source.suspected_duplicates.length })}</span>}
+        {source.cited_in_latest_answer && <span className="ref-pill is-cited"><MessageSquareQuote size={12} aria-hidden />{t('cited in the latest answer')}</span>}
+      </div>
+      {source.applicability === 'stale_scope' && <p className="proposal is-stale">{t(s.proposal ? 'Found for question revision {n}; the proposal below was made for that question. Search again to screen it for the current question.' : 'Found for question revision {n}. Search again to screen it for the current question.', { n: source.found_in_revision ?? '?' })}</p>}
+      {s.proposal && <p className="proposal"><Sparkles size={13} aria-hidden />{t('Model proposal:')} <em className={`verdict is-${s.proposal}`}>{t(s.proposal)}</em> — {s.proposal_reason} <span>({t(s.proposal_basis?.replaceAll('_', ' ') ?? '')})</span>{s.origin === 'user' ? ` ${t('· overridden by you')}` : ''}</p>}
+      {s.origin === 'user' && s.user_reason && <p className="proposal"><UserPen size={13} aria-hidden />{t('Your reason: {reason}', { reason: s.user_reason })}</p>}
+      {s.origin === 'user' && s.state === 'excluded' && !s.user_reason && <ReasonForm busy={busy} onSave={onReason} />}
       <div className="source-links">
-        {source.access.abstract_passage_id && <button onClick={onAbstract}>Read abstract</button>}
-        {source.doi && <a href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer">DOI</a>}
-        {!source.doi && source.landing_url && <a href={source.landing_url} target="_blank" rel="noreferrer">Publisher page</a>}
+        {source.access.abstract_passage_id && <button onClick={onAbstract}><BookOpenText size={14} aria-hidden />{t('Read abstract')}</button>}
+        {source.doi && <a href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><Link2 size={14} aria-hidden />DOI</a>}
+        {!source.doi && source.landing_url && <a href={source.landing_url} target="_blank" rel="noreferrer"><ExternalLink size={14} aria-hidden />{t('Publisher page')}</a>}
       </div>
     </div>
-    <div className="selection-toggle" role="group" aria-label={`Selection for ${source.title}`}>
-      {(['included', 'pending', 'excluded'] as const).map(state => <button key={state} aria-pressed={s.state === state} disabled={busy || s.state === state} onClick={() => onSelect(state)}>{state === 'included' ? 'Include' : state === 'excluded' ? 'Exclude' : 'Undecided'}</button>)}
+    <div className="selection-toggle" role="group" aria-label={t('Selection for {title}', { title: source.title })}>
+      {(['included', 'pending', 'excluded'] as const).map(state => <button key={state} className={`is-${state}`} aria-pressed={s.state === state} disabled={busy || s.state === state} onClick={() => onSelect(state)}>{t(state === 'included' ? 'Include' : state === 'excluded' ? 'Exclude' : 'Undecided')}</button>)}
     </div>
   </div>
 }
@@ -174,31 +411,33 @@ function SourceRow({ source, busy, onSelect, onAbstract }: { source: Source; bus
 function RevisionForm({ question, disabled, onSubmit }: { question: string; disabled: boolean; onSubmit: (text: string) => void }) {
   const [text, setText] = useState(question)
   return <form className="legacy-followup" onSubmit={e => { e.preventDefault(); if (text.trim() && text.trim() !== question) onSubmit(text.trim()) }}>
-    <label htmlFor="revise-question">Revise the question</label>
+    <label htmlFor="revise-question">{t('Revise the question')}</label>
     <textarea id="revise-question" value={text} onChange={e => setText(e.target.value)} />
-    <div><span>Creates a new question revision. Sources and earlier answers are kept.</span><Button type="submit" disabled={disabled || !text.trim() || text.trim() === question}>Save revision</Button></div>
+    <div><span>{t('Creates a new question revision. Sources and earlier answers are kept.')}</span><Button type="submit" disabled={disabled || !text.trim() || text.trim() === question}>{t('Save revision')}</Button></div>
   </form>
 }
+
+const selectionStates: Record<string, string> = { included: 'Included', excluded: 'Excluded', pending: 'Undecided' }
 
 function describeEvent(event: ActivityEvent) {
   const p = event.payload as Record<string, string | number | null>
   switch (event.type) {
-    case 'research_created': return 'Research created'
-    case 'scope_revised': return `Question revised (revision ${p.scope_revision})`
-    case 'run_queued': return `${p.kind === 'discovery' ? 'Search' : 'Answer'} run queued`
-    case 'run_started': return 'Run started'
-    case 'run_completed': return 'Run completed'
-    case 'run_paused': return `Run paused${p.pause_reason ? `: ${pauseReasonText(String(p.pause_reason))}` : ''}`
-    case 'run_failed': return `Run failed${p.pause_reason ? `: ${pauseReasonText(String(p.pause_reason))}` : ''}`
-    case 'run_resumed': return 'Run resumed'
-    case 'run_cancelled': return 'Run cancelled'
-    case 'run_pause_requested': return 'Pause requested'
-    case 'step_started': return `${stepLabel(String(p.kind), String(p.operation_key))} started`
-    case 'step_finished': return `${stepLabel(String(p.kind), String(p.operation_key))}: ${String(p.status).replace('_', ' ')}${p.error_code ? ` (${p.error_code})` : ''}`
-    case 'model_call_started': return `Model call sent to ${p.connection}${p.requested_model ? ` · ${p.requested_model}` : ''}`
-    case 'search_recorded': return `OpenAlex search: ${String(p.status).replace('_', ' ')}, ${p.result_count} records`
-    case 'selection_changed': return `You marked a source as ${p.state}`
-    case 'answer_saved': return `Answer saved (${String(p.status).replaceAll('_', ' ')})`
+    case 'research_created': return t('Research created')
+    case 'scope_revised': return t('Question revised (revision {n})', { n: String(p.scope_revision) })
+    case 'run_queued': return t(p.kind === 'discovery' ? 'Search run queued' : 'Answer run queued')
+    case 'run_started': return t('Run started')
+    case 'run_completed': return t('Run completed')
+    case 'run_paused': return p.pause_reason ? `${t('Run paused')}: ${pauseReasonText(String(p.pause_reason))}` : t('Run paused')
+    case 'run_failed': return p.pause_reason ? `${t('Run failed')}: ${pauseReasonText(String(p.pause_reason))}` : t('Run failed')
+    case 'run_resumed': return t('Run resumed')
+    case 'run_cancelled': return t('Run cancelled')
+    case 'run_pause_requested': return t('Pause requested')
+    case 'step_started': return t('{step} started', { step: stepLabel(String(p.kind), String(p.operation_key)) })
+    case 'step_finished': return `${stepLabel(String(p.kind), String(p.operation_key))}: ${t(String(p.status).replace('_', ' '))}${p.error_code ? ` (${p.error_code})` : ''}`
+    case 'model_call_started': return `${t('Model call sent to {connection}', { connection: String(p.connection) })}${p.requested_model ? ` · ${p.requested_model}` : ''}`
+    case 'search_recorded': return t('{provider} search: {status}, {count} records', { provider: providerName(String(p.provider)), status: t(String(p.status).replace('_', ' ')), count: String(p.result_count) })
+    case 'selection_changed': return t('You marked a source as {state}', { state: t(selectionStates[String(p.state)] ?? String(p.state)).toLocaleLowerCase(uiLocale()) })
+    case 'answer_saved': return t('Answer saved ({status})', { status: t(String(p.status).replaceAll('_', ' ')) })
     default: return event.type
   }
 }

@@ -6,8 +6,22 @@ export type Effort = 'quick' | 'standard' | 'detailed'
 
 export type Scope = {
   research_id: string; revision: number; question: string; language_hint: string | null; source_scope: SourceScope
-  providers: string[]; effort: Effort; model_connection: string; requested_model: string | null; steering: string | null; created_at: string
+  providers: string[]; effort: Effort; model_connection: string; requested_model: string | null; reasoning_effort: string | null
+  // null literature model: the research model runs the search steps (researches created before model roles).
+  literature_model: string | null; literature_reasoning_effort: string | null
+  review_mode: ReviewMode; review_model: string | null; review_reasoning_effort: string | null
+  steering: string | null; created_at: string
 }
+export type ReviewMode = 'default' | 'custom' | 'off'
+export type Verdict = 'supported' | 'partially_supported' | 'not_supported' | 'cannot_assess'
+export type AnswerReview = {
+  status: 'completed' | 'failed'; failure_reason: string | null; created_at: string
+  reviews: { claim_label: string; verdict: Verdict; reason: string }[]; notes: string; issues: ValidationIssue[]
+  model: { connection: string; requested_model: string | null; resolved_model: string | null } | null
+}
+export type ModelRole = 'answer' | 'literature' | 'reviewer'
+// App-wide default for one role. model null: no default (for the reviewer: answers are not reviewed).
+export type RoleModelSetting = { model_connection: string; model: string | null; reasoning_effort: string | null }
 export type Step = {
   id: string; operation_key: string; kind: string; status: string; attempt: number; delivery_class: string | null
   error_code: string | null; error: unknown; started_at: string | null; finished_at: string | null
@@ -25,17 +39,22 @@ export type Asset = { id: string; extraction_status: string; page_count: number 
 export type Source = {
   source_version_id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null
   doi: string | null; landing_url: string | null; version_label: string | null; publication_type: string | null
+  cited_by_count: number | null; cited_by_count_at: string | null
   origin: 'provider' | 'user_upload'; added_by: string; rank: number | null
   found_in_revision: number | null; applicability: 'current' | 'stale_scope'; version_role: 'record' | 'other_version'
   access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; fetch: { status: string; error_code: string | null } | null }
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null }
   cited_in_latest_answer: boolean
+  provider_records: string[]; suspected_duplicates: { source_version_id: string; basis: 'same_title' | 'published_doi' }[]
 }
 export type Evidence = {
   passage_id: string; source_version_id: string; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
-  printed_label: string | null; reading_depth: string; title: string
+  printed_label: string | null; reading_depth: string; title: string; version_label: string | null
 }
-export type Claim = { id: string; label: string; text: string; support_type: 'source_stated' | 'analyst_inference'; semantic_review: string; evidence: Evidence[] }
+export type Claim = {
+  id: string; label: string; section: string | null; text: string; support_type: 'source_stated' | 'analyst_inference'; semantic_review: string; evidence: Evidence[]
+  review: { verdict: Verdict; reason: string } | null
+}
 export type Limitation = { kind: string; text: string; source_ids: string[] }
 export type ValidationIssue = { code: string; path: string; message: string }
 export type Answer = {
@@ -44,35 +63,47 @@ export type Answer = {
   claims: Claim[]; limitations: Limitation[]; unanswered_aspects: string[]; capability_notice: string | null
   clarification: { question: string; ambiguity: string; why_it_matters: string; options: string[] } | null
   unverified_draft: { claims?: { claim_label: string; text: string }[] } | null
-  validation: { ok?: boolean; issues?: ValidationIssue[]; note?: string }
+  validation: { ok?: boolean; issues?: ValidationIssue[]; warnings?: ValidationIssue[]; note?: string }
   model: { connection: string; requested_model: string | null; resolved_model: string | null; token_usage: unknown } | null
   inputs_given: { sources: number; passages: number; source_ids: string[] } | null
+  review: AnswerReview | null
 }
 export type Counts = { found: number; unique: number; included: number; excluded: number; pending: number; inspected: number; cited: number }
 export type ResearchView = {
   research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string }
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
+  // The reviewer the next answer gets: the research's own setting, else the app-wide default. model null: no review.
+  reviewer: { mode: ReviewMode; model: string | null; reasoning_effort: string | null }
 }
 export type ResearchSummary = {
   id: string; title: string; question: string; source_scope: SourceScope; effort: Effort; last_run_status: RunStatus | null
   answer_count: number; created_at: string; updated_at: string
 }
+export type TrashedResearch = { id: string; title: string; trashed_at: string }
 export type Passage = {
   id: string; kind: Evidence['kind']; text: string; physical_page: number | null; printed_label: string | null
   abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; reading_depth: string; asset_id: string | null
-  source: { id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; landing_url: string | null; version_label: string | null; origin: string }
+  source: { id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; landing_url: string | null; version_label: string | null; origin: string; cited_by_count: number | null; cited_by_count_at: string | null }
+}
+export type ModelOption = {
+  id: string; display_name: string; is_default: boolean; description?: string
+  default_reasoning_effort?: string | null; reasoning_efforts?: { id: string; description: string }[]
 }
 export type ModelHealth = {
   connection: string; ready: boolean; reason?: string | null; installed?: boolean; cli_version?: string; signed_in?: boolean
-  account_type?: string | null; plan_type?: string | null; models?: { id: string; display_name: string; is_default: boolean }[]
+  account_type?: string | null; plan_type?: string | null; models?: ModelOption[]
   isolation?: { instruction_sources: number; live_mcp_servers: string[] }
 }
-export type Connections = { models: Record<string, ModelHealth>; providers: { id: string; implemented: boolean; access_mode: string | null; note: string }[] }
+export type Connections = { models: Record<string, ModelHealth>; providers: { id: string; implemented: boolean; access_mode: string | null; supplementary?: boolean; note: string }[] }
+export type InstitutionalAccess = { status: 'institutional' | 'none' | 'unknown' | 'not_checked'; via?: string; reason?: string }
 export type QuickFindResult = {
   researches: { id: string; title: string; question: string; updated_at: string }[]
   sources: { source_version_id: string; title: string; year: number | null; version_label: string | null; research_id: string; research_title: string }[]
 }
 export type ActivityEvent ={ id: number; type: string; run_id: string | null; payload: Record<string, unknown>; created_at: string }
+export type ZoteroSource = 'local' | 'web'
+export type ZoteroCollection = { key: string; name: string }
+export type ZoteroImport = { items: number; pdfs_added: number; notes: { title: string; note: string }[] }
 
 export class ApiError extends Error {
   status: number
@@ -110,10 +141,23 @@ const json = (method: string, body: unknown, extra: Record<string, string> = {})
 
 export const api = {
   researches: () => request<ResearchSummary[]>('/api/researches'),
+  trash: () => request<TrashedResearch[]>('/api/trash'),
+  moveToTrash: (id: string) => request<{ trashed: boolean }>(`/api/researches/${id}`, { method: 'DELETE' }),
+  restore: (id: string) => request<{ restored: boolean }>(`/api/trash/${id}/restore`, { method: 'POST' }),
+  deletePermanently: (id: string) => request<{ deleted: boolean; files_not_removed: string[] }>(`/api/trash/${id}`, { method: 'DELETE' }),
   search: (q: string) => request<QuickFindResult>(`/api/search?q=${encodeURIComponent(q)}`),
   research: (id: string) => request<ResearchView>(`/api/researches/${id}`),
-  create: (body: { question: string; source_scope: SourceScope; effort: Effort; model_connection: string; requested_model: string }) =>
-    request<ResearchView>('/api/researches', json('POST', body)),
+  create: (body: {
+    question: string; source_scope: SourceScope; effort: Effort; model_connection: string; requested_model: string; reasoning_effort: string | null
+    literature_model: string; literature_reasoning_effort: string | null
+    review_mode: ReviewMode; review_model: string | null; review_reasoning_effort: string | null
+  }) => request<ResearchView>('/api/researches', json('POST', body)),
+  settings: () => request<Record<ModelRole, RoleModelSetting>>('/api/settings'),
+  saveModelDefault: (role: ModelRole, setting: RoleModelSetting) =>
+    request<Partial<Record<ModelRole, RoleModelSetting>>>(`/api/settings/${role}`, json('PUT', setting)),
+  zoteroCollections: (source: ZoteroSource) => request<{ source: ZoteroSource; collections: ZoteroCollection[] }>(`/api/zotero/collections?source=${source}`),
+  zoteroImport: (id: string, source: ZoteroSource, collectionKey: string) =>
+    request<ResearchView & { zotero_import: ZoteroImport }>(`/api/researches/${id}/zotero-imports`, json('POST', { source, collection_key: collectionKey })),
   upload: (id: string, file: File) => {
     const form = new FormData()
     form.append('file', file)
@@ -122,14 +166,18 @@ export const api = {
   startRun: (id: string, kind: 'discovery' | 'answer', idempotencyKey: string) =>
     request<Run>(`/api/researches/${id}/runs`, json('POST', { kind }, { 'Idempotency-Key': idempotencyKey })),
   controlRun: (runId: string, action: 'pause' | 'resume' | 'cancel') => request<Run>(`/api/runs/${runId}/${action}`, { method: 'POST' }),
-  select: (id: string, sourceId: string, state: Source['selection']['state'], expectedVersion: number) =>
-    request<unknown>(`/api/researches/${id}/selections/${sourceId}`, json('PATCH', { state, expected_version: expectedVersion })),
+  select: (id: string, sourceId: string, state: Source['selection']['state'], expectedVersion: number, reason?: string) =>
+    request<unknown>(`/api/researches/${id}/selections/${sourceId}`, json('PATCH', { state, expected_version: expectedVersion, reason })),
   reviseScope: (id: string, question: string, expectedVersion: number) =>
     request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion })),
   passage: (id: string, passageId: string) => request<Passage>(`/api/researches/${id}/passages/${passageId}`),
   events: (id: string, after = 0) => request<ActivityEvent[]>(`/api/researches/${id}/events?after=${after}`),
   connections: (refresh = false) => request<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`),
+  institutionalAccess: () => request<InstitutionalAccess>('/api/institutional-access'),
 }
+
+export const bibliographyUrl = (researchId: string, format: 'bibtex' | 'ris', sources: 'included' | 'cited') =>
+  `/api/researches/${researchId}/bibliography?format=${format}&sources=${sources}`
 
 export const assetUrl = (researchId: string, assetId: string, page?: number | null) =>
   `/api/researches/${researchId}/assets/${assetId}${page ? `#page=${page}` : ''}`

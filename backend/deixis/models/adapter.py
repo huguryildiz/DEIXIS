@@ -55,7 +55,7 @@ class ModelAdapter(Protocol):
     async def health(self, refresh: bool = False) -> dict[str, Any]: ...
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
-                       requested_model: str | None) -> ModelStepResult: ...
+                       requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult: ...
 
     async def cancel(self) -> bool: ...
 
@@ -104,7 +104,10 @@ class CodexAdapter:
                 status["plan_type"] = account.get("planType")
                 models = await server.request("model/list", {})
                 status["models"] = [
-                    {"id": m["id"], "display_name": m.get("displayName") or m["id"], "is_default": bool(m.get("isDefault"))}
+                    {"id": m["id"], "display_name": m.get("displayName") or m["id"], "is_default": bool(m.get("isDefault")),
+                     "description": m.get("description") or "", "default_reasoning_effort": m.get("defaultReasoningEffort"),
+                     "reasoning_efforts": [{"id": e["reasoningEffort"], "description": e.get("description") or ""}
+                                           for e in m.get("supportedReasoningEfforts") or []]}
                     for m in models.get("data", []) if not m.get("hidden")
                 ]
                 mcp = await server.request("mcpServerStatus/list", {"detail": "toolsAndAuthOnly"})
@@ -130,7 +133,7 @@ class CodexAdapter:
         return status
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
-                       requested_model: str | None) -> ModelStepResult:
+                       requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
         async with self._lock:
             try:
                 server = await self._ensure_server()
@@ -152,7 +155,8 @@ class CodexAdapter:
                 self._active = (thread_id, turn_id)
 
             try:
-                turn = await server.run_turn(thread_id, message, output_schema, timeout=self.turn_timeout, on_started=remember)
+                turn = await server.run_turn(thread_id, message, output_schema, timeout=self.turn_timeout, on_started=remember,
+                                             effort=reasoning_effort)
             except (RpcError, ConnectionError, TimeoutError, OSError) as exc:
                 return ModelStepResult("failed", resolved_model=resolved, external_thread_id=thread_id,
                                        error=str(exc)[:300], delivery_class="after_send_unknown")

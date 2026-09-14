@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from deixis.domain.rules import result_applicability
+from deixis.domain.rules import effective_reviewer, result_applicability
 from deixis.workflow.store import Store
 
 
@@ -39,21 +39,26 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             evidence = [
                 {"passage_id": e["passage_id"], "source_version_id": e["source_version_id"], "kind": e["kind"],
                  "physical_page": e["physical_page"], "printed_label": e["printed_label"],
-                 "reading_depth": "abstract" if e["kind"] == "abstract" else "selected_sections", "title": e["title"]}
+                 "reading_depth": "abstract" if e["kind"] == "abstract" else "selected_sections", "title": e["title"],
+                 "version_label": e["version_label"]}
                 for e in conn.execute(
-                    "SELECT l.passage_id, l.source_version_id, p.kind, p.physical_page, p.printed_label, s.title FROM evidence_links l"
+                    "SELECT l.passage_id, l.source_version_id, p.kind, p.physical_page, p.printed_label, s.title, s.version_label FROM evidence_links l"
                     " JOIN passages p ON p.id = l.passage_id JOIN source_versions s ON s.id = l.source_version_id"
                     " WHERE l.claim_id = ? ORDER BY l.rowid", (c["id"],)
                 )
             ]
             if not answers:
                 cited_sources.update(e["source_version_id"] for e in evidence)
-            claims.append({"id": c["id"], "label": c["label"], "text": c["text"], "support_type": c["support_type"],
+            claims.append({"id": c["id"], "label": c["label"], "section": c["section"], "text": c["text"], "support_type": c["support_type"],
                            "semantic_review": c["semantic_review"], "evidence": evidence})
         session = conn.execute(
             "SELECT connection, requested_model, resolved_model, token_usage_json FROM model_sessions WHERE step_input_id = ?",
             (a["step_input_id"],),
         ).fetchone() if a["step_input_id"] else None
+        review = _review_view(store, a["id"])
+        verdicts = {r["claim_label"]: {"verdict": r["verdict"], "reason": r["reason"]} for r in (review or {}).get("reviews", [])}
+        for claim in claims:
+            claim["review"] = verdicts.get(claim["label"])
         given = store.step_input_payload(a["step_input_id"]) if a["step_input_id"] else None
         validation = _json(a["validation_json"]) or {}
         answers.append({
@@ -71,7 +76,9 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
                       "resolved_model": session["resolved_model"], "token_usage": _json(session["token_usage_json"])} if session else None,
             "inputs_given": {"sources": len(given["sources"]), "passages": len(given["passages"]),
                              "source_ids": [s["source_id"] for s in given["sources"]]} if given else None,
+            "review": review,
         })
+    duplicates = store.suspected_duplicates(research_id)
     sources = []
     for row in conn.execute(
         "SELECT m.added_by, s.*, sel.state, sel.origin AS selection_origin, sel.version AS selection_version, sel.proposal,"
@@ -96,9 +103,10 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "source_version_id": svid, "work_id": row["work_id"], "title": row["title"], "authors": json.loads(row["authors_json"]),
             "year": row["year"], "venue": row["venue"], "doi": row["doi"], "landing_url": row["landing_url"],
             "version_label": row["version_label"], "publication_type": row["publication_type"], "origin": row["origin"],
+            "cited_by_count": row["cited_by_count"], "cited_by_count_at": row["cited_by_count_at"],
             "added_by": row["added_by"], "rank": row["rank"],
             # "other_version": another version of a found record (e.g. its submitted manuscript), stored separately.
-            "version_role": "other_version" if row["origin"] == "provider" and row["candidate_id"] is None else "record",
+            "version_role": "other_version" if row["added_by"] == "search" and row["candidate_id"] is None else "record",
             # A search result keeps the question revision it was found for; attached files belong to no revision.
             "found_in_revision": row["found_in_revision"],
             "applicability": "current" if row["found_in_revision"] is None
@@ -111,6 +119,12 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
                           "proposal": row["proposal"], "proposal_reason": row["proposal_reason"],
                           "proposal_basis": row["proposal_basis"], "user_reason": row["user_reason"]},
             "cited_in_latest_answer": svid in cited_sources,
+            # Providers whose records map to this source version (one DOI from several providers is one source).
+            "provider_records": [r[0] for r in conn.execute(
+                "SELECT DISTINCT provider FROM identifier_mappings WHERE source_version_id = ? AND scheme = provider ORDER BY provider", (svid,)
+            )],
+            # Possibly the same publication as another source (same title, or a preprint naming its DOI); never merged.
+            "suspected_duplicates": duplicates.get(svid, []),
         })
 
     # Other versions follow the record of their work and share its question revision.
@@ -139,8 +153,27 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         "cited": works(cited_sources),
     }
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
+    reviewer = effective_reviewer(scope, store.setting("reviewer"))
     return {"research": research, "scope": scope, "runs": runs, "search_runs": search_runs, "sources": sources,
-            "answers": answers, "counts": counts, "last_event_id": last_event}
+            "answers": answers, "counts": counts, "last_event_id": last_event,
+            # The reviewer the next answer would get: the research's own setting, else the app-wide default.
+            "reviewer": {"mode": scope["review_mode"], "model": reviewer[1] if reviewer else None,
+                         "reasoning_effort": reviewer[2] if reviewer else None}}
+
+
+def _review_view(store: Store, answer_id: str) -> dict[str, Any] | None:
+    review = store.answer_review(answer_id)
+    if review is None:
+        return None
+    session = store.conn.execute(
+        "SELECT connection, requested_model, resolved_model FROM model_sessions WHERE step_id = ? ORDER BY started_at DESC LIMIT 1",
+        (review["step_id"],),
+    ).fetchone() if review["step_id"] else None
+    completed = review["status"] == "completed"
+    return {"status": review["status"], "failure_reason": review["failure_reason"], "created_at": review["created_at"],
+            "reviews": review["review"]["reviews"] if completed else [], "notes": review["review"]["notes"] if completed else "",
+            "issues": (review["review"] or {}).get("issues", []) if not completed else [],
+            "model": dict(session) if session else None}
 
 
 def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, Any] | None:
@@ -154,5 +187,6 @@ def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, A
         "extraction_version": passage["extraction_version"], "payload_ref": passage["payload_ref"],
         "reading_depth": "abstract" if passage["kind"] == "abstract" else "selected_sections",
         "asset_id": passage["asset_id"],
-        "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin")},
+        "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
+                                            "cited_by_count", "cited_by_count_at")},
     }

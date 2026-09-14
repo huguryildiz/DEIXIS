@@ -51,10 +51,6 @@ class Settings:
         return self.data_dir / "worker.lock"
 
     @property
-    def openalex_api_key(self) -> str | None:
-        return os.environ.get("OPENALEX_API_KEY") or None
-
-    @property
     def contact_email(self) -> str | None:
         return os.environ.get("DEIXIS_CONTACT_EMAIL") or None
 

@@ -12,12 +12,15 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from deixis.domain.phrasebank import PHRASEBANK, render
 from deixis.paths import SKILL_DIR
 
+# Only the answer step writes report prose, so only it loads the phrasebank.
 RUNTIME_FILES = {
     "search_plan": ("SKILL.md", "references/source-grounded-answer.md"),
     "screening": ("SKILL.md", "references/source-grounded-answer.md"),
-    "grounded_answer": ("SKILL.md", "references/source-grounded-answer.md"),
+    "grounded_answer": ("SKILL.md", "references/source-grounded-answer.md", PHRASEBANK),
+    "answer_review": ("SKILL.md", "references/answer-review.md"),
 }
 PROVENANCE_REQUIRED = (
     "package",
@@ -37,17 +40,19 @@ class SkillPackage:
     package_hash: str
     files: dict[str, str]
 
-    def runtime_text(self, task_type: str) -> str:
-        return "\n\n".join(
-            f"<method-file path=\"{name}\">\n{self.files[name]}\n</method-file>"
-            for name in RUNTIME_FILES[task_type]
-        )
+    def runtime_text(self, task_type: str, language: str = "en") -> str:
+        """Method files for one step; the phrasebank is rendered in the language whose frames the answer uses."""
+        def body(name: str) -> str:
+            return render(self.files[name], language) if name == PHRASEBANK else self.files[name]
+
+        return "\n\n".join(f"<method-file path=\"{name}\">\n{body(name)}\n</method-file>" for name in RUNTIME_FILES[task_type])
 
 
 def _package_files(root: Path) -> list[Path]:
     return sorted(
         p for p in root.rglob("*")
-        if p.is_file() and not any(part.startswith(".") for part in p.relative_to(root).parts)
+        if p.is_file() and p.suffix in {".md", ".json", ".txt"}
+        and not any(part.startswith(".") for part in p.relative_to(root).parts)
     )
 
 

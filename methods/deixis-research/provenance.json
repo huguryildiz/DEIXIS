@@ -33,9 +33,21 @@
       "deixis_file": "references/source-grounded-answer.md",
       "derived_from": ["references/search-methods.md", "references/source-audit.md"],
       "change": "Search plan keeps vocabulary families, essential-versus-desired conditions, no AND-everything queries, question-driven date limits and no exhaustiveness claim. Screening adds include/exclude/uncertain proposals with keyword false-positive guard. Grounded answer keeps original-passage checking, access limits and contradiction handling, expressed as claim-to-passage links. Search logging, citation chasing, sentinel sets and bibliometric maps are application or later-stage responsibilities and were not copied."
+    },
+    {
+      "deixis_file": "references/answer-review.md",
+      "derived_from": [],
+      "change": "Written for DEIXIS on 2026-09-14 (D14), not adapted from upstream text. Applies the SKILL.md evidence rules (reading depth, source_stated versus analyst_inference) to a per-claim verdict on the passages each claim cites. Loaded into answer_review steps only."
     }
   ],
+  "phrasebank": {
+    "deixis_file": "references/academic-phrasebank/phrases.txt",
+    "source": "Academic Phrasebank, 2015 enhanced edition (John Morley, The University of Manchester), phrase sections of printed pages 7-91. Copyright remains with The University of Manchester.",
+    "form": "converted once on 2026-09-14: one frame per line under # section and ## subsection headings, table rows written with {a | b} alternatives; nine frames split or joined by the conversion were repaired by hand",
+    "turkish": "each frame is followed by a `tr:` line, a literal Turkish rendering written on 2026-09-14 by Claude Sonnet subagents; checked by script for equal alternative groups and slots, spot-read by the implementing agent, not reviewed by a human translator",
+    "use": "versioned at the user's decision (2026-09-14); loaded into grounded_answer steps only, English frames or their Turkish renderings by question language; every answer sentence is checked against the frames of the answer language (contracts._check_phrasing); its hash is part of skill_package_hash"
+  },
   "upstream_update_policy": "Quaestio changes are not imported automatically. A change is compared by diff, recorded here with the new revision and hashes, and re-tested with the behavior cases before the package version changes.",
   "distribution_review": "not_done; required before public distribution of adapted text",
-  "behavioral_validation": "development cases run on 2026-09-14 with Codex gpt-5.6-luna; the unsupported-mode rule was tightened after MB06 failed; each case has one execution on the current runtime manifest, judged by the implementing agent pending user review; no held-out evaluation yet; see tests/model_behavior/cases.json"
+  "behavioral_validation": "development cases run on 2026-09-14 with Codex gpt-5.6-luna and rerun on 2026-09-15 after the phrasebank rules (D15), every automatic check passing on the single attempt; the unsupported-mode rule was tightened after MB06 failed. The search-plan wording was subsequently revised for the in-sample packet-size P4 measurement; earlier behavior cases are no longer executions of the current instruction hash. One baseline and one revised packet-size run are recorded locally, but no held-out evaluation or human claim review has been completed; see tests/model_behavior/cases.json and .local/p4-eval-2026-09-15-packet/analysis.md"
 }

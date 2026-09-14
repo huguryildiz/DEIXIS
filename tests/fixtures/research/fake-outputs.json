@@ -18,8 +18,8 @@
             { "label": "mathematical programming", "role": "method", "synonyms": ["integer programming", "MILP", "convex optimization"] }
           ],
           "queries": [
-            { "provider_id": "openalex", "query_text": "molecular communication integer programming", "rationale": "Method vocabulary with the core phenomenon." },
-            { "provider_id": "openalex", "query_text": "diffusion-based nano network resource allocation optimization", "rationale": "Adjacent terminology for allocation formulations." }
+            { "provider_id": "openalex", "query_text": "\"molecular communication\" AND (\"integer programming\" OR MILP OR \"convex optimization\")", "rationale": "Method vocabulary with the core phenomenon." },
+            { "provider_id": "openalex", "query_text": "\"nano networks\" AND (\"resource allocation\" OR optimization)", "rationale": "Adjacent terminology for allocation formulations." }
           ],
           "scope_boundaries": ["OpenAlex keyword search only; not exhaustive."],
           "search_rationale": "Separate method and phenomenon vocabularies without requiring every desired feature."
@@ -67,9 +67,9 @@
           "question_interpretation": "x",
           "concepts": [],
           "queries": [
-            { "provider_id": "openalex", "query_text": "a", "rationale": "a" },
+            { "provider_id": "openalex", "query_text": "\"core phrase\" AND a", "rationale": "a" },
             { "provider_id": "scopus", "query_text": "b", "rationale": "silently widened provider" },
-            { "provider_id": "openalex", "query_text": "c", "rationale": "over budget" }
+            { "provider_id": "openalex", "query_text": "\"core phrase\" AND c", "rationale": "over budget" }
           ],
           "scope_boundaries": [],
           "search_rationale": "x"
@@ -126,15 +126,15 @@
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
         "answer_language": "en",
         "claims": [
-          { "claim_label": "c1", "text": "One source formulates transmitter release-time scheduling as a mixed-integer linear program with binary release variables.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01"] },
-          { "claim_label": "c2", "text": "Its objective minimizes expected bit error probability under a per-frame molecule budget.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1pg003"] },
-          { "claim_label": "c3", "text": "Relay placement in the inspected preprint is heuristic rather than an optimization model with a guarantee.", "support_type": "analyst_inference", "passage_ids": ["psg_SYNA3pg002"] }
+          { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that transmitter release-time scheduling is formulated as a mixed-integer linear program with binary release variables.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01"] },
+          { "claim_label": "c2", "section": "Formulations", "text": "It has been reported that its objective minimizes expected bit error probability under a per-frame molecule budget.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1pg003"] },
+          { "claim_label": "c3", "section": "Formulations", "text": "It is possible that relay placement in the inspected preprint is heuristic rather than an optimization model with a guarantee.", "support_type": "analyst_inference", "passage_ids": ["psg_SYNA3pg002"] }
         ],
         "limitations": [
-          { "kind": "access", "text": "Only the abstract of the relay-network source was available; its formulation is not described.", "source_ids": ["srv_SYNA2pub01"] },
-          { "kind": "scope", "text": "The published version of A3 was not inspected; the preprint passage may not reflect it.", "source_ids": ["srv_SYNA3pre01", "srv_SYNA3pub01"] }
+          { "kind": "access", "text": "It was not possible to assess the formulation of the relay-network source; therefore, it is unknown if it describes an optimization model.", "source_ids": ["srv_SYNA2pub01"] },
+          { "kind": "scope", "text": "An issue that was not addressed in the supplied passages was whether the published version of A3 differs from the preprint.", "source_ids": ["srv_SYNA3pre01", "srv_SYNA3pub01"] }
         ],
-        "unanswered_aspects": ["Validation level of the models was not stated in the inspected passages."],
+        "unanswered_aspects": ["An issue that was not addressed in the supplied passages was whether the models were validated."],
         "capability_notice": null
       }
     },
@@ -150,7 +150,7 @@
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
         "answer_language": "en",
         "claims": [
-          { "claim_label": "c1", "text": "Nodes carry hydrophones.", "support_type": "source_stated", "passage_ids": ["psg_SYNB1pg001"] }
+          { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that nodes carry hydrophones.", "support_type": "source_stated", "passage_ids": ["psg_SYNB1pg001"] }
         ],
         "limitations": [],
         "unanswered_aspects": [],
@@ -169,7 +169,7 @@
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
         "answer_language": "en",
         "claims": [
-          { "claim_label": "c1", "text": "Constraint (7) bounds nutrients.", "support_type": "source_stated", "passage_ids": ["psg_SYNA2abs01"], "page": 7 }
+          { "claim_label": "c1", "section": "Formulations", "text": "Constraint (7) bounds nutrients.", "support_type": "source_stated", "passage_ids": ["psg_SYNA2abs01"], "page": 7 }
         ],
         "limitations": [],
         "unanswered_aspects": [],
@@ -188,7 +188,7 @@
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
         "answer_language": "en",
         "claims": [
-          { "claim_label": "c1", "text": "x", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01"], "semantic_review": "human_checked" }
+          { "claim_label": "c1", "section": "Formulations", "text": "x", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01"], "semantic_review": "human_checked" }
         ],
         "limitations": [],
         "unanswered_aspects": [],
@@ -208,7 +208,7 @@
         "answer_language": "en",
         "claims": [],
         "limitations": [],
-        "unanswered_aspects": ["x"],
+        "unanswered_aspects": ["An issue that was not addressed in the supplied passages was whether X holds."],
         "capability_notice": null
       }
     },
@@ -224,11 +224,11 @@
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
         "answer_language": "en",
         "claims": [
-          { "claim_label": "c1", "text": "Unsupported assertion.", "support_type": "analyst_inference", "passage_ids": [] },
-          { "claim_label": "c1", "text": "Repeated label.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01", "psg_SYNA1abs01"] }
+          { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that X is unsupported.", "support_type": "analyst_inference", "passage_ids": [] },
+          { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that X carries a repeated label.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01", "psg_SYNA1abs01"] }
         ],
         "limitations": [
-          { "kind": "access", "text": "x", "source_ids": ["srv_SYNB1pub01"] }
+          { "kind": "access", "text": "It was not possible to assess X; therefore, it is unknown if Y holds.", "source_ids": ["srv_SYNB1pub01"] }
         ],
         "unanswered_aspects": [],
         "capability_notice": null

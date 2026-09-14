@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/answer-review.schema.json",
+  "title": "AnswerReview",
+  "description": "An additional model's reading of each claim of one answer against the passages that claim cites. It is not peer review or independent verification and never changes the answer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "reviews",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "deixis.answer_review.v1" },
+    "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
+    "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
+    "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "reviews": {
+      "type": "array",
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_label", "verdict", "reason"],
+        "properties": {
+          "claim_label": { "type": "string", "pattern": "^c[0-9]{1,3}$" },
+          "verdict": { "type": "string", "enum": ["supported", "partially_supported", "not_supported", "cannot_assess"] },
+          "reason": { "$ref": "common.schema.json#/$defs/short_text" }
+        }
+      }
+    },
+    "notes": { "type": "string", "maxLength": 1200 }
+  }
+}

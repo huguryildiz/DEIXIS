@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents.fetch import FetchResult
+from deixis.providers import scopus
 from deixis.storage import db
 from fakes import FakeAdapter, envelope, valid_response
 from helpers import make_pdf
@@ -85,6 +86,105 @@ def create(client, **overrides):
     return response.json()["research"]["id"]
 
 
+def test_trash_restore_and_permanent_delete_with_evidence(tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app) as raw:
+        client = session(raw)
+        rid = create(client, source_scope="attached")
+        uploaded = client.post(f"/api/researches/{rid}/uploads", files={"file": (
+            "notes.pdf", make_pdf(["SYNTHETIC molecule notes"]), "application/pdf"
+        )})
+        assert uploaded.status_code == 201
+        asset_id = uploaded.json()["sources"][0]["access"]["assets"][0]["id"]
+        assert client.get(f"/api/researches/{rid}/assets/{asset_id}").status_code == 200
+
+        assert client.delete(f"/api/researches/{rid}").json() == {"trashed": True}
+        assert rid not in [r["id"] for r in client.get("/api/researches").json()]
+        assert client.get(f"/api/researches/{rid}").status_code == 404
+        assert client.get(f"/api/researches/{rid}/assets/{asset_id}").status_code == 404
+        assert client.get(f"/api/researches/{rid}/bibliography").status_code == 404
+        assert client.get("/api/search", params={"q": "molecule"}).json() == {"researches": [], "sources": []}
+        assert client.get("/api/trash").json()[0]["id"] == rid
+        assert client.delete(f"/api/researches/{rid}").status_code == 404
+
+        assert client.post(f"/api/trash/{rid}/restore").json() == {"restored": True}
+        assert client.get(f"/api/researches/{rid}").status_code == 200
+        assert client.delete(f"/api/trash/{rid}").status_code == 404
+        assert client.delete(f"/api/researches/{rid}").status_code == 200
+        result = client.delete(f"/api/trash/{rid}")
+        assert result.status_code == 200, result.text
+        assert result.json() == {"deleted": True, "files_not_removed": []}
+        assert client.get("/api/trash").json() == []
+        assert client.get(f"/api/researches/{rid}").status_code == 404
+        assert client.get(f"/api/researches/{rid}/assets/{asset_id}").status_code == 404
+        assert client.delete(f"/api/trash/{rid}").status_code == 404
+        assert not list((tmp_path / "data" / "papers").glob("*.pdf"))
+        assert app.state.store.conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_trash_rejects_active_run_and_purge_removes_model_provenance(tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app) as raw:
+        client = session(raw)
+        rid = create(client)
+        queued = app.state.store.create_run(rid, "discovery", {}, None)
+        assert client.delete(f"/api/researches/{rid}").status_code == 409
+        assert client.get(f"/api/researches/{rid}").status_code == 200
+        app.state.store.update_run(queued["id"], status="cancelled")
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        view, _ = wait_run(client, rid, run["id"])
+        assert view["sources"]
+        assert app.state.store.conn.execute("SELECT COUNT(*) FROM step_inputs WHERE research_id = ?", (rid,)).fetchone()[0] > 0
+        assert client.delete(f"/api/researches/{rid}").status_code == 200
+        result = client.delete(f"/api/trash/{rid}")
+        assert result.status_code == 200, result.text
+        assert app.state.store.conn.execute("SELECT COUNT(*) FROM step_inputs WHERE research_id = ?", (rid,)).fetchone()[0] == 0
+        assert app.state.store.conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_permanent_delete_keeps_sources_shared_with_another_research(tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app) as raw:
+        client = session(raw)
+        first, second = create(client), create(client)
+        for rid in (first, second):
+            run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+            wait_run(client, rid, run["id"])
+        common = {s["source_version_id"] for s in client.get(f"/api/researches/{first}").json()["sources"]} & {
+            s["source_version_id"] for s in client.get(f"/api/researches/{second}").json()["sources"]
+        }
+        assert common
+        assert client.delete(f"/api/researches/{first}").status_code == 200
+        response = client.delete(f"/api/trash/{first}")
+        assert response.status_code == 200, response.text
+        surviving = client.get(f"/api/researches/{second}")
+        assert surviving.status_code == 200
+        assert common <= {s["source_version_id"] for s in surviving.json()["sources"]}
+        assert app.state.store.conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_institutional_access_is_checked_through_scopus_and_cached(tmp_path, monkeypatch):
+    calls, route = [], ["192.168.0.2"]
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={"search-results": {}})
+    monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
+    monkeypatch.setattr(scopus, "route_source", lambda: route[0])
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fake_fetch,
+                     extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as client:
+        assert client.get("/api/institutional-access").json()["status"] == "not_checked" and not calls
+        monkeypatch.setenv("SCOPUS_API_KEY", "SECRET")
+        assert client.get("/api/institutional-access?refresh=true").json() == {"status": "institutional", "via": "scopus"}
+        assert client.get("/api/institutional-access").json()["status"] == "institutional"
+        assert len(calls) == 1  # same route: answered from the cache
+        route[0] = "10.10.9.22"  # a VPN started routing Scopus traffic
+        client.get("/api/institutional-access")
+        assert len(calls) == 2
+
+
 def test_question_to_cited_answer_and_restart(tmp_path):
     adapter = FakeAdapter()
     with TestClient(app_for(tmp_path, adapter)) as client:
@@ -118,7 +218,8 @@ def test_question_to_cited_answer_and_restart(tmp_path):
         evidence = answer["claims"][0]["evidence"][0]
         assert evidence["source_version_id"] != second["source_version_id"]  # excluded source not given to the model
         given = adapter.calls[-1]
-        assert second["source_version_id"] not in given["allowlist"]["source_ids"]
+        assert second["title"] not in [s["title"] for s in given["sources"]]
+        assert given["passages"][0]["passage_id"] == "psg_P0000001"  # the model sees short handles, the answer keeps record IDs
 
         passage = client.get(f"/api/researches/{rid}/passages/{evidence['passage_id']}").json()
         assert passage["source"]["id"] == evidence["source_version_id"]
@@ -147,7 +248,7 @@ def test_invalid_output_is_repaired_once_then_kept_as_unverified_draft(tmp_path)
             return valid_response(si)
         return json.dumps(envelope(si, "deixis.grounded_answer_draft.v1") | {
             "answer_language": "en",
-            "claims": [{"claim_label": "c1", "text": "Invented", "support_type": "source_stated", "passage_ids": ["psg_INVENTED0001"]}],
+            "claims": [{"claim_label": "c1", "section": "Overview", "text": "It has been reported that X was invented.", "support_type": "source_stated", "passage_ids": ["psg_INVENTED0001"]}],
             "limitations": [], "unanswered_aspects": [], "capability_notice": None,
         })
 
@@ -163,6 +264,42 @@ def test_invalid_output_is_repaired_once_then_kept_as_unverified_draft(tmp_path)
         assert {i["code"] for i in answer["validation"]["issues"]} == {"unknown_passage_id"}
         assert len(adapter.calls) == 2  # original + one repair
         assert run["usage"]["model_calls"] == 2
+
+
+def test_invented_locator_in_claim_text_is_repaired_or_never_shown_as_cited(tmp_path):
+    # B: the first draft asserts a page and an equation; the repair attempt removes them.
+    def with_claim_text(si, text):
+        draft = json.loads(valid_response(si))
+        if si["task_type"] == "grounded_answer" and text:
+            draft["claims"][0]["text"] = text
+        return json.dumps(draft)
+
+    answers_given = []
+
+    def first_invents(si):
+        answers_given.append(si["task_type"])
+        invented = si["task_type"] == "grounded_answer" and answers_given.count("grounded_answer") == 1
+        return with_claim_text(si, "Equation 4 on page 12 proves the schedule is optimal." if invented else None)
+
+    adapter = FakeAdapter(first_invents)
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        rid = attached_research(client)
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        answer = view["answers"][0]
+        assert len(adapter.calls) == 2 and answer["status"] == "structurally_valid"
+        assert all("page 12" not in c["text"].lower() for c in answer["claims"])
+
+    always = FakeAdapter(lambda si: with_claim_text(si, "It has been reported on page 12 that X holds."))
+    with TestClient(app_for(tmp_path / "second", always)) as client:
+        session(client)
+        rid = attached_research(client)
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, _ = wait_run(client, rid, run["id"])
+        answer = view["answers"][0]
+        assert answer["status"] == "unverified_draft" and answer["claims"] == []
+        assert {i["code"] for i in answer["validation"]["issues"]} == {"locator_in_claim_text"}
 
 
 def test_attached_only_scope_never_searches(tmp_path):
@@ -256,6 +393,21 @@ def test_research_requires_an_explicit_listed_model(tmp_path):
         assert client.post("/api/researches", json=body).status_code == 422
         assert client.post("/api/researches", json=body | {"requested_model": "unlisted-model"}).status_code == 422
         assert client.post("/api/researches", json=body | {"requested_model": "fake-model"}).status_code == 201
+
+
+def test_reasoning_effort_must_be_listed_and_is_sent_with_every_model_step(tmp_path):
+    adapter = FakeAdapter(models=["fake-model"], efforts=["low", "high"])
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        body = {"question": "How is molecule release scheduling optimized?", "model_connection": "fake", "requested_model": "fake-model"}
+        assert client.post("/api/researches", json=body | {"reasoning_effort": "xhigh"}).status_code == 422
+        rid = create(client, source_scope="attached", reasoning_effort="high")
+        client.post(f"/api/researches/{rid}/uploads", files={"file": ("a.pdf", make_pdf(["SYNTHETIC molecule text"]), "application/pdf")})
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        assert run["status"] == "completed", run
+        assert view["scope"]["reasoning_effort"] == "high"
+        assert adapter.sent_efforts and set(adapter.sent_efforts) == {"high"}
 
 
 def test_output_from_another_model_is_recorded_but_not_used(tmp_path):
@@ -392,8 +544,8 @@ def test_submitted_and_published_versions_stay_separate_versions_of_one_work(tmp
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
         view, run = wait_run(client, rid, run["id"])
         assert run["status"] == "completed", run
-        given = {s["source_id"]: s for s in adapter.calls[-1]["sources"]}
-        assert given[manuscript["source_version_id"]]["work_id"] == given[record["source_version_id"]]["work_id"]
+        letters = [s for s in adapter.calls[-1]["sources"] if "letter" in s["title"]]
+        assert len(letters) == 2 and len({s["work_id"] for s in letters}) == 1
 
         evidence = view["answers"][0]["claims"][0]["evidence"][0]
         assert evidence["source_version_id"] == manuscript["source_version_id"] and evidence["kind"] == "pdf_page"
@@ -446,6 +598,49 @@ def test_quick_find_matches_researches_and_their_sources(tmp_path):
         assert client.get("/api/search", params={"q": "%"}).json() == {"researches": [], "sources": []}  # no wildcard matching
 
 
+def test_standard_depth_reads_more_results_screens_in_batches_and_gives_every_included_source(tmp_path):
+    from deixis.domain.rules import SCREENING_BATCH
+
+    seen, cited = [], {"base": 10}
+
+    def handler(request):
+        seen.append(request.url.params["per_page"])
+        works = [{"id": f"https://openalex.org/W{100 + i}", "doi": None, "display_name": f"SYNTHETIC molecule schedule study {i}",
+                  "publication_year": 2020, "type": "article", "authorships": [], "ids": {}, "primary_location": {},
+                  "best_oa_location": None, "abstract_inverted_index": {"Molecule": [0], "release": [1], f"schedule{i}.": [2]},
+                  "cited_by_count": cited["base"] + i} for i in range(45)]
+        return httpx.Response(200, json={"meta": {"count": 300}, "results": works})
+
+    adapter = FakeAdapter()
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": adapter},
+                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fake_fetch,
+                     extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as client:
+        session(client)
+        rid = create(client, effort="standard")
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        assert run["status"] == "completed", run
+        assert seen == ["25"] and view["search_runs"][0]["provider_total"] == 300
+        assert [len(c["candidates"]) for c in adapter.calls if c["task_type"] == "screening"] == [SCREENING_BATCH, 45 - SCREENING_BATCH]
+        assert view["counts"]["included"] == 45
+        first = next(s for s in view["sources"] if s["title"].endswith("study 0"))
+        assert first["cited_by_count"] == 10 and first["cited_by_count_at"]
+
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        assert run["status"] == "completed", run
+        assert len(adapter.calls[-1]["sources"]) == 45 and view["answers"][0]["inputs_given"]["sources"] == 45
+        assert all("cited_by_count" not in s for s in adapter.calls[-1]["sources"])  # shown to the user, not given to the model
+        passage = client.get(f"/api/researches/{rid}/passages/{first['access']['abstract_passage_id']}").json()
+        assert passage["source"]["cited_by_count"] == 10
+
+        cited["base"] = 50  # the provider reports newer counts when the records are found again
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        view, _ = wait_run(client, rid, run["id"])
+        assert next(s for s in view["sources"] if s["title"].endswith("study 0"))["cited_by_count"] == 50
+
+
 def test_upload_size_is_bounded_before_and_while_reading(tmp_path, monkeypatch):
     from deixis.api import app as app_module
 
@@ -479,3 +674,105 @@ def test_mutations_require_csrf_and_known_host(tmp_path):
                             http_client=openalex_client(), fetcher=fake_fetch, extra_hosts=("testserver",))
     with TestClient(remote_app) as remote:
         assert remote.get("/api/health").status_code == 403  # the test client's peer address is not loopback
+
+
+def run_to_end(client, rid, kind):
+    run = client.post(f"/api/researches/{rid}/runs", json={"kind": kind}).json()
+    view, run = wait_run(client, rid, run["id"])
+    assert run["status"] == "completed", run
+    return view
+
+
+def test_literature_model_runs_search_steps_and_the_research_model_writes_the_answer(tmp_path):
+    adapter = FakeAdapter(models=["answer-model", "lit-model"], efforts=["low", "high"])
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        rid = create(client, requested_model="answer-model", reasoning_effort="high",
+                     literature_model="lit-model", literature_reasoning_effort="low")
+        run_to_end(client, rid, "discovery")
+        view = run_to_end(client, rid, "answer")
+        assert set(adapter.sent) == {("search_plan", "lit-model", "low"), ("screening", "lit-model", "low"),
+                                     ("grounded_answer", "answer-model", "high")}
+        assert view["answers"][0]["review"] is None and view["reviewer"]["model"] is None  # no reviewer set anywhere
+        revised = client.post(f"/api/researches/{rid}/scope", json={"question": "How is molecule release timing optimized?",
+                                                                    "expected_version": view["research"]["version"]}).json()
+        assert (revised["scope"]["literature_model"], revised["scope"]["literature_reasoning_effort"]) == ("lit-model", "low")
+
+
+def test_research_without_a_literature_model_searches_with_its_research_model(tmp_path):
+    adapter = FakeAdapter(models=["fake-model"])
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        run_to_end(client, create(client), "discovery")
+        assert {model for _, model, _ in adapter.sent} == {"fake-model"}
+
+
+def test_role_models_must_be_listed_and_complete(tmp_path):
+    with TestClient(app_for(tmp_path, FakeAdapter(models=["fake-model"], efforts=["low"]))) as client:
+        session(client)
+        body = {"question": "How is molecule release scheduling optimized?", "model_connection": "fake", "requested_model": "fake-model"}
+        for bad in ({"literature_model": "unlisted"}, {"literature_model": "fake-model", "literature_reasoning_effort": "xhigh"},
+                    {"literature_reasoning_effort": "low"}, {"review_mode": "custom"}, {"review_mode": "custom", "review_model": "unlisted"},
+                    {"review_model": "fake-model"}, {"review_mode": "off", "review_reasoning_effort": "low"}):
+            assert client.post("/api/researches", json=body | bad).status_code == 422, bad
+        assert client.put("/api/settings/reviewer", json={"model_connection": "fake", "model": "unlisted"}).status_code == 422
+        assert client.put("/api/settings/reviewer", json={"model_connection": "fake", "reasoning_effort": "low"}).status_code == 422
+        assert client.put("/api/settings/reviewer", json={"model_connection": "nope", "model": "fake-model"}).status_code == 422
+
+
+def test_model_defaults_are_kept_per_role_and_must_be_listed(tmp_path):
+    with TestClient(app_for(tmp_path, FakeAdapter(models=["fake-model"], efforts=["low"]))) as client:
+        session(client)
+        assert {role: s["model"] for role, s in client.get("/api/settings").json().items()} == {"answer": None, "literature": None, "reviewer": None}
+        saved = client.put("/api/settings/answer", json={"model_connection": "fake", "model": "fake-model", "reasoning_effort": "low"})
+        assert saved.status_code == 200
+        settings = client.get("/api/settings").json()
+        assert (settings["answer"]["model"], settings["answer"]["reasoning_effort"]) == ("fake-model", "low")
+        assert settings["literature"]["model"] is None and settings["reviewer"]["model"] is None  # roles do not share a default
+        assert client.put("/api/settings/literature", json={"model_connection": "fake", "model": "unlisted"}).status_code == 422
+        assert client.put("/api/settings/writer", json={"model_connection": "fake", "model": "fake-model"}).status_code == 422
+
+
+def test_app_wide_reviewer_reviews_every_research_and_a_research_setting_overrides_it(tmp_path):
+    adapter = FakeAdapter(models=["fake-model", "review-model", "other-reviewer"], efforts=["high"])
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        assert client.get("/api/settings").json()["reviewer"]["model"] is None
+        saved = client.put("/api/settings/reviewer", json={"model_connection": "fake", "model": "review-model", "reasoning_effort": "high"})
+        assert saved.status_code == 200 and client.get("/api/settings").json()["reviewer"]["model"] == "review-model"
+
+        def answered(**overrides):
+            rid = create(client, source_scope="attached", **overrides)
+            client.post(f"/api/researches/{rid}/uploads", files={"file": ("a.pdf", make_pdf(["SYNTHETIC molecule release schedule"]), "application/pdf")})
+            return run_to_end(client, rid, "answer")
+
+        view = answered()
+        review = view["answers"][0]["review"]
+        assert review["status"] == "completed" and review["model"]["requested_model"] == "review-model"
+        assert view["answers"][0]["status"] == "structurally_valid"
+        assert all(c["review"]["verdict"] == "supported" for c in view["answers"][0]["claims"])
+        assert view["reviewer"] == {"mode": "default", "model": "review-model", "reasoning_effort": "high"}
+        assert ("answer_review", "review-model", "high") in adapter.sent
+
+        custom = answered(review_mode="custom", review_model="other-reviewer")
+        assert custom["answers"][0]["review"]["model"]["requested_model"] == "other-reviewer"
+
+        adapter.sent.clear()
+        off = answered(review_mode="off")
+        assert off["answers"][0]["review"] is None and off["reviewer"]["model"] is None
+        assert off["answers"][0]["claims"][0]["review"] is None
+        assert [task for task, _, _ in adapter.sent] == ["grounded_answer"]
+
+
+def test_a_failed_review_is_recorded_without_pausing_or_changing_the_answer(tmp_path):
+    adapter = FakeAdapter(responder=lambda si: "not json" if si["task_type"] == "answer_review" else valid_response(si),
+                          models=["fake-model"])
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        client.put("/api/settings/reviewer", json={"model_connection": "fake", "model": "fake-model"})
+        view = run_to_end(client, attached_research(client), "answer")  # completed, not paused
+        answer = view["answers"][0]
+        assert answer["status"] == "structurally_valid" and answer["claims"]
+        assert answer["review"]["status"] == "failed" and answer["review"]["failure_reason"] == "invalid_model_output"
+        assert answer["review"]["issues"] and answer["claims"][0]["review"] is None
+        assert [task for task, _, _ in adapter.sent].count("answer_review") == 2  # one repair, as for every model step

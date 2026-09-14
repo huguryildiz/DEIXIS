@@ -166,10 +166,13 @@ class CodexAppServer:
         output_schema: dict[str, Any] | None,
         timeout: float = 300.0,
         on_started: Callable[[str], Awaitable[None]] | None = None,
+        effort: str | None = None,
     ) -> TurnResult:
         params: dict[str, Any] = {"threadId": thread_id, "input": [{"type": "text", "text": text}]}
         if output_schema is not None:
             params["outputSchema"] = output_schema
+        if effort is not None:
+            params["effort"] = effort
         started = await self.request("turn/start", params)
         turn_id = started["turn"]["id"]
         result = TurnResult(turn_id=turn_id, status="inProgress")

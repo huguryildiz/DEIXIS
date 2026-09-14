@@ -32,7 +32,16 @@ def test_runtime_text_loads_only_declared_files():
     text = package.runtime_text("grounded_answer")
     assert '<method-file path="SKILL.md">' in text
     assert '<method-file path="references/source-grounded-answer.md">' in text
+    assert f'<method-file path="{skill.PHRASEBANK}">' in text
     assert "provenance.json" not in text
+    # Only the answer step writes report prose, so only it carries the phrasebank.
+    assert skill.PHRASEBANK not in package.runtime_text("screening")
+    assert skill.PHRASEBANK not in package.runtime_text("search_plan")
+    review = package.runtime_text("answer_review")
+    assert '<method-file path="references/answer-review.md">' in review and skill.PHRASEBANK not in review
+    # The raw file's `tr:` lines never reach the model; a Turkish answer gets the rendered Turkish frames.
+    assert "\ntr: " not in text
+    assert "literal Turkish renderings" in package.runtime_text("grounded_answer", "tr")
 
 
 def test_skill_does_not_advertise_unsupported_modes_as_available():

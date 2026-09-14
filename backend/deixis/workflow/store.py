@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from typing import Any
 
@@ -17,6 +18,11 @@ from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
+MIN_TITLE_KEY_CHARS = 12  # shorter normalized titles ("Introduction") say too little to suspect a duplicate
+
+
+def title_key(title: str | None) -> str:
+    return re.sub(r"\W+", " ", (title or "").casefold()).strip()
 
 
 class NotFound(Exception):
@@ -52,6 +58,12 @@ class Store:
         model_connection: str,
         requested_model: str | None,
         language_hint: str | None,
+        reasoning_effort: str | None = None,
+        literature_model: str | None = None,
+        literature_reasoning_effort: str | None = None,
+        review_mode: str = "default",
+        review_model: str | None = None,
+        review_reasoning_effort: str | None = None,
     ) -> str:
         rid, ts = new_id("res"), now()
         title = question.strip().splitlines()[0][:160]
@@ -61,17 +73,103 @@ class Store:
             )
             self.conn.execute(
                 "INSERT INTO scope_revisions (research_id, revision, question, language_hint, source_scope, providers_json,"
-                " effort, model_connection, requested_model, created_at) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (rid, question.strip(), language_hint, source_scope, dumps(providers), effort, model_connection, requested_model, ts),
+                " effort, model_connection, requested_model, reasoning_effort, literature_model, literature_reasoning_effort,"
+                " review_mode, review_model, review_reasoning_effort, created_at) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (rid, question.strip(), language_hint, source_scope, dumps(providers), effort, model_connection, requested_model,
+                 reasoning_effort, literature_model, literature_reasoning_effort, review_mode, review_model, review_reasoning_effort, ts),
             )
             self._event(rid, "research_created", {"scope_revision": 1})
         return rid
 
     def research(self, research_id: str) -> dict[str, Any]:
-        row = self.conn.execute("SELECT * FROM researches WHERE id = ?", (research_id,)).fetchone()
+        row = self.conn.execute("SELECT * FROM researches WHERE id = ? AND trashed_at IS NULL", (research_id,)).fetchone()
         if row is None:
             raise NotFound(research_id)
         return dict(row)
+
+    def trash_research(self, research_id: str) -> None:
+        """Move a research to trash; active work must be finished or cancelled first."""
+        with transaction(self.conn):
+            self.research(research_id)
+            active = self.conn.execute(
+                "SELECT 1 FROM runs WHERE research_id = ? AND status IN ('queued', 'running', 'pause_requested') LIMIT 1",
+                (research_id,),
+            ).fetchone()
+            if active:
+                raise RevisionConflict("Cancel or finish active runs before trashing this research")
+            self.conn.execute("UPDATE researches SET trashed_at = ? WHERE id = ?", (now(), research_id))
+
+    def list_trash(self) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT id, title, trashed_at FROM researches WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC"
+        )]
+
+    def restore_research(self, research_id: str) -> None:
+        with transaction(self.conn):
+            result = self.conn.execute(
+                "UPDATE researches SET trashed_at = NULL WHERE id = ? AND trashed_at IS NOT NULL", (research_id,)
+            )
+            if not result.rowcount:
+                raise NotFound(research_id)
+
+    def purge_research(self, research_id: str) -> tuple[list[str], list[str]]:
+        """Delete a trashed research and unshared source records; return orphaned file paths for cleanup."""
+        with transaction(self.conn):
+            row = self.conn.execute("SELECT trashed_at FROM researches WHERE id = ?", (research_id,)).fetchone()
+            if row is None or row["trashed_at"] is None:
+                raise NotFound(research_id)
+            active = self.conn.execute(
+                "SELECT 1 FROM runs WHERE research_id = ? AND status IN ('queued', 'running', 'pause_requested') LIMIT 1",
+                (research_id,),
+            ).fetchone()
+            if active:
+                raise RevisionConflict("Active runs prevent permanent deletion")
+            source_ids = [r[0] for r in self.conn.execute(
+                "SELECT source_version_id FROM corpus_memberships WHERE research_id = ? UNION "
+                "SELECT source_version_id FROM candidates WHERE research_id = ?", (research_id, research_id)
+            )]
+            payloads = [r[0] for r in self.conn.execute(
+                "SELECT raw_payload_path FROM search_runs WHERE research_id = ? AND raw_payload_path IS NOT NULL",
+                (research_id,),
+            )]
+            self.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (research_id,))
+            self.conn.execute("DELETE FROM evidence_links WHERE claim_id IN (SELECT id FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?))", (research_id,))
+            self.conn.execute("DELETE FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?)", (research_id,))
+            for table in ("answer_reviews", "answers", "model_sessions", "step_inputs", "candidates", "search_runs",
+                          "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events"):
+                self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
+            self.conn.execute("DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
+            for table in ("runs", "scope_revisions"):
+                self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
+            self.conn.execute("DELETE FROM researches WHERE id = ?", (research_id,))
+            self.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (research_id,))
+            orphan_files: list[str] = []
+            for source_id in source_ids:
+                # A provider source may be shared by another research. Keep its evidence and files in that case.
+                shared = self.conn.execute(
+                    "SELECT 1 FROM corpus_memberships WHERE source_version_id = ? UNION SELECT 1 FROM candidates WHERE source_version_id = ? LIMIT 1",
+                    (source_id, source_id),
+                ).fetchone()
+                if shared:
+                    continue
+                source = self.conn.execute("SELECT work_id, provider_payload_path FROM source_versions WHERE id = ?", (source_id,)).fetchone()
+                if source is None:
+                    continue
+                if source["provider_payload_path"]:
+                    payloads.append(source["provider_payload_path"])
+                orphan_files.extend(r[0] for r in self.conn.execute("SELECT storage_path FROM source_assets WHERE source_version_id = ?", (source_id,)))
+                self.conn.execute("DELETE FROM identifier_mappings WHERE source_version_id = ?", (source_id,))
+                self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (source_id,))
+                self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (source_id,))
+                self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (source_id,))
+                self.conn.execute("DELETE FROM source_versions WHERE id = ?", (source_id,))
+                self.conn.execute("DELETE FROM works WHERE id = ? AND NOT EXISTS (SELECT 1 FROM source_versions WHERE work_id = ?)", (source["work_id"], source["work_id"]))
+            # Files are content-addressed and may be referenced by another asset or search run.
+            orphan_files = [p for p in set(orphan_files) if not self.conn.execute("SELECT 1 FROM source_assets WHERE storage_path = ?", (p,)).fetchone()]
+            payloads = [p for p in set(payloads) if not self.conn.execute(
+                "SELECT 1 FROM search_runs WHERE raw_payload_path = ? UNION SELECT 1 FROM source_versions WHERE provider_payload_path = ?", (p, p)
+            ).fetchone()]
+        return orphan_files, payloads
 
     def selection_revision(self, research_id: str) -> int:
         return self.research(research_id)["selection_revision"]
@@ -86,6 +184,7 @@ class Store:
             " (SELECT status FROM runs WHERE research_id = r.id ORDER BY created_at DESC LIMIT 1) AS last_run_status,"
             " (SELECT COUNT(*) FROM answers WHERE research_id = r.id AND status = 'structurally_valid') AS answer_count"
             " FROM researches r JOIN scope_revisions s ON s.research_id = r.id AND s.revision = r.current_scope_revision"
+            " WHERE r.trashed_at IS NULL"
             " ORDER BY r.updated_at DESC"
         ).fetchall()
         return [dict(r) for r in rows]
@@ -95,13 +194,13 @@ class Store:
         researches = self.conn.execute(
             "SELECT r.id, r.title, s.question, r.updated_at FROM researches r"
             " JOIN scope_revisions s ON s.research_id = r.id AND s.revision = r.current_scope_revision"
-            " WHERE instr(lower(r.title), lower(?)) > 0 OR instr(lower(s.question), lower(?)) > 0"
+            " WHERE r.trashed_at IS NULL AND (instr(lower(r.title), lower(?)) > 0 OR instr(lower(s.question), lower(?)) > 0)"
             " ORDER BY r.updated_at DESC LIMIT ?", (text, text, limit)
         ).fetchall()
         sources = self.conn.execute(
             "SELECT v.id AS source_version_id, v.title, v.year, v.version_label, m.research_id, r.title AS research_title"
             " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id JOIN researches r ON r.id = m.research_id"
-            " WHERE instr(lower(v.title), lower(?)) > 0 ORDER BY r.updated_at DESC, v.title LIMIT ?", (text, limit * 2)
+            " WHERE r.trashed_at IS NULL AND instr(lower(v.title), lower(?)) > 0 ORDER BY r.updated_at DESC, v.title LIMIT ?", (text, limit * 2)
         ).fetchall()
         return {"researches": [dict(r) for r in researches], "sources": [dict(r) for r in sources]}
 
@@ -125,9 +224,13 @@ class Store:
             revision = research["current_scope_revision"] + 1
             self.conn.execute(
                 "INSERT INTO scope_revisions (research_id, revision, question, language_hint, source_scope, providers_json,"
-                " effort, model_connection, requested_model, steering, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " effort, model_connection, requested_model, reasoning_effort, literature_model, literature_reasoning_effort,"
+                " review_mode, review_model, review_reasoning_effort, steering, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (research_id, revision, question.strip(), current["language_hint"], current["source_scope"],
-                 dumps(current["providers"]), current["effort"], current["model_connection"], current["requested_model"], steering, now()),
+                 dumps(current["providers"]), current["effort"], current["model_connection"], current["requested_model"],
+                 current["reasoning_effort"], current["literature_model"], current["literature_reasoning_effort"],
+                 current["review_mode"], current["review_model"], current["review_reasoning_effort"], steering, now()),
             )
             self.conn.execute(
                 "UPDATE researches SET current_scope_revision = ?, version = version + 1, title = ?, updated_at = ? WHERE id = ?",
@@ -307,14 +410,29 @@ class Store:
         return row["source_version_id"] if row else None
 
     def upsert_provider_source(self, provider: str, record: Any, payload_path: str | None) -> tuple[str, bool]:
-        """Reuse only an exact provider-record mapping; DOI or title matches never merge records here.
+        """Reuse the provider's own record mapping, else a source version with the same normalized DOI.
 
-        Other versions the provider lists for the record become separate source versions of the same work.
+        A DOI names one registered version, so the same DOI from several providers is one source version with a mapping
+        per provider. A record whose DOI covers several file versions (`merge_by_doi` false, e.g. arXiv) never merges,
+        and title matches never merge; `record_search` flags those as suspected duplicates. Other versions the provider
+        lists for the record become separate source versions of the same work.
         """
         existing = self.find_source_by_identifier(provider, record.provider_record_id)
+        if existing is None and record.doi and record.merge_by_doi:
+            existing = self.find_source_by_identifier("doi", record.doi)
         with transaction(self.conn):
             if existing:
                 svid, wid = existing, self.source(existing)["work_id"]
+                self._insert_mappings(svid, provider, record, now())
+                has_abstract = self.conn.execute(
+                    "SELECT 1 FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (svid,)
+                ).fetchone()
+                if record.abstract and not has_abstract:
+                    self._insert_passage(svid, None, "abstract", None, None, record.abstract_origin, payload_path, None, record.abstract)
+                if record.cited_by_count is not None:
+                    # A citation count changes over time; the latest retrieval replaces it, with its date.
+                    self.conn.execute("UPDATE source_versions SET cited_by_count = ?, cited_by_count_at = ? WHERE id = ?",
+                                      (record.cited_by_count, now(), svid))
             else:
                 svid, wid = self._insert_provider_record(provider, record, payload_path)
             for other in record.other_versions:
@@ -349,20 +467,28 @@ class Store:
         self.conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (wid, ts))
         self.conn.execute(
             "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label, publication_type, doi,"
-            " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provider', ?, ?)",
+            " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at, cited_by_count, cited_by_count_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provider', ?, ?, ?, ?)",
             (svid, wid, record.title, dumps(record.authors), record.year, record.venue, record.version_label,
-             record.publication_type, record.doi, record.landing_url, record.oa_pdf_url, record.oa_pdf_version, payload_path, ts),
+             record.publication_type, record.doi, record.landing_url, record.oa_pdf_url, record.oa_pdf_version, payload_path, ts,
+             record.cited_by_count, ts if record.cited_by_count is not None else None),
         )
-        mappings = [(provider, record.provider_record_id)] + ([("doi", record.doi)] if record.doi else [])
+        self._insert_mappings(svid, provider, record, ts)
+        if record.abstract:
+            self._insert_passage(svid, None, "abstract", None, None, record.abstract_origin, payload_path, None, record.abstract)
+        return svid, wid
+
+    def _insert_mappings(self, svid: str, provider: str, record: Any, ts: str) -> None:
+        mappings = [(provider, record.provider_record_id)]
+        if record.doi and record.merge_by_doi:
+            mappings.append(("doi", record.doi))
+        if record.identifiers.get("published_doi"):
+            mappings.append(("published_doi", record.identifiers["published_doi"]))
         for scheme, value in mappings:
             self.conn.execute(
                 "INSERT OR IGNORE INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at) VALUES (?, ?, ?, ?, ?)",
                 (svid, scheme, value, provider, ts),
             )
-        if record.abstract:
-            self._insert_passage(svid, None, "abstract", None, None, record.abstract_origin, payload_path, None, record.abstract)
-        return svid, wid
 
     def create_upload_source(self, title: str) -> str:
         ts, wid, svid = now(), new_id("wrk"), new_id("srv")
@@ -433,14 +559,60 @@ class Store:
         """Commit the search run, normalized sources, candidates and the step outcome together."""
         with transaction(self.conn):
             srid = self.add_search_run(**search_fields)
+            found = []
             for rank, record in enumerate(records):
                 svid, _ = self.upsert_provider_source(provider, record, payload_path)
+                found.append(svid)
                 self.add_to_corpus(search_fields["research_id"], svid, "search", srid, rank, scope_revision=search_fields["scope_revision"])
                 for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
                     self.add_to_corpus(search_fields["research_id"], other, "search", srid, candidate=False)
+            self._flag_suspected_duplicates(search_fields["research_id"], found)
             output = {**step_output, "search_run_id": srid} if step_output is not None else None
             self.finish_step(step_id, step_status, output=output, **step_fields)
         return srid
+
+    def _flag_suspected_duplicates(self, research_id: str, svids: list[str]) -> None:
+        """Record candidates of other works that may be the same publication; nothing is merged."""
+        rows = {r["id"]: r for r in self.conn.execute(
+            "SELECT v.id, v.work_id, v.title, v.doi FROM candidates c JOIN source_versions v ON v.id = c.source_version_id"
+            " WHERE c.research_id = ?", (research_id,)
+        )}
+        by_title: dict[str, list[str]] = {}
+        for row in rows.values():
+            by_title.setdefault(title_key(row["title"]), []).append(row["id"])
+        pairs = set()
+        for svid in dict.fromkeys(svids):
+            if svid not in rows:
+                continue
+            key = title_key(rows[svid]["title"])
+            if len(key) >= MIN_TITLE_KEY_CHARS:
+                pairs |= {(svid, other, "same_title") for other in by_title[key]}
+            doi = rows[svid]["doi"]
+            linked = self.conn.execute(
+                "SELECT source_version_id FROM identifier_mappings WHERE scheme = 'published_doi' AND value = ?", (doi,)
+            ).fetchall() if doi else []
+            linked += self.conn.execute(
+                "SELECT d.source_version_id FROM identifier_mappings p JOIN identifier_mappings d"
+                " ON d.scheme = 'doi' AND d.value = p.value WHERE p.scheme = 'published_doi' AND p.source_version_id = ?", (svid,)
+            ).fetchall()
+            pairs |= {(svid, r[0], "published_doi") for r in linked}
+        ts = now()
+        for a, b, basis in pairs:
+            if b in rows and rows[a]["work_id"] != rows[b]["work_id"]:
+                first, second = sorted((a, b))
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO suspected_duplicates (research_id, source_version_id, other_source_version_id, basis, created_at)"
+                    " VALUES (?, ?, ?, ?, ?)", (research_id, first, second, basis, ts),
+                )
+
+    def suspected_duplicates(self, research_id: str) -> dict[str, list[dict[str, str]]]:
+        result: dict[str, list[dict[str, str]]] = {}
+        for r in self.conn.execute(
+            "SELECT source_version_id, other_source_version_id, basis FROM suspected_duplicates WHERE research_id = ?", (research_id,)
+        ):
+            result.setdefault(r[0], []).append({"source_version_id": r[1], "basis": r[2]})
+            result.setdefault(r[1], []).append({"source_version_id": r[0], "basis": r[2]})
+        return result
 
     def add_search_run(self, **fields: Any) -> str:
         srid = new_id("srn")
@@ -463,11 +635,15 @@ class Store:
                 (research_id, svid, added_by, ts),
             )
             if added_by == "search" and candidate:
-                # A record found again under a newer question revision becomes a candidate of that revision.
+                # A record found again under a newer question revision becomes a candidate of that revision; found again
+                # under the same revision (another query or provider), it keeps its best rank and the search that gave it.
                 self.conn.execute(
                     "INSERT INTO candidates (id, research_id, search_run_id, source_version_id, rank, scope_revision, created_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (research_id, source_version_id) DO UPDATE SET"
-                    " search_run_id = excluded.search_run_id, rank = excluded.rank, scope_revision = excluded.scope_revision",
+                    " search_run_id = CASE WHEN candidates.scope_revision = excluded.scope_revision AND candidates.rank <= excluded.rank"
+                    " THEN candidates.search_run_id ELSE excluded.search_run_id END,"
+                    " rank = CASE WHEN candidates.scope_revision = excluded.scope_revision AND candidates.rank <= excluded.rank"
+                    " THEN candidates.rank ELSE excluded.rank END, scope_revision = excluded.scope_revision",
                     (new_id("cnd"), research_id, search_run_id, svid, rank, scope_revision, ts),
                 )
             inserted = self.conn.execute(
@@ -487,13 +663,17 @@ class Store:
         ).fetchone() is not None
 
     def candidates(self, research_id: str, scope_revision: int | None = None) -> list[dict[str, Any]]:
-        """Candidates of one question revision (all when None); ones without a proposal come first."""
+        """Candidates of one question revision (all when None); ones without a proposal come first.
+
+        Within that, candidates interleave by their rank in their search, so a candidate limit keeps every query's
+        first results instead of only the earliest query's.
+        """
         revision_filter = " AND c.scope_revision = ?" if scope_revision is not None else ""
         params = (research_id, scope_revision) if scope_revision is not None else (research_id,)
         rows = self.conn.execute(
             "SELECT c.id AS candidate_id, c.source_version_id, c.rank, s.state, s.origin FROM candidates c"
             " JOIN selections s ON s.research_id = c.research_id AND s.source_version_id = c.source_version_id"
-            f" WHERE c.research_id = ?{revision_filter} ORDER BY s.proposal IS NOT NULL, c.created_at, c.rank", params
+            f" WHERE c.research_id = ?{revision_filter} ORDER BY s.proposal IS NOT NULL, c.rank, c.created_at", params
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -551,6 +731,23 @@ class Store:
         return [r[0] for r in self.conn.execute(
             "SELECT source_version_id FROM selections WHERE research_id = ? AND state = 'included' ORDER BY updated_at", (research_id,)
         )]
+
+    def answer_order_facts(self, research_id: str, svids: list[str]) -> dict[str, tuple[bool, int]]:
+        """Per source: whether the user chose its selection, and how many providers returned a record of it.
+
+        bioRxiv is searched through OpenAlex, so the two count as one provider.
+        """
+        facts = {}
+        for svid in svids:
+            origin = self.conn.execute(
+                "SELECT origin FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
+            ).fetchone()
+            providers = self.conn.execute(
+                "SELECT COUNT(DISTINCT CASE provider WHEN 'biorxiv' THEN 'openalex' ELSE provider END) FROM identifier_mappings"
+                " WHERE source_version_id = ? AND scheme = provider", (svid,)
+            ).fetchone()[0]
+            facts[svid] = (origin is not None and origin["origin"] == "user", providers)
+        return facts
 
     def passages_for(self, svid: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.conn.execute(
@@ -619,8 +816,8 @@ class Store:
                     cid = new_id("clm")
                     claim_ids[claim["claim_label"]] = cid
                     self.conn.execute(
-                        "INSERT INTO claims (id, answer_id, label, ordinal, text, support_type) VALUES (?, ?, ?, ?, ?, ?)",
-                        (cid, aid, claim["claim_label"], ordinal, claim["text"], claim["support_type"]),
+                        "INSERT INTO claims (id, answer_id, label, ordinal, text, support_type, section) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (cid, aid, claim["claim_label"], ordinal, claim["text"], claim["support_type"], claim.get("section")),
                     )
                 for link in links or []:
                     self.conn.execute(
@@ -630,3 +827,36 @@ class Store:
             self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (now(), research_id))
             self._event(research_id, "answer_saved", {"answer_id": aid, "status": status}, run_id)
         return aid
+
+    def answer_review(self, answer_id: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT * FROM answer_reviews WHERE answer_id = ?", (answer_id,)).fetchone()
+        if row is None:
+            return None
+        review = dict(row)
+        review["review"] = json.loads(review.pop("review_json")) if review["review_json"] else None
+        return review
+
+    def save_answer_review(self, answer_id: str, research_id: str, run_id: str, step_id: str | None, step_input_id: str | None,
+                           status: str, review: dict[str, Any] | None, failure_reason: str | None = None) -> None:
+        with transaction(self.conn):
+            inserted = self.conn.execute(
+                "INSERT OR IGNORE INTO answer_reviews (id, answer_id, research_id, run_id, step_id, step_input_id, status,"
+                " failure_reason, review_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (new_id("rvw"), answer_id, research_id, run_id, step_id, step_input_id, status, failure_reason,
+                 dumps(review) if review is not None else None, now()),
+            ).rowcount
+            if inserted:  # a resumed run finds the review it already saved
+                self._event(research_id, "answer_reviewed", {"answer_id": answer_id, "status": status, "failure_reason": failure_reason}, run_id)
+
+    # ---- app settings -----------------------------------------------------------------------
+    def setting(self, key: str) -> Any:
+        row = self.conn.execute("SELECT value_json FROM app_settings WHERE key = ?", (key,)).fetchone()
+        return json.loads(row["value_json"]) if row else None
+
+    def set_setting(self, key: str, value: Any) -> None:
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+                (key, dumps(value), now()),
+            )

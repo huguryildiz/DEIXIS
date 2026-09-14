@@ -6,6 +6,7 @@ Test defaults here are P1 configuration, not measured product defaults.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 MAX_SCHEMA_REPAIRS = 1
 MAX_ACTIVE_MODEL_CALLS = 1
@@ -18,13 +19,19 @@ class EffortBudget:
     max_provider_requests: int
     max_candidates: int
     max_answer_passages: int
+    results_per_query: int
 
 
-# Effort presets bound work; they are not paper-count or accuracy guarantees.
+# Screening proposals are requested for at most this many candidates per model call.
+SCREENING_BATCH = 40
+
+# Effort presets bound work; they are not paper-count or accuracy guarantees. Model calls cover the search plan, one
+# screening call per SCREENING_BATCH candidates and the answer, each with its one schema repair. Provider requests are
+# the plan's query limit; with several providers enabled, one query per relevant provider needs room.
 TEST_EFFORT_BUDGETS = {
-    "quick": EffortBudget(max_model_calls=4, max_provider_requests=2, max_candidates=15, max_answer_passages=8),
-    "standard": EffortBudget(max_model_calls=6, max_provider_requests=4, max_candidates=30, max_answer_passages=14),
-    "detailed": EffortBudget(max_model_calls=8, max_provider_requests=6, max_candidates=50, max_answer_passages=20),
+    "quick": EffortBudget(max_model_calls=6, max_provider_requests=3, max_candidates=20, max_answer_passages=16, results_per_query=10),
+    "standard": EffortBudget(max_model_calls=12, max_provider_requests=8, max_candidates=150, max_answer_passages=48, results_per_query=25),
+    "detailed": EffortBudget(max_model_calls=14, max_provider_requests=12, max_candidates=200, max_answer_passages=80, results_per_query=25),
 }
 
 
@@ -48,6 +55,34 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
     if step_selection_revision is not None and step_selection_revision != current_selection_revision:
         return "stale_selection"
     return "current"
+
+
+LITERATURE_TASKS = ("search_plan", "screening")
+
+
+def step_model(scope: dict[str, Any], task_type: str) -> tuple[str, str | None, str | None]:
+    """(connection, model, reasoning effort) for a research's search and answer steps.
+
+    A research without a literature model (created before D14) runs its search steps on the research model.
+    """
+    if task_type in LITERATURE_TASKS and scope.get("literature_model"):
+        return scope["model_connection"], scope["literature_model"], scope.get("literature_reasoning_effort")
+    return scope["model_connection"], scope["requested_model"], scope.get("reasoning_effort")
+
+
+def effective_reviewer(scope: dict[str, Any], default: dict[str, Any] | None) -> tuple[str, str, str | None] | None:
+    """(connection, model, reasoning effort) that reviews this research's answers, or None when nothing reviews them.
+
+    A research's own reviewer setting wins; 'default' follows the app-wide setting as it is when the review starts.
+    """
+    mode = scope.get("review_mode") or "default"
+    if mode == "off":
+        return None
+    if mode == "custom":
+        return scope["model_connection"], scope["review_model"], scope.get("review_reasoning_effort")
+    if default and default.get("model"):
+        return default["model_connection"], default["model"], default.get("reasoning_effort")
+    return None
 
 
 def after_invalid_output(repairs_used: int) -> str:

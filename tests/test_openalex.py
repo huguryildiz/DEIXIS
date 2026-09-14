@@ -19,6 +19,7 @@ WORK = {
     "best_oa_location": {"pdf_url": "https://example.org/a.pdf", "version": "acceptedVersion"},
     "open_access": {"is_oa": True},
     "abstract_inverted_index": {"We": [0], "schedule": [1], "release": [2], "times.": [3]},
+    "cited_by_count": 17,
 }
 
 
@@ -46,6 +47,7 @@ def test_success_normalizes_record_and_reconstructs_abstract():
     assert record.abstract_origin == openalex.ABSTRACT_ORIGIN
     assert record.version_label == "publishedVersion" and record.oa_pdf_url.endswith(".pdf")
     assert record.oa_pdf_version == "acceptedVersion"  # kept separate from the primary location's version
+    assert record.cited_by_count == 17 and "cited_by_count" in seen["url"]
     assert [(o.version_label, o.pdf_url) for o in record.other_versions] == [("acceptedVersion", "https://example.org/a.pdf")]
     assert "search.title_and_abstract=molecular" in seen["url"]
     assert "SECRET-KEY-VALUE" not in seen["url"]

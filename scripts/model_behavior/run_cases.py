@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from deixis.config import load_settings
-from deixis.domain import contracts
+from deixis.domain import contracts, phrasebank
 from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
 from deixis.models.adapter import CodexAdapter
@@ -78,7 +78,8 @@ def automatic_checks(case_id: str, output: dict[str, Any] | None, raw: str) -> d
 async def run_one(adapter: CodexAdapter, package, si: dict[str, Any]) -> dict[str, Any]:
     assert not contracts.check_step_input(si), contracts.check_step_input(si)
     result = await adapter.run_step(
-        prompt.BASE_INSTRUCTIONS, prompt.developer_instructions(package, si["task_type"]), prompt.step_message(si),
+        prompt.BASE_INSTRUCTIONS, prompt.developer_instructions(package, si["task_type"], phrasebank.frames_language(si)),
+        prompt.step_message(si),
         contracts.step_output_schema(si["task_type"]), si["model"]["requested_model"],
     )
     raw = result.raw_text or ""

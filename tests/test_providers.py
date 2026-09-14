@@ -1,0 +1,279 @@
+"""Scholarly provider adapters against mocked HTTP: one test matrix per connection. Live access is checked separately."""
+
+import asyncio
+import json
+
+import httpx
+import pytest
+
+from deixis.providers import arxiv, biorxiv, common, crossref, ieee_xplore, openalex, scopus, semantic_scholar, serpapi
+from deixis.providers.registry import CONNECTORS, available_providers
+
+SECRET = "SECRET-KEY-VALUE"
+DOI = "10.1109/SYNTH.2021.1"
+
+ARXIV_FEED = """<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <opensearch:totalResults>7</opensearch:totalResults>
+  <entry>
+    <id>http://arxiv.org/abs/2101.00001v2</id>
+    <title>SYNTHETIC release
+      scheduling</title>
+    <summary>We schedule release times.</summary>
+    <published>2021-01-02T00:00:00Z</published>
+    <link href="https://arxiv.org/abs/2101.00001v2" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2101.00001v2" rel="related" type="application/pdf" title="pdf"/>
+    <arxiv:doi>10.1109/SYNTH.2021.1</arxiv:doi>
+    <author><name>A. Author</name></author>
+  </entry>
+</feed>"""
+EMPTY_FEED = '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"><opensearch:totalResults>0</opensearch:totalResults></feed>'
+
+SUCCESS = {
+    "openalex": {"meta": {"count": 3}, "results": [{"id": "https://openalex.org/W1", "doi": f"https://doi.org/{DOI}", "display_name": "SYNTHETIC"}]},
+    "semantic_scholar": {"total": 3, "data": [{
+        "paperId": "s2abc", "externalIds": {"DOI": DOI, "ArXiv": "2101.00001", "CorpusId": 9}, "title": "SYNTHETIC release scheduling",
+        "abstract": "We schedule release times.", "year": 2021, "venue": "Synthetic Transactions", "publicationTypes": ["JournalArticle"],
+        "authors": [{"name": "A. Author"}], "url": "https://www.semanticscholar.org/paper/s2abc"}]},
+    "crossref": {"status": "ok", "message": {"total-results": 3, "items": [{
+        "DOI": DOI, "title": ["SYNTHETIC <i>release</i> scheduling"], "author": [{"given": "A.", "family": "Author"}],
+        "issued": {"date-parts": [[2021, 3]]}, "container-title": ["Synthetic Transactions"], "type": "journal-article",
+        "abstract": "<jats:title>Abstract</jats:title><jats:p>We schedule release&amp;times.</jats:p>", "URL": f"https://doi.org/{DOI}"}]}},
+    "ieee_xplore": {"total_records": 3, "articles": [{
+        "article_number": "123", "doi": DOI, "title": "SYNTHETIC <inline-formula>release</inline-formula> scheduling",
+        "authors": {"authors": [{"full_name": "A. Author"}]}, "publication_year": 2021, "publication_title": "Synthetic Transactions",
+        "content_type": "Journals", "abstract": "We schedule release times.", "html_url": "https://ieeexplore.ieee.org/document/123/",
+        "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=123", "access_type": "LOCKED"}]},
+    "scopus": {"search-results": {"opensearch:totalResults": "3", "entry": [{
+        "dc:identifier": "SCOPUS_ID:555", "eid": "2-s2.0-555", "dc:title": "SYNTHETIC release scheduling", "dc:creator": "Author A.",
+        "prism:publicationName": "Synthetic Transactions", "prism:coverDate": "2021-01-01", "prism:doi": DOI.upper(),
+        "subtypeDescription": "Article", "citedby-count": "4", "link": [{"@ref": "scopus", "@href": "https://www.scopus.com/record/555"}]}]}},
+    "serpapi": {"search_metadata": {"json_endpoint": "https://serpapi.com/searches/x.json"}, "search_parameters": {"q": "x"},
+                "search_information": {"total_results": 128}, "organic_results": [{
+                    "result_id": "r1", "title": "SYNTHETIC release scheduling", "link": f"https://doi.org/{DOI}", "snippet": "… an excerpt …",
+                    "publication_info": {"summary": "A Author, B Author - Synthetic Transactions, 2021 - ieeexplore.ieee.org",
+                                         "authors": [{"name": "A Author"}, {"name": "B Author"}]}}]},
+}
+ZERO = {
+    "openalex": {"meta": {"count": 0}, "results": []},
+    "semantic_scholar": {"total": 0, "offset": 0},
+    "crossref": {"message": {"total-results": 0, "items": []}},
+    "ieee_xplore": {"total_records": 0, "total_searched": 7408387},
+    "scopus": {"search-results": {"opensearch:totalResults": "0", "entry": [{"@_fa": "true", "error": "Result set was empty"}]}},
+    "serpapi": {"search_metadata": {"status": "Success"}, "error": "Google hasn't returned any results for this query."},
+}
+SUCCESS["biorxiv"], ZERO["biorxiv"] = SUCCESS["openalex"], ZERO["openalex"]
+KEYED = {"ieee_xplore", "scopus", "serpapi"}
+SEARCH = {"openalex": openalex.search_works, "semantic_scholar": semantic_scholar.search, "crossref": crossref.search,
+          "arxiv": arxiv.search, "biorxiv": biorxiv.search, "ieee_xplore": ieee_xplore.search, "scopus": scopus.search,
+          "serpapi": serpapi.search}
+ALL = list(SEARCH)
+
+
+@pytest.fixture(autouse=True)
+def no_waits(monkeypatch):
+    sleeps = []
+
+    async def instant(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(common.asyncio, "sleep", instant)
+    monkeypatch.setattr(arxiv, "MIN_INTERVAL_SECONDS", 0.0)
+    return sleeps
+
+
+def ok_response(provider, zero=False):
+    if provider == "arxiv":
+        return httpx.Response(200, text=EMPTY_FEED if zero else ARXIV_FEED)
+    return httpx.Response(200, json=(ZERO if zero else SUCCESS)[provider])
+
+
+def run(provider, handler, key=None, limit=5):
+    seen = []
+
+    def record(request):
+        seen.append(request)
+        return handler(request)
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(record)) as client:
+            return await SEARCH[provider](client, "synthetic query", limit, key, "contact@example.org")
+    return asyncio.run(go()), seen
+
+
+def key_for(provider):
+    return SECRET if provider in KEYED else None
+
+
+def test_semantic_scholar_record():
+    outcome, seen = run("semantic_scholar", lambda r: ok_response("semantic_scholar"), key=SECRET)
+    record = outcome.records[0]
+    assert (outcome.status, outcome.provider_total, outcome.access_mode) == ("completed", 3, "api_key")
+    assert seen[0].headers["x-api-key"] == SECRET and SECRET not in str(seen[0].url)
+    assert (record.provider_record_id, record.doi, record.year, record.venue) == ("s2abc", DOI.lower(), 2021, "Synthetic Transactions")
+    assert record.abstract_origin == semantic_scholar.ABSTRACT_ORIGIN and record.oa_pdf_url is None
+    assert record.merge_by_doi and record.identifiers["ArXiv"] == "2101.00001"
+
+
+def test_semantic_scholar_arxiv_only_record_gets_no_doi():
+    payload = {"total": 1, "data": [{"paperId": "p", "externalIds": {"ArXiv": "2101.00001"}, "title": "T"}]}
+    outcome, _ = run("semantic_scholar", lambda r: httpx.Response(200, json=payload))
+    assert outcome.records[0].doi is None and outcome.access_mode == "keyless"
+
+
+def test_crossref_record_strips_jats_and_filters_types():
+    outcome, seen = run("crossref", lambda r: ok_response("crossref"))
+    record = outcome.records[0]
+    assert record.title == "SYNTHETIC release scheduling" and record.abstract == "We schedule release&times."
+    assert (record.authors, record.year, record.version_label) == (["A. Author"], 2021, "publishedVersion")
+    assert record.provider_record_id == DOI.lower() and record.abstract_origin == crossref.ABSTRACT_ORIGIN
+    params = seen[0].url.params
+    assert params["query"] == "synthetic query" and params["mailto"] == "contact@example.org" and "posted-content" in params["filter"]
+
+
+def test_crossref_posted_content_is_a_submitted_version():
+    item = {**SUCCESS["crossref"]["message"]["items"][0], "type": "posted-content"}
+    outcome, _ = run("crossref", lambda r: httpx.Response(200, json={"message": {"total-results": 1, "items": [item]}}))
+    assert outcome.records[0].version_label == "submittedVersion"
+
+
+def test_arxiv_record_is_one_version_with_its_pdf():
+    outcome, seen = run("arxiv", lambda r: ok_response("arxiv"))
+    record = outcome.records[0]
+    assert (outcome.status, outcome.provider_total) == ("completed", 7)
+    assert (record.provider_record_id, record.version_label, record.oa_pdf_version) == ("2101.00001v2", "arXiv v2", "arXiv v2")
+    assert record.oa_pdf_url == "https://arxiv.org/pdf/2101.00001v2" and record.title == "SYNTHETIC release scheduling"
+    assert record.doi == "10.48550/arxiv.2101.00001" and not record.merge_by_doi
+    assert record.identifiers["published_doi"] == DOI.lower()
+    assert seen[0].url.params["sortBy"] == "relevance"
+
+
+def test_biorxiv_searches_openalex_limited_to_the_biorxiv_source():
+    outcome, seen = run("biorxiv", lambda r: ok_response("biorxiv"))
+    params = seen[0].url
+    assert params.host == "api.openalex.org" and params.params["filter"] == "locations.source.id:S4306402567"
+    assert "filter=locations.source.id:S4306402567" in outcome.request_description
+    assert outcome.records[0].provider_record_id == "W1" and outcome.status == "completed"
+
+
+def test_ieee_record_redacts_key_and_attaches_no_pdf():
+    outcome, seen = run("ieee_xplore", lambda r: ok_response("ieee_xplore"), key=SECRET)
+    record = outcome.records[0]
+    assert seen[0].url.params["apikey"] == SECRET
+    assert SECRET not in outcome.request_description and SECRET not in json.dumps(outcome.raw_payload)
+    assert (record.provider_record_id, record.title, record.oa_pdf_url) == ("123", "SYNTHETIC release scheduling", None)
+    assert record.abstract_origin == ieee_xplore.ABSTRACT_ORIGIN and record.version_label == "publishedVersion"
+
+
+def test_ieee_over_quota_403_is_a_rate_limit():
+    outcome, _ = run("ieee_xplore", lambda r: httpx.Response(403, headers={"x-error-detail-header": "Account Over Queries Per Day Limit"}), key=SECRET)
+    assert (outcome.status, outcome.delivery_class) == ("rate_limited", "rejected_not_executed")
+
+
+def test_scopus_record_has_no_abstract_and_key_in_header_only():
+    outcome, seen = run("scopus", lambda r: ok_response("scopus"), key=SECRET)
+    record = outcome.records[0]
+    assert seen[0].headers["x-els-apikey"] == SECRET and SECRET not in str(seen[0].url)
+    assert (record.provider_record_id, record.doi, record.year, record.abstract) == ("555", DOI.lower(), 2021, None)
+    assert record.authors == ["Author A."] and record.landing_url == "https://www.scopus.com/record/555"
+
+
+@pytest.mark.parametrize("answer, expected", [(200, True), (401, False), (429, None), (500, None), (httpx.ConnectError("down"), None)])
+def test_scopus_complete_view_probe_reads_entitlement(answer, expected):
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        if isinstance(answer, Exception):
+            raise answer
+        return httpx.Response(answer, json={})
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await scopus.complete_view_entitled(client, SECRET)
+    assert asyncio.run(go()) is expected
+    assert seen[0].url.params["view"] == "COMPLETE" and seen[0].headers["X-ELS-APIKey"] == SECRET and SECRET not in str(seen[0].url)
+
+
+def test_serpapi_record_keeps_snippet_out_of_the_abstract():
+    outcome, seen = run("serpapi", lambda r: ok_response("serpapi"), key=SECRET)
+    record = outcome.records[0]
+    assert seen[0].url.params["engine"] == "google_scholar" and seen[0].url.params["api_key"] == SECRET
+    assert (record.abstract, record.abstract_origin, record.oa_pdf_url) == (None, None, None)
+    assert (record.authors, record.year, record.venue, record.doi) == (["A Author", "B Author"], 2021, "Synthetic Transactions", DOI.lower())
+    assert "search_parameters" not in outcome.raw_payload and outcome.provider_total == 128
+
+
+def test_serpapi_quota_exhaustion_is_not_retried(no_waits):
+    outcome, seen = run("serpapi", lambda r: httpx.Response(429, json={"error": "Your account has run out of searches."}), key=SECRET)
+    assert outcome.status == "rate_limited" and len(seen) == 1 and no_waits == []
+
+
+def test_serpapi_error_payload_is_a_failure_not_zero_results():
+    outcome, _ = run("serpapi", lambda r: httpx.Response(200, json={"error": "Unsupported parameter."}), key=SECRET)
+    assert (outcome.status, outcome.delivery_class) == ("failed", "rejected_not_executed")
+
+
+@pytest.mark.parametrize("provider", ALL)
+def test_zero_results_is_distinct_from_failure(provider):
+    outcome, _ = run(provider, lambda r: ok_response(provider, zero=True), key=key_for(provider))
+    assert (outcome.status, outcome.delivery_class, outcome.records) == ("zero_results", None, [])
+
+
+@pytest.mark.parametrize("provider", [p for p in ALL if p != "serpapi"])
+def test_short_rate_limit_is_retried_and_counted(provider, no_waits):
+    responses = iter([httpx.Response(429), httpx.Response(429, headers={"retry-after": "2"}), ok_response(provider)])
+    outcome, seen = run(provider, lambda r: next(responses), key=key_for(provider))
+    assert (outcome.status, outcome.retries, len(seen)) == ("completed", 2, 3)
+    assert no_waits[-2:] == [3.0, 2.0]
+
+
+@pytest.mark.parametrize("provider", ALL)
+def test_long_rate_limit_is_not_retried(provider):
+    outcome, seen = run(provider, lambda r: httpx.Response(429, headers={"retry-after": "60"}), key=key_for(provider))
+    assert (outcome.status, outcome.delivery_class, len(seen)) == ("rate_limited", "rejected_not_executed", 1)
+    assert outcome.rate_limit["retry-after"] == "60"
+
+
+@pytest.mark.parametrize("provider", ALL)
+def test_auth_errors_are_classified_and_redacted(provider):
+    key = key_for(provider) or (SECRET if provider in ("openalex", "biorxiv", "semantic_scholar") else None)
+    outcome, _ = run(provider, lambda r: httpx.Response(401, text=f"bad key {key}"), key=key)
+    assert outcome.status == ("entitlement_missing" if key else "auth_required")
+    if key:
+        assert SECRET not in (outcome.error or "") and SECRET not in outcome.request_description
+
+
+@pytest.mark.parametrize("provider", ALL)
+def test_rejected_unknown_parse_and_network_outcomes(provider):
+    key = key_for(provider)
+
+    def refuse(request):
+        raise httpx.ConnectError("refused", request=request)
+
+    def slow(request):
+        raise httpx.ReadTimeout("slow", request=request)
+
+    assert (run(provider, lambda r: httpx.Response(400, text="bad query"), key=key)[0].delivery_class) == "rejected_not_executed"
+    assert (run(provider, lambda r: httpx.Response(503), key=key)[0].delivery_class) == "after_send_unknown"
+    assert run(provider, lambda r: httpx.Response(200, text="<html>"), key=key)[0].status == "parse_error"
+    assert (run(provider, refuse, key=key)[0].status, run(provider, refuse, key=key)[0].delivery_class) == ("failed", "before_send")
+    assert (run(provider, slow, key=key)[0].status, run(provider, slow, key=key)[0].delivery_class) == ("timeout", "after_send_unknown")
+
+
+@pytest.mark.parametrize("provider", ALL)
+def test_result_limit_is_capped_by_the_provider_maximum(provider):
+    _, seen = run(provider, lambda r: ok_response(provider), key=key_for(provider), limit=500)
+    params = seen[0].url.params
+    sent = next(int(params[k]) for k in ("per_page", "limit", "rows", "max_results", "max_records", "count", "num") if k in params)
+    assert sent == min(500, CONNECTORS[provider].max_results)
+
+
+def test_available_providers_follow_configured_keys(monkeypatch):
+    for connector in CONNECTORS.values():
+        if connector.key_env:
+            monkeypatch.delenv(connector.key_env, raising=False)
+    assert available_providers() == ["openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv"]
+    assert CONNECTORS["scopus"].access_mode() == "not_configured"
+    monkeypatch.setenv("IEEE_API_KEY", SECRET)
+    assert available_providers()[-1] == "ieee_xplore" and CONNECTORS["ieee_xplore"].access_mode() == "api_key"

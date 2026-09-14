@@ -10,11 +10,13 @@ actual mode and returned limit headers are recorded per call.
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+
+from deixis.providers.common import OtherVersion, ProviderRecord, SearchOutcome, normalize_doi, send
+
+__all__ = ["OtherVersion", "ProviderRecord", "SearchOutcome", "normalize_doi", "reconstruct_abstract", "search_works"]
 
 PROVIDER_ID = "openalex"
 WORKS_URL = "https://api.openalex.org/works"
@@ -22,58 +24,15 @@ SEARCH_PARAM = "search.title_and_abstract"
 SELECT = ",".join(
     [
         "id", "doi", "ids", "display_name", "publication_year", "type", "authorships",
-        "primary_location", "best_oa_location", "open_access", "abstract_inverted_index",
+        "primary_location", "best_oa_location", "open_access", "abstract_inverted_index", "cited_by_count",
     ]
 )
 ABSTRACT_ORIGIN = "provider_openalex_inverted_index"
 RATE_LIMIT_HEADERS = (
     "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset",
-    "x-ratelimit-cost-usd", "x-ratelimit-remaining-usd", "retry-after",
+    "x-ratelimit-cost-usd", "x-ratelimit-remaining-usd",
 )
-
-
-@dataclass
-class OtherVersion:
-    """An open-access copy the provider labels with a different version than the record's primary location."""
-
-    version_label: str
-    pdf_url: str
-    landing_url: str | None
-    venue: str | None
-
-
-@dataclass
-class ProviderRecord:
-    provider_record_id: str
-    title: str
-    authors: list[str]
-    year: int | None
-    venue: str | None
-    publication_type: str | None
-    doi: str | None
-    landing_url: str | None
-    oa_pdf_url: str | None
-    oa_pdf_version: str | None
-    version_label: str | None
-    abstract: str | None
-    abstract_origin: str | None
-    identifiers: dict[str, str]
-    raw: dict[str, Any] = field(repr=False)
-    other_versions: list[OtherVersion] = field(default_factory=list)
-
-
-@dataclass
-class SearchOutcome:
-    status: str
-    delivery_class: str | None
-    request_description: str
-    access_mode: str
-    records: list[ProviderRecord] = field(default_factory=list)
-    provider_total: int | None = None
-    http_status: int | None = None
-    rate_limit: dict[str, str] = field(default_factory=dict)
-    error: str | None = None
-    raw_payload: dict[str, Any] | None = None
+MAX_RESULTS = 200
 
 
 def reconstruct_abstract(inverted: dict[str, list[int]] | None) -> str | None:
@@ -85,12 +44,6 @@ def reconstruct_abstract(inverted: dict[str, list[int]] | None) -> str | None:
         for index in indexes:
             positions[index] = word
     return " ".join(positions[i] for i in sorted(positions)) or None
-
-
-def normalize_doi(value: str | None) -> str | None:
-    if not value:
-        return None
-    return re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", value.strip(), flags=re.IGNORECASE).lower() or None
 
 
 def _record(work: dict[str, Any]) -> ProviderRecord:
@@ -111,7 +64,7 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
             if (a.get("author") or {}).get("display_name")
         ],
         year=work.get("publication_year"),
-        venue=(primary.get("source") or {}).get("display_name"),
+        venue=(primary.get("source") or {}).get("display_name") or primary.get("raw_source_name"),
         publication_type=work.get("type"),
         doi=normalize_doi(work.get("doi")),
         landing_url=primary.get("landing_page_url"),
@@ -123,6 +76,7 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
         identifiers=ids,
         raw=work,
         other_versions=other_versions,
+        cited_by_count=work.get("cited_by_count") if isinstance(work.get("cited_by_count"), int) else None,
     )
 
 
@@ -132,37 +86,28 @@ async def search_works(
     per_page: int,
     api_key: str | None = None,
     contact_email: str | None = None,
+    works_filter: str | None = None,
 ) -> SearchOutcome:
+    per_page = min(per_page, MAX_RESULTS)
     params: dict[str, Any] = {SEARCH_PARAM: query, "per_page": per_page, "select": SELECT}
+    if works_filter:
+        params["filter"] = works_filter
     if contact_email:
         params["mailto"] = contact_email
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     access_mode = "api_key" if api_key else "keyless"
-    description = f"GET {WORKS_URL} {SEARCH_PARAM}={query!r} per_page={per_page} access={access_mode}"
-
-    try:
-        response = await client.get(WORKS_URL, params=params, headers=headers, timeout=30.0)
-    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
-        return SearchOutcome("failed", "before_send", description, access_mode, error=type(exc).__name__)
-    except httpx.TimeoutException as exc:
-        return SearchOutcome("timeout", "after_send_unknown", description, access_mode, error=type(exc).__name__)
-    except httpx.HTTPError as exc:
-        return SearchOutcome("failed", "after_send_unknown", description, access_mode, error=type(exc).__name__)
-
-    rate = {h: response.headers[h] for h in RATE_LIMIT_HEADERS if h in response.headers}
-    base = dict(request_description=description, access_mode=access_mode, http_status=response.status_code, rate_limit=rate)
-    if response.status_code == 429:
-        return SearchOutcome("rate_limited", "rejected_not_executed", **base, error="429 Too Many Requests")
-    if response.status_code in (401, 403):
-        status = "entitlement_missing" if api_key else "auth_required"
-        return SearchOutcome(status, "rejected_not_executed", **base, error=response.text[:300])
-    if response.status_code != 200:
-        return SearchOutcome("failed", "after_send_unknown", **base, error=response.text[:300])
+    description = (f"GET {WORKS_URL} {SEARCH_PARAM}={query!r}" + (f" filter={works_filter}" if works_filter else "")
+                   + f" per_page={per_page} access={access_mode}")
+    response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,))
+    if response is None:
+        return outcome
     try:
         payload = response.json()
-        records = [_record(w) for w in payload["results"]]
-        total = (payload.get("meta") or {}).get("count")
+        outcome.records = [_record(w) for w in payload["results"]]
+        outcome.provider_total = (payload.get("meta") or {}).get("count")
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        return SearchOutcome("parse_error", None, **base, error=str(exc)[:300])
-    status = "zero_results" if not records else "completed"
-    return SearchOutcome(status, None, **base, records=records, provider_total=total, raw_payload=payload)
+        outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
+        return outcome
+    outcome.status = "zero_results" if not outcome.records else "completed"
+    outcome.raw_payload = payload
+    return outcome

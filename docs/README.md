@@ -14,6 +14,5 @@ The [plan review and finding disposition](product/plan-review-2026-09-14.md) pre
 | [Reference index](desktop/reference-index.md) | Provenance and limits of the private transfer package, screenshots, and inspected design references. |
 | [Design prompt](desktop/design-prompt.md) | Historical continuation prompt, not an instruction to execute automatically or the canonical implementation plan. |
 | [Decisions](decisions.md) | Durable decisions made after the handoff. An accepted decision is distinct from verified implementation. |
-| [UI prototype](../prototypes/shadcn-ui/README.md) | Run instructions and honest capability boundary for the browser-only demonstration. |
 
 The [root bibliography](../README.md#research-workspace-methodological-references) holds the transferred methodological references. The sibling Quaestio repository is a separate methodological skill, not a DEIXIS runtime dependency already wired in.

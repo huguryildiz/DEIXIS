@@ -6,9 +6,9 @@ A research workspace for source-linked literature synthesis, evidence comparison
 and candidate-question development. Product name: **DEIXIS** (uppercase).
 A first local-web development slice is implemented: question → OpenAlex search or attached PDF →
 source selection → passage inspection → source-linked answer → reopen after restart. It has been
-exercised manually with live OpenAlex and Codex, and a backup/restore test is automated, but P4
-acceptance is pending: no recorded browser-level A–G acceptance run or evaluation on a user-known
-source set exists yet.
+exercised manually with live OpenAlex and Codex, a backup/restore test is automated, and a browser-level
+A–G acceptance suite runs against synthetic sources and a scripted model. P4 is still open: the
+evaluation on a user-known source set (human citation review, coverage, correction time) has not been done.
 Only OpenAlex and the Codex model connection are implemented; the other providers and model
 connections remain planned.
 
@@ -22,6 +22,8 @@ uv sync
 CODEX_HOME="$HOME/Library/Application Support/DEIXIS/codex-home" codex login   # once
 PYTHONPATH=backend uv run python -m deixis serve                                  # opens http://127.0.0.1:8765/
 PYTHONPATH=backend uv run pytest                                                   # deterministic tests
+(cd apps/web && npm run build && DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance)  # A–G in Chrome
+PYTHONPATH=backend uv run python scripts/p4_eval/measure.py snapshot --research res_… --out eval-dir  # P4 measurement
 PYTHONPATH=backend uv run python -m deixis backup ~/DEIXIS-backups                # safe while serving
 DEIXIS_DATA_DIR=/new/empty/dir PYTHONPATH=backend uv run python -m deixis restore ~/DEIXIS-backups/deixis-backup-…
 ```
@@ -29,8 +31,16 @@ DEIXIS_DATA_DIR=/new/empty/dir PYTHONPATH=backend uv run python -m deixis restor
 Backups hold the database snapshot, referenced PDFs and provider payloads with a SHA-256 manifest; the
 DEIXIS Codex home (model sign-in) is never copied. Restore verifies every hash and refuses a data
 directory that already has a library. Press Cmd/Ctrl+K in the UI to find research, source titles or pages.
+The acceptance suite starts its own fixture server (mocked OpenAlex, fixed PDFs, a scripted model) and
+writes screenshots and `results.json` to `DEIXIS_ACCEPTANCE_DIR`; it needs Google Chrome installed. The
+measurement kit checks every citation link, looks up each DOI on Crossref, and writes `review.md` for
+the person who knows the literature; `measure.py reopen` and `measure.py score` complete it. A `--known` list
+may group its entries with `# stratum: name` lines, and `measure.py compare` puts several measured runs side by side.
 
 Optional keys go in an untracked `.env` (see [providers.env.example](docs/product/providers.env.example)).
+The Sources tab exports the included sources, and an answer's reference list its cited sources, as BibTeX or RIS.
+A research with attached files can import one Zotero collection read-only, from the Zotero app on this computer (its
+local API turned on) or from zotero.org with `ZOTERO_API_KEY` and `ZOTERO_LIBRARY_ID` (D16).
 
 ## Start here
 
@@ -42,8 +52,7 @@ Optional keys go in an untracked `.env` (see [providers.env.example](docs/produc
 - [Research methods](docs/methods/research-methods.md)
 - [Reference index](docs/desktop/reference-index.md)
 - [Historical design prompt](docs/desktop/design-prompt.md)
-- [UI prototype and run instructions](prototypes/shadcn-ui/README.md)
-- [DEIXIS SVG icon](prototypes/shadcn-ui/public/deixis-icon.svg)
+- [DEIXIS SVG icon](apps/web/public/deixis-icon.svg)
 
 ## Project separation
 
@@ -186,8 +195,8 @@ report, select an available model and receive a separate evidence-linked assessm
 of a versioned snapshot. Findings may be fed back into the main work by the user;
 the reviewer does not automatically edit it. Existing evidence is the default,
 with extra retrieval explicitly selected. See the [review design](docs/methods/research-methods.md#isteğe-bağlı-başka-modelle-inceleme)
-for scope, provenance and budget boundaries. An [interactive UI prototype](prototypes/shadcn-ui/README.md#optional-model-review-prototype)
-now demonstrates model/focus selection, a separate sample report and staged feedback.
+for scope, provenance and budget boundaries. A browser-only UI prototype once demonstrated model/focus selection, a separate
+sample report and staged feedback; it was removed ([D10](docs/decisions.md)).
 Real model execution, evidence review and production persistence are not implemented.
 
 The identifiers below match the detailed document. Existing references above

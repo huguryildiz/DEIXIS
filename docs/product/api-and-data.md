@@ -37,8 +37,8 @@ The user can feed selected findings back into the main workflow for revision;
 preserve provenance and previous versions. Mark the review as referring to an older
 version when its dependencies change. No automatic repeat review or verdict by
 majority. A different model is another assessment, not proof of independence or
-scientific correctness. The [UI prototype](../../prototypes/shadcn-ui/README.md#optional-model-review-prototype)
-demonstrates the interaction with fictional models, fixed sample findings and
+scientific correctness. The removed UI prototype ([D10](../decisions.md))
+demonstrated the interaction with fictional models, fixed sample findings and
 in-memory session-scoped state. Production schema, persisted snapshots/history,
 actual model/tool execution and revision handling remain to be implemented.
 
@@ -70,10 +70,21 @@ configure replacement values locally. Do not assume environment variables exist.
 | Scopus | `SCOPUS_API_KEY` | Indexed search and citation metadata within entitlements | `X-ELS-APIKey` header |
 | IEEE Xplore | `IEEE_API_KEY` | Relevant engineering/computing searches | `apikey` query parameter; redact URLs |
 | SerpApi | `SERPAPI_API_KEY` | Supplementary Google Scholar discovery | `engine=google_scholar`, `api_key` query parameter |
+| bioRxiv (added 2026-09-14) | `OPENALEX_API_KEY` (optional) | Life-science preprints, searched through OpenAlex's bioRxiv source | bioRxiv's own API has no keyword search |
 
 Owner-reported SerpApi allowance: 250 searches/month shared across uses. Remaining
 quota and current terms were not verified. Verify provider docs and entitlements
 before implementation; do not interpret this table as tested access.
+
+Status on 2026-09-14 ([D13](../decisions.md)): all seven connectors are implemented
+in `backend/deixis/providers/`, and each returned results in one live probe with the
+locally configured access. Scopus search works in `STANDARD` view only (`COMPLETE`,
+which carries abstracts, answered 401 for that key). Keyless Semantic Scholar is
+often rate-limited. The SerpApi account showed 213 of 250 monthly searches left
+before the probes. bioRxiv, added at the owner's request, has no keyword search API
+of its own and is searched through OpenAlex's bioRxiv source. Per-provider query
+syntax rules are in
+`backend/deixis/providers/query_rules.py` and the method reference.
 
 Use relevant direct scholarly APIs for primary retrieval and SerpApi for supplementary
 coverage. Do not force IEEE into unrelated fields. Translate concept families into

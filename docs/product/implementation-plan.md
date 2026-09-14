@@ -10,7 +10,7 @@ Bu belge, DEIXIS'i mevcut arayüz prototipinden günlük kullanılabilir yerel a
 
 | Mevcut parça | Doğrulanan durum | Plandaki karşılığı |
 |---|---|---|
-| `prototypes/shadcn-ui/` | React, TypeScript, Vite, Tailwind ve shadcn bileşenleri; sentetik araştırma ekranları | Etkileşim ve görsel temel; gerçek veri servisine aşamalı geçiş |
+| `apps/web/` (eski `prototypes/shadcn-ui/` kopyasından başladı; prototip [D10](../decisions.md) ile silindi) | React, TypeScript, Vite, Tailwind ve shadcn bileşenleri | Etkileşim ve görsel temel; gerçek veri servisine aşamalı geçiş |
 | Ayrı Quaestio deposu | `SKILL.md`, yöntem referansları ve önceki değerlendirme kayıtları var | Yöntem kaynağı; DEIXIS'e bağlanmış çalışma zamanı bağımlılığı değil |
 | DEIXIS araştırma skill'i | Henüz yok | P1'de hazırlanacak ve sürümlenecek |
 | DEIXIS backend, veritabanı, akademik bağlantılar | Henüz yok | P2–P4'te dar çalışan dilim |
@@ -24,7 +24,7 @@ Bu belge, DEIXIS'i mevcut arayüz prototipinden günlük kullanılabilir yerel a
 ## 2. Korunan ürün kararları
 
 - Önce tek kullanıcılı **yerel web uygulaması**: tarayıcı, yerel backend ve kullanıcının bilgisayarında veri. Daha sonra aynı ürünün macOS/Windows için Tauri paketlemesi. Kamuya açık çok kullanıcılı SaaS bu planın ilk sürümü değildir.
-- Tek ana araştırma ajanı; keşif, sentez, aday geliştirme ve kill-search ayrı ajanlar değil, ihtiyaca bağlı sorumluluklardır. Başka modelle inceleme kullanıcı tarafından ayrıca başlatılır.
+- Tek ana araştırma ajanı; keşif, sentez, aday geliştirme ve kill-search ayrı ajanlar değil, ihtiyaca bağlı sorumluluklardır. Başka modelle inceleme kullanıcı tarafından ayrıca başlatılır. İstisna ([D14](../decisions.md)): arama planı ve tarama ayrıca seçilen literatür modeliyle çalışır; cevap tamamlanınca ayarlanmış incelemeci model iddiaları arka planda inceler. Adımlar yine sırayla çalışır.
 - Uygulama alan bağımsızdır. Moleküler haberleşme, OR/MILP, algae ve UWSN örnektir; sabit ürün ontolojisi değildir.
 - Akademik kapsam Semantic Scholar, Crossref, arXiv, OpenAlex, Scopus, IEEE Xplore ve SerpApi'yi içerir. Uygulama sırası, sağlayıcıları kapsamdan çıkarmak anlamına gelmez. Her soruda hepsi aranmaz.
 - Model bağlantısı ile kaynak kapsamı ayrı seçilir. Bağlantı önceliği Codex, ardından Claude hesabı, sonra DeepSeek API'dir; Ollama isteğe bağlıdır. Kullanıcının modeli korunur; başarısızlıkta sessiz değişim yapılmaz.

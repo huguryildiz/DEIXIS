@@ -85,11 +85,18 @@ bir inceleme oturumudur; model seçimi ile incelemeci rolü ayrı kavramlardır.
 İnceleme kaydında kapsam, girdi sürümleri, zaman, seçilen/gerçekleşen model,
 erişilen kanıt, kullanılan araçlar ve mevcutsa kullanım/maliyet saklanır. Rapor
 bir **ek model değerlendirmesi** olarak etiketlenir; hakem onayı veya bağımsız
-bilimsel doğrulama olarak sunulmaz. [Etkileşimli UI prototipi](../../prototypes/shadcn-ui/README.md#optional-model-review-prototype)
-model/odak seçimi, örnek rapor ve bulgu geri aktarımını gösteriyor. Model adları
+bilimsel doğrulama olarak sunulmaz. Silinen etkileşimli UI prototipi ([D10](../decisions.md))
+model/odak seçimi, örnek rapor ve bulgu geri aktarımını gösteriyordu. Model adları
 yer tutucu, rapor sabit örnek içeriktir; gerçek model/arama çağrısı yapılmaz.
 İnceleme durumu yalnız bellekte, oturum başına son rapor olarak tutulur. Gerçek
 kanıt değerlendirmesi, kalıcı sürümlü kayıt ve revizyon yürütme henüz uygulanmadı.
+
+**Cevaplar için değişen ([D14](../decisions.md)):** kullanıcının kararıyla cevap
+tamamlanınca arka planda bir iddia incelemesi çalışır. İncelemeci model uygulama
+genelinde ayarlanır, araştırma bazında değiştirilir veya kapatılır. Her iddiayı
+yalnız atıf yaptığı pasajlarla karşılaştırıp gerekçeli bir hüküm verir; cevabı
+değiştirmez ve bağımsız doğrulama sayılmaz. Aday ve raporların kullanıcı
+tarafından başlatılan incelemesi yukarıdaki tasarımda kalır.
 
 **Uygulama durumu:** bu çalışma dokümantasyondur. CoI-Agent entegrasyonu,
 yeni çalışır guardrail'ler, deney yürütücüsü ve yöntem karşılaştırma benchmark'ı

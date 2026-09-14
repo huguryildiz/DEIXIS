@@ -6,6 +6,9 @@ __pycache__/
 node_modules/
 dist/
 .local/
+apps/web/test-results/
+apps/web/playwright-report/
+/test-results/
 
 # Private design evidence; do not publish.
 /local-reference/

@@ -12,7 +12,7 @@ import { ZoteroPanel } from './ZoteroPanel'
 import { useToast } from './Toast'
 import { ConnectionIcon } from './connectionIcons'
 import { ConfirmDialog } from './ConfirmDialog'
-import { effortLabels, effortOptions, Option, scopeOptions } from './Home'
+import { effortLabels, effortOptions, modelRoles, Option, scopeOptions } from './Home'
 import { citationStyles, formatReference, type CitationStyle } from './citations'
 import { t, uiLocale } from './i18n'
 
@@ -183,7 +183,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <TabsContent value="answer">
         <Transcript view={view} modelText={modelText}
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
-          latestAnswer={answer ? <AnswerBlock researchId={id} answer={answer} sources={view.sources} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText })} /> : null} />
+          latestAnswer={answer ? <AnswerBlock researchId={id} answer={answer} sources={view.sources} busy={busy} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText })} onAttachPdf={chooseSourcePdf} /> : null} />
         <div className="answer-actions">
           <Button disabled={busy || active || !included} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
           {hasAcademic && <Button variant="outline" disabled={busy || active} onClick={startDiscovery}><Search size={15} />{t(view.search_runs.length ? 'Search again' : 'Search providers')}</Button>}
@@ -202,8 +202,6 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
             </>}
           </div></div>
         {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
-        <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void upload(e.target.files); e.target.value = '' }} />
-        <input ref={sourceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void uploadToSource(e.target.files); e.target.value = '' }} />
         {view.search_runs.length > 0 && <div className="search-summary">{view.search_runs.map(s => <div key={s.id}><Search size={13} /><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {t(s.status.replace('_', ' '))} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div>}
         <SourceList sources={view.sources} busy={busy}
           onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
@@ -214,10 +212,19 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       </TabsContent>
 
       <TabsContent value="activity">
-        <ol className="activity-list">{events.slice().reverse().map(event => <li key={event.id}><time>{new Date(event.created_at).toLocaleString(uiLocale())}</time><span>{describeEvent(event)}</span></li>)}</ol>
+        <ol className="activity-list">{events.slice().reverse().map(event => {
+          const { icon, text, chips } = describeEvent(event)
+          return <li key={event.id}>
+            <time>{new Date(event.created_at).toLocaleString(uiLocale())}</time>
+            <span className="activity-event"><span className="activity-icon">{icon}</span><span>{text}</span>{chips.map((chip, i) => <span key={i} className={`activity-chip is-${chip.tone}`}>{chip.label}</span>)}</span>
+          </li>
+        })}</ol>
         {!events.length && <p className="empty-inline">{t('No recorded activity.')}</p>}
       </TabsContent>
     </Tabs></div>
+    {/* Outside the tabs: the answer's PDF suggestions attach through the same picker as the Sources tab. */}
+    <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void upload(e.target.files); e.target.value = '' }} />
+    <input ref={sourceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void uploadToSource(e.target.files); e.target.value = '' }} />
 
     <RevisionForm key={view.research.version} question={view.scope.question} disabled={busy || active}
       onSubmit={text => act(() => api.reviseScope(id, text, view.research.version), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />
@@ -231,7 +238,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
 const versionTones: Record<string, string> = { publishedVersion: 'published', acceptedVersion: 'accepted', submittedVersion: 'submitted' }
 
-function AnswerBlock({ researchId, answer, sources, onOpen }: { researchId: string; answer: Answer; sources: Source[]; onOpen: (passageId: string, highlightText: string | null) => void }) {
+function AnswerBlock({ researchId, answer, sources, busy, onOpen, onAttachPdf }: { researchId: string; answer: Answer; sources: Source[]; busy: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void }) {
   const [style, setStyle] = useState<CitationStyle>(() => { try { const saved = localStorage.getItem('deixis-citation-style'); return saved && Object.keys(citationStyles).includes(saved) ? saved as CitationStyle : 'apa' } catch { return 'apa' } })
   const chooseStyle = (next: CitationStyle) => { setStyle(next); try { localStorage.setItem('deixis-citation-style', next) } catch { /* the choice still applies for this tab */ } }
   if (answer.status === 'clarification' && answer.clarification) {
@@ -249,6 +256,9 @@ function AnswerBlock({ researchId, answer, sources, onOpen }: { researchId: stri
   // Consecutive claims with the same heading form one report section; answers saved before sections have no heading.
   const sections: { heading: string | null; claims: Answer['claims'] }[] = []
   answer.claims.forEach(c => { const last = sections[sections.length - 1]; if (last && last.heading === c.section) last.claims.push(c); else sections.push({ heading: c.section, claims: [c] }) })
+  // An access limitation shown with the PDF suggestions is not repeated under Limits.
+  const suggestion = pdfSuggestion(answer, sources)
+  const limits = answer.limitations.filter(l => !suggestion?.notes.includes(l))
   return <div className="legacy-answer">
     <div className="section-label">{t('SOURCE-LINKED ANSWER')}{answer.applicability === 'stale_scope' ? ` ${t('· EARLIER QUESTION REVISION')}` : answer.applicability === 'stale_selection' ? ` ${t('· EARLIER SOURCE SELECTION')}` : ''}</div>
     {answer.applicability === 'stale_scope' && <div className="legacy-boundary">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</div>}
@@ -265,7 +275,7 @@ function AnswerBlock({ researchId, answer, sources, onOpen }: { researchId: stri
     </section>)}
     {!answer.claims.length && <p>{t('No claim could be linked to the passages given to the model.')}</p>}
     {answer.unanswered_aspects.length > 0 && <><h3>{t('Not answered by the inspected passages')}</h3><ul className="plain-list">{answer.unanswered_aspects.map(a => <li key={a}><MathText text={a} /></li>)}</ul></>}
-    {answer.limitations.length > 0 && <><h3>{t('Limits')}</h3><ul className="plain-list">{answer.limitations.map((l, i) => <li key={i}><em>{t(l.kind.replace('_', ' '))}:</em> <MathText text={l.text} /></li>)}</ul></>}
+    {limits.length > 0 && <><h3>{t('Limits')}</h3><ul className="plain-list">{limits.map((l, i) => <li key={i}><em>{t(l.kind.replace('_', ' '))}:</em> <MathText text={l.text} /></li>)}</ul></>}
     {refs.size > 0 && <>
       <div className="reference-head"><h3>{t('Cited passages')}</h3>
         <div className="reference-tools"><ExportLinks researchId={researchId} sources="cited" />
@@ -495,13 +505,13 @@ function SourceRow({ source, busy, onSelect, onReason, onAbstract, onDiscoverPdf
       {s.origin === 'user' && s.state === 'excluded' && !s.user_reason && <ReasonForm busy={busy} onSave={onReason} />}
       <div className="source-links">
         {source.access.abstract_passage_id && <button onClick={onAbstract}><BookOpenText size={14} aria-hidden />{t('Read abstract')}</button>}
-        {source.doi && <a href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><Link2 size={14} aria-hidden />DOI</a>}
+        {source.doi && <a href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" />DOI</a>}
         {source.access.assets.map(asset => <span className="source-asset-actions" key={asset.id}>
           <a href={assetUrl(researchId, asset.id)} target="_blank" rel="noreferrer" title={asset.original_filename ?? undefined}><FileText size={14} aria-hidden />{t('Open PDF')}</a>
           <button className="is-destructive" disabled={busy} onClick={() => onRemoveAsset(asset.id)} title={asset.original_filename ?? undefined}><Trash2 size={14} aria-hidden />{t('Remove PDF')}</button>
         </span>)}
-        {source.doi && <button disabled={busy || finding} onClick={onDiscoverPdf}><Search size={14} aria-hidden />{finding ? t('Web Search is running…') : t(source.access.assets.length ? 'Refresh metadata' : 'Find PDF')}</button>}
-        {!source.access.assets.length && <button disabled={busy || finding} onClick={onAttachPdf}><FileUp size={14} aria-hidden />{t('Attach this PDF')}</button>}
+        {source.doi && <button disabled={busy || finding} onClick={onDiscoverPdf}><Search size={14} aria-hidden />{finding ? <span className="shimmer-text">{t('Web Search is running…')}</span> : t(source.access.assets.length ? 'Refresh metadata' : 'Find PDF')}</button>}
+        {!source.access.assets.length && <button disabled={busy || finding} onClick={onAttachPdf}><FileUp size={14} aria-hidden />{t('Attach PDF')}</button>}
       </div>
     </div>
     <div className="selection-toggle" role="group" aria-label={t('Selection for {title}', { title: source.title })}>
@@ -521,27 +531,43 @@ function RevisionForm({ question, disabled, onSubmit }: { question: string; disa
 
 const selectionStates: Record<string, string> = { included: 'Included', excluded: 'Excluded', pending: 'Undecided' }
 
-function describeEvent(event: ActivityEvent) {
+type ChipTone = 'ok' | 'bad' | 'warn' | 'live' | 'neutral'
+type EventChip = { label: string; tone: ChipTone }
+
+const statusTones: Record<string, ChipTone> = {
+  completed: 'ok', succeeded: 'ok', structurally_valid: 'ok',
+  partial: 'warn', unverified_draft: 'warn', outcome_unknown: 'warn', rate_limited: 'warn', timeout: 'warn',
+  failed: 'bad', auth_required: 'bad', entitlement_missing: 'bad', parse_error: 'bad',
+  pending: 'live', running: 'live',
+}
+const statusChip = (status: unknown): EventChip => ({ label: t(String(status).replaceAll('_', ' ')), tone: statusTones[String(status)] ?? 'neutral' })
+const selectionTones: Record<string, ChipTone> = { included: 'ok', excluded: 'bad', pending: 'warn' }
+
+function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; chips: EventChip[] } {
   const p = event.payload as Record<string, string | number | null>
+  const lucide = (Icon: LucideIcon, text: string, chips: EventChip[] = []) => ({ icon: <Icon size={15} aria-hidden />, text, chips })
+  const brand = (id: string, text: string, chips: EventChip[] = []) => ({ icon: <ConnectionIcon id={id} />, text, chips })
+  const reason = p.pause_reason ? [{ label: pauseReasonText(String(p.pause_reason)), tone: 'neutral' as const }] : []
+  const errorChip = p.error_code ? [{ label: String(p.error_code), tone: 'neutral' as const }] : []
   switch (event.type) {
-    case 'research_created': return t('Research created')
-    case 'scope_revised': return t('Question revised (revision {n})', { n: String(p.scope_revision) })
-    case 'run_queued': return t(p.kind === 'discovery' ? 'Search run queued' : 'Answer run queued')
-    case 'run_started': return t('Run started')
-    case 'run_completed': return t('Run completed')
-    case 'run_paused': return p.pause_reason ? `${t('Run paused')}: ${pauseReasonText(String(p.pause_reason))}` : t('Run paused')
-    case 'run_failed': return p.pause_reason ? `${t('Run failed')}: ${pauseReasonText(String(p.pause_reason))}` : t('Run failed')
-    case 'run_resumed': return t('Run resumed')
-    case 'run_cancelled': return t('Run cancelled')
-    case 'run_pause_requested': return t('Pause requested')
-    case 'step_started': return t('{step} started', { step: stepLabel(String(p.kind), String(p.operation_key)) })
-    case 'step_finished': return `${stepLabel(String(p.kind), String(p.operation_key))}: ${t(String(p.status).replace('_', ' '))}${p.error_code ? ` (${p.error_code})` : ''}`
-    case 'model_call_started': return `${t('Model call sent to {connection}', { connection: String(p.connection) })}${p.requested_model ? ` · ${p.requested_model}` : ''}`
-    case 'search_recorded': return t('{provider} search: {status}, {count} records', { provider: providerName(String(p.provider)), status: t(String(p.status).replace('_', ' ')), count: String(p.result_count) })
-    case 'pdf_discovery_recorded': return t('{provider} PDF lookup: {status}, {count} candidates', { provider: providerName(String(p.provider)), status: t(String(p.status).replace('_', ' ')), count: String(p.result_count) })
-    case 'asset_removed': return t('PDF removed from a source')
-    case 'selection_changed': return t('You marked a source as {state}', { state: t(selectionStates[String(p.state)] ?? String(p.state)).toLocaleLowerCase(uiLocale()) })
-    case 'answer_saved': return t('Answer saved ({status})', { status: t(String(p.status).replaceAll('_', ' ')) })
-    default: return event.type
+    case 'research_created': return lucide(FilePlus2, t('Research created'))
+    case 'scope_revised': return lucide(PencilLine, t('Question revised (revision {n})', { n: String(p.scope_revision) }))
+    case 'run_queued': return lucide(ListPlus, t(p.kind === 'discovery' ? 'Search run queued' : 'Answer run queued'))
+    case 'run_started': return lucide(Play, t('Run started'))
+    case 'run_completed': return lucide(CircleCheck, t('Run completed'), [statusChip('completed')])
+    case 'run_paused': return lucide(Pause, t('Run paused'), reason)
+    case 'run_failed': return lucide(CircleX, t('Run failed'), [statusChip('failed'), ...reason])
+    case 'run_resumed': return lucide(RotateCw, t('Run resumed'))
+    case 'run_cancelled': return lucide(Ban, t('Run cancelled'))
+    case 'run_pause_requested': return lucide(Hand, t('Pause requested'))
+    case 'step_started': return lucide(CircleDot, t('{step} started', { step: stepLabel(String(p.kind), String(p.operation_key)) }))
+    case 'step_finished': return lucide(ListChecks, stepLabel(String(p.kind), String(p.operation_key)), [statusChip(p.status), ...errorChip])
+    case 'model_call_started': return brand(String(p.connection), t('Model call sent to {connection}', { connection: String(p.connection) }), p.requested_model ? [{ label: String(p.requested_model), tone: 'neutral' }] : [])
+    case 'search_recorded': return brand(String(p.provider), t('{provider} search', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} records', { count: String(p.result_count) }), tone: 'neutral' }])
+    case 'pdf_discovery_recorded': return brand(String(p.provider), t('{provider} PDF lookup', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} candidates', { count: String(p.result_count) }), tone: 'neutral' }, ...errorChip])
+    case 'asset_removed': return lucide(Trash2, t('PDF removed from a source'))
+    case 'selection_changed': return lucide(UserPen, t('You marked a source'), [{ label: t(selectionStates[String(p.state)] ?? String(p.state)), tone: selectionTones[String(p.state)] ?? 'neutral' }])
+    case 'answer_saved': return lucide(MessageSquareQuote, t('Answer saved'), [statusChip(p.status)])
+    default: return lucide(Activity, event.type)
   }
 }

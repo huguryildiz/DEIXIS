@@ -2,6 +2,19 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D23 — Query Unpaywall before other PDF-location providers
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: OpenAlex and Crossref exposed candidate URLs for 14 of the 16 direct packet-size sources, but none produced a validated PDF. Unpaywall is a free DOI lookup service that requires a contact e-mail rather than an API key and can expose repository copies that the other metadata responses omit.
+
+**Decision**: The PDF resolver queries Unpaywall first with `DEIXIS_CONTACT_EMAIL`, retains every `oa_locations[].url_for_pdf` candidate, and then still queries OpenAlex and Crossref so provider evidence is complete. The same DOI and version gates apply before retrieval. A missing contact e-mail is stored as `auth_required`; HTTP, rate-limit, parse and retrieval failures remain visible. Search-result rows identify Unpaywall with a green open-lock icon. Web Search remains the final, explicitly labelled fallback.
+
+**Evidence**: Mocked tests cover all PDF locations, duplicate removal, DOI identity, version matching, and the missing-email path. In the fresh 16-source Kurt measurement, Unpaywall returned same-version candidates for two sources; both URLs returned HTTP 403 and duplicated locations already known through OpenAlex. Crossref again exposed 12 URLs that returned HTML rather than PDF. The validated result therefore remained 0/16. Evidence is retained locally in `.local/p4-eval-2026-09-15-packet/pdf-coverage-v4.json`.
+
+**Impact**: Migration 0013 extends discovery provenance with `unpaywall`. No API key is stored. Unpaywall improved provenance for this set but did not improve PDF recall; institutional browser access or a user-supplied PDF is still required for the two gated copies.
+
 ## D22 — Preserve PDF candidates and make acquisition failures visible
 
 **Status**: accepted

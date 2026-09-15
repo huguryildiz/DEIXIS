@@ -13,13 +13,15 @@ from urllib.parse import quote
 import httpx
 
 from deixis.documents import fetch, pdf
-from deixis.providers.common import normalize_doi
+from deixis.providers import crossref
+from deixis.providers.common import ProviderRecord, normalize_doi
 from deixis.storage import db
 from deixis.workflow.store import Store
 
 OPENALEX_URL = "https://api.openalex.org/works"
 CROSSREF_URL = "https://api.crossref.org/works"
 SERPAPI_URL = "https://serpapi.com/search.json"
+UNPAYWALL_URL = "https://api.unpaywall.org/v2"
 OPENALEX_SELECT = "doi,display_name,primary_location,best_oa_location,locations"
 
 
@@ -40,6 +42,7 @@ class Lookup:
     candidates: list[Candidate]
     http_status: int | None = None
     error_code: str | None = None
+    record: ProviderRecord | None = None
 
 
 def _version_status(candidate: str | None, source: str | None) -> str:
@@ -50,6 +53,40 @@ def _version_status(candidate: str | None, source: str | None) -> str:
 
 def _unique(candidates: list[Candidate]) -> list[Candidate]:
     return list({c.url: c for c in candidates if c.url}.values())
+
+
+async def unpaywall_lookup(client: httpx.AsyncClient, doi: str, source_version: str | None,
+                           contact_email: str | None) -> Lookup:
+    if not contact_email:
+        return Lookup("auth_required", [], error_code="missing_contact_email")
+    try:
+        response = await client.get(f"{UNPAYWALL_URL}/{quote(doi, safe='')}", params={"email": contact_email}, timeout=30)
+    except httpx.TimeoutException:
+        return Lookup("timeout", [], error_code="timeout")
+    except httpx.HTTPError as exc:
+        return Lookup("failed", [], error_code=type(exc).__name__)
+    if response.status_code == 404:
+        return Lookup("zero_results", [], 404)
+    if response.status_code == 429:
+        return Lookup("rate_limited", [], 429, "rate_limited")
+    if response.status_code in (401, 403, 422):
+        return Lookup("auth_required", [], response.status_code, "email_rejected")
+    if response.status_code != 200:
+        return Lookup("failed", [], response.status_code, f"http_{response.status_code}")
+    try:
+        item = response.json()
+        identity = "doi_verified" if normalize_doi(item.get("doi")) == doi else "mismatch"
+        locations = list(item.get("oa_locations") or [])
+        best = item.get("best_oa_location") or {}
+        if best.get("url_for_pdf") and not any(location.get("url_for_pdf") == best["url_for_pdf"] for location in locations):
+            locations.insert(0, best)
+        candidates = [Candidate(
+            "unpaywall", location["url_for_pdf"], location.get("url"), location.get("version"),
+            location.get("license"), identity, _version_status(location.get("version"), source_version),
+        ) for location in locations if location.get("url_for_pdf")]
+        return Lookup("completed" if candidates else "zero_results", _unique(candidates), 200)
+    except (json.JSONDecodeError, TypeError, KeyError) as exc:
+        return Lookup("parse_error", [], 200, type(exc).__name__)
 
 
 async def openalex_lookup(client: httpx.AsyncClient, doi: str, source_version: str | None,
@@ -118,7 +155,8 @@ async def crossref_lookup(client: httpx.AsyncClient, doi: str, source_version: s
             version = crossref_version(link.get("content-version"))
             candidates.append(Candidate("crossref", url, landing, version, None, identity,
                                         _version_status(version, source_version)))
-        return Lookup("completed" if candidates else "zero_results", _unique(candidates), 200)
+        record = crossref.record_from_item(item) if identity == "doi_verified" else None
+        return Lookup("completed" if candidates else "zero_results", _unique(candidates), 200, record=record)
     except (json.JSONDecodeError, TypeError, KeyError) as exc:
         return Lookup("parse_error", [], 200, type(exc).__name__)
 
@@ -177,6 +215,8 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     if not doi:
         raise ValueError("A DOI is required for verified PDF acquisition")
     lookups: list[tuple[str, str, Lookup]] = []
+    unpaywall = await unpaywall_lookup(client, doi, source.get("version_label"), contact_email)
+    lookups.append(("unpaywall", doi, unpaywall))
     oa = await openalex_lookup(client, doi, source.get("version_label"), contact_email=contact_email)
     lookups.append(("openalex", doi, oa))
     cr = await crossref_lookup(client, doi, source.get("version_label"), contact_email=contact_email)
@@ -184,6 +224,8 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     for provider, query, lookup in lookups:
         run_id = store.record_pdf_discovery(research_id, source_version_id, provider, query, lookup)
         store.record_pdf_candidates(source_version_id, run_id, lookup.candidates)
+    if cr.record is not None:
+        store.enrich_source("crossref", source_version_id, cr.record)
 
     if not store.has_asset(source_version_id):
         attempted_urls: set[str] = set()

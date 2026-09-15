@@ -52,7 +52,7 @@ async def measure(args: argparse.Namespace) -> dict:
     store = Store(connection)
     rid = store.create_research(
         f"Kurt et al. direct packet-size references: version-verified PDF coverage ({args.stratum})",
-        "academic", "quick", ["openalex", "crossref", "serpapi"], "codex", "gpt-5.6-luna", "en",
+        "academic", "quick", ["unpaywall", "openalex", "crossref", "serpapi"], "codex", "gpt-5.6-luna", "en",
     )
     sources = []
     for doi, title in known_sources(args.known_sources, args.stratum):

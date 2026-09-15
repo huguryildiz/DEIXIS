@@ -5,8 +5,9 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { api, assetUrl, type Passage } from './api'
 import { locatorText, versionText } from './labels'
 import { t, uiLocale } from './i18n'
+import { PassageMathText } from './PassageMathText'
 
-export function PassageSheet({ researchId, passageId, dark, onClose }: { researchId: string; passageId: string | null; dark: boolean; onClose: () => void }) {
+export function PassageSheet({ researchId, passageId, highlightText, dark, onClose }: { researchId: string; passageId: string | null; highlightText?: string | null; dark: boolean; onClose: () => void }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [error, setError] = useState('')
   const [showPdf, setShowPdf] = useState(false)
@@ -45,11 +46,11 @@ export function PassageSheet({ researchId, passageId, dark, onClose }: { researc
             <span className="source-access"><FileText size={15} />{t(abstract ? 'Abstract only' : 'PDF text passage')}</span>
           </div>
           {passage.asset_id && passage.physical_page && <Button variant="outline" className="pdf-toggle" onClick={() => setShowPdf(v => !v)}><FileText />{showPdf ? t('Hide PDF page') : t('Open PDF page {n}', { n: passage.physical_page })}</Button>}
-          {showPdf && passage.asset_id && <iframe className="pdf-frame" title={t('PDF page {n}', { n: passage.physical_page ?? '' })} src={assetUrl(researchId, passage.asset_id, passage.physical_page)} />}
+          {showPdf && passage.asset_id && <iframe className="pdf-frame" title={t('PDF page {n}', { n: passage.physical_page ?? '' })} src={assetUrl(researchId, passage.asset_id, passage.physical_page, highlightText)} />}
 
           <h3 className="source-section">{abstract ? t('Abstract') : t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
           {/* PDF extraction keeps layout line breaks; join single breaks for reading. The stored passage is unchanged. */}
-          <p className="passage-text">{passage.kind === 'pdf_page' ? passage.text.replace(/(?<!\n)\n(?!\n)/g, ' ') : passage.text}</p>
+          <p className="passage-text"><PassageMathText text={passage.kind === 'pdf_page' ? passage.text.replace(/(?<!\n)\n(?!\n)/g, ' ') : passage.text} /></p>
           {passage.abstract_origin === 'provider_openalex_inverted_index' && <p className="source-fine">{t('Rebuilt from OpenAlex’s abstract index; wording and punctuation may differ from the publisher’s text.')}</p>}
 
           <dl className="source-facts">

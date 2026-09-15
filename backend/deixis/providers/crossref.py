@@ -20,7 +20,7 @@ from deixis.providers.common import ProviderRecord, SearchOutcome, normalize_doi
 
 PROVIDER_ID = "crossref"
 WORKS_URL = "https://api.crossref.org/works"
-SELECT = "DOI,title,author,issued,container-title,type,abstract,URL,link"
+SELECT = "DOI,title,author,issued,container-title,type,abstract,URL,link,volume,issue,page"
 TYPES = "type:journal-article,type:proceedings-article,type:posted-content"
 ABSTRACT_ORIGIN = "provider_crossref_jats"
 RATE_LIMIT_HEADERS = ("x-rate-limit-limit", "x-rate-limit-interval", "x-concurrency-limit")
@@ -34,7 +34,7 @@ def strip_markup(text: str | None) -> str | None:
     return re.sub(r"^abstract\s*[:.]?\s*", "", plain, flags=re.IGNORECASE) or None
 
 
-def _record(item: dict[str, Any]) -> ProviderRecord:
+def record_from_item(item: dict[str, Any]) -> ProviderRecord:
     doi = normalize_doi(item.get("DOI"))
     abstract = strip_markup(item.get("abstract"))
     parts = ((item.get("issued") or {}).get("date-parts") or [[None]])[0]
@@ -62,6 +62,9 @@ def _record(item: dict[str, Any]) -> ProviderRecord:
         abstract_origin=ABSTRACT_ORIGIN if abstract else None,
         identifiers={"doi": doi} if doi else {},
         raw=item,
+        volume=str(item["volume"]).strip() if item.get("volume") else None,
+        issue=str(item["issue"]).strip() if item.get("issue") else None,
+        pages=str(item["page"]).strip() if item.get("page") else None,
     )
 
 
@@ -78,7 +81,7 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     try:
         payload = response.json()
         message = payload["message"]
-        outcome.records = [_record(i) for i in message["items"]]
+        outcome.records = [record_from_item(i) for i in message["items"]]
         outcome.provider_total = message.get("total-results")
     except (json.JSONDecodeError, KeyError, TypeError, IndexError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []

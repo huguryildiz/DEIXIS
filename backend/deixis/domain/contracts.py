@@ -31,7 +31,7 @@ SCHEMA_FILES = {
 SCHEMA_VERSIONS = {
     "SearchPlan": "deixis.search_plan.v1",
     "ScreeningProposal": "deixis.screening_proposal.v1",
-    "GroundedAnswerDraft": "deixis.grounded_answer_draft.v1",
+    "GroundedAnswerDraft": "deixis.grounded_answer_draft.v2",
     "ClarificationRequest": "deixis.clarification_request.v1",
     "AnswerReview": "deixis.answer_review.v1",
 }
@@ -239,7 +239,7 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
     elif output_type == "ScreeningProposal":
         _check_screening(allow, result, report)
     elif output_type == "GroundedAnswerDraft":
-        _check_answer(allow, result, report)
+        _check_answer(step_input, allow, result, report)
         _check_phrasing(step_input, result, report)
         _check_math(step_input, result, report)
     elif output_type == "AnswerReview":
@@ -531,8 +531,9 @@ LOCATOR_IN_TEXT = re.compile(
 )
 
 
-def _check_answer(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
+def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
     labels: set[str] = set()
+    cited_by_claim: dict[str, set[str]] = {}
     for i, claim in enumerate(draft["claims"]):
         if match := LOCATOR_IN_TEXT.search(claim["text"]):
             report.issues.append(Issue("locator_in_claim_text", f"/claims/{i}/text",
@@ -549,6 +550,32 @@ def _check_answer(allow: dict[str, set[str]], draft: dict[str, Any], report: Val
                 report.issues.append(Issue("unknown_passage_id", f"/claims/{i}/passage_ids/{j}", pid))
         if len(set(claim["passage_ids"])) != len(claim["passage_ids"]):
             report.issues.append(Issue("duplicate_passage_id", f"/claims/{i}/passage_ids", claim["claim_label"]))
+        cited_by_claim[claim["claim_label"]] = set(claim["passage_ids"])
+
+    passage_text = {p["passage_id"]: re.sub(r"\s+", " ", p["text"]).strip() for p in step_input["passages"]}
+    required_anchors = {
+        (claim["claim_label"], pid)
+        for claim in draft["claims"]
+        for pid in claim["passage_ids"]
+        if pid in allow["passage_ids"]
+    }
+    seen_anchors: set[tuple[str, str]] = set()
+    for i, anchor in enumerate(draft["citation_anchors"]):
+        pair = (anchor["claim_label"], anchor["passage_id"])
+        if pair in seen_anchors:
+            report.issues.append(Issue("duplicate_citation_anchor", f"/citation_anchors/{i}", ":".join(pair)))
+        seen_anchors.add(pair)
+        if anchor["claim_label"] not in cited_by_claim:
+            report.issues.append(Issue("unknown_anchor_claim", f"/citation_anchors/{i}/claim_label", anchor["claim_label"]))
+            continue
+        if anchor["passage_id"] not in cited_by_claim[anchor["claim_label"]]:
+            report.issues.append(Issue("anchor_passage_not_cited", f"/citation_anchors/{i}/passage_id", anchor["passage_id"]))
+            continue
+        normalized_quote = re.sub(r"\s+", " ", anchor["quote"]).strip()
+        if normalized_quote not in passage_text.get(anchor["passage_id"], ""):
+            report.issues.append(Issue("anchor_not_in_passage", f"/citation_anchors/{i}/quote", anchor["passage_id"]))
+    for claim_label, passage_id in sorted(required_anchors - seen_anchors):
+        report.issues.append(Issue("missing_citation_anchor", "/citation_anchors", f"{claim_label}:{passage_id}"))
     for i, limitation in enumerate(draft["limitations"]):
         for j, sid in enumerate(limitation["source_ids"]):
             if sid not in allow["source_ids"]:
@@ -593,6 +620,9 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
         for item in items if isinstance(items, list) else []:
             if isinstance(item, dict) and isinstance(item.get(key), list):
                 item[key] = [real.get(i, i) if isinstance(i, str) else i for i in item[key]]
+    for anchor in data.get("citation_anchors", []):
+        if isinstance(anchor, dict) and isinstance(anchor.get("passage_id"), str):
+            anchor["passage_id"] = real.get(anchor["passage_id"], anchor["passage_id"])
     return data
 
 

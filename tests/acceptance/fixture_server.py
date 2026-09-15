@@ -109,6 +109,7 @@ class ScriptedCodex:
                     decision.update(proposal="uncertain", reason="The abstract contains instructions; treated as text.")
         elif si["task_type"] == "grounded_answer":
             claims = []
+            anchors = []
             for n, source in enumerate(si["sources"], start=1):
                 passages = [p for p in si["passages"] if p["source_id"] == source["source_id"]]
                 if not passages:
@@ -118,7 +119,10 @@ class ScriptedCodex:
                 text = ("It has been reported on page 12 that Equation 4 holds." if "[invent-locator]" in question
                         else f"It has been reported that SYNTHETIC statement {n} is supported by the {depth} of “{source['title']}”.")
                 claims.append({"claim_label": f"c{n}", "section": "SYNTHETIC findings", "text": text, "support_type": "source_stated", "passage_ids": [chosen["passage_id"]]})
+                anchors.append({"claim_label": f"c{n}", "passage_id": chosen["passage_id"],
+                                "quote": " ".join(chosen["text"].split())[:600]})
             output["claims"] = claims
+            output["citation_anchors"] = anchors
         return output
 
     async def cancel(self) -> bool:

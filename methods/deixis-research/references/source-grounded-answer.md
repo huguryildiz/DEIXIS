@@ -106,6 +106,12 @@ access and scope limits are stated.
 5. Do not cite a passage for something it does not say. Do not put page numbers,
    equation numbers, DOIs or quotations into claim text; the application displays
    locators from its records.
+   For every claim-passage link, also add one `citation_anchors` item containing
+   the shortest contiguous sentence or sentences that directly support the
+   claim. Copy `quote` exactly from that passage: keep its language, punctuation,
+   mathematical extraction and wording; do not translate, repair, paraphrase,
+   add ellipses or join non-contiguous spans. If no exact contiguous span supports
+   the claim, the passage does not support that claim and must not be cited.
 6. Write mathematical content (decision variables, objective functions,
    constraints, channel or energy models) in LaTeX, between `$…$` inside a
    sentence or `$$…$$` for a displayed expression. Write an expression only as a

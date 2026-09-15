@@ -83,6 +83,20 @@ def test_abstract_evidence_link_has_no_page_and_depth_comes_from_records():
     assert all(l["semantic_review"] == "not_checked" for l in links.values())
 
 
+def test_citation_anchor_must_be_exact_text_from_the_cited_passage():
+    step_input = STEP_INPUTS["A_answer"]
+    draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    draft["citation_anchors"][0]["quote"] = "SYNTHETIC. This sentence was not present in the cited passage."
+    assert contracts.validate_model_output(step_input, draft).codes() == ["anchor_not_in_passage"]
+
+
+def test_every_valid_claim_passage_link_requires_a_citation_anchor():
+    step_input = STEP_INPUTS["A_answer"]
+    draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    draft["citation_anchors"].pop()
+    assert contracts.validate_model_output(step_input, draft).codes() == ["missing_citation_anchor"]
+
+
 @pytest.mark.parametrize("query, ambiguous", [
     ('"molecular communication" optimization OR "operations research"', True),  # live: same count as the phrase alone
     ('"molecular communication" AND optimization OR scheduling', True),
@@ -113,11 +127,13 @@ def test_answer_steps_show_short_handles_that_map_back_to_records():
     first, source = shown["passages"][0], shown["sources"][0]
     answer = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
     answer["claims"] = [dict(answer["claims"][0], passage_ids=[first["passage_id"]])]
+    answer["citation_anchors"] = [{"claim_label": "c1", "passage_id": first["passage_id"], "quote": first["text"]}]
     answer["limitations"] = [dict(answer["limitations"][0], source_ids=[source["source_id"]])] if answer["limitations"] else []
     resolved = contracts.resolve_citation_handles(step_input, json.dumps(answer))
     report = contracts.validate_model_output(step_input, resolved)
     assert not {"unknown_passage_id", "unknown_source_id"} & set(report.codes()), report.issues
     assert contracts.derive_evidence_links(step_input, resolved)[0]["passage_id"] == step_input["passages"][0]["passage_id"]
+    assert resolved["citation_anchors"][0]["passage_id"] == step_input["passages"][0]["passage_id"]
 
     swapped = "psg_" + source["source_id"].removeprefix("srv_")  # the live copy error: a source suffix under the passage prefix
     answer["claims"][0]["passage_ids"] = [swapped]

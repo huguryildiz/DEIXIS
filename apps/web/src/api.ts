@@ -35,19 +35,20 @@ export type SearchRun = {
   id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null } | null
 }
-export type Asset = { id: string; extraction_status: string; page_count: number | null; origin: string; byte_size: number }
+export type Asset = { id: string; extraction_status: string; page_count: number | null; origin: string; byte_size: number; original_filename: string | null }
 export type PdfCandidate = {
-  id: string; provider: 'openalex' | 'crossref' | 'web_search'; candidate_url: string; landing_url: string | null
+  id: string; provider: 'unpaywall' | 'openalex' | 'crossref' | 'web_search'; candidate_url: string; landing_url: string | null
   version_label: string | null; license: string | null; identity_status: 'doi_verified' | 'title_verified' | 'unverified' | 'mismatch'
   version_status: 'match' | 'different' | 'uncertain'; access_status: 'not_attempted' | 'downloaded' | 'http_error' | 'not_pdf' | 'too_large' | 'timeout' | 'blocked_url' | 'failed'
   http_status: number | null; error_code: string | null; final_url: string | null; discovered_at: string; attempted_at: string | null
 }
 export type PdfDiscovery = {
-  provider: 'openalex' | 'crossref' | 'web_search'; query_text: string; status: string; result_count: number
+  provider: 'unpaywall' | 'openalex' | 'crossref' | 'web_search'; query_text: string; status: string; result_count: number
   http_status: number | null; error_code: string | null; created_at: string; finished_at: string | null
 }
 export type Source = {
   source_version_id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null
+  volume: string | null; issue: string | null; pages: string | null
   doi: string | null; landing_url: string | null; version_label: string | null; publication_type: string | null
   cited_by_count: number | null; cited_by_count_at: string | null
   origin: 'provider' | 'user_upload'; added_by: string; rank: number | null
@@ -59,7 +60,7 @@ export type Source = {
 }
 export type Evidence = {
   passage_id: string; source_version_id: string; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
-  printed_label: string | null; reading_depth: string; title: string; version_label: string | null
+  printed_label: string | null; reading_depth: string; title: string; version_label: string | null; anchor_text: string | null
 }
 export type Claim = {
   id: string; label: string; section: string | null; text: string; support_type: 'source_stated' | 'analyst_inference'; semantic_review: string; evidence: Evidence[]
@@ -178,6 +179,8 @@ export const api = {
     form.append('file', file)
     return request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/uploads`, { method: 'POST', body: form })
   },
+  removeAsset: (id: string, sourceId: string, assetId: string) =>
+    request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}`, { method: 'DELETE' }),
   discoverPdf: (id: string, sourceId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-discovery`, { method: 'POST' }),
   startRun: (id: string, kind: 'discovery' | 'answer', idempotencyKey: string) =>
@@ -196,8 +199,13 @@ export const api = {
 export const bibliographyUrl = (researchId: string, format: 'bibtex' | 'ris', sources: 'included' | 'cited') =>
   `/api/researches/${researchId}/bibliography?format=${format}&sources=${sources}`
 
-export const assetUrl = (researchId: string, assetId: string, page?: number | null) =>
-  `/api/researches/${researchId}/assets/${assetId}${page ? `#page=${page}` : ''}`
+const textFragment = (text: string) => encodeURIComponent(text.replace(/\s+/g, ' ').trim()).replace(/-/g, '%2D')
+
+export const assetUrl = (researchId: string, assetId: string, page?: number | null, highlightText?: string | null) => {
+  const openParams = page ? `page=${page}` : ''
+  const highlight = highlightText?.trim() ? `:~:text=${textFragment(highlightText)}` : ''
+  return `/api/researches/${researchId}/assets/${assetId}${openParams || highlight ? `#${openParams}${highlight}` : ''}`
+}
 
 export function subscribe(researchId: string, after: number, onEvent: () => void): () => void {
   const source = new EventSource(`/api/researches/${researchId}/events/stream?after=${after}`)

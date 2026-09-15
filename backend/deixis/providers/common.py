@@ -48,6 +48,9 @@ class ProviderRecord:
     cited_by_count: int | None = None
     # False when the DOI covers several file versions (arXiv's DataCite DOI names every version of a preprint).
     merge_by_doi: bool = True
+    volume: str | None = None
+    issue: str | None = None
+    pages: str | None = None
 
 
 @dataclass

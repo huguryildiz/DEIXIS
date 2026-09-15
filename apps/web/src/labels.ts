@@ -49,7 +49,7 @@ export const verdictLabels: Record<Verdict, string> = {
 }
 
 const providerNames: Record<string, string> = {
-  openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', ieee_xplore: 'IEEE Xplore', scopus: 'Scopus', serpapi: 'SerpApi', web_search: 'Web Search', zotero: 'Zotero',
+  unpaywall: 'Unpaywall', openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', ieee_xplore: 'IEEE Xplore', scopus: 'Scopus', serpapi: 'SerpApi', web_search: 'Web Search', zotero: 'Zotero',
 }
 export const providerName = (id: string) => providerNames[id] ?? id
 

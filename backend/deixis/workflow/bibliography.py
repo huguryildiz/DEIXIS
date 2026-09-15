@@ -73,6 +73,9 @@ def to_bibtex(sources: list[dict[str, Any]]) -> str:
             ("author", " and ".join(_author(a) for a in s["authors"] if a.strip())),
             ("year", str(s["year"] or "")),
             (venue_field, _tex(s["venue"] or "")),
+            ("volume", _tex(s.get("volume") or "")),
+            ("number", _tex(s.get("issue") or "")),
+            ("pages", _tex(s.get("pages") or "")),
             ("doi", _raw(s["doi"])),
             ("url", _raw(s["landing_url"])),
             ("eprint", _raw(s["arxiv_id"])),
@@ -88,7 +91,8 @@ def to_ris(sources: list[dict[str, Any]]) -> str:
     lines = []
     for s in sources:
         tags = [("TY", _TYPES[_kind(s["publication_type"])][2]), ("TI", s["title"]), *(("AU", a) for a in s["authors"]),
-                ("PY", s["year"]), ("T2", s["venue"]), ("DO", s["doi"]), ("UR", s["landing_url"]),
+                ("PY", s["year"]), ("T2", s["venue"]), ("VL", s.get("volume")), ("IS", s.get("issue")),
+                ("SP", s.get("pages")), ("DO", s["doi"]), ("UR", s["landing_url"]),
                 ("N1", _version_note(s["version_label"]))]
         lines += [f"{tag}  - {_line(value)}" for tag, value in tags if _line(value)]
         lines += ["ER  - ", ""]

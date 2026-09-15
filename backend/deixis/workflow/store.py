@@ -426,6 +426,7 @@ class Store:
             if existing:
                 svid, wid = existing, self.source(existing)["work_id"]
                 self._insert_mappings(svid, provider, record, now())
+                self.enrich_source(provider, svid, record)
                 has_abstract = self.conn.execute(
                     "SELECT 1 FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (svid,)
                 ).fetchone()
@@ -453,10 +454,11 @@ class Store:
         ts, oid = now(), new_id("srv")
         self.conn.execute(
             "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label, publication_type, doi,"
-            " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at)"
-            " VALUES (?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, ?, 'provider', ?, ?)",
+            " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at, volume, issue, pages)"
+            " VALUES (?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, ?, 'provider', ?, ?, ?, ?, ?)",
             (oid, wid, record.title, dumps(record.authors), other.venue, other.version_label, record.publication_type,
-             other.landing_url, other.pdf_url, other.version_label, payload_path, ts),
+             other.landing_url, other.pdf_url, other.version_label, payload_path, ts,
+             record.volume, record.issue, record.pages),
         )
         self.conn.execute(
             "INSERT INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at) VALUES (?, ?, ?, ?, ?)",
@@ -469,16 +471,37 @@ class Store:
         self.conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (wid, ts))
         self.conn.execute(
             "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label, publication_type, doi,"
-            " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at, cited_by_count, cited_by_count_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provider', ?, ?, ?, ?)",
+            " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at, cited_by_count, cited_by_count_at,"
+            " volume, issue, pages)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provider', ?, ?, ?, ?, ?, ?, ?)",
             (svid, wid, record.title, dumps(record.authors), record.year, record.venue, record.version_label,
              record.publication_type, record.doi, record.landing_url, record.oa_pdf_url, record.oa_pdf_version, payload_path, ts,
-             record.cited_by_count, ts if record.cited_by_count is not None else None),
+             record.cited_by_count, ts if record.cited_by_count is not None else None,
+             record.volume, record.issue, record.pages),
         )
         self._insert_mappings(svid, provider, record, ts)
         if record.abstract:
             self._insert_passage(svid, None, "abstract", None, None, record.abstract_origin, payload_path, None, record.abstract)
         return svid, wid
+
+    def enrich_source(self, provider: str, svid: str, record: Any) -> None:
+        """Fill absent citation fields from an exact-identity provider lookup; never replace existing metadata."""
+        ts = now()
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE source_versions SET"
+                " authors_json = CASE WHEN authors_json = '[]' AND ? <> '[]' THEN ? ELSE authors_json END,"
+                " year = COALESCE(year, ?), venue = COALESCE(venue, ?), publication_type = COALESCE(publication_type, ?),"
+                " landing_url = COALESCE(landing_url, ?), volume = COALESCE(volume, ?), issue = COALESCE(issue, ?),"
+                " pages = COALESCE(pages, ?) WHERE id = ?",
+                (dumps(record.authors), dumps(record.authors), record.year, record.venue, record.publication_type,
+                 record.landing_url, record.volume, record.issue, record.pages, svid),
+            )
+            self.conn.execute(
+                "INSERT OR IGNORE INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (svid, provider, record.provider_record_id, provider, ts),
+            )
 
     def _insert_mappings(self, svid: str, provider: str, record: Any, ts: str) -> None:
         mappings = [(provider, record.provider_record_id)]
@@ -521,7 +544,9 @@ class Store:
         return pid
 
     def asset_by_sha(self, sha256: str) -> dict[str, Any] | None:
-        return row_dict(self.conn.execute("SELECT * FROM source_assets WHERE sha256 = ? ORDER BY retrieved_at LIMIT 1", (sha256,)).fetchone())
+        return row_dict(self.conn.execute(
+            "SELECT * FROM source_assets WHERE sha256 = ? AND removed_at IS NULL ORDER BY retrieved_at LIMIT 1", (sha256,)
+        ).fetchone())
 
     def asset(self, asset_id: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT * FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
@@ -546,6 +571,30 @@ class Store:
                     self._insert_passage(svid, aid, "pdf_page", page.physical_page, page.printed_label, None,
                                          f"chars:{start}-{end}", extraction_version, text)
         return aid
+
+    def remove_asset(self, research_id: str, svid: str, asset_id: str) -> None:
+        """Withdraw an attachment from future use while retaining its immutable audit evidence."""
+        with transaction(self.conn):
+            asset = self.conn.execute(
+                "SELECT id FROM source_assets WHERE id = ? AND source_version_id = ? AND removed_at IS NULL",
+                (asset_id, svid),
+            ).fetchone()
+            if asset is None:
+                raise NotFound(asset_id)
+            ts = now()
+            self.conn.execute("UPDATE source_assets SET removed_at = ? WHERE id = ?", (ts, asset_id))
+            included = self.conn.execute(
+                "SELECT 1 FROM selections WHERE research_id = ? AND source_version_id = ? AND state = 'included'",
+                (research_id, svid),
+            ).fetchone()
+            if included:
+                self.conn.execute(
+                    "UPDATE researches SET selection_revision = selection_revision + 1, updated_at = ? WHERE id = ?",
+                    (ts, research_id),
+                )
+            else:
+                self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (ts, research_id))
+            self._event(research_id, "asset_removed", {"source_version_id": svid, "asset_id": asset_id})
 
     def source(self, svid: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT * FROM source_versions WHERE id = ?", (svid,)).fetchone()
@@ -809,7 +858,9 @@ class Store:
 
     def passages_for(self, svid: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.conn.execute(
-            "SELECT * FROM passages WHERE source_version_id = ? ORDER BY kind, physical_page, rowid", (svid,)
+            "SELECT p.* FROM passages p WHERE p.source_version_id = ? AND (p.asset_id IS NULL OR EXISTS"
+            " (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL))"
+            " ORDER BY p.kind, p.physical_page, p.rowid", (svid,)
         )]
 
     def search_passages(self, svids: list[str], fts_query: str, limit: int) -> list[dict[str, Any]]:
@@ -818,7 +869,9 @@ class Store:
         marks = ",".join("?" * len(svids))
         rows = self.conn.execute(
             f"SELECT p.* FROM passages_fts f JOIN passages p ON p.rowid = f.rowid"
-            f" WHERE passages_fts MATCH ? AND p.source_version_id IN ({marks}) ORDER BY bm25(passages_fts) LIMIT ?",
+            f" WHERE passages_fts MATCH ? AND p.source_version_id IN ({marks}) AND (p.asset_id IS NULL OR EXISTS"
+            f" (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL))"
+            " ORDER BY bm25(passages_fts) LIMIT ?",
             (fts_query, *svids, limit),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -849,7 +902,9 @@ class Store:
         return json.loads(row["payload_json"])
 
     def has_asset(self, svid: str) -> bool:
-        return self.conn.execute("SELECT 1 FROM source_assets WHERE source_version_id = ?", (svid,)).fetchone() is not None
+        return self.conn.execute(
+            "SELECT 1 FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,)
+        ).fetchone() is not None
 
     def save_answer(self, research_id: str, run_id: str, step_id: str | None, step_input_id: str | None, scope_revision: int,
                     status: str, draft: dict[str, Any] | None, validation: dict[str, Any],

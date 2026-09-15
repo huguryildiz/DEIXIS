@@ -440,7 +440,7 @@ def create_app(
         sha, size, path = await store_upload(file, settings.papers_dir)
         existing = store.conn.execute(
             "SELECT a.source_version_id FROM source_assets a JOIN source_versions s ON s.id = a.source_version_id"
-            " WHERE a.sha256 = ? AND s.origin = 'user_upload' LIMIT 1", (sha,)
+            " WHERE a.sha256 = ? AND a.removed_at IS NULL AND s.origin = 'user_upload' LIMIT 1", (sha,)
         ).fetchone()
         filename = Path(file.filename or "document.pdf").name
         if existing:
@@ -465,7 +465,8 @@ def create_app(
         settings.papers_dir.mkdir(parents=True, exist_ok=True)
         sha, size, path = await store_upload(file, settings.papers_dir)
         if not store.conn.execute(
-            "SELECT 1 FROM source_assets WHERE source_version_id = ? AND sha256 = ?", (source_version_id, sha)
+            "SELECT 1 FROM source_assets WHERE source_version_id = ? AND sha256 = ? AND removed_at IS NULL",
+            (source_version_id, sha)
         ).fetchone():
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             filename = Path(file.filename or "document.pdf").name
@@ -560,13 +561,26 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         asset = store.asset(asset_id)
-        if not store.is_member(research_id, asset["source_version_id"]):
+        if asset["removed_at"] is not None or not store.is_member(research_id, asset["source_version_id"]):
             raise HTTPException(404, "Asset is not part of this research")
         root = settings.papers_dir.resolve()
         path = (root / asset["storage_path"]).resolve()
         if not path.is_relative_to(root) or not path.exists():
             raise HTTPException(404, "File missing")
         return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": "inline"})
+
+    @app.delete("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}")
+    async def remove_asset(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+        """Withdraw a mistaken PDF from future answers while retaining its audit record."""
+        store = store_of(request)
+        store.research(research_id)
+        if not store.is_member(research_id, source_version_id):
+            raise HTTPException(404, "Source is not part of this research")
+        asset = store.asset(asset_id)
+        if asset["source_version_id"] != source_version_id or asset["removed_at"] is not None:
+            raise HTTPException(404, "Asset is not attached to this source")
+        store.remove_asset(research_id, source_version_id, asset_id)
+        return research_view(store, research_id)
 
     @app.get("/api/researches/{research_id}/events")
     async def events(research_id: str, request: Request, after: int = 0) -> list[dict[str, Any]]:

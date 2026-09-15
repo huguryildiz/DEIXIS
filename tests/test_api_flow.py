@@ -254,7 +254,7 @@ def test_pdf_discovery_is_visible_and_user_can_attach_pdf_to_existing_source(tmp
         found = client.post(f"/api/researches/{rid}/sources/{source['source_version_id']}/pdf-discovery")
         assert found.status_code == 200, found.text
         refreshed = next(s for s in found.json()["sources"] if s["source_version_id"] == source["source_version_id"])
-        assert [d["provider"] for d in refreshed["access"]["pdf_discoveries"]] == ["openalex", "crossref", "web_search"]
+        assert [d["provider"] for d in refreshed["access"]["pdf_discoveries"]] == ["unpaywall", "openalex", "crossref", "web_search"]
 
         attached = client.post(
             f"/api/researches/{rid}/sources/{source['source_version_id']}/uploads",
@@ -269,9 +269,10 @@ def test_invalid_output_is_repaired_once_then_kept_as_unverified_draft(tmp_path)
     def bad(si):
         if si["task_type"] != "grounded_answer":
             return valid_response(si)
-        return json.dumps(envelope(si, "deixis.grounded_answer_draft.v1") | {
+        return json.dumps(envelope(si, "deixis.grounded_answer_draft.v2") | {
             "answer_language": "en",
             "claims": [{"claim_label": "c1", "section": "Overview", "text": "It has been reported that X was invented.", "support_type": "source_stated", "passage_ids": ["psg_INVENTED0001"]}],
+            "citation_anchors": [],
             "limitations": [], "unanswered_aspects": [], "capability_notice": None,
         })
 
@@ -572,6 +573,7 @@ def test_submitted_and_published_versions_stay_separate_versions_of_one_work(tmp
 
         evidence = view["answers"][0]["claims"][0]["evidence"][0]
         assert evidence["source_version_id"] == manuscript["source_version_id"] and evidence["kind"] == "pdf_page"
+        assert evidence["anchor_text"]
         passage = client.get(f"/api/researches/{rid}/passages/{evidence['passage_id']}").json()
         assert passage["source"]["version_label"] == "submittedVersion"
         by_id = {s["source_version_id"]: s for s in view["sources"]}

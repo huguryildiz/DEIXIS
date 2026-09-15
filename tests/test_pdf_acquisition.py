@@ -38,6 +38,56 @@ def test_openalex_collects_every_pdf_location_and_marks_versions():
     ]
 
 
+def test_unpaywall_collects_every_pdf_location_and_marks_versions():
+    def handler(request):
+        assert request.url.params["email"] == "researcher@example.org"
+        return httpx.Response(200, json={
+            "doi": "10.1/test",
+            "best_oa_location": {
+                "url_for_pdf": "https://repo.example/vor.pdf",
+                "url": "https://repo.example/item",
+                "version": "publishedVersion",
+                "license": "cc-by",
+            },
+            "oa_locations": [
+                {
+                    "url_for_pdf": "https://repo.example/vor.pdf",
+                    "url": "https://repo.example/item",
+                    "version": "publishedVersion",
+                    "license": "cc-by",
+                },
+                {"url_for_pdf": "https://preprint.example/a.pdf", "version": "submittedVersion"},
+                {"url": "https://closed.example/item", "version": "publishedVersion"},
+            ],
+        })
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.unpaywall_lookup(
+                client, "10.1/test", "publishedVersion", "researcher@example.org"
+            )
+
+    result = run(check())
+    assert result.status == "completed"
+    assert [(c.url, c.identity_status, c.version_status) for c in result.candidates] == [
+        ("https://repo.example/vor.pdf", "doi_verified", "match"),
+        ("https://preprint.example/a.pdf", "doi_verified", "different"),
+    ]
+
+
+def test_unpaywall_requires_contact_email_without_calling_network():
+    def handler(request):
+        raise AssertionError("Unpaywall must not be called without a contact email")
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.unpaywall_lookup(client, "10.1/test", "publishedVersion", None)
+
+    result = run(check())
+    assert result.status == "auth_required"
+    assert result.error_code == "missing_contact_email"
+
+
 def test_crossref_collects_pdf_links_and_maps_content_version():
     def handler(request):
         return httpx.Response(200, json={"message": {
@@ -91,6 +141,8 @@ def test_acquisition_records_403_then_downloads_second_verified_location(tmp_pat
     store.add_to_corpus(rid, svid, "search")
 
     def handler(request):
+        if "api.unpaywall.org" in request.url.host:
+            return httpx.Response(200, json={"doi": "10.1/test", "oa_locations": [], "best_oa_location": None})
         if "api.openalex.org" in request.url.host:
             return httpx.Response(200, json={"doi": "https://doi.org/10.1/test", "display_name": record.title,
                 "locations": [
@@ -115,7 +167,7 @@ def test_acquisition_records_403_then_downloads_second_verified_location(tmp_pat
     candidates = store.pdf_candidates(svid)
     assert [(c["access_status"], c["http_status"]) for c in candidates] == [("http_error", 403), ("downloaded", 200)]
     assert store.has_asset(svid)
-    assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == ["openalex", "crossref"]
+    assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == ["unpaywall", "openalex", "crossref"]
     connection.close()
 
 
@@ -130,6 +182,8 @@ def test_acquisition_uses_web_when_metadata_sources_yield_no_verified_pdf(tmp_pa
     store.add_to_corpus(rid, svid, "search")
 
     def handler(request):
+        if "api.unpaywall.org" in request.url.host:
+            return httpx.Response(200, json={"doi": "10.1/test", "oa_locations": [], "best_oa_location": None})
         if "api.openalex.org" in request.url.host:
             return httpx.Response(200, json={"doi": "https://doi.org/10.1/test", "display_name": record.title,
                 "locations": [{"pdf_url": "https://repo.example/manuscript.pdf", "version": "acceptedVersion"}]})
@@ -147,6 +201,6 @@ def test_acquisition_uses_web_when_metadata_sources_yield_no_verified_pdf(tmp_pa
 
     result = run(check())
     assert result["pdf_found"] is False
-    assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == ["openalex", "crossref", "web_search"]
+    assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == ["unpaywall", "openalex", "crossref", "web_search"]
     assert [c["version_status"] for c in store.pdf_candidates(svid)] == ["different", "uncertain"]
     connection.close()

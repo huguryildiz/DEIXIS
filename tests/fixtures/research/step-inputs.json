@@ -95,7 +95,7 @@
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
     "skill_files": ["SKILL.md", "references/source-grounded-answer.md"],
-    "output_schema_versions": ["deixis.grounded_answer_draft.v1"],
+    "output_schema_versions": ["deixis.grounded_answer_draft.v2"],
     "question": {
       "text": "SYNTHETIC: How is operations research used in molecular communication, and what decision variables, objectives and constraints do published models use?",
       "language_hint": "en"
@@ -140,7 +140,7 @@
     "scope_revision": 3,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
     "skill_files": ["SKILL.md", "references/source-grounded-answer.md"],
-    "output_schema_versions": ["deixis.grounded_answer_draft.v1"],
+    "output_schema_versions": ["deixis.grounded_answer_draft.v2"],
     "question": { "text": "SYNTHETIC: Which sensors are used in underwater sensor networks?", "language_hint": "en" },
     "user_steering": [],
     "capabilities": {

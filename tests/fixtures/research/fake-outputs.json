@@ -120,7 +120,7 @@
       "expect_ok": true,
       "expect_codes": [],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v1",
+        "schema_version": "deixis.grounded_answer_draft.v2",
         "step_input_id": "sti_SYNTHA0003",
         "scope_revision": 1,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -129,6 +129,11 @@
           { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that transmitter release-time scheduling is formulated as a mixed-integer linear program with binary release variables.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01"] },
           { "claim_label": "c2", "section": "Formulations", "text": "It has been reported that its objective minimizes expected bit error probability under a per-frame molecule budget.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1pg003"] },
           { "claim_label": "c3", "section": "Formulations", "text": "It is possible that relay placement in the inspected preprint is heuristic rather than an optimization model with a guarantee.", "support_type": "analyst_inference", "passage_ids": ["psg_SYNA3pg002"] }
+        ],
+        "citation_anchors": [
+          { "claim_label": "c1", "passage_id": "psg_SYNA1abs01", "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint." },
+          { "claim_label": "c2", "passage_id": "psg_SYNA1pg003", "quote": "SYNTHETIC. The objective minimizes expected bit error probability subject to a total molecule budget per frame." },
+          { "claim_label": "c3", "passage_id": "psg_SYNA3pg002", "quote": "SYNTHETIC. Relay positions are chosen by a heuristic; no optimality guarantee is claimed in this version." }
         ],
         "limitations": [
           { "kind": "access", "text": "It was not possible to assess the formulation of the relay-network source; therefore, it is unknown if it describes an optimization model.", "source_ids": ["srv_SYNA2pub01"] },
@@ -144,7 +149,7 @@
       "expect_ok": false,
       "expect_codes": ["unknown_passage_id"],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v1",
+        "schema_version": "deixis.grounded_answer_draft.v2",
         "step_input_id": "sti_SYNTHA0003",
         "scope_revision": 1,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -152,6 +157,7 @@
         "claims": [
           { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that nodes carry hydrophones.", "support_type": "source_stated", "passage_ids": ["psg_SYNB1pg001"] }
         ],
+        "citation_anchors": [],
         "limitations": [],
         "unanswered_aspects": [],
         "capability_notice": null
@@ -163,7 +169,7 @@
       "expect_ok": false,
       "expect_codes": ["schema_invalid"],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v1",
+        "schema_version": "deixis.grounded_answer_draft.v2",
         "step_input_id": "sti_SYNTHA0003",
         "scope_revision": 1,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -171,6 +177,7 @@
         "claims": [
           { "claim_label": "c1", "section": "Formulations", "text": "Constraint (7) bounds nutrients.", "support_type": "source_stated", "passage_ids": ["psg_SYNA2abs01"], "page": 7 }
         ],
+        "citation_anchors": [],
         "limitations": [],
         "unanswered_aspects": [],
         "capability_notice": null
@@ -182,7 +189,7 @@
       "expect_ok": false,
       "expect_codes": ["schema_invalid"],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v1",
+        "schema_version": "deixis.grounded_answer_draft.v2",
         "step_input_id": "sti_SYNTHA0003",
         "scope_revision": 1,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -190,6 +197,7 @@
         "claims": [
           { "claim_label": "c1", "section": "Formulations", "text": "x", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01"], "semantic_review": "human_checked" }
         ],
+        "citation_anchors": [],
         "limitations": [],
         "unanswered_aspects": [],
         "capability_notice": null
@@ -201,12 +209,13 @@
       "expect_ok": false,
       "expect_codes": ["envelope_mismatch"],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v1",
+        "schema_version": "deixis.grounded_answer_draft.v2",
         "step_input_id": "sti_SYNTHB0001",
         "scope_revision": 2,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
         "answer_language": "en",
         "claims": [],
+        "citation_anchors": [],
         "limitations": [],
         "unanswered_aspects": ["An issue that was not addressed in the supplied passages was whether X holds."],
         "capability_notice": null
@@ -216,9 +225,9 @@
       "name": "answer_claim_without_passage_and_duplicates",
       "step_input": "A_answer",
       "expect_ok": false,
-      "expect_codes": ["claim_without_passage", "duplicate_claim_label", "duplicate_passage_id", "unknown_source_id"],
+      "expect_codes": ["claim_without_passage", "duplicate_claim_label", "duplicate_passage_id", "missing_citation_anchor", "unknown_source_id"],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v1",
+        "schema_version": "deixis.grounded_answer_draft.v2",
         "step_input_id": "sti_SYNTHA0003",
         "scope_revision": 1,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -227,6 +236,7 @@
           { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that X is unsupported.", "support_type": "analyst_inference", "passage_ids": [] },
           { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that X carries a repeated label.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01", "psg_SYNA1abs01"] }
         ],
+        "citation_anchors": [],
         "limitations": [
           { "kind": "access", "text": "It was not possible to assess X; therefore, it is unknown if Y holds.", "source_ids": ["srv_SYNB1pub01"] }
         ],
@@ -246,6 +256,7 @@
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
         "answer_language": "en",
         "claims": [],
+        "citation_anchors": [],
         "limitations": [],
         "unanswered_aspects": [],
         "capability_notice": null

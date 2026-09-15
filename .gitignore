@@ -6,6 +6,8 @@ __pycache__/
 node_modules/
 dist/
 .local/
+.impeccable
+.pytest_cache
 apps/web/test-results/
 apps/web/playwright-report/
 /test-results/

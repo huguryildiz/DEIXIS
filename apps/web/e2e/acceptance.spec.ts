@@ -211,7 +211,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await expect(sheet).toContainText('published version')
     await shot(page, 'A-citation-opens-passage')  // before the PDF frame: headless Chrome has no PDF viewer and paints it blank
     await sheet.getByRole('button', { name: /Open PDF page/ }).click()
-    await expect(sheet.locator('iframe.pdf-frame')).toHaveAttribute('src', /\/assets\/ast_.*#page=\d/)
+    await expect(sheet.locator('iframe.pdf-frame')).toHaveAttribute('src', /\/assets\/ast_.*#page=\d+:~:text=/)
     await page.keyboard.press('Escape')
   })
 

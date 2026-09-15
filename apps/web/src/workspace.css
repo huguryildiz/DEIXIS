@@ -190,12 +190,15 @@ button.chat-step-title svg{color:var(--muted)}
 .source-main .proposal:has(.verdict)>svg{color:var(--accent)}
 .legacy-research .proposal.is-stale{padding-left:9px;border-left:2px solid var(--accent);color:var(--ink)}
 .proposal span{font-size:11px}
-.source-links{display:flex;gap:14px;margin-top:8px;font-size:12px}
+.source-links{display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;font-size:12px}
 .source-links :is(a,button){display:inline-flex;align-items:center;gap:5px;color:var(--accent)}
 .source-links button:disabled{color:var(--muted);cursor:wait}
+.source-links .source-asset-actions{display:inline-flex;gap:12px}
+.source-links .is-destructive{color:var(--destructive)}
 .pdf-search-status{display:flex;align-items:center;gap:6px;margin:9px 0 0;color:var(--accent);font-size:12px}
 .pdf-candidate-list{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:9px;color:var(--muted);font-size:11px}
 .pdf-candidate-list span{display:inline-flex;align-items:center;gap:5px}
+.pdf-candidate-list .connection-icon{width:12px;height:12px}
 .section-actions{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px}
 .reference-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
 .export-links{display:inline-flex;align-items:stretch;height:36px;border:1px solid var(--strong-line,var(--line));border-radius:9px;background:var(--raised-surface,var(--paper));overflow:hidden;color:var(--muted)}
@@ -356,6 +359,22 @@ button.chat-step-title svg{color:var(--muted)}
 .quick-find-option small{display:block;margin-top:2px;color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .quick-find-empty{margin:0;padding:16px 10px;color:var(--muted);font-size:12px}
 .quick-find-note{margin:0;padding:9px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+.confirm-dialog{--paper:#f8f9fb;--raised:#fff;--ink:#262a30;--muted:#5b6475;--line:#e3e6ea;--danger:#b42318;--danger-ink:#fff;position:fixed;z-index:70;top:50%;left:50%;width:min(440px,calc(100vw - 32px));padding:24px;background:var(--raised);color:var(--ink);border:1px solid var(--line);border-radius:10px;box-shadow:0 20px 65px rgb(24 31 45/.22);font-family:'DM Sans Variable',sans-serif;transform:translate(-50%,-50%);transition:opacity .16s ease,transform .16s cubic-bezier(.22,1,.36,1)}
+.confirm-dialog.dark{--paper:#15171b;--raised:#1f2329;--ink:#e6e8eb;--muted:#9aa2ad;--line:#353b45;--danger:#e0786b;--danger-ink:#15171b}
+.confirm-dialog[data-starting-style],.confirm-dialog[data-ending-style]{opacity:0;transform:translate(-50%,-48%) scale(.985)}
+.confirm-dialog-backdrop{position:fixed;inset:0;z-index:65;background:rgb(24 31 45/.34);backdrop-filter:blur(2px);transition:opacity .16s ease}
+.confirm-dialog-backdrop[data-starting-style],.confirm-dialog-backdrop[data-ending-style]{opacity:0}
+.confirm-dialog-heading{display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;align-items:start}
+.confirm-dialog-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:7px;background:color-mix(in srgb,var(--danger),transparent 88%);color:var(--danger)}
+.confirm-dialog-title{margin:1px 0 6px;font-family:'Newsreader Variable',serif;font-size:23px;font-weight:500;line-height:1.2;letter-spacing:-.25px;color:var(--ink)}
+.confirm-dialog-description{margin:0;color:var(--muted);font-size:12.5px;line-height:1.65}
+.confirm-dialog-context{margin:18px 0 0;padding:10px 12px;border-block:1px solid var(--line);color:var(--ink);font-size:11.5px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.confirm-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+.confirm-dialog-actions [data-slot=button]{min-width:92px;height:34px;border-radius:7px;box-shadow:none}
+.confirm-dialog-actions .confirm-dialog-cancel{border-color:var(--line);background:var(--raised);color:var(--ink)}
+.confirm-dialog-actions .confirm-dialog-cancel:hover{background:color-mix(in srgb,var(--ink),transparent 95%)}
+.confirm-dialog-actions .confirm-dialog-danger{background:var(--danger);color:var(--danger-ink)}
+.confirm-dialog-actions .confirm-dialog-danger:hover{background:color-mix(in srgb,var(--danger),var(--ink) 10%)}
 .find-button{gap:8px;color:var(--muted);font-size:12px}
 .language-switch{display:inline-flex;align-items:center;gap:1px;font-size:12px;color:var(--muted)}
 .language-switch button{padding:4px 5px;border-radius:5px;color:var(--muted);font-weight:450;letter-spacing:.4px;cursor:pointer}
@@ -366,4 +385,5 @@ button.chat-step-title svg{color:var(--muted)}
 .app.dark .access-chip{--ok-ink:#8fd0a4;--ok-surface:#1f3327;--ok-line:#325a40}
 .app.sidebar-collapsed .access-chip{align-self:center;margin-inline:0;padding:5px}
 .sidebar-divider{flex:none;margin:auto 10px 0;padding-top:14px;border-bottom:1px solid var(--line)}
-@media(max-width:760px){.find-button span,.find-button kbd{display:none}.quick-find{top:12px;max-height:calc(100svh - 24px)}}
+@media(max-width:760px){.find-button span,.find-button kbd{display:none}.quick-find{top:12px;max-height:calc(100svh - 24px)}.confirm-dialog{padding:20px}.confirm-dialog-actions{flex-direction:column-reverse}.confirm-dialog-actions [data-slot=button]{width:100%}}
+@media(prefers-reduced-motion:reduce){.confirm-dialog,.confirm-dialog-backdrop{transition:none}}

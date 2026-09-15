@@ -41,9 +41,10 @@ def valid_response(si: dict[str, Any]) -> str:
             "notes": "",
         })
     first = si["passages"][0]
-    return json.dumps(envelope(si, "deixis.grounded_answer_draft.v1") | {
+    return json.dumps(envelope(si, "deixis.grounded_answer_draft.v2") | {
         "answer_language": "en",
         "claims": [{"claim_label": "c1", "section": "Overview", "text": "It has been reported that the first passage supports this fake claim.", "support_type": "source_stated", "passage_ids": [first["passage_id"]]}],
+        "citation_anchors": [{"claim_label": "c1", "passage_id": first["passage_id"], "quote": " ".join(first["text"].split())[:600]}],
         "limitations": [{"kind": "scope", "text": "It is beyond the scope of this answer to examine the fake scope.", "source_ids": [first["source_id"]]}],
         "unanswered_aspects": [], "capability_notice": None,
     })

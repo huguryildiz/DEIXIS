@@ -17,6 +17,14 @@ STEP_INPUTS = json.loads((FIXTURES / "step-inputs.json").read_text())
 CASES = json.loads((FIXTURES / "fake-outputs.json").read_text())["cases"]
 TEXT = load_skill_package().files[phrasebank.PHRASEBANK]
 
+
+def anchored(draft):
+    """Re-derive one exact citation anchor per claim-passage link after a test rewrites the claims."""
+    text = {p["passage_id"]: " ".join(p["text"].split()) for p in STEP_INPUTS["A_answer"]["passages"]}
+    draft["citation_anchors"] = [{"claim_label": c["claim_label"], "passage_id": pid, "quote": text[pid][:600]}
+                                 for c in draft["claims"] for pid in c["passage_ids"]]
+    return draft
+
 SAMPLE = """Header line.
 tr: marks the Turkish rendering.
 
@@ -102,7 +110,7 @@ def test_claim_naming_the_writers_own_work_is_flagged(text, language):
     draft["answer_language"] = language
     draft["claims"] = [dict(draft["claims"][0], text=text)]
     draft["limitations"], draft["unanswered_aspects"] = [], []
-    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], draft)
+    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], anchored(draft))
     assert report.ok  # phrasing findings are warnings, never a rejection (D19)
     assert [w.path for w in report.warnings if w.code == "own_work_phrase_in_claim"] == ["/claims/0/text"]
 
@@ -125,7 +133,7 @@ def test_several_sources_wording_for_a_one_source_claim_is_flagged(text, languag
     one = dict(draft["claims"][0], text=text, passage_ids=["psg_SYNA1abs01"])
     two = dict(draft["claims"][0], claim_label="c2", text=text, passage_ids=["psg_SYNA1abs01", "psg_SYNA3pg002"])
     draft["claims"], draft["limitations"], draft["unanswered_aspects"] = [one, two], [], []
-    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], draft)
+    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], anchored(draft))
     assert report.ok and [w.path for w in report.warnings if w.code == "plural_sources_for_one_source"] == ["/claims/0/text"]
 
 
@@ -156,7 +164,7 @@ def test_latex_math_in_a_claim_reads_as_one_slot_word():
     draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
     draft["claims"][0]["text"] = r"It has been reported that the objective $\min_{x} \sum_{i=1}^{N} P_e(x_i)$ is minimized subject to $\sum_i x_i \le Q$."
     draft["claims"][0]["passage_ids"] = ["psg_SYNA1pg003"]
-    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], draft)
+    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], anchored(draft))
     assert report.ok and [w for w in report.warnings if w.path == "/claims/0/text"] == []
 
 
@@ -179,7 +187,7 @@ def test_claim_math_citing_only_an_abstract_is_a_warning_not_an_issue():
     assert report.ok and [w.path for w in warnings] == ["/claims/0/text"]
 
     draft["claims"][0]["passage_ids"] = ["psg_SYNA1pg003"]
-    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], draft)
+    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], anchored(draft))
     assert report.ok and [w for w in report.warnings if w.code == "math_without_full_text"] == []
 
 

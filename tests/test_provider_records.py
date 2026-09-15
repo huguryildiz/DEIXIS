@@ -139,6 +139,48 @@ def test_answer_retrieval_places_a_formulation_page_before_a_better_fts_match():
     assert [p["id"] for p in passages] == ["abstract", "formulation", "fts"]
 
 
+def test_short_attached_pdf_supplies_later_pages_without_the_multi_source_cap():
+    from deixis.workflow.flow import ResearchFlow
+
+    pages = [{"id": f"page-{page}-chunk-{chunk}", "source_version_id": "source", "asset_id": "asset", "kind": "pdf_page",
+              "physical_page": page, "text": f"SYNTHETIC page {page} chunk {chunk} about packet size and power."}
+             for page in range(1, 11) for chunk in range(4)]
+
+    class RetrievalStore:
+        def passages_for(self, *_): return pages
+        def asset(self, *_): return {"page_count": 10}
+
+    flow = object.__new__(ResearchFlow)
+    flow.store = RetrievalStore()
+    selected = flow._retrieve("research", {"question": "How are packet size and power chosen?", "revision": 1,
+                                            "source_scope": "attached"}, ["source"], 48)
+    assert len(selected) == 40
+    assert {p["physical_page"] for p in selected} == set(range(1, 11))
+    assert [p["id"] for p in selected if p["physical_page"] == 5] == [f"page-5-chunk-{n}" for n in range(4)]
+
+
+@pytest.mark.parametrize(("page_count", "chunk_count"), [(49, 49), (400, 10)])
+def test_large_attached_pdf_keeps_bounded_passage_selection(page_count, chunk_count):
+    from deixis.workflow.flow import MAX_PASSAGES_PER_SOURCE, ResearchFlow
+
+    pages = [{"id": f"page-{n}", "source_version_id": "source", "asset_id": "asset", "kind": "pdf_page", "physical_page": n,
+              "text": f"SYNTHETIC scheduling evidence on page {n}."} for n in range(1, chunk_count + 1)]
+
+    class RetrievalStore:
+        def passages_for(self, *_): return pages
+        def asset(self, *_): return {"page_count": page_count}
+        def latest_step_output(self, *_): return None
+        def search_passages(self, *_): return pages
+        def source(self, *_): return {"title": "SYNTHETIC scheduling source"}
+        def answer_order_facts(self, *_): return {"source": (True, 0)}
+
+    flow = object.__new__(ResearchFlow)
+    flow.store = RetrievalStore()
+    selected = flow._retrieve("research", {"question": "How is scheduling optimized?", "revision": 1,
+                                            "source_scope": "attached"}, ["source"], 48)
+    assert len(selected) == MAX_PASSAGES_PER_SOURCE
+
+
 def plan_issues(queries, enabled=("openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv", "ieee_xplore", "scopus", "serpapi")):
     report = contracts.ValidationReport()
     plan = {"queries": [{"provider_id": p, "query_text": q, "rationale": "r"} for p, q in queries]}

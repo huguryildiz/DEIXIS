@@ -117,6 +117,13 @@ access and scope limits are stated.
    (`f kl ij` for $f^{kl}_{ij}$); restore them only where the passage's own
    definitions make the reading unambiguous, and otherwise describe the
    expression in words.
+   Distinguish variables optimized inside a displayed formulation from fixed
+   inputs, choices computed by a separate local problem, and candidates
+   compared by solving the formulation repeatedly. A source's title or abstract
+   may describe the overall framework as "joint" or "cross-layer"; that wording
+   alone does not establish that every choice is a decision variable of one MIP.
+   When the supplied equations and procedure show separate stages, state those
+   stages explicitly and do not attribute their choices to the MIP itself.
 7. Write for a reader new to the topic. Define each technical term from the
    passages the first time it is used, for example in a key-concepts section after
    the overview. Say what a formulation or result means and how approaches differ;

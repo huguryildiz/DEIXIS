@@ -43,6 +43,8 @@ CAPABILITIES = {
 MAX_DOWNLOADS_PER_RUN = 8
 MAX_ABSTRACT_CHARS = 2500
 MAX_PASSAGES_PER_SOURCE = 6  # passages one included source may contribute to an answer step
+MAX_SMALL_PDF_CHARS = 60_000  # bounded full extracted text for a single attached PDF
+MAX_SMALL_PDF_PAGES = 12
 FORMULATION_SCORE_THRESHOLD = 3
 FORMULATION_TERMS = re.compile(
     r"\b(?:minimi[sz]e|maximi[sz]e|subject\s+to|s\.\s*t|objective\s+function|constraints?|decision\s+variables?"
@@ -356,6 +358,17 @@ class ResearchFlow:
                                error_code=None if status == "succeeded" else f"extraction_{extraction.status}")
 
     def _retrieve(self, research_id: str, scope: dict[str, Any], included: list[str], limit: int) -> list[dict[str, Any]]:
+        # A short attached document can fit in the answer input in its entirety. Do not discard relevant later pages
+        # merely because the multi-source six-passage cap was reached; keep that cap for larger or mixed corpora.
+        if len(included) == 1 and scope.get("source_scope") in ("attached", "attached_and_academic"):
+            all_passages = self.store.passages_for(included[0])
+            pdf_passages = [p for p in all_passages if p["kind"] == "pdf_page"]
+            asset_ids = {p["asset_id"] for p in pdf_passages}
+            if (len(asset_ids) == 1 and len(all_passages) <= limit
+                    and sum(len(p["text"]) for p in all_passages) <= MAX_SMALL_PDF_CHARS):
+                asset = self.store.asset(next(iter(asset_ids)))
+                if asset["page_count"] is not None and asset["page_count"] <= MAX_SMALL_PDF_PAGES:
+                    return all_passages
         terms = [t for t in re.findall(r"\w+", scope["question"].lower()) if len(t) > 2 and t not in STOPWORDS]
         plan = self.store.latest_step_output(research_id, "search_plan", scope["revision"])
         if plan and plan.get("output_type") == "SearchPlan":

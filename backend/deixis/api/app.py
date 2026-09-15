@@ -159,7 +159,10 @@ def create_app(
         store = Store(conn)
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.USER_AGENT})
         adapter_map = adapters if adapters is not None else {
-            "codex": CodexAdapter(codex_home=settings.codex_home, workspace=settings.data_dir / "codex-workspace")
+            "codex": CodexAdapter(codex_home=settings.codex_home, workspace=settings.data_dir / "codex-workspace"),
+            "claude": ClaudeCodeAdapter(workspace=settings.data_dir / "claude-workspace"),
+            "gemini": GeminiAdapter(client=http),
+            "deepseek": DeepSeekAdapter(client=http),
         }
         package = skill.load_skill_package()
         flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf))
@@ -258,18 +261,26 @@ def create_app(
         models = {}
         for name, adapter in request.app.state.adapters.items():
             models[name] = await adapter.health(refresh=refresh)
-        for name in ("claude", "deepseek", "gemini", "kimi", "grok", "copilot", "glm", "muse_spark", "muse_glimmer",
+        for name in ("kimi", "grok", "copilot", "glm", "muse_spark", "muse_glimmer",
                      "ollama", "qwen", "mistral"):
             models.setdefault(name, {"connection": name, "ready": False, "reason": "Adapter not implemented in this version"})
         return {
             "models": models,
             "providers": [
                 {"id": p, "implemented": True, "access_mode": c.access_mode(), "supplementary": c.supplementary,
-                 "note": f"Set {c.key_env} in .env to enable it." if c.access_mode() == "not_configured"
+                 "key_env": c.key_env,
+                 "note": f"Add the key in Settings or set {c.key_env} in .env to enable it." if c.access_mode() == "not_configured"
                  else "Access and quota are recorded per request; not verified in advance."}
                 for p, c in CONNECTORS.items()
             ],
         }
+
+    @app.get("/api/connections/{connection}")
+    async def model_connection(connection: str, request: Request, refresh: bool = False) -> dict[str, Any]:
+        adapter = request.app.state.adapters.get(connection)
+        if adapter is None:
+            raise HTTPException(404, f"Model connection '{connection}' is not available")
+        return await adapter.health(refresh=refresh)
 
     @app.get("/api/institutional-access")
     async def institutional_access(request: Request, refresh: bool = False) -> dict[str, Any]:

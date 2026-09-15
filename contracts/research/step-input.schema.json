@@ -419,6 +419,7 @@
             "codex",
             "claude",
             "deepseek",
+            "gemini",
             "ollama",
             "fake"
           ]

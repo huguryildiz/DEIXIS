@@ -526,7 +526,7 @@ class ResearchFlow:
                                                error=result.error, delivery_class=result.delivery_class)
                 self._checkpoint(run_id)
                 halt("model_call_failed", {"status": result.status, "error": result.error})
-            if not requested_model or result.resolved_model != requested_model:
+            if not requested_model or (result.resolved_model != requested_model and not result.requested_model_verified):
                 # Output from any model other than the one chosen for this step's role is recorded but never used.
                 mismatch = {"requested_model": requested_model, "resolved_model": result.resolved_model}
                 self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_mismatch", error=mismatch)

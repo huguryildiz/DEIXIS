@@ -47,6 +47,9 @@ class ModelStepResult:
     tool_item_types: list[str] = field(default_factory=list)
     error: str | None = None
     delivery_class: str | None = None
+    # True when an adapter used a provider selector/alias exactly as requested
+    # and separately reports the concrete model that answered.
+    requested_model_verified: bool = False
 
 
 class ModelAdapter(Protocol):

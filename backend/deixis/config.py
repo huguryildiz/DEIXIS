@@ -72,7 +72,10 @@ def load_dotenv(path: Path) -> None:
 def load_settings() -> Settings:
     from deixis.paths import REPO_ROOT
 
+    from deixis import credentials
+
     load_dotenv(REPO_ROOT / ".env")
+    credentials.load_into_environment()
     return Settings(
         data_dir=default_data_dir(),
         host=os.environ.get("DEIXIS_HOST", "127.0.0.1"),

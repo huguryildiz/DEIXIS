@@ -192,12 +192,33 @@ button.chat-step-title svg{color:var(--muted)}
 .proposal span{font-size:11px}
 .source-links{display:flex;gap:14px;margin-top:8px;font-size:12px}
 .source-links :is(a,button){display:inline-flex;align-items:center;gap:5px;color:var(--accent)}
-.section-actions{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
+.source-links button:disabled{color:var(--muted);cursor:wait}
+.pdf-search-status{display:flex;align-items:center;gap:6px;margin:9px 0 0;color:var(--accent);font-size:12px}
+.pdf-candidate-list{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:9px;color:var(--muted);font-size:11px}
+.pdf-candidate-list span{display:inline-flex;align-items:center;gap:5px}
+.section-actions{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px}
 .reference-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
-.export-links{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
-.export-links a{display:inline-flex;align-items:center;height:28px;padding:0 9px;border:1px solid var(--strong-line,var(--line));border-radius:7px;color:var(--ink);font-size:12px;text-decoration:none}
-.export-links a:hover{background:var(--field-surface,transparent);border-color:var(--accent)}
+.export-links{display:inline-flex;align-items:stretch;height:36px;border:1px solid var(--strong-line,var(--line));border-radius:9px;background:var(--raised-surface,var(--paper));overflow:hidden;color:var(--muted)}
+.export-links-label{display:inline-flex;align-items:center;gap:7px;padding:0 11px;font-size:12px;font-weight:500;white-space:nowrap}
+.export-links-label svg{color:var(--muted)}
+.export-formats{display:inline-flex;align-items:stretch;border-left:1px solid var(--strong-line,var(--line))}
+.export-links a{display:inline-flex;align-items:center;padding:0 10px;color:var(--ink);font-size:12px;font-weight:600;text-decoration:none;transition:background-color .16s ease,color .16s ease}
+.export-links a+a{border-left:1px solid var(--strong-line,var(--line))}
+.export-links a:hover{background:color-mix(in srgb,var(--accent),transparent 91%);color:var(--accent)}
+.export-links a:focus-visible{position:relative;z-index:1;outline:2px solid var(--accent);outline-offset:-2px}
+.source-add-actions{display:inline-flex;align-items:center;gap:7px}
+.export-links+.source-add-actions{padding-left:10px;border-left:1px solid var(--line)}
+.app .source-action{height:36px;gap:8px;padding:0 13px;border-color:var(--strong-line,var(--line));border-radius:9px;background:var(--raised-surface,var(--paper));color:var(--ink);font-size:12.5px;font-weight:600;box-shadow:0 1px 1px rgb(24 31 45/.03);transition:border-color .16s ease,background-color .16s ease,color .16s ease,box-shadow .16s ease,transform .16s ease}
+.app .source-action:hover{border-color:color-mix(in srgb,var(--accent),var(--line) 45%);background:color-mix(in srgb,var(--accent),transparent 95%);color:var(--accent);box-shadow:0 3px 10px rgb(24 31 45/.07)}
+.app .source-action:active{transform:translateY(1px);box-shadow:none}
+.app .source-action .connection-icon{display:grid;place-items:center;width:17px;height:17px}
+.app .source-action .connection-icon svg{width:17px;height:17px}
+.app .source-action.is-primary{border-color:var(--accent);background:var(--accent);color:var(--paper);box-shadow:0 2px 8px color-mix(in srgb,var(--accent),transparent 78%)}
+.app .source-action.is-primary:hover{border-color:color-mix(in srgb,var(--accent),var(--ink) 12%);background:color-mix(in srgb,var(--accent),var(--ink) 10%);color:var(--paper);box-shadow:0 4px 12px color-mix(in srgb,var(--accent),transparent 72%)}
+.app .source-action[aria-expanded=true]{border-color:var(--accent);background:color-mix(in srgb,var(--accent),transparent 91%);color:var(--accent)}
 @media (max-width:720px){.legacy-section-head:has(.section-actions){flex-wrap:wrap}.section-actions{flex:1 1 100%;justify-content:flex-start}.zotero-panel-head .source-filters{order:1}}
+@media (max-width:540px){.section-actions{align-items:stretch}.export-links{width:100%}.export-links-label{flex:1}.source-add-actions{width:100%}.export-links+.source-add-actions{padding:8px 0 0;border-top:1px solid var(--line);border-left:0}.app .source-action{flex:1;padding-inline:10px}}
+@media (prefers-reduced-motion:reduce){.app .source-action,.export-links a{transition:none}}
 .intake-menu-item>.connection-icon{width:17px;height:17px}
 .attachment-chip .connection-icon{width:13px;height:13px}
 .zotero-panel{display:grid;gap:10px;margin:0 0 16px;padding:14px 16px;border:1px solid var(--line);border-radius:8px}
@@ -245,6 +266,8 @@ button.chat-step-title svg{color:var(--muted)}
 .source-sheet .pdf-toggle{width:100%;height:40px;margin-top:18px;border-color:var(--line);background:transparent;color:var(--ink);font-size:14px}
 .source-section{margin:24px 0 8px;font-size:14px;font-weight:600;color:var(--ink)}
 .source-sheet .passage-text{margin:0;font-size:14px;line-height:1.75;color:var(--muted)}
+.source-sheet .passage-math{display:inline-block;max-width:100%;margin-inline:.08em;overflow-x:auto;overflow-y:hidden;color:var(--ink);vertical-align:-.18em}
+.source-sheet .passage-math .katex{font-size:1.04em}
 .source-fine{margin:10px 0 0;font-size:12px;line-height:1.55}
 .source-facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 16px;margin:24px 0 0;padding-top:16px;border-top:1px solid var(--line)}
 .source-facts dt,.source-facts dd{margin:0;font-size:12px;line-height:1.55}

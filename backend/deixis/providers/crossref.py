@@ -20,7 +20,7 @@ from deixis.providers.common import ProviderRecord, SearchOutcome, normalize_doi
 
 PROVIDER_ID = "crossref"
 WORKS_URL = "https://api.crossref.org/works"
-SELECT = "DOI,title,author,issued,container-title,type,abstract,URL"
+SELECT = "DOI,title,author,issued,container-title,type,abstract,URL,link"
 TYPES = "type:journal-article,type:proceedings-article,type:posted-content"
 ABSTRACT_ORIGIN = "provider_crossref_jats"
 RATE_LIMIT_HEADERS = ("x-rate-limit-limit", "x-rate-limit-interval", "x-concurrency-limit")
@@ -40,6 +40,11 @@ def _record(item: dict[str, Any]) -> ProviderRecord:
     parts = ((item.get("issued") or {}).get("date-parts") or [[None]])[0]
     authors = [" ".join(p for p in (a.get("given"), a.get("family")) if p) or a.get("name") for a in item.get("author") or []]
     kind = item.get("type")
+    pdf_link = next((link for link in item.get("link") or []
+                     if link.get("URL") and ("pdf" in (link.get("content-type") or "").lower()
+                                             or link["URL"].lower().split("?", 1)[0].endswith(".pdf"))), None)
+    pdf_version = {"vor": "publishedVersion", "am": "acceptedVersion"}.get(
+        (pdf_link.get("content-version") or "").lower()) if pdf_link else None
     return ProviderRecord(
         provider_record_id=doi or str(item.get("URL")),
         title=strip_markup((item.get("title") or [None])[0]) or "(untitled)",
@@ -49,8 +54,8 @@ def _record(item: dict[str, Any]) -> ProviderRecord:
         publication_type=kind,
         doi=doi,
         landing_url=item.get("URL"),
-        oa_pdf_url=None,
-        oa_pdf_version=None,
+        oa_pdf_url=pdf_link.get("URL") if pdf_link else None,
+        oa_pdf_version=pdf_version,
         # A DOI registered for posted content names the preprint; other registered types name the published record.
         version_label="submittedVersion" if kind == "posted-content" else "publishedVersion",
         abstract=abstract,

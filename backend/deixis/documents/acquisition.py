@@ -1,0 +1,221 @@
+"""Auditable PDF discovery by DOI, followed by version-gated retrieval."""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import re
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable
+from urllib.parse import quote
+
+import httpx
+
+from deixis.documents import fetch, pdf
+from deixis.providers.common import normalize_doi
+from deixis.storage import db
+from deixis.workflow.store import Store
+
+OPENALEX_URL = "https://api.openalex.org/works"
+CROSSREF_URL = "https://api.crossref.org/works"
+SERPAPI_URL = "https://serpapi.com/search.json"
+OPENALEX_SELECT = "doi,display_name,primary_location,best_oa_location,locations"
+
+
+@dataclass(frozen=True)
+class Candidate:
+    provider: str
+    url: str
+    landing_url: str | None
+    version_label: str | None
+    license: str | None
+    identity_status: str
+    version_status: str
+
+
+@dataclass(frozen=True)
+class Lookup:
+    status: str
+    candidates: list[Candidate]
+    http_status: int | None = None
+    error_code: str | None = None
+
+
+def _version_status(candidate: str | None, source: str | None) -> str:
+    if not candidate or not source:
+        return "uncertain"
+    return "match" if candidate == source else "different"
+
+
+def _unique(candidates: list[Candidate]) -> list[Candidate]:
+    return list({c.url: c for c in candidates if c.url}.values())
+
+
+async def openalex_lookup(client: httpx.AsyncClient, doi: str, source_version: str | None,
+                          api_key: str | None = None, contact_email: str | None = None) -> Lookup:
+    params: dict[str, str] = {"select": OPENALEX_SELECT}
+    if contact_email:
+        params["mailto"] = contact_email
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        response = await client.get(f"{OPENALEX_URL}/https://doi.org/{quote(doi, safe='/')}", params=params, headers=headers, timeout=30)
+    except httpx.TimeoutException:
+        return Lookup("timeout", [], error_code="timeout")
+    except httpx.HTTPError as exc:
+        return Lookup("failed", [], error_code=type(exc).__name__)
+    if response.status_code == 404:
+        return Lookup("zero_results", [], 404)
+    if response.status_code == 429:
+        return Lookup("rate_limited", [], 429, "rate_limited")
+    if response.status_code in (401, 403):
+        return Lookup("auth_required", [], response.status_code, "auth_required")
+    if response.status_code != 200:
+        return Lookup("failed", [], response.status_code, f"http_{response.status_code}")
+    try:
+        work = response.json()
+        identity = "doi_verified" if normalize_doi(work.get("doi")) == doi else "mismatch"
+        candidates = [Candidate(
+            "openalex", location["pdf_url"], location.get("landing_page_url"), location.get("version"),
+            location.get("license"), identity, _version_status(location.get("version"), source_version),
+        ) for location in work.get("locations") or [] if location.get("pdf_url")]
+        return Lookup("completed" if candidates else "zero_results", _unique(candidates), 200)
+    except (json.JSONDecodeError, TypeError, KeyError) as exc:
+        return Lookup("parse_error", [], 200, type(exc).__name__)
+
+
+def crossref_version(value: str | None) -> str | None:
+    return {"vor": "publishedVersion", "am": "acceptedVersion"}.get((value or "").lower())
+
+
+async def crossref_lookup(client: httpx.AsyncClient, doi: str, source_version: str | None,
+                          contact_email: str | None = None) -> Lookup:
+    params = {"mailto": contact_email} if contact_email else {}
+    try:
+        response = await client.get(f"{CROSSREF_URL}/{quote(doi, safe='')}", params=params, timeout=30)
+    except httpx.TimeoutException:
+        return Lookup("timeout", [], error_code="timeout")
+    except httpx.HTTPError as exc:
+        return Lookup("failed", [], error_code=type(exc).__name__)
+    if response.status_code == 404:
+        return Lookup("zero_results", [], 404)
+    if response.status_code == 429:
+        return Lookup("rate_limited", [], 429, "rate_limited")
+    if response.status_code in (401, 403):
+        return Lookup("auth_required", [], response.status_code, "auth_required")
+    if response.status_code != 200:
+        return Lookup("failed", [], response.status_code, f"http_{response.status_code}")
+    try:
+        item = response.json()["message"]
+        identity = "doi_verified" if normalize_doi(item.get("DOI")) == doi else "mismatch"
+        landing = item.get("URL")
+        candidates = []
+        for link in item.get("link") or []:
+            url = link.get("URL")
+            media = (link.get("content-type") or "").lower()
+            if not url or ("pdf" not in media and not url.lower().split("?", 1)[0].endswith(".pdf")):
+                continue
+            version = crossref_version(link.get("content-version"))
+            candidates.append(Candidate("crossref", url, landing, version, None, identity,
+                                        _version_status(version, source_version)))
+        return Lookup("completed" if candidates else "zero_results", _unique(candidates), 200)
+    except (json.JSONDecodeError, TypeError, KeyError) as exc:
+        return Lookup("parse_error", [], 200, type(exc).__name__)
+
+
+def _title_key(text: str | None) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", (text or "").casefold()))
+
+
+def _web_pdf_links(result: dict[str, Any]) -> list[str]:
+    links = [resource.get("link") for resource in result.get("resources") or []
+             if resource.get("link") and "pdf" in (resource.get("file_format") or "").casefold()]
+    direct = result.get("link")
+    if direct and direct.lower().split("?", 1)[0].endswith(".pdf"):
+        links.append(direct)
+    return list(dict.fromkeys(links))
+
+
+async def web_lookup(client: httpx.AsyncClient, doi: str, title: str, api_key: str | None) -> Lookup:
+    if not api_key:
+        return Lookup("auth_required", [], error_code="missing_serpapi_key")
+    query = f'"{title}"'
+    params = {"engine": "google_scholar", "q": query, "num": 20, "hl": "en", "api_key": api_key}
+    try:
+        response = await client.get(SERPAPI_URL, params=params, timeout=60)
+    except httpx.TimeoutException:
+        return Lookup("timeout", [], error_code="timeout")
+    except httpx.HTTPError as exc:
+        return Lookup("failed", [], error_code=type(exc).__name__)
+    if response.status_code in (401, 403):
+        return Lookup("auth_required", [], response.status_code, "auth_required")
+    if response.status_code == 429:
+        return Lookup("rate_limited", [], 429, "rate_limited")
+    if response.status_code != 200:
+        return Lookup("failed", [], response.status_code, f"http_{response.status_code}")
+    try:
+        payload = response.json()
+        if payload.get("error") and not payload.get("organic_results"):
+            return Lookup("failed", [], 200, str(payload["error"])[:200])
+        expected = _title_key(title)
+        candidates = []
+        for result in payload.get("organic_results") or []:
+            actual = _title_key(result.get("title"))
+            identity = "title_verified" if actual == expected else "unverified"
+            for url in _web_pdf_links(result):
+                candidates.append(Candidate("web_search", url, result.get("link"), None, None, identity, "uncertain"))
+        return Lookup("completed" if candidates else "zero_results", _unique(candidates), 200)
+    except (json.JSONDecodeError, TypeError) as exc:
+        return Lookup("parse_error", [], 200, type(exc).__name__)
+
+
+async def acquire_for_source(store: Store, research_id: str, source_version_id: str, client: httpx.AsyncClient,
+                             papers_dir: Any, contact_email: str | None, serpapi_key: str | None,
+                             fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch.fetch_pdf) -> dict[str, Any]:
+    source = store.source(source_version_id)
+    doi = normalize_doi(source.get("doi"))
+    if not doi:
+        raise ValueError("A DOI is required for verified PDF acquisition")
+    lookups: list[tuple[str, str, Lookup]] = []
+    oa = await openalex_lookup(client, doi, source.get("version_label"), contact_email=contact_email)
+    lookups.append(("openalex", doi, oa))
+    cr = await crossref_lookup(client, doi, source.get("version_label"), contact_email=contact_email)
+    lookups.append(("crossref", doi, cr))
+    for provider, query, lookup in lookups:
+        run_id = store.record_pdf_discovery(research_id, source_version_id, provider, query, lookup)
+        store.record_pdf_candidates(source_version_id, run_id, lookup.candidates)
+
+    if not store.has_asset(source_version_id):
+        attempted_urls: set[str] = set()
+        for candidate in store.pdf_candidates(source_version_id):
+            if candidate["identity_status"] != "doi_verified" or candidate["version_status"] != "match":
+                continue
+            if candidate["candidate_url"] in attempted_urls:
+                continue
+            attempted_urls.add(candidate["candidate_url"])
+            result = await fetcher(candidate["candidate_url"])
+            store.record_pdf_attempt(candidate["id"], result)
+            if result.status != "ok":
+                continue
+            sha = hashlib.sha256(result.data).hexdigest()
+            papers_dir.mkdir(parents=True, exist_ok=True)
+            path = papers_dir / f"{sha}.pdf"
+            if not path.exists():
+                path.write_bytes(result.data)
+            extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+            store.add_asset_with_pages(source_version_id, sha, len(result.data), path.name, "download",
+                                       result.final_url or candidate["candidate_url"], None, extraction,
+                                       pdf.EXTRACTION_VERSION, pdf.chunk_page)
+            break
+
+    # A listed URL is not a found PDF: it may be gated, dead, HTML, or a different version. Make the fallback explicit
+    # and retain its uncertain-version candidates for manual review/upload; never silently attach them.
+    if not store.has_asset(source_version_id):
+        web_query = f'"{source["title"]}"'
+        web = await web_lookup(client, doi, source["title"], serpapi_key)
+        run_id = store.record_pdf_discovery(research_id, source_version_id, "web_search", web_query, web)
+        store.record_pdf_candidates(source_version_id, run_id, web.candidates)
+        lookups.append(("web_search", web_query, web))
+
+    return {"source_version_id": source_version_id, "lookups": len(lookups),
+            "candidates": len(store.pdf_candidates(source_version_id)), "pdf_found": store.has_asset(source_version_id)}

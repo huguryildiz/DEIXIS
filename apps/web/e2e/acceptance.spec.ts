@@ -189,7 +189,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await page.keyboard.press('Escape')
     await expect(page.locator('.session-meta')).toContainText('Files + academic search')
 
-    await page.locator('input[type=file]').setInputFiles(server.hostilePdf())
+    await page.locator('input[type=file]').first().setInputFiles(server.hostilePdf())
     await expect(page.getByText('PDF added and included.')).toBeVisible()
     await expect(row(page, 'SYNTHETIC optimization of hospital visiting hours').getByRole('button', { name: 'Exclude' })).toBeDisabled()
   })

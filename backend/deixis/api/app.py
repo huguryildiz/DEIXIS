@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
+from deixis.documents import acquisition
 from deixis.documents import pdf
 from deixis.domain import skill
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict
@@ -451,6 +452,44 @@ def create_app(
             store.add_asset_with_pages(svid, sha, size, path.name, "user_upload", None, filename,
                                        extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
         store.add_to_corpus(research_id, svid, "user_upload", selection_state="included", selection_origin="user")
+        return research_view(store, research_id)
+
+    @app.post("/api/researches/{research_id}/sources/{source_version_id}/uploads", status_code=201)
+    async def upload_to_source(research_id: str, source_version_id: str, request: Request,
+                               file: UploadFile = File(...)) -> dict[str, Any]:
+        """Attach a user-selected PDF to an existing bibliographic source version."""
+        store = store_of(request)
+        store.research(research_id)
+        if not store.is_member(research_id, source_version_id):
+            raise HTTPException(404, "Source is not part of this research")
+        settings.papers_dir.mkdir(parents=True, exist_ok=True)
+        sha, size, path = await store_upload(file, settings.papers_dir)
+        if not store.conn.execute(
+            "SELECT 1 FROM source_assets WHERE source_version_id = ? AND sha256 = ?", (source_version_id, sha)
+        ).fetchone():
+            extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+            filename = Path(file.filename or "document.pdf").name
+            store.add_asset_with_pages(source_version_id, sha, size, path.name, "user_upload", None, filename,
+                                       extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+        return research_view(store, research_id)
+
+    @app.post("/api/researches/{research_id}/sources/{source_version_id}/pdf-discovery")
+    async def discover_source_pdf(research_id: str, source_version_id: str, request: Request) -> dict[str, Any]:
+        """Collect OpenAlex and Crossref locations, use explicit web search only if both list no PDF, then retrieve verified versions."""
+        store = store_of(request)
+        store.research(research_id)
+        if not store.is_member(research_id, source_version_id):
+            raise HTTPException(404, "Source is not part of this research")
+        source = store.source(source_version_id)
+        if not source.get("doi"):
+            raise HTTPException(422, "A DOI is required for verified PDF acquisition")
+        try:
+            await acquisition.acquire_for_source(
+                store, research_id, source_version_id, request.app.state.http, settings.papers_dir,
+                settings.contact_email, os.environ.get("SERPAPI_API_KEY"), request.app.state.fetch_pdf,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         return research_view(store, research_id)
 
     @app.get("/api/zotero/collections")

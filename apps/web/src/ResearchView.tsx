@@ -27,7 +27,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [busy, setBusy] = useState(false)
   const [events, setEvents] = useState<ActivityEvent[]>([])
   const [zoteroOpen, setZoteroOpen] = useState(false)
+  const [pdfFinding, setPdfFinding] = useState<string | null>(null)
+  const [attachTarget, setAttachTarget] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const sourceFileInput = useRef<HTMLInputElement>(null)
   const firstEvent = useRef<number | null>(null)
   const tabsRef = useRef<HTMLDivElement>(null)
   const jumped = useRef(false)
@@ -112,6 +115,16 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const startAnswer = () => act(() => api.startRun(id, 'answer', crypto.randomUUID()))
   const startDiscovery = () => act(() => api.startRun(id, 'discovery', crypto.randomUUID()))
   const upload = (list: FileList | null) => list && act(async () => { for (const file of Array.from(list)) await api.upload(id, file) }, t('PDF added and included. Its text was extracted page by page (no OCR).'))
+  const uploadToSource = (list: FileList | null) => list && attachTarget && act(async () => {
+    for (const file of Array.from(list)) await api.uploadToSource(id, attachTarget, file)
+  }, t('PDF attached to this source. Its text was extracted page by page (no OCR).'))
+  const discoverPdf = async (source: Source) => {
+    setPdfFinding(source.source_version_id)
+    try { await api.discoverPdf(id, source.source_version_id); await load(); onChanged() }
+    catch (e) { toast('error', errorText(e)) }
+    finally { setPdfFinding(null) }
+  }
+  const chooseSourcePdf = (source: Source) => { setAttachTarget(source.source_version_id); sourceFileInput.current?.click() }
   const importZotero = (source: ZoteroSource, key: string) => act(async () => {
     const { items, pdfs_added: pdfs, notes } = (await api.zoteroImport(id, source, key)).zotero_import
     setZoteroOpen(false)
@@ -171,17 +184,21 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           <div className="section-actions">
             {included > 0 && <ExportLinks researchId={id} sources="included" />}
             {view.scope.source_scope !== 'academic' && <>
-              <Button variant="outline" disabled={busy} aria-expanded={zoteroOpen} onClick={() => setZoteroOpen(open => !open)}><ConnectionIcon id="zotero" />{t('Add from Zotero')}</Button>
-              <Button variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}><FileUp size={14} />{t('Attach PDF')}</Button>
+              <div className="source-add-actions">
+                <Button className="source-action" variant="outline" disabled={busy} aria-expanded={zoteroOpen} onClick={() => setZoteroOpen(open => !open)}><ConnectionIcon id="zotero" />{t('Add from Zotero')}</Button>
+                <Button className="source-action is-primary" variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}><FileUp size={16} />{t('Attach PDF')}</Button>
+              </div>
             </>}
           </div></div>
         {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
         <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void upload(e.target.files); e.target.value = '' }} />
+        <input ref={sourceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void uploadToSource(e.target.files); e.target.value = '' }} />
         {view.search_runs.length > 0 && <div className="search-summary">{view.search_runs.map(s => <div key={s.id}><Search size={13} /><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {t(s.status.replace('_', ' '))} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div>}
         <SourceList sources={view.sources} busy={busy}
           onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
           onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
-          onAbstract={source => source.access.abstract_passage_id && setPassageId(source.access.abstract_passage_id)} />
+          onAbstract={source => source.access.abstract_passage_id && setPassageId(source.access.abstract_passage_id)}
+          onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} pdfFinding={pdfFinding} />
       </TabsContent>
 
       <TabsContent value="activity">
@@ -301,9 +318,11 @@ function ReviewNote({ review }: { review: Answer['review'] }) {
 function ExportLinks({ researchId, sources }: { researchId: string; sources: 'included' | 'cited' }) {
   const label = t(sources === 'included' ? 'included sources' : 'cited sources')
   return <span className="export-links" role="group" aria-label={t('Export {label}', { label })}>
-    <Download size={14} aria-hidden />{t(sources === 'included' ? 'Export included' : 'Export cited')}
-    <a href={bibliographyUrl(researchId, 'bibtex', sources)} download title={t('BibTeX file of the {label} (LaTeX, Zotero, JabRef)', { label })}>.bib</a>
-    <a href={bibliographyUrl(researchId, 'ris', sources)} download title={t('RIS file of the {label} (Zotero, EndNote, Mendeley)', { label })}>.ris</a>
+    <span className="export-links-label"><Download size={15} aria-hidden />{t(sources === 'included' ? 'Export included' : 'Export cited')}</span>
+    <span className="export-formats">
+      <a href={bibliographyUrl(researchId, 'bibtex', sources)} download title={t('BibTeX file of the {label} (LaTeX, Zotero, JabRef)', { label })}>.bib</a>
+      <a href={bibliographyUrl(researchId, 'ris', sources)} download title={t('RIS file of the {label} (Zotero, EndNote, Mendeley)', { label })}>.ris</a>
+    </span>
   </span>
 }
 
@@ -333,9 +352,9 @@ const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
   title: (a, b) => a.title.localeCompare(b.title),
 }
 
-type SourceActions = { onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void }
+type SourceActions = { onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; pdfFinding: string | null }
 
-function SourceList({ sources, busy, onSelect, onReason, onAbstract }: { sources: Source[]; busy: boolean } & SourceActions) {
+function SourceList({ sources, busy, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, pdfFinding }: { sources: Source[]; busy: boolean } & SourceActions) {
   const [filter, setFilter] = useState<StateFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SourceSort>('found')
@@ -367,12 +386,13 @@ function SourceList({ sources, busy, onSelect, onReason, onAbstract }: { sources
       </Select>
     </div>}
     {shown.flat().map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
-      onSelect={state => onSelect(source, state)} onReason={reason => onReason(source, reason)} onAbstract={() => onAbstract(source)} />)}
+      onSelect={state => onSelect(source, state)} onReason={reason => onReason(source, reason)} onAbstract={() => onAbstract(source)}
+      onDiscoverPdf={() => onDiscoverPdf(source)} onAttachPdf={() => onAttachPdf(source)} finding={pdfFinding === source.source_version_id} />)}
     {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { setFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
   </>
 }
 
-function SourceRow({ source, busy, onSelect, onReason, onAbstract }: { source: Source; busy: boolean; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void }) {
+function SourceRow({ source, busy, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, finding }: { source: Source; busy: boolean; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; finding: boolean }) {
   const s = source.selection
   const other = source.version_role === 'other_version'
   const authors = source.authors.slice(0, 3).join(', ') + (source.authors.length > 3 ? ' et al.' : '')
@@ -392,6 +412,11 @@ function SourceRow({ source, busy, onSelect, onReason, onAbstract }: { source: S
         {source.suspected_duplicates.length > 0 && <span className="ref-pill is-unstated" title={source.suspected_duplicates.map(d => t(d.basis === 'published_doi' ? 'a preprint that names the other record’s DOI' : 'same title')).join('; ')}><FileText size={12} aria-hidden />{t(source.suspected_duplicates.length === 1 ? 'may duplicate {n} other source · not merged' : 'may duplicate {n} other sources · not merged', { n: source.suspected_duplicates.length })}</span>}
         {source.cited_in_latest_answer && <span className="ref-pill is-cited"><MessageSquareQuote size={12} aria-hidden />{t('cited in the latest answer')}</span>}
       </div>
+      {finding && <p className="pdf-search-status" role="status"><Search size={13} aria-hidden />{t('Checking OpenAlex and Crossref; Web Search will run if no verified PDF is retrieved…')}</p>}
+      {!finding && source.access.pdf_discoveries.length > 0 && <div className="pdf-candidate-list">
+        {source.access.pdf_discoveries.map((search, i) => <span key={`${search.provider}-${search.created_at}-${i}`}><Search size={12} aria-hidden />{providerName(search.provider)} · {t(search.status.replace('_', ' '))} · {search.result_count}{search.http_status ? ` · HTTP ${search.http_status}` : ''}</span>)}
+        {source.access.pdf_candidates.map(candidate => <span key={candidate.id}><FileText size={12} aria-hidden />{providerName(candidate.provider)} · {t(candidate.version_status === 'match' ? 'version verified' : candidate.version_status === 'different' ? 'different version' : 'version uncertain')} · {candidate.access_status === 'http_error' ? `HTTP ${candidate.http_status ?? '?'}` : t(candidate.access_status.replace('_', ' '))}</span>)}
+      </div>}
       {source.applicability === 'stale_scope' && <p className="proposal is-stale">{t(s.proposal ? 'Found for question revision {n}; the proposal below was made for that question. Search again to screen it for the current question.' : 'Found for question revision {n}. Search again to screen it for the current question.', { n: source.found_in_revision ?? '?' })}</p>}
       {s.proposal && <p className="proposal"><Sparkles size={13} aria-hidden />{t('Model proposal:')} <em className={`verdict is-${s.proposal}`}>{t(s.proposal)}</em> — {s.proposal_reason} <span>({t(s.proposal_basis?.replaceAll('_', ' ') ?? '')})</span>{s.origin === 'user' ? ` ${t('· overridden by you')}` : ''}</p>}
       {s.origin === 'user' && s.user_reason && <p className="proposal"><UserPen size={13} aria-hidden />{t('Your reason: {reason}', { reason: s.user_reason })}</p>}
@@ -399,7 +424,9 @@ function SourceRow({ source, busy, onSelect, onReason, onAbstract }: { source: S
       <div className="source-links">
         {source.access.abstract_passage_id && <button onClick={onAbstract}><BookOpenText size={14} aria-hidden />{t('Read abstract')}</button>}
         {source.doi && <a href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><Link2 size={14} aria-hidden />DOI</a>}
-        {!source.doi && source.landing_url && <a href={source.landing_url} target="_blank" rel="noreferrer"><ExternalLink size={14} aria-hidden />{t('Publisher page')}</a>}
+        {(source.landing_url || source.doi) && <a href={source.landing_url || `https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><ExternalLink size={14} aria-hidden />{t('Open at publisher')}</a>}
+        {source.doi && !source.access.assets.length && <button disabled={busy || finding} onClick={onDiscoverPdf}><Search size={14} aria-hidden />{finding ? t('Web Search is running…') : t('Find PDF')}</button>}
+        {!source.access.assets.length && <button disabled={busy || finding} onClick={onAttachPdf}><FileUp size={14} aria-hidden />{t('Attach this PDF')}</button>}
       </div>
     </div>
     <div className="selection-toggle" role="group" aria-label={t('Selection for {title}', { title: source.title })}>
@@ -436,6 +463,7 @@ function describeEvent(event: ActivityEvent) {
     case 'step_finished': return `${stepLabel(String(p.kind), String(p.operation_key))}: ${t(String(p.status).replace('_', ' '))}${p.error_code ? ` (${p.error_code})` : ''}`
     case 'model_call_started': return `${t('Model call sent to {connection}', { connection: String(p.connection) })}${p.requested_model ? ` · ${p.requested_model}` : ''}`
     case 'search_recorded': return t('{provider} search: {status}, {count} records', { provider: providerName(String(p.provider)), status: t(String(p.status).replace('_', ' ')), count: String(p.result_count) })
+    case 'pdf_discovery_recorded': return t('{provider} PDF lookup: {status}, {count} candidates', { provider: providerName(String(p.provider)), status: t(String(p.status).replace('_', ' ')), count: String(p.result_count) })
     case 'selection_changed': return t('You marked a source as {state}', { state: t(selectionStates[String(p.state)] ?? String(p.state)).toLocaleLowerCase(uiLocale()) })
     case 'answer_saved': return t('Answer saved ({status})', { status: t(String(p.status).replaceAll('_', ' ')) })
     default: return event.type

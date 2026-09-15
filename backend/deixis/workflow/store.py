@@ -135,6 +135,8 @@ class Store:
             self.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (research_id,))
             self.conn.execute("DELETE FROM evidence_links WHERE claim_id IN (SELECT id FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?))", (research_id,))
             self.conn.execute("DELETE FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?)", (research_id,))
+            self.conn.execute("DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs WHERE research_id = ?)", (research_id,))
+            self.conn.execute("DELETE FROM pdf_discovery_runs WHERE research_id = ?", (research_id,))
             for table in ("answer_reviews", "answers", "model_sessions", "step_inputs", "candidates", "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
@@ -552,6 +554,62 @@ class Store:
         source = dict(row)
         source["authors"] = json.loads(source.pop("authors_json"))
         return source
+
+    # ---- PDF acquisition -------------------------------------------------------------
+    def record_pdf_discovery(self, research_id: str, svid: str, provider: str, query: str, outcome: Any) -> str:
+        run_id, ts = new_id("pdr"), now()
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO pdf_discovery_runs (id, research_id, source_version_id, provider, query_text, status,"
+                " result_count, http_status, error_code, created_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (run_id, research_id, svid, provider, query, outcome.status, len(outcome.candidates),
+                 outcome.http_status, outcome.error_code, ts, ts),
+            )
+            self._event(research_id, "pdf_discovery_recorded", {
+                "source_version_id": svid, "provider": provider, "status": outcome.status,
+                "result_count": len(outcome.candidates), "http_status": outcome.http_status,
+                "error_code": outcome.error_code,
+            })
+        return run_id
+
+    def record_pdf_candidates(self, svid: str, run_id: str, candidates: list[Any]) -> list[dict[str, Any]]:
+        with transaction(self.conn):
+            for candidate in candidates:
+                self.conn.execute(
+                    "INSERT INTO pdf_candidates (id, source_version_id, discovery_run_id, provider, candidate_url,"
+                    " landing_url, version_label, license, identity_status, version_status, access_status, discovered_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_attempted', ?)"
+                    " ON CONFLICT(source_version_id, provider, candidate_url) DO UPDATE SET"
+                    " discovery_run_id = excluded.discovery_run_id, provider = excluded.provider,"
+                    " landing_url = COALESCE(excluded.landing_url, pdf_candidates.landing_url),"
+                    " version_label = COALESCE(excluded.version_label, pdf_candidates.version_label),"
+                    " license = COALESCE(excluded.license, pdf_candidates.license),"
+                    " identity_status = excluded.identity_status, version_status = excluded.version_status",
+                    (new_id("pdc"), svid, run_id, candidate.provider, candidate.url, candidate.landing_url,
+                     candidate.version_label, candidate.license, candidate.identity_status, candidate.version_status, now()),
+                )
+        return self.pdf_candidates(svid)
+
+    def pdf_candidates(self, svid: str) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM pdf_candidates WHERE source_version_id = ? ORDER BY discovered_at, rowid", (svid,)
+        )]
+
+    def pdf_discoveries(self, research_id: str, svid: str) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT provider, query_text, status, result_count, http_status, error_code, created_at, finished_at"
+            " FROM pdf_discovery_runs WHERE research_id = ? AND source_version_id = ? ORDER BY created_at, rowid",
+            (research_id, svid),
+        )]
+
+    def record_pdf_attempt(self, candidate_id: str, result: Any) -> None:
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE pdf_candidates SET access_status = ?, http_status = ?, error_code = ?, final_url = ?, attempted_at = ?"
+                " WHERE id = ?",
+                ("downloaded" if result.status == "ok" else result.status, result.http_status, result.error,
+                 result.final_url, now(), candidate_id),
+            )
 
     # ---- research corpus -------------------------------------------------------------
     def record_search(self, search_fields: dict[str, Any], provider: str, records: list[Any], payload_path: str | None,

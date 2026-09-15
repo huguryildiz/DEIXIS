@@ -2,6 +2,32 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D22 — Preserve PDF candidates and make acquisition failures visible
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: A source version previously stored one `oa_pdf_url`. Alternative locations, the provider that supplied each location, and failed attempts such as HTTP 403 or an HTML response at a `.pdf` URL were lost. In the Kurt direct packet-size set, that made metadata-only records look as if no PDF acquisition had been attempted.
+
+**Decision**: A source can now retain every PDF candidate reported by OpenAlex `locations` and Crossref `link`, with provider, DOI identity state, version state, license, URL and retrieval outcome. Only a DOI-verified candidate whose version equals the source record is downloaded and attached. If those candidates yield no verified PDF, a separately labelled SerpApi Google Scholar Web Search uses the exact title and records PDF resources as candidates; web candidates remain version-uncertain and are not attached automatically. Discovery and zero/failure outcomes are stored even when they produce no candidate. The Sources UI shows the provider searches, HTTP status, version state and retrieval status; it offers **Open at publisher** and a per-source **Attach PDF** action for a user-obtained copy.
+
+**Evidence**: Mocked tests cover all OpenAlex locations, Crossref `vor`/`am` mapping, a first same-version URL returning HTTP 403 followed by a successful second URL, web fallback after metadata candidates fail, the ban on automatically downloading a version-uncertain web candidate, API visibility and attaching a user PDF to the existing source. In the live 16-source Kurt measurement, OpenAlex/Crossref listed candidate URLs for 14 sources. None yielded a validated PDF: 12 IEEE Crossref links returned HTTP 200 with non-PDF content, and two publisher links returned HTTP 403. The exact-title Web Search produced candidate PDFs for six sources; their versions were not established, so none was attached. The verified-PDF result is therefore 0/16. The first over-constrained title+DOI+`filetype:pdf` probe and its 0/16 result are retained locally as diagnostic evidence; the corrected run is `.local/p4-eval-2026-09-15-packet/pdf-coverage-v3.json`.
+
+**Impact**: Migration 0011. A listed link and a found, validated PDF are separate states. Web candidates can still include unrelated works and require user inspection. Institutional browser access remains manual; the app does not manage publisher credentials or claim that HTTP 403 proves a subscription requirement. Unpaywall and Semantic Scholar are sensible later resolver stages, and structured extraction/OCR remains P5 work.
+
+## D21 — Read short attached PDFs fully and inspect same-version OA locations
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: In the attached-only Kurt packet-size test, 44 extracted PDF chunks from ten physical pages fit under the standard 48-passage limit, yet the six-passages-per-source cap supplied only six chunks and omitted page 5. That page explains the separate link-power minimization and the selection of packet size by comparing MIP solves. In academic search, the OpenAlex adapter read only `best_oa_location`, which may not be a PDF of the source record's version.
+
+**Decision**: When exactly one source is included in an attached-file scope and all its extracted passages fit within 48 passages, 12 physical pages and 60,000 characters, supply all passages in page order. Larger and mixed corpora retain the existing bounded ranking and six-passages-per-source cap. The OpenAlex search adapter also reads `locations` and prefers an OA PDF whose version equals the primary record's version; a different-version `best_oa_location` remains a separate version. The answer method now explicitly distinguishes variables in the displayed formulation from local precomputation and candidate values compared across repeated solves.
+
+**Evidence**: The read-only replay of the stored Kurt research changed its answer input from six chunks on pages 1, 2, 4 and 8 to all 44 chunks on pages 1–10, including all five on page 5. A fresh isolated Luna answer cited page 5 and described the separate link-power minimization and packet-size comparison, but also contained claims implying that the MIP itself selects power levels. A second answer after the method change cited page 5 and named the local power problem, but still described packet size as directly optimized by the MIP and omitted the repeated-solve selection rule. These are two stochastic, in-sample answer runs, not a semantic correctness pass. An OpenAlex live query returned `locations` (two entries); mocked tests cover same-version selection. The prior four-DOI probe for included direct packet-size works found no PDF URL, so this adapter change does not resolve those four works. The backend suite passed 267 tests.
+
+**Impact**: No migration. Short uploaded PDFs can substantially increase answer input size. Supplying all extracted text does not verify math extraction or the model's interpretation. Subscription PDFs still require an authenticated/user-provided path; an unverified web result must not be attached to a publication record. P5 needs a provenance-preserving candidate resolver with explicit DOI, version, access and failure states, plus an evidence-level check that the final answer distinguishes separate optimization stages.
+
 ## D20 — Reserve bounded answer room for formulation pages and warn about unsupported math
 
 **Status**: accepted  

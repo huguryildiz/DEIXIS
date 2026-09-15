@@ -99,6 +99,12 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "SELECT s.status, s.error_code FROM run_steps s JOIN runs r ON r.id = s.run_id"
             " WHERE r.research_id = ? AND s.operation_key = ? ORDER BY s.started_at DESC LIMIT 1", (research_id, f"fetch:{svid}")
         ).fetchone()
+        pdf_candidates = [{k: r[k] for k in (
+            "id", "provider", "candidate_url", "landing_url", "version_label", "license", "identity_status",
+            "version_status", "access_status", "http_status", "error_code", "final_url", "discovered_at", "attempted_at"
+        )} for r in conn.execute(
+            "SELECT * FROM pdf_candidates WHERE source_version_id = ? ORDER BY discovered_at, rowid", (svid,)
+        )]
         sources.append({
             "source_version_id": svid, "work_id": row["work_id"], "title": row["title"], "authors": json.loads(row["authors_json"]),
             "year": row["year"], "venue": row["venue"], "doi": row["doi"], "landing_url": row["landing_url"],
@@ -114,7 +120,8 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "access": {"abstract_passage_id": abstract["id"] if abstract else None,
                        "abstract_origin": abstract["abstract_origin"] if abstract else None,
                        "oa_pdf_url": row["oa_pdf_url"], "oa_pdf_version": row["oa_pdf_version"], "assets": assets,
-                       "fetch": dict(fetch) if fetch else None},
+                       "fetch": dict(fetch) if fetch else None, "pdf_candidates": pdf_candidates,
+                       "pdf_discoveries": store.pdf_discoveries(research_id, svid)},
             "selection": {"state": row["state"], "origin": row["selection_origin"], "version": row["selection_version"],
                           "proposal": row["proposal"], "proposal_reason": row["proposal_reason"],
                           "proposal_basis": row["proposal_basis"], "user_reason": row["user_reason"]},

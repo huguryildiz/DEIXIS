@@ -36,13 +36,23 @@ export type SearchRun = {
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null } | null
 }
 export type Asset = { id: string; extraction_status: string; page_count: number | null; origin: string; byte_size: number }
+export type PdfCandidate = {
+  id: string; provider: 'openalex' | 'crossref' | 'web_search'; candidate_url: string; landing_url: string | null
+  version_label: string | null; license: string | null; identity_status: 'doi_verified' | 'title_verified' | 'unverified' | 'mismatch'
+  version_status: 'match' | 'different' | 'uncertain'; access_status: 'not_attempted' | 'downloaded' | 'http_error' | 'not_pdf' | 'too_large' | 'timeout' | 'blocked_url' | 'failed'
+  http_status: number | null; error_code: string | null; final_url: string | null; discovered_at: string; attempted_at: string | null
+}
+export type PdfDiscovery = {
+  provider: 'openalex' | 'crossref' | 'web_search'; query_text: string; status: string; result_count: number
+  http_status: number | null; error_code: string | null; created_at: string; finished_at: string | null
+}
 export type Source = {
   source_version_id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null
   doi: string | null; landing_url: string | null; version_label: string | null; publication_type: string | null
   cited_by_count: number | null; cited_by_count_at: string | null
   origin: 'provider' | 'user_upload'; added_by: string; rank: number | null
   found_in_revision: number | null; applicability: 'current' | 'stale_scope'; version_role: 'record' | 'other_version'
-  access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; fetch: { status: string; error_code: string | null } | null }
+  access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; fetch: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; pdf_discoveries: PdfDiscovery[] }
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null }
   cited_in_latest_answer: boolean
   provider_records: string[]; suspected_duplicates: { source_version_id: string; basis: 'same_title' | 'published_doi' }[]
@@ -163,6 +173,13 @@ export const api = {
     form.append('file', file)
     return request<ResearchView>(`/api/researches/${id}/uploads`, { method: 'POST', body: form })
   },
+  uploadToSource: (id: string, sourceId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/uploads`, { method: 'POST', body: form })
+  },
+  discoverPdf: (id: string, sourceId: string) =>
+    request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-discovery`, { method: 'POST' }),
   startRun: (id: string, kind: 'discovery' | 'answer', idempotencyKey: string) =>
     request<Run>(`/api/researches/${id}/runs`, json('POST', { kind }, { 'Idempotency-Key': idempotencyKey })),
   controlRun: (runId: string, action: 'pause' | 'resume' | 'cancel') => request<Run>(`/api/runs/${runId}/${action}`, { method: 'POST' }),

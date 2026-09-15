@@ -24,7 +24,7 @@ SEARCH_PARAM = "search.title_and_abstract"
 SELECT = ",".join(
     [
         "id", "doi", "ids", "display_name", "publication_year", "type", "authorships",
-        "primary_location", "best_oa_location", "open_access", "abstract_inverted_index", "cited_by_count",
+        "primary_location", "best_oa_location", "locations", "open_access", "abstract_inverted_index", "cited_by_count",
     ]
 )
 ABSTRACT_ORIGIN = "provider_openalex_inverted_index"
@@ -49,6 +49,12 @@ def reconstruct_abstract(inverted: dict[str, list[int]] | None) -> str | None:
 def _record(work: dict[str, Any]) -> ProviderRecord:
     primary = work.get("primary_location") or {}
     best_oa = work.get("best_oa_location") or {}
+    # The overall best OA copy can be an accepted manuscript even when another location has a PDF of the record's
+    # published version. Prefer the latter for this source version, without conflating versions.
+    same_version_pdf = next((location for location in work.get("locations") or []
+                             if location.get("is_oa") and location.get("pdf_url")
+                             and primary.get("version") and location.get("version") == primary["version"]), None)
+    chosen_pdf = same_version_pdf or best_oa
     ids = {k: str(v) for k, v in (work.get("ids") or {}).items() if v}
     abstract = reconstruct_abstract(work.get("abstract_inverted_index"))
     other_versions = []
@@ -68,8 +74,8 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
         publication_type=work.get("type"),
         doi=normalize_doi(work.get("doi")),
         landing_url=primary.get("landing_page_url"),
-        oa_pdf_url=best_oa.get("pdf_url") or None,
-        oa_pdf_version=best_oa.get("version") if best_oa.get("pdf_url") else None,
+        oa_pdf_url=chosen_pdf.get("pdf_url") or None,
+        oa_pdf_version=chosen_pdf.get("version") if chosen_pdf.get("pdf_url") else None,
         version_label=primary.get("version"),
         abstract=abstract,
         abstract_origin=ABSTRACT_ORIGIN if abstract else None,

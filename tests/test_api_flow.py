@@ -242,6 +242,29 @@ def test_question_to_cited_answer_and_restart(tmp_path):
         assert leak.status_code == 404  # T08: passage outside research B's corpus
 
 
+def test_pdf_discovery_is_visible_and_user_can_attach_pdf_to_existing_source(tmp_path):
+    with TestClient(app_for(tmp_path)) as raw:
+        client = session(raw)
+        rid = create(client)
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        view, completed = wait_run(client, rid, run["id"])
+        assert completed["status"] == "completed"
+        source = next(s for s in view["sources"] if s["doi"])
+
+        found = client.post(f"/api/researches/{rid}/sources/{source['source_version_id']}/pdf-discovery")
+        assert found.status_code == 200, found.text
+        refreshed = next(s for s in found.json()["sources"] if s["source_version_id"] == source["source_version_id"])
+        assert [d["provider"] for d in refreshed["access"]["pdf_discoveries"]] == ["openalex", "crossref", "web_search"]
+
+        attached = client.post(
+            f"/api/researches/{rid}/sources/{source['source_version_id']}/uploads",
+            files={"file": ("author-copy.pdf", make_pdf(["SYNTHETIC author copy"]), "application/pdf")},
+        )
+        assert attached.status_code == 201, attached.text
+        same = next(s for s in attached.json()["sources"] if s["source_version_id"] == source["source_version_id"])
+        assert same["access"]["assets"][0]["origin"] == "user_upload"
+
+
 def test_invalid_output_is_repaired_once_then_kept_as_unverified_draft(tmp_path):
     def bad(si):
         if si["task_type"] != "grounded_answer":

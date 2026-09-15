@@ -56,6 +56,20 @@ def test_success_normalizes_record_and_reconstructs_abstract():
     assert outcome.access_mode == "api_key" and outcome.rate_limit["x-ratelimit-remaining"] == "990"
 
 
+def test_same_version_oa_location_is_preferred_over_best_other_version():
+    work = {**WORK, "locations": [
+        {"is_oa": False, "pdf_url": "https://closed.example/published.pdf", "version": "publishedVersion"},
+        {"is_oa": True, "pdf_url": "https://repository.example/published.pdf", "version": "publishedVersion"},
+        WORK["best_oa_location"],
+    ]}
+    outcome = run(lambda r: httpx.Response(200, json={"meta": {"count": 1}, "results": [work]}))
+    record = outcome.records[0]
+    assert record.oa_pdf_url == "https://repository.example/published.pdf"
+    assert record.oa_pdf_version == record.version_label == "publishedVersion"
+    assert [(o.version_label, o.pdf_url) for o in record.other_versions] == [
+        ("acceptedVersion", "https://example.org/a.pdf")]
+
+
 def test_zero_results_is_distinct_from_failure():
     outcome = run(lambda r: httpx.Response(200, json={"meta": {"count": 0}, "results": []}))
     assert outcome.status == "zero_results" and outcome.delivery_class is None

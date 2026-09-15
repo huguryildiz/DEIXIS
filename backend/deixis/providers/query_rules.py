@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 
 NAMES = {"openalex": "OpenAlex", "semantic_scholar": "Semantic Scholar", "crossref": "Crossref", "arxiv": "arXiv",
+         "pubmed": "PubMed",
          "biorxiv": "bioRxiv", "ieee_xplore": "IEEE Xplore", "scopus": "Scopus", "core": "CORE", "serpapi": "SerpApi"}
 EXAMPLES = {
     "openalex": '"molecular communication" AND ("resource allocation" OR scheduling)',
@@ -21,6 +22,7 @@ EXAMPLES = {
     "arxiv": 'abs:"molecular communication" AND (abs:scheduling OR abs:allocation)',
     "semantic_scholar": "molecular communication resource allocation",
     "crossref": "molecular communication scheduling",
+    "pubmed": '"molecular communication" AND (optimization OR scheduling)',
     "serpapi": '"molecular communication" scheduling OR "resource allocation"',
 }
 MAX_PLAIN_WORDS = 8

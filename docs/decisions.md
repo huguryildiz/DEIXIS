@@ -2,6 +2,24 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D32 — Add PubMed through NCBI E-utilities
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: The owner noticed that PubMed was absent from the scholarly sources and asked to add it, including its API key in the local `.env` configuration.
+
+**Decision**:
+
+- A `pubmed` connector uses NCBI E-utilities: ESearch retrieves relevance-ranked PMIDs and the total match count, then EFetch retrieves PubMed XML for those PMIDs. The two calls form one provider search operation.
+- Records keep PMID, DOI when present, title, authors, journal, publication year/type, volume, issue, pages and structured abstract sections. PubMed does not identify a version-labelled PDF, so the connector attaches no file.
+- PubMed is available without a key. `NCBI_API_KEY` is an optional managed source key and may be set in `.env` or Settings. Requests identify the application as `DEIXIS` and include the configured contact email; the key is never written to the stored request description or payload.
+- Search-plan instructions use native Entrez syntax, including quoted phrases, Boolean operators and optional field tags. PubMed joins the provider enum, default enabled-provider list and Connections UI.
+
+**Evidence**: Mocked provider and integration tests cover the ESearch-to-EFetch sequence, XML mapping, zero results, bounded rate-limit retries, auth/error classes, result caps, secret redaction and the enabled-provider list. A live one-record request through the adapter with the configured key returned `completed`, a PMID, DOI and abstract, with no key in the request description. NCBI's official E-utilities documentation defines ESearch for UID discovery and EFetch for full records.
+
+**Impact**: Changes the method package hash and `provider_id` contract enum. One logical PubMed query makes two HTTP requests. Biomedical coverage should improve, but recall and precision against a user-known set have not been measured.
+
 ## D31 — Add CORE as a search provider and a PDF-location lookup
 
 **Status**: accepted

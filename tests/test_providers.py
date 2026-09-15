@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from deixis.providers import arxiv, biorxiv, common, core, crossref, ieee_xplore, openalex, scopus, semantic_scholar, serpapi
+from deixis.providers import arxiv, biorxiv, common, core, crossref, ieee_xplore, openalex, pubmed, scopus, semantic_scholar, serpapi
 from deixis.providers.registry import CONNECTORS, available_providers
 
 SECRET = "SECRET-KEY-VALUE"
@@ -28,6 +28,17 @@ ARXIV_FEED = """<?xml version='1.0' encoding='UTF-8'?>
   </entry>
 </feed>"""
 EMPTY_FEED = '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"><opensearch:totalResults>0</opensearch:totalResults></feed>'
+PUBMED_XML = """<?xml version="1.0"?>
+<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>12345678</PMID><Article>
+<Journal><JournalIssue><Volume>12</Volume><Issue>3</Issue><PubDate><MedlineDate>2021 Spring</MedlineDate></PubDate></JournalIssue><Title>Synthetic Transactions</Title></Journal>
+<ArticleTitle>SYNTHETIC <i>release</i> scheduling</ArticleTitle>
+<Pagination><MedlinePgn>10-19</MedlinePgn></Pagination>
+<Abstract><AbstractText Label="BACKGROUND">We schedule release times.</AbstractText><AbstractText Label="RESULTS">It works.</AbstractText></Abstract>
+<AuthorList><Author><ForeName>A.</ForeName><LastName>Author</LastName></Author><Author><CollectiveName>Synthetic Group</CollectiveName></Author></AuthorList>
+<PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList>
+</Article></MedlineCitation><PubmedData><PublicationStatus>ppublish</PublicationStatus><ArticleIdList>
+<ArticleId IdType="pubmed">12345678</ArticleId><ArticleId IdType="doi">10.1109/SYNTH.2021.1</ArticleId>
+</ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"""
 
 SUCCESS = {
     "openalex": {"meta": {"count": 3}, "results": [{"id": "https://openalex.org/W1", "doi": f"https://doi.org/{DOI}", "display_name": "SYNTHETIC"}]},
@@ -39,6 +50,7 @@ SUCCESS = {
         "DOI": DOI, "title": ["SYNTHETIC <i>release</i> scheduling"], "author": [{"given": "A.", "family": "Author"}],
         "issued": {"date-parts": [[2021, 3]]}, "container-title": ["Synthetic Transactions"], "type": "journal-article",
         "abstract": "<jats:title>Abstract</jats:title><jats:p>We schedule release&amp;times.</jats:p>", "URL": f"https://doi.org/{DOI}"}]}},
+    "pubmed": {"esearchresult": {"count": "3", "retmax": "1", "idlist": ["12345678"]}},
     "ieee_xplore": {"total_records": 3, "articles": [{
         "article_number": "123", "doi": DOI, "title": "SYNTHETIC <inline-formula>release</inline-formula> scheduling",
         "authors": {"authors": [{"full_name": "A. Author"}]}, "publication_year": 2021, "publication_title": "Synthetic Transactions",
@@ -63,6 +75,7 @@ ZERO = {
     "openalex": {"meta": {"count": 0}, "results": []},
     "semantic_scholar": {"total": 0, "offset": 0},
     "crossref": {"message": {"total-results": 0, "items": []}},
+    "pubmed": {"esearchresult": {"count": "0", "retmax": "0", "idlist": []}},
     "ieee_xplore": {"total_records": 0, "total_searched": 7408387},
     "scopus": {"search-results": {"opensearch:totalResults": "0", "entry": [{"@_fa": "true", "error": "Result set was empty"}]}},
     "core": {"totalHits": 0, "limit": 5, "offset": 0, "results": []},
@@ -71,7 +84,8 @@ ZERO = {
 SUCCESS["biorxiv"], ZERO["biorxiv"] = SUCCESS["openalex"], ZERO["openalex"]
 KEYED = {"ieee_xplore", "scopus", "core", "serpapi"}
 SEARCH = {"openalex": openalex.search_works, "semantic_scholar": semantic_scholar.search, "crossref": crossref.search,
-          "arxiv": arxiv.search, "biorxiv": biorxiv.search, "ieee_xplore": ieee_xplore.search, "scopus": scopus.search,
+          "arxiv": arxiv.search, "biorxiv": biorxiv.search, "pubmed": pubmed.search,
+          "ieee_xplore": ieee_xplore.search, "scopus": scopus.search,
           "core": core.search, "serpapi": serpapi.search}
 ALL = list(SEARCH)
 
@@ -88,9 +102,11 @@ def no_waits(monkeypatch):
     return sleeps
 
 
-def ok_response(provider, zero=False):
+def ok_response(provider, zero=False, request=None):
     if provider == "arxiv":
         return httpx.Response(200, text=EMPTY_FEED if zero else ARXIV_FEED)
+    if provider == "pubmed" and request is not None and request.url.path.endswith("/efetch.fcgi"):
+        return httpx.Response(200, text=PUBMED_XML)
     return httpx.Response(200, json=(ZERO if zero else SUCCESS)[provider])
 
 
@@ -141,6 +157,24 @@ def test_crossref_posted_content_is_a_submitted_version():
     item = {**SUCCESS["crossref"]["message"]["items"][0], "type": "posted-content"}
     outcome, _ = run("crossref", lambda r: httpx.Response(200, json={"message": {"total-results": 1, "items": [item]}}))
     assert outcome.records[0].version_label == "submittedVersion"
+
+
+def test_pubmed_record_uses_esearch_then_efetch_and_maps_abstract():
+    outcome, seen = run("pubmed", lambda r: ok_response("pubmed", request=r), key=SECRET)
+    record = outcome.records[0]
+    assert (outcome.status, outcome.provider_total, outcome.access_mode) == ("completed", 3, "api_key")
+    assert [request.url.path.rsplit("/", 1)[-1] for request in seen] == ["esearch.fcgi", "efetch.fcgi"]
+    assert seen[0].url.params["api_key"] == SECRET and seen[0].url.params["tool"] == "DEIXIS"
+    assert seen[0].url.params["sort"] == "relevance" and seen[1].url.params["id"] == "12345678"
+    assert SECRET not in outcome.request_description
+    assert (record.provider_record_id, record.doi, record.year, record.venue) == (
+        "12345678", DOI.lower(), 2021, "Synthetic Transactions")
+    assert record.title == "SYNTHETIC release scheduling"
+    assert record.authors == ["A. Author", "Synthetic Group"]
+    assert record.abstract == "BACKGROUND: We schedule release times.\n\nRESULTS: It works."
+    assert record.abstract_origin == pubmed.ABSTRACT_ORIGIN
+    assert (record.volume, record.issue, record.pages) == ("12", "3", "10-19")
+    assert record.landing_url == "https://pubmed.ncbi.nlm.nih.gov/12345678/" and record.oa_pdf_url is None
 
 
 def test_arxiv_record_is_one_version_with_its_pdf():
@@ -234,15 +268,23 @@ def test_serpapi_error_payload_is_a_failure_not_zero_results():
 
 @pytest.mark.parametrize("provider", ALL)
 def test_zero_results_is_distinct_from_failure(provider):
-    outcome, _ = run(provider, lambda r: ok_response(provider, zero=True), key=key_for(provider))
+    outcome, _ = run(provider, lambda r: ok_response(provider, zero=True, request=r), key=key_for(provider))
     assert (outcome.status, outcome.delivery_class, outcome.records) == ("zero_results", None, [])
 
 
 @pytest.mark.parametrize("provider", [p for p in ALL if p != "serpapi"])
 def test_short_rate_limit_is_retried_and_counted(provider, no_waits):
-    responses = iter([httpx.Response(429), httpx.Response(429, headers={"retry-after": "2"}), ok_response(provider)])
-    outcome, seen = run(provider, lambda r: next(responses), key=key_for(provider))
-    assert (outcome.status, outcome.retries, len(seen)) == ("completed", 2, 3)
+    attempts = 0
+    def handler(request):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(429)
+        if attempts == 2:
+            return httpx.Response(429, headers={"retry-after": "2"})
+        return ok_response(provider, request=request)
+    outcome, seen = run(provider, handler, key=key_for(provider))
+    assert (outcome.status, outcome.retries, len(seen)) == ("completed", 2, 4 if provider == "pubmed" else 3)
     assert no_waits[-2:] == [3.0, 2.0]
 
 
@@ -283,7 +325,7 @@ def test_rejected_unknown_parse_and_network_outcomes(provider):
 def test_result_limit_is_capped_by_the_provider_maximum(provider):
     _, seen = run(provider, lambda r: ok_response(provider), key=key_for(provider), limit=500)
     params = seen[0].url.params
-    sent = next(int(params[k]) for k in ("per_page", "limit", "rows", "max_results", "max_records", "count", "num") if k in params)
+    sent = next(int(params[k]) for k in ("per_page", "limit", "rows", "max_results", "max_records", "count", "num", "retmax") if k in params)
     assert sent == min(500, CONNECTORS[provider].max_results)
 
 
@@ -291,7 +333,7 @@ def test_available_providers_follow_configured_keys(monkeypatch):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
-    assert available_providers() == ["openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv"]
+    assert available_providers() == ["openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv", "pubmed"]
     assert CONNECTORS["scopus"].access_mode() == "not_configured"
     monkeypatch.setenv("IEEE_API_KEY", SECRET)
     assert available_providers()[-1] == "ieee_xplore" and CONNECTORS["ieee_xplore"].access_mode() == "api_key"

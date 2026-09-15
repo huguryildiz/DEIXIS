@@ -25,9 +25,9 @@ closest relevant work for the question.
 5. Spread queries over the enabled providers whose coverage fits the field instead
    of repeating one provider: for example IEEE Xplore for engineering and
    computing, arXiv for physics, mathematics and computing preprints, bioRxiv for
-   life-science preprints, OpenAlex and Scopus for cross-disciplinary indexes, CORE
-   for open-access copies held by repositories (theses, reports and author
-   manuscripts). The application merges records that share a DOI across
+   life-science preprints, PubMed for biomedical and life-science literature,
+   OpenAlex and Scopus for cross-disciplinary indexes, and CORE for open-access
+   copies held by repositories (theses, reports and author manuscripts). The application merges records that share a DOI across
    providers. Only each query's first-ranked results are read. Syntax per provider:
    - **OpenAlex** (titles and abstracts), **bioRxiv** (searched through OpenAlex,
      limited to bioRxiv preprints), **IEEE Xplore** and **CORE**: every unquoted word
@@ -57,6 +57,10 @@ closest relevant work for the question.
      Quotes, parentheses and AND/OR/NOT are ignored and records matching any word
      are ranked, so use the most distinctive words, for example
      `molecular communication scheduling`.
+   - **PubMed**: use native Entrez syntax. Quote exact phrases; combine concepts
+     with uppercase AND/OR/NOT and use field tags when they improve precision,
+     for example `"molecular communication" AND (optimization OR scheduling)`
+     or `quorum sensing[Title/Abstract] AND optimization[Title/Abstract]`.
    - **SerpApi** (Google Scholar): supplementary coverage, at most one query and
      never the only query. Use quoted phrases, plain words and OR; no
      parentheses, AND or NOT. Its records have no abstract or DOI.

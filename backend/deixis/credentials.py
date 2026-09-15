@@ -39,6 +39,7 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("DEEPSEEK_API_KEY", "model", "deepseek", testable=True),
     ManagedKey("OPENALEX_API_KEY", "source", "openalex"),
     ManagedKey("S2_API_KEY", "source", "semantic_scholar"),
+    ManagedKey("NCBI_API_KEY", "source", "pubmed"),
     ManagedKey("IEEE_API_KEY", "source", "ieee_xplore"),
     ManagedKey("SCOPUS_API_KEY", "source", "scopus"),
     ManagedKey("CORE_API_KEY", "source", "core"),

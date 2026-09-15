@@ -10,7 +10,7 @@ The [completed plan review](plan-review-2026-09-14.md) records `ready_with_chang
 
 - First release: a single-user, local web application with a browser UI and local backend. Tauri packaging for macOS and Windows is a later stage, not a shortcut around backend packaging and process management.
 - Start with a question. Academic discovery, user-visible source selection, accessible evidence inspection, source-linked answer and recoverable session form the first narrow workflow. PDF upload is optional; evidence tables build on this foundation.
-- Scholarly coverage includes Semantic Scholar, Crossref, arXiv, OpenAlex, Scopus, IEEE Xplore and SerpApi, implemented in stages. The user may add further sources through a defined connector contract. Source selection and model selection are separate.
+- Scholarly coverage includes Semantic Scholar, Crossref, arXiv, OpenAlex, Scopus, IEEE Xplore, SerpApi, bioRxiv, CORE and PubMed. The user may add further sources through a defined connector contract. Source selection and model selection are separate.
 - One main research agent suffices. Deterministic retrieval, parsing, provenance, persistence and budget checks belong to application code. Missing full text, source errors, model inference and unsupported claims must stay visible.
 - The synthesis method is Chain of Ideas adapted with purpose–mechanism–evaluation candidate framing and a distinct claim-specific kill-search. A model's assessment is not scientific validation.
 - Preserve user corrections, source and version IDs, citation-to-passage links, and completed work across reopening. Do not silently switch model or academic provider after a failure.

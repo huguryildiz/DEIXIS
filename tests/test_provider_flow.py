@@ -68,7 +68,7 @@ def test_discovery_searches_each_planned_provider_and_merges_by_doi(tmp_path, mo
     adapter = FakeAdapter(two_provider_plan)
     view, run = discover(tmp_path, monkeypatch, routed, adapter)
     assert run["status"] == "completed", run
-    assert view["scope"]["providers"] == ["openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv"]
+    assert view["scope"]["providers"] == ["openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv", "pubmed"]
     assert adapter.calls[0]["enabled_providers"] == view["scope"]["providers"]
     assert [(s["provider"], s["result_count"]) for s in view["search_runs"]] == [("openalex", 1), ("crossref", 2)]
     assert [s["kind"] for s in run["steps"] if s["operation_key"].startswith("search:")] == ["provider_search:openalex", "provider_search:crossref"]

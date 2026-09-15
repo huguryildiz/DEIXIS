@@ -2,6 +2,28 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D37 — Keep evidence table cells as append-only revisions that only the user can change
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: P5 requires an editable evidence table where a human edit is never overwritten, "Recheck this cell" produces a new proposal tied to the right source, version and passage, and version or index changes do not break earlier evidence (implementation plan §6.2, §9; api-and-data "Priority requirement"). The design note `docs/product/p5-slice1-evidence-table.md` left six questions open. The owner asked Claude to answer them (2026-09-16).
+
+**Decision**:
+
+- A table belongs to one research. Its rows are listed explicitly (`table_rows`): a new table starts with the included sources, and the user adds or removes the research's sources. Narrowing the Sources selection, as in D34, does not shrink the table.
+- Columns carry a short name, an instruction written for a human annotator and an answer format: options, number and unit, yes/no, or short text (at most 500 characters). A changed definition is a new column revision; values made under an earlier revision stay and read as `stale_column`. Columns can be saved as a library-wide template.
+- A cell is an append-only list of revisions (`model_fill`, `model_proposal`, `system_fill`, `human_edit`, `accept_proposal`, `dismiss_proposal`) and points at the revision it shows. Revisions, their evidence links and column revisions are immutable; only permanent deletion of the research removes them. A trigger refuses evidence from any source version other than the cell's own, including another version of the same work.
+- A model result becomes the value only of an empty cell and only when it is structurally valid. Every other model result, including every recheck result, waits as a proposal; only the user's accept or dismiss decides it. Accepting copies the proposal's value, reading depth and evidence (with the StepInput that gave each passage) into a revision authored by the user.
+- Human writes carry the cell version their screen showed and are refused with 409 when it changed. Creates and cell writes accept an `Idempotency-Key`; a replay returns the same record.
+- Cell states stay distinct: `value` (with linked evidence), `not_verified` (a value without linked evidence), `unknown`, `not_reported`, `not_applicable`, `inaccessible`, `not_found_in_inspected_scope`. A source with no stored text gets `inaccessible` from the system without a model call.
+- For the model step still to be built: a recheck does not show the model the current human value; no cell gets `full_text` reading depth and the model may not write `not_reported` until OCR and page checks exist (T10); fills run one call per source, at most 25 sources and 8 columns per call.
+- Table work runs as runs of kind `table_columns`, `table_fill` and `cell_recheck` (stage `extraction`). Migration 0019 rebuilds `runs` for the new kinds; `db.migrate` runs a file whose first line is `-- deixis:foreign-keys-off` with foreign keys off and checks them before the commit.
+
+**Evidence**: `tests/test_evidence_tables.py` (20 tests) covers the `runs` rebuild on a database at migration 18 (rows, idempotency key and foreign keys kept), rollback of a foreign-keys-off migration that leaves an orphan, T09 scenarios a–i and l with synthetic model outputs, superseded and invalid proposals, immutability and the same-source trigger, explicit rows, a withdrawn PDF whose evidence still resolves, answer-format validation, the API (versions, idempotency, CSRF, cross-research 404, templates, trash), permanent deletion and backup/restore of a table with a human edit. Backend suite: 363 passed.
+
+**Limits**: The cell extraction and column suggestion model steps, the fill and recheck endpoints and the Evidence tab are not built, so no model has filled a cell and T09 j, k and m are not yet tested. Semantic support of cell evidence stays `not_checked`. Tables have no restore screen yet (trash is P5 slice 3).
+
 ## D36 — Let the answer model replace the provisional question with a bounded report title
 
 **Status**: accepted

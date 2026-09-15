@@ -140,6 +140,8 @@ class Store:
                 (research_id,),
             )]
             self.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (research_id,))
+            from deixis.workflow.tables import purge_tables  # tables builds on this module
+            purge_tables(self.conn, research_id)  # cell revisions reference runs, step inputs and passages deleted below
             self.conn.execute("DELETE FROM evidence_links WHERE claim_id IN (SELECT id FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?))", (research_id,))
             self.conn.execute("DELETE FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs WHERE research_id = ?)", (research_id,))

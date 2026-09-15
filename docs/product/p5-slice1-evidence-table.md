@@ -1,6 +1,6 @@
 # P5 dilim 1 — Kanıt tablosu çekirdeği: tasarım notu
 
-**Tarih:** 16 Eylül 2026. **Durum:** taslak. §9'daki sorular sahibin isteğiyle Claude tarafından yanıtlandı; uygulama sahibin onayını bekliyor. Kod, migration veya karar kaydı yazılmadı.
+**Tarih:** 16 Eylül 2026. **Durum:** §9'daki sorular sahibin isteğiyle Claude tarafından yanıtlandı ([D37](../decisions.md)). Modelsiz ilk alt adım uygulandı: `0019`/`0020` migration'ları, `workflow/tables.py` ve API. SQL'in geçerli hali migration dosyalarıdır; aşağıdaki taslaktan küçük farkları vardır. Örneğin `not_verified`, kanıtı olmayan bir değer taşır. Model adımı, doldurma ve recheck uçları ile arayüz henüz yok.
 
 **Kısaca:** Bir araştırmanın içinde tablo açılır. Sütunlar talimat ve yanıt biçimi taşır. Satırlar tabloya açıkça eklenen kaynak sürümleridir; tablo, açıldığı anda dahil edilen kaynaklarla başlar. Her hücre değişmez revizyonlar dizisidir ve bir işaretçi "geçerli" revizyonu gösterir. Model yalnız boş hücreyi doldurabilir. "Recheck this cell" ise her zaman bekleyen bir öneri üretir; geçerli değeri yalnız kullanıcının kabulü değiştirir. İnsan yazıları beklenen hücre sürümünü denetler, bu yüzden eski ekran yeni düzenlemeyi ezemez. Model işleri mevcut run/step/StepInput hattından geçer; böylece duraklatma, yeniden başlatma, bütçe ve idempotency yeniden yazılmaz.
 
@@ -156,7 +156,7 @@ CREATE TABLE cell_revisions (
   CHECK (kind NOT IN ('human_edit', 'accept_proposal', 'dismiss_proposal') OR author = 'human'),
   CHECK (kind NOT IN ('accept_proposal', 'dismiss_proposal') OR based_on_revision_id IS NOT NULL),
   CHECK ((kind = 'dismiss_proposal') = (state IS NULL)),
-  CHECK (state IS NULL OR (state = 'value') = (value_json IS NOT NULL))
+  CHECK (state IS NULL OR (state IN ('value', 'not_verified')) = (value_json IS NOT NULL))
 );
 CREATE INDEX cell_revisions_cell ON cell_revisions(cell_id, created_at);
 

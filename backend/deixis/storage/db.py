@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+FOREIGN_KEYS_OFF = "-- deixis:foreign-keys-off"
 _ALPHABET = string.digits + string.ascii_letters
 
 
@@ -63,13 +64,25 @@ def migrate(conn: sqlite3.Connection) -> list[int]:
         version = int(path.name.split("_", 1)[0])
         if version in applied:
             continue
-        with transaction(conn):
-            for statement in _split_sql(path.read_text(encoding="utf-8")):
-                conn.execute(statement)
-            conn.execute(
-                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-                (version, path.name, now()),
-            )
+        script = path.read_text(encoding="utf-8")
+        # Rebuilding a table that other tables reference needs foreign keys off (SQLite's documented 12-step procedure).
+        # The pragma cannot change inside a transaction, and the check runs before the commit.
+        keys_off = script.startswith(FOREIGN_KEYS_OFF)
+        if keys_off:
+            conn.execute("PRAGMA foreign_keys = OFF")
+        try:
+            with transaction(conn):
+                for statement in _split_sql(script):
+                    conn.execute(statement)
+                if keys_off and conn.execute("PRAGMA foreign_key_check").fetchall():
+                    raise RuntimeError(f"foreign key check failed in {path.name}")
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                    (version, path.name, now()),
+                )
+        finally:
+            if keys_off:
+                conn.execute("PRAGMA foreign_keys = ON")
         done.append(version)
     if conn.execute("PRAGMA foreign_key_check").fetchall():
         raise RuntimeError("foreign key check failed after migration")

@@ -40,6 +40,7 @@ from deixis.storage import db
 from deixis.workflow import bibliography
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.store import NotFound, Store
+from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow.views import passage_view, research_view
 from deixis.workflow.worker import Worker
 
@@ -125,6 +126,70 @@ class ScopeRevision(BaseModel):
 class ZoteroImport(BaseModel):
     source: Literal["local", "web"]
     collection_key: str = Field(pattern=r"^[A-Z0-9]{8}$")
+
+
+AnswerFormat = Literal["choice", "number_unit", "yes_no", "text"]
+
+
+class CreateTable(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    template_id: str | None = Field(default=None, max_length=40)
+    rows: list[str] | None = Field(default=None, max_length=500)  # None: the research's included sources
+
+
+class TableTitle(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    expected_version: int
+
+
+class TableRows(BaseModel):
+    source_version_ids: list[str] = Field(min_length=1, max_length=500)
+    expected_version: int
+
+
+class ColumnOption(BaseModel):
+    id: str | None = Field(default=None, pattern=r"^o[0-9]{1,3}$")  # None: a new option
+    label: str = Field(min_length=1, max_length=120)
+
+
+class ColumnCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    instruction: str = Field(min_length=1, max_length=2000)
+    answer_format: AnswerFormat
+    options: list[ColumnOption] | None = Field(default=None, max_length=20)
+    allow_multiple: bool = False
+    unit_hint: str | None = Field(default=None, max_length=40)
+    expected_version: int  # of the table
+
+
+class ColumnChange(BaseModel):
+    """Only the fields a request sets change; a changed definition becomes a new column revision."""
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    instruction: str | None = Field(default=None, min_length=1, max_length=2000)
+    answer_format: AnswerFormat | None = None
+    options: list[ColumnOption] | None = Field(default=None, max_length=20)
+    allow_multiple: bool | None = None
+    unit_hint: str | None = Field(default=None, max_length=40)
+    position: int | None = Field(default=None, ge=0)
+    expected_version: int  # of the column
+
+
+class CellEdit(BaseModel):
+    state: Literal[CELL_STATES]  # type: ignore[valid-type]
+    value: dict[str, Any] | None = None
+    note: str | None = Field(default=None, max_length=2000)
+    keep_evidence_from: str | None = Field(default=None, max_length=40)  # a revision of this cell whose evidence the value keeps
+    expected_version: int  # of the cell; 0 for a cell without revisions
+
+
+class ExpectedVersion(BaseModel):
+    expected_version: int
+
+
+class TemplateCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    research_id: str = Field(max_length=40)
+    table_id: str = Field(max_length=40)
 
 
 async def store_upload(file: UploadFile, papers_dir: Path) -> tuple[str, int, Path]:
@@ -754,6 +819,115 @@ def create_app(
             raise HTTPException(404, "Asset is not attached to this source")
         store.remove_asset(research_id, source_version_id, asset_id)
         return research_view(store, research_id)
+
+    # ---- evidence tables (P5, D37) -------------------------------------------------------------
+    def tables_of(request: Request) -> TableStore:
+        return TableStore(store_of(request))
+
+    @app.exception_handler(InvalidTableInput)
+    async def invalid_table_input(_: Request, exc: InvalidTableInput):
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    table_path = "/api/researches/{research_id}/tables/{table_id}"
+    cell_path = table_path + "/cells/{column_id}/{source_version_id}"
+
+    @app.get("/api/researches/{research_id}/tables")
+    async def list_tables(research_id: str, request: Request) -> list[dict[str, Any]]:
+        return tables_of(request).tables(research_id)
+
+    @app.post("/api/researches/{research_id}/tables", status_code=201)
+    async def create_table(research_id: str, body: CreateTable, request: Request,
+                           idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        tables = tables_of(request)
+        table_id = tables.create_table(research_id, body.title, body.rows, body.template_id, idempotency_key)
+        return tables.table_view(research_id, table_id)
+
+    @app.get(table_path)
+    async def get_table(research_id: str, table_id: str, request: Request) -> dict[str, Any]:
+        return tables_of(request).table_view(research_id, table_id)
+
+    @app.patch(table_path)
+    async def rename_table(research_id: str, table_id: str, body: TableTitle, request: Request) -> dict[str, Any]:
+        tables = tables_of(request)
+        tables.rename_table(research_id, table_id, body.title, body.expected_version)
+        return tables.table_view(research_id, table_id)
+
+    @app.delete(table_path)
+    async def trash_table(research_id: str, table_id: str, request: Request, expected_version: int = Query()) -> dict[str, bool]:
+        tables_of(request).trash_table(research_id, table_id, expected_version)
+        return {"trashed": True}
+
+    @app.post(table_path + "/rows")
+    async def add_table_rows(research_id: str, table_id: str, body: TableRows, request: Request) -> dict[str, Any]:
+        tables = tables_of(request)
+        tables.add_rows(research_id, table_id, body.source_version_ids, body.expected_version)
+        return tables.table_view(research_id, table_id)
+
+    @app.delete(table_path + "/rows/{source_version_id}")
+    async def remove_table_row(research_id: str, table_id: str, source_version_id: str, request: Request,
+                               expected_version: int = Query()) -> dict[str, Any]:
+        tables = tables_of(request)
+        tables.remove_row(research_id, table_id, source_version_id, expected_version)
+        return tables.table_view(research_id, table_id)
+
+    @app.post(table_path + "/columns", status_code=201)
+    async def add_table_column(research_id: str, table_id: str, body: ColumnCreate, request: Request,
+                               idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        tables = tables_of(request)
+        spec = body.model_dump(exclude={"expected_version"})
+        tables.add_column(research_id, table_id, spec, body.expected_version, idempotency_key)
+        return tables.table_view(research_id, table_id)
+
+    @app.patch(table_path + "/columns/{column_id}")
+    async def revise_table_column(research_id: str, table_id: str, column_id: str, body: ColumnChange, request: Request) -> dict[str, Any]:
+        tables = tables_of(request)
+        changes = body.model_dump(exclude_unset=True, exclude={"expected_version", "position"})
+        tables.revise_column(research_id, table_id, column_id, changes, body.position, body.expected_version)
+        return tables.table_view(research_id, table_id)
+
+    @app.delete(table_path + "/columns/{column_id}")
+    async def remove_table_column(research_id: str, table_id: str, column_id: str, request: Request,
+                                  expected_version: int = Query()) -> dict[str, Any]:
+        tables = tables_of(request)
+        tables.remove_column(research_id, table_id, column_id, expected_version)
+        return tables.table_view(research_id, table_id)
+
+    @app.get(cell_path)
+    async def get_cell(research_id: str, table_id: str, column_id: str, source_version_id: str, request: Request) -> dict[str, Any]:
+        return tables_of(request).cell_view(research_id, table_id, column_id, source_version_id)
+
+    @app.put(cell_path)
+    async def edit_cell(research_id: str, table_id: str, column_id: str, source_version_id: str, body: CellEdit, request: Request,
+                        idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        tables = tables_of(request)
+        tables.edit_cell(research_id, table_id, column_id, source_version_id, body.state, body.value, body.note,
+                         body.keep_evidence_from, body.expected_version, idempotency_key)
+        return tables.cell_view(research_id, table_id, column_id, source_version_id)
+
+    @app.post(cell_path + "/proposals/{revision_id}/{decision}")
+    async def decide_cell_proposal(research_id: str, table_id: str, column_id: str, source_version_id: str, revision_id: str,
+                                   decision: Literal["accept", "dismiss"], body: ExpectedVersion, request: Request,
+                                   idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        tables = tables_of(request)
+        tables.decide_proposal(research_id, table_id, column_id, source_version_id, revision_id, decision == "accept",
+                               body.expected_version, idempotency_key)
+        return tables.cell_view(research_id, table_id, column_id, source_version_id)
+
+    @app.get("/api/table-templates")
+    async def list_table_templates(request: Request) -> list[dict[str, Any]]:
+        return tables_of(request).templates()
+
+    @app.post("/api/table-templates", status_code=201)
+    async def create_table_template(body: TemplateCreate, request: Request,
+                                    idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        tables = tables_of(request)
+        template_id = tables.create_template(body.research_id, body.table_id, body.name, idempotency_key)
+        return next(t for t in tables.templates() if t["id"] == template_id)
+
+    @app.delete("/api/table-templates/{template_id}")
+    async def trash_table_template(template_id: str, request: Request) -> dict[str, bool]:
+        tables_of(request).trash_template(template_id)
+        return {"trashed": True}
 
     @app.get("/api/researches/{research_id}/events")
     async def events(research_id: str, request: Request, after: int = 0) -> list[dict[str, Any]]:

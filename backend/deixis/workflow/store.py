@@ -161,6 +161,7 @@ class Store:
                     payloads.append(source["provider_payload_path"])
                 orphan_files.extend(r[0] for r in self.conn.execute("SELECT storage_path FROM source_assets WHERE source_version_id = ?", (source_id,)))
                 self.conn.execute("DELETE FROM identifier_mappings WHERE source_version_id = ?", (source_id,))
+                self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (source_id,))
                 self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (source_id,))

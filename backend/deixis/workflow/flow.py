@@ -24,7 +24,7 @@ import httpx
 
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
-from deixis.documents import pdf
+from deixis.documents import embeddings, pdf
 from deixis.domain import contracts, phrasebank
 from deixis.domain.rules import (MAX_SCHEMA_REPAIRS, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH, after_invalid_output,
                                  effective_reviewer, step_model)
@@ -64,12 +64,25 @@ def formulation_score(text: str) -> int:
     return 2 * len(FORMULATION_TERMS.findall(text)) + min(6, len(FORMULATION_SYMBOLS.findall(text)))
 
 
-def answer_source_order(included: list[str], facts: dict[str, tuple[bool, int]], texts: dict[str, str], terms: list[str]) -> list[str]:
+def fuse_rankings(*rankings: list[dict[str, Any]], k: int = 60) -> list[dict[str, Any]]:
+    """Reciprocal rank fusion: a passage ranked high lexically or semantically comes first (D27)."""
+    scores: dict[str, float] = {}
+    rows: dict[str, dict[str, Any]] = {}
+    for ranking in rankings:
+        for position, row in enumerate(ranking):
+            scores[row["id"]] = scores.get(row["id"], 0.0) + 1 / (k + position + 1)
+            rows.setdefault(row["id"], row)
+    return sorted(rows.values(), key=lambda row: -scores[row["id"]])
+
+
+def answer_source_order(included: list[str], facts: dict[str, tuple[bool, int]], texts: dict[str, str], terms: list[str],
+                        semantic_rank: dict[str, int] | None = None) -> list[str]:
     """Order included sources for the answer step, whose input holds a limited number of passages.
 
     Sources the user chose come first, then sources more providers returned, then sources whose title and abstract match
     the question and search-plan terms best (BM25), then selection order. Offline on D13's three all-provider runs this
     put 6, 6 and 5 of the included known papers into the first 48, against 3, 3 and 4 in selection order (D17).
+    With a semantic ranking, the BM25 rank is fused with each source's best passage rank (D27).
     """
     docs = {svid: re.findall(r"\w+", texts.get(svid, "").lower()) for svid in included}
     count = len(docs) or 1
@@ -82,7 +95,11 @@ def answer_source_order(included: list[str], facts: dict[str, tuple[bool, int]],
                    / (tf[t] + 1.2 * (0.25 + 0.75 * length / average)) for t in terms if tf[t])
 
     position = {svid: i for i, svid in enumerate(included)}
-    return sorted(included, key=lambda s: (not facts.get(s, (False, 0))[0], -facts.get(s, (False, 0))[1], -match(s), position[s]))
+    relevance = {s: match(s) for s in included}
+    if semantic_rank is not None:
+        lexical_rank = {s: i for i, s in enumerate(sorted(included, key=lambda s: (-relevance[s], position[s])))}
+        relevance = {s: 1 / (61 + lexical_rank[s]) + (1 / (61 + semantic_rank[s]) if s in semantic_rank else 0.0) for s in included}
+    return sorted(included, key=lambda s: (not facts.get(s, (False, 0))[0], -facts.get(s, (False, 0))[1], -relevance[s], position[s]))
 
 
 class RunStopped(Exception):
@@ -272,7 +289,8 @@ class ResearchFlow:
 
         self._checkpoint(run_id)
         self.store.update_run(run_id, stage="answer")
-        passages = self._retrieve(rid, scope, included, run["budget"]["max_answer_passages"])
+        semantic = await self._semantic_ranking(run, scope, included)
+        passages = self._retrieve(rid, scope, included, run["budget"]["max_answer_passages"], semantic)
         if not passages:
             self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
                                    {"ok": True, "issues": [], "note": "No accessible passages for the included sources."},
@@ -378,6 +396,8 @@ class ResearchFlow:
         unique_terms = list(dict.fromkeys(terms))[:40]
         fts = " OR ".join(f'"{t}"' for t in unique_terms)
         ranked = self.store.search_passages(included, fts, limit * 3)
+        if semantic is not None:
+            ranked = fuse_rankings(ranked, semantic)[: limit * 3]
         best = {}
         for p in ranked:
             best.setdefault(p["source_version_id"], p)
@@ -385,7 +405,12 @@ class ResearchFlow:
         passages_of = {svid: self.store.passages_for(svid) for svid in included}
         texts = {svid: " ".join([self.store.source(svid)["title"], *(p["text"] for p in passages_of[svid] if p["kind"] == "abstract")])
                  for svid in included}
-        order = answer_source_order(included, self.store.answer_order_facts(research_id, included), texts, unique_terms)
+        semantic_rank = None
+        if semantic is not None:
+            semantic_rank = {}
+            for p in semantic:
+                semantic_rank.setdefault(p["source_version_id"], len(semantic_rank))
+        order = answer_source_order(included, self.store.answer_order_facts(research_id, included), texts, unique_terms, semantic_rank)
         # Every included source is given first, in that order, up to the limit: its abstract, else its best-matching
         # passage, else its first passage. Formulation pages then get bounded room before the general FTS matches.
         for svid in order:

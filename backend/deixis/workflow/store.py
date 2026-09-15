@@ -20,7 +20,8 @@ from deixis.storage.db import dumps, new_id, now, row_dict, transaction
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
 MIN_TITLE_KEY_CHARS = 12  # shorter normalized titles ("Introduction") say too little to suspect a duplicate
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
-STEP_OUTPUT_KINDS = ("fetch_pdf", "source_similarity")
+STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "source_similarity")
+STEP_OUTPUT_KEYS = ("semantic_retrieval",)
 
 
 def title_key(title: str | None) -> str:
@@ -358,7 +359,8 @@ class Store:
             )
             self._event(
                 row["research_id"], "step_finished",
-                {"step_id": step_id, "kind": row["kind"], "operation_key": row["operation_key"], "status": status, "error_code": error_code},
+                {"step_id": step_id, "kind": row["kind"], "operation_key": row["operation_key"], "status": status, "error_code": error_code,
+                 **({"http_status": error["http_status"]} if isinstance(error, dict) and error.get("http_status") else {})},
                 row["run_id"],
             )
 
@@ -369,8 +371,8 @@ class Store:
         ).fetchall()
         return [{**{k: r[k] for k in r.keys() if k != "output_json"},
                  "error": json.loads(r["error_json"]) if r["error_json"] else None,
-                 # Only the counting steps carry their output here; a model step's output is read through its own view.
-                 "output": json.loads(r["output_json"]) if r["output_json"] and r["kind"] in STEP_OUTPUT_KINDS else None}
+                 # Only small counting/provenance outputs are carried here; model prose is read through its own view.
+                 "output": json.loads(r["output_json"]) if r["output_json"] and (r["kind"] in STEP_OUTPUT_KINDS or r["operation_key"] in STEP_OUTPUT_KEYS) else None}
                 for r in rows]
 
     # ---- model step records ---------------------------------------------------------
@@ -666,6 +668,17 @@ class Store:
             " FROM pdf_discovery_runs WHERE research_id = ? AND source_version_id = ? ORDER BY created_at, rowid",
             (research_id, svid),
         )]
+
+    def pdf_link_refusal(self, svid: str, url: str) -> dict[str, Any] | None:
+        """The latest refusal of this open-access link in any run. A timeout or lost connection is not a refusal."""
+        return row_dict(self.conn.execute(
+            "SELECT error_code, json_extract(error_json, '$.http_status') AS http_status FROM run_steps"
+            " WHERE operation_key = ? AND kind = 'fetch_pdf' AND status = 'failed'"
+            " AND error_code IN ('fetch_http_error', 'fetch_not_pdf', 'fetch_too_large', 'fetch_blocked_url')"
+            # A failure recorded before the link was stored with it is taken to concern the same link.
+            " AND COALESCE(json_extract(error_json, '$.url'), ?) = ? ORDER BY finished_at DESC LIMIT 1",
+            (f"fetch:{svid}", url, url),
+        ).fetchone())
 
     def record_pdf_attempt(self, candidate_id: str, result: Any) -> None:
         with transaction(self.conn):
@@ -989,6 +1002,11 @@ class Store:
                         (new_id("evl"), claim_ids[link["claim_label"]], link["passage_id"], link["source_id"], step_input_id,
                          link.get("anchor_text"), link.get("anchor_match")),
                     )
+                # Only a valid answer for the active question revision may replace the provisional question-as-title.
+                self.conn.execute(
+                    "UPDATE researches SET title = ? WHERE id = ? AND current_scope_revision = ?",
+                    (draft["title"], research_id, scope_revision),
+                )
             self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (now(), research_id))
             self._event(research_id, "answer_saved", {"answer_id": aid, "status": status}, run_id)
         return aid

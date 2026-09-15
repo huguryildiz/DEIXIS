@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Ban, CircleCheck, CirclePause, CircleX, ChevronDown, ChevronRight, Ellipsis, FlaskConical, Landmark, LoaderCircle, Menu, MessageCirclePlus, Moon, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Search, Settings2, Sun, Trash2, type LucideIcon } from 'lucide-react'
+import { Ban, CircleCheck, CirclePause, CircleX, ChevronDown, ChevronRight, Ellipsis, FlaskConical, Landmark, LoaderCircle, Menu, MessageCirclePlus, Moon, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Search, Settings2, ShieldAlert, Sun, Trash2, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, type ResearchSummary, type RunStatus, type TrashedResearch } from './api'
+import { api, type InstitutionalAccess, type ResearchSummary, type RunStatus, type TrashedResearch } from './api'
 import { runStatusLabels } from './labels'
 import { Home } from './Home'
 import { ResearchPage } from './ResearchView'
@@ -169,9 +169,9 @@ export default function App() {
 
   // A university VPN can be switched on or off while DEIXIS is open. The backend asks Scopus again only when the network
   // route changed, so this check is local and cheap and repeats every few seconds.
-  const [institutional, setInstitutional] = useState(false)
+  const [institutionalStatus, setInstitutionalStatus] = useState<InstitutionalAccess['status']>('not_checked')
   useEffect(() => {
-    const check = () => { api.institutionalAccess().then(result => setInstitutional(result.status === 'institutional')).catch(() => setInstitutional(false)) }
+    const check = () => { api.institutionalAccess().then(result => setInstitutionalStatus(result.status)).catch(() => setInstitutionalStatus('unknown')) }
     check()
     const timer = window.setInterval(check, 5_000)
     window.addEventListener('focus', check)
@@ -267,7 +267,13 @@ export default function App() {
       </div>
       {actionMessage && route.view !== 'trash' && <p className="sidebar-action-message" role="status">{actionMessage}</p>}
       <div className="sidebar-divider" aria-hidden="true" />
-      {institutional && <span className="access-chip" title={t('Scopus recognizes this network as institutional (campus network or university VPN). Updates when the network changes.')}><Landmark size={13} aria-hidden="true" /><span className="sidebar-label">{t('Institutional access')}</span></span>}
+      <div className="access-status">
+        <span className={`access-chip ${institutionalStatus === 'institutional' ? '' : institutionalStatus === 'none' ? 'is-unavailable' : 'is-uncertain'}`} title={t(institutionalStatus === 'institutional' ? 'Scopus recognizes this network as institutional (campus network or university VPN). Updates when the network changes.' : institutionalStatus === 'none' ? 'University VPN or campus network is not detected. Turn it on to access institutional Scopus coverage.' : 'Institutional access status is not available yet. DEIXIS will check again when the network changes.')}>
+          {institutionalStatus === 'institutional' ? <Landmark size={13} aria-hidden="true" /> : <ShieldAlert size={13} aria-hidden="true" />}
+          <span className="sidebar-label">{t(institutionalStatus === 'institutional' ? 'Institutional access' : institutionalStatus === 'none' ? 'VPN required' : institutionalStatus === 'unknown' ? 'Access uncertain' : 'Checking access…')}</span>
+        </span>
+        {!collapsed && <span className="access-chip-note">{t(institutionalStatus === 'institutional' ? 'Campus network or university VPN detected.' : institutionalStatus === 'none' ? 'Turn on the university VPN for institutional Scopus access.' : institutionalStatus === 'unknown' ? 'Institutional access could not be verified.' : 'Checking the current network access.')}</span>}
+      </div>
       {!collapsed && <div className="sidebar-resizer" role="separator" aria-orientation="vertical" tabIndex={0} aria-label={t('Resize sidebar')} title={t('Drag to resize · double-click to reset')} aria-valuemin={SIDEBAR_MIN} aria-valuemax={SIDEBAR_MAX} aria-valuenow={sidebarWidth ?? undefined} onPointerDown={startResize} onKeyDown={resizeByKey} onDoubleClick={() => setSidebarWidth(null)} />}
     </aside>
     <div className="main-shell">

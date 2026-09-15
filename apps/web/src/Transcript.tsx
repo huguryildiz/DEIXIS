@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, Check, ChevronDown, ChevronRight, LoaderCircle, Minus, Search, TriangleAlert } from 'lucide-react'
+import { ArrowDown, Check, ChevronDown, ChevronRight, LoaderCircle, Minus, Search, Sparkles, TriangleAlert } from 'lucide-react'
 import type { ResearchView, Run, Verdict } from './api'
-import { pauseReasonText, providerName, runStatusLabels, stepLabel, verdictLabels } from './labels'
+import { fetchReasonText, pauseReasonText, providerName, runStatusLabels, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { t, uiLocale } from './i18n'
 
@@ -9,7 +9,7 @@ import { t, uiLocale } from './i18n'
 // The page's event stream refreshes the view; a one-second clock keeps running durations moving between events.
 // Run controls stay in the run card above the tabs, so they are reachable from every tab.
 
-type PhaseKey = 'plan' | 'search' | 'screen' | 'pdf' | 'answer' | 'review'
+type PhaseKey = 'plan' | 'search' | 'screen' | 'pdf' | 'semantic' | 'answer' | 'review'
 type PhaseState = 'done' | 'running' | 'attention' | 'waiting' | 'skipped'
 type Step = NonNullable<Run['steps']>[number]
 
@@ -20,6 +20,7 @@ const titles: Record<PhaseKey, [string, string, string]> = {
   search: ['Searching the providers', 'Searched the providers', 'Provider searches'],
   screen: ['Screening the candidates', 'Screened the candidates', 'Screening'],
   pdf: ['Downloading open-access PDFs', 'Downloaded open-access PDFs', 'Open-access PDFs'],
+  semantic: ['Preparing semantic search', 'Prepared semantic search', 'Semantic search'],
   answer: ['Writing the answer', 'Wrote the answer', 'Source-linked answer'],
   review: ['Reviewing the claims', 'Reviewed the claims', 'Claim review'],
 }
@@ -27,14 +28,14 @@ const discoveryHeadings: Record<string, string> = { active: 'Searching and scree
 const answerHeadings: Record<string, string> = { active: 'Generating the answer', completed: 'Ran answer generation', paused: 'Answer generation paused', failed: 'Answer generation failed', cancelled: 'Answer generation cancelled' }
 // The run's stage names the phase it has reached before that phase records its first step.
 const stagePhases: Record<string, PhaseKey> = { screening: 'screen', inspection: 'pdf', answer: 'answer', claim_check: 'review' }
-const fetchReasons: Record<string, string> = { fetch_http_error: 'server refused', fetch_timeout: 'timed out', fetch_too_large: 'file too large', fetch_not_pdf: 'not a PDF', fetch_blocked_url: 'address not allowed', fetch_failed: 'connection failed' }
 const basisLabels: Record<string, string> = { metadata_only: 'metadata only', title_only: 'title only', title_and_abstract: 'title and abstract' }
 
 function phaseOf(kind: string): PhaseKey | null {
   if (kind === 'model:search_plan') return 'plan'
   if (kind.startsWith('provider_search')) return 'search'
   if (kind === 'model:screening') return 'screen'
-  if (kind === 'fetch_pdf') return 'pdf'
+  if (kind === 'fetch_pdf' || kind === 'pdf_other_copy') return 'pdf'
+  if (kind.startsWith('embedding:')) return 'semantic'
   if (kind === 'model:grounded_answer') return 'answer'
   if (kind === 'model:answer_review') return 'review'
   return null
@@ -89,13 +90,14 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
   const active = ACTIVE.has(run.status)
   const [open, setOpen] = useState<boolean | null>(null)
   const [queriesOpen, setQueriesOpen] = useState(true)
-  const [conceptsOpen, setConceptsOpen] = useState(false)
+  // The plan summary and its concept list share one disclosure control.
+  const [conceptsOpen, setConceptsOpen] = useState(true)
   // A finished run folds away once something follows it; the latest search stays open so its queries can be read.
   const expanded = open ?? (run.status !== 'completed' || (latest && run.kind === 'discovery'))
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
 
   const steps = run.steps ?? []
-  const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen'] : ['pdf', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
+  const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
   const reached = Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
   const searches = view.search_runs.filter(s => s.run_id === run.id)
@@ -115,8 +117,10 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
   const rationaleOf = (provider: string, query: string) => plan?.queries.find(q => q.provider_id === provider && q.query_text === query)?.rationale ?? ''
 
   const stateOf = (i: number): PhaseState => {
-    if (i < reached) return groups[i].length ? 'done' : 'skipped'
-    if (i === reached) return active ? 'running' : run.status === 'completed' ? 'done' : 'attention'
+    const hasTrouble = groups[i].some(troubled)
+    if (groups[i].some(step => step.status === 'running')) return 'running'
+    if (i < reached) return hasTrouble ? 'attention' : groups[i].length ? 'done' : 'skipped'
+    if (i === reached) return active ? 'running' : hasTrouble ? 'attention' : run.status === 'completed' ? 'done' : 'attention'
     if (active && reached < 0 && i === 0 && run.status !== 'queued') return 'running'
     return active || run.status === 'paused' ? 'waiting' : 'skipped'
   }
@@ -127,14 +131,14 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
     if (state === 'done' && key === 'pdf') return plural(group.filter(s => s.status === 'succeeded').length, 'Downloaded {n} open-access PDF', 'Downloaded {n} open-access PDFs')
     if (state === 'done' && key === 'review' && answer?.review?.status === 'completed') return plural(answer.review.reviews.length, 'Reviewed {n} claim', 'Reviewed {n} claims')
     const [running, done, idle] = titles[key]
-    return t(state === 'running' || state === 'attention' ? running : state === 'done' ? done : idle)
+    return t(state === 'running' ? running : state === 'done' ? done : idle)
   }
 
   const detail = (key: PhaseKey, state: PhaseState, group: Step[]): string => {
     const attempt = Math.max(0, ...group.map(s => s.attempt))
     const attemptText = attempt > 1 && state === 'running' ? t('attempt {n}', { n: attempt }) : ''
     if (state === 'waiting') return t('Waiting')
-    if (state === 'skipped') return t(key === 'pdf' && run.status === 'completed' ? 'No open-access PDF to download' : run.status === 'completed' ? 'Not needed' : 'Not run')
+    if (state === 'skipped') return t(key === 'pdf' && run.status === 'completed' ? 'No open-access PDF to download' : key === 'semantic' && run.status === 'completed' ? 'Not used' : run.status === 'completed' ? 'Not needed' : 'Not run')
     switch (key) {
       case 'plan': {
         if (state !== 'done' || !plan) return attemptText
@@ -166,15 +170,25 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
         return t('{included} included · {excluded} excluded · {pending} undecided', { included: view.counts.included, excluded: view.counts.excluded, pending: view.counts.pending })
       }
       case 'pdf': {
-        const reasons = new Map<string, number>()
-        group.filter(troubled).forEach(s => { const reason = t(fetchReasons[s.error_code ?? ''] ?? 'connection failed'); reasons.set(reason, (reasons.get(reason) ?? 0) + 1) })
-        const failed = [...reasons.values()].reduce((a, b) => a + b, 0)
+        // One outcome per source: a copy found after its link refused counts as downloaded, not as a failure.
+        const outcomes = new Map<string, Step>()
+        group.forEach(s => { const svid = s.operation_key.split(':')[1]; if (outcomes.get(svid)?.status !== 'succeeded') outcomes.set(svid, s) })
+        const reasons = tally([...outcomes.values()].filter(troubled).map(s => fetchReasonText(s.error_code, (s.error as { http_status?: number } | null)?.http_status)))
+        const failed = reasons.reduce((sum, [, n]) => sum + n, 0)
         const ok = group.filter(s => s.status === 'succeeded')
         const pages = ok.reduce((sum, s) => sum + (s.output?.page_count ?? 0), 0)
         const parts = [state === 'running' && group.length ? plural(ok.length, '{n} downloaded', '{n} downloaded') : '',
           state === 'done' && pages ? t('{pages} pages · {passages} passages', { pages, passages: ok.reduce((sum, s) => sum + (s.output?.passage_count ?? 0), 0) }) : '',
-          failed ? t('{n} not downloaded ({reasons})', { n: failed, reasons: [...reasons].map(([reason, n]) => `${n} ${reason}`).join(', ') }) : '']
+          failed ? t('{n} not downloaded ({reasons})', { n: failed, reasons: reasons.map(([reason, n]) => `${n} ${reason}`).join(', ') }) : '']
         return parts.filter(Boolean).join(' · ')
+      }
+      case 'semantic': {
+        if (state === 'running') return attemptText
+        if (state === 'attention') return t('Unavailable · continued with keyword search')
+        const output = group.find(s => s.status === 'succeeded')?.output
+        return output?.passages !== undefined && output.embedded !== undefined
+          ? t('{passages} passages ranked · {embedded} newly embedded', { passages: output.passages, embedded: output.embedded })
+          : ''
       }
       case 'answer': {
         if (state !== 'done') return attemptText
@@ -199,9 +213,9 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
       case 'plan': {
         if (!plan) return null
         return <>
-          <p>{plan.question_interpretation}</p>
+          <p className="chat-phase-summary">{plan.question_interpretation}</p>
           <p>{plan.search_rationale}</p>
-          {plan.scope_boundaries.length > 0 && <p>{t('Scope limits: {list}', { list: plan.scope_boundaries.join(' · ') })}</p>}
+          {plan.scope_boundaries.length > 0 && <p className="chat-scope-note"><span>{t('Scope limits')}</span>{plan.scope_boundaries.join(' · ')}</p>}
         </>
       }
       case 'screen': {
@@ -260,8 +274,16 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
   const scope = view.scope
   const literature = { role: 'Literature', connection: scope.literature_model ? scope.literature_connection ?? scope.model_connection : scope.model_connection,
     model: scope.literature_model ?? scope.requested_model, effort: scope.literature_model ? scope.literature_reasoning_effort : scope.reasoning_effort }
+  const embeddingStep = steps.find(s => s.kind.startsWith('embedding:'))
+  const embeddingStoredModel = embeddingStep?.kind.slice('embedding:'.length) ?? ''
+  const embeddingParts = embeddingStoredModel.split(':')
+  const embeddingConnections = new Set(['openai', 'ollama', 'lm_studio'])
+  const embeddingConnection = embeddingConnections.has(embeddingParts[0]) ? embeddingParts[0] : 'gemini'
+  const embeddingModel = embeddingConnections.has(embeddingParts[0]) ? embeddingParts.slice(1).join(':') : embeddingStoredModel
+  const embeddingProviders: Record<string, string> = { gemini: 'Gemini', openai: 'OpenAI', ollama: 'Ollama', lm_studio: 'LM Studio' }
   const agents: Partial<Record<PhaseKey, { role: string; connection: string; model: string | null; effort: string | null }>> = {
     plan: literature, screen: literature,
+    semantic: embeddingStep ? { role: embeddingProviders[embeddingConnection], connection: embeddingConnection, model: embeddingModel, effort: null } : undefined,
     answer: { role: 'Answer', connection: answer?.model?.connection ?? scope.model_connection, model: answer?.model?.resolved_model ?? answer?.model?.requested_model ?? scope.requested_model, effort: scope.reasoning_effort },
     review: { role: 'Reviewer', connection: answer?.review?.model?.connection ?? view.reviewer.connection ?? scope.model_connection, model: answer?.review?.model?.resolved_model ?? view.reviewer.model, effort: view.reviewer.reasoning_effort },
   }
@@ -276,16 +298,20 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
     t('provider requests {requests}/{limit}', { requests: run.usage.provider_requests ?? 0, limit: run.budget.max_provider_requests ?? 0 }),
     ...(tokens === null ? [] : [t('{n} answer tokens', { n: compact(tokens) })])].join(' · ')
   return <section className="chat-turn">
-    <p className="chat-say">{run.kind === 'discovery' ? t('Plan: search {providers}, then screen the candidates.', { providers }) : t('Plan: download the open-access PDFs of the included sources, then write a source-linked answer.')}</p>
-    <div className="chat-group">
+    <div className={`chat-group${active ? ' is-active' : ''}`}>
       <button type="button" className="chat-toggle" aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
         {expanded ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
         <span className={active ? 'shimmer-text' : undefined}>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span>
         {active && <LoaderCircle size={14} className="chat-spin" aria-hidden />}
         <time>{durationText(secondsBetween(started, clock))}</time>
       </button>
-      {run.status !== 'queued' && <p className="chat-step-note">{spend}</p>}
-      {expanded && <ol className="chat-steps">{order.map((key, i) => {
+      {expanded && <>
+        {latest && <div className="chat-run-plan" role="note">
+          <Sparkles size={14} strokeWidth={1.8} aria-hidden />
+          <div><p className="chat-run-plan-title">{run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : t('Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
+        </div>}
+        {run.status !== 'queued' && <details className="chat-run-meta"><summary>{t('Run details')}</summary><p>{spend}</p></details>}
+        <ol className="chat-steps">{order.map((key, i) => {
         const state = stateOf(i)
         const group = groups[i]
         const seconds = phaseSeconds(group, state)
@@ -308,11 +334,11 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
             {text && <small>{text}</small>}
             <time>{seconds === null ? '' : durationText(seconds)}</time>
           </div>
-          {note && <div className="chat-step-note">{note}</div>}
+          {note && (!hasConcepts || conceptsOpen) && <div className="chat-step-note">{note}</div>}
           {hasConcepts && conceptsOpen && <div className="query-box">
             {plan?.concepts.map(c => <div key={c.label} className="query-row">
               <span className="query-text">{c.synonyms.length ? `${c.label} · ${c.synonyms.join(', ')}` : c.label}</span>
-              <span className="query-meta">{t(c.role.replace('_', ' '))}</span>
+              <span className="query-meta"><span className="query-result">{t(c.role.replace('_', ' '))}</span></span>
             </div>)}
           </div>}
           {hasQueries && queriesOpen && <div className="query-box">
@@ -322,9 +348,12 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
               return <div key={s.id} className={`query-row${ok ? '' : ' is-attention'}`} title={s.query_text}>
                 <Search size={14} aria-hidden />
                 {why
-                  ? <span className="query-stack"><span className="query-text">{s.query_text}</span><small>{why}</small></span>
-                  : <span className="query-text">{s.query_text}</span>}
-                <span className="query-meta"><ConnectionIcon id={s.provider} />{providerName(s.provider)} · {ok ? t('{count} of {total}', { count: s.result_count, total: s.provider_total === null ? '?' : compact(s.provider_total) }) : t(s.status.replace('_', ' '))}</span>
+                  ? <span className="query-stack"><code className="query-text query-code">{s.query_text}</code><small>{why}</small></span>
+                  : <code className="query-text query-code">{s.query_text}</code>}
+                <span className={`query-meta${ok ? ' is-ok' : ' is-error'}`}>
+                  <span className="query-provider"><ConnectionIcon id={s.provider} />{providerName(s.provider)}</span>
+                  <span className="query-result">{ok ? t('{count} of {total}', { count: s.result_count, total: s.provider_total === null ? '?' : compact(s.provider_total) }) : t(s.status.replace('_', ' '))}</span>
+                </span>
               </div>
             })}
             {runningSearch && active && <div className="query-row is-running">
@@ -333,10 +362,11 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
             </div>}
           </div>}
         </li>
-      })}</ol>}
+        })}</ol>
+      </>}
     </div>
 
-    {failedSearches.length > 0 && run.status !== 'paused' && <div className="chat-note"><p>{t('Some searches did not complete: {list}. The results of the other searches are used; search again to retry them.', { list: failedSearches.join(', ') })}</p></div>}
+    {failedSearches.length > 0 && run.status !== 'paused' && <p className="chat-say is-muted">{t('Some searches did not complete: {list}. The results of the other searches are used.', { list: failedSearches.join(', ') })}</p>}
     {run.status === 'paused' && <div className="chat-note is-warning">
       <p>{pauseReasonText(run.pause_reason)}</p>
       {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
@@ -344,6 +374,6 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
     {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className="chat-note is-warning"><p>{pauseReasonText(run.pause_reason)}</p></div>}
     {run.kind === 'discovery' && run.status === 'completed' && latest && !answer && <p className="chat-say">{t(view.counts.included === 1 ? 'Found {unique} unique works; {included} is included. Check the Sources tab, then generate an answer.' : 'Found {unique} unique works; {included} are included. Check the Sources tab, then generate an answer.', { unique: view.counts.unique, included: view.counts.included })}</p>}
     {children}
-    {!children && answer && run.kind === 'answer' && <p className="chat-say is-muted">{t('An earlier answer: {status}.', { status: t(answer.status.replaceAll('_', ' ')) })}</p>}
+    {!children && answer && run.kind === 'answer' && <div className="answer-history-note"><span className="answer-history-icon" aria-hidden="true"><TriangleAlert size={14} /></span><span>{t('An earlier answer: {status}.', { status: t(answer.status.replaceAll('_', ' ')) })}</span></div>}
   </section>
 }

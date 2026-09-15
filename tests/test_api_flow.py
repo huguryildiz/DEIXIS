@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
 from deixis.config import Settings
+from deixis.documents import acquisition
 from deixis.documents.fetch import FetchResult
 from deixis.providers import scopus
 from deixis.storage import db
@@ -97,11 +98,16 @@ def test_trash_restore_and_permanent_delete_with_evidence(tmp_path):
         assert uploaded.status_code == 201
         asset_id = uploaded.json()["sources"][0]["access"]["assets"][0]["id"]
         assert client.get(f"/api/researches/{rid}/assets/{asset_id}").status_code == 200
+        asset_text = client.get(f"/api/researches/{rid}/assets/{asset_id}/text")
+        assert asset_text.status_code == 200
+        assert asset_text.json()["asset"]["id"] == asset_id
+        assert "SYNTHETIC molecule notes" in asset_text.json()["passages"][0]["text"]
 
         assert client.delete(f"/api/researches/{rid}").json() == {"trashed": True}
         assert rid not in [r["id"] for r in client.get("/api/researches").json()]
         assert client.get(f"/api/researches/{rid}").status_code == 404
         assert client.get(f"/api/researches/{rid}/assets/{asset_id}").status_code == 404
+        assert client.get(f"/api/researches/{rid}/assets/{asset_id}/text").status_code == 404
         assert client.get(f"/api/researches/{rid}/bibliography").status_code == 404
         assert client.get("/api/search", params={"q": "molecule"}).json() == {"researches": [], "sources": []}
         assert client.get("/api/trash").json()[0]["id"] == rid
@@ -290,11 +296,124 @@ def test_pdf_discovery_is_visible_and_user_can_attach_pdf_to_existing_source(tmp
         assert same["access"]["assets"][0]["origin"] == "user_upload"
 
 
+def test_version_uncertain_pdf_candidate_is_attached_only_when_the_user_confirms_it(tmp_path):
+    fetched = []
+
+    async def fetcher(url):
+        fetched.append(url)
+        if "gated" in url:
+            return FetchResult("http_error", final_url=url, http_status=403)
+        return FetchResult("ok", data=make_pdf(["SYNTHETIC repository copy"]), final_url=url, http_status=200)
+
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+                     http_client=openalex_client(), fetcher=fetcher, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as raw:
+        client = session(raw)
+        rid = create(client)
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        view, completed = wait_run(client, rid, run["id"])
+        assert completed["status"] == "completed"
+        source = next(s for s in view["sources"] if s["doi"] == "10.1/c")
+        svid = source["source_version_id"]
+        assert not source["access"]["assets"]
+        store = app.state.store
+        discovery = store.record_pdf_discovery(rid, svid, "web_search", '"SYNTHETIC molecule schedule letter"',
+                                               acquisition.Lookup("completed", []))
+        store.record_pdf_candidates(svid, discovery, [
+            acquisition.Candidate("web_search", "https://gated.example/copy.pdf", None, None, None, "title_verified", "uncertain"),
+            acquisition.Candidate("web_search", "https://repo.example/copy.pdf", None, None, None, "title_verified", "uncertain"),
+            acquisition.Candidate("openalex", "https://repo.example/manuscript.pdf", None, "submittedVersion", None,
+                                  "doi_verified", "different"),
+            acquisition.Candidate("web_search", "https://other.example/unrelated.pdf", None, None, None, "unverified", "uncertain"),
+        ])
+        ids = {c["candidate_url"]: c["id"] for c in store.pdf_candidates(svid)}
+        attach = lambda url: client.post(f"/api/researches/{rid}/sources/{svid}/pdf-candidates/{ids[url]}/attach")
+        before = len(fetched)
+
+        assert attach("https://repo.example/manuscript.pdf").status_code == 422
+        assert attach("https://other.example/unrelated.pdf").status_code == 422
+        assert len(fetched) == before
+
+        gated = attach("https://gated.example/copy.pdf")
+        assert gated.status_code == 502 and "HTTP 403" in gated.json()["detail"]
+        refreshed = next(s for s in client.get(f"/api/researches/{rid}").json()["sources"] if s["source_version_id"] == svid)
+        assert not refreshed["access"]["assets"]
+
+        attached = attach("https://repo.example/copy.pdf")
+        assert attached.status_code == 200, attached.text
+        same = next(s for s in attached.json()["sources"] if s["source_version_id"] == svid)
+        assert [a["origin"] for a in same["access"]["assets"]] == ["user_upload"]
+        outcomes = {c["candidate_url"]: (c["access_status"], c["http_status"]) for c in same["access"]["pdf_candidates"]}
+        assert outcomes["https://gated.example/copy.pdf"] == ("http_error", 403)
+        assert outcomes["https://repo.example/copy.pdf"] == ("downloaded", 200)
+
+        assert attach("https://gated.example/copy.pdf").status_code == 409
+        assert client.post(f"/api/researches/{rid}/sources/{svid}/pdf-candidates/pdc_missing/attach").status_code == 404
+
+
+@pytest.mark.parametrize("copy_found", [True, False])
+def test_refused_link_leads_to_one_lookup_for_another_copy_and_is_not_requested_again(tmp_path, monkeypatch, copy_found):
+    monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "")  # Unpaywall and CORE are not configured, so they send nothing
+    monkeypatch.setenv("CORE_API_KEY", "")
+    fetched, lookups = [], []
+
+    def handler(request):
+        if request.url.host == "api.openalex.org" and "doi.org" in request.url.path:
+            lookups.append(request.url.host)
+            return httpx.Response(200, json={"doi": "https://doi.org/10.1/a", "locations": [
+                {"pdf_url": "https://repository.example/w1.pdf", "version": "publishedVersion"}]})
+        if request.url.host == "api.crossref.org":
+            lookups.append(request.url.host)
+            return httpx.Response(404)
+        return httpx.Response(200, json={"meta": {"count": len(WORKS)}, "results": WORKS})
+
+    async def fetcher(url):
+        fetched.append(url)
+        if copy_found and "repository" in url:
+            return FetchResult("ok", data=make_pdf(["SYNTHETIC repository copy"]), final_url=url, http_status=200)
+        return FetchResult("http_error", final_url=url, http_status=403)
+
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fetcher,
+                     extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as raw:
+        client = session(raw)
+        rid = create(client)
+        discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        wait_run(client, rid, discovery["id"])
+        answer = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, answer["id"])
+        assert run["status"] == "completed", run
+
+        refused = next(s for s in run["steps"] if s["kind"] == "fetch_pdf")
+        assert (refused["status"], refused["error_code"], refused["error"]["http_status"]) == ("failed", "fetch_http_error", 403)
+        other = next(s for s in run["steps"] if s["kind"] == "pdf_other_copy")
+        source = next(s for s in view["sources"] if s["doi"] == "10.1/a")
+        # The automatic lookup leaves web search to the user's own "Find PDF".
+        assert [d["provider"] for d in source["access"]["pdf_discoveries"]] == ["unpaywall", "openalex", "crossref", "core"]
+        assert source["access"]["fetch"]["http_status"] == 403
+        if copy_found:
+            assert other["status"] == "succeeded" and other["output"]["page_count"] == 1
+            assert [a["origin"] for a in source["access"]["assets"]] == ["download"]
+        else:
+            assert (other["status"], other["error_code"]) == ("failed", "no_other_copy")
+            assert not source["access"]["assets"] and source["access"]["other_copy"]["status"] == "failed"
+        assert fetched == ["https://example.org/w1.pdf", "https://repository.example/w1.pdf"]
+        assert lookups == ["api.openalex.org", "api.crossref.org"]
+
+        again = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        _, rerun = wait_run(client, rid, again["id"])
+        assert rerun["status"] == "completed", rerun
+        assert not [s for s in rerun["steps"] if s["kind"] in ("fetch_pdf", "pdf_other_copy")]
+        assert len(fetched) == 2 and len(lookups) == 2  # neither the refused link nor the lookup is repeated
+
+
 def test_invalid_output_is_repaired_once_then_kept_as_unverified_draft(tmp_path):
     def bad(si):
         if si["task_type"] != "grounded_answer":
             return valid_response(si)
-        return json.dumps(envelope(si, "deixis.grounded_answer_draft.v2") | {
+        return json.dumps(envelope(si, "deixis.grounded_answer_draft.v3") | {
+            "title": "Synthetic evidence for release scheduling and optimization in constrained molecular communication networks",
             "answer_language": "en",
             "claims": [{"claim_label": "c1", "section": "Overview", "text": "It has been reported that X was invented.", "support_type": "source_stated", "passage_ids": ["psg_INVENTED0001"]}],
             "citation_anchors": [],
@@ -313,6 +432,58 @@ def test_invalid_output_is_repaired_once_then_kept_as_unverified_draft(tmp_path)
         assert {i["code"] for i in answer["validation"]["issues"]} == {"unknown_passage_id"}
         assert len(adapter.calls) == 2  # original + one repair
         assert run["usage"]["model_calls"] == 2
+
+
+def test_missing_anchor_is_repaired_before_the_answer_is_published(tmp_path):
+    answer_attempts = 0
+
+    def missing_then_valid(si):
+        nonlocal answer_attempts
+        draft = json.loads(valid_response(si))
+        if si["task_type"] == "grounded_answer":
+            answer_attempts += 1
+            if answer_attempts == 1:
+                draft["citation_anchors"] = []
+        return json.dumps(draft)
+
+    adapter = FakeAdapter(missing_then_valid)
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        rid = create(client, source_scope="attached")
+        client.post(f"/api/researches/{rid}/uploads", files={"file": ("a.pdf", make_pdf(["SYNTHETIC molecule text"]), "application/pdf")})
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        answer = view["answers"][0]
+        assert answer["status"] == "structurally_valid"
+        assert all(evidence["anchor_text"] for claim in answer["claims"] for evidence in claim["evidence"])
+        assert [task for task, _, _ in adapter.sent].count("grounded_answer") == 2
+        assert run["usage"]["model_calls"] == 2
+
+
+def test_long_answer_title_is_repaired_and_the_valid_title_replaces_the_question(tmp_path):
+    attempts = 0
+
+    def long_then_valid(si):
+        nonlocal attempts
+        draft = json.loads(valid_response(si))
+        if si["task_type"] == "grounded_answer":
+            attempts += 1
+            if attempts == 1:
+                draft["title"] = " ".join(f"word{n}" for n in range(21))
+        return json.dumps(draft)
+
+    adapter = FakeAdapter(long_then_valid)
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        rid = create(client, source_scope="attached")
+        original = client.get(f"/api/researches/{rid}").json()["research"]["title"]
+        client.post(f"/api/researches/{rid}/uploads", files={"file": ("a.pdf", make_pdf(["SYNTHETIC molecule text"]), "application/pdf")})
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        assert view["answers"][0]["status"] == "structurally_valid"
+        assert view["research"]["title"] == "Synthetic evidence for release scheduling and optimization in constrained molecular communication networks"
+        assert view["research"]["title"] != original
+        assert attempts == 2 and run["usage"]["model_calls"] == 2
 
 
 def test_invented_locator_in_claim_text_is_repaired_or_never_shown_as_cited(tmp_path):

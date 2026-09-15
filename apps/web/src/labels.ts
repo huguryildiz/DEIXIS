@@ -67,7 +67,17 @@ export const stepLabel = (kind: string, key: string) => {
   if (kind === 'model:answer_review') return t('Claim review (reviewer model)')
   if (kind.startsWith('provider_search')) return t('{provider} search {n}', { provider: providerName(kind.split(':')[1] ?? ''), n: Number(key.split(':')[1]) + 1 })
   if (kind === 'fetch_pdf') return t('Open-access PDF retrieval')
+  if (kind === 'pdf_other_copy') return t('Search for another open copy')
   return kind
+}
+
+// Why a PDF step gave no file, in plain words; the HTTP status stays in view for the record.
+const fetchReasons: Record<string, string> = { fetch_timeout: 'timed out', fetch_too_large: 'file too large', fetch_not_pdf: 'not a PDF', fetch_blocked_url: 'address not allowed', fetch_failed: 'connection failed', no_other_copy: 'no other open copy found' }
+export function fetchReasonText(code: string | null | undefined, httpStatus?: number | null) {
+  if (code !== 'fetch_http_error') return t(fetchReasons[code ?? ''] ?? 'connection failed')
+  if (httpStatus === 401 || httpStatus === 403) return t('site blocked automatic download · HTTP {status}', { status: httpStatus })
+  if (httpStatus === 404 || httpStatus === 410) return t('no file at this link · HTTP {status}', { status: httpStatus })
+  return httpStatus ? t('server refused · HTTP {status}', { status: httpStatus }) : t('server refused')
 }
 
 export function locatorText(e: Pick<Evidence, 'kind' | 'physical_page' | 'printed_label'>) {
@@ -88,7 +98,10 @@ export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unst
   const parts: { tone: 'text' | 'abstract' | 'unstated'; text: string }[] = []
   const asset = source.access.assets[0]
   if (asset) parts.push(asset.extraction_status === 'no_text' ? { tone: 'unstated', text: t('PDF without a text layer (no OCR in this version)') } : { tone: 'text', text: t('PDF · {pages} pages · text {status}', { pages: asset.page_count ?? '?', status: t(asset.extraction_status) }) })
-  else if (source.access.fetch?.status === 'failed') parts.push({ tone: 'unstated', text: t('PDF not retrieved ({reason})', { reason: source.access.fetch.error_code?.replace('fetch_', '').replace('_', ' ') ?? '' }) })
+  else if (source.access.fetch?.status === 'failed') {
+    const reason = fetchReasonText(source.access.fetch.error_code, source.access.fetch.http_status)
+    parts.push({ tone: 'unstated', text: source.access.other_copy?.status === 'failed' ? t('PDF not retrieved ({reason}) · no other open copy found · attach the PDF yourself', { reason }) : t('PDF not retrieved ({reason})', { reason }) })
+  }
   else if (source.access.oa_pdf_url && source.access.oa_pdf_version !== source.version_label) parts.push({ tone: 'unstated', text: t('Open-access PDF is a different version ({version}) · not used for this version', { version: versionText(source.access.oa_pdf_version) }) })
   else if (source.access.oa_pdf_url) parts.push({ tone: 'unstated', text: t('Open-access PDF listed · not yet retrieved') })
   if (source.access.abstract_passage_id) parts.push({ tone: 'abstract', text: t(source.access.abstract_origin === 'provider_openalex_inverted_index' ? 'Abstract (rebuilt from OpenAlex index)' : 'Abstract') })

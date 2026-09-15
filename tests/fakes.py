@@ -41,7 +41,8 @@ def valid_response(si: dict[str, Any]) -> str:
             "notes": "",
         })
     first = si["passages"][0]
-    return json.dumps(envelope(si, "deixis.grounded_answer_draft.v2") | {
+    return json.dumps(envelope(si, "deixis.grounded_answer_draft.v3") | {
+        "title": "Synthetic evidence for release scheduling and optimization in constrained molecular communication networks",
         "answer_language": "en",
         "claims": [{"claim_label": "c1", "section": "Overview", "text": "It has been reported that the first passage supports this fake claim.", "support_type": "source_stated", "passage_ids": [first["passage_id"]]}],
         "citation_anchors": [{"claim_label": "c1", "passage_id": first["passage_id"], "quote": " ".join(first["text"].split())[:600]}],

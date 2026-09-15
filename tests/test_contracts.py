@@ -88,29 +88,41 @@ def test_evidence_links_keep_the_located_passage_words():
     assert all(l["anchor_match"] == "exact" and l["anchor_text"] for l in links)
 
 
-def test_quote_not_found_in_the_cited_passage_is_a_warning_and_the_link_has_no_anchor():
+def test_quote_not_found_in_the_cited_passage_rejects_the_draft_and_the_link_has_no_anchor():
     step_input = STEP_INPUTS["A_answer"]
     draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
     draft["citation_anchors"][0]["quote"] = "SYNTHETIC. This sentence was not present in the cited passage."
     report = contracts.validate_model_output(step_input, draft)
-    assert report.ok and [w.code for w in report.warnings] == ["anchor_not_in_passage"]
+    assert not report.ok and report.codes() == ["anchor_not_in_passage"]
     link = contracts.derive_evidence_links(step_input, draft)[0]
     assert (link["anchor_text"], link["anchor_match"]) == (None, None)
 
 
-def test_missing_citation_anchor_is_a_warning_not_an_issue():
+def test_missing_citation_anchor_rejects_the_draft():
     step_input = STEP_INPUTS["A_answer"]
     draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
     draft["citation_anchors"].pop()
     report = contracts.validate_model_output(step_input, draft)
-    assert report.ok and [w.code for w in report.warnings] == ["missing_citation_anchor"]
+    assert not report.ok and report.codes() == ["missing_citation_anchor"]
+    assert "psg_" in report.issues[0].message
+
+
+def test_answer_title_has_a_strict_twenty_word_ceiling():
+    draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    draft["title"] = " ".join(f"word{n}" for n in range(21))
+    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], draft)
+    assert report.codes() == ["answer_title_too_long"]
+    assert report.issues[0].path == "/title"
+
+    draft["title"] = " ".join(f"word{n}" for n in range(20))
+    assert contracts.validate_model_output(STEP_INPUTS["A_answer"], draft).ok
 
 
 def test_anchor_for_a_passage_the_claim_does_not_cite_is_still_an_issue():
     step_input = STEP_INPUTS["A_answer"]
     draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
     draft["citation_anchors"][0]["passage_id"] = "psg_SYNA3pg002"  # cited by c3, not by c1
-    assert contracts.validate_model_output(step_input, draft).codes() == ["anchor_passage_not_cited"]
+    assert contracts.validate_model_output(step_input, draft).codes() == ["anchor_passage_not_cited", "missing_citation_anchor"]
 
 
 PDF_TEXT = ("SYNTHETIC. Earlier text.\nThe bit error probability is p e = Q( √ 2 E b /N 0 ) for each\n"

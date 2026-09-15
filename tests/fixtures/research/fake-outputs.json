@@ -120,10 +120,11 @@
       "expect_ok": true,
       "expect_codes": [],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v2",
+        "schema_version": "deixis.grounded_answer_draft.v3",
         "step_input_id": "sti_SYNTHA0003",
         "scope_revision": 1,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
         "answer_language": "en",
         "claims": [
           { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that transmitter release-time scheduling is formulated as a mixed-integer linear program with binary release variables.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01"] },
@@ -149,10 +150,11 @@
       "expect_ok": false,
       "expect_codes": ["unknown_passage_id"],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v2",
+        "schema_version": "deixis.grounded_answer_draft.v3",
         "step_input_id": "sti_SYNTHA0003",
         "scope_revision": 1,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
         "answer_language": "en",
         "claims": [
           { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that nodes carry hydrophones.", "support_type": "source_stated", "passage_ids": ["psg_SYNB1pg001"] }
@@ -169,10 +171,11 @@
       "expect_ok": false,
       "expect_codes": ["schema_invalid"],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v2",
+        "schema_version": "deixis.grounded_answer_draft.v3",
         "step_input_id": "sti_SYNTHA0003",
         "scope_revision": 1,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
         "answer_language": "en",
         "claims": [
           { "claim_label": "c1", "section": "Formulations", "text": "Constraint (7) bounds nutrients.", "support_type": "source_stated", "passage_ids": ["psg_SYNA2abs01"], "page": 7 }
@@ -189,10 +192,11 @@
       "expect_ok": false,
       "expect_codes": ["schema_invalid"],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v2",
+        "schema_version": "deixis.grounded_answer_draft.v3",
         "step_input_id": "sti_SYNTHA0003",
         "scope_revision": 1,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
         "answer_language": "en",
         "claims": [
           { "claim_label": "c1", "section": "Formulations", "text": "x", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01"], "semantic_review": "human_checked" }
@@ -209,10 +213,11 @@
       "expect_ok": false,
       "expect_codes": ["envelope_mismatch"],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v2",
+        "schema_version": "deixis.grounded_answer_draft.v3",
         "step_input_id": "sti_SYNTHB0001",
         "scope_revision": 2,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
         "answer_language": "en",
         "claims": [],
         "citation_anchors": [],
@@ -225,12 +230,13 @@
       "name": "answer_claim_without_passage_and_duplicates",
       "step_input": "A_answer",
       "expect_ok": false,
-      "expect_codes": ["claim_without_passage", "duplicate_claim_label", "duplicate_passage_id", "unknown_source_id"],
+      "expect_codes": ["claim_without_passage", "duplicate_claim_label", "duplicate_passage_id", "missing_citation_anchor", "unknown_source_id"],
       "output": {
-        "schema_version": "deixis.grounded_answer_draft.v2",
+        "schema_version": "deixis.grounded_answer_draft.v3",
         "step_input_id": "sti_SYNTHA0003",
         "scope_revision": 1,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
         "answer_language": "en",
         "claims": [
           { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that X is unsupported.", "support_type": "analyst_inference", "passage_ids": [] },

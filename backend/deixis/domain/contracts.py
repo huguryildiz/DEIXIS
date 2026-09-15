@@ -33,7 +33,7 @@ SCHEMA_FILES = {
 SCHEMA_VERSIONS = {
     "SearchPlan": "deixis.search_plan.v1",
     "ScreeningProposal": "deixis.screening_proposal.v1",
-    "GroundedAnswerDraft": "deixis.grounded_answer_draft.v2",
+    "GroundedAnswerDraft": "deixis.grounded_answer_draft.v3",
     "ClarificationRequest": "deixis.clarification_request.v1",
     "AnswerReview": "deixis.answer_review.v1",
 }
@@ -581,6 +581,10 @@ def locate_anchor(quote: str, passage: str) -> AnchorMatch | None:
 
 
 def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
+    title_words = re.findall(r"[^\W_]+(?:['’.-][^\W_]+)*", draft["title"], re.UNICODE)
+    if len(title_words) > 20:
+        report.issues.append(Issue("answer_title_too_long", "/title",
+                                   f"expected at most 20 words, got {len(title_words)}"))
     labels: set[str] = set()
     cited_by_claim: dict[str, set[str]] = {}
     for i, claim in enumerate(draft["claims"]):
@@ -601,8 +605,8 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
             report.issues.append(Issue("duplicate_passage_id", f"/claims/{i}/passage_ids", claim["claim_label"]))
         cited_by_claim[claim["claim_label"]] = set(claim["passage_ids"])
 
-    # A quote that cannot be located only costs the highlight, so it is a warning (D24); a quote aimed at the wrong
-    # claim or passage is a structural error.
+    # A published citation must resolve to source-owned text so the evidence panel can show the exact highlighted
+    # span (D27). Missing or unlocatable anchors go through the same bounded repair path as other structural errors.
     passage_text = {p["passage_id"]: p["text"] for p in step_input["passages"]}
     required_anchors = {
         (claim["claim_label"], pid)
@@ -623,11 +627,11 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
             report.issues.append(Issue("anchor_passage_not_cited", f"/citation_anchors/{i}/passage_id", anchor["passage_id"]))
             continue
         if locate_anchor(anchor["quote"], passage_text.get(anchor["passage_id"], "")) is None:
-            report.warnings.append(Issue("anchor_not_in_passage", f"/citation_anchors/{i}/quote",
-                                         f"{anchor['claim_label']}: the quoted sentence was not found in the cited passage"))
+            report.issues.append(Issue("anchor_not_in_passage", f"/citation_anchors/{i}/quote",
+                                       f"{anchor['claim_label']}:{anchor['passage_id']}: the quoted sentence was not found in the cited passage"))
     for claim_label, passage_id in sorted(required_anchors - seen_anchors):
-        report.warnings.append(Issue("missing_citation_anchor", "/citation_anchors",
-                                     f"{claim_label}: one citation has no quoted sentence"))
+        report.issues.append(Issue("missing_citation_anchor", "/citation_anchors",
+                                   f"{claim_label}:{passage_id}: this citation requires an exact contiguous quote"))
     for i, limitation in enumerate(draft["limitations"]):
         for j, sid in enumerate(limitation["source_ids"]):
             if sid not in allow["source_ids"]:

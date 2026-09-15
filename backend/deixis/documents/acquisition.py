@@ -240,7 +240,7 @@ async def web_lookup(client: httpx.AsyncClient, doi: str, title: str, api_key: s
 async def acquire_for_source(store: Store, research_id: str, source_version_id: str, client: httpx.AsyncClient,
                              papers_dir: Any, contact_email: str | None, serpapi_key: str | None,
                              fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch.fetch_pdf,
-                             core_key: str | None = None) -> dict[str, Any]:
+                             core_key: str | None = None, web_search: bool = True) -> dict[str, Any]:
     source = store.source(source_version_id)
     doi = normalize_doi(source.get("doi"))
     if not doi:
@@ -259,6 +259,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     if cr.record is not None:
         store.enrich_source("crossref", source_version_id, cr.record)
 
+    asset_id = None
     if not store.has_asset(source_version_id):
         attempted_urls: set[str] = set()
         for candidate in store.pdf_candidates(source_version_id):
@@ -271,25 +272,41 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
             store.record_pdf_attempt(candidate["id"], result)
             if result.status != "ok":
                 continue
-            sha = hashlib.sha256(result.data).hexdigest()
-            papers_dir.mkdir(parents=True, exist_ok=True)
-            path = papers_dir / f"{sha}.pdf"
-            if not path.exists():
-                path.write_bytes(result.data)
-            extraction = await asyncio.to_thread(pdf.extract_pdf, path)
-            store.add_asset_with_pages(source_version_id, sha, len(result.data), path.name, "download",
-                                       result.final_url or candidate["candidate_url"], None, extraction,
-                                       pdf.EXTRACTION_VERSION, pdf.chunk_page)
+            asset_id = await _attach_pdf(store, source_version_id, result.data, papers_dir, "download",
+                                         result.final_url or candidate["candidate_url"])
             break
 
     # A listed URL is not a found PDF: it may be gated, dead, HTML, or a different version. Make the fallback explicit
     # and retain its uncertain-version candidates for manual review/upload; never silently attach them.
-    if not store.has_asset(source_version_id):
+    if web_search and not store.has_asset(source_version_id):
         web_query = f'"{source["title"]}"'
         web = await web_lookup(client, doi, source["title"], serpapi_key)
         run_id = store.record_pdf_discovery(research_id, source_version_id, "web_search", web_query, web)
         store.record_pdf_candidates(source_version_id, run_id, web.candidates)
         lookups.append(("web_search", web_query, web))
 
-    return {"source_version_id": source_version_id, "lookups": len(lookups),
+    return {"source_version_id": source_version_id, "lookups": len(lookups), "asset_id": asset_id,
             "candidates": len(store.pdf_candidates(source_version_id)), "pdf_found": store.has_asset(source_version_id)}
+
+
+async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_dir: Any, origin: str,
+                      retrieved_from: str | None) -> str:
+    sha = hashlib.sha256(data).hexdigest()
+    papers_dir.mkdir(parents=True, exist_ok=True)
+    path = papers_dir / f"{sha}.pdf"
+    if not path.exists():
+        path.write_bytes(data)
+    extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+    return store.add_asset_with_pages(source_version_id, sha, len(data), path.name, origin, retrieved_from, None,
+                                      extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+
+
+async def attach_confirmed_candidate(store: Store, source_version_id: str, candidate: dict[str, Any], papers_dir: Any,
+                                     fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch.fetch_pdf) -> fetch.FetchResult:
+    result = await fetcher(candidate["candidate_url"])
+    store.record_pdf_attempt(candidate["id"], result)
+    if result.status == "ok":
+        # The version claim is the user's, not the provider's, so the file is recorded as their confirmed copy.
+        await _attach_pdf(store, source_version_id, result.data, papers_dir, "user_upload",
+                          result.final_url or candidate["candidate_url"])
+    return result

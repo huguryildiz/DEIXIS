@@ -92,25 +92,29 @@ Goal: a comprehensive report in sections that answers the question from the
 supplied passages. Every claim is linked to the passages that support it, and
 access and scope limits are stated.
 
-1. Read all passages. Note each passage's `reading_depth` and locator kind
+1. Write `title` as a concise descriptive title in the answer language. Aim for
+   15–20 words and never exceed 20 words. Do not copy the full question, end the
+   title with a question mark, or add claims that the supplied passages do not
+   support.
+2. Read all passages. Note each passage's `reading_depth` and locator kind
    (`abstract`, `pdf_page`, `section`).
-2. Organise the report in sections. Put the section heading in each claim's
+3. Organise the report in sections. Put the section heading in each claim's
    `section`, in the answer language; the claims of one section are consecutive
    and in reading order. Open with an overview section that answers the question
    directly. Then give one section to each part the question asks about (for
    example the decision variables, objectives, constraints and validation of
    published models), and close with a comparison or open-issues section when
    the passages support one.
-3. Cover the supplied evidence thoroughly. Report what each relevant source
+4. Cover the supplied evidence thoroughly. Report what each relevant source
    states instead of a few representative claims, and do not shorten the report
    to keep it simple. A claim is one to three sentences about one point and cites
    the specific passages that state it, at most five. Prefer several specific
    claims, each saying what one source or a small group of sources did, over one
    claim that lists many sources.
-4. `source_stated` claims cite at least one passage that states the claim.
+5. `source_stated` claims cite at least one passage that states the claim.
    `analyst_inference` claims cite the passages the inference draws on and the
    text should read as an interpretation.
-5. Do not cite a passage for something it does not say. Do not put page numbers,
+6. Do not cite a passage for something it does not say. Do not put page numbers,
    equation numbers, DOIs or quotations into claim text; the application displays
    locators from its records.
    For every claim-passage link, also add one `citation_anchors` item containing
@@ -119,7 +123,7 @@ access and scope limits are stated.
    mathematical extraction and wording; do not translate, repair, paraphrase,
    add ellipses or join non-contiguous spans. If no exact contiguous span supports
    the claim, the passage does not support that claim and must not be cited.
-6. Write mathematical content (decision variables, objective functions,
+7. Write mathematical content (decision variables, objective functions,
    constraints, channel or energy models) in LaTeX, between `$…$` inside a
    sentence or `$$…$$` for a displayed expression. Write an expression only as a
    cited passage states it; do not invent notation or turn a verbal description
@@ -137,22 +141,22 @@ access and scope limits are stated.
    alone does not establish that every choice is a decision variable of one MIP.
    When the supplied equations and procedure show separate stages, state those
    stages explicitly and do not attribute their choices to the MIP itself.
-7. Write for a reader new to the topic. Define each technical term from the
+8. Write for a reader new to the topic. Define each technical term from the
    passages the first time it is used, for example in a key-concepts section after
    the overview. Say what a formulation or result means and how approaches differ;
    when that explanation is your reading of the passages rather than their
    statement, make it an `analyst_inference` claim.
-8. When a source is available only as an abstract, restrict claims to what the
+9. When a source is available only as an abstract, restrict claims to what the
    abstract states and add an `access` limitation naming that source.
-9. When passages disagree, say so and add a `conflicting_evidence` limitation.
-10. Put parts of the question the passages do not answer in `unanswered_aspects`.
+10. When passages disagree, say so and add a `conflicting_evidence` limitation.
+11. Put parts of the question the passages do not answer in `unanswered_aspects`.
    An empty claim list with a clear statement of what is missing is a valid answer.
-11. A structured report of what the supplied passages state is supported. If the
+12. A structured report of what the supplied passages state is supported. If the
    question requests an unsupported mode (synthesis chains that derive new
    findings across sources, candidate questions, kill-search, experiments), set
    `capability_notice` and add an `unsupported_request` limitation; still answer
    the supported part.
-12. Word every text field as set out in Phrasing below.
+13. Word every text field as set out in Phrasing below.
 
 ### Phrasing
 

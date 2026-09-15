@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpen, BookOpenText, CalendarDays, CircleCheck, CircleDot, CircleX, Download, FilePlus2, FileText, FileUp, Hand, Info, ListChecks, ListPlus, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, ScanSearch, Search, ShieldCheck, Sparkles, Trash2, Upload, UserPen, Users, X, type LucideIcon } from 'lucide-react'
+import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpen, BookOpenText, CalendarDays, CircleCheck, CircleDot, CircleX, Copy, Download, FilePlus2, FileText, FileUp, Filter, Hand, Info, ListChecks, ListPlus, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, ScanSearch, Search, ShieldCheck, Sparkles, Trash2, Upload, UserPen, Users, X, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { api, ApiError, assetUrl, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type Limitation, type ModelOption, type ResearchView, type Run, type RunStatus, type Source, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
-import { accessParts, citedText, connectionName, locatorText, pauseReasonText, providerName, runStatusLabels, scopeLabels, stepLabel, verdictLabels, versionText } from './labels'
+import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type Limitation, type ModelOption, type ResearchView, type Run, type RunStatus, type Source, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
+import { accessParts, citedText, connectionName, fetchReasonText, locatorText, pauseReasonText, providerName, runStatusLabels, scopeLabels, stepLabel, verdictLabels, versionText } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { MathText } from './MathText'
 import { Transcript } from './Transcript'
@@ -13,18 +14,46 @@ import { useToast } from './Toast'
 import { ConnectionIcon } from './connectionIcons'
 import { ConfirmDialog } from './ConfirmDialog'
 import { effortLabels, effortOptions, modelRoles, Option, scopeOptions } from './Home'
-import { citationStyles, formatReference, type CitationStyle } from './citations'
+import { citationStyles, formatReference, formatReferenceText, type CitationStyle } from './citations'
 import { t, uiLocale } from './i18n'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+function TypewriterTitle({ text }: { text: string }) {
+  const [shown, setShown] = useState(text)
+  const previous = useRef(text)
+
+  useEffect(() => {
+    if (previous.current === text) return
+    previous.current = text
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const frame = requestAnimationFrame(() => setShown(text))
+      return () => cancelAnimationFrame(frame)
+    }
+    const started = performance.now()
+    const duration = Math.min(900, Math.max(450, text.length * 12))
+    let frame = 0
+    const write = (now: number) => {
+      const count = Math.ceil(Math.min(1, (now - started) / duration) * text.length)
+      setShown(text.slice(0, count))
+      if (count < text.length) frame = requestAnimationFrame(write)
+    }
+    frame = requestAnimationFrame(write)
+    return () => cancelAnimationFrame(frame)
+  }, [text])
+
+  const writing = shown.length < text.length
+  return <h1 className={writing ? 'is-typing' : undefined} aria-label={text}><span aria-hidden>{shown}</span></h1>
+}
 
 export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; initialTab?: string; dark: boolean; onChanged: () => void }) {
   const [view, setView] = useState<ResearchView | null>(null)
   const [error, setError] = useState('')
   const toast = useToast()
   const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'activity' ? initialTab : 'answer')
-  const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null } | null>(null)
+  const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean } | null>(null)
+  const [pdfTarget, setPdfTarget] = useState<{ assetId: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [events, setEvents] = useState<ActivityEvent[]>([])
   const [zoteroOpen, setZoteroOpen] = useState(false)
@@ -127,6 +156,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     finally { setPdfFinding(null) }
   }
   const chooseSourcePdf = (source: Source) => { setAttachTarget(source.source_version_id); sourceFileInput.current?.click() }
+  // A failed retrieval is recorded on the candidate, so reload before act reports the error.
+  const attachPdfCandidate = (source: Source, candidateId: string) => act(async () => {
+    try { await api.attachPdfCandidate(id, source.source_version_id, candidateId) } finally { await load() }
+  }, t('PDF attached after your version check. Its text was extracted page by page (no OCR).'))
   const removeSourcePdf = (source: Source, assetId: string) => setRemoveTarget({ source, assetId })
   const confirmRemoveSourcePdf = () => {
     if (!removeTarget) return
@@ -153,14 +186,14 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const reviewerConnection = view.reviewer.connection ?? view.scope.model_connection
   return <section className="research-view legacy-research">
     <div className="section-label">{t('RESEARCH')} <span> {t('/ REVISION {n}', { n: view.research.current_scope_revision })}</span></div>
-    <h1>{view.scope.question}</h1>
+    <TypewriterTitle text={view.research.title} />
     <div className="session-meta session-chips">
       <span className="meta-chip" title={t('Where DEIXIS looks for sources')}><ScopeIcon size={14} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
       <span className="meta-chip" title={t('How much searching and reading a run may do')}><EffortIcon size={14} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
-      <span className="meta-chip" title={t('Writes the source-linked answer')}><modelRoles.answer.icon size={14} aria-hidden />{t('Answer')} · <ConnectionIcon id={view.scope.model_connection} /><span className="sr-only">{connectionName(view.scope.model_connection)} </span>{modelText(view.scope.requested_model, view.scope.reasoning_effort)}</span>
+      <span className="meta-chip" title={t('Writes the source-linked answer')}><modelRoles.answer.icon size={14} aria-hidden />{t('Answer')} · <ConnectionIcon id={view.scope.model_connection} /><span className="sr-only">{connectionName(view.scope.model_connection)} · </span>{modelText(view.scope.requested_model, view.scope.reasoning_effort)}</span>
       {/* A research without a literature model (created before model roles) searches with its research model. */}
-      <span className="meta-chip" title={t('Plans the searches and screens the candidates')}><ScanSearch size={14} aria-hidden />{t('Literature')} · <ConnectionIcon id={literatureConnection} /><span className="sr-only">{connectionName(literatureConnection)} </span>{modelText(view.scope.literature_model ?? view.scope.requested_model, view.scope.literature_model ? view.scope.literature_reasoning_effort : view.scope.reasoning_effort)}</span>
-      <span className="meta-chip" title={t('Reviews each claim against its cited passages when an answer completes; never changes the answer')}><ShieldCheck size={14} aria-hidden />{view.reviewer.model ? <>{t('Reviewer')} · <ConnectionIcon id={reviewerConnection} /><span className="sr-only">{connectionName(reviewerConnection)} </span>{modelText(view.reviewer.model, view.reviewer.reasoning_effort)}{view.reviewer.mode === 'default' && ` ${t('(default)')}`}</> : t(view.reviewer.mode === 'off' ? 'Reviewer off' : 'No reviewer set')}</span>    </div>
+      <span className="meta-chip" title={t('Plans the searches and screens the candidates')}><ScanSearch size={14} aria-hidden />{t('Literature')} · <ConnectionIcon id={literatureConnection} /><span className="sr-only">{connectionName(literatureConnection)} · </span>{modelText(view.scope.literature_model ?? view.scope.requested_model, view.scope.literature_model ? view.scope.literature_reasoning_effort : view.scope.reasoning_effort)}</span>
+      <span className="meta-chip" title={t('Reviews each claim against its cited passages when an answer completes; never changes the answer')}><ShieldCheck size={14} aria-hidden />{view.reviewer.model ? <>{t('Reviewer')} · <ConnectionIcon id={reviewerConnection} /><span className="sr-only">{connectionName(reviewerConnection)} · </span>{modelText(view.reviewer.model, view.reviewer.reasoning_effort)}{view.reviewer.mode === 'default' && ` ${t('(default)')}`}</> : t(view.reviewer.mode === 'off' ? 'Reviewer off' : 'No reviewer set')}</span>    </div>
 
     {/* Counts and run controls sit above the tabs so they stay reachable from Sources and Activity; the Answer tab tells the run step by step. */}
     {(run || view.sources.length > 0) && <div className={`legacy-progress run-card${run ? ` is-${run.status}` : ''}`}>
@@ -183,7 +216,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <TabsContent value="answer">
         <Transcript view={view} modelText={modelText}
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
-          latestAnswer={answer ? <AnswerBlock researchId={id} answer={answer} sources={view.sources} busy={busy} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText })} onAttachPdf={chooseSourcePdf} /> : null} />
+          latestAnswer={answer ? <AnswerBlock researchId={id} title={view.research.title} version={view.answers.length} answer={answer} sources={view.sources} busy={busy} dark={dark} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} /> : null} />
         <div className="answer-actions">
           <Button disabled={busy || active || !included} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
           {hasAcademic && <Button variant="outline" disabled={busy || active} onClick={startDiscovery}><Search size={15} />{t(view.search_runs.length ? 'Search again' : 'Search providers')}</Button>}
@@ -191,7 +224,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       </TabsContent>
 
       <TabsContent value="sources">
-        <div className="legacy-section-head"><div><div className="section-label">{t('SELECTION')}</div><h2>{t('Sources and access')}</h2><p>{t('Your choice always overrides the model’s screening proposal. Access, retrieval and inspection are separate states.')}</p></div>
+        <section className="sources-panel" aria-labelledby="sources-heading">
+        <div className="workspace-pane-head"><div><h2 id="sources-heading">{t('Sources and access')}</h2><p>{t('Your choice always overrides the model’s screening proposal. Access, retrieval and inspection are separate states.')}</p></div>
           <div className="section-actions">
             {included > 0 && <ExportLinks researchId={id} sources="included" />}
             {view.scope.source_scope !== 'academic' && <>
@@ -202,24 +236,18 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
             </>}
           </div></div>
         {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
-        {view.search_runs.length > 0 && <div className="search-summary">{view.search_runs.map(s => <div key={s.id}><Search size={13} /><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {t(s.status.replace('_', ' '))} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div>}
+        {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}</span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {t(s.status.replace('_', ' '))} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
         <SourceList sources={view.sources} busy={busy}
           onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
           onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
-          onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null })}
-          onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf}
-          onRemoveAsset={removeSourcePdf} researchId={id} pdfFinding={pdfFinding} />
+          onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
+          onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} onAttachCandidate={(source, candidateId) => { void attachPdfCandidate(source, candidateId) }} onOpenPdf={(_, assetId) => setPdfTarget({ assetId })}
+          onRemoveAsset={removeSourcePdf} pdfFinding={pdfFinding} />
+        </section>
       </TabsContent>
 
       <TabsContent value="activity">
-        <ol className="activity-list">{events.slice().reverse().map(event => {
-          const { icon, text, chips } = describeEvent(event)
-          return <li key={event.id}>
-            <time>{new Date(event.created_at).toLocaleString(uiLocale())}</time>
-            <span className="activity-event"><span className="activity-icon">{icon}</span><span>{text}</span>{chips.map((chip, i) => <span key={i} className={`activity-chip is-${chip.tone}`}>{chip.label}</span>)}</span>
-          </li>
-        })}</ol>
-        {!events.length && <p className="empty-inline">{t('No recorded activity.')}</p>}
+        <ActivityLog events={events} />
       </TabsContent>
     </Tabs></div>
     {/* Outside the tabs: the answer's PDF suggestions attach through the same picker as the Sources tab. */}
@@ -232,14 +260,35 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}
       onConfirm={confirmRemoveSourcePdf} onOpenChange={open => { if (!open) setRemoveTarget(null) }} />
-    <PassageSheet researchId={id} passageId={passageTarget?.passageId ?? null} highlightText={passageTarget?.highlightText} dark={dark} onClose={() => setPassageTarget(null)} />
+    <PassageSheet researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : 'text'} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }} />
   </section>
 }
 
 const versionTones: Record<string, string> = { publishedVersion: 'published', acceptedVersion: 'accepted', submittedVersion: 'submitted' }
 
-function AnswerBlock({ researchId, answer, sources, busy, onOpen, onAttachPdf }: { researchId: string; answer: Answer; sources: Source[]; busy: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void }) {
+function reportFilename(title: string, version: number) {
+  const base = title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 80)
+  return `${base || 'deixis-report'}-v${version}.md`
+}
+
+async function writeClipboard(text: string) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text)
+  const field = document.createElement('textarea')
+  field.value = text
+  field.style.position = 'fixed'
+  field.style.opacity = '0'
+  document.body.appendChild(field)
+  field.select()
+  const copied = document.execCommand('copy')
+  field.remove()
+  if (!copied) throw new Error('copy failed')
+}
+
+function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, onOpen, onAttachPdf }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void }) {
   const [style, setStyle] = useState<CitationStyle>(() => { try { const saved = localStorage.getItem('deixis-citation-style'); return saved && Object.keys(citationStyles).includes(saved) ? saved as CitationStyle : 'apa' } catch { return 'apa' } })
+  const [reportOpen, setReportOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const toast = useToast()
   const chooseStyle = (next: CitationStyle) => { setStyle(next); try { localStorage.setItem('deixis-citation-style', next) } catch { /* the choice still applies for this tab */ } }
   if (answer.status === 'clarification' && answer.clarification) {
     return <div className="legacy-answer"><div className="section-label">{t('CLARIFICATION NEEDED')}</div><h2>{answer.clarification.question}</h2><p>{answer.clarification.why_it_matters}</p>{answer.clarification.options.length > 0 && <ul className="plain-list">{answer.clarification.options.map(o => <li key={o}>{o}</li>)}</ul>}<p className="legacy-mini-note">{t('Revise the question below to continue.')}</p></div>
@@ -259,7 +308,48 @@ function AnswerBlock({ researchId, answer, sources, busy, onOpen, onAttachPdf }:
   // An access limitation shown with the PDF suggestions is not repeated under Limits.
   const suggestion = pdfSuggestion(answer, sources)
   const limits = answer.limitations.filter(l => !suggestion?.notes.includes(l))
-  return <div className="legacy-answer">
+  const markdown = () => {
+    const lines = [`# ${title}`, '', `${t('Report')} · V${version}`, '']
+    if (answer.applicability === 'stale_scope') lines.push(`> ${t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}`, '')
+    if (answer.applicability === 'stale_selection') lines.push(`> ${t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}`, '')
+    if (answer.capability_notice) lines.push(`> ${answer.capability_notice}`, '')
+    sections.forEach(({ heading, claims }) => {
+      if (heading) lines.push(`## ${heading}`, '')
+      claims.forEach(claim => {
+        const citations = claim.evidence.map(e => `[${refs.get(e.passage_id)?.n}]`).join('')
+        const inference = claim.support_type === 'analyst_inference' ? ` _(${t('interpretation')})_` : ''
+        const review = claim.review ? ` _${t('Reviewer: {reason}', { reason: `${t(verdictLabels[claim.review.verdict])} — ${claim.review.reason}` })}_` : ''
+        lines.push(`${claim.text}${citations ? ` ${citations}` : ''}${inference}${review}`, '')
+      })
+    })
+    if (!answer.claims.length) lines.push(t('No claim could be linked to the passages given to the model.'), '')
+    if (answer.unanswered_aspects.length) lines.push(`## ${t('Not answered by the inspected passages')}`, '', ...answer.unanswered_aspects.map(item => `- ${item}`), '')
+    if (limits.length) lines.push(`## ${t('Limits')}`, '', ...limits.map(limit => `- **${t(limit.kind.replace('_', ' '))}:** ${limit.text}`), '')
+    if (refs.size) {
+      lines.push(`## ${t('Cited passages')}`, '')
+      refs.forEach(({ n, e }) => {
+        const source = sources.find(s => s.source_version_id === e.source_version_id)
+        lines.push(`[${n}] ${source ? formatReferenceText(style, source) : e.title} — ${locatorText(e)}`)
+      })
+      lines.push('')
+    }
+    lines.push(`---`, '', t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.'))
+    return `${lines.join('\n').trim()}\n`
+  }
+  const copyReport = async () => {
+    try { await writeClipboard(markdown()); setCopied(true); toast('success', t('Report copied to clipboard.')) }
+    catch { toast('error', t('Could not copy the report.')) }
+  }
+  const downloadReport = () => {
+    const url = URL.createObjectURL(new Blob([markdown()], { type: 'text/markdown;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = reportFilename(title, version)
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+  const preview = answer.claims.slice(0, 2).map(claim => claim.text).join(' ')
+  const report = <div className="legacy-answer report-content">
     <div className="section-label">{t('SOURCE-LINKED ANSWER')}{answer.applicability === 'stale_scope' ? ` ${t('· EARLIER QUESTION REVISION')}` : answer.applicability === 'stale_selection' ? ` ${t('· EARLIER SOURCE SELECTION')}` : ''}</div>
     {answer.applicability === 'stale_scope' && <div className="legacy-boundary">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</div>}
     {answer.applicability === 'stale_selection' && <div className="legacy-boundary">{t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}</div>}
@@ -307,6 +397,35 @@ function AnswerBlock({ researchId, answer, sources, busy, onOpen, onAttachPdf }:
     <ChecksNote warnings={answer.validation.warnings} />
     {suggestion && <PdfSuggestions notes={suggestion.notes} sources={suggestion.sources} busy={busy} onAttachPdf={onAttachPdf} />}
   </div>
+  return <>
+    <button type="button" className="report-artifact" onClick={() => setReportOpen(true)} aria-label={t('Open report: {title}', { title })}>
+      <span className="report-artifact-preview" aria-hidden="true"><strong>{title}</strong><span>{preview}</span></span>
+      <span className="report-artifact-copy">
+        <span className="report-artifact-kind" aria-hidden="true"><Sparkles size={16} strokeWidth={1.8} /></span>
+        <strong>{title}</strong>
+        <span className="report-artifact-meta">{t('Report')} · V{version}</span>
+      </span>
+      <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={19} /></span>
+    </button>
+    <Sheet open={reportOpen} onOpenChange={open => { setReportOpen(open); if (!open) setCopied(false) }}>
+      <SheetContent className={`detail-sheet report-sheet ${dark ? 'dark' : ''}`}>
+        <SheetHeader className="report-toolbar">
+          <div className="report-toolbar-title"><FileText size={17} aria-hidden /><SheetTitle>{title}</SheetTitle></div>
+          <SheetDescription className="sr-only">{t('Source-linked research report, version {n}.', { n: version })}</SheetDescription>
+          <div className="report-toolbar-actions">
+            <Button variant="ghost" size="sm" onClick={() => { void copyReport() }}>{copied ? <CircleCheck size={16} /> : <Copy size={16} />}{t(copied ? 'Copied' : 'Copy')}</Button>
+            <Button variant="ghost" size="sm" onClick={downloadReport}><Download size={16} />{t('Download')}</Button>
+          </div>
+        </SheetHeader>
+        <div className="report-scroll">
+          <article className="report-document">
+            <header className="report-document-head"><p>{t('Report')} · V{version}</p><h1>{title}</h1><time>{new Date(answer.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'long' })}</time></header>
+            {report}
+          </article>
+        </div>
+      </SheetContent>
+    </Sheet>
+  </>
 }
 
 // Sources the answer could read only from their abstracts and that still have no PDF. The model's access limitations name
@@ -413,13 +532,15 @@ function ReasonForm({ busy, onSave }: { busy: boolean; onSave: (reason: string) 
 }
 
 type SourceSort = 'found' | 'relevant' | 'cited' | 'newest' | 'oldest' | 'title'
-const sourceSorts: Record<SourceSort, string> = { found: 'Order found', relevant: 'Most relevant', cited: 'Most cited', newest: 'Newest first', oldest: 'Oldest first', title: 'Title A–Z' }
+const sourceSorts: Record<SourceSort, string> = { relevant: 'Most relevant', found: 'Order found', cited: 'Most cited', newest: 'Newest first', oldest: 'Oldest first', title: 'Title A–Z' }
 // Search position is not comparable across queries: the model's screening verdict decides, then similarity to the question
 // when semantic search scored the source (D30), then the best position in the searches that found it.
 const verdictOrder: Record<string, number> = { include: 0, uncertain: 1, exclude: 2 }
 const verdictRank = (s: Source) => verdictOrder[s.selection.proposal ?? ''] ?? 3
 const stateFilters = [['all', 'All'], ['included', 'Included'], ['pending', 'Undecided'], ['excluded', 'Excluded']] as const
 type StateFilter = typeof stateFilters[number][0]
+type PdfFilter = 'all' | 'with_pdf' | 'without_pdf'
+const pdfFilterLabels: Record<PdfFilter, string> = { all: 'All PDFs', with_pdf: 'PDF attached', without_pdf: 'No PDF attached' }
 // Sources without the value (no year, no citation count) go last in either direction.
 const byNumber = (a: number | null, b: number | null, dir: 1 | -1) => a === null ? (b === null ? 0 : 1) : b === null ? -1 : dir * (a - b)
 const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
@@ -431,12 +552,13 @@ const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
   title: (a, b) => a.title.localeCompare(b.title),
 }
 
-type SourceActions = { onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onRemoveAsset: (source: Source, assetId: string) => void; researchId: string; pdfFinding: string | null }
+type SourceActions = { onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; pdfFinding: string | null }
 
-function SourceList({ sources, busy, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onRemoveAsset, researchId, pdfFinding }: { sources: Source[]; busy: boolean } & SourceActions) {
+function SourceList({ sources, busy, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, pdfFinding }: { sources: Source[]; busy: boolean } & SourceActions) {
   const [filter, setFilter] = useState<StateFilter>('all')
+  const [pdfFilter, setPdfFilter] = useState<PdfFilter>('all')
   const [query, setQuery] = useState('')
-  const [sort, setSort] = useState<SourceSort>('found')
+  const [sort, setSort] = useState<SourceSort>('relevant')
   // Other versions follow their record and move with it; the filter and sort look at the record.
   const families: Source[][] = []
   for (const source of sources) {
@@ -446,9 +568,11 @@ function SourceList({ sources, busy, onSelect, onReason, onAbstract, onDiscoverP
   }
   const counts = { all: families.length, included: 0, pending: 0, excluded: 0 }
   families.forEach(([record]) => counts[record.selection.state]++)
+  const hasPdf = (family: Source[]) => family.some(source => source.access.assets.length > 0)
+  const pdfCounts = { all: families.length, with_pdf: families.filter(hasPdf).length, without_pdf: families.filter(family => !hasPdf(family)).length }
   const needle = query.trim().toLocaleLowerCase()
   const matches = (s: Source) => [s.title, s.venue, s.doi, ...s.authors].some(text => text?.toLocaleLowerCase().includes(needle))
-  const shown = families.filter(f => (filter === 'all' || f[0].selection.state === filter) && (!needle || f.some(matches)))
+  const shown = families.filter(f => (filter === 'all' || f[0].selection.state === filter) && (pdfFilter === 'all' || (pdfFilter === 'with_pdf' ? hasPdf(f) : !hasPdf(f))) && (!needle || f.some(matches)))
     .sort((a, b) => sourceCompare[sort](a[0], b[0]))
   if (!sources.length) return <p className="empty-inline">{t('No sources yet.')}</p>
   return <>
@@ -457,6 +581,12 @@ function SourceList({ sources, busy, onSelect, onReason, onAbstract, onDiscoverP
         {stateFilters.map(([key, label]) => <button key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}>{t(label)}<span>{counts[key]}</span></button>)}
       </div>
       <label className="source-search"><Search size={14} aria-hidden /><input type="search" aria-label={t('Filter sources')} placeholder={t('Title, author, venue or DOI')} value={query} onChange={e => setQuery(e.target.value)} /></label>
+      <Select value={pdfFilter} onValueChange={value => { if (value) setPdfFilter(value as PdfFilter) }}>
+        <SelectTrigger className="source-pdf-filter" aria-label={t('Filter sources by PDF availability')}><SelectValue>{(value: string) => <><Filter size={14} />{t(pdfFilterLabels[value as PdfFilter])}</>}</SelectValue></SelectTrigger>
+        <SelectContent className="intake-select-content source-pdf-menu" align="end" alignItemWithTrigger={false}>
+          {(Object.keys(pdfFilterLabels) as PdfFilter[]).map(k => <SelectItem key={k} value={k}><span className="source-filter-option"><span>{t(pdfFilterLabels[k])}</span><small>{pdfCounts[k]}</small></span></SelectItem>)}
+        </SelectContent>
+      </Select>
       <Select value={sort} onValueChange={value => { if (value) setSort(value as SourceSort) }}>
         <SelectTrigger aria-label={t('Sort sources')}><SelectValue>{(value: string) => <><ArrowUpDown size={14} />{t(sourceSorts[value as SourceSort])}</>}</SelectValue></SelectTrigger>
         <SelectContent className="intake-select-content" align="end" alignItemWithTrigger={false}>
@@ -464,15 +594,15 @@ function SourceList({ sources, busy, onSelect, onReason, onAbstract, onDiscoverP
         </SelectContent>
       </Select>
     </div>}
-    {shown.flat().map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
+    <div className="source-list">{shown.flat().map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
       onSelect={state => onSelect(source, state)} onReason={reason => onReason(source, reason)} onAbstract={() => onAbstract(source)}
-      onDiscoverPdf={() => onDiscoverPdf(source)} onAttachPdf={() => onAttachPdf(source)}
-      onRemoveAsset={assetId => onRemoveAsset(source, assetId)} researchId={researchId} finding={pdfFinding === source.source_version_id} />)}
-    {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { setFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
+      onDiscoverPdf={() => onDiscoverPdf(source)} onAttachPdf={() => onAttachPdf(source)} onAttachCandidate={candidateId => onAttachCandidate(source, candidateId)} onOpenPdf={assetId => onOpenPdf(source, assetId)}
+      onRemoveAsset={assetId => onRemoveAsset(source, assetId)} finding={pdfFinding === source.source_version_id} />)}</div>
+    {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { setFilter('all'); setPdfFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
   </>
 }
 
-function SourceRow({ source, busy, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onRemoveAsset, researchId, finding }: { source: Source; busy: boolean; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onRemoveAsset: (assetId: string) => void; researchId: string; finding: boolean }) {
+function SourceRow({ source, busy, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, finding }: { source: Source; busy: boolean; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onAttachCandidate: (candidateId: string) => void; onOpenPdf: (assetId: string) => void; onRemoveAsset: (assetId: string) => void; finding: boolean }) {
   const s = source.selection
   const other = source.version_role === 'other_version'
   const authors = source.authors.join(', ')
@@ -495,10 +625,10 @@ function SourceRow({ source, busy, onSelect, onReason, onAbstract, onDiscoverPdf
         {source.cited_in_latest_answer && <span className="ref-pill is-cited"><MessageSquareQuote size={12} aria-hidden />{t('cited in the latest answer')}</span>}
       </div>
       {finding && <p className="pdf-search-status" role="status"><Search size={13} aria-hidden /><span className="shimmer-text">{t('Checking Unpaywall, OpenAlex and Crossref; Web Search will run if no verified PDF is retrieved…')}</span></p>}
-      {!finding && source.access.pdf_discoveries.length > 0 && <div className="pdf-candidate-list">
+      {!finding && source.access.pdf_discoveries.length > 0 && <details className="source-provenance"><summary><Search size={13} aria-hidden />{t('PDF lookup details')}<span>{t('{n} checks', { n: source.access.pdf_discoveries.length })}</span></summary><div className="pdf-candidate-list">
         {source.access.pdf_discoveries.map((search, i) => <span key={`${search.provider}-${search.created_at}-${i}`}><ConnectionIcon id={search.provider} />{providerName(search.provider)} · {t(search.status.replace('_', ' '))} · {search.result_count}{search.http_status ? ` · HTTP ${search.http_status}` : ''}</span>)}
-        {source.access.pdf_candidates.map(candidate => <span key={candidate.id}><ConnectionIcon id={candidate.provider} />{providerName(candidate.provider)} · {t(candidate.version_status === 'match' ? 'version verified' : candidate.version_status === 'different' ? 'different version' : 'version uncertain')} · {candidate.access_status === 'http_error' ? `HTTP ${candidate.http_status ?? '?'}` : t(candidate.access_status.replace('_', ' '))}</span>)}
-      </div>}
+        {source.access.pdf_candidates.map(candidate => <span key={candidate.id}><ConnectionIcon id={candidate.provider} />{providerName(candidate.provider)} · {t(candidate.version_status === 'match' ? 'version verified' : candidate.version_status === 'different' ? 'different version' : 'version uncertain')} · {candidate.access_status === 'http_error' ? `HTTP ${candidate.http_status ?? '?'}` : t(candidate.access_status.replace('_', ' '))}{candidate.identity_status === 'unverified' && ` · ${t('title does not match')}`}{' · '}<a href={candidate.candidate_url} target="_blank" rel="noreferrer">{t('Open file')}</a>{candidate.version_status === 'uncertain' && (candidate.identity_status === 'doi_verified' || candidate.identity_status === 'title_verified') && !source.access.assets.length && <>{' · '}<button disabled={busy} onClick={() => onAttachCandidate(candidate.id)} title={t('Open the file first and check that it is this version of the work, not a preprint or another edition. An attached file’s pages can be cited in answers.')}>{t('Same version, attach')}</button></>}</span>)}
+      </div></details>}
       {source.applicability === 'stale_scope' && <p className="proposal is-stale">{t(s.proposal ? 'Found for question revision {n}; the proposal below was made for that question. Search again to screen it for the current question.' : 'Found for question revision {n}. Search again to screen it for the current question.', { n: source.found_in_revision ?? '?' })}</p>}
       {s.proposal && <p className="proposal"><Sparkles size={13} aria-hidden />{t('Model proposal:')} <em className={`verdict is-${s.proposal}`}>{t(s.proposal)}</em> — {s.proposal_reason} <span>({t(s.proposal_basis?.replaceAll('_', ' ') ?? '')})</span>{s.origin === 'user' ? ` ${t('· overridden by you')}` : ''}</p>}
       {s.origin === 'user' && s.user_reason && <p className="proposal"><UserPen size={13} aria-hidden />{t('Your reason: {reason}', { reason: s.user_reason })}</p>}
@@ -507,7 +637,7 @@ function SourceRow({ source, busy, onSelect, onReason, onAbstract, onDiscoverPdf
         {source.access.abstract_passage_id && <button onClick={onAbstract}><BookOpenText size={14} aria-hidden />{t('Read abstract')}</button>}
         {source.doi && <a href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" />DOI</a>}
         {source.access.assets.map(asset => <span className="source-asset-actions" key={asset.id}>
-          <a href={assetUrl(researchId, asset.id)} target="_blank" rel="noreferrer" title={asset.original_filename ?? undefined}><FileText size={14} aria-hidden />{t('Open PDF')}</a>
+          <button type="button" onClick={() => onOpenPdf(asset.id)} title={asset.original_filename ?? undefined}><FileText size={14} aria-hidden />{t('Open PDF')}</button>
           <button className="is-destructive" disabled={busy} onClick={() => onRemoveAsset(asset.id)} title={asset.original_filename ?? undefined}><Trash2 size={14} aria-hidden />{t('Remove PDF')}</button>
         </span>)}
         {source.doi && <button disabled={busy || finding} onClick={onDiscoverPdf}><Search size={14} aria-hidden />{finding ? <span className="shimmer-text">{t('Web Search is running…')}</span> : t(source.access.assets.length ? 'Refresh metadata' : 'Find PDF')}</button>}
@@ -527,6 +657,33 @@ function RevisionForm({ question, disabled, onSubmit }: { question: string; disa
     <textarea id="revise-question" value={text} onChange={e => setText(e.target.value)} />
     <div><span>{t('Creates a new question revision. Sources and earlier answers are kept.')}</span><Button type="submit" disabled={disabled || !text.trim() || text.trim() === question}>{t('Save revision')}</Button></div>
   </form>
+}
+
+function activityDayKey(value: string) {
+  const date = new Date(value)
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+}
+
+function ActivityLog({ events }: { events: ActivityEvent[] }) {
+  const groups = new Map<string, ActivityEvent[]>()
+  events.slice().reverse().forEach(event => {
+    const key = activityDayKey(event.created_at)
+    groups.set(key, [...(groups.get(key) ?? []), event])
+  })
+  return <section className="activity-panel" aria-labelledby="activity-heading">
+    <header className="workspace-pane-head"><div><h2 id="activity-heading">{t('Recorded activity')}</h2><p>{t(events.length === 1 ? '{n} recorded event' : '{n} recorded events', { n: events.length })}</p></div></header>
+    {[...groups.values()].map(group => <section className="activity-day" key={activityDayKey(group[0].created_at)}>
+      <h3>{new Date(group[0].created_at).toLocaleDateString(uiLocale(), { dateStyle: 'long' })}</h3>
+      <ol className="activity-list">{group.map(event => {
+        const { icon, text, chips } = describeEvent(event)
+        return <li key={event.id}>
+          <time dateTime={event.created_at}>{new Date(event.created_at).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })}</time>
+          <span className="activity-event"><span className="activity-icon">{icon}</span><span className="activity-copy">{text}</span>{chips.map((chip, i) => <span key={i} className={`activity-chip is-${chip.tone}`}>{chip.label}</span>)}</span>
+        </li>
+      })}</ol>
+    </section>)}
+    {!events.length && <p className="empty-inline">{t('No recorded activity.')}</p>}
+  </section>
 }
 
 const selectionStates: Record<string, string> = { included: 'Included', excluded: 'Excluded', pending: 'Undecided' }
@@ -561,13 +718,18 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'run_cancelled': return lucide(Ban, t('Run cancelled'))
     case 'run_pause_requested': return lucide(Hand, t('Pause requested'))
     case 'step_started': return lucide(CircleDot, t('{step} started', { step: stepLabel(String(p.kind), String(p.operation_key)) }))
-    case 'step_finished': return lucide(ListChecks, stepLabel(String(p.kind), String(p.operation_key)), [statusChip(p.status), ...errorChip])
+    case 'step_finished': {
+      const pdfStep = p.kind === 'fetch_pdf' || p.kind === 'pdf_other_copy'
+      const chips = p.error_code && pdfStep ? [{ label: fetchReasonText(String(p.error_code), typeof p.http_status === 'number' ? p.http_status : null), tone: 'neutral' as const }] : errorChip
+      return lucide(ListChecks, stepLabel(String(p.kind), String(p.operation_key)), [statusChip(p.status), ...chips])
+    }
     case 'model_call_started': return brand(String(p.connection), t('Model call sent to {connection}', { connection: String(p.connection) }), p.requested_model ? [{ label: String(p.requested_model), tone: 'neutral' }] : [])
     case 'search_recorded': return brand(String(p.provider), t('{provider} search', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} records', { count: String(p.result_count) }), tone: 'neutral' }])
     case 'pdf_discovery_recorded': return brand(String(p.provider), t('{provider} PDF lookup', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} candidates', { count: String(p.result_count) }), tone: 'neutral' }, ...errorChip])
     case 'asset_removed': return lucide(Trash2, t('PDF removed from a source'))
     case 'selection_changed': return lucide(UserPen, t('You marked a source'), [{ label: t(selectionStates[String(p.state)] ?? String(p.state)), tone: selectionTones[String(p.state)] ?? 'neutral' }])
     case 'answer_saved': return lucide(MessageSquareQuote, t('Answer saved'), [statusChip(p.status)])
+    case 'answer_reviewed': return lucide(ShieldCheck, t('Answer review saved'), [statusChip(p.status)])
     default: return lucide(Activity, event.type)
   }
 }

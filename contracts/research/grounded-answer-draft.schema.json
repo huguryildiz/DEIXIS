@@ -10,6 +10,7 @@
     "step_input_id",
     "scope_revision",
     "skill_package_hash",
+    "title",
     "answer_language",
     "claims",
     "citation_anchors",
@@ -18,10 +19,16 @@
     "capability_notice"
   ],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.grounded_answer_draft.v2" },
+    "schema_version": { "type": "string", "const": "deixis.grounded_answer_draft.v3" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 180,
+      "description": "Concise title in the answer language. Aim for 15–20 words and never exceed 20 words."
+    },
     "answer_language": { "$ref": "common.schema.json#/$defs/language_tag" },
     "claims": {
       "type": "array",

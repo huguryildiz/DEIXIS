@@ -24,14 +24,14 @@ import httpx
 
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
-from deixis.documents import embeddings, pdf
+from deixis.documents import acquisition, embeddings, pdf
 from deixis.domain import contracts, phrasebank
 from deixis.domain.rules import (MAX_SCHEMA_REPAIRS, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH, after_invalid_output,
                                  effective_reviewer, step_model)
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.models import prompt
 from deixis.models.adapter import ModelAdapter
-from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
+from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, normalize_doi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, new_id, now
 from deixis.workflow.store import Store
@@ -312,10 +312,18 @@ class ResearchFlow:
             source = self.store.source(svid)
             # A PDF from a different version (e.g. a submitted manuscript for a published record) is not attached.
             same_version = source["oa_pdf_version"] is not None and source["oa_pdf_version"] == source["version_label"]
-            if (source["origin"] == "provider" and source["oa_pdf_url"] and same_version and not self.store.has_asset(svid)
-                    and downloads < MAX_DOWNLOADS_PER_RUN):
-                downloads += 1
+            if not (source["origin"] == "provider" and source["oa_pdf_url"] and same_version and not self.store.has_asset(svid)):
+                continue
+            # A link that refused in an earlier run is not requested again; a timeout or lost connection is.
+            refusal = self.store.pdf_link_refusal(svid, source["oa_pdf_url"])
+            if (refusal is not None and not self._needs_other_copy(rid, source, refusal)) or downloads >= MAX_DOWNLOADS_PER_RUN:
+                continue
+            downloads += 1
+            if refusal is None:
                 await self._fetch_pdf(run, source)
+                refusal = self.store.pdf_link_refusal(svid, source["oa_pdf_url"])
+            if refusal is not None and self._needs_other_copy(rid, source, refusal):
+                await self._find_other_copy(run, source)
 
         self._checkpoint(run_id)
         self.store.update_run(run_id, stage="answer")
@@ -387,7 +395,7 @@ class ResearchFlow:
         result = await self.deps.fetch_pdf(source["oa_pdf_url"])
         if result.status != "ok":
             self.store.finish_step(step["id"], "failed", error_code=f"fetch_{result.status}",
-                                   error={"http_status": result.http_status, "error": result.error})
+                                   error={"http_status": result.http_status, "error": result.error, "url": source["oa_pdf_url"]})
             return
         sha = hashlib.sha256(result.data).hexdigest()
         papers = self.deps.settings.papers_dir
@@ -405,6 +413,33 @@ class ResearchFlow:
                                                           "page_count": extraction.page_count,
                                                           "passage_count": self.store.asset_passage_count(asset_id)},
                                error_code=None if status == "succeeded" else f"extraction_{extraction.status}")
+
+    def _needs_other_copy(self, research_id: str, source: dict[str, Any], refusal: dict[str, Any]) -> bool:
+        """A blocked (403) or missing (404) link leads to one lookup per source; "Find PDF" repeats it on request."""
+        return (refusal["http_status"] in (403, 404) and normalize_doi(source["doi"]) is not None
+                and not self.store.pdf_discoveries(research_id, source["id"]))
+
+    async def _find_other_copy(self, run: dict[str, Any], source: dict[str, Any]) -> None:
+        """Look the DOI up in Unpaywall, OpenAlex, Crossref and CORE and retrieve a copy of the same version.
+
+        Web search stays the user's "Find PDF" action, and a copy of uncertain version waits for the user to confirm it.
+        """
+        step = self.store.step(run["id"], f"other_copy:{source['id']}", "pdf_other_copy")
+        self.store.start_step(step["id"])
+        settings = self.deps.settings
+        found = await acquisition.acquire_for_source(
+            self.store, run["research_id"], source["id"], self.deps.http, settings.papers_dir, settings.contact_email, None,
+            self.deps.fetch_pdf, core_key=CONNECTORS["core"].api_key(), web_search=False,
+        )
+        if found["asset_id"] is None:
+            self.store.finish_step(step["id"], "failed", error_code="no_other_copy", error={"candidates": found["candidates"]})
+            return
+        asset = self.store.asset(found["asset_id"])
+        status = "succeeded" if asset["extraction_status"] in ("succeeded", "partial") else "partial"
+        self.store.finish_step(step["id"], status, output={"asset_id": asset["id"], "extraction_status": asset["extraction_status"],
+                                                          "page_count": asset["page_count"],
+                                                          "passage_count": self.store.asset_passage_count(asset["id"])},
+                               error_code=None if status == "succeeded" else f"extraction_{asset['extraction_status']}")
 
     async def _semantic_ranking(self, run: dict[str, Any], scope: dict[str, Any], included: list[str]) -> list[dict[str, Any]] | None:
         """Rank the included sources' passages by embedding similarity to the question (D27, D29).

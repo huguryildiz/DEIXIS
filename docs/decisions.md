@@ -2,6 +2,92 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D36 — Let the answer model replace the provisional question with a bounded report title
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: A research initially used the first 160 characters of the question as its title. Long multipart questions therefore occupied most of the research header and were copied unchanged into the report title and export filename. The owner asked the answer model to write a title of at most about 15–20 words and requested a typewriter reveal.
+
+**Decision**: `GroundedAnswerDraft` v3 requires `title` in the answer language. The method asks for 15–20 words; deterministic validation rejects more than 20 Unicode words and sends the draft through the existing single repair attempt. Only a structurally valid answer for the current scope revision replaces the provisional question-as-title. The full question remains unchanged in the scope revision and revision form. When the title changes in an open research view, it is revealed once with a capped 450–900 ms typewriter effect; reduced-motion users receive the complete title immediately.
+
+**Impact**: New valid answers provide the research header, report heading and export filename. Existing answers and researches retain their stored titles until a new answer is generated. A failed, unverified or no-evidence answer cannot rename the research.
+
+## D35 — Remember refused PDF links and look once for another open copy
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: In the local library, 62 of 121 open-access PDF downloads failed: 51 with HTTP 403 (MDPI, ScienceDirect, ACM, TechRxiv, Wiley) and 11 with HTTP 404 (an IEEE `ielx7` link and one arXiv version). The 403 sites refused a browser user agent as well, so they block automated clients rather than DEIXIS in particular. Each answer run requested the same links again (2 TechRxiv sources: 16 requests), and the timeline showed the raw code `fetch_http_error`.
+
+**Decision**:
+
+- A link that refused (HTTP error, not a PDF, too large, address not allowed) is not requested again in a later run. A timeout or lost connection is retried.
+- After a 403 or 404, the answer run looks the DOI up once per source in Unpaywall, OpenAlex, Crossref and CORE (step `pdf_other_copy`). It attaches only a DOI-verified copy of the same version (D4). Web search stays the user's "Find PDF" action, and a copy of uncertain version still waits for the user to confirm it.
+- The interface gives the reason in plain words with the HTTP status. When no other copy is found, the source says the user has to attach the PDF.
+- DEIXIS does not try to get past bot protection.
+
+**Limits**: Not measured on live providers yet. Repository copies are often an accepted manuscript, which D4 does not attach automatically, so many refused sources will still need a user upload. Activity rows recorded before this change have no HTTP status and show only "server refused".
+
+## D34 — Close P4 on the packet-size re-run, reviewed by Claude on the owner's delegation
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: The P4 gate (implementation plan §10) asks for a human check of one real source's identity, version and passage. It also asks for a measurement on a small source set the user knows: wrong citations, missed evidence, reading depth, correction time and reopen success. Restart and backup/restore tests are part of it as well. The owner chose the question of their co-authored paper, Kurt et al., "Packet Size Optimization in Wireless Sensor Networks for Smart Grid Applications" (IEEE TIE 2017, DOI 10.1109/tie.2016.2619319). They delegated the whole test to Claude, including the review judgments and the decision to close. All model roles ran GPT-5.6 Luna at medium effort. The known set was the target paper plus 18 packet-size works from its reference list.
+
+**Decision**: P4 is closed. Later phases start now. The limits below are carried forward, not fixed first.
+
+**Evidence** (research `res_IXBsnzhYZsKByEdTpSJo`; review packet from `scripts/p4_eval/measure.py`):
+
+- **Discovery.** 110 unique records. The target and 9 of the 18 known works were found and included; the other 9 known works were found by no search.
+- **Answer 1.** An unverified draft after its one repair: handle copy errors (`unknown_passage_id`) and one duplicate citation anchor.
+- **Correction 1.** 13 user exclusions (off-topic works and one duplicate record). 9 published PDFs from IEEE Xplore were attached, using institutional access. This took 5.13 minutes in the app plus about 8 minutes to get the files.
+- **Answer 2.** Valid: 14 claims, 105/105 link checks. It used 35 abstracts and no PDF page. With 51 included sources, the answer input gives each source its abstract first, and the 48-passage limit left no room for pages.
+- **Correction 2.** 26 included sources set to Undecided, leaving 25 core works. This took 0.40 minutes.
+- **Answer 3.**
+  - Valid: 15 claims and 46 evidence links (32 abstracts, 14 PDF pages).
+  - 152/152 link checks passed, and all 13 checked DOI titles matched Crossref.
+  - It cited the target and 6 of the 18 known works. 3 more known works were given to the model but not cited.
+- **Link check.** For Kurt 2017, the identity and the "published version" label were confirmed against the IEEE PDF, and so were the cited passages on pages 2 and 4. The same page check passed for Dong 2014 p. 8, Akbas 2014 pp. 3–4 and Vuran 2008 pp. 1, 4, 5 and 9.
+- **Claim review of answer 3.** 13 supported and 2 partly supported: c10 turns one smart grid study into plural studies, and c15's inference relies on factors its own passages do not show. There were no wrong citations or wrong reading depths. The in-app reviewer marked all 15 as supported. All 25 included sources were judged relevant (included precision 1.0).
+- **Restart.** The live backend was stopped and started again. The question, answer, selections and all 46 cited passages reopened unchanged. An earlier low-effort run (`res_IhQ9TI2QWmxjWsa8CodN`) had passed the same check (23/23).
+- **Backup and restore.** A `deixis backup` of the live library was restored into an empty data directory.
+  - Row counts matched in all 30 tables.
+  - All 65 PDFs matched their SHA-256 names, and no asset file was missing.
+  - The research view returned by the API was identical.
+  - The 13 user exclusions, 26 user Undecided selections and 9 `user_upload` PDFs were present.
+  - The reopen check also passed on the restored copy (46/46).
+
+**Limits**:
+
+- **Reviewer.** The review is Claude's, not an independent person's, and the owner did not re-check it. Correction times are an agent's; a person would need longer, especially for 26 selection changes.
+- **Sample.** One question, one stochastic run per setting. The low-effort run found 6 of the 18 known works and the medium run found 9, but that difference is not a measured effect.
+- **Recall.** This is the weakest result: half of the known works were not found, and 6 of 18 were cited.
+- **Answer input.** An answer uses no PDF page once 48 or more sources are included. A user has to narrow the selection to get full-text evidence.
+- **Model output.** Handle copy errors (D12) recurred in answer 1.
+- **In-app reviewer.** It was more lenient than the delegated review.
+- **PDF access.** The PDFs came from institutional access outside DEIXIS; the stored web candidates were not usable for these works.
+
+**Impact**: The P4 gate is met, and its limits are recorded. Four problems stay open for later phases: recall of known works, abstract-only answers on large selections, handle copy errors, and the effort of narrowing a selection.
+
+## D33 — Let the user confirm a version-uncertain PDF candidate before it is attached
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: During the P4 packet-size re-run the owner saw Sources rows reading "Web Search · version uncertain · not attempted" and asked whether those PDFs should still be shown. Each candidate was named but had no link, so it could be neither checked nor used. D4 and the PDF-location decision forbid automatic attachment because a repository or Google Scholar copy may be a preprint, an author copy or another work.
+
+**Decision**:
+
+- Every PDF candidate row offers **Open file** for its URL.
+- A candidate whose version is `uncertain` and whose DOI or exact title matched the source (`doi_verified` or `title_verified`), on a source without an attached PDF, also offers **Same version, attach**. A web result whose title did not match (`unverified`) is labelled "title does not match" and cannot be attached this way; the user can still download it and use **Attach PDF**.
+- Only that explicit request retrieves the file, through the existing bounded, private-network-protected fetcher. The outcome is recorded on the candidate; a failure attaches nothing. A retrieved file is attached with origin `user_upload` and the candidate URL as `retrieved_from`, because the version claim is the user's, not a provider's. Automatic rules for `match` and `different` candidates are unchanged.
+
+**Evidence**: An API test covers refusal of a different-version and of a title-unmatched candidate without a fetch, a recorded HTTP 403 without attachment, a successful `user_upload` attachment, 409 once a PDF exists, and an unknown candidate. The backend suite passed 338 tests and the web build succeeded. On an isolated copy of the local library served on another port, one web candidate returned HTML (recorded `not_pdf`), one returned HTTP 403, and a title-verified arXiv candidate was attached with eight extracted pages. In the live library, 6 of 7 stored web candidates were `unverified`; in the P4 packet-size research one of them linked to a different paper.
+
+**Impact**: PDF coverage can rise only through a user's check, and each such file depends on that judgment; the source's version label is not changed. Most current web candidates are not eligible because their titles do not match. D4 is narrowed for user-confirmed files, not reversed.
+
 ## D32 — Add PubMed through NCBI E-utilities
 
 **Status**: accepted
@@ -108,6 +194,17 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 **Impact**: Retrieval without a key is unchanged. OpenAI `text-embedding-3-small` was suggested as an alternative; it is not implemented and was not compared.
 
+## D27 — Every published citation must have a highlightable source anchor
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: The Elicit-like source panel defaults to extracted PDF text and retains the original document in a separate PDF tab. A live answer contained citations with `anchor_text: null`; opening one showed the cited page text but could not identify or highlight the exact supporting span. Highlighting the whole page would overstate precision and could misrepresent support.
+
+**Decision**: `missing_citation_anchor` and `anchor_not_in_passage` are validation issues. They trigger the existing single bounded repair attempt, whose message names the exact claim-passage pair. If repair still fails, the draft remains unverified and is not displayed as a source-linked answer. The UI highlights only backend-located, source-owned text; it never guesses a span from the claim. Source details open on `Plain text`; `PDF` uses DEIXIS's full-width viewer rather than the browser's embedded PDF interface.
+
+**Impact**: Newly generated source-linked answers either provide a visible highlight for every citation or fail closed as an unverified draft. Existing stored answers are immutable and may retain anchors missing under D24; regenerating an answer is required to obtain highlights for those citations.
+
 ## D26 — Connect Gemini through the Gemini API, not the Gemini CLI
 
 **Status**: accepted
@@ -136,7 +233,7 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 ## D24 — Citation anchors locate text; they do not reject answers
 
-**Status**: accepted
+**Status**: superseded by D27
 **Date**: 2026-09-15
 
 **Context**: Grounded answer schema v2 asks the model for one exact quote per claim-passage link, and the first implementation rejected the answer (repair, then unverified draft) when a quote was not a whitespace-normalized substring of the passage. pypdf text splits sub- and superscripts, hyphenates at line breaks and uses ligatures, so faithful copies can fail that check. The check also proves nothing about support: a verbatim but irrelevant sentence passes it. Semantic support is the reviewer's job.

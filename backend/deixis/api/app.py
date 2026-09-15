@@ -629,6 +629,27 @@ def create_app(
             raise HTTPException(422, str(exc)) from exc
         return research_view(store, research_id)
 
+    @app.post("/api/researches/{research_id}/sources/{source_version_id}/pdf-candidates/{candidate_id}/attach")
+    async def attach_pdf_candidate(research_id: str, source_version_id: str, candidate_id: str, request: Request) -> dict[str, Any]:
+        """Retrieve a version-uncertain PDF candidate after the user has checked that it is this source's version."""
+        store = store_of(request)
+        store.research(research_id)
+        if not store.is_member(research_id, source_version_id):
+            raise HTTPException(404, "Source is not part of this research")
+        candidate = next((c for c in store.pdf_candidates(source_version_id) if c["id"] == candidate_id), None)
+        if candidate is None:
+            raise HTTPException(404, "PDF candidate is not listed for this source")
+        if candidate["version_status"] != "uncertain" or candidate["identity_status"] not in ("doi_verified", "title_verified"):
+            raise HTTPException(422, "Only a version-uncertain candidate whose DOI or title matches this source can be confirmed")
+        if store.has_asset(source_version_id):
+            raise HTTPException(409, "This source already has a PDF")
+        result = await acquisition.attach_confirmed_candidate(store, source_version_id, candidate, settings.papers_dir,
+                                                              request.app.state.fetch_pdf)
+        if result.status != "ok":
+            reason = f"HTTP {result.http_status}" if result.status == "http_error" else result.status.replace("_", " ")
+            raise HTTPException(502, f"No PDF was retrieved from this link ({reason})")
+        return research_view(store, research_id)
+
     @app.get("/api/zotero/collections")
     async def zotero_collections(request: Request, source: Literal["local", "web"] = "local") -> dict[str, Any]:
         return {"source": source, "collections": await zotero.collections(request.app.state.http, zotero.library(source))}
@@ -704,6 +725,22 @@ def create_app(
         if not path.is_relative_to(root) or not path.exists():
             raise HTTPException(404, "File missing")
         return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": "inline"})
+
+    @app.get("/api/researches/{research_id}/assets/{asset_id}/text")
+    async def get_asset_text(research_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        asset = store.asset(asset_id)
+        if asset["removed_at"] is not None or not store.is_member(research_id, asset["source_version_id"]):
+            raise HTTPException(404, "Asset is not part of this research")
+        source = store.source(asset["source_version_id"])
+        passages = [p for p in store.passages_for(asset["source_version_id"]) if p["asset_id"] == asset_id]
+        return {
+            "asset": {k: asset[k] for k in ("id", "extraction_status", "page_count", "origin", "byte_size", "original_filename")},
+            "passages": [{k: passage[k] for k in ("id", "kind", "text", "physical_page", "printed_label", "extraction_version", "payload_ref")} for passage in passages],
+            "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
+                                                "cited_by_count", "cited_by_count_at")},
+        }
 
     @app.delete("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}")
     async def remove_asset(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:

@@ -58,3 +58,38 @@ export function formatReference(style: CitationStyle, s: Source): ReactNode {
     }
   }
 }
+
+// Plain-text companion for report copy/download. Keep it beside the visual formatter so exported
+// references follow the citation style selected in the report drawer.
+export function formatReferenceText(style: CitationStyle, s: Source): string {
+  const names = s.authors.map(parse)
+  const book = s.publication_type === 'book'
+  const link = s.doi ? `https://doi.org/${s.doi}` : s.landing_url
+  switch (style) {
+    case 'apa': {
+      const people = names.map(n => (n.given.length ? `${n.family}, ${initials(n)}` : n.family))
+      const authors = people.length > 20 ? `${people.slice(0, 19).join(', ')}, . . . ${people.at(-1)}` : series(people, '&')
+      const date = `(${s.year ?? 'n.d.'}).`
+      const title = end(s.title, '.')
+      return [authors ? `${authors} ${date} ${title}` : `${title} ${date}`, s.venue ? end(s.venue, '.') : '', link ?? ''].filter(Boolean).join(' ')
+    }
+    case 'ieee': {
+      const people = names.map(n => [initials(n), n.family].filter(Boolean).join(' '))
+      const authors = people.length > 6 ? `${people[0]} et al.` : people.length === 2 ? people.join(' and ') : series(people, 'and')
+      const title = book ? end(s.title, '.') : `“${end(s.title, s.venue || s.year || s.doi ? ',' : '.')}”`
+      const tail = [s.venue, s.year?.toString(), s.doi && `doi: ${s.doi}`].filter(Boolean).join(', ')
+      return `${authors ? `${authors}, ` : ''}${title}${tail ? ` ${end(tail, '.')}` : ''}`
+    }
+    case 'mla': {
+      const authors = !names.length ? '' : names.length === 1 ? inverted(names[0]) : names.length === 2 ? `${inverted(names[0])}, and ${natural(names[1])}` : `${inverted(names[0])}, et al.`
+      const title = book ? end(s.title, '.') : `“${end(s.title, '.')}”`
+      return [authors ? end(authors, '.') : '', title, s.venue ? end(s.venue, ',') : '', s.year?.toString() ?? '', link ?? ''].filter(Boolean).join(' ')
+    }
+    case 'chicago': {
+      const people = names.map((n, i) => (i === 0 ? inverted(n) : natural(n)))
+      const authors = people.length > 10 ? `${people.slice(0, 7).join(', ')}, et al.` : series(people, 'and')
+      const title = book ? end(s.title, '.') : `“${end(s.title, '.')}”`
+      return [authors ? end(authors, '.') : '', `${s.year ?? 'n.d.'}.`, title, s.venue ? end(s.venue, '.') : '', link ? end(link, '.') : ''].filter(Boolean).join(' ')
+    }
+  }
+}

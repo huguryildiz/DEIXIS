@@ -27,8 +27,8 @@ export type RoleModelSetting = { model_connection: string; model: string | null;
 export type Step = {
   id: string; operation_key: string; kind: string; status: string; attempt: number; delivery_class: string | null
   error_code: string | null; error: unknown; started_at: string | null; finished_at: string | null
-  // Only the counting steps (fetch_pdf, source_similarity) carry an output here.
-  output: { page_count?: number | null; passage_count?: number; model?: string; sources?: number } | null
+  // Only small counting/provenance outputs carry through this view; model prose remains in its own artifact view.
+  output: { page_count?: number | null; passage_count?: number; model?: string; sources?: number; passages?: number; embedded?: number } | null
 }
 // What the search plan step reported, as the model wrote it.
 export type SearchPlan = {
@@ -48,6 +48,11 @@ export type SearchRun = {
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null } | null
 }
 export type Asset = { id: string; extraction_status: string; page_count: number | null; origin: string; byte_size: number; original_filename: string | null }
+export type AssetText = {
+  asset: Asset
+  passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null }[]
+  source: Passage['source']
+}
 export type PdfCandidate = {
   id: string; provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'web_search'; candidate_url: string; landing_url: string | null
   version_label: string | null; license: string | null; identity_status: 'doi_verified' | 'title_verified' | 'unverified' | 'mismatch'
@@ -65,7 +70,7 @@ export type Source = {
   cited_by_count: number | null; cited_by_count_at: string | null
   origin: 'provider' | 'user_upload'; added_by: string; rank: number | null; similarity: number | null
   found_in_revision: number | null; applicability: 'current' | 'stale_scope'; version_role: 'record' | 'other_version'
-  access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; fetch: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; pdf_discoveries: PdfDiscovery[] }
+  access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; fetch: { status: string; error_code: string | null; http_status: number | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; pdf_discoveries: PdfDiscovery[] }
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null }
   cited_in_latest_answer: boolean
   provider_records: string[]; suspected_duplicates: { source_version_id: string; basis: 'same_title' | 'published_doi' }[]
@@ -212,6 +217,8 @@ export const api = {
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}`, { method: 'DELETE' }),
   discoverPdf: (id: string, sourceId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-discovery`, { method: 'POST' }),
+  attachPdfCandidate: (id: string, sourceId: string, candidateId: string) =>
+    request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-candidates/${candidateId}/attach`, { method: 'POST' }),
   startRun: (id: string, kind: 'discovery' | 'answer', idempotencyKey: string) =>
     request<Run>(`/api/researches/${id}/runs`, json('POST', { kind }, { 'Idempotency-Key': idempotencyKey })),
   controlRun: (runId: string, action: 'pause' | 'resume' | 'cancel') => request<Run>(`/api/runs/${runId}/${action}`, { method: 'POST' }),
@@ -220,6 +227,7 @@ export const api = {
   reviseScope: (id: string, question: string, expectedVersion: number) =>
     request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion })),
   passage: (id: string, passageId: string) => request<Passage>(`/api/researches/${id}/passages/${passageId}`),
+  assetText: (id: string, assetId: string) => request<AssetText>(`/api/researches/${id}/assets/${assetId}/text`),
   events: (id: string, after = 0) => request<ActivityEvent[]>(`/api/researches/${id}/events?after=${after}`),
   connections: (refresh = false) => request<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`),
   modelConnection: (connection: string, refresh = false) => request<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}${refresh ? '?refresh=true' : ''}`),

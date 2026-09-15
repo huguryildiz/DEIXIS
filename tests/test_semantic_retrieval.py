@@ -98,6 +98,8 @@ def test_semantic_ranking_matches_across_languages_and_embeds_each_passage_once(
     first = rank(store, rid, svid, run, handler)
     assert "Depth-based routing" in first[0]["text"]
     assert batches == [["RETRIEVAL_DOCUMENT", "RETRIEVAL_DOCUMENT"], ["RETRIEVAL_QUERY"]]
+    semantic_step = research_view(store, rid)["runs"][0]["steps"][0]
+    assert semantic_step["output"] == {"model": "gemini-embedding-2", "passages": 2, "embedded": 2}
     batches.clear()
     rank(store, rid, svid, run, handler)
     assert batches == [["RETRIEVAL_QUERY"]]  # stored passage vectors are reused

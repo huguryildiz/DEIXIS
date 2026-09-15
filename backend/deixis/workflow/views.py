@@ -166,7 +166,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     return {"research": research, "scope": scope, "runs": runs, "search_runs": search_runs, "sources": sources,
             "answers": answers, "counts": counts, "last_event_id": last_event,
             # The reviewer the next answer would get: the research's own setting, else the app-wide default.
-            "reviewer": {"mode": scope["review_mode"], "model": reviewer[1] if reviewer else None,
+            "reviewer": {"mode": scope["review_mode"], "connection": reviewer[0] if reviewer else None, "model": reviewer[1] if reviewer else None,
                          "reasoning_effort": reviewer[2] if reviewer else None}}
 
 

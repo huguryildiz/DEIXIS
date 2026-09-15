@@ -10,6 +10,8 @@ export type Scope = {
   // null literature model: the research model runs the search steps (researches created before model roles).
   literature_model: string | null; literature_reasoning_effort: string | null
   review_mode: ReviewMode; review_model: string | null; review_reasoning_effort: string | null
+  // null connection: the role uses model_connection (researches created before per-role connections).
+  literature_connection: string | null; review_connection: string | null
   steering: string | null; created_at: string
 }
 export type ReviewMode = 'default' | 'custom' | 'off'
@@ -84,7 +86,7 @@ export type ResearchView = {
   research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string }
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
   // The reviewer the next answer gets: the research's own setting, else the app-wide default. model null: no review.
-  reviewer: { mode: ReviewMode; model: string | null; reasoning_effort: string | null }
+  reviewer: { mode: ReviewMode; connection: string | null; model: string | null; reasoning_effort: string | null }
 }
 export type ResearchSummary = {
   id: string; title: string; question: string; source_scope: SourceScope; effort: Effort; last_run_status: RunStatus | null
@@ -160,8 +162,8 @@ export const api = {
   research: (id: string) => request<ResearchView>(`/api/researches/${id}`),
   create: (body: {
     question: string; source_scope: SourceScope; effort: Effort; model_connection: string; requested_model: string; reasoning_effort: string | null
-    literature_model: string; literature_reasoning_effort: string | null
-    review_mode: ReviewMode; review_model: string | null; review_reasoning_effort: string | null
+    literature_connection: string; literature_model: string; literature_reasoning_effort: string | null
+    review_mode: ReviewMode; review_connection: string | null; review_model: string | null; review_reasoning_effort: string | null
   }) => request<ResearchView>('/api/researches', json('POST', body)),
   settings: () => request<Record<ModelRole, RoleModelSetting>>('/api/settings'),
   saveModelDefault: (role: ModelRole, setting: RoleModelSetting) =>

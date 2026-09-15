@@ -36,7 +36,7 @@ const pauseReasons: Record<string, string> = {
   no_included_sources: 'No source is included.',
   internal_error: 'An internal error stopped the run.',
   user_cancelled: 'You cancelled this run.',
-  model_mismatch: 'Codex answered with a different model than the one chosen for this research. Its output was not used.',
+  model_mismatch: 'The connection answered with a different model than the one chosen for this step. Its output was not used.',
   scope_revised: 'The question was revised while this run was working. Its remaining results were not applied.',
 }
 export const pauseReasonText = (reason: string | null) => (reason ? t(pauseReasons[reason] ?? reason) : '')

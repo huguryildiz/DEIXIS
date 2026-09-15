@@ -56,9 +56,12 @@ class CreateResearch(BaseModel):
     # Runs the search plan and screening. None: the research model runs them.
     literature_model: str | None = Field(default=None, min_length=1, max_length=120)
     literature_reasoning_effort: str | None = Field(default=None, min_length=1, max_length=40)
+    # The connection that lists literature_model (D28). None: model_connection.
+    literature_connection: str | None = Field(default=None, min_length=1, max_length=40)
     # 'default' follows the app-wide reviewer setting; 'custom' reviews with review_model; 'off' reviews nothing.
     review_mode: Literal["default", "custom", "off"] = "default"
     review_model: str | None = Field(default=None, min_length=1, max_length=120)
+    review_connection: str | None = Field(default=None, min_length=1, max_length=40)  # None: model_connection
     review_reasoning_effort: str | None = Field(default=None, min_length=1, max_length=40)
     language_hint: str | None = Field(default=None, pattern=r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
 
@@ -340,20 +343,30 @@ def create_app(
 
     @app.post("/api/researches", status_code=201)
     async def create_research(body: CreateResearch, request: Request) -> dict[str, Any]:
-        adapter = request.app.state.adapters.get(body.model_connection)
-        if adapter is None:
-            raise HTTPException(422, f"Model connection '{body.model_connection}' is not available")
-        listed = (await adapter.health()).get("models")
-        check_offered(listed, body.model_connection, body.requested_model, body.reasoning_effort)
+        listed: dict[str, list[dict[str, Any]] | None] = {}
+
+        async def check_role(connection: str, model: str, effort: str | None) -> None:
+            if connection not in listed:
+                adapter = request.app.state.adapters.get(connection)
+                if adapter is None:
+                    raise HTTPException(422, f"Model connection '{connection}' is not available")
+                listed[connection] = (await adapter.health()).get("models")
+            check_offered(listed[connection], connection, model, effort)
+
+        # Each role's model must be listed by that role's own connection (D28).
+        await check_role(body.model_connection, body.requested_model, body.reasoning_effort)
+        literature_connection = review_connection = None
         if body.literature_model is not None:
-            check_offered(listed, body.model_connection, body.literature_model, body.literature_reasoning_effort)
-        elif body.literature_reasoning_effort is not None:
-            raise HTTPException(422, "A literature reasoning effort needs a literature model")
+            literature_connection = body.literature_connection or body.model_connection
+            await check_role(literature_connection, body.literature_model, body.literature_reasoning_effort)
+        elif body.literature_reasoning_effort is not None or body.literature_connection is not None:
+            raise HTTPException(422, "A literature reasoning effort or connection needs a literature model")
         if body.review_mode == "custom":
             if body.review_model is None:
                 raise HTTPException(422, "A custom reviewer needs a review model")
-            check_offered(listed, body.model_connection, body.review_model, body.review_reasoning_effort)
-        elif body.review_model is not None or body.review_reasoning_effort is not None:
+            review_connection = body.review_connection or body.model_connection
+            await check_role(review_connection, body.review_model, body.review_reasoning_effort)
+        elif body.review_model is not None or body.review_reasoning_effort is not None or body.review_connection is not None:
             raise HTTPException(422, f"A review model is only kept with review_mode 'custom', not '{body.review_mode}'")
         # Every connector with the access it needs is enabled; the model picks which of them to query.
         providers = available_providers() if body.source_scope != "attached" else []
@@ -361,7 +374,8 @@ def create_app(
         rid = store.create_research(body.question, body.source_scope, body.effort, providers,
                                     body.model_connection, body.requested_model, body.language_hint, body.reasoning_effort,
                                     body.literature_model, body.literature_reasoning_effort,
-                                    body.review_mode, body.review_model, body.review_reasoning_effort)
+                                    body.review_mode, body.review_model, body.review_reasoning_effort,
+                                    literature_connection=literature_connection, review_connection=review_connection)
         return research_view(store, rid)
 
     @app.get("/api/settings")
@@ -428,9 +442,8 @@ def create_app(
         elif action == "cancel" and status in ("queued", "running", "pause_requested", "paused"):
             run = store.update_run(run_id, event="run_cancelled", status="cancelled", pause_reason="user_cancelled")
             if worker.current_run_id == run_id:
-                scope = store.scope(run["research_id"], run["scope_revision"])
-                adapter = request.app.state.adapters.get(scope["model_connection"])
-                if adapter:
+                # Roles may use different connections; only the running step's connection has a call to interrupt.
+                for adapter in request.app.state.adapters.values():
                     await adapter.cancel()
         else:
             raise HTTPException(409, f"Cannot {action} a run in status {status}")

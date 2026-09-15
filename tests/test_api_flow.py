@@ -745,6 +745,35 @@ def test_role_models_must_be_listed_and_complete(tmp_path):
         assert client.put("/api/settings/reviewer", json={"model_connection": "nope", "model": "fake-model"}).status_code == 422
 
 
+def test_each_role_can_use_a_model_from_another_connection(tmp_path):
+    answer = FakeAdapter(models=["answer-model"], efforts=["high"])
+    # A second connection registered under a connection id the step input contract lists.
+    other = FakeAdapter(models=["lit-model", "review-model"], efforts=["low"])
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": answer, "gemini": other},
+                     http_client=openalex_client(), fetcher=fake_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as client:
+        session(client)
+        rid = create(client, requested_model="answer-model", reasoning_effort="high",
+                     literature_connection="gemini", literature_model="lit-model", literature_reasoning_effort="low",
+                     review_mode="custom", review_connection="gemini", review_model="review-model")
+        run_to_end(client, rid, "discovery")
+        view = run_to_end(client, rid, "answer")
+        assert set(answer.sent) == {("grounded_answer", "answer-model", "high")}
+        assert set(other.sent) == {("search_plan", "lit-model", "low"), ("screening", "lit-model", "low"),
+                                   ("answer_review", "review-model", None)}
+        assert view["reviewer"] == {"mode": "custom", "connection": "gemini", "model": "review-model", "reasoning_effort": None}
+        assert view["answers"][0]["review"]["model"]["connection"] == "gemini"
+        revised = client.post(f"/api/researches/{rid}/scope", json={"question": "How is molecule release timing optimized?",
+                                                                    "expected_version": view["research"]["version"]}).json()
+        assert (revised["scope"]["literature_connection"], revised["scope"]["review_connection"]) == ("gemini", "gemini")
+
+        body = {"question": "How is molecule release scheduling optimized?", "model_connection": "fake", "requested_model": "answer-model"}
+        for bad in ({"literature_model": "lit-model"}, {"literature_connection": "gemini", "literature_model": "answer-model"},
+                    {"literature_connection": "nope", "literature_model": "lit-model"}, {"literature_connection": "gemini"},
+                    {"review_mode": "custom", "review_model": "review-model"}, {"review_connection": "gemini"}):
+            assert client.post("/api/researches", json=body | bad).status_code == 422, bad
+
+
 def test_model_defaults_are_kept_per_role_and_must_be_listed(tmp_path):
     with TestClient(app_for(tmp_path, FakeAdapter(models=["fake-model"], efforts=["low"]))) as client:
         session(client)
@@ -776,7 +805,7 @@ def test_app_wide_reviewer_reviews_every_research_and_a_research_setting_overrid
         assert review["status"] == "completed" and review["model"]["requested_model"] == "review-model"
         assert view["answers"][0]["status"] == "structurally_valid"
         assert all(c["review"]["verdict"] == "supported" for c in view["answers"][0]["claims"])
-        assert view["reviewer"] == {"mode": "default", "model": "review-model", "reasoning_effort": "high"}
+        assert view["reviewer"] == {"mode": "default", "connection": "fake", "model": "review-model", "reasoning_effort": "high"}
         assert ("answer_review", "review-model", "high") in adapter.sent
 
         custom = answered(review_mode="custom", review_model="other-reviewer")

@@ -149,16 +149,18 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const eff = effort || modelOptions.find(m => m.id === model)?.default_reasoning_effort
     return eff ? `${model}-${eff}` : model
   }
+  const literatureConnection = view.scope.literature_model ? view.scope.literature_connection ?? view.scope.model_connection : view.scope.model_connection
+  const reviewerConnection = view.reviewer.connection ?? view.scope.model_connection
   return <section className="research-view legacy-research">
     <div className="section-label">{t('RESEARCH')} <span> {t('/ REVISION {n}', { n: view.research.current_scope_revision })}</span></div>
     <h1>{view.scope.question}</h1>
     <div className="session-meta session-chips">
       <span className="meta-chip" title={t('Where DEIXIS looks for sources')}><ScopeIcon size={14} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
       <span className="meta-chip" title={t('How much searching and reading a run may do')}><EffortIcon size={14} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
-      <span className="meta-chip" title={t('Writes the source-linked answer')}><ConnectionIcon id={view.scope.model_connection} />{t('Answer')} · Codex · {modelText(view.scope.requested_model, view.scope.reasoning_effort)}</span>
+      <span className="meta-chip" title={t('Writes the source-linked answer')}><modelRoles.answer.icon size={14} aria-hidden />{t('Answer')} · <ConnectionIcon id={view.scope.model_connection} /><span className="sr-only">{connectionName(view.scope.model_connection)} </span>{modelText(view.scope.requested_model, view.scope.reasoning_effort)}</span>
       {/* A research without a literature model (created before model roles) searches with its research model. */}
-      <span className="meta-chip" title={t('Plans the searches and screens the candidates')}><ScanSearch size={14} aria-hidden />{t('Literature')} · {modelText(view.scope.literature_model ?? view.scope.requested_model, view.scope.literature_model ? view.scope.literature_reasoning_effort : view.scope.reasoning_effort)}</span>
-      <span className="meta-chip" title={t('Reviews each claim against its cited passages when an answer completes; never changes the answer')}><ShieldCheck size={14} aria-hidden />{view.reviewer.model ? `${t('Reviewer')} · ${modelText(view.reviewer.model, view.reviewer.reasoning_effort)}${view.reviewer.mode === 'default' ? ` ${t('(default)')}` : ''}` : t(view.reviewer.mode === 'off' ? 'Reviewer off' : 'No reviewer set')}</span>    </div>
+      <span className="meta-chip" title={t('Plans the searches and screens the candidates')}><ScanSearch size={14} aria-hidden />{t('Literature')} · <ConnectionIcon id={literatureConnection} /><span className="sr-only">{connectionName(literatureConnection)} </span>{modelText(view.scope.literature_model ?? view.scope.requested_model, view.scope.literature_model ? view.scope.literature_reasoning_effort : view.scope.reasoning_effort)}</span>
+      <span className="meta-chip" title={t('Reviews each claim against its cited passages when an answer completes; never changes the answer')}><ShieldCheck size={14} aria-hidden />{view.reviewer.model ? <>{t('Reviewer')} · <ConnectionIcon id={reviewerConnection} /><span className="sr-only">{connectionName(reviewerConnection)} </span>{modelText(view.reviewer.model, view.reviewer.reasoning_effort)}{view.reviewer.mode === 'default' && ` ${t('(default)')}`}</> : t(view.reviewer.mode === 'off' ? 'Reviewer off' : 'No reviewer set')}</span>    </div>
 
     {/* Counts and run controls sit above the tabs so they stay reachable from Sources and Activity; the Answer tab tells the run step by step. */}
     {(run || view.sources.length > 0) && <div className={`legacy-progress run-card${run ? ` is-${run.status}` : ''}`}>

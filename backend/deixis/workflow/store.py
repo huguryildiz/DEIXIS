@@ -64,6 +64,8 @@ class Store:
         review_mode: str = "default",
         review_model: str | None = None,
         review_reasoning_effort: str | None = None,
+        literature_connection: str | None = None,
+        review_connection: str | None = None,
     ) -> str:
         rid, ts = new_id("res"), now()
         title = question.strip().splitlines()[0][:160]
@@ -74,9 +76,11 @@ class Store:
             self.conn.execute(
                 "INSERT INTO scope_revisions (research_id, revision, question, language_hint, source_scope, providers_json,"
                 " effort, model_connection, requested_model, reasoning_effort, literature_model, literature_reasoning_effort,"
-                " review_mode, review_model, review_reasoning_effort, created_at) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " review_mode, review_model, review_reasoning_effort, literature_connection, review_connection, created_at)"
+                " VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (rid, question.strip(), language_hint, source_scope, dumps(providers), effort, model_connection, requested_model,
-                 reasoning_effort, literature_model, literature_reasoning_effort, review_mode, review_model, review_reasoning_effort, ts),
+                 reasoning_effort, literature_model, literature_reasoning_effort, review_mode, review_model, review_reasoning_effort,
+                 literature_connection, review_connection, ts),
             )
             self._event(rid, "research_created", {"scope_revision": 1})
         return rid
@@ -228,12 +232,13 @@ class Store:
             self.conn.execute(
                 "INSERT INTO scope_revisions (research_id, revision, question, language_hint, source_scope, providers_json,"
                 " effort, model_connection, requested_model, reasoning_effort, literature_model, literature_reasoning_effort,"
-                " review_mode, review_model, review_reasoning_effort, steering, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " review_mode, review_model, review_reasoning_effort, literature_connection, review_connection, steering, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (research_id, revision, question.strip(), current["language_hint"], current["source_scope"],
                  dumps(current["providers"]), current["effort"], current["model_connection"], current["requested_model"],
                  current["reasoning_effort"], current["literature_model"], current["literature_reasoning_effort"],
-                 current["review_mode"], current["review_model"], current["review_reasoning_effort"], steering, now()),
+                 current["review_mode"], current["review_model"], current["review_reasoning_effort"],
+                 current["literature_connection"], current["review_connection"], steering, now()),
             )
             self.conn.execute(
                 "UPDATE researches SET current_scope_revision = ?, version = version + 1, title = ?, updated_at = ? WHERE id = ?",

@@ -38,7 +38,7 @@ const exposesEffortControl = (model: SelectableModel | undefined) => model?.conn
 export const defaultEffort = (models: SelectableModel[], id: string) => {
   const m = models.find(x => x.id === id)
   if (!exposesEffortControl(m)) return null
-  return m?.default_reasoning_effort ?? m?.reasoning_efforts?.[0]?.id ?? null
+  return m?.default_reasoning_effort ?? null
 }
 const listedEffort = (models: SelectableModel[], id: string, effort: string | null) => {
   const model = models.find(m => m.id === id)
@@ -68,7 +68,7 @@ export const modelRoles: Record<ModelRole, { label: string; icon: LucideIcon; hi
 // `choices` are non-model entries such as "Default" or "Off"; they have no effort.
 export function ModelPicker({ role, icon: Icon, hint, models, value, onChange, effort, onEffort, choices = [] }: {
   role: string; icon: LucideIcon; hint: string; models: ConnectionModel[]; value: string; onChange: (value: string) => void
-  effort: string | null; onEffort: (effort: string) => void; choices?: { value: string; title: string; detail: string }[]
+  effort: string | null; onEffort: (effort: string | null) => void; choices?: { value: string; title: string; detail: string }[]
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -163,12 +163,13 @@ export function ModelPicker({ role, icon: Icon, hint, models, value, onChange, e
         </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
-    {efforts.length > 0 && effort &&
-      <Select value={effort} onValueChange={v => { if (v) onEffort(v) }}>
+    {efforts.length > 0 &&
+      <Select value={effort ?? '__provider_default'} onValueChange={v => { if (v) onEffort(v === '__provider_default' ? null : v) }}>
         <SelectTrigger aria-label={t('{role} reasoning effort', { role })} title={t('How long the {role} model thinks', { role: role.toLocaleLowerCase(uiLocale()) })}><SelectValue>{(v: string) => <><Brain size={15} />{reasoningLabel(v)}</>}</SelectValue></SelectTrigger>
         <SelectContent className="intake-select-content has-details" align="start" alignItemWithTrigger={false}>
           <div className="intake-select-heading" aria-hidden="true">{t('{role} REASONING EFFORT', { role: role.toLocaleUpperCase(uiLocale()) })}</div>
           <p className="intake-select-description" aria-hidden="true">{t('How long the {role} model reasons before it replies. Higher settings take longer.', { role: role.toLocaleLowerCase(uiLocale()) })}</p>
+          <SelectItem value="__provider_default"><Option icon={Brain} title={t('Provider default')} detail={t('Let the current model choose its default effort')} /></SelectItem>
           {efforts.map(e => <SelectItem key={e.id} value={e.id}><Option icon={Brain} title={reasoningLabel(e.id)} detail={[e.description, e.id === chosen?.default_reasoning_effort ? t('Model default') : ''].filter(Boolean).join(' · ') || undefined} /></SelectItem>)}
         </SelectContent>
       </Select>}
@@ -225,8 +226,8 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
   function chooseModel(id: string, list = models) {
     const next = list.find(m => m.id === id)
     setModel(id)
-    // Each model lists its own efforts; start from the one Codex marks as its default.
-    setReasoning(next?.default_reasoning_effort ?? next?.reasoning_efforts?.[0]?.id ?? null)
+    // Each model lists its own efforts; use the provider-declared default when one exists.
+    setReasoning(next?.default_reasoning_effort ?? null)
   }
 
   async function addFiles(list: FileList | null) {

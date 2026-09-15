@@ -30,6 +30,8 @@ from deixis.documents import pdf
 from deixis.domain import skill
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict
 from deixis.models.adapter import CodexAdapter, ModelAdapter
+from deixis.models.claude import ClaudeCodeAdapter
+from deixis.models.deepseek import DeepSeekAdapter
 from deixis.models.gemini import GeminiAdapter
 from deixis.providers import scopus
 from deixis.providers import zotero
@@ -176,7 +178,9 @@ def create_app(
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.USER_AGENT})
         adapter_map = adapters if adapters is not None else {
             "codex": CodexAdapter(codex_home=settings.codex_home, workspace=settings.data_dir / "codex-workspace"),
+            "claude": ClaudeCodeAdapter(workspace=settings.data_dir / "claude-workspace"),
             "gemini": GeminiAdapter(client=http),
+            "deepseek": DeepSeekAdapter(client=http),
         }
         package = skill.load_skill_package()
         flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf))

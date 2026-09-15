@@ -31,6 +31,10 @@ def remote(request):
         if request.headers["authorization"] == "Bearer openai-no-credit-key":
             return httpx.Response(429, json={"error": {"message": "You have no credits remaining.", "code": "insufficient_quota"}})
         return httpx.Response(401, json={"error": {"message": "Incorrect API key provided: openai-bad-key"}})
+    if url == "https://api.deepseek.com/models":
+        if request.headers.get("authorization") == "Bearer deepseek-good-key":
+            return httpx.Response(200, json={"object": "list", "data": []})
+        return httpx.Response(401, json={"error": {"message": "invalid api key"}})
     if url == "http://127.0.0.1:11434/api/tags":
         return httpx.Response(200, json={"models": [{"name": "qwen3:8b", "size": 5_200_000_000},
                                                     {"name": "nomic-embed-text:latest", "size": 274_000_000}]})
@@ -87,6 +91,20 @@ def test_a_key_without_credit_is_kept_and_a_refused_key_is_not(client, memory_ke
     assert memory_keychain.items == {("DEIXIS", "OPENAI_API_KEY"): "openai-no-credit-key"}
 
 
+def test_deepseek_key_is_verified_by_listing_models(client, memory_keychain):
+    refused = client.put("/api/credentials/DEEPSEEK_API_KEY", json={"value": "deepseek-bad-key"})
+    assert refused.status_code == 422 and "deepseek-bad-key" not in refused.text
+    saved = client.put("/api/credentials/DEEPSEEK_API_KEY", json={"value": "deepseek-good-key"}).json()
+    assert saved["test"]["status"] == "ok" and saved["key"]["service"] == "deepseek"
+    assert memory_keychain.items == {("DEIXIS", "DEEPSEEK_API_KEY"): "deepseek-good-key"}
+
+
+def test_one_model_connection_can_be_freshly_queried(client):
+    response = client.get("/api/connections/fake?refresh=true")
+    assert response.status_code == 200 and response.json()["connection"] == "fake"
+    assert client.get("/api/connections/not-present?refresh=true").status_code == 404
+
+
 def test_keys_from_the_environment_are_left_alone_and_source_keys_are_not_tested(client, monkeypatch):
     monkeypatch.setenv("OPENALEX_API_KEY", "openalex-from-env")
     entry = next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == "OPENALEX_API_KEY")
@@ -119,7 +137,7 @@ def test_local_tools_report_clis_running_servers_and_embedding_models(client, pa
     tools = {t["id"]: t for t in data["tools"]}
     assert data["machine"]["memory_gb"] == 32
     claude = tools["claude_code"]
-    assert (claude["installed"], claude["version"], claude["role"], claude["job"]) == (True, "2.1.270 (Claude Code)", "detected", None)
+    assert (claude["installed"], claude["version"], claude["role"], claude["job"]) == (True, "2.1.270 (Claude Code)", "runs_steps", None)
     codex = tools["codex"]
     assert (codex["installed"], codex["role"], codex["install"]["available"]) == (False, "runs_steps", True)
     assert codex["install"]["command"] == "npm install -g @openai/codex"

@@ -3,11 +3,11 @@ import { Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, Server, Sparkles
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
-import { api, type Connections, type Credentials, type KeyEntry, type Keychain, type LocalTool, type LocalTools, type SemanticSearch, type SemanticSearchProvider } from './api'
+import { api, type Connections, type Credentials, type KeyEntry, type Keychain, type LocalTool, type LocalTools, type ModelHealth, type SemanticSearch, type SemanticSearchProvider } from './api'
 import { ConnectionIcon } from './connectionIcons'
 import { useToast } from './Toast'
 import { t } from './i18n'
-import { connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames } from './labels'
+import { connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames, reasoningLabel } from './labels'
 
 const providerNames: Record<string, string> = {
   semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', openalex: 'OpenAlex', scopus: 'Scopus', ieee_xplore: 'IEEE Xplore', core: 'CORE', serpapi: 'SerpApi',
@@ -137,9 +137,26 @@ function LocalToolDetails({ tool, dark, onChanged }: { tool: LocalTool; dark: bo
   </div>
 }
 
+function ModelCatalogue({ model }: { model: ModelHealth }) {
+  const models = model.models ?? []
+  return <>
+    <h3 className="source-section">{t('Models listed · {n}', { n: models.length })}</h3>
+    {models.length > 0 && <ul className="connection-models">{models.map(item => <li key={item.id}>
+      <span className="connection-model-copy"><strong>{item.display_name}</strong>{item.description && <small>{item.description}</small>}{item.resolved_model && item.resolved_model !== item.id && <code>{item.resolved_model}</code>}</span>
+      <span className="connection-model-meta">
+        {item.is_default && <small>{t('default')}</small>}
+        {(item.reasoning_efforts ?? []).length > 0
+          ? <span className="reasoning-levels" aria-label={t('Thinking levels')}>{item.reasoning_efforts?.map(level => <span key={level.id} title={level.description || undefined}>{reasoningLabel(level.id)}</span>)}</span>
+          : <small>{t('No thinking levels')}</small>}
+      </span>
+    </li>)}</ul>}
+  </>
+}
+
 export function ConnectionsTab({ dark }: { dark: boolean }) {
   const [data, setData] = useState<Connections | null>(null)
   const [busy, setBusy] = useState(false)
+  const [refreshingModel, setRefreshingModel] = useState<string | null>(null)
   const [error, setError] = useState('')
   // The selection outlives `open` so the drawer keeps its content while it animates closed.
   const [selected, setSelected] = useState<Selected | null>(null)
@@ -174,21 +191,36 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
 
   const reloadAfterKeyChange = useCallback(() => { loadCredentials(); load(true); loadSemantic() }, [loadCredentials, load, loadSemantic])
 
-  const show = (item: Selected) => { setSelected(item); setOpen(true) }
+  const refreshModel = useCallback((id: string, notify = false) => {
+    setRefreshingModel(id)
+    return api.modelConnection(id, true).then(result => {
+      setData(current => current ? { ...current, models: { ...current.models, [id]: result } } : current)
+      setError('')
+      if (notify) {
+        const label = modelNames[id] ?? id
+        if (result.ready) toast('success', t('{name}: ready', { name: label }))
+        else toast('warning', `${label}: ${result.reason ?? t('not ready')}`)
+      }
+    }).catch((e: Error) => {
+      if (notify) toast('error', t('Check failed: {message}', { message: e.message }))
+      else toast('error', t('Could not refresh model catalogue: {message}', { message: e.message }))
+    }).finally(() => setRefreshingModel(current => current === id ? null : current))
+  }, [toast])
+  const show = (item: Selected) => {
+    setSelected(item)
+    setOpen(true)
+    if (item.kind === 'model') void refreshModel(item.id)
+  }
   const recheck = () => {
     if (!selected) return
+    if (selected.kind === 'model') { void refreshModel(selected.id, true); return }
     setBusy(true)
     api.connections(true).then(result => {
       setData(result); setError('')
-      if (selected.kind === 'model') {
-        const m = result.models[selected.id]
-        if (m?.ready) toast('success', t('{name}: ready', { name })); else toast('warning', `${name}: ${m?.reason ?? t('not ready')}`)
-      } else {
-        // This refreshes configuration only; it does not spend a provider request or verify access.
-        const p = result.providers.find(x => x.id === selected.id)
-        if (p && hasProviderAccessMode(p.access_mode)) toast('success', t('Configuration refreshed; live access was not tested.'))
-        else toast('warning', t('{name}: key not configured', { name }))
-      }
+      // This refreshes configuration only; it does not spend a provider request or verify access.
+      const p = result.providers.find(x => x.id === selected.id)
+      if (p && hasProviderAccessMode(p.access_mode)) toast('success', t('Configuration refreshed; live access was not tested.'))
+      else toast('warning', t('{name}: key not configured', { name }))
     }).catch((e: Error) => toast('error', t('Check failed: {message}', { message: e.message }))).finally(() => setBusy(false))
   }
   const isActive = (kind: Selected['kind'], id: string) => open && selected?.kind === kind && selected.id === id
@@ -211,6 +243,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
 
   const openaiKey = credentials?.keys.find(k => k.env === 'OPENAI_API_KEY')
   const geminiKey = credentials?.keys.find(k => k.env === 'GEMINI_API_KEY')
+  const deepseekKey = credentials?.keys.find(k => k.env === 'DEEPSEEK_API_KEY')
 
   const cliTools = (tools?.tools ?? []).filter(tool => tool.kind === 'cli')
   const serverTools = (tools?.tools ?? []).filter(tool => tool.kind === 'server')
@@ -298,6 +331,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
           {selected && <div className="connection-sheet-head"><ConnectionIcon id={selected.kind === 'local-tool' ? localToolIcon(selected.id) : selected.id} /><h2 className="source-title">{name}</h2></div>}
           {localTool && <LocalToolDetails key={localTool.id} tool={localTool} dark={dark} onChanged={() => loadTools(true)} />}
           {model && <>
+            {refreshingModel === selected?.id && <p className="source-byline connection-catalog-refresh"><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Refreshing model catalogue…')}</p>}
             {model.ready ? <span className="status-chip">{t('Ready')}</span> : <p className="source-byline">{model.reason ?? t('Not ready')}</p>}
             {selected?.id === 'codex' && <>
               <p className="source-byline">{t('DEIXIS runs Codex in its own Codex home with tools, connectors, skills and instruction files disabled, and starts a new session for every step.')}</p>
@@ -308,8 +342,15 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
                 {check(t('MCP servers with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
               </div>
               {!model.signed_in && model.installed && <p className="source-byline">{t('Sign in once in a terminal:')}<br /><code className="command">CODEX_HOME="$HOME/Library/Application Support/DEIXIS/codex-home" codex login</code></p>}
-              <h3 className="source-section">{t('Models listed · {n}', { n: model.models?.length ?? 0 })}</h3>
-              {model.models && model.models.length > 0 && <ul className="connection-models">{model.models.map(m => <li key={m.id}><span>{m.display_name}</span>{m.is_default && <small>{t('default')}</small>}</li>)}</ul>}
+            </>}
+            {selected?.id === 'claude' && <>
+              <p className="source-byline">{t('DEIXIS runs Claude Code through the official Agent SDK with tools, MCP servers, skills and instruction files disabled, and starts a new non-persistent session for every step.')}</p>
+              <div className="connection-checks">
+                {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
+                {check(t('Signed in to Claude Code'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
+                {check(t('Instruction files loaded'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
+                {check(t('MCP servers with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
+              </div>
             </>}
             {selected?.id === 'gemini' && <>
               <p className="source-byline">{t('DEIXIS calls the Gemini API directly with GEMINI_API_KEY, with no tools, instruction files or CLI agent prompt, and one new request per step. The Gemini CLI is only detected; it does not run steps.')}</p>
@@ -319,9 +360,15 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
                 {check(t('Semantic passage search'), model.key_configured ? t('on · passage text is sent to Google') : t('off'))}
               </div>
               {credentials && <KeyPanel env="GEMINI_API_KEY" entry={geminiKey} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
-              <h3 className="source-section">{t('Models listed · {n}', { n: model.models?.length ?? 0 })}</h3>
-              {model.models && model.models.length > 0 && <ul className="connection-models">{model.models.map(m => <li key={m.id}><span>{m.display_name}</span></li>)}</ul>}
             </>}
+            {selected?.id === 'deepseek' && <>
+              <p className="source-byline">{t('DEIXIS calls the DeepSeek API directly with DEEPSEEK_API_KEY, with no tools or instruction files and one new request per step.')}</p>
+              <div className="connection-checks">
+                {check(t('API key (DEEPSEEK_API_KEY)'), model.key_configured ? t('set') : t('not set'))}
+              </div>
+              {credentials && <KeyPanel env="DEEPSEEK_API_KEY" entry={deepseekKey} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
+            </>}
+            <ModelCatalogue model={model} />
           </>}
           {provider && <>
             {hasProviderAccessMode(provider.access_mode) && <span className={`status-chip ${provider.access_mode === 'keyless' ? 'is-configured' : ''}`}>{providerStatus(provider.access_mode)}</span>}
@@ -329,7 +376,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
             <div className="connection-checks">{check(t('Access mode'), provider.access_mode ? t(provider.access_mode) : t('none'))}</div>
             {credentials && providerKeyEnv[provider.id] && <KeyPanel env={providerKeyEnv[provider.id]} entry={credentials.keys.find(k => k.env === providerKeyEnv[provider.id])} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
           </>}
-          {!localTool && <Button variant="outline" className="connection-recheck" onClick={recheck} disabled={busy}><RefreshCw size={14} />{t(provider ? (busy ? 'Refreshing…' : 'Refresh configuration') : (busy ? 'Checking…' : 'Check again'))}</Button>}
+          {!localTool && <Button variant="outline" className="connection-recheck" onClick={recheck} disabled={busy || refreshingModel === selected?.id}><RefreshCw size={14} />{t(provider ? (busy ? 'Refreshing…' : 'Refresh configuration') : (refreshingModel === selected?.id ? 'Checking…' : 'Check again'))}</Button>}
         </div>
       </SheetContent>
     </Sheet>

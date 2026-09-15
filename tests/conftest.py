@@ -25,9 +25,9 @@ class MemoryKeyring(KeyringBackend):
 
 
 @pytest.fixture(autouse=True)
-def no_gemini_key(monkeypatch):
-    """Tests never reach the Gemini or OpenAI API, even when a local .env or shell sets a key; a test that needs one sets a fake key."""
-    for name in ("GEMINI_API_KEY", "OPENAI_API_KEY"):
+def no_model_api_keys(monkeypatch):
+    """Tests never use real model API keys; a test that needs one sets a fake key."""
+    for name in ("GEMINI_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"):
         # setenv first records the original value, so a key a test saves through the app is removed afterwards too.
         monkeypatch.setenv(name, "unset")
         monkeypatch.delenv(name)

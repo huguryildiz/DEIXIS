@@ -112,6 +112,63 @@ execution was initiated. Observations apply to this account/session, not every t
   and Metadata. Evidence (8) showed passages with abstract/body/conclusion labels
   and links to show them in abstract/full text. Scientific claims were not audited.
 
+On 2026-09-15 the owner shared three screenshots of their Elicit Library for P5
+design. They are not stored in the repository. The observations below come from them:
+
+- **Library list.** "Library / All" showed 25 sources and one personal collection.
+  The toolbar held filters, two row densities, collections, tags, export, delete
+  and search, with "Connect Zotero" and "Upload" above it. Two rows read
+  "No title found".
+- **Paper details.** Selecting a row opened a "Paper details" panel. It listed
+  authors, year, the PDF file name and a "Full text" status, followed by an edit
+  control, "Replace PDF", "View" and the abstract.
+- **Reader.** "View" opened the paper with a "Source" link and a "Plain text / PDF"
+  toggle. The plain text showed an extraction artifact: "MOLECULAR" had become
+  "M OLECULAR" because of a drop capital.
+- **Metadata editing.** A fourth screenshot showed the edit control in use, opening
+  "Edit paper details". The form had "Name", "Authors" with an "Add" button,
+  "Abstract", and "Cancel" and "Update" buttons; "Update" was greyed out while no
+  field had changed. No DOI, year or venue field appeared in the visible part of
+  the form.
+
+The extraction table was not seen live. Its description in the P5 plan comes from
+Elicit's help articles. The owner asked the Claude in Chrome extension to look for
+one read-only in the same account. Its report said:
+
+- **No extraction table.** The account had no extraction table or systematic review.
+  Recents held three "Session" items: report or agent-chat conversations with
+  inline citations, a "View N cited sources" control and "Follow-ups" suggestions,
+  but no row/column grid.
+- **"New from selection".** Selecting papers in Library opened a "New from selection"
+  panel with "Review duplicates", "Start systematic review" and "Extract data".
+  These actions were not clicked.
+- **Other.** The IoNBT collection was empty. The "New systematic review" card looked
+  greyed out next to "New search" and "New research report"; the report did not
+  confirm whether that was a plan limit.
+
+The owner then shared two screenshots of their Consensus library, also on
+2026-09-15 and not stored in the repository:
+
+- **Navigation.** The page was titled "My Library" and had three tabs:
+  "Items (25)", "Threads" and "Suggested". A banner read "20 suggested papers since
+  you last checked" and had a "View" button. The sidebar listed "Back Home",
+  "My Library", "Collections" (one: IoNBT), "Zotero Import", "Learn", "Contact" and
+  "API & MCP", followed by a remaining Pro-message count and "Upgrade".
+- **Table.** Columns were Title, Type ("Journal Article" or "Preprint"), Authors and
+  Journal; preprints showed "—" for Journal. Above the table sat "Search items in
+  My Library", a citation icon and a download icon. Hovering a row showed "Ask",
+  "Save" (with a menu), a related-papers-style icon, a citation icon and a link icon.
+- **Composer.** A persistent "Ask the research..." box at the bottom had "+",
+  "Corpus", "Deep" and "Filter" controls.
+- **Item panel.** Selecting a row opened a panel headed by the item type
+  ("Preprint"), with tabs "Overview", "Snapshot", "Attachment" and "Metadata".
+  Metadata was a Field/Value table: Name, Attachment (a check mark and "PDF"),
+  Type, Year, Authors (2) and Accessed (Sep 14, 2026). "Ask", "Save", citation,
+  link and download actions sat at the bottom.
+
+The screenshots do not show whether the "Preprint" type label is correct for that
+paper, what "Suggested" is based on, or how "Ask" on one row limits the corpus.
+
 The owner accepted question/scope/depth/budget-led corpus growth rather than a
 mandatory paper count. Quaestio should distinguish retrieved, screened-in,
 inspected and answer-cited sources; fixed counts do not establish sufficiency.

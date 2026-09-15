@@ -301,6 +301,54 @@ Takvim taahhüdü yerine tamamlanma kanıtı kullanılır. Her aşama değişikl
 
 **P5 PDF edinme önerisi:** Dahil edilmiş DOI için önce sürümü belirtilmiş açık erişim konumları aranır; her adayın sağlayıcısı, URL'si, DOI eşleşmesi, sürümü ve indirme sonucu ayrı kaydedilir. Bu yollar sonuç vermezse web araması yalnızca *aday konum* üretir. Başlık/DOI eşleşmesi ve dosyanın yayın sürümü doğrulanmadan web'den bulunan PDF mevcut yayın kaydına otomatik bağlanmaz; belirsiz sürüm kullanıcı incelemesine bırakılır. Abonelik veya giriş isteyen yayınlarda tarayıcıdan edinilmiş PDF yüklemesi ya da Zotero içe aktarımı kullanılır. Arama geri çağırması, tam metin edinme oranı ve doğru pasajı seçme başarısı ayrı ölçülür; birindeki artış diğerinin kanıtı sayılmaz. Crossref'in tam metin URL'si erişim garantisi değildir ([Crossref](https://www.crossref.org/documentation/retrieve-metadata/text-and-data-mining/)); OpenAlex konumları PDF URL'si yanında sürümü de taşır ([OpenAlex](https://help.openalex.org/data/works/open-access/)).
 
+**P5 tasarım girdisi, Elicit (2026-09-15):** Kaynaklar iki tanedir. Birincisi sahibin paylaştığı Elicit kütüphane ekran görüntüleridir, ayrıntısı [reference-index](../desktop/reference-index.md#live-chrome-ui-inspection) belgesindedir. İkincisi Elicit'in resmî yardım belgeleridir: [sistematik tarama](https://support.elicit.com/en/articles/14759154-systematic-reviews-in-elicit), [özel sütunlar](https://support.elicit.com/en/articles/906049), [kaynak etiketleri](https://support.elicit.com/en/articles/9539905) ve [kütüphane](https://support.elicit.com/en/articles/14757550-elicit-s-library). Veri çıkarım tablosu canlı görülmedi; o kısım yalnız belgeye dayanır. Aşağıda Elicit'te gözlenen davranış ile DEIXIS için önerilen davranış ayrı yazılmıştır.
+
+- **Kütüphane:**
+  - *Elicit'te gözlenen:* Bütün kaynaklar tek listede durur, yanında kişisel koleksiyonlar ve etiketler vardır. Filtre, arama, dışa aktarma ve silme aynı araç çubuğundadır. Meta verisi bulunamayan satırlar "No title found" olarak listede kalır.
+  - *DEIXIS'e öneri:* Aynı düzen alınır. Eksik satırda ayrıca eksikliğin nedeni gösterilir ve satır meta veri düzenlemeye götürür. Silme, çöp kutusu üzerinden geri alınabilir olur.
+  - *Elicit'te gözlenen (seçimden yeni iş):* Kütüphanede birkaç kaynak seçilince "New from selection" paneli açılır. Panelde "Review duplicates", "Start systematic review" ve "Extract data" seçenekleri vardır.
+  - *DEIXIS'e öneri:* Seçili kaynaklardan yeni bir araştırma ya da kanıt tablosu başlatılabilir. Aynı panelden tekrar eden kayıtların incelemesine de gidilebilir.
+- **Kaynak ayrıntı paneli:**
+  - *Elicit'te gözlenen:* Panelde yazarlar, yıl, PDF dosya adı, tam metin durumu, düzenleme, "Replace PDF" ve "View" bulunur. Düzenleme formunun görünen kısmında başlık, yazarlar ve özet vardı.
+  - *DEIXIS'e öneri:* Aynı alanlar gösterilir. Kullanıcının düzelttiği meta veri, sağlayıcıdan gelen değerin üstüne yazılmaz; ayrı saklanır ve DOI ile kimlik eşleşmesini değiştirmez. Dosya değiştirme ise yerinde değiştirme olmaz: yeni dosya yeni bir dosya kaydı olarak eklenir, eski kanıt eski dosyaya ve sayfaya bağlı kalır. Bu, P5'in "sürüm/indeks değişimi eski kanıtı bozmaz" koşulunun ekrandaki karşılığıdır.
+- **Okuyucu:**
+  - *Elicit'te gözlenen:* Aynı kaynak "Plain text" ile "PDF" arasında geçişle okunur. Düz metinde çıkarım bozulmaları görülebilir; örnekte büyük baş harf koptuğu için "MOLECULAR" sözcüğü "M OLECULAR" olmuştu.
+  - *DEIXIS'e öneri:* Geçiş aynı sayfayı ve pasajı korur, böylece asıl PDF sayfası her zaman bir tık uzakta kalır.
+- **İçerik durumu etiketleri:**
+  - *Elicit'te belgelenen:* "Full text", "Full text from Library", "PDF link available" ve "Abstract only".
+  - *DEIXIS'e öneri:* Mevcut erişim ve okuma durumlarıyla eşlenir. Her tablo hücresi ve iddia hangi düzeyde okunduğunu taşır.
+- **Kanıt tablosu sütunu:**
+  - *Elicit'te belgelenen:* Bir sütun kısa bir ad ile insan etiketleyiciye verilecek türden bir talimattan oluşur. Yanıt biçimi talimatta tanımlanır: seçenek listesi, sayı ve birim ya da evet/hayır/belirsiz. Sorudan sütun önerileri gelir; kullanıcı bunları düzenler, siler veya yenilerini ekler. Sütun hazır şablon olarak kaydedilip başka çalışmada kullanılır. Hücreye tıklayınca destekleyen alıntılar açılır.
+  - *DEIXIS'e öneri:* Aynı sütun modeli alınır. Hücrenin destekleyen alıntıları DEIXIS'te "Show evidence" olur ve pasaj ile sayfaya gider.
+- **İnsan düzenlemesi:**
+  - *Elicit belgelerinde:* Hücreyi elle düzenleme, yeniden çalıştırmada düzenlemenin korunması ve hücre geçmişi anlatılmıyor.
+  - *DEIXIS'e öneri:* Asıl fark burada kurulur. İnsanın girdiği değer ayrı saklanır. "Recheck this cell" yalnız yeni bir öneri ve dayanak üretir; kullanıcı kabul etmedikçe insan değeri değişmez. Geçmişte değerin kimden geldiği (model ya da insan) ve hangi kanıta dayandığı görünür.
+- **Tarama:**
+  - *Elicit'te belgelenen:* Her kriter için ayrı karar, gerekçe ve özetten alıntı gösterilir. Kullanıcı kararı değiştirebilir ve bir dışlama nedeni seçebilir.
+  - *DEIXIS'e öneri:* DEIXIS'teki model önerisi ile kullanıcı seçimi ayrımının kriter düzeyine genişletilmesi P5'te değerlendirilir; bu faz için zorunlu değildir.
+- **Taranmış PDF:**
+  - *Elicit belgelerine göre:* Metin katmanı olmayan PDF okunmaz.
+  - *DEIXIS'e öneri:* P5'teki OCR bu durumu kapsar. OCR ile çıkarılmış metin ayrıca etiketlenir, sayfası denetlenmeden matematik ya da denklem garantisi verilmez.
+- **Ölçüm:**
+  - *Elicit'in yaptığı:* Kendi değerlendirmesinde arama recall'unu, tarama duyarlılığını ve özgüllüğünü ve çıkarım doğruluğunu ayrı ayrı raporlar ([değerlendirme](https://elicit.com/blog/evaluating-elicit-slr)).
+  - *DEIXIS'e öneri:* P5 aynı ayrımı bilinen küçük kaynak kümeleriyle ölçer. Elicit'in sayıları DEIXIS için hedef ya da karşılaştırma değildir; aynı veri ve bütçeyle ölçülmemiştir.
+
+**P5 tasarım girdisi, Consensus (2026-09-15):** Sahibin iki Consensus kütüphane ekran görüntüsüne dayanır; ayrıntısı yine [reference-index](../desktop/reference-index.md#live-chrome-ui-inspection) belgesindedir.
+
+- **Tür sütunu:**
+  - *Consensus'ta gözlenen:* Kütüphane listesinde "Journal Article" ya da "Preprint" türü ayrı bir sütundur.
+  - *DEIXIS'e öneri:* DEIXIS'te bu sütun sürüm etiketini gösterir. Etiket sağlayıcıdan değil sürüm kaydından gelir; aynı çalışmanın ön baskısı ve yayımlanmış hâli ayrı satır ya da açılır alt satır olur.
+- **Satır eylemleri:**
+  - *Consensus'ta gözlenen:* Bir satırın üzerine gelince "Ask", "Save", atıf ve bağlantı eylemleri çıkar.
+  - *DEIXIS'e öneri:* Aynı yakınlıkta şu eylemler sunulur: kaynağa soru sormak, koleksiyona eklemek, atıfı kopyalamak ve dayanağı açmak. "Ask" kaynak kapsamını açıkça o kaynağa daraltır ve bu daralma yanıtta görünür.
+- **Kütüphane düzeyinde soru kutusu:**
+  - *Consensus'ta gözlenen:* Altta sabit bir "Ask the research..." kutusu ve yanında "Corpus" seçicisi bulunur.
+  - *DEIXIS'e öneri:* DEIXIS'teki kaynak kapsamı seçiciyle aynı iştir. Kütüphane ya da bir koleksiyon, bir araştırmanın kaynak kapsamı olarak seçilebilir.
+- **Kaynak paneli:**
+  - *Consensus'ta gözlenen:* Panelde "Overview / Snapshot / Attachment / Metadata" sekmeleri vardır; "Metadata" sekmesi erişim tarihini de gösterir.
+  - *DEIXIS'e öneri:* DEIXIS'in kaynak paneli dosyanın alındığı yeri ve tarihi, sürüm etiketini ve okuma düzeyini birlikte gösterir.
+- **"Suggested" (önerilen makaleler):** Bu yayın takibidir ve P8 kapsamında kalır; P5'e alınmaz.
+
 P1 şemalarından sonra P3'ün modelden bağımsız işleri P2 Codex denemesinin sonucunu beklemek zorunda değildir. P4'ün canlı model çıkış koşulu P2'ye bağlıdır; UI geliştirme ve sentetik veri kontrolleri bu sonuç gelmeden yapılabilir. Bu bağımlılık ayrımı çok ajanlı yürütme şartı getirmez.
 
 Tauri'nin external binary/sidecar düzeni platforma özgü paketlemeyi gerektirir; Python backend'i sarmak tek başına dağıtım sorunlarını çözmez ([belge](https://v2.tauri.app/develop/sidecar/)). P10'da gerekirse backend paketleme seçimi ayrıca ölçülür. Başlangıçta Tauri veya zorunlu yerel model kurulmaz.

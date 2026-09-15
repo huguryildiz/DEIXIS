@@ -51,13 +51,13 @@ def test_private_or_unsafe_urls_are_blocked(url):
 def test_extraction_stops_at_the_text_limit(tmp_path):
     path = tmp_path / "long.pdf"
     path.write_bytes(make_pdf([f"SYNTHETIC page {i} " + "word " * 40 for i in range(6)]))
-    result = pdf.extract_pdf(path, max_chars=500)
+    result = pdf.extract_pdf(path, max_chars=300)  # each line runs past the page edge; only its visible ~99 characters count
     assert result.status == "partial"
-    assert sum(len(p.text) for p in result.pages) <= 500 and len(result.pages) < 6
+    assert sum(len(p.text) for p in result.pages) <= 300 and len(result.pages) < 6
 
 
 def test_extraction_is_stopped_when_it_exceeds_the_memory_limit(tmp_path):
-    # ~70 MB of decoded page content in a file of well under 1 MB (below pypdf's own 75 MB stream limit).
+    # ~70 MB of decoded page content in a file of well under 1 MB.
     path = tmp_path / "expands.pdf"
     path.write_bytes(make_compressed_page_pdf(b"BT /F1 11 Tf 72 720 Td (" + b"A" * 70_000_000 + b") Tj ET"))
     assert path.stat().st_size < 1_000_000

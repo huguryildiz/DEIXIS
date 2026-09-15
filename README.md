@@ -42,6 +42,11 @@ The Sources tab exports the included sources, and an answer's reference list its
 A research with attached files can import one Zotero collection read-only, from the Zotero app on this computer (its
 local API turned on) or from zotero.org with `ZOTERO_API_KEY` and `ZOTERO_LIBRARY_ID` (D16).
 
+## License
+
+DEIXIS is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). PDF text is extracted
+with PyMuPDF, which is itself AGPL-3.0 licensed (D25).
+
 ## Start here
 
 - [Working mechanism, skill and implementation plan](docs/product/implementation-plan.md)

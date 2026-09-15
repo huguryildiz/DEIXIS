@@ -1,7 +1,9 @@
 """Page-level PDF text extraction in a bounded subprocess.
 
-pypdf extracts embedded text only: scanned pages yield no text (no OCR), and
-equations/tables may be garbled. The original page stays the reference.
+PyMuPDF extracts embedded text only: scanned pages yield no text (no OCR), and
+equations/tables may still be garbled. Ligatures come out as plain letters. The
+original page stays the reference. Passages extracted earlier with pypdf keep their
+own `extraction_version`; they are not re-extracted.
 
 The child process is limited in time, pages, total extracted text and memory. The memory
 limit is a watchdog on the child's peak resident size: it stops the child shortly after the
@@ -11,7 +13,6 @@ limit is crossed rather than preventing the allocation. There is no memory limit
 from __future__ import annotations
 
 import json
-import logging
 import os
 import re
 import subprocess
@@ -21,9 +22,11 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import pypdf
+import pymupdf
 
-EXTRACTION_VERSION = f"pypdf-{pypdf.__version__}-chunks-v1"
+EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-chunks-v1"
+# MuPDF's default text flags without TEXT_PRESERVE_LIGATURES, so "ﬁ" is extracted as "fi".
+TEXT_FLAGS = pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_MEDIABOX_CLIP
 MAX_PAGES = 400
 MAX_TEXT_CHARS = 3_000_000
 MAX_MEMORY_BYTES = 1024 * 1024 * 1024
@@ -48,25 +51,27 @@ class Extraction:
 
 
 def _extract_in_process(path: str, max_chars: int) -> dict:
-    reader = pypdf.PdfReader(path)
-    labels = list(reader.page_labels) if reader.page_labels else []
-    pages, failed, chars = [], 0, 0
-    total = len(reader.pages)
-    truncated = total > MAX_PAGES
-    for index, page in enumerate(reader.pages[:MAX_PAGES]):
-        if chars >= max_chars:
-            truncated = True
-            break
-        try:
-            text = page.extract_text() or ""
-        except Exception:  # noqa: BLE001 - one bad page must not lose the rest
-            failed += 1
-            continue
-        if len(text) > max_chars - chars:
-            text, truncated = text[: max_chars - chars], True
-        chars += len(text)
-        label = labels[index] if index < len(labels) else None
-        pages.append({"physical_page": index + 1, "printed_label": label if label != str(index + 1) else None, "text": text})
+    with pymupdf.open(path, filetype="pdf") as doc:
+        if not doc.is_pdf:  # MuPDF opens other bytes as a one-page document instead of raising
+            raise ValueError("not a PDF")
+        pages, failed, chars = [], 0, 0
+        total = doc.page_count
+        truncated = total > MAX_PAGES
+        for index in range(min(total, MAX_PAGES)):
+            if chars >= max_chars:
+                truncated = True
+                break
+            try:
+                page = doc[index]
+                text = page.get_text("text", flags=TEXT_FLAGS)
+                label = page.get_label() or None
+            except Exception:  # noqa: BLE001 - one bad page must not lose the rest
+                failed += 1
+                continue
+            if len(text) > max_chars - chars:
+                text, truncated = text[: max_chars - chars], True
+            chars += len(text)
+            pages.append({"physical_page": index + 1, "printed_label": label if label != str(index + 1) else None, "text": text})
     return {"page_count": total, "pages": pages, "failed_pages": failed, "truncated": truncated}
 
 
@@ -128,7 +133,9 @@ def chunk_page(text: str, limit: int = CHUNK_CHARS) -> list[tuple[int, int, str]
 
 
 if __name__ == "__main__":
-    logging.getLogger("pypdf").setLevel(logging.ERROR)  # a malformed file must not flood the parent with warnings
+    # A malformed file must not flood the parent with MuPDF messages.
+    pymupdf.TOOLS.mupdf_display_errors(False)
+    pymupdf.TOOLS.mupdf_display_warnings(False)
     _watch_memory(int(sys.argv[3]))
     try:
         result = _extract_in_process(sys.argv[1], int(sys.argv[2]))

@@ -2,12 +2,15 @@
 name = "deixis"
 version = "0.1.0"
 description = "DEIXIS local research workspace backend"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.115",
   "httpx>=0.28",
   "jsonschema>=4.23",
-  "pypdf>=5",
+  "keyring>=25",
+  "pymupdf>=1.26",
   "python-multipart>=0.0.20",
   "referencing>=0.35",
   "uvicorn>=0.32",

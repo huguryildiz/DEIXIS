@@ -934,8 +934,10 @@ class Store:
                     )
                 for link in links or []:
                     self.conn.execute(
-                        "INSERT INTO evidence_links (id, claim_id, passage_id, source_version_id, step_input_id) VALUES (?, ?, ?, ?, ?)",
-                        (new_id("evl"), claim_ids[link["claim_label"]], link["passage_id"], link["source_id"], step_input_id),
+                        "INSERT INTO evidence_links (id, claim_id, passage_id, source_version_id, step_input_id, anchor_text, anchor_match)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (new_id("evl"), claim_ids[link["claim_label"]], link["passage_id"], link["source_id"], step_input_id,
+                         link.get("anchor_text"), link.get("anchor_match")),
                     )
             self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (now(), research_id))
             self._event(research_id, "answer_saved", {"answer_id": aid, "status": status}, run_id)

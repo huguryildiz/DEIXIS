@@ -25,11 +25,12 @@ closest relevant work for the question.
 5. Spread queries over the enabled providers whose coverage fits the field instead
    of repeating one provider: for example IEEE Xplore for engineering and
    computing, arXiv for physics, mathematics and computing preprints, bioRxiv for
-   life-science preprints, OpenAlex and Scopus for cross-disciplinary indexes. The
-   application merges records that share a DOI across providers. Only each
-   query's first-ranked results are read. Syntax per provider:
+   life-science preprints, OpenAlex and Scopus for cross-disciplinary indexes, CORE
+   for open-access copies held by repositories (theses, reports and author
+   manuscripts). The application merges records that share a DOI across
+   providers. Only each query's first-ranked results are read. Syntax per provider:
    - **OpenAlex** (titles and abstracts), **bioRxiv** (searched through OpenAlex,
-     limited to bioRxiv preprints) and **IEEE Xplore**: every unquoted word
+     limited to bioRxiv preprints), **IEEE Xplore** and **CORE**: every unquoted word
      and every AND-joined part is required. Quote the core multiword phrase. Join
      it with AND to one parenthesized group of specific alternatives joined by OR,
      for example `"molecular communication" AND ("resource allocation" OR scheduling)`.
@@ -43,6 +44,8 @@ closest relevant work for the question.
      underwater)` and a separate packet-length synonym query over
      `"wireless sensor network" AND ("packet size" OR "transmission power")`:
      the latter can bury the relevant papers beyond the first results read.
+     CORE answers a quoted phrase without AND with an error and does not read field
+     prefixes such as `title:`, so always join its phrase with AND and use none.
    - **Scopus**: the same form inside one field group, for example
      `TITLE-ABS-KEY("molecular communication" AND ("resource allocation" OR scheduling))`.
      Scopus records arrive without abstracts, so they are screened on titles.

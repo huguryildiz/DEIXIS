@@ -83,18 +83,57 @@ def test_abstract_evidence_link_has_no_page_and_depth_comes_from_records():
     assert all(l["semantic_review"] == "not_checked" for l in links.values())
 
 
-def test_citation_anchor_must_be_exact_text_from_the_cited_passage():
+def test_evidence_links_keep_the_located_passage_words():
+    links = contracts.derive_evidence_links(STEP_INPUTS["A_answer"], next(c for c in CASES if c["name"] == "answer_valid")["output"])
+    assert all(l["anchor_match"] == "exact" and l["anchor_text"] for l in links)
+
+
+def test_quote_not_found_in_the_cited_passage_is_a_warning_and_the_link_has_no_anchor():
     step_input = STEP_INPUTS["A_answer"]
     draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
     draft["citation_anchors"][0]["quote"] = "SYNTHETIC. This sentence was not present in the cited passage."
-    assert contracts.validate_model_output(step_input, draft).codes() == ["anchor_not_in_passage"]
+    report = contracts.validate_model_output(step_input, draft)
+    assert report.ok and [w.code for w in report.warnings] == ["anchor_not_in_passage"]
+    link = contracts.derive_evidence_links(step_input, draft)[0]
+    assert (link["anchor_text"], link["anchor_match"]) == (None, None)
 
 
-def test_every_valid_claim_passage_link_requires_a_citation_anchor():
+def test_missing_citation_anchor_is_a_warning_not_an_issue():
     step_input = STEP_INPUTS["A_answer"]
     draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
     draft["citation_anchors"].pop()
-    assert contracts.validate_model_output(step_input, draft).codes() == ["missing_citation_anchor"]
+    report = contracts.validate_model_output(step_input, draft)
+    assert report.ok and [w.code for w in report.warnings] == ["missing_citation_anchor"]
+
+
+def test_anchor_for_a_passage_the_claim_does_not_cite_is_still_an_issue():
+    step_input = STEP_INPUTS["A_answer"]
+    draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    draft["citation_anchors"][0]["passage_id"] = "psg_SYNA3pg002"  # cited by c3, not by c1
+    assert contracts.validate_model_output(step_input, draft).codes() == ["anchor_passage_not_cited"]
+
+
+PDF_TEXT = ("SYNTHETIC. Earlier text.\nThe bit error probability is p e = Q( √ 2 E b /N 0 ) for each\n"
+            "release, and the objec-\ntive minimizes it under a mol-\necule budget per frame. Later text.")
+
+
+@pytest.mark.parametrize("quote, kind", [
+    ("The bit error probability is p e = Q( √ 2 E b /N 0 ) for each release,", "exact"),
+    ("The bit error probability is pe = Q(√2Eb/N0) for each release, and the objective minimizes it under a molecule budget per frame.", "normalized"),
+    ("The bit error probability is pe = Q(√2Eb/NO) for each release, and the objective minimises it under a molecule budget per frame.", "fuzzy"),
+])
+def test_quote_is_located_despite_pdf_extraction_damage_and_keeps_the_passage_words(quote, kind):
+    match = contracts.locate_anchor(quote, PDF_TEXT)
+    assert match is not None and match.kind == kind
+    assert match.text.startswith("The bit error probability") and match.text in PDF_TEXT
+
+
+@pytest.mark.parametrize("quote", [
+    "Die Bitfehlerwahrscheinlichkeit wird unter einem Molekülbudget pro Rahmen minimiert.",
+    "The bit error probability is minimized under a molecule budget per frame.",  # two spans joined into one
+])
+def test_translated_or_spliced_quote_is_not_located(quote):
+    assert contracts.locate_anchor(quote, PDF_TEXT) is None
 
 
 @pytest.mark.parametrize("query, ambiguous", [

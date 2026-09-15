@@ -7,8 +7,10 @@ consistency. They do not establish that a passage semantically supports a claim.
 from __future__ import annotations
 
 import copy
+import difflib
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from functools import cache
 from typing import Any
@@ -530,6 +532,53 @@ LOCATOR_IN_TEXT = re.compile(
     re.IGNORECASE,
 )
 
+ANCHOR_MIN_RATIO = 0.9  # provisional; see D24
+
+
+@dataclass
+class AnchorMatch:
+    kind: str  # exact | normalized | fuzzy
+    text: str  # the passage's own words, never the model's quote
+    ratio: float
+
+
+def _compact(text: str) -> tuple[str, list[tuple[int, int]]]:
+    """Case-folded NFKC word characters without spaces or punctuation, each mapped to its word's span in `text`."""
+    words: list[str] = []
+    spans: list[tuple[int, int]] = []
+    for m in re.finditer(r"\w+", text):
+        word = unicodedata.normalize("NFKC", m.group()).casefold()
+        words.append(word)
+        spans += [m.span()] * len(word)
+    return "".join(words), spans
+
+
+def locate_anchor(quote: str, passage: str) -> AnchorMatch | None:
+    """Find a model quote in the passage it cites, tolerating PDF extraction damage.
+
+    Spaces, punctuation, case and compatibility forms are ignored, so "p e = Q( √ 2 E b /N 0 )", ligatures and
+    hyphenated line breaks still match. A near match must reach ANCHOR_MIN_RATIO over one contiguous region;
+    a translated, paraphrased or spliced quote does not. The quote only locates text: it does not show support.
+    """
+    p, spans = _compact(passage)
+    q, _ = _compact(quote)
+    if not p or not q:
+        return None
+    if (at := p.find(q)) >= 0:
+        exact = " ".join(quote.split()) in " ".join(passage.split())
+        return AnchorMatch("exact" if exact else "normalized", passage[spans[at][0]:spans[at + len(q) - 1][1]], 1.0)
+    seed = difflib.SequenceMatcher(None, p, q, autojunk=False).find_longest_match(0, len(p), 0, len(q))
+    lo = max(0, seed.a - seed.b - len(q) // 5)
+    hi = min(len(p), seed.a - seed.b + len(q) + len(q) // 5)
+    blocks = [b for b in difflib.SequenceMatcher(None, p[lo:hi], q, autojunk=False).get_matching_blocks() if b.size >= 3]
+    if not blocks:
+        return None
+    start, end = lo + blocks[0].a, lo + blocks[-1].a + blocks[-1].size
+    ratio = 2 * sum(b.size for b in blocks) / (end - start + len(q))
+    if ratio < ANCHOR_MIN_RATIO:
+        return None
+    return AnchorMatch("fuzzy", passage[spans[start][0]:spans[end - 1][1]], round(ratio, 3))
+
 
 def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
     labels: set[str] = set()
@@ -552,7 +601,9 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
             report.issues.append(Issue("duplicate_passage_id", f"/claims/{i}/passage_ids", claim["claim_label"]))
         cited_by_claim[claim["claim_label"]] = set(claim["passage_ids"])
 
-    passage_text = {p["passage_id"]: re.sub(r"\s+", " ", p["text"]).strip() for p in step_input["passages"]}
+    # A quote that cannot be located only costs the highlight, so it is a warning (D24); a quote aimed at the wrong
+    # claim or passage is a structural error.
+    passage_text = {p["passage_id"]: p["text"] for p in step_input["passages"]}
     required_anchors = {
         (claim["claim_label"], pid)
         for claim in draft["claims"]
@@ -571,11 +622,12 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
         if anchor["passage_id"] not in cited_by_claim[anchor["claim_label"]]:
             report.issues.append(Issue("anchor_passage_not_cited", f"/citation_anchors/{i}/passage_id", anchor["passage_id"]))
             continue
-        normalized_quote = re.sub(r"\s+", " ", anchor["quote"]).strip()
-        if normalized_quote not in passage_text.get(anchor["passage_id"], ""):
-            report.issues.append(Issue("anchor_not_in_passage", f"/citation_anchors/{i}/quote", anchor["passage_id"]))
+        if locate_anchor(anchor["quote"], passage_text.get(anchor["passage_id"], "")) is None:
+            report.warnings.append(Issue("anchor_not_in_passage", f"/citation_anchors/{i}/quote",
+                                         f"{anchor['claim_label']}: the quoted sentence was not found in the cited passage"))
     for claim_label, passage_id in sorted(required_anchors - seen_anchors):
-        report.issues.append(Issue("missing_citation_anchor", "/citation_anchors", f"{claim_label}:{passage_id}"))
+        report.warnings.append(Issue("missing_citation_anchor", "/citation_anchors",
+                                     f"{claim_label}: one citation has no quoted sentence"))
     for i, limitation in enumerate(draft["limitations"]):
         for j, sid in enumerate(limitation["source_ids"]):
             if sid not in allow["source_ids"]:
@@ -629,10 +681,13 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
 def derive_evidence_links(step_input: dict[str, Any], draft: dict[str, Any]) -> list[dict[str, Any]]:
     """Evidence links take source, depth and locator from StepInput records only."""
     passages = {p["passage_id"]: p for p in step_input["passages"]}
+    quotes = {(a["claim_label"], a["passage_id"]): a["quote"] for a in draft.get("citation_anchors", [])}
     links = []
     for claim in draft["claims"]:
         for pid in claim["passage_ids"]:
             p = passages[pid]
+            quote = quotes.get((claim["claim_label"], pid))
+            anchor = locate_anchor(quote, p["text"]) if quote else None
             links.append(
                 {
                     "claim_label": claim["claim_label"],
@@ -642,6 +697,8 @@ def derive_evidence_links(step_input: dict[str, Any], draft: dict[str, Any]) -> 
                     "locator": dict(p["locator"]),
                     "support_type": claim["support_type"],
                     "semantic_review": "not_checked",
+                    "anchor_text": anchor.text if anchor else None,
+                    "anchor_match": anchor.kind if anchor else None,
                 }
             )
     return links

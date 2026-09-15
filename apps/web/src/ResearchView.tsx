@@ -293,13 +293,65 @@ function AnswerBlock({ researchId, answer, sources, onOpen }: { researchId: stri
     <p className="legacy-mini-note">{t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.')} {answer.model ? t('Model: {connection} · {model}.', { connection: answer.model.connection, model: answer.model.resolved_model ?? answer.model.requested_model ?? t('unknown') }) : ''} {answer.inputs_given ? t('{passages} passages from {sources} sources were provided.', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }) : ''}</p>
     <ReviewNote review={answer.review} />
     <ChecksNote warnings={answer.validation.warnings} />
+    {suggestion && <PdfSuggestions notes={suggestion.notes} sources={suggestion.sources} busy={busy} onAttachPdf={onAttachPdf} />}
   </div>
+}
+
+// Sources the answer could read only from their abstracts and that still have no PDF. The model's access limitations name
+// them and say what their full text would settle; an answer without such a limitation lists its cited sources that lack a PDF.
+function pdfSuggestion(answer: Answer, sources: Source[]): { notes: Limitation[]; sources: Source[] } | null {
+  if (answer.status !== 'structurally_valid' || answer.applicability === 'stale_scope') return null
+  const lacking = (ids: string[]) => [...new Set(ids)]
+    .map(id => sources.find(s => s.source_version_id === id && s.origin === 'provider' && !s.access.assets.length))
+    .filter((s): s is Source => Boolean(s))
+  const notes = answer.limitations.filter(l => l.kind === 'access' && lacking(l.source_ids).length > 0)
+  const listed = lacking(notes.length ? notes.flatMap(l => l.source_ids) : answer.claims.flatMap(c => c.evidence.map(e => e.source_version_id)))
+  return listed.length ? { notes, sources: listed } : null
+}
+
+// A short author–year key such as "Gur23": the first author's family name, then the last two digits of the year.
+function sourceKey(source: Source) {
+  const author = source.authors[0]?.trim()
+  const name = author ? (author.includes(',') ? author.split(',')[0] : author.split(/\s+/).pop() ?? '') : source.title
+  const stem = name.replace(/ı/g, 'i').normalize('NFD').replace(/[^A-Za-z]/g, '').slice(0, 3)
+  return stem ? `${stem.charAt(0).toUpperCase()}${stem.slice(1).toLowerCase()}${source.year ? String(source.year).slice(-2) : ''}` : ''
+}
+
+function PdfSuggestions({ notes, sources, busy, onAttachPdf }: { notes: Limitation[]; sources: Source[]; busy: boolean; onAttachPdf: (source: Source) => void }) {
+  const tip = t('Sources the answer read only from their abstracts and that have no PDF yet. An attached PDF is read page by page (no OCR).')
+  return <section className="pdf-suggest" aria-labelledby="pdf-suggest-title">
+    <div className="pdf-suggest-head">
+      <Upload size={18} aria-hidden />
+      <div>
+        <strong id="pdf-suggest-title">{t('PDF uploads suggested')}<span className="pdf-suggest-info" title={tip}><Info size={14} aria-hidden /><span className="sr-only">{tip}</span></span></strong>
+        <small>{t('Attached PDFs stay with this research; generate a new answer to use their text.')}</small>
+      </div>
+    </div>
+    <div className="pdf-suggest-body">
+      {notes.length ? notes.map((l, i) => <p key={i}><MathText text={l.text} /></p>)
+        : <p>{t('The answer cited these sources from their abstracts only. Their full text can add details the abstracts leave out.')}</p>}
+      <ul className="pdf-suggest-list">{sources.map(source => {
+        const key = sourceKey(source)
+        const href = source.doi ? `https://doi.org/${source.doi}` : source.landing_url
+        return <li key={source.source_version_id}>
+          {key && <span className="pdf-suggest-key" title={[source.authors.join(', '), source.year].filter(Boolean).join(' · ')}>{key}</span>}
+          <span className="pdf-suggest-title" title={source.title}>{source.title}</span>
+          <span className="pdf-suggest-actions">
+            {href && <a href={href} target="_blank" rel="noreferrer" title={t('Opens the source page in a new tab')}><ArrowUpRight size={14} aria-hidden />{t('Get PDF')}</a>}
+            <button type="button" disabled={busy} onClick={() => onAttachPdf(source)} aria-label={t('Attach a PDF to {title}', { title: source.title })}><Upload size={14} aria-hidden />{t('Attach PDF')}</button>
+          </span>
+        </li>
+      })}</ul>
+    </div>
+  </section>
 }
 
 const phrasingCodes = new Set(['sentence_without_phrasebank_frame', 'own_work_phrase_in_claim', 'plural_sources_for_one_source'])
 const mathLabels: Record<string, string> = {
   math_not_well_formed: 'Math is not well formed',
   math_without_full_text: 'Math cites abstract text only',
+  anchor_not_in_passage: 'Citation opens without a highlight',
+  missing_citation_anchor: 'Citation opens without a highlight',
 }
 const checkCodes = new Set([...phrasingCodes, ...Object.keys(mathLabels)])
 

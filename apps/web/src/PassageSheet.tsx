@@ -6,6 +6,7 @@ import { api, assetUrl, type Passage } from './api'
 import { locatorText, versionText } from './labels'
 import { t, uiLocale } from './i18n'
 import { PassageMathText } from './PassageMathText'
+import { ConnectionIcon } from './connectionIcons'
 
 export function PassageSheet({ researchId, passageId, highlightText, dark, onClose }: { researchId: string; passageId: string | null; highlightText?: string | null; dark: boolean; onClose: () => void }) {
   const [passage, setPassage] = useState<Passage | null>(null)
@@ -41,7 +42,7 @@ export function PassageSheet({ researchId, passageId, highlightText, dark, onClo
             : source.authors.join(', ')}</p>}
           <p className="source-byline">{[source.venue, source.year, source.version_label ? versionText(source.version_label) : t('version not stated by the provider'), source.origin === 'user_upload' && t('uploaded by you')].filter(Boolean).join(' · ')}</p>
           <div className="source-chips">
-            {source.doi ? <a className="source-chip" href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><Link2 size={15} />DOI</a>
+            {source.doi ? <a className="source-chip" href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" />DOI</a>
               : source.landing_url && <a className="source-chip" href={source.landing_url} target="_blank" rel="noreferrer"><Link2 size={15} />{t('Publisher page')}</a>}
             <span className="source-access"><FileText size={15} />{t(abstract ? 'Abstract only' : 'PDF text passage')}</span>
           </div>

@@ -63,10 +63,12 @@ LITERATURE_TASKS = ("search_plan", "screening")
 def step_model(scope: dict[str, Any], task_type: str) -> tuple[str, str | None, str | None]:
     """(connection, model, reasoning effort) for a research's search and answer steps.
 
-    A research without a literature model (created before D14) runs its search steps on the research model.
+    A research without a literature model (created before D14) runs its search steps on the research model. A literature
+    model without its own connection (created before D28) is on the research model's connection.
     """
     if task_type in LITERATURE_TASKS and scope.get("literature_model"):
-        return scope["model_connection"], scope["literature_model"], scope.get("literature_reasoning_effort")
+        return (scope.get("literature_connection") or scope["model_connection"], scope["literature_model"],
+                scope.get("literature_reasoning_effort"))
     return scope["model_connection"], scope["requested_model"], scope.get("reasoning_effort")
 
 
@@ -79,7 +81,7 @@ def effective_reviewer(scope: dict[str, Any], default: dict[str, Any] | None) ->
     if mode == "off":
         return None
     if mode == "custom":
-        return scope["model_connection"], scope["review_model"], scope.get("review_reasoning_effort")
+        return scope.get("review_connection") or scope["model_connection"], scope["review_model"], scope.get("review_reasoning_effort")
     if default and default.get("model"):
         return default["model_connection"], default["model"], default.get("reasoning_effort")
     return None

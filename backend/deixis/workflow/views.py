@@ -34,20 +34,15 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     cited_sources: set[str] = set()
     for a in conn.execute("SELECT * FROM answers WHERE research_id = ? ORDER BY created_at DESC LIMIT 10", (research_id,)):
         draft = _json(a["draft_json"])
-        anchors = {
-            (anchor["claim_label"], anchor["passage_id"]): anchor["quote"]
-            for anchor in (draft or {}).get("citation_anchors", [])
-            if isinstance(anchor, dict) and all(isinstance(anchor.get(k), str) for k in ("claim_label", "passage_id", "quote"))
-        }
         claims = []
         for c in conn.execute("SELECT * FROM claims WHERE answer_id = ? ORDER BY ordinal", (a["id"],)):
             evidence = [
                 {"passage_id": e["passage_id"], "source_version_id": e["source_version_id"], "kind": e["kind"],
                  "physical_page": e["physical_page"], "printed_label": e["printed_label"],
                  "reading_depth": "abstract" if e["kind"] == "abstract" else "selected_sections", "title": e["title"],
-                 "version_label": e["version_label"], "anchor_text": anchors.get((c["label"], e["passage_id"]))}
+                 "version_label": e["version_label"], "anchor_text": e["anchor_text"]}
                 for e in conn.execute(
-                    "SELECT l.passage_id, l.source_version_id, p.kind, p.physical_page, p.printed_label, s.title, s.version_label FROM evidence_links l"
+                    "SELECT l.passage_id, l.source_version_id, l.anchor_text, p.kind, p.physical_page, p.printed_label, s.title, s.version_label FROM evidence_links l"
                     " JOIN passages p ON p.id = l.passage_id JOIN source_versions s ON s.id = l.source_version_id"
                     " WHERE l.claim_id = ? ORDER BY l.rowid", (c["id"],)
                 )

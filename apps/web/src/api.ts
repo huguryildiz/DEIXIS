@@ -100,14 +100,31 @@ export type Passage = {
 }
 export type ModelOption = {
   id: string; display_name: string; is_default: boolean; description?: string
+  resolved_model?: string | null
   default_reasoning_effort?: string | null; reasoning_efforts?: { id: string; description: string }[]
 }
 export type ModelHealth = {
-  connection: string; ready: boolean; reason?: string | null; installed?: boolean; cli_version?: string; signed_in?: boolean
+  connection: string; ready: boolean; reason?: string | null; installed?: boolean; cli_version?: string; signed_in?: boolean; key_configured?: boolean
   account_type?: string | null; plan_type?: string | null; models?: ModelOption[]
   isolation?: { instruction_sources: number; live_mcp_servers: string[] }
 }
 export type Connections = { models: Record<string, ModelHealth>; providers: { id: string; implemented: boolean; access_mode: string | null; supplementary?: boolean; note: string }[] }
+export type Keychain = { available: boolean; name: string | null }
+export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'environment' | null; testable: boolean }
+export type Credentials = { keychain: Keychain; keys: KeyEntry[] }
+export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed'; detail: string; checked_at: string }
+export type LocalToolModel = { id: string; size_bytes: number | null; embedding: boolean }
+export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; url: string }
+export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string } | null
+export type LocalTool = {
+  id: 'claude_code' | 'codex' | 'gemini_cli' | 'ollama' | 'lm_studio'; name: string; kind: 'cli' | 'server'
+  installed: boolean; version: string | null; path: string | null; role: 'runs_steps' | 'detected'
+  running?: boolean; endpoint?: string; models?: LocalToolModel[]; install: LocalToolInstall; job: LocalToolJob
+}
+export type LocalTools = { machine: { chip: string | null; memory_gb: number | null; disk_free_gb: number | null }; tools: LocalTool[] }
+export type SemanticSearchProvider = 'gemini' | 'openai' | 'ollama' | 'lm_studio' | 'off'
+export type SemanticSearchOption = { provider: SemanticSearchProvider; models: string[]; available: boolean; reason: string | null }
+export type SemanticSearch = { provider: SemanticSearchProvider; model: string | null; explicit: boolean; options: SemanticSearchOption[] }
 export type InstitutionalAccess = { status: 'institutional' | 'none' | 'unknown' | 'not_checked'; via?: string; reason?: string }
 export type QuickFindResult = {
   researches: { id: string; title: string; question: string; updated_at: string }[]
@@ -195,7 +212,18 @@ export const api = {
   passage: (id: string, passageId: string) => request<Passage>(`/api/researches/${id}/passages/${passageId}`),
   events: (id: string, after = 0) => request<ActivityEvent[]>(`/api/researches/${id}/events?after=${after}`),
   connections: (refresh = false) => request<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`),
+  modelConnection: (connection: string, refresh = false) => request<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}${refresh ? '?refresh=true' : ''}`),
   institutionalAccess: () => request<InstitutionalAccess>('/api/institutional-access'),
+  credentials: () => request<Credentials>('/api/credentials'),
+  saveCredential: (env: string, value: string) => request<{ key: KeyEntry; test: KeyTest | null }>(`/api/credentials/${env}`, json('PUT', { value })),
+  removeCredential: (env: string) => request<{ key: KeyEntry }>(`/api/credentials/${env}`, { method: 'DELETE' }),
+  testCredential: (env: string) => request<KeyTest>(`/api/credentials/${env}/test`, { method: 'POST' }),
+  localTools: (refresh = false) => request<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`),
+  installLocalTool: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/install`, { method: 'POST' }),
+  cancelLocalToolInstall: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/cancel`, { method: 'POST' }),
+  semanticSearch: () => request<SemanticSearch>('/api/semantic-search'),
+  saveSemanticSearch: (provider: SemanticSearchProvider, model: string | null) =>
+    request<SemanticSearch>('/api/semantic-search', json('PUT', { provider, model })),
 }
 
 export const bibliographyUrl = (researchId: string, format: 'bibtex' | 'ris', sources: 'included' | 'cited') =>

@@ -18,15 +18,21 @@ import httpx
 from fastapi import FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from keyring.errors import KeyringError
 from pydantic import BaseModel, Field
 
+from deixis import credentials, local_tools
 from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
+from deixis.documents import embeddings
 from deixis.documents import pdf
 from deixis.domain import skill
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict
 from deixis.models.adapter import CodexAdapter, ModelAdapter
+from deixis.models.claude import ClaudeCodeAdapter
+from deixis.models.deepseek import DeepSeekAdapter
+from deixis.models.gemini import GeminiAdapter
 from deixis.providers import scopus
 from deixis.providers import zotero
 from deixis.providers.registry import CONNECTORS, available_providers
@@ -89,6 +95,15 @@ def check_offered(listed: list[dict[str, Any]] | None, connection: str, model: s
         raise HTTPException(422, f"Model '{model}' is not offered by {connection}")
     if effort is not None and effort not in {e["id"] for e in offered.get("reasoning_efforts", [])}:
         raise HTTPException(422, f"Reasoning effort '{effort}' is not offered for {model}")
+
+
+class KeyValue(BaseModel):
+    value: str = Field(min_length=8, max_length=400, pattern=r"^\S+$")
+
+
+class SemanticChoice(BaseModel):
+    provider: Literal["gemini", "openai", "ollama", "lm_studio", "off"]
+    model: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class StartRun(BaseModel):
@@ -175,6 +190,7 @@ def create_app(
         app.state.package, app.state.owner = package, owner
         app.state.http, app.state.fetch_pdf = http, fetcher or fetch_module.fetch_pdf
         app.state.institutional_access = None
+        app.state.local_tools = local_tools.LocalTools(http)
         app.state.recovered = worker.recover() if owner else None
 
         async def take_over_when_released() -> None:
@@ -395,6 +411,101 @@ def create_app(
             check_offered((await adapter.health()).get("models"), body.model_connection, body.model, body.reasoning_effort)
         store_of(request).set_setting(role, body.model_dump())
         return {role: body.model_dump()}
+
+    def managed_key(env: str) -> credentials.ManagedKey:
+        if env not in credentials.MANAGED_KEYS:
+            raise HTTPException(404, f"{env} is not a key DEIXIS manages")
+        return credentials.MANAGED_KEYS[env]
+
+    @app.get("/api/credentials")
+    async def list_credentials() -> dict[str, Any]:
+        name = credentials.keychain_name()
+        return {"keychain": {"available": name is not None, "name": name},
+                "keys": [credentials.status(env) for env in credentials.MANAGED_KEYS]}
+
+    @app.put("/api/credentials/{env}")
+    async def save_credential(env: str, body: KeyValue, request: Request) -> dict[str, Any]:
+        """Test a model key with one short request, then store it in the keychain; a key the API refuses is not stored."""
+        key = managed_key(env)
+        if credentials.status(env)["source"] == "environment":
+            raise HTTPException(409, f"{env} is set in .env or the shell; change or remove it there")
+        if credentials.keychain_name() is None:
+            raise HTTPException(503, "No system keychain is available; set the key in .env")
+        result = await credentials.test(request.app.state.http, env, body.value) if key.testable else None
+        if result and result["status"] in ("rejected", "failed"):
+            raise HTTPException(422, f"The key was not saved. {result['detail']}")
+        try:
+            credentials.save(env, body.value)
+        except credentials.KeySourceConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except KeyringError as exc:
+            raise HTTPException(503, f"The keychain did not store the key ({type(exc).__name__})") from exc
+        return {"key": credentials.status(env), "test": result}
+
+    @app.delete("/api/credentials/{env}")
+    async def delete_credential(env: str) -> dict[str, Any]:
+        managed_key(env)
+        try:
+            credentials.delete(env)
+        except credentials.KeySourceConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except KeyringError as exc:
+            raise HTTPException(503, f"The keychain did not remove the key ({type(exc).__name__})") from exc
+        return {"key": credentials.status(env)}
+
+    @app.post("/api/credentials/{env}/test")
+    async def test_credential(env: str, request: Request) -> dict[str, str]:
+        key, value = managed_key(env), os.environ.get(env)
+        if not key.testable:
+            raise HTTPException(422, f"{env} is not tested in advance; access is recorded with each request")
+        if not value:
+            raise HTTPException(422, f"{env} is not set")
+        return await credentials.test(request.app.state.http, env, value)
+
+    @app.get("/api/local-tools")
+    async def get_local_tools(request: Request, refresh: bool = False) -> dict[str, Any]:
+        return await request.app.state.local_tools.snapshot(refresh)
+
+    @app.post("/api/local-tools/{tool_id}/install", status_code=202)
+    async def install_local_tool(tool_id: str, request: Request) -> dict[str, Any]:
+        try:
+            return {"job": await request.app.state.local_tools.install(tool_id)}
+        except local_tools.ToolError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @app.post("/api/local-tools/{tool_id}/cancel")
+    async def cancel_local_tool_install(tool_id: str, request: Request) -> dict[str, Any]:
+        try:
+            return {"job": request.app.state.local_tools.cancel(tool_id)}
+        except local_tools.ToolError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    async def semantic_search_view(request: Request, refresh: bool = False) -> dict[str, Any]:
+        saved = store_of(request).setting("semantic_search")
+        provider, model = embeddings.chosen(saved)
+        return {"provider": provider, "model": model, "explicit": saved is not None,
+                "options": embeddings.options(await request.app.state.local_tools.snapshot(refresh))}
+
+    @app.get("/api/semantic-search")
+    async def get_semantic_search(request: Request) -> dict[str, Any]:
+        return await semantic_search_view(request)
+
+    @app.put("/api/semantic-search")
+    async def put_semantic_search(body: SemanticChoice, request: Request) -> dict[str, Any]:
+        """Save the embedding provider for later answers; a provider or model not offered now is refused, never replaced."""
+        tools = await request.app.state.local_tools.snapshot(refresh=body.provider in ("ollama", "lm_studio"))
+        option = next(o for o in embeddings.options(tools) if o["provider"] == body.provider)
+        if not option["available"]:
+            raise HTTPException(422, option["reason"])
+        model = None
+        if body.provider != "off":
+            model = body.model or (option["models"][0] if body.provider in ("gemini", "openai") else None)
+            if model is None:
+                raise HTTPException(422, "Choose an embedding model")
+            if model not in option["models"]:
+                raise HTTPException(422, f"Model '{model}' is not offered by {body.provider}")
+        store_of(request).set_setting("semantic_search", {"provider": body.provider, "model": model})
+        return await semantic_search_view(request)
 
     @app.get("/api/researches/{research_id}")
     async def get_research(research_id: str, request: Request) -> dict[str, Any]:

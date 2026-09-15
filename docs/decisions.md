@@ -2,6 +2,133 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D31 — Add CORE as a search provider and a PDF-location lookup
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: The owner asked (2026-09-15) whether CORE (core.ac.uk) was among the scholarly sources; it was not. They chose to add it both as a search provider and to the PDF resolver, because CORE aggregates open-access copies held by institutional repositories that the other providers may not list.
+
+**Decision**:
+
+- A `core` connector searches CORE API v3 (`/v3/search/works/`, `Authorization: Bearer`) with `CORE_API_KEY`, which can be saved in Settings like the other source keys (D29). It requires a key: without one CORE allows 10 requests per window, and 4 of 12 rapid keyless requests answered 429.
+- Query rules follow live probes: the OpenAlex form and limits apply; an unbalanced query is sent back for repair (CORE returned 7 other records instead of an error); a quoted phrase without AND is sent back (`"molecular communication"` and `"a" OR "b"` answered HTTP 500, `"molecular communication" AND scheduling` matched 7); field prefixes are sent back (`title:"molecular communication"` matched 1,565,728 works, `("molecular communication")` 1,889). The method reference tells the search-plan step the same.
+- Records keep DOI, authors, year, journal and abstract. CORE labels no file version, so no PDF is attached to a search record, and `fullText` is not stored.
+- The PDF resolver queries CORE after Unpaywall, OpenAlex and Crossref with `doi:"<doi>"`, keeps only works whose DOI matches, and records their CORE-hosted PDFs as `doi_verified` but version `uncertain`. Under D4 such a candidate is listed for review and not downloaded automatically. Without a key the lookup is recorded as `auth_required` (`missing_core_key`) and sends no request.
+
+**Evidence**: Backend tests: 321 passed (`tests/test_p4_eval.py` excluded). New mocked tests cover the record mapping, key redaction, dropped full text, CORE query rules, same-DOI filtering, the missing-key path, and that a CORE candidate is not downloaded. Live through the adapter (2026-09-15): the example query returned 10 of 10 records (5 with DOI, 8 with abstract) and no key appeared in the description or payload; the DOI lookup for `10.1371/journal.pone.0082935` returned one CORE-hosted PDF, and a closed IEEE DOI returned none.
+
+**Impact**: Migration `0018_core_pdf_provider` adds `core` to PDF discovery provenance. Changes the method package hash and the `provider_id` contract enum. CORE PDF candidates do not raise automatic PDF recall because their version is unknown; they give the user an open copy to check and upload. Recall effect on search was not measured.
+
+## D30 — Order "Most relevant" sources by similarity to the question after the screening verdict
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: The owner asked (2026-09-15) whether text embeddings affect the source list's "Most relevant" order. They did not: it ordered by the model's screening verdict, then search position, and search position is not comparable across providers and queries. Before a change, an offline measurement ran on the stored library (`scripts/p4_eval/screening_similarity.py`; expectations were written into the script before the first run). Over 19 researches (35,567 include–exclude pairs), the similarity of title and abstract to the question (`gemini-embedding-2`) separated the model's include proposals from its exclude proposals with AUC 0.885 (95% interval over researches 0.818–0.934); search position gave 0.531 (0.497–0.562). Among proposed includes, sources cited in the latest answer were separated with 0.596 by similarity and 0.697 by search position (difference interval −0.22 to 0.06). That citation measure favours search position by construction: the answer orders sources partly by how many providers returned them (AUC 0.677 on its own), and sources returned by four providers have a median search position of 2, against about 10 for the rest. The owner approved the change after these results.
+
+**Decision**:
+
+- After screening, each screened candidate's title and stored abstract (the title alone when there is none) is embedded with the semantic search provider chosen in Settings (D29). Its similarity to the question is stored per research, question revision and model (`source_similarities`) and is not requested again for the same three. With semantic search off, nothing is sent and no score is shown.
+- "Most relevant" orders by screening verdict, then similarity (highest first; sources without a score after scored ones), then search position. Without scores the order is as before.
+- A neutral pill on each scored source shows the cosine similarity to two decimal places. Its tooltip states whether the score used the title and abstract or the title alone, and that the score is an ordering signal rather than a relevance judgment. Scores are not shown as percentages or qualitative bands because their scale depends on the embedding model.
+- Only this order reads the score. Screening decisions and answer retrieval do not. It shows closeness to the question, not that a source is relevant or supports a claim.
+- A failed embedding request is recorded as a failed `similarity:<model>` step and does not stop the run.
+
+**Evidence**: Backend tests: 308 passed (`tests/test_p4_eval.py` excluded). A new test with a mocked Gemini endpoint checks that title and abstract are embedded together, that scores reach the research view, that a second call sends nothing, and that turning semantic search off hides the scores. The web build passed. On a copy of the library, one research was scored through the flow method (161 sources, one succeeded step), and in the app running on that copy the "Most relevant" order of all 161 records and of the 36 undecided ones matched the expected order. Not measured: whether this order helps a person screen. The library holds 2 user selection decisions out of 2,639, so there is no human judgment to compare against; 14 of the 19 researches repeat one question; and 270 of the 356 undecided sources have no abstract, so their score comes from the title alone. Existing researches get scores only at their next search run.
+
+**Impact**: The title and abstract of every screened source, not only included ones, go to the chosen semantic search provider (Google or OpenAI when a cloud provider is chosen). Adds migration `0017_source_similarities.sql`.
+
+## D29 — Manage keys, local tools and the semantic search provider in Settings
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: The owner asked (2026-09-15) for a place in Settings that shows cloud APIs and models that can run on this computer, in the style of the Connections page, and approved a mockup. While it was being built they added that installed tools such as Claude Code and Codex should be detected, with an install button when they are missing. Keys could only be set in `.env`, and semantic retrieval could only use Gemini (D27).
+
+**Decision**:
+
+- The Connections page becomes the Connections tab of Settings (`#/settings/connections`; `#/connections` opens it). The sidebar no longer lists Connections.
+- API keys for Gemini, OpenAI and the scholarly sources can be saved from Settings. They are stored in the system keychain under the service `DEIXIS`, loaded into the environment at startup, and never returned by the API. A key set in the shell or `.env` wins and cannot be changed or removed from the app. A Gemini or OpenAI key is tried with one short request before it is saved (Gemini lists models; OpenAI embeds one word), and a refused key is not saved. A key without credit is saved with that result. A provider's refusal message is not passed on, because it can quote part of the key. Source keys are not tried in advance, as before.
+- The tab shows Claude Code, the Codex CLI and the Gemini CLI (path and version), and Ollama and LM Studio (whether they are installed, whether their loopback server answers, and their models, marking embedding models). Only the Codex CLI runs research steps. Ollama and LM Studio do not run steps in this version, and no citation test for local models exists yet. A missing tool can be installed after confirmation. The install runs the one command fixed for that tool (`npm install -g` for the three CLIs, `brew install ollama`, `brew install --cask lm-studio`), never a command from the request, and shows its output.
+- Semantic retrieval uses the provider saved in Settings: Gemini `gemini-embedding-2`, OpenAI `text-embedding-3-small`, an embedding model on Ollama or LM Studio, or off. A provider that cannot be used now is refused, not replaced. Without a saved choice, D27's behaviour stays: Gemini when its key is set. Vectors are stored per provider and model, so changing the provider embeds passages again and keeps earlier vectors. If the chosen provider cannot run at answer time, the `semantic_retrieval` step is recorded as failed and the answer uses lexical retrieval.
+- Claude and DeepSeek API keys are not offered, because no step adapter uses them.
+
+**Evidence**: Backend tests: 305 passed (`tests/test_p4_eval.py` excluded; it does not collect). The new tests use an in-memory keychain and mocked APIs and servers, and cover: key test-then-save, removal, a refused key, a key without credit, `.env` precedence, loading at startup, unmanaged names such as `PATH` being refused, detection with a running Ollama, an install through a stub script that succeeds and one that fails, and refused semantic choices. They also cover a local embedding model ranking passages, and semantic search turned off or unable to run. The web build passed. On this computer, the Python keyring round-tripped a dummy item through the macOS Keychain. The live tab showed Claude Code 2.1.270, codex-cli 0.154.0 and Gemini CLI 0.59.0 with their paths, reported Ollama and LM Studio as not installed, and showed every key as coming from `.env`. Not verified: saving a real key through the app, a real `npm` or `brew` install, embedding through OpenAI (the key has no credit), Ollama or LM Studio (neither is installed), and LM Studio's model-type endpoint (`/api/v0/models`, with an id-based fallback).
+
+**Impact**: Adds the `keyring` dependency (MIT). The local API can now start a package-manager install on this computer; it is limited to the fixed commands above and to loopback requests with the CSRF token. Passage text goes to OpenAI when OpenAI is chosen for semantic search.
+
+## D28 — Choose each step role's model from any model connection
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: The owner asked why Gemini models did not appear in the composer's model pickers while the Gemini connection was ready (D26). The web client read only the Codex model list and always sent `model_connection: 'codex'`, and a research stored one connection for all step roles, so the answer, literature and reviewer models had to come from one connection. The owner chose (2026-09-15) a connection per role over one connection switch per research. The step input contract also did not list `gemini`, so every Gemini model step in the application would have stopped with `step_input_invalid`.
+
+**Decision**:
+
+- A question revision stores `literature_connection` and `review_connection` next to `model_connection`, which stays the answer model's connection (migration 0016). NULL, as in every earlier research, means the role uses `model_connection`. A new research stores the literature connection whenever it has a literature model, and the review connection when its reviewer is `custom`. A revision keeps both.
+- `POST /api/researches` checks each role's model and effort against that role's own connection. A role connection without its model, and a model its connection does not list, are refused; nothing is substituted.
+- The composer and Settings list the models of every connection in one picker, grouped by connection. The research page and the run transcript show each role's connection.
+- Cancel interrupts the current call of every connection, because the running step may be on any of them.
+- The step input contract lists `gemini`.
+
+**Evidence**: A mocked API test runs the literature and reviewer models on a second connection and the answer on the first. It checks which connection received each step, that a question revision keeps the connections, and that a model on the wrong connection, an unknown connection and a connection without a model are refused. Backend tests: 296 passed (`tests/test_p4_eval.py` does not collect, `No module named 'scripts'`). The web type check passed. Acceptance tests: 15 of 16 passed; the connections page test expects 12 planned model connections and finds 11, because Gemini left the planned list in D26. On a separate instance with temporary data, the composer listed 5 Codex and 14 Gemini models under their connection names. `POST /api/researches` stored `gpt-6-astra` on Codex for the answer and `gemini-3-flash-preview` on Gemini for literature and review, and refused the Gemini model on Codex. No model step ran with mixed connections.
+
+**Impact**: Settings defaults already stored a connection per role and now keep the chosen one instead of always `codex`. The `model_mismatch` message no longer names Codex. Researches may now send literature or review passages to Google when a Gemini model is chosen for that role.
+
+## D27 — Rank answer passages semantically as well as lexically
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: Answer passages were chosen by SQLite FTS (BM25) on words from the question and the search plan, and included sources were ordered by BM25 on title and abstract. A question worded differently from the sources, or asked in another language, matches fewer words.
+
+**Decision**: When `GEMINI_API_KEY` is set, the answer step embeds the included sources' passages (`gemini-embedding-2`, 768 dimensions, `RETRIEVAL_DOCUMENT`) and the question (`RETRIEVAL_QUERY`). Passage vectors are stored once per passage and model (migration 0015). Reciprocal rank fusion (k = 60) combines the lexical and semantic passage rankings, and each source's BM25 rank with its best semantic passage rank. User-chosen sources and provider counts still come first (D17). The work is recorded as a `semantic_retrieval` run step. If embedding fails, the step is recorded as failed and the answer uses lexical retrieval alone. Passage text and the question are sent to Google whenever the key is set.
+
+**Evidence**: In a probe, a Turkish and an English query about underwater routing energy scored 0.825 and 0.884 against a matching English sentence, and 0.336 and 0.386 against an unrelated one. On a copy of stored research `res_4FxDPeGkCoCq4DgQTUi8` (84 included sources, 157 passages, 48-passage limit), the passages selected for the Turkish question and its English translation overlapped 0.548 (Jaccard) with lexical retrieval and 0.684 with hybrid retrieval. Hybrid changed the selection by about a quarter (overlap 0.745 and 0.811 with lexical). The first embedding pass took 4.8 s; later passes took 0.4 s. A first version fused passage rankings only and changed nothing on this research, because every source contributes its abstract before ranked passages are used, which is why source order is fused too. Nobody judged whether the selected passages are more relevant, and D17's known-paper count was not rerun. `scripts/p4_eval/semantic_retrieval.py`; results in `.local/semantic-retrieval-2026-09-15/`.
+
+**Impact**: Retrieval without a key is unchanged. OpenAI `text-embedding-3-small` was suggested as an alternative; it is not implemented and was not compared.
+
+## D26 — Connect Gemini through the Gemini API, not the Gemini CLI
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: The owner asked to connect Gemini Flash and to add a Gemini CLI check. On this computer Gemini CLI 0.59.0 is installed, but its Google sign-in answered `IneligibleTierError` ("no longer supported for Gemini Code Assist for individuals"). With an API key and a separate home it answered, but it adds its own agent instructions and tools (about 8,500 input tokens for a one-word prompt), and it has no response schema option.
+
+**Decision**: The `gemini` model connection calls `generativelanguage.googleapis.com` directly with `GEMINI_API_KEY` from `.env`. Each step is one request with a system instruction, the step message and `responseJsonSchema`; no tools or instruction files are sent. Gemini 3 models offer thinking levels low, medium and high. `minItems` and `maxItems` are removed from the response schema because the API rejects them, and DEIXIS validation still enforces them. The health check reports the key, the API model list, and whether the Gemini CLI is installed with its version. The CLI does not run steps. Aliases such as `gemini-flash-latest` are not offered, because the answering model would differ from the requested id.
+
+**Evidence**: Mocked tests cover health without a key, model filtering, a rejected key, the request body, and truncated, rate-limited and timed-out answers. The anchor measurement (D24) with `gemini-3.8-flash` at low thinking completed all six runs. Of 102 anchors, 99 were exact, 2 fuzzy at ratio 0.98 and 1 not located (ratio 0.42), with no missing anchors. None of the six answers had a validation issue; the whitespace-only anchor rule would have rejected three. Results are in `.local/anchor-measure-2026-09-15-gemini-3.8-flash-low/`.
+
+**Impact**: The key was pasted into a conversation before it was stored in the untracked `.env`; rotate it. Pause and cancel take effect after the current Gemini request returns.
+
+## D25 — Extract PDF text with PyMuPDF and license DEIXIS under AGPL-3.0-or-later
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: pypdf split sub- and superscripts, kept ligature characters and was slow on long papers. PyMuPDF (MuPDF) is faster and also exposes word positions on the page, but it is AGPL-3.0 licensed (or commercial). DEIXIS had no license.
+
+**Decision**: New PDF text is extracted with PyMuPDF (`pymupdf-1.28.2-chunks-v1`), with ligatures expanded and text outside the page box dropped. Bytes that MuPDF does not recognise as PDF still fail extraction. pypdf is removed. Passages already extracted keep their pypdf `extraction_version` and are not re-extracted. DEIXIS is licensed AGPL-3.0-or-later (`LICENSE`, `pyproject.toml`), as chosen by the project owner.
+
+**Evidence**: On three stored papers (8, 10 and 15 pages), extraction took 0.05–0.11 s instead of 0.27–0.69 s, and ligature characters fell from 75 and 90 to 0. Single-letter words, a sign of split sub- and superscripts, fell from 21.7% to 17.6% on the 15-page paper and were unchanged (±0.3 points) on the others. MuPDF also produced U+FFFD replacement characters where pypdf had none: 37 and 335 on two papers, mostly large delimiters from TeX CMEX fonts in displayed equations, and in one paper the √ sign was not extracted. The `TEXT_CID_FOR_UNKNOWN_UNICODE` alternative replaced them with control characters, so it was not used. Hyphenated line ends were unchanged. The effect on retrieval, anchor location and answer quality was not measured.
+
+**Impact**: Displayed equations remain garbled with either extractor. The formula rules in `PassageMathText.tsx` were written against pypdf output and may not match PyMuPDF text. Word positions are available for exact highlighting but are not used yet.
+
+## D24 — Citation anchors locate text; they do not reject answers
+
+**Status**: accepted
+**Date**: 2026-09-15
+
+**Context**: Grounded answer schema v2 asks the model for one exact quote per claim-passage link, and the first implementation rejected the answer (repair, then unverified draft) when a quote was not a whitespace-normalized substring of the passage. pypdf text splits sub- and superscripts, hyphenates at line breaks and uses ligatures, so faithful copies can fail that check. The check also proves nothing about support: a verbatim but irrelevant sentence passes it. Semantic support is the reviewer's job.
+
+**Decision**: A quote aimed at an uncited passage, an unknown claim, or a repeated claim-passage pair remains a validation issue. A quote that cannot be located, or a missing quote, is a warning (`anchor_not_in_passage`, `missing_citation_anchor`), listed with the answer, and the citation opens without a highlight. `locate_anchor` compares case-folded NFKC word characters with spaces and punctuation removed, then accepts one contiguous near match with ratio ≥ 0.9. The highlight uses the passage's own words, not the model's quote, stored with the evidence link together with the match kind (`exact`, `normalized`, `fuzzy`). The model instruction still asks for an exact copy.
+
+**Evidence**: Unit tests cover exact, extraction-damaged and near quotes, and rejection of translated and spliced quotes. On 20 stored PDF pages, a lookup takes about 1 ms. Live measurement with `scripts/model_behavior/anchor_measure.py` used three stored StepInputs (44 PDF pages, 6 PDF pages, 48 abstracts), two runs each, one attempt without repair, all six completed. With gpt-5.6-luna, every call returned Codex `usageLimitExceeded`, so Luna remains unmeasured. With Claude Sonnet 5 at low effort through `claude -p` (no tools, settings, MCP or skills), the model returned 144 anchors. The whitespace-only substring check found 137 (95%). The locator found 143 (99%): 137 exact, 1 normalized (a displayed equation), and 5 fuzzy at ratio 0.99, where the model wrote "we derive" and the abstract says "and derive". The one quote not located (ratio 0.78) started before the cited passage's first word, so it crossed a passage boundary. Separately, 23 claim-passage links had no anchor, 18 of them in one abstract-only run. The old rule would have rejected 3 of the 6 answers for anchor reasons; the new rule rejected none, but one answer still failed on `duplicate_citation_anchor`. Four answers also failed `locator_in_claim_text`, which is unrelated to anchors. No observed ratio fell between 0.78 and 0.99, so the 0.9 threshold is not yet calibrated. Results and raw outputs are in `.local/anchor-measure-2026-09-15-sonnet-low/results.json`.
+
+**Impact**: Migration 0014 adds `anchor_text` and `anchor_match` to `evidence_links`. Answers are no longer downgraded for quote copying errors. The Sonnet result does not transfer to Luna; run the same measurement with gpt-5.6-luna when Codex usage is available.
+
 ## D23 — Query Unpaywall before other PDF-location providers
 
 **Status**: accepted

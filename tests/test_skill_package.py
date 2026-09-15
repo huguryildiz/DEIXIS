@@ -39,6 +39,10 @@ def test_runtime_text_loads_only_declared_files():
     assert skill.PHRASEBANK not in package.runtime_text("search_plan")
     review = package.runtime_text("answer_review")
     assert '<method-file path="references/answer-review.md">' in review and skill.PHRASEBANK not in review
+    for task in ("cell_extraction", "table_columns"):
+        table = package.runtime_text(task)
+        assert '<method-file path="references/evidence-table.md">' in table and skill.PHRASEBANK not in table
+    assert '<method-file path="references/evidence-table.md">' not in text
     # The raw file's `tr:` lines never reach the model; a Turkish answer gets the rendered Turkish frames.
     assert "\ntr: " not in text
     assert "literal Turkish renderings" in package.runtime_text("grounded_answer", "tr")

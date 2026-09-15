@@ -34,10 +34,11 @@ from deixis.models.adapter import ModelAdapter
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, normalize_doi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, new_id, now
-from deixis.workflow.store import Store
+from deixis.workflow.store import NotFound, Store
+from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
 
 CAPABILITIES = {
-    "supported_tasks": ["search_plan", "screening", "grounded_answer", "answer_review"],
+    "supported_tasks": ["search_plan", "screening", "grounded_answer", "answer_review", "cell_extraction", "table_columns"],
     "unsupported_tasks": ["synthesis", "candidate_development", "claim_check", "experiment"],
 }
 MAX_DOWNLOADS_PER_RUN = 8
@@ -45,6 +46,12 @@ MAX_ABSTRACT_CHARS = 2500
 MAX_PASSAGES_PER_SOURCE = 6  # passages one included source may contribute to an answer step
 MAX_SMALL_PDF_CHARS = 60_000  # bounded full extracted text for a single attached PDF
 MAX_SMALL_PDF_PAGES = 12
+# Passages of its one source a cell extraction call reads. A source within MAX_CELL_PASSAGES and MAX_SMALL_PDF_CHARS is
+# given whole; the other limits are test defaults, to be measured in P5 slice 5.
+MAX_CELL_PASSAGES = 48
+MAX_FILL_PASSAGES = 24
+MAX_RECHECK_PASSAGES = 16
+COLUMN_FIELDS = ("name", "instruction", "answer_format", "options", "allow_multiple", "unit_hint")
 FORMULATION_SCORE_THRESHOLD = 3
 FORMULATION_TERMS = re.compile(
     r"\b(?:minimi[sz]e|maximi[sz]e|subject\s+to|s\.\s*t|objective\s+function|constraints?|decision\s+variables?"
@@ -73,6 +80,11 @@ def fuse_rankings(*rankings: list[dict[str, Any]], k: int = 60) -> list[dict[str
             scores[row["id"]] = scores.get(row["id"], 0.0) + 1 / (k + position + 1)
             rows.setdefault(row["id"], row)
     return sorted(rows.values(), key=lambda row: -scores[row["id"]])
+
+
+def extraction_column(column: dict[str, Any]) -> dict[str, Any]:
+    """A table column as a StepInput shows it: the revision the model answers and its definition, never a cell value."""
+    return {"column_id": column["id"], "revision": column["current_revision"], **{k: column[k] for k in COLUMN_FIELDS}}
 
 
 def answer_source_order(included: list[str], facts: dict[str, tuple[bool, int]], texts: dict[str, str], terms: list[str],
@@ -135,8 +147,14 @@ class ResearchFlow:
         try:
             if run["kind"] == "discovery":
                 await self._discovery(run, scope)
-            else:
+            elif run["kind"] == "answer":
                 await self._answer(run, scope)
+            elif run["kind"] == "table_fill":
+                await self._table_fill(run, scope)
+            elif run["kind"] == "cell_recheck":
+                await self._cell_recheck(run, scope)
+            else:
+                await self._table_columns(run, scope)
         except RunStopped:
             return
         if self.store.run(run_id)["status"] in ("running", "pause_requested"):
@@ -441,24 +459,25 @@ class ResearchFlow:
                                                           "passage_count": self.store.asset_passage_count(asset["id"])},
                                error_code=None if status == "succeeded" else f"extraction_{asset['extraction_status']}")
 
-    async def _semantic_ranking(self, run: dict[str, Any], scope: dict[str, Any], included: list[str]) -> list[dict[str, Any]] | None:
-        """Rank the included sources' passages by embedding similarity to the question (D27, D29).
+    async def _semantic_ranking(self, run: dict[str, Any], scope: dict[str, Any], included: list[str], query_text: str | None = None,
+                                key: str = "semantic_retrieval") -> list[dict[str, Any]] | None:
+        """Rank the included sources' passages by embedding similarity to the question, or to query_text (D27, D29).
 
         Uses the provider chosen in Settings; without a choice, Gemini when GEMINI_API_KEY is set. A failed or
-        unavailable embedding request is recorded as a failed step, and the answer then uses lexical retrieval alone.
+        unavailable embedding request is recorded as a failed step, and the caller then uses lexical retrieval alone.
         """
         provider, model = embeddings.chosen(self.store.setting("semantic_search"))
         if provider == "off" or not model:
             return None
         embedder = embeddings.Embedder(provider, model)
-        step = self.store.step(run["id"], "semantic_retrieval", f"embedding:{embedder.stored_model}")
+        step = self.store.step(run["id"], key, f"embedding:{embedder.stored_model}")
         self.store.start_step(step["id"])
         passages = [p for svid in included for p in self.store.passages_for(svid)]
         stored = self.store.passage_embeddings([p["id"] for p in passages], embedder.stored_model)
         missing = [p for p in passages if p["id"] not in stored]
         try:
             fresh = await embedder.embed(self.deps.http, [p["text"] for p in missing], "RETRIEVAL_DOCUMENT") if missing else []
-            (query,) = await embedder.embed(self.deps.http, [scope["question"]], "RETRIEVAL_QUERY")
+            (query,) = await embedder.embed(self.deps.http, [query_text or scope["question"]], "RETRIEVAL_QUERY")
         except embeddings.EmbeddingError as exc:
             self.store.finish_step(step["id"], "failed", error_code="embedding_failed", error={"error": str(exc)})
             return None
@@ -541,10 +560,148 @@ class ResearchFlow:
                 taken[p["source_version_id"]] = taken.get(p["source_version_id"], 0) + 1
         return list(selected.values())
 
+    # ---- evidence tables ----------------------------------------------------------------
+    async def _table_fill(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+        """Fill the cells planned when the run was requested, one source at a time (D37).
+
+        A source's columns are asked together, at most MAX_COLUMNS_PER_CALL per call, and each call reads that source's
+        passages only. A source without stored text gets 'inaccessible' from the system without a model call. A result
+        for a cell that got a value in the meantime waits as a proposal (TableStore.save_model_output).
+        """
+        run_id, target = run["id"], run["target"]
+        tables = TableStore(self.store)
+        for planned in target["sources"]:
+            self._checkpoint(run_id)
+            svid = planned["source_version_id"]
+            columns = [c for c in self._live_columns(run, tables) if c["id"] in planned["column_ids"]]
+            if not columns or svid not in tables.active_rows(target["table_id"]):
+                continue  # the column or row was removed after the fill was requested
+            if not self.store.passages_for(svid):
+                step = self.store.step(run_id, f"no_text:{svid}", "table_no_text")
+                if step["status"] != "succeeded":
+                    self.store.start_step(step["id"])
+                    saved = [tables.save_no_text(run["research_id"], target["table_id"], c["id"], svid, column_revision=c["current_revision"],
+                                                 run_id=run_id, step_id=step["id"], scope_revision=run["scope_revision"]) for c in columns]
+                    self.store.finish_step(step["id"], "succeeded", output={"source_version_id": svid, "cells": sum(s is not None for s in saved)})
+                continue
+            # Calls are cut from the planned column list, so a resumed run finds each call's stored step under the same key.
+            for index in range(0, len(planned["column_ids"]), MAX_COLUMNS_PER_CALL):
+                chunk = [c for c in columns if c["id"] in planned["column_ids"][index:index + MAX_COLUMNS_PER_CALL]]
+                if not chunk:
+                    continue
+                key = f"cell_extraction:{svid}:{index // MAX_COLUMNS_PER_CALL}"
+                output = await self._extraction(run, scope, key, svid, chunk, MAX_FILL_PASSAGES)
+                self._checkpoint(run_id)
+                if output is not None:
+                    self._save_cells(run, output, planned["cell_versions"], recheck=False)
+
+    async def _cell_recheck(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+        """Ask again for one cell. The model never sees the cell's current value, and the result waits as a proposal (D37)."""
+        run_id, target = run["id"], run["target"]
+        tables = TableStore(self.store)
+        svid = target["source_version_id"]
+        columns = [c for c in self._live_columns(run, tables) if c["id"] == target["column_id"]]
+        if not columns or svid not in tables.active_rows(target["table_id"]):
+            self._fail(run_id, "cell_unavailable")
+        self._checkpoint(run_id)
+        output = await self._extraction(run, scope, "cell_recheck", svid, columns, MAX_RECHECK_PASSAGES)
+        if output is None:
+            self._fail(run_id, "no_text")
+        self._checkpoint(run_id)
+        if not self._save_cells(run, output, {target["column_id"]: target["cell_version"]}, recheck=True):
+            self._fail(run_id, "invalid_model_output", {"step": "cell_recheck", "issues": output.get("issues")})
+
+    async def _table_columns(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+        """Suggest columns from the question and the rows' titles and abstracts; nothing is added to the table."""
+        run_id, table_id = run["id"], run["target"]["table_id"]
+        tables = TableStore(self.store)
+        columns = self._live_columns(run, tables)
+        rows = tables.active_rows(table_id)[:MAX_FILL_SOURCES]
+        abstracts = [p for svid in rows for p in self.store.passages_for(svid) if p["kind"] == "abstract"]
+        target = {"table_id": table_id, "source_id": None, "columns": [extraction_column(c) for c in columns], "passage_scope": None}
+        self._checkpoint(run_id)
+        output = await self._model_step(run, scope, "table_columns", "table_columns", source_ids=rows, passage_rows=abstracts,
+                                        extraction_target=target)
+        self._checkpoint(run_id)
+        if output.get("invalid"):
+            self._fail(run_id, "invalid_model_output", {"step": "table_columns", "issues": output["issues"]})
+
+    def _live_columns(self, run: dict[str, Any], tables: TableStore) -> list[dict[str, Any]]:
+        try:
+            return tables.target_columns(run["research_id"], run["target"]["table_id"])
+        except NotFound:
+            self._fail(run["id"], "table_unavailable")
+            raise
+
+    async def _extraction(self, run: dict[str, Any], scope: dict[str, Any], key: str, svid: str, columns: list[dict[str, Any]],
+                          limit: int) -> dict[str, Any] | None:
+        """One cell extraction step for one source; None when the source has no stored text to give."""
+        step = self.store.step(run["id"], key, "model:cell_extraction")
+        if step["status"] == "succeeded":
+            return step["output"]
+        if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
+            # Its result was kept as unverified proposals; a resumed run does not ask again.
+            return {"invalid": True, "step_input_id": step["output"]["step_input_id"], "issues": json.loads(step["error_json"] or "null")}
+        available = self.store.passages_for(svid)
+        if not available:
+            return None
+        given = await self._cell_passages(run, scope, key, svid, columns, available, limit)
+        pages = {p["id"] for p in available if p["kind"] == "pdf_page"}
+        target = {"table_id": run["target"]["table_id"], "source_id": svid, "columns": [extraction_column(c) for c in columns],
+                  "passage_scope": {"given": len(given), "available": len(available),
+                                    "all_pages_given": bool(pages) and pages <= {p["id"] for p in given}}}
+        return await self._model_step(run, scope, key, "cell_extraction", source_ids=[svid], passage_rows=given, extraction_target=target)
+
+    async def _cell_passages(self, run: dict[str, Any], scope: dict[str, Any], key: str, svid: str, columns: list[dict[str, Any]],
+                             available: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+        """Passages of one source for a cell extraction call (P5 slice 1 design, §5).
+
+        A source within MAX_CELL_PASSAGES passages and MAX_SMALL_PDF_CHARS characters is given whole. Otherwise its
+        abstract comes first, then passages matching the column names and instructions (fused with the semantic ranking
+        when semantic search is on), then the remaining passages in page order, up to the limit.
+        """
+        if len(available) <= MAX_CELL_PASSAGES and sum(len(p["text"]) for p in available) <= MAX_SMALL_PDF_CHARS:
+            return available
+        text = " ".join(f"{c['name']} {c['instruction']}" for c in columns)
+        terms = list(dict.fromkeys(t for t in re.findall(r"\w+", text.lower()) if len(t) > 2 and t not in STOPWORDS))[:40]
+        ranked = self.store.search_passages([svid], " OR ".join(f'"{t}"' for t in terms), limit * 3)
+        semantic = await self._semantic_ranking(run, scope, [svid], query_text=text, key=f"semantic:{key}")
+        if semantic is not None:
+            ranked = fuse_rankings(ranked, semantic)
+        ordered = [p for p in available if p["kind"] == "abstract"] + ranked + available
+        return list({p["id"]: p for p in ordered}.values())[:limit]
+
+    def _save_cells(self, run: dict[str, Any], output: dict[str, Any], cell_versions: dict[str, int], recheck: bool) -> int:
+        """Store one extraction step's answers as cell revisions. From an invalid output, what can be kept is kept as unverified."""
+        payload = self.store.step_input_payload(output["step_input_id"])
+        target = payload["extraction_target"]
+        session = self.store.model_session(output["step_input_id"])
+        if output.get("invalid"):
+            raw = contracts.resolve_citation_handles(payload, session["raw_output"] or "")
+            cells, status = contracts.storable_cells(payload, raw), "unverified_draft"
+        else:
+            cells, status = output["result"]["cells"], "structurally_valid"
+        columns = {c["column_id"]: c for c in target["columns"]}
+        # Reading depth follows the passages the step was given, never the model's words; no cell gets full_text (D37).
+        depth = "abstract" if all(p["locator"]["kind"] == "abstract" for p in payload["passages"]) else "selected_sections"
+        tables = TableStore(self.store)
+        for cell in cells:
+            column = columns[cell["column_id"]]
+            tables.save_model_output(
+                run["research_id"], target["table_id"], column["column_id"], target["source_id"], column_revision=column["revision"],
+                state=cell["state"], value=check_value(column, cell["state"], cell["value"]), note=(cell["note"] or "").strip() or None,
+                reading_depth=depth, output_status=status, links=contracts.cell_links(payload, cell), run_id=run["id"],
+                step_id=payload["step_id"], step_input_id=payload["step_input_id"], model_connection=session["connection"],
+                resolved_model=session["resolved_model"], scope_revision=payload["scope_revision"],
+                cell_version_at_request=cell_versions.get(column["column_id"]), recheck=recheck,
+            )
+        return len(cells)
+
     # ---- model steps -------------------------------------------------------------------
     def _step_input(self, run: dict[str, Any], scope: dict[str, Any], step_id: str, task_type: str,
                     candidate_rows: list[dict[str, Any]], source_ids: list[str], passage_rows: list[dict[str, Any]],
-                    claims: list[dict[str, Any]], model: tuple[str, str | None, str | None]) -> dict[str, Any]:
+                    claims: list[dict[str, Any]], model: tuple[str, str | None, str | None],
+                    extraction_target: dict[str, Any] | None = None) -> dict[str, Any]:
         candidates = []
         for c in candidate_rows:
             source = self.store.source(c["source_version_id"])
@@ -570,7 +727,8 @@ class ResearchFlow:
         } for p in passage_rows]
         language = scope["language_hint"] if scope["language_hint"] and re.fullmatch(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})*", scope["language_hint"]) else None
         review = {"claims_under_review": claims} if task_type == "answer_review" else {}
-        return review | {
+        target = {"extraction_target": extraction_target} if extraction_target is not None else {}
+        return review | target | {
             "step_input_id": new_id("sti"), "research_id": run["research_id"], "run_id": run["id"], "step_id": step_id,
             "task_type": task_type, "scope_revision": run["scope_revision"],
             "skill_package_hash": self.deps.package.package_hash, "skill_files": list(RUNTIME_FILES[task_type]),
@@ -592,7 +750,7 @@ class ResearchFlow:
                           candidate_rows: list[dict[str, Any]] | None = None, source_ids: list[str] | None = None,
                           passage_rows: list[dict[str, Any]] | None = None, selection_revision: int | None = None,
                           claims: list[dict[str, Any]] | None = None, model: tuple[str, str | None, str | None] | None = None,
-                          optional: bool = False) -> dict[str, Any]:
+                          optional: bool = False, extraction_target: dict[str, Any] | None = None) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run."""
         run_id, rid = run["id"], run["research_id"]
@@ -621,15 +779,15 @@ class ResearchFlow:
                 self.store.finish_step(step["id"], "failed", error_code="budget_exhausted")
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
-                                       claims or [], model)
+                                       claims or [], model, extraction_target)
             if issues := contracts.check_step_input(payload):
                 self.store.finish_step(step["id"], "failed", error_code="step_input_invalid", error=[vars(i) for i in issues])
                 halt("step_input_invalid", fail=True)
             schema = contracts.step_output_schema(task_type)
             base = prompt.BASE_INSTRUCTIONS
             developer = prompt.developer_instructions(self.deps.package, task_type, phrasebank.frames_language(payload))
-            # Answer and review steps show short citation handles; the stored StepInput keeps the record IDs they map back to.
-            shown = contracts.with_citation_handles(payload) if task_type in ("grounded_answer", "answer_review") else payload
+            # Answer, review and cell steps show short handles; the stored StepInput keeps the record IDs they map back to.
+            shown = contracts.with_citation_handles(payload) if task_type in ("grounded_answer", "answer_review", "cell_extraction") else payload
             message = prompt.step_message(shown) if repair_issues is None else prompt.repair_message(shown, repair_issues)
             self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema, selection_revision)
             session = self.store.start_model_session(rid, run_id, step["id"], payload["step_input_id"], connection, requested_model)
@@ -654,7 +812,7 @@ class ResearchFlow:
                 self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_mismatch", error=mismatch)
                 halt("model_mismatch", mismatch)
             output_text = result.raw_text or ""
-            if task_type == "grounded_answer":
+            if task_type in ("grounded_answer", "cell_extraction"):
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             report = contracts.validate_model_output(payload, output_text)
             warnings = [vars(w) for w in report.warnings]

@@ -38,6 +38,11 @@
       "deixis_file": "references/answer-review.md",
       "derived_from": [],
       "change": "Written for DEIXIS on 2026-09-14 (D14), not adapted from upstream text. Applies the SKILL.md evidence rules (reading depth, source_stated versus analyst_inference) to a per-claim verdict on the passages each claim cites. Loaded into answer_review steps only."
+    },
+    {
+      "deixis_file": "references/evidence-table.md",
+      "derived_from": [],
+      "change": "Written for DEIXIS on 2026-09-16 (D37, D38), not adapted from upstream text. Applies the SKILL.md evidence rules to evidence table cells: column instructions followed as by a human annotator, the four model cell states, no unit conversion, exact quotes per cited passage, no locators in notes; and to column suggestions. Loaded into cell_extraction and table_columns steps only."
     }
   ],
   "phrasebank": {

@@ -20,6 +20,9 @@ CELL_STATES = ("value", "unknown", "not_reported", "not_verified", "not_applicab
 VALUE_STATES = ("value", "not_verified")  # the states that carry a value
 MAX_TEXT_VALUE = 500
 MAX_OPTIONS = 20
+MAX_FILL_SOURCES = 25  # sources one fill run reads; the rest stay empty for another fill (D37)
+MAX_COLUMNS_PER_CALL = 8  # columns one cell extraction call answers for its source
+CALLS_PER_REQUEST = 2  # a model call and its one schema repair
 
 
 class InvalidTableInput(Exception):
@@ -292,6 +295,12 @@ class TableStore:
             if key and (existing := self.conn.execute("SELECT column_id FROM column_revisions WHERE idempotency_key = ?", (key,)).fetchone()):
                 return existing["column_id"]
             check_expected_version(expected_version, self._table(research_id, table_id)["version"])
+            if origin == "model_suggestion" and not self.conn.execute(
+                "SELECT 1 FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE s.id = ? AND s.kind = 'model:table_columns'"
+                " AND s.status = 'succeeded' AND r.research_id = ? AND json_extract(r.target_json, '$.table_id') = ?",
+                (suggestion_step_id, research_id, table_id),
+            ).fetchone():
+                raise InvalidTableInput("Not a column suggestion step of this table")
             position = self.conn.execute("SELECT COALESCE(MAX(position) + 1, 0) FROM table_columns WHERE table_id = ?", (table_id,)).fetchone()[0]
             cid = self._insert_column(table_id, position, column_spec(**spec), origin, suggestion_step_id, key)
             self._touch(table_id, bump=True)
@@ -474,6 +483,111 @@ class TableStore:
             self._set_current(research_id, cell, revision_id, "system_fill")
         return revision_id
 
+    # ---- model work -------------------------------------------------------------------
+    def target_columns(self, research_id: str, table_id: str, column_ids: list[str] | None = None) -> list[dict[str, Any]]:
+        """The table's active columns in table order; only the named ones when column_ids is given."""
+        self._table(research_id, table_id)
+        columns = self._columns(table_id)
+        if column_ids is None:
+            return columns
+        if missing := set(column_ids) - {c["id"] for c in columns}:
+            raise InvalidTableInput(f"Not a column of this table: {', '.join(sorted(missing))}")
+        return [c for c in columns if c["id"] in column_ids]
+
+    def active_rows(self, table_id: str) -> list[str]:
+        return [r[0] for r in self.conn.execute(
+            "SELECT t.source_version_id FROM table_rows t JOIN source_versions v ON v.id = t.source_version_id"
+            " WHERE t.table_id = ? AND t.removed_at IS NULL ORDER BY t.created_at, v.title", (table_id,)
+        )]
+
+    def fill_plan(self, research_id: str, table_id: str, column_ids: list[str] | None = None,
+                  include_stale: bool = False) -> dict[str, Any]:
+        """The cells a fill would read: empty cells and, with include_stale, values made under an earlier column revision.
+
+        Rows are taken in table order up to MAX_FILL_SOURCES sources. A source without stored text needs no model call.
+        """
+        columns = self.target_columns(research_id, table_id, column_ids)
+        sources, beyond = [], 0
+        for svid in self.active_rows(table_id):
+            cells = {r["column_id"]: r for r in self.conn.execute(
+                "SELECT c.column_id, c.version, r.column_revision FROM evidence_cells c LEFT JOIN cell_revisions r"
+                " ON r.id = c.current_revision_id WHERE c.table_id = ? AND c.source_version_id = ?", (table_id, svid)
+            )}
+            targets = [c["id"] for c in columns if c["id"] not in cells or cells[c["id"]]["column_revision"] is None
+                       or (include_stale and cells[c["id"]]["column_revision"] != c["current_revision"])]
+            if not targets:
+                continue
+            if len(sources) == MAX_FILL_SOURCES:
+                beyond += 1
+                continue
+            sources.append({"source_version_id": svid, "column_ids": targets, "has_text": bool(self.store.passages_for(svid)),
+                            "cell_versions": {cid: cells[cid]["version"] if cid in cells else 0 for cid in targets}})
+        calls = sum(math.ceil(len(s["column_ids"]) / MAX_COLUMNS_PER_CALL) for s in sources if s["has_text"])
+        return {"sources": sources, "sources_beyond_limit": beyond, "model_calls": calls, "max_model_calls": CALLS_PER_REQUEST * calls}
+
+    def _replayed_run(self, key: str | None, kind: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT id, kind FROM runs WHERE idempotency_key = ?", (key,)).fetchone() if key else None
+        if row and row["kind"] != kind:
+            raise InvalidTableInput("This idempotency key was used for another request")
+        return self.store.run(row["id"]) if row else None
+
+    def request_fill(self, research_id: str, table_id: str, column_ids: list[str] | None, include_stale: bool,
+                     expected_version: int, idempotency_key: str | None) -> dict[str, Any]:
+        """Queue a fill of the planned cells. The plan is stored with the run, so a resumed run reads the same sources."""
+        key = self._key(research_id, idempotency_key)
+        with transaction(self.conn):
+            if replayed := self._replayed_run(key, "table_fill"):
+                return replayed
+            check_expected_version(expected_version, self._table(research_id, table_id)["version"])
+            plan = self.fill_plan(research_id, table_id, column_ids, include_stale)
+            if not plan["sources"]:
+                raise InvalidTableInput("No cell of this table needs filling")
+            target = {"table_id": table_id, "column_ids": column_ids, "include_stale": include_stale,
+                      "sources": [{k: s[k] for k in ("source_version_id", "column_ids", "cell_versions")} for s in plan["sources"]]}
+            return self.store.create_run(research_id, "table_fill", {"max_model_calls": plan["max_model_calls"], "max_provider_requests": 0},
+                                         key, target)
+
+    def request_recheck(self, research_id: str, table_id: str, column_id: str, svid: str, expected_version: int,
+                        idempotency_key: str | None) -> dict[str, Any]:
+        """Queue a recheck of one cell; its result waits as a proposal whatever the cell holds (D37)."""
+        key = self._key(research_id, idempotency_key)
+        with transaction(self.conn):
+            if replayed := self._replayed_run(key, "cell_recheck"):
+                return replayed
+            self._table(research_id, table_id)
+            self._column(table_id, column_id)
+            self._active_row(table_id, svid)
+            cell = self.conn.execute("SELECT version FROM evidence_cells WHERE column_id = ? AND source_version_id = ?",
+                                     (column_id, svid)).fetchone()
+            version = cell["version"] if cell else 0
+            check_expected_version(expected_version, version)
+            if not self.store.passages_for(svid):
+                raise InvalidTableInput("This source has no stored text to read")
+            target = {"table_id": table_id, "column_id": column_id, "source_version_id": svid, "cell_version": version}
+            return self.store.create_run(research_id, "cell_recheck", {"max_model_calls": CALLS_PER_REQUEST, "max_provider_requests": 0},
+                                         key, target)
+
+    def request_column_suggestions(self, research_id: str, table_id: str, idempotency_key: str | None) -> dict[str, Any]:
+        key = self._key(research_id, idempotency_key)
+        with transaction(self.conn):
+            if replayed := self._replayed_run(key, "table_columns"):
+                return replayed
+            self._table(research_id, table_id)
+            return self.store.create_run(research_id, "table_columns", {"max_model_calls": CALLS_PER_REQUEST, "max_provider_requests": 0},
+                                         key, {"table_id": table_id})
+
+    def column_suggestions(self, table_id: str) -> dict[str, Any] | None:
+        """The latest suggested columns for this table; a suggestion joins the table only when the user adds it."""
+        row = self.conn.execute(
+            "SELECT s.id, s.run_id, s.output_json FROM runs r JOIN run_steps s ON s.run_id = r.id WHERE r.kind = 'table_columns'"
+            " AND json_extract(r.target_json, '$.table_id') = ? AND s.kind = 'model:table_columns' AND s.status = 'succeeded'"
+            " ORDER BY s.finished_at DESC LIMIT 1", (table_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        result = json.loads(row["output_json"])["result"]
+        return {"run_id": row["run_id"], "step_id": row["id"], "columns": result["columns"], "notes": result["notes"]}
+
     # ---- templates --------------------------------------------------------------------
     def create_template(self, research_id: str, table_id: str, name: str, idempotency_key: str | None) -> str:
         key = self._key("template", idempotency_key)
@@ -568,6 +682,7 @@ class TableStore:
         cells = [self._cell_summary(dict(c), by_column[c["column_id"]]) for c in self.conn.execute(
             "SELECT * FROM evidence_cells WHERE table_id = ? ORDER BY created_at", (table_id,)
         ) if c["column_id"] in by_column and c["source_version_id"] in active_rows]
+        plan = self.fill_plan(research_id, table_id)
         return {
             "table": {k: table[k] for k in ("id", "research_id", "title", "template_id", "version", "created_at", "updated_at")},
             "columns": [{"id": c["id"], "position": c["position"], "revision": c["current_revision"], "version": c["version"],
@@ -580,6 +695,9 @@ class TableStore:
                        "with_value": sum(c["current"] is not None for c in cells),
                        "empty": len(active_rows) * len(columns) - sum(c["current"] is not None for c in cells),
                        "pending_proposals": sum(c["pending_proposal"] is not None for c in cells)},
+            "fill_estimate": {"sources": len(plan["sources"]), "sources_without_text": sum(not s["has_text"] for s in plan["sources"]),
+                              **{k: plan[k] for k in ("sources_beyond_limit", "model_calls", "max_model_calls")}},
+            "column_suggestions": self.column_suggestions(table_id),
         }
 
     def cell_view(self, research_id: str, table_id: str, column_id: str, svid: str) -> dict[str, Any]:

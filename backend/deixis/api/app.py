@@ -159,7 +159,14 @@ class ColumnCreate(BaseModel):
     options: list[ColumnOption] | None = Field(default=None, max_length=20)
     allow_multiple: bool = False
     unit_hint: str | None = Field(default=None, max_length=40)
+    suggestion_step_id: str | None = Field(default=None, max_length=40)  # set when the user adds a suggested column
     expected_version: int  # of the table
+
+
+class FillRequest(BaseModel):
+    column_ids: list[str] | None = Field(default=None, min_length=1, max_length=200)  # None: every active column
+    include_stale: bool = False  # also ask again for values made under an earlier column revision; they come back as proposals
+    expected_version: int  # of the table whose fill estimate the user saw
 
 
 class ColumnChange(BaseModel):
@@ -874,9 +881,25 @@ def create_app(
     async def add_table_column(research_id: str, table_id: str, body: ColumnCreate, request: Request,
                                idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
         tables = tables_of(request)
-        spec = body.model_dump(exclude={"expected_version"})
-        tables.add_column(research_id, table_id, spec, body.expected_version, idempotency_key)
+        spec = body.model_dump(exclude={"expected_version", "suggestion_step_id"})
+        tables.add_column(research_id, table_id, spec, body.expected_version, idempotency_key,
+                          origin="model_suggestion" if body.suggestion_step_id else "user", suggestion_step_id=body.suggestion_step_id)
         return tables.table_view(research_id, table_id)
+
+    @app.post(table_path + "/column-suggestions", status_code=202)
+    async def suggest_table_columns(research_id: str, table_id: str, request: Request,
+                                    idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        run = tables_of(request).request_column_suggestions(research_id, table_id, idempotency_key)
+        request.app.state.worker.wake()
+        return run
+
+    @app.post(table_path + "/fill", status_code=202)
+    async def fill_table(research_id: str, table_id: str, body: FillRequest, request: Request,
+                         idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        run = tables_of(request).request_fill(research_id, table_id, body.column_ids, body.include_stale, body.expected_version,
+                                              idempotency_key)
+        request.app.state.worker.wake()
+        return run
 
     @app.patch(table_path + "/columns/{column_id}")
     async def revise_table_column(research_id: str, table_id: str, column_id: str, body: ColumnChange, request: Request) -> dict[str, Any]:
@@ -903,6 +926,14 @@ def create_app(
         tables.edit_cell(research_id, table_id, column_id, source_version_id, body.state, body.value, body.note,
                          body.keep_evidence_from, body.expected_version, idempotency_key)
         return tables.cell_view(research_id, table_id, column_id, source_version_id)
+
+    @app.post(cell_path + "/recheck", status_code=202)
+    async def recheck_cell(research_id: str, table_id: str, column_id: str, source_version_id: str, body: ExpectedVersion,
+                           request: Request, idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        run = tables_of(request).request_recheck(research_id, table_id, column_id, source_version_id, body.expected_version,
+                                                 idempotency_key)
+        request.app.state.worker.wake()
+        return run
 
     @app.post(cell_path + "/proposals/{revision_id}/{decision}")
     async def decide_cell_proposal(research_id: str, table_id: str, column_id: str, source_version_id: str, revision_id: str,

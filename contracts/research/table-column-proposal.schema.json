@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/table-column-proposal.schema.json",
+  "title": "TableColumnProposal",
+  "description": "Suggested evidence table columns for the research question. Suggestions are shown to the user and never added to a table by themselves.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "columns",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "deixis.table_column_proposal.v1" },
+    "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
+    "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
+    "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "columns": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "instruction", "answer_format", "options", "allow_multiple", "unit_hint", "rationale"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "instruction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Written as for a human annotator reading one source."
+          },
+          "answer_format": { "type": "string", "enum": ["choice", "number_unit", "yes_no", "text"] },
+          "options": {
+            "description": "choice only: 2 to 20 distinct labels; null for other formats.",
+            "anyOf": [
+              {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 20,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["label"],
+                  "properties": { "label": { "type": "string", "minLength": 1, "maxLength": 120 } }
+                }
+              },
+              { "type": "null" }
+            ]
+          },
+          "allow_multiple": { "type": "boolean", "description": "choice only; false for other formats." },
+          "unit_hint": { "type": ["string", "null"], "maxLength": 40, "description": "number_unit only; null for other formats." },
+          "rationale": { "$ref": "common.schema.json#/$defs/short_text" }
+        }
+      }
+    },
+    "notes": { "type": "string", "maxLength": 1200 }
+  }
+}

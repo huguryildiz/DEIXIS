@@ -50,7 +50,9 @@
         "search_plan",
         "screening",
         "grounded_answer",
-        "answer_review"
+        "answer_review",
+        "cell_extraction",
+        "table_columns"
       ]
     },
     "scope_revision": {
@@ -342,6 +344,142 @@
               "$ref": "common.schema.json#/$defs/passage_id"
             }
           }
+        }
+      }
+    },
+    "extraction_target": {
+      "type": "object",
+      "description": "cell_extraction and table_columns steps only: the evidence table and its columns. A cell_extraction step reads the passages of source_id only; table_columns has no source_id or passage_scope.",
+      "additionalProperties": false,
+      "required": [
+        "table_id",
+        "source_id",
+        "columns",
+        "passage_scope"
+      ],
+      "properties": {
+        "table_id": {
+          "type": "string",
+          "pattern": "^tbl_[0-9A-Za-z]{8,40}$"
+        },
+        "source_id": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/source_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "columns": {
+          "type": "array",
+          "description": "cell_extraction: the columns to answer. table_columns: the table's current columns.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "column_id",
+              "revision",
+              "name",
+              "instruction",
+              "answer_format",
+              "options",
+              "allow_multiple",
+              "unit_hint"
+            ],
+            "properties": {
+              "column_id": {
+                "type": "string",
+                "pattern": "^col_[0-9A-Za-z]{8,40}$"
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "name": {
+                "type": "string"
+              },
+              "instruction": {
+                "type": "string"
+              },
+              "answer_format": {
+                "type": "string",
+                "enum": [
+                  "choice",
+                  "number_unit",
+                  "yes_no",
+                  "text"
+                ]
+              },
+              "options": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "label"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^o[0-9]{1,3}$"
+                        },
+                        "label": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "allow_multiple": {
+                "type": "boolean"
+              },
+              "unit_hint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "passage_scope": {
+          "description": "How much of the source's stored text the step was given. all_pages_given: every extracted PDF passage was given, which is still not a reading of the whole publication.",
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "given",
+                "available",
+                "all_pages_given"
+              ],
+              "properties": {
+                "given": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "available": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "all_pages_given": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },

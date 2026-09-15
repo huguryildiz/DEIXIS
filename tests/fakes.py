@@ -34,6 +34,21 @@ def valid_response(si: dict[str, Any]) -> str:
                           for c in si["candidates"]],
             "notes": "fake screening notes.",
         })
+    if task == "cell_extraction":
+        first = si["passages"][0]
+        values = {"choice": lambda c: {"option_ids": [c["options"][0]["id"]]}, "number_unit": lambda c: {"number": 128, "unit": "byte", "as_stated": None},
+                  "yes_no": lambda c: {"answer": "yes"}, "text": lambda c: {"text": "SYNTHETIC fake value"}}
+        return json.dumps(envelope(si, "deixis.evidence_cell_draft.v1") | {"cells": [
+            {"column_id": c["column_id"], "state": "value", "value": values[c["answer_format"]](c), "note": None,
+             "evidence": [{"passage_id": first["passage_id"], "quote": " ".join(first["text"].split())[:600]}]}
+            for c in si["extraction_target"]["columns"]
+        ]})
+    if task == "table_columns":
+        return json.dumps(envelope(si, "deixis.table_column_proposal.v1") | {
+            "columns": [{"name": "SYNTHETIC method", "instruction": "Name the method the source uses, as stated.", "answer_format": "text",
+                         "options": None, "allow_multiple": False, "unit_hint": None, "rationale": "fake rationale"}],
+            "notes": "",
+        })
     if task == "answer_review":
         return json.dumps(envelope(si, "deixis.answer_review.v1") | {
             "reviews": [{"claim_label": c["claim_label"], "verdict": "supported", "reason": "fake: the cited passage states it."}

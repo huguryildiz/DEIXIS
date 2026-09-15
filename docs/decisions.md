@@ -2,6 +2,25 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D38 — Extract evidence table cells one source version at a time, from that version's passages only
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: D37 left the cell extraction and column suggestion model steps, and the fill, recheck and suggestion endpoints, to a second sub-step of P5 slice 1 (`docs/product/p5-slice1-evidence-table.md` §5).
+
+**Decision**:
+
+- `EvidenceCellDraft` v1 answers every target column once for one source version: a state, a value shaped by the column's format, a note and evidence items of passage plus exact quote. Its state enum holds only `value`, `unknown`, `not_applicable` and `not_found_in_inspected_scope`, so a structured-output model cannot produce `inaccessible`, `not_verified` or `not_reported`, and validation rejects them as schema errors. `TableColumnProposal` v1 suggests at most eight columns that `column_spec` accepts, with names distinct from each other and from the table's columns.
+- A StepInput for these tasks carries `extraction_target`: the table, the source version (`cell_extraction` only), the columns with their revision and definition, and `passage_scope` (passages given, passages available, whether every extracted PDF passage was given). `check_step_input` refuses a cell StepInput whose sources or passages include anything but that source version. It never carries a cell value, so a recheck does not show the model the current value.
+- Validation adds per-cell checks that go through the single repair: `unknown_column_id`, `duplicate_column_answer`, `column_without_answer`, `invalid_cell_value`, `unknown_passage_id`, `duplicate_passage_id`, `anchor_not_in_passage`, `value_without_evidence`, `unknown_without_evidence`, `evidence_for_not_found`, `not_applicable_without_note` and `locator_in_note`. The step shows short handles for passages, the source and columns (as D12). After a failed repair, each answer that still has a model state and a value its format accepts is kept as an `unverified_draft` proposal with its allowlisted evidence only; it cannot be accepted.
+- A fill request needs the table's `expected_version`, plans its cells (empty cells, and with `include_stale` values from an earlier column revision) for at most 25 sources, and stores the plan in `runs.target_json`, so a resumed run reads the same sources and step keys. The budget is two calls per planned call. A source with no retained passage gets `inaccessible` without a model call. A source within 48 passages and 60,000 characters is given whole; otherwise its abstract, then passages matching the column names and instructions (fused with semantic ranking when it is on), then the remaining passages in page order, up to 24 for a fill and 16 for a recheck. Reading depth is `abstract` when only abstracts were given, else `selected_sections`.
+- A recheck request needs the cell's `expected_version`; a row outside the table or a source without text answers 422, another active run 409. Column suggestions run as a `table_columns` run on the question and the rows' titles and abstracts; the table view shows the latest suggestions, and adding one records `origin = model_suggestion` with its step.
+
+**Evidence**: `tests/test_table_extraction.py` covers each cell check and a model-written person or system state, handle resolution, one-source StepInputs, which answers of an invalid output are kept, column proposal checks, a fill that links each cell to its own version's passages and skips the model for a source without text, a resumed fill and recheck that add no revision or call, eight columns per call, a spent budget pausing the fill, the 25-source plan, a stale fill that only proposes, T09 m (no human value in the recheck StepInput or message), a recheck whose model cites the preprint of the same work (rejected, kept as an invalid proposal without that evidence, not acceptable), the fill and suggestion API, T09 g and j, and T09 k (a restart during a recheck resumes into one proposal). Model outputs come from the scripted fake adapter. Backend suite: 402 passed.
+
+**Limits**: No real model has filled a cell; the Luna trial is sub-step 5. The passage limits (48, 24, 16) and the page-order padding are untested defaults. The Evidence tab is not built, and the current run card labels table runs as answer runs. Semantic support of cell evidence stays `not_checked`.
+
 ## D37 — Keep evidence table cells as append-only revisions that only the user can change
 
 **Status**: accepted

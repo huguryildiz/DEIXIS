@@ -11,6 +11,7 @@ import difflib
 import json
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, field
 from functools import cache
 from typing import Any
@@ -21,6 +22,7 @@ from referencing import Registry, Resource
 from deixis.domain import phrasebank
 from deixis.paths import CONTRACTS_DIR, SKILL_DIR
 from deixis.providers import query_rules
+from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, InvalidTableInput, check_value, column_spec
 
 SCHEMA_FILES = {
     "SearchPlan": "search-plan.schema.json",
@@ -28,6 +30,8 @@ SCHEMA_FILES = {
     "GroundedAnswerDraft": "grounded-answer-draft.schema.json",
     "ClarificationRequest": "clarification-request.schema.json",
     "AnswerReview": "answer-review.schema.json",
+    "EvidenceCellDraft": "evidence-cell-draft.schema.json",
+    "TableColumnProposal": "table-column-proposal.schema.json",
     "StepInput": "step-input.schema.json",
 }
 SCHEMA_VERSIONS = {
@@ -36,6 +40,8 @@ SCHEMA_VERSIONS = {
     "GroundedAnswerDraft": "deixis.grounded_answer_draft.v3",
     "ClarificationRequest": "deixis.clarification_request.v1",
     "AnswerReview": "deixis.answer_review.v1",
+    "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
+    "TableColumnProposal": "deixis.table_column_proposal.v1",
 }
 # Model outputs each task may return. More than one output type is wrapped in an
 # object with one nullable property per type; exactly one must be non-null.
@@ -44,7 +50,12 @@ TASK_OUTPUTS = {
     "screening": ("ScreeningProposal",),
     "grounded_answer": ("GroundedAnswerDraft",),
     "answer_review": ("AnswerReview",),
+    "cell_extraction": ("EvidenceCellDraft",),
+    "table_columns": ("TableColumnProposal",),
 }
+EXTRACTION_TASKS = ("cell_extraction", "table_columns")
+# The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's (D37).
+MODEL_CELL_STATES = ("value", "unknown", "not_applicable", "not_found_in_inspected_scope")
 WRAPPER_KEYS = {
     "SearchPlan": "search_plan",
     "ClarificationRequest": "clarification_request",
@@ -192,6 +203,18 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
         for pid in claim["passage_ids"]:
             if pid not in records["passage_ids"]:
                 issues.append(Issue("review_passage_missing", f"/claims_under_review/{claim['claim_label']}", pid))
+    target = step_input.get("extraction_target")
+    if (target is not None) != (step_input["task_type"] in EXTRACTION_TASKS):
+        issues.append(Issue("extraction_target_mismatch", "/extraction_target", step_input["task_type"]))
+    elif step_input["task_type"] == "cell_extraction":
+        # One call reads one source version, so evidence cannot come from another source or another version of the work.
+        if target["source_id"] is None or records["source_ids"] != {target["source_id"]}:
+            issues.append(Issue("extraction_source_mismatch", "/extraction_target/source_id", str(target["source_id"])))
+        for p in step_input["passages"]:
+            if p["source_id"] != target["source_id"]:
+                issues.append(Issue("passage_outside_extraction_source", f"/passages/{p['passage_id']}", p["source_id"]))
+        if not 1 <= len(target["columns"]) <= MAX_COLUMNS_PER_CALL:
+            issues.append(Issue("extraction_column_count", "/extraction_target/columns", str(len(target["columns"]))))
     return issues
 
 
@@ -246,6 +269,10 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         _check_math(step_input, result, report)
     elif output_type == "AnswerReview":
         _check_review(step_input, result, report)
+    elif output_type == "EvidenceCellDraft":
+        _check_cells(step_input, allow, result, report)
+    elif output_type == "TableColumnProposal":
+        _check_column_proposal(step_input, result, report)
     return report
 
 
@@ -521,6 +548,63 @@ def _check_review(step_input: dict[str, Any], review: dict[str, Any], report: Va
         report.issues.append(Issue("claim_without_review", "/reviews", label))
 
 
+def _check_cells(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
+    """Every target column is answered once, in its format, from quoted passages of the one source given (D27, D37)."""
+    columns = {c["column_id"]: c for c in step_input["extraction_target"]["columns"]}
+    passage_text = {p["passage_id"]: p["text"] for p in step_input["passages"]}
+    seen: set[str] = set()
+    for i, cell in enumerate(draft["cells"]):
+        path, column_id, state = f"/cells/{i}", cell["column_id"], cell["state"]
+        if column_id not in columns:
+            report.issues.append(Issue("unknown_column_id", f"{path}/column_id", column_id))
+            continue
+        if column_id in seen:
+            report.issues.append(Issue("duplicate_column_answer", f"{path}/column_id", column_id))
+        seen.add(column_id)
+        try:
+            check_value(columns[column_id], state, cell["value"])
+        except InvalidTableInput as exc:
+            report.issues.append(Issue("invalid_cell_value", f"{path}/value", f"{column_id}: {exc}"))
+        cited = [e["passage_id"] for e in cell["evidence"]]
+        for j, item in enumerate(cell["evidence"]):
+            if item["passage_id"] not in allow["passage_ids"]:
+                report.issues.append(Issue("unknown_passage_id", f"{path}/evidence/{j}/passage_id", item["passage_id"]))
+            elif locate_anchor(item["quote"], passage_text[item["passage_id"]]) is None:
+                report.issues.append(Issue("anchor_not_in_passage", f"{path}/evidence/{j}/quote",
+                                           f"{column_id}:{item['passage_id']}: the quoted text was not found in the cited passage"))
+        if len(set(cited)) != len(cited):
+            report.issues.append(Issue("duplicate_passage_id", f"{path}/evidence", column_id))
+        if state in ("value", "unknown") and not cited:
+            report.issues.append(Issue(f"{state}_without_evidence", f"{path}/evidence",
+                                       f"{column_id}: a '{state}' cell cites at least one passage with an exact quote"))
+        if state == "not_found_in_inspected_scope" and cited:
+            report.issues.append(Issue("evidence_for_not_found", f"{path}/evidence",
+                                       f"{column_id}: nothing was found, so no passage is cited"))
+        if state == "not_applicable" and not (cell["note"] or "").strip():
+            report.issues.append(Issue("not_applicable_without_note", f"{path}/note", column_id))
+        if cell["note"] and (match := LOCATOR_IN_TEXT.search(cell["note"])):
+            report.issues.append(Issue("locator_in_note", f"{path}/note",
+                                       f"remove {match.group(0)!r}; locators are attached from passage records"))
+    for column_id in columns:
+        if column_id not in seen:
+            report.issues.append(Issue("column_without_answer", "/cells", column_id))
+
+
+def _check_column_proposal(step_input: dict[str, Any], proposal: dict[str, Any], report: ValidationReport) -> None:
+    """Each suggestion is a column the table would accept, and no two columns share a name."""
+    names = {c["name"].strip().casefold() for c in step_input["extraction_target"]["columns"]}
+    for i, column in enumerate(proposal["columns"]):
+        try:
+            column_spec(column["name"], column["instruction"], column["answer_format"], column["options"],
+                        column["allow_multiple"], column["unit_hint"])
+        except InvalidTableInput as exc:
+            report.issues.append(Issue("invalid_column_definition", f"/columns/{i}", str(exc)))
+        name = column["name"].strip().casefold()
+        if name in names:
+            report.issues.append(Issue("duplicate_column_name", f"/columns/{i}/name", column["name"]))
+        names.add(name)
+
+
 # Locators come from application records, so claim text must not state its own page, equation, table, figure,
 # section or DOI (acceptance case B). Quotations are not detected.
 LOCATOR_IN_TEXT = re.compile(
@@ -646,6 +730,8 @@ def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     passage and source handles never share a suffix, so a swapped prefix stays an unknown ID instead of another record.
     """
     handles = {p["passage_id"]: f"psg_P{n:07d}" for n, p in enumerate(step_input["passages"], start=1)}
+    columns = (step_input.get("extraction_target") or {}).get("columns", [])
+    handles |= {c["column_id"]: f"col_C{n:07d}" for n, c in enumerate(columns, start=1)}
     return handles | {s["source_id"]: f"srv_S{n:07d}" for n, s in enumerate(step_input["sources"], start=1)}
 
 
@@ -658,13 +744,17 @@ def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
         source["source_id"] = handles[source["source_id"]]
     for claim in shown.get("claims_under_review", []):
         claim["passage_ids"] = [handles.get(i, i) for i in claim["passage_ids"]]
+    if target := shown.get("extraction_target"):
+        target["source_id"] = handles.get(target["source_id"], target["source_id"])
+        for column in target["columns"]:
+            column["column_id"] = handles[column["column_id"]]
     for key in ("passage_ids", "source_ids"):
         shown["allowlist"][key] = [handles.get(i, i) for i in shown["allowlist"][key]]
     return shown
 
 
 def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict[str, Any]:
-    """Map handles in a grounded answer back to IDs; anything else is left for validation to report."""
+    """Map handles in a grounded answer or cell draft back to IDs; anything else is left for validation to report."""
     real = {handle: identifier for identifier, handle in citation_handles(step_input).items()}
     try:
         data = json.loads(raw)
@@ -679,7 +769,65 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
     for anchor in data.get("citation_anchors", []):
         if isinstance(anchor, dict) and isinstance(anchor.get("passage_id"), str):
             anchor["passage_id"] = real.get(anchor["passage_id"], anchor["passage_id"])
+    cells = data.get("cells")
+    for cell in cells if isinstance(cells, list) else []:
+        if not isinstance(cell, dict):
+            continue
+        if isinstance(cell.get("column_id"), str):
+            cell["column_id"] = real.get(cell["column_id"], cell["column_id"])
+        evidence = cell.get("evidence")
+        for item in evidence if isinstance(evidence, list) else []:
+            if isinstance(item, dict) and isinstance(item.get("passage_id"), str):
+                item["passage_id"] = real.get(item["passage_id"], item["passage_id"])
     return data
+
+
+def cell_links(step_input: dict[str, Any], cell: dict[str, Any]) -> list[dict[str, Any]]:
+    """Evidence links of one cell answer: passages of the StepInput only, with the located passage words as anchor."""
+    passages = {p["passage_id"]: p for p in step_input["passages"]}
+    links: dict[str, dict[str, Any]] = {}
+    for item in cell["evidence"]:
+        passage = passages.get(item["passage_id"])
+        if passage is None or passage["passage_id"] in links:
+            continue
+        anchor = locate_anchor(item["quote"], passage["text"])
+        links[passage["passage_id"]] = {"passage_id": passage["passage_id"], "source_version_id": passage["source_id"],
+                                        "anchor_text": anchor.text if anchor else None, "anchor_match": anchor.kind if anchor else None}
+    return list(links.values())
+
+
+def storable_cells(step_input: dict[str, Any], data: str | dict[str, Any]) -> list[dict[str, Any]]:
+    """Cell answers of an output that failed validation that can still be kept as unverified proposals.
+
+    An answer is kept when it is its column's only answer, has a state a model may write and a value the column's format
+    accepts; its evidence keeps allowlisted passages only. Such a proposal shows as invalid and cannot be accepted.
+    """
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            return []
+    cells = data.get("cells") if isinstance(data, dict) else None
+    if not isinstance(cells, list):
+        return []
+    columns = {c["column_id"]: c for c in step_input["extraction_target"]["columns"]}
+    allowed = set(step_input["allowlist"]["passage_ids"])
+    answers = Counter(c.get("column_id") for c in cells if isinstance(c, dict) and isinstance(c.get("column_id"), str))
+    kept = []
+    for cell in cells:
+        if not isinstance(cell, dict) or cell.get("column_id") not in columns or answers[cell["column_id"]] != 1 \
+                or cell.get("state") not in MODEL_CELL_STATES:
+            continue
+        try:
+            value = check_value(columns[cell["column_id"]], cell["state"], cell.get("value"))
+        except InvalidTableInput:
+            continue
+        evidence = cell.get("evidence") if isinstance(cell.get("evidence"), list) else []
+        kept.append({"column_id": cell["column_id"], "state": cell["state"], "value": value,
+                     "note": cell["note"] if isinstance(cell.get("note"), str) else None,
+                     "evidence": [e for e in evidence if isinstance(e, dict) and e.get("passage_id") in allowed
+                                  and isinstance(e.get("quote"), str)]})
+    return kept
 
 
 def derive_evidence_links(step_input: dict[str, Any], draft: dict[str, Any]) -> list[dict[str, Any]]:

@@ -1,6 +1,6 @@
 ---
 name: deixis-research
-description: Method instructions loaded by the DEIXIS application for its single research agent. Covers the supported source-grounded answer workflow (search plan, candidate screening, passage-linked answer) and the review of an answer's claims against their cited passages. Not a globally installed skill; the application supplies each step's input records and output schema.
+description: Method instructions loaded by the DEIXIS application for its single research agent. Covers the supported source-grounded answer workflow (search plan, candidate screening, passage-linked answer), the review of an answer's claims against their cited passages, and evidence table cells and column suggestions. Not a globally installed skill; the application supplies each step's input records and output schema.
 ---
 
 # DEIXIS research method
@@ -39,6 +39,10 @@ that matches `task_type`:
 
 For `answer_review`, read [answer review](references/answer-review.md) instead:
 you review claims another step wrote and do not answer the question yourself.
+
+For `cell_extraction` and `table_columns`, read
+[evidence table](references/evidence-table.md): you answer evidence table
+columns for one source, or suggest columns, and do not answer the question.
 
 This version supports only source-grounded question answering. Literature
 synthesis across idea chains, candidate research-question development,

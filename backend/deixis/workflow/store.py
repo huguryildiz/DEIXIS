@@ -254,7 +254,9 @@ class Store:
         return revision
 
     # ---- runs -------------------------------------------------------------------------
-    def create_run(self, research_id: str, kind: str, budget: dict[str, Any], idempotency_key: str | None) -> dict[str, Any]:
+    def create_run(self, research_id: str, kind: str, budget: dict[str, Any], idempotency_key: str | None,
+                   target: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Queue a run. Evidence table runs carry their target (table, columns, planned sources or cell)."""
         with transaction(self.conn):
             if idempotency_key:
                 existing = self.conn.execute("SELECT * FROM runs WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
@@ -268,11 +270,12 @@ class Store:
             if active:
                 raise RevisionConflict(f"run {active['id']} is still active")
             run_id, ts = new_id("run"), now()
-            stage = "discovery" if kind == "discovery" else "inspection"
+            stage = {"discovery": "discovery", "answer": "inspection"}.get(kind, "extraction")
             self.conn.execute(
-                "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
-                (run_id, research_id, research["current_scope_revision"], kind, stage, dumps(budget), idempotency_key, ts, ts),
+                "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
+                " created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
+                (run_id, research_id, research["current_scope_revision"], kind, stage, dumps(budget), idempotency_key,
+                 dumps(target) if target is not None else None, ts, ts),
             )
             self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (ts, research_id))
             self._event(research_id, "run_queued", {"kind": kind}, run_id)
@@ -287,6 +290,8 @@ class Store:
         run["usage"] = json.loads(run.pop("usage_json"))
         error = run.pop("error_json")
         run["error"] = json.loads(error) if error else None
+        target = run.pop("target_json")
+        run["target"] = json.loads(target) if target else None
         return run
 
     def next_queued_run(self) -> dict[str, Any] | None:
@@ -414,6 +419,15 @@ class Store:
                 f"UPDATE model_sessions SET {', '.join(f'{k} = ?' for k in encoded)} WHERE id = ?",
                 (*encoded.values(), session_id),
             )
+
+    def model_session(self, step_input_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT connection, resolved_model, raw_output FROM model_sessions WHERE step_input_id = ? ORDER BY started_at DESC LIMIT 1",
+            (step_input_id,),
+        ).fetchone()
+        if row is None:
+            raise NotFound(step_input_id)
+        return dict(row)
 
     def complete_model_step(self, session_id: str, session_fields: dict[str, Any], step_id: str, status: str, **step_fields: Any) -> None:
         """Commit the model session result and the step outcome together, so recovery never finds one without the other."""

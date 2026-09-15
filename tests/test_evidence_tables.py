@@ -39,12 +39,14 @@ def test_runs_rebuild_keeps_rows_and_foreign_keys(tmp_path, monkeypatch):
     db.migrate(conn)
     store = Store(conn)
     rid = store.create_research("Question?", "academic", "quick", [], "fake", "fake-model", None)
-    run = store.create_run(rid, "discovery", {"max_model_calls": 1}, "key-1")
-    store.step(run["id"], "search:0", "provider_search:openalex")
+    run_id = "run_P4ERA0000000001"  # written as P4 code wrote it, before runs had target_json
+    conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, created_at, updated_at)"
+                 " VALUES (?, ?, 1, 'discovery', 'queued', 'discovery', '{}', 'key-1', ?, ?)", (run_id, rid, now(), now()))
+    store.step(run_id, "search:0", "provider_search:openalex")
 
     monkeypatch.setattr(db, "MIGRATIONS_DIR", REAL_MIGRATIONS)
     assert db.migrate(conn) == [19, 20]
-    assert store.run(run["id"])["idempotency_key"] == "key-1"
+    assert store.run(run_id)["idempotency_key"] == "key-1" and store.run(run_id)["target"] is None
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     assert "REFERENCES runs(id)" in conn.execute("SELECT sql FROM sqlite_master WHERE name = 'run_steps'").fetchone()[0]
     with pytest.raises(sqlite3.IntegrityError):

@@ -79,14 +79,19 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "review": review,
         })
     duplicates = store.suspected_duplicates(research_id)
+    # Similarity from the chosen semantic search model only; with semantic search off, no source has one (D30).
+    provider, model = embeddings.chosen(store.setting("semantic_search"))
+    similarity_model = embeddings.Embedder(provider, model).stored_model if provider != "off" and model else None
     sources = []
     for row in conn.execute(
         "SELECT m.added_by, s.*, sel.state, sel.origin AS selection_origin, sel.version AS selection_version, sel.proposal,"
-        " sel.proposal_reason, sel.proposal_basis, sel.user_reason, c.id AS candidate_id, c.rank, c.scope_revision AS found_in_revision"
+        " sel.proposal_reason, sel.proposal_basis, sel.user_reason, c.id AS candidate_id, c.rank, c.scope_revision AS found_in_revision,"
+        " (SELECT ss.similarity FROM source_similarities ss WHERE ss.research_id = m.research_id AND ss.source_version_id = m.source_version_id"
+        "  AND ss.scope_revision = c.scope_revision AND ss.model = ?) AS similarity"
         " FROM corpus_memberships m JOIN source_versions s ON s.id = m.source_version_id"
         " JOIN selections sel ON sel.research_id = m.research_id AND sel.source_version_id = m.source_version_id"
         " LEFT JOIN candidates c ON c.research_id = m.research_id AND c.source_version_id = m.source_version_id"
-        " WHERE m.research_id = ? ORDER BY m.created_at, c.rank", (research_id,)
+        " WHERE m.research_id = ? ORDER BY m.created_at, c.rank", (similarity_model, research_id)
     ):
         svid = row["id"]
         assets = [dict(r) for r in conn.execute(
@@ -112,7 +117,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "pages": row["pages"], "doi": row["doi"], "landing_url": row["landing_url"],
             "version_label": row["version_label"], "publication_type": row["publication_type"], "origin": row["origin"],
             "cited_by_count": row["cited_by_count"], "cited_by_count_at": row["cited_by_count_at"],
-            "added_by": row["added_by"], "rank": row["rank"],
+            "added_by": row["added_by"], "rank": row["rank"], "similarity": row["similarity"],
             # "other_version": another version of a found record (e.g. its submitted manuscript), stored separately.
             "version_role": "other_version" if row["added_by"] == "search" and row["candidate_id"] is None else "record",
             # A search result keeps the question revision it was found for; attached files belong to no revision.

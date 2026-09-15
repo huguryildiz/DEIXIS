@@ -216,6 +216,36 @@ class ResearchFlow:
                     rid, by_candidate[decision["candidate_id"]], decision["proposal"], decision["reason"],
                     decision["evidence_basis"], step["id"],
                 )
+        await self._source_similarity(run, scope, candidates)
+
+    async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]]) -> None:
+        """Score screened sources by the similarity of their title and abstract to the question (D30).
+
+        Uses the semantic search provider (D29). Only the source list's "Most relevant" order reads the score. A failed
+        request is recorded as a failed step, and the list then orders by search position as before.
+        """
+        provider, model = embeddings.chosen(self.store.setting("semantic_search"))
+        if provider == "off" or not model:
+            return
+        embedder = embeddings.Embedder(provider, model)
+        rid, revision = run["research_id"], run["scope_revision"]
+        scored = self.store.scored_sources(rid, revision, embedder.stored_model)
+        missing = [c["source_version_id"] for c in candidates if c["source_version_id"] not in scored]
+        if not missing:
+            return
+        step = self.store.step(run["id"], "source_similarity", f"similarity:{embedder.stored_model}")
+        self.store.start_step(step["id"])
+        texts = ["\n\n".join([self.store.source(svid)["title"], *(p["text"] for p in self.store.passages_for(svid) if p["kind"] == "abstract")])
+                 for svid in missing]
+        try:
+            vectors = await embedder.embed(self.deps.http, texts, "RETRIEVAL_DOCUMENT")
+            (query,) = await embedder.embed(self.deps.http, [scope["question"]], "RETRIEVAL_QUERY")
+        except embeddings.EmbeddingError as exc:
+            self.store.finish_step(step["id"], "failed", error_code="embedding_failed", error={"error": str(exc)})
+            return
+        self.store.save_source_similarities(rid, revision, embedder.stored_model,
+                                            {svid: embeddings.similarity(query, v) for svid, v in zip(missing, vectors)})
+        self.store.finish_step(step["id"], "succeeded", output={"model": embedder.stored_model, "sources": len(missing)})
 
     async def _search(self, run: dict[str, Any], index: int, query: dict[str, Any], per_query: int,
                       retry_failed: bool = True) -> tuple[str, dict[str, Any]] | None:

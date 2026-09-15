@@ -404,7 +404,8 @@ function ReasonForm({ busy, onSave }: { busy: boolean; onSave: (reason: string) 
 
 type SourceSort = 'found' | 'relevant' | 'cited' | 'newest' | 'oldest' | 'title'
 const sourceSorts: Record<SourceSort, string> = { found: 'Order found', relevant: 'Most relevant', cited: 'Most cited', newest: 'Newest first', oldest: 'Oldest first', title: 'Title A–Z' }
-// There is no relevance score comparable across queries: the model's screening verdict decides, then the best position in the searches that found it.
+// Search position is not comparable across queries: the model's screening verdict decides, then similarity to the question
+// when semantic search scored the source (D30), then the best position in the searches that found it.
 const verdictOrder: Record<string, number> = { include: 0, uncertain: 1, exclude: 2 }
 const verdictRank = (s: Source) => verdictOrder[s.selection.proposal ?? ''] ?? 3
 const stateFilters = [['all', 'All'], ['included', 'Included'], ['pending', 'Undecided'], ['excluded', 'Excluded']] as const
@@ -413,7 +414,7 @@ type StateFilter = typeof stateFilters[number][0]
 const byNumber = (a: number | null, b: number | null, dir: 1 | -1) => a === null ? (b === null ? 0 : 1) : b === null ? -1 : dir * (a - b)
 const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
   found: () => 0,
-  relevant: (a, b) => verdictRank(a) - verdictRank(b) || byNumber(a.rank, b.rank, 1),
+  relevant: (a, b) => verdictRank(a) - verdictRank(b) || byNumber(a.similarity, b.similarity, -1) || byNumber(a.rank, b.rank, 1),
   cited: (a, b) => byNumber(a.cited_by_count, b.cited_by_count, -1),
   newest: (a, b) => byNumber(a.year, b.year, -1),
   oldest: (a, b) => byNumber(a.year, b.year, 1),
@@ -449,7 +450,7 @@ function SourceList({ sources, busy, onSelect, onReason, onAbstract, onDiscoverP
       <Select value={sort} onValueChange={value => { if (value) setSort(value as SourceSort) }}>
         <SelectTrigger aria-label={t('Sort sources')}><SelectValue>{(value: string) => <><ArrowUpDown size={14} />{t(sourceSorts[value as SourceSort])}</>}</SelectValue></SelectTrigger>
         <SelectContent className="intake-select-content" align="end" alignItemWithTrigger={false}>
-          {(Object.keys(sourceSorts) as SourceSort[]).map(k => <SelectItem key={k} value={k}>{k === 'relevant' ? <span className="sort-option">{t(sourceSorts[k])}<small>{t('Model’s screening verdict first, then search position')}</small></span> : t(sourceSorts[k])}</SelectItem>)}
+          {(Object.keys(sourceSorts) as SourceSort[]).map(k => <SelectItem key={k} value={k}>{k === 'relevant' ? <span className="sort-option">{t(sourceSorts[k])}<small>{t('Model’s screening verdict first, then similarity to the question, then search position')}</small></span> : t(sourceSorts[k])}</SelectItem>)}
         </SelectContent>
       </Select>
     </div>}
@@ -479,10 +480,11 @@ function SourceRow({ source, busy, onSelect, onReason, onAbstract, onDiscoverPdf
       <div className="ref-pills source-pills">
         {source.version_label && <span className={`ref-pill is-${versionTones[source.version_label] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(source.version_label)}</span>}
         {accessParts(source).map(part => <span key={part.text} className={`ref-pill is-${part.tone}`}>{part.tone === 'abstract' ? <BookOpenText size={12} aria-hidden /> : <FileText size={12} aria-hidden />}{part.text}</span>)}
+        {source.similarity !== null && <span className="ref-pill is-similarity" title={t(source.access.abstract_passage_id ? 'Embedding similarity between the research question and this source’s title and stored abstract. Used for ordering only; it is not a relevance judgment.' : 'Embedding similarity between the research question and this source’s title. No abstract was available. Used for ordering only; it is not a relevance judgment.')}><ScanSearch size={12} aria-hidden />{t('Similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</span>}
         {source.suspected_duplicates.length > 0 && <span className="ref-pill is-unstated" title={source.suspected_duplicates.map(d => t(d.basis === 'published_doi' ? 'a preprint that names the other record’s DOI' : 'same title')).join('; ')}><FileText size={12} aria-hidden />{t(source.suspected_duplicates.length === 1 ? 'may duplicate {n} other source · not merged' : 'may duplicate {n} other sources · not merged', { n: source.suspected_duplicates.length })}</span>}
         {source.cited_in_latest_answer && <span className="ref-pill is-cited"><MessageSquareQuote size={12} aria-hidden />{t('cited in the latest answer')}</span>}
       </div>
-      {finding && <p className="pdf-search-status" role="status"><Search size={13} aria-hidden />{t('Checking Unpaywall, OpenAlex and Crossref; Web Search will run if no verified PDF is retrieved…')}</p>}
+      {finding && <p className="pdf-search-status" role="status"><Search size={13} aria-hidden /><span className="shimmer-text">{t('Checking Unpaywall, OpenAlex and Crossref; Web Search will run if no verified PDF is retrieved…')}</span></p>}
       {!finding && source.access.pdf_discoveries.length > 0 && <div className="pdf-candidate-list">
         {source.access.pdf_discoveries.map((search, i) => <span key={`${search.provider}-${search.created_at}-${i}`}><ConnectionIcon id={search.provider} />{providerName(search.provider)} · {t(search.status.replace('_', ' '))} · {search.result_count}{search.http_status ? ` · HTTP ${search.http_status}` : ''}</span>)}
         {source.access.pdf_candidates.map(candidate => <span key={candidate.id}><ConnectionIcon id={candidate.provider} />{providerName(candidate.provider)} · {t(candidate.version_status === 'match' ? 'version verified' : candidate.version_status === 'different' ? 'different version' : 'version uncertain')} · {candidate.access_status === 'http_error' ? `HTTP ${candidate.http_status ?? '?'}` : t(candidate.access_status.replace('_', ' '))}</span>)}

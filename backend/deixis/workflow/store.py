@@ -142,7 +142,8 @@ class Store:
             self.conn.execute("DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM pdf_discovery_runs WHERE research_id = ?", (research_id,))
             for table in ("answer_reviews", "answers", "model_sessions", "step_inputs", "candidates", "search_runs",
-                          "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events"):
+                          "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
+                          "source_similarities"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
             for table in ("runs", "scope_revisions"):
@@ -911,6 +912,40 @@ class Store:
         return self.conn.execute(
             "SELECT 1 FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,)
         ).fetchone() is not None
+
+    def passage_embeddings(self, passage_ids: list[str], model: str) -> dict[str, bytes]:
+        found: dict[str, bytes] = {}
+        for start in range(0, len(passage_ids), 500):
+            chunk = passage_ids[start:start + 500]
+            rows = self.conn.execute(
+                f"SELECT passage_id, vector FROM passage_embeddings WHERE model = ? AND passage_id IN ({','.join('?' * len(chunk))})",
+                (model, *chunk),
+            )
+            found.update({row["passage_id"]: row["vector"] for row in rows})
+        return found
+
+    def save_passage_embeddings(self, model: str, dimensions: int, vectors: dict[str, bytes]) -> None:
+        ts = now()
+        with transaction(self.conn):
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO passage_embeddings (passage_id, model, dimensions, vector, created_at) VALUES (?, ?, ?, ?, ?)",
+                [(pid, model, dimensions, blob, ts) for pid, blob in vectors.items()],
+            )
+
+    def scored_sources(self, research_id: str, scope_revision: int, model: str) -> set[str]:
+        return {r[0] for r in self.conn.execute(
+            "SELECT source_version_id FROM source_similarities WHERE research_id = ? AND scope_revision = ? AND model = ?",
+            (research_id, scope_revision, model),
+        )}
+
+    def save_source_similarities(self, research_id: str, scope_revision: int, model: str, scores: dict[str, float]) -> None:
+        ts = now()
+        with transaction(self.conn):
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO source_similarities (research_id, source_version_id, scope_revision, model, similarity, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                [(research_id, svid, scope_revision, model, score, ts) for svid, score in scores.items()],
+            )
 
     def save_answer(self, research_id: str, run_id: str, step_id: str | None, step_input_id: str | None, scope_revision: int,
                     status: str, draft: dict[str, Any] | None, validation: dict[str, Any],

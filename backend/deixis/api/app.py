@@ -611,7 +611,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/pdf-discovery")
     async def discover_source_pdf(research_id: str, source_version_id: str, request: Request) -> dict[str, Any]:
-        """Collect OpenAlex and Crossref locations, use explicit web search only if both list no PDF, then retrieve verified versions."""
+        """Collect Unpaywall, OpenAlex, Crossref and CORE locations, retrieve verified versions, and use explicit web search only if none is retrieved."""
         store = store_of(request)
         store.research(research_id)
         if not store.is_member(research_id, source_version_id):
@@ -623,6 +623,7 @@ def create_app(
             await acquisition.acquire_for_source(
                 store, research_id, source_version_id, request.app.state.http, settings.papers_dir,
                 settings.contact_email, os.environ.get("SERPAPI_API_KEY"), request.app.state.fetch_pdf,
+                core_key=os.environ.get("CORE_API_KEY"),
             )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc

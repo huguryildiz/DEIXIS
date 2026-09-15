@@ -464,7 +464,7 @@ def _check_search_plan(step_input: dict[str, Any], plan: dict[str, Any], report:
         boolean = query_rules.boolean_part(provider, text)
         if boolean is None or syntax:
             continue
-        # OpenAlex's boolean limits were measured (D8, D11); IEEE Xplore and a Scopus field group take the same form.
+        # OpenAlex's boolean limits were measured (D8, D11); IEEE Xplore, CORE and a Scopus field group take the same form.
         if openalex_or_is_ambiguous(boolean):
             report.issues.append(Issue(
                 "provider_query_syntax", path,

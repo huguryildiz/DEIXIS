@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from deixis.providers import arxiv, biorxiv, common, crossref, ieee_xplore, openalex, scopus, semantic_scholar, serpapi
+from deixis.providers import arxiv, biorxiv, common, core, crossref, ieee_xplore, openalex, scopus, semantic_scholar, serpapi
 from deixis.providers.registry import CONNECTORS, available_providers
 
 SECRET = "SECRET-KEY-VALUE"
@@ -48,6 +48,11 @@ SUCCESS = {
         "dc:identifier": "SCOPUS_ID:555", "eid": "2-s2.0-555", "dc:title": "SYNTHETIC release scheduling", "dc:creator": "Author A.",
         "prism:publicationName": "Synthetic Transactions", "prism:coverDate": "2021-01-01", "prism:doi": DOI.upper(),
         "subtypeDescription": "Article", "citedby-count": "4", "link": [{"@ref": "scopus", "@href": "https://www.scopus.com/record/555"}]}]}},
+    "core": {"totalHits": 3, "limit": 5, "offset": 0, "results": [{
+        "id": 777, "doi": DOI, "title": "SYNTHETIC release\n scheduling", "authors": [{"name": "A. Author"}], "yearPublished": 2021,
+        "journals": [{"title": "Synthetic Transactions", "identifiers": []}], "documentType": "research article",
+        "abstract": "We schedule release times.", "downloadUrl": "https://core.ac.uk/download/555.pdf", "fullText": "SYNTHETIC full text",
+        "links": [{"type": "download", "url": "https://core.ac.uk/download/555.pdf"}, {"type": "display", "url": "https://core.ac.uk/works/777"}]}]},
     "serpapi": {"search_metadata": {"json_endpoint": "https://serpapi.com/searches/x.json"}, "search_parameters": {"q": "x"},
                 "search_information": {"total_results": 128}, "organic_results": [{
                     "result_id": "r1", "title": "SYNTHETIC release scheduling", "link": f"https://doi.org/{DOI}", "snippet": "… an excerpt …",
@@ -60,13 +65,14 @@ ZERO = {
     "crossref": {"message": {"total-results": 0, "items": []}},
     "ieee_xplore": {"total_records": 0, "total_searched": 7408387},
     "scopus": {"search-results": {"opensearch:totalResults": "0", "entry": [{"@_fa": "true", "error": "Result set was empty"}]}},
+    "core": {"totalHits": 0, "limit": 5, "offset": 0, "results": []},
     "serpapi": {"search_metadata": {"status": "Success"}, "error": "Google hasn't returned any results for this query."},
 }
 SUCCESS["biorxiv"], ZERO["biorxiv"] = SUCCESS["openalex"], ZERO["openalex"]
-KEYED = {"ieee_xplore", "scopus", "serpapi"}
+KEYED = {"ieee_xplore", "scopus", "core", "serpapi"}
 SEARCH = {"openalex": openalex.search_works, "semantic_scholar": semantic_scholar.search, "crossref": crossref.search,
           "arxiv": arxiv.search, "biorxiv": biorxiv.search, "ieee_xplore": ieee_xplore.search, "scopus": scopus.search,
-          "serpapi": serpapi.search}
+          "core": core.search, "serpapi": serpapi.search}
 ALL = list(SEARCH)
 
 
@@ -193,6 +199,18 @@ def test_scopus_complete_view_probe_reads_entitlement(answer, expected):
             return await scopus.complete_view_entitled(client, SECRET)
     assert asyncio.run(go()) is expected
     assert seen[0].url.params["view"] == "COMPLETE" and seen[0].headers["X-ELS-APIKey"] == SECRET and SECRET not in str(seen[0].url)
+
+
+def test_core_record_attaches_no_pdf_and_drops_full_text():
+    outcome, seen = run("core", lambda r: ok_response("core"), key=SECRET)
+    record = outcome.records[0]
+    assert str(seen[0].url).startswith(core.SEARCH_URL) and seen[0].headers["authorization"] == f"Bearer {SECRET}"
+    assert SECRET not in str(seen[0].url) and SECRET not in outcome.request_description
+    assert (record.provider_record_id, record.title, record.doi, record.year, record.venue) == (
+        "777", "SYNTHETIC release scheduling", DOI.lower(), 2021, "Synthetic Transactions")
+    assert (record.oa_pdf_url, record.version_label, record.landing_url) == (None, None, "https://core.ac.uk/works/777")
+    assert record.abstract_origin == core.ABSTRACT_ORIGIN and record.identifiers == {"core_work_id": "777", "doi": DOI.lower()}
+    assert "fullText" not in record.raw and "fullText" not in json.dumps(outcome.raw_payload) and outcome.provider_total == 3
 
 
 def test_serpapi_record_keeps_snippet_out_of_the_abstract():

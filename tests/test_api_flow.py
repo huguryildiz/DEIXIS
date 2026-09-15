@@ -254,7 +254,7 @@ def test_pdf_discovery_is_visible_and_user_can_attach_pdf_to_existing_source(tmp
         found = client.post(f"/api/researches/{rid}/sources/{source['source_version_id']}/pdf-discovery")
         assert found.status_code == 200, found.text
         refreshed = next(s for s in found.json()["sources"] if s["source_version_id"] == source["source_version_id"])
-        assert [d["provider"] for d in refreshed["access"]["pdf_discoveries"]] == ["unpaywall", "openalex", "crossref", "web_search"]
+        assert [d["provider"] for d in refreshed["access"]["pdf_discoveries"]] == ["unpaywall", "openalex", "crossref", "core", "web_search"]
 
         attached = client.post(
             f"/api/researches/{rid}/sources/{source['source_version_id']}/uploads",

@@ -1,35 +1,179 @@
 import { useCallback, useEffect, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, Server, Sparkles, SquareTerminal, TextSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { api, type Connections } from './api'
+import { ConfirmDialog } from './ConfirmDialog'
+import { api, type Connections, type Credentials, type KeyEntry, type Keychain, type LocalTool, type LocalTools, type SemanticSearch, type SemanticSearchProvider } from './api'
 import { ConnectionIcon } from './connectionIcons'
 import { useToast } from './Toast'
 import { t } from './i18n'
+import { connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames } from './labels'
 
-const modelNames: Record<string, string> = { codex: 'Codex', claude: 'Claude', deepseek: 'DeepSeek', gemini: 'Gemini CLI', kimi: 'Kimi', grok: 'Grok', copilot: 'GitHub Copilot', glm: 'GLM', muse_spark: 'Muse Spark', muse_glimmer: 'Muse Glimmer', ollama: 'Ollama', qwen: 'Qwen', mistral: 'Mistral' }
 const providerNames: Record<string, string> = {
-  semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', openalex: 'OpenAlex', scopus: 'Scopus', ieee_xplore: 'IEEE Xplore', serpapi: 'SerpApi',
+  semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', openalex: 'OpenAlex', scopus: 'Scopus', ieee_xplore: 'IEEE Xplore', core: 'CORE', serpapi: 'SerpApi',
 }
-const isPlannedModel = (reason?: string | null) => reason === 'Adapter not implemented in this version'
+// Providers that take their own key; env names come from the credentials contract.
+const providerKeyEnv: Record<string, string> = { openalex: 'OPENALEX_API_KEY', biorxiv: 'OPENALEX_API_KEY', semantic_scholar: 'S2_API_KEY', ieee_xplore: 'IEEE_API_KEY', scopus: 'SCOPUS_API_KEY', core: 'CORE_API_KEY', serpapi: 'SERPAPI_API_KEY' }
 const hasProviderAccessMode = (mode: string | null) => mode === 'api_key' || mode === 'keyless'
 const providerStatus = (mode: string | null) => mode === 'api_key' ? t('API key configured') : mode === 'keyless' ? t('No API key required') : t('Key not configured')
+const formatBytes = (bytes: number) => bytes / 1e9 >= 1 ? t('{gb} GB', { gb: (bytes / 1e9).toFixed(1) }) : t('{mb} MB', { mb: Math.round(bytes / 1e6) })
 
-type Selected = { kind: 'model' | 'provider'; id: string }
+type Selected = { kind: 'model' | 'provider' | 'local-tool'; id: string }
 
-export function ConnectionsPage({ dark }: { dark: boolean }) {
+// Shared key management block: status + test/replace/remove, or the key form. Used for cloud model
+// keys (Gemini, OpenAI) and scholarly source keys inside their respective cards/sheets.
+function KeyPanel({ env, entry, keychain, dark, onSaved }: { env: string; entry: KeyEntry | undefined; keychain: Keychain; dark: boolean; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [formError, setFormError] = useState('')
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const toast = useToast()
+  if (!entry) return null
+  const id = `key-${env}`
+
+  if (entry.source === 'environment') return null
+
+  function test() {
+    setTesting(true)
+    api.testCredential(env).then(result => {
+      toast(result.status === 'ok' ? 'success' : 'warning', result.detail)
+      onSaved()
+    }).catch((e: Error) => toast('error', e.message)).finally(() => setTesting(false))
+  }
+  function save() {
+    setBusy(true); setFormError('')
+    api.saveCredential(env, value).then(() => { setEditing(false); setValue(''); onSaved(); toast('success', t('Key saved.')) })
+      .catch((e: Error) => setFormError(e.message)).finally(() => setBusy(false))
+  }
+  function remove() {
+    setBusy(true)
+    api.removeCredential(env).then(() => { setConfirmRemove(false); onSaved(); toast('success', t('Key removed.')) })
+      .catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+  }
+
+  if (editing) return <form className="key-form" onSubmit={e => { e.preventDefault(); save() }}>
+    <label htmlFor={id}>{t('API key')}</label>
+    <input id={id} className="key-field" type="password" autoComplete="off" value={value} onChange={e => setValue(e.target.value)} />
+    <p className="key-form-note">{t('The key is tested with one short request before it is saved. It is stored in {keychain} and never shown again.', { keychain: keychain.name ?? t('the system keychain') })}</p>
+    {formError && <p className="key-form-error" role="alert">{formError}</p>}
+    <div className="actions"><Button type="submit" size="sm" disabled={busy || !value.trim()}>{t(busy ? 'Testing and saving…' : 'Test and save')}</Button><Button type="button" variant="ghost" size="sm" onClick={() => { setEditing(false); setValue(''); setFormError('') }}>{t('Cancel')}</Button></div>
+  </form>
+
+  if (!entry.configured) {
+    if (!keychain.available) return <p className="key-note">{t('No system keychain is available; set the key in .env.')}</p>
+    return <div className="actions"><Button variant="outline" size="sm" onClick={() => setEditing(true)}>{t('Add key')}</Button></div>
+  }
+
+  return <div className="key-panel">
+    <div className="actions">
+      {entry.testable && <Button variant="outline" size="sm" onClick={test} disabled={testing}>{t(testing ? 'Testing…' : 'Test')}</Button>}
+      <Button variant="outline" size="sm" onClick={() => setEditing(true)}>{t('Replace key')}</Button>
+      <Button variant="outline" size="sm" className="is-destructive" onClick={() => setConfirmRemove(true)}>{t('Remove')}</Button>
+    </div>
+    <ConfirmDialog open={confirmRemove} dark={dark} title={t('Remove this key?')} description={t('This connection stops working until a new key is added.')} confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={remove} onOpenChange={setConfirmRemove} />
+  </div>
+}
+
+// Warnings are left out: brew prints them for unrelated taps, so they rarely explain a failed install.
+function errorLines(output: string): string[] {
+  return output.split('\n').map(line => line.trim()).filter(line => /\berror\b|fatal|npm err!|permission denied|could not|not found/i.test(line)).slice(0, 3)
+}
+
+function LocalToolDetails({ tool, dark, onChanged }: { tool: LocalTool; dark: boolean; onChanged: () => Promise<void> }) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const toast = useToast()
+  const name = tool.name || localToolNames[tool.id] || tool.id
+  const running = tool.job?.status === 'running'
+  function install() {
+    setBusy(true)
+    api.installLocalTool(tool.id).then(() => { setConfirmOpen(false); onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+  }
+  function cancelInstall() {
+    setCancelling(true)
+    api.cancelLocalToolInstall(tool.id).then(onChanged).catch((e: Error) => toast('error', e.message)).finally(() => setCancelling(false))
+  }
+  function refresh() {
+    setRefreshing(true)
+    onChanged().finally(() => setRefreshing(false))
+  }
+  return <div className="local-tool-details-panel">
+    <span className={`status-chip ${tool.installed ? '' : 'is-configured'}`}>{t(tool.installed ? 'Installed' : 'Not installed')}</span>
+    {tool.installed && <dl className="local-tool-facts">
+      {tool.version && <><dt>{t('Version')}</dt><dd>{tool.version}</dd></>}
+      {tool.path && <><dt>{t('Path')}</dt><dd className="local-tool-path">{tool.path.split('/').map((part, i) => <span key={i}>{i > 0 && '/'}{part}<wbr /></span>)}</dd></>}
+      {tool.role === 'detected' && <><dt>{t('Role')}</dt><dd>{t('Detected only; it does not run steps')}</dd></>}
+    </dl>}
+    {tool.kind === 'server' && tool.installed && (tool.running
+      ? <>
+        <p className="local-tool-note">{t('Running · {endpoint}', { endpoint: tool.endpoint ?? '' })}</p>
+        {tool.models && tool.models.length > 0
+          ? <ul className="local-tool-models">{tool.models.map(m => <li key={m.id}><span>{m.id}</span><span className="local-tool-model-meta">{m.size_bytes != null && formatBytes(m.size_bytes)}{m.embedding && <span className="status-chip is-configured">{t('Embedding')}</span>}</span></li>)}</ul>
+          : <p className="local-tool-note">{t('No models found.')}</p>}
+      </>
+      : <p className="local-tool-note">{t(tool.id === 'ollama' ? 'Start it with `ollama serve`' : 'Open LM Studio and start its local server')}</p>)}
+    {!tool.installed && (tool.install.available
+      ? <>
+        <div className="cmd"><code>{tool.install.command.split(' ').map((word, i) => <span key={i}>{i > 0 && ' '}<span>{word}</span></span>)}</code></div>
+        <div className="actions"><Button variant="outline" size="sm" onClick={() => setConfirmOpen(true)}>{t('Install')}</Button></div>
+        <ConfirmDialog open={confirmOpen} dark={dark} title={t('Install {name}?', { name })} description={t('This runs the command below on this computer.')} context={tool.install.command} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={install} onOpenChange={setConfirmOpen} />
+      </>
+      : <p className="local-tool-note">{tool.install.unavailable_reason}<br /><a href={tool.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
+    {tool.job && <>
+      {running
+        ? <p className="local-tool-note local-tool-progress-head"><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Installing…')}</p>
+        : <p className="local-tool-note">{t(tool.job.status === 'succeeded' ? 'Install finished.' : tool.job.status === 'cancelled' ? 'Installation cancelled.' : 'Install failed.')}</p>}
+      {tool.job.status === 'failed' && <>
+        {errorLines(tool.job.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
+        {tool.job.output && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{tool.job.output}</pre></details>}
+      </>}
+      {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={cancelInstall} disabled={cancelling}>{t(cancelling ? 'Cancelling…' : 'Cancel installation')}</Button></div>}
+    </>}
+    <Button variant="outline" className="connection-recheck" onClick={refresh} disabled={refreshing}><RefreshCw size={14} />{t(refreshing ? 'Refreshing…' : 'Refresh configuration')}</Button>
+  </div>
+}
+
+export function ConnectionsTab({ dark }: { dark: boolean }) {
   const [data, setData] = useState<Connections | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   // The selection outlives `open` so the drawer keeps its content while it animates closed.
   const [selected, setSelected] = useState<Selected | null>(null)
   const [open, setOpen] = useState(false)
+  const [credentials, setCredentials] = useState<Credentials | null>(null)
+  const [tools, setTools] = useState<LocalTools | null>(null)
+  const [toolsError, setToolsError] = useState('')
+  const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
+  const [semError, setSemError] = useState('')
+  const [semProvider, setSemProvider] = useState<SemanticSearchProvider | null>(null)
+  const [semModel, setSemModel] = useState<string | null>(null)
+  const [semBusy, setSemBusy] = useState(false)
+  const toast = useToast()
+
   const load = useCallback((refresh: boolean) => {
     setBusy(true)
     api.connections(refresh).then(result => { setData(result); setError('') }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
   }, [])
+  const loadCredentials = useCallback(() => { api.credentials().then(setCredentials).catch(() => { /* shown inline per key panel */ }) }, [])
+  const loadTools = useCallback((refresh: boolean) => api.localTools(refresh).then(result => { setTools(result); setToolsError('') }).catch((e: Error) => { setToolsError(e.message) }), [])
+  const loadSemantic = useCallback(() => { api.semanticSearch().then(result => { setSemantic(result); setSemError('') }).catch((e: Error) => setSemError(e.message)) }, [])
   useEffect(() => { load(false) }, [load])
-  const toast = useToast()
+  useEffect(() => { loadCredentials() }, [loadCredentials])
+  useEffect(() => { loadTools(false) }, [loadTools])
+  useEffect(() => { loadSemantic() }, [loadSemantic])
+  useEffect(() => { if (semantic) { setSemProvider(semantic.provider); setSemModel(semantic.model) } }, [semantic])
+  useEffect(() => {
+    if (!tools?.tools.some(tool => tool.job?.status === 'running')) return
+    const timer = window.setInterval(() => loadTools(false), 2000)
+    return () => window.clearInterval(timer)
+  }, [tools, loadTools])
+
+  const reloadAfterKeyChange = useCallback(() => { loadCredentials(); load(true); loadSemantic() }, [loadCredentials, load, loadSemantic])
+
   const show = (item: Selected) => { setSelected(item); setOpen(true) }
   const recheck = () => {
     if (!selected) return

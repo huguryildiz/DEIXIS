@@ -88,6 +88,39 @@ def test_unpaywall_requires_contact_email_without_calling_network():
     assert result.error_code == "missing_contact_email"
 
 
+def test_core_lists_hosted_pdfs_of_the_same_doi_as_version_uncertain():
+    def handler(request):
+        assert request.url.params["q"] == 'doi:"10.1/test"' and request.headers["authorization"] == "Bearer key"
+        return httpx.Response(200, json={"totalHits": 2, "results": [
+            {"id": 1, "doi": "10.1/TEST", "downloadUrl": "https://core.ac.uk/download/11.pdf",
+             "links": [{"type": "download", "url": "https://core.ac.uk/download/11.pdf"},
+                       {"type": "display", "url": "https://core.ac.uk/works/1"}]},
+            {"id": 2, "doi": "10.1/test.suppl", "downloadUrl": "https://core.ac.uk/download/22.pdf"},
+        ]})
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.core_lookup(client, "10.1/test", "key")
+
+    result = run(check())
+    assert result.status == "completed"
+    assert [(c.url, c.landing_url, c.identity_status, c.version_status) for c in result.candidates] == [
+        ("https://core.ac.uk/download/11.pdf", "https://core.ac.uk/works/1", "doi_verified", "uncertain"),
+    ]
+
+
+def test_core_requires_key_without_calling_network():
+    def handler(request):
+        raise AssertionError("CORE must not be called without a key")
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.core_lookup(client, "10.1/test", None)
+
+    result = run(check())
+    assert (result.status, result.error_code) == ("auth_required", "missing_core_key")
+
+
 def test_crossref_collects_pdf_links_and_maps_content_version():
     def handler(request):
         return httpx.Response(200, json={"message": {
@@ -167,7 +200,7 @@ def test_acquisition_records_403_then_downloads_second_verified_location(tmp_pat
     candidates = store.pdf_candidates(svid)
     assert [(c["access_status"], c["http_status"]) for c in candidates] == [("http_error", 403), ("downloaded", 200)]
     assert store.has_asset(svid)
-    assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == ["unpaywall", "openalex", "crossref"]
+    assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == ["unpaywall", "openalex", "crossref", "core"]
     connection.close()
 
 
@@ -189,6 +222,8 @@ def test_acquisition_uses_web_when_metadata_sources_yield_no_verified_pdf(tmp_pa
                 "locations": [{"pdf_url": "https://repo.example/manuscript.pdf", "version": "acceptedVersion"}]})
         if "api.crossref.org" in request.url.host:
             return httpx.Response(200, json={"message": {"DOI": "10.1/test", "link": []}})
+        if "api.core.ac.uk" in request.url.host:
+            return httpx.Response(200, json={"results": [{"doi": "10.1/test", "downloadUrl": "https://core.ac.uk/download/1.pdf"}]})
         return httpx.Response(200, json={"organic_results": [{"title": record.title,
             "link": "https://repo.example/item", "resources": [{"file_format": "PDF", "link": "https://repo.example/a.pdf"}]}]})
 
@@ -197,10 +232,12 @@ def test_acquisition_uses_web_when_metadata_sources_yield_no_verified_pdf(tmp_pa
 
     async def check():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            return await acquisition.acquire_for_source(store, rid, svid, client, tmp_path / "papers", None, "key", reject_fetch)
+            return await acquisition.acquire_for_source(store, rid, svid, client, tmp_path / "papers", None, "key", reject_fetch,
+                                                        core_key="key")
 
     result = run(check())
     assert result["pdf_found"] is False
-    assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == ["unpaywall", "openalex", "crossref", "web_search"]
-    assert [c["version_status"] for c in store.pdf_candidates(svid)] == ["different", "uncertain"]
+    assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == ["unpaywall", "openalex", "crossref", "core", "web_search"]
+    assert [(c["provider"], c["version_status"]) for c in store.pdf_candidates(svid)] == [
+        ("openalex", "different"), ("core", "uncertain"), ("web_search", "uncertain")]
     connection.close()

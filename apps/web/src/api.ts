@@ -39,13 +39,13 @@ export type SearchRun = {
 }
 export type Asset = { id: string; extraction_status: string; page_count: number | null; origin: string; byte_size: number; original_filename: string | null }
 export type PdfCandidate = {
-  id: string; provider: 'unpaywall' | 'openalex' | 'crossref' | 'web_search'; candidate_url: string; landing_url: string | null
+  id: string; provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'web_search'; candidate_url: string; landing_url: string | null
   version_label: string | null; license: string | null; identity_status: 'doi_verified' | 'title_verified' | 'unverified' | 'mismatch'
   version_status: 'match' | 'different' | 'uncertain'; access_status: 'not_attempted' | 'downloaded' | 'http_error' | 'not_pdf' | 'too_large' | 'timeout' | 'blocked_url' | 'failed'
   http_status: number | null; error_code: string | null; final_url: string | null; discovered_at: string; attempted_at: string | null
 }
 export type PdfDiscovery = {
-  provider: 'unpaywall' | 'openalex' | 'crossref' | 'web_search'; query_text: string; status: string; result_count: number
+  provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'web_search'; query_text: string; status: string; result_count: number
   http_status: number | null; error_code: string | null; created_at: string; finished_at: string | null
 }
 export type Source = {

@@ -181,7 +181,7 @@ def test_large_attached_pdf_keeps_bounded_passage_selection(page_count, chunk_co
     assert len(selected) == MAX_PASSAGES_PER_SOURCE
 
 
-def plan_issues(queries, enabled=("openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv", "ieee_xplore", "scopus", "serpapi")):
+def plan_issues(queries, enabled=("openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv", "ieee_xplore", "scopus", "core", "serpapi")):
     report = contracts.ValidationReport()
     plan = {"queries": [{"provider_id": p, "query_text": q, "rationale": "r"} for p, q in queries]}
     contracts._check_search_plan({"enabled_providers": list(enabled), "budget": {"max_provider_requests": 12}}, plan, report)
@@ -197,6 +197,7 @@ def test_well_formed_queries_for_every_provider_pass():
         ("arxiv", 'abs:"molecular communication" AND (abs:scheduling OR abs:allocation)'),
         ("semantic_scholar", "molecular communication resource allocation"),
         ("crossref", "molecular communication scheduling"),
+        ("core", '"molecular communication" AND ("resource allocation" OR scheduling)'),
         ("serpapi", '"molecular communication" scheduling OR "resource allocation"'),
     ]) == []
 
@@ -215,6 +216,10 @@ def test_well_formed_queries_for_every_provider_pass():
     ("semantic_scholar", '"molecular communication" AND scheduling', "provider_query_syntax"),
     ("crossref", "molecular communication resource allocation scheduling routing optimization energy delay", "provider_query_syntax"),
     ("serpapi", '"molecular communication" AND (scheduling OR routing)', "provider_query_syntax"),
+    ("core", '"molecular communication" AND (scheduling', "provider_query_syntax"),
+    ("core", '"molecular communication" OR "nano network"', "provider_query_syntax"),
+    ("core", 'title:"molecular communication" AND scheduling', "provider_query_syntax"),
+    ("core", "molecular communication resource allocation", "provider_query_shape"),
 ])
 def test_malformed_queries_go_back_for_repair(provider, query, code):
     assert (code, "/queries/1/query_text") in plan_issues([("openalex", '"molecular communication" AND scheduling'), (provider, query)])

@@ -71,6 +71,7 @@ configure replacement values locally. Do not assume environment variables exist.
 | IEEE Xplore | `IEEE_API_KEY` | Relevant engineering/computing searches | `apikey` query parameter; redact URLs |
 | SerpApi | `SERPAPI_API_KEY` | Supplementary Google Scholar discovery | `engine=google_scholar`, `api_key` query parameter |
 | bioRxiv (added 2026-09-14) | `OPENALEX_API_KEY` (optional) | Life-science preprints, searched through OpenAlex's bioRxiv source | bioRxiv's own API has no keyword search |
+| CORE (added 2026-09-15) | `CORE_API_KEY` | Open-access repository works; PDF lookup by DOI | `Authorization: Bearer` header |
 
 Owner-reported SerpApi allowance: 250 searches/month shared across uses. Remaining
 quota and current terms were not verified. Verify provider docs and entitlements
@@ -82,8 +83,9 @@ locally configured access. Scopus search works in `STANDARD` view only (`COMPLET
 which carries abstracts, answered 401 for that key). Keyless Semantic Scholar is
 often rate-limited. The SerpApi account showed 213 of 250 monthly searches left
 before the probes. bioRxiv, added at the owner's request, has no keyword search API
-of its own and is searched through OpenAlex's bioRxiv source. Per-provider query
-syntax rules are in
+of its own and is searched through OpenAlex's bioRxiv source. CORE was added on
+2026-09-15 ([D31](../decisions.md)) as a search provider and a PDF-location lookup.
+Per-provider query syntax rules are in
 `backend/deixis/providers/query_rules.py` and the method reference.
 
 Use relevant direct scholarly APIs for primary retrieval and SerpApi for supplementary

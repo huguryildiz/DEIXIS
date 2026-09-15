@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from deixis.providers import arxiv, biorxiv, crossref, ieee_xplore, openalex, scopus, semantic_scholar, serpapi
+from deixis.providers import arxiv, biorxiv, core, crossref, ieee_xplore, openalex, scopus, semantic_scholar, serpapi
 from deixis.providers.common import SearchOutcome
 
 
@@ -41,6 +41,7 @@ CONNECTORS = {c.provider_id: c for c in (
     Connector("biorxiv", biorxiv.search, biorxiv.MAX_RESULTS, "OPENALEX_API_KEY"),  # searched through OpenAlex
     Connector("ieee_xplore", ieee_xplore.search, ieee_xplore.MAX_RESULTS, "IEEE_API_KEY", key_required=True),
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True),
+    Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True),
     Connector("serpapi", serpapi.search, serpapi.MAX_RESULTS, "SERPAPI_API_KEY", key_required=True, supplementary=True),
 )}
 

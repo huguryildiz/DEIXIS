@@ -49,9 +49,16 @@ export const verdictLabels: Record<Verdict, string> = {
 }
 
 const providerNames: Record<string, string> = {
-  unpaywall: 'Unpaywall', openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', ieee_xplore: 'IEEE Xplore', scopus: 'Scopus', serpapi: 'SerpApi', web_search: 'Web Search', zotero: 'Zotero',
+  unpaywall: 'Unpaywall', openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', ieee_xplore: 'IEEE Xplore', scopus: 'Scopus', core: 'CORE', serpapi: 'SerpApi', web_search: 'Web Search', zotero: 'Zotero',
 }
 export const providerName = (id: string) => providerNames[id] ?? id
+
+export const connectionNames: Record<string, string> = { codex: 'Codex', claude: 'Claude Code', deepseek: 'DeepSeek', gemini: 'Gemini', kimi: 'Kimi', grok: 'Grok', copilot: 'GitHub Copilot', glm: 'GLM', muse_spark: 'Muse Spark', muse_glimmer: 'Muse Glimmer', ollama: 'Ollama', qwen: 'Qwen', mistral: 'Mistral' }
+export const connectionName = (id: string) => connectionNames[id] ?? id
+export const isPlannedModel = (reason?: string | null) => reason === 'Adapter not implemented in this version'
+
+export const localToolNames: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex CLI', gemini_cli: 'Gemini CLI', ollama: 'Ollama', lm_studio: 'LM Studio' }
+export const localToolIcon = (id: string) => (id === 'gemini_cli' ? 'gemini' : id)
 
 export const stepLabel = (kind: string, key: string) => {
   if (kind === 'model:search_plan') return t('Search plan (model)')

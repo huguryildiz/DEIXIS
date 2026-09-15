@@ -3,7 +3,7 @@
 Each rule follows a live probe recorded in the provider adapter's docstring. A query a provider would reject, silently
 misread or answer with zero records goes back to the model for repair instead of being run. The OpenAlex-style checks
 for boolean queries (OR ambiguity, part and operator limits) live in `contracts` and also apply to bioRxiv (searched
-through OpenAlex), IEEE Xplore and the inside of a Scopus field group.
+through OpenAlex), IEEE Xplore, CORE and the inside of a Scopus field group.
 """
 
 from __future__ import annotations
@@ -11,11 +11,12 @@ from __future__ import annotations
 import re
 
 NAMES = {"openalex": "OpenAlex", "semantic_scholar": "Semantic Scholar", "crossref": "Crossref", "arxiv": "arXiv",
-         "biorxiv": "bioRxiv", "ieee_xplore": "IEEE Xplore", "scopus": "Scopus", "serpapi": "SerpApi"}
+         "biorxiv": "bioRxiv", "ieee_xplore": "IEEE Xplore", "scopus": "Scopus", "core": "CORE", "serpapi": "SerpApi"}
 EXAMPLES = {
     "openalex": '"molecular communication" AND ("resource allocation" OR scheduling)',
     "biorxiv": '"quorum sensing" AND (optimization OR "optimal control")',
     "ieee_xplore": '"molecular communication" AND ("resource allocation" OR scheduling)',
+    "core": '"molecular communication" AND ("resource allocation" OR scheduling)',
     "scopus": 'TITLE-ABS-KEY("molecular communication" AND ("resource allocation" OR scheduling))',
     "arxiv": 'abs:"molecular communication" AND (abs:scheduling OR abs:allocation)',
     "semantic_scholar": "molecular communication resource allocation",
@@ -41,7 +42,7 @@ def balanced(query: str) -> bool:
 
 def boolean_part(provider_id: str, query: str) -> str | None:
     """The part of a query that OpenAlex-style boolean checks apply to, or None."""
-    if provider_id in ("openalex", "biorxiv", "ieee_xplore"):
+    if provider_id in ("openalex", "biorxiv", "ieee_xplore", "core"):
         return query
     if provider_id == "scopus" and (match := SCOPUS_GROUP.match(query)) and balanced(match.group(2)):
         return match.group(2)
@@ -58,8 +59,16 @@ def syntax_issues(provider_id: str, query: str) -> list[str]:
             issues.append(f"more than {MAX_PLAIN_WORDS} words; {name} ranks records matching any word, so keep only distinctive words")
         return issues
     if not balanced(query):
-        silently = " (it returns zero records instead of an error)" if provider_id == "ieee_xplore" else ""
+        silently = {"ieee_xplore": " (it returns zero records instead of an error)",
+                    "core": " (it returns other records instead of an error)"}.get(provider_id, "")
         return [f"unbalanced quotes or parentheses{silently}"]
+    if provider_id == "core":
+        issues = []
+        if re.search(r"\b[A-Za-z]+:", re.sub(r'"[^"]*"', "", query)):
+            issues.append("CORE does not read a field prefix such as title: as a filter; write the query without field prefixes")
+        if '"' in query and not re.search(r"\bAND\b", query):
+            issues.append("CORE answers a quoted phrase without AND with an error; join the phrase with AND to a group of alternatives")
+        return issues
     if provider_id == "scopus" and not SCOPUS_GROUP.match(query):
         return ["wrap the whole query in one field group such as TITLE-ABS-KEY(...)"]
     if provider_id == "serpapi" and (re.search(r"[()]", query) or re.search(r"\b(AND|NOT)\b", query)):

@@ -13,7 +13,7 @@ from urllib.parse import quote
 import httpx
 
 from deixis.documents import fetch, pdf
-from deixis.providers import crossref
+from deixis.providers import core, crossref
 from deixis.providers.common import ProviderRecord, normalize_doi
 from deixis.storage import db
 from deixis.workflow.store import Store
@@ -161,6 +161,36 @@ async def crossref_lookup(client: httpx.AsyncClient, doi: str, source_version: s
         return Lookup("parse_error", [], 200, type(exc).__name__)
 
 
+async def core_lookup(client: httpx.AsyncClient, doi: str, api_key: str | None) -> Lookup:
+    """CORE works with this DOI and their CORE-hosted PDFs. CORE labels no file version, so every candidate is uncertain."""
+    if not api_key:
+        return Lookup("auth_required", [], error_code="missing_core_key")
+    try:
+        response = await client.get(core.SEARCH_URL, params={"q": f'doi:"{doi}"', "limit": 10},
+                                    headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
+    except httpx.TimeoutException:
+        return Lookup("timeout", [], error_code="timeout")
+    except httpx.HTTPError as exc:
+        return Lookup("failed", [], error_code=type(exc).__name__)
+    if response.status_code == 429:
+        return Lookup("rate_limited", [], 429, "rate_limited")
+    if response.status_code in (401, 403):
+        return Lookup("auth_required", [], response.status_code, "auth_required")
+    if response.status_code != 200:
+        return Lookup("failed", [], response.status_code, f"http_{response.status_code}")
+    try:
+        candidates = []
+        for work in response.json()["results"]:
+            if normalize_doi(work.get("doi")) != doi:
+                continue  # the DOI search also ranks works that only share parts of the DOI
+            urls = [work.get("downloadUrl"), *(item.get("url") for item in work.get("links") or [] if item.get("type") == "download")]
+            candidates += [Candidate("core", url, core.link(work, "display"), None, None, "doi_verified", "uncertain")
+                           for url in urls if url]
+        return Lookup("completed" if candidates else "zero_results", _unique(candidates), 200)
+    except (json.JSONDecodeError, TypeError, KeyError) as exc:
+        return Lookup("parse_error", [], 200, type(exc).__name__)
+
+
 def _title_key(text: str | None) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", (text or "").casefold()))
 
@@ -209,7 +239,8 @@ async def web_lookup(client: httpx.AsyncClient, doi: str, title: str, api_key: s
 
 async def acquire_for_source(store: Store, research_id: str, source_version_id: str, client: httpx.AsyncClient,
                              papers_dir: Any, contact_email: str | None, serpapi_key: str | None,
-                             fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch.fetch_pdf) -> dict[str, Any]:
+                             fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch.fetch_pdf,
+                             core_key: str | None = None) -> dict[str, Any]:
     source = store.source(source_version_id)
     doi = normalize_doi(source.get("doi"))
     if not doi:
@@ -221,6 +252,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     lookups.append(("openalex", doi, oa))
     cr = await crossref_lookup(client, doi, source.get("version_label"), contact_email=contact_email)
     lookups.append(("crossref", doi, cr))
+    lookups.append(("core", doi, await core_lookup(client, doi, core_key)))
     for provider, query, lookup in lookups:
         run_id = store.record_pdf_discovery(research_id, source_version_id, provider, query, lookup)
         store.record_pdf_candidates(source_version_id, run_id, lookup.candidates)

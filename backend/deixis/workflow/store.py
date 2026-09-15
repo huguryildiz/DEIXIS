@@ -19,6 +19,8 @@ from deixis.storage.db import dumps, new_id, now, row_dict, transaction
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
 MIN_TITLE_KEY_CHARS = 12  # shorter normalized titles ("Introduction") say too little to suspect a duplicate
+# Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
+STEP_OUTPUT_KINDS = ("fetch_pdf", "source_similarity")
 
 
 def title_key(title: str | None) -> str:
@@ -362,10 +364,14 @@ class Store:
 
     def run_steps(self, run_id: str) -> list[dict[str, Any]]:
         rows = self.conn.execute(
-            "SELECT id, operation_key, kind, status, attempt, delivery_class, error_code, error_json, started_at, finished_at"
+            "SELECT id, operation_key, kind, status, attempt, delivery_class, error_code, error_json, output_json, started_at, finished_at"
             " FROM run_steps WHERE run_id = ? ORDER BY rowid", (run_id,)
         ).fetchall()
-        return [{**dict(r), "error": json.loads(r["error_json"]) if r["error_json"] else None} for r in rows]
+        return [{**{k: r[k] for k in r.keys() if k != "output_json"},
+                 "error": json.loads(r["error_json"]) if r["error_json"] else None,
+                 # Only the counting steps carry their output here; a model step's output is read through its own view.
+                 "output": json.loads(r["output_json"]) if r["output_json"] and r["kind"] in STEP_OUTPUT_KINDS else None}
+                for r in rows]
 
     # ---- model step records ---------------------------------------------------------
     def insert_step_input(self, step_id: str, research_id: str, run_id: str, attempt: int, payload: dict[str, Any],
@@ -560,6 +566,9 @@ class Store:
         if row is None:
             raise NotFound(asset_id)
         return dict(row)
+
+    def asset_passage_count(self, asset_id: str) -> int:
+        return self.conn.execute("SELECT COUNT(*) FROM passages WHERE asset_id = ?", (asset_id,)).fetchone()[0]
 
     def add_asset_with_pages(self, svid: str, sha256: str, size: int, storage_path: str, origin: str,
                              retrieved_from: str | None, filename: str | None, extraction: Any,

@@ -32,7 +32,7 @@ def valid_response(si: dict[str, Any]) -> str:
         return json.dumps(envelope(si, "deixis.screening_proposal.v1") | {
             "decisions": [{"candidate_id": c["candidate_id"], "proposal": "include", "reason": "fake include", "evidence_basis": "title_and_abstract"}
                           for c in si["candidates"]],
-            "notes": "",
+            "notes": "fake screening notes.",
         })
     if task == "answer_review":
         return json.dumps(envelope(si, "deixis.answer_review.v1") | {

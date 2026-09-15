@@ -242,6 +242,31 @@ def test_question_to_cited_answer_and_restart(tmp_path):
         assert leak.status_code == 404  # T08: passage outside research B's corpus
 
 
+def test_run_view_reports_the_plan_screening_notes_and_counting_step_outputs(tmp_path):
+    with TestClient(app_for(tmp_path)) as raw:
+        client = session(raw)
+        rid = create(client)
+        discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        view, run = wait_run(client, rid, discovery["id"])
+        assert run["status"] == "completed", run
+        plan = run["plan"]
+        assert plan["question_interpretation"] == "fake interpretation" and plan["search_rationale"] == "fake"
+        assert plan["scope_boundaries"] == ["fake"]
+        assert plan["concepts"][0]["label"] == "molecular communication" and plan["concepts"][0]["synonyms"] == ["diffusion channel"]
+        assert [(q["provider_id"], q["rationale"]) for q in plan["queries"]] == [("openalex", "fake")]
+        assert run["screening_notes"] == "fake screening notes."
+        # A model step's output stays out of the view; the counting steps carry theirs.
+        assert next(s for s in run["steps"] if s["kind"] == "model:search_plan")["output"] is None
+
+        answer_run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, answer_run["id"])
+        assert run["status"] == "completed", run
+        assert run["plan"] is None and run["screening_notes"] == ""
+        fetched = next(s for s in run["steps"] if s["kind"] == "fetch_pdf" and s["status"] == "succeeded")
+        assert fetched["output"]["page_count"] == 1 and fetched["output"]["passage_count"] >= 1
+        assert fetched["output"]["asset_id"] in [a["id"] for s in view["sources"] for a in s["access"]["assets"]]
+
+
 def test_pdf_discovery_is_visible_and_user_can_attach_pdf_to_existing_source(tmp_path):
     with TestClient(app_for(tmp_path)) as raw:
         client = session(raw)

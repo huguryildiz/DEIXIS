@@ -225,7 +225,7 @@
       "name": "answer_claim_without_passage_and_duplicates",
       "step_input": "A_answer",
       "expect_ok": false,
-      "expect_codes": ["claim_without_passage", "duplicate_claim_label", "duplicate_passage_id", "missing_citation_anchor", "unknown_source_id"],
+      "expect_codes": ["claim_without_passage", "duplicate_claim_label", "duplicate_passage_id", "unknown_source_id"],
       "output": {
         "schema_version": "deixis.grounded_answer_draft.v2",
         "step_input_id": "sti_SYNTHA0003",

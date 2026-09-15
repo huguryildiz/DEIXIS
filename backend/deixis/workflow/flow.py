@@ -402,10 +402,42 @@ class ResearchFlow:
         )
         status = "succeeded" if extraction.status in ("succeeded", "partial") else "partial"
         self.store.finish_step(step["id"], status, output={"asset_id": asset_id, "extraction_status": extraction.status,
-                                                          "page_count": extraction.page_count},
+                                                          "page_count": extraction.page_count,
+                                                          "passage_count": self.store.asset_passage_count(asset_id)},
                                error_code=None if status == "succeeded" else f"extraction_{extraction.status}")
 
-    def _retrieve(self, research_id: str, scope: dict[str, Any], included: list[str], limit: int) -> list[dict[str, Any]]:
+    async def _semantic_ranking(self, run: dict[str, Any], scope: dict[str, Any], included: list[str]) -> list[dict[str, Any]] | None:
+        """Rank the included sources' passages by embedding similarity to the question (D27, D29).
+
+        Uses the provider chosen in Settings; without a choice, Gemini when GEMINI_API_KEY is set. A failed or
+        unavailable embedding request is recorded as a failed step, and the answer then uses lexical retrieval alone.
+        """
+        provider, model = embeddings.chosen(self.store.setting("semantic_search"))
+        if provider == "off" or not model:
+            return None
+        embedder = embeddings.Embedder(provider, model)
+        step = self.store.step(run["id"], "semantic_retrieval", f"embedding:{embedder.stored_model}")
+        self.store.start_step(step["id"])
+        passages = [p for svid in included for p in self.store.passages_for(svid)]
+        stored = self.store.passage_embeddings([p["id"] for p in passages], embedder.stored_model)
+        missing = [p for p in passages if p["id"] not in stored]
+        try:
+            fresh = await embedder.embed(self.deps.http, [p["text"] for p in missing], "RETRIEVAL_DOCUMENT") if missing else []
+            (query,) = await embedder.embed(self.deps.http, [scope["question"]], "RETRIEVAL_QUERY")
+        except embeddings.EmbeddingError as exc:
+            self.store.finish_step(step["id"], "failed", error_code="embedding_failed", error={"error": str(exc)})
+            return None
+        if fresh:
+            self.store.save_passage_embeddings(embedder.stored_model, len(fresh[0]),
+                                               {p["id"]: vector.tobytes() for p, vector in zip(missing, fresh)})
+        vectors = {pid: embeddings.from_blob(blob) for pid, blob in stored.items()} | {p["id"]: v for p, v in zip(missing, fresh)}
+        ranked = sorted(passages, key=lambda p: -embeddings.similarity(query, vectors[p["id"]]))
+        self.store.finish_step(step["id"], "succeeded",
+                               output={"model": embedder.stored_model, "passages": len(passages), "embedded": len(missing)})
+        return ranked
+
+    def _retrieve(self, research_id: str, scope: dict[str, Any], included: list[str], limit: int,
+                  semantic: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
         # A short attached document can fit in the answer input in its entirety. Do not discard relevant later pages
         # merely because the multi-source six-passage cap was reached; keep that cap for larger or mixed corpora.
         if len(included) == 1 and scope.get("source_scope") in ("attached", "attached_and_academic"):

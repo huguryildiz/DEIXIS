@@ -27,11 +27,21 @@ export type RoleModelSetting = { model_connection: string; model: string | null;
 export type Step = {
   id: string; operation_key: string; kind: string; status: string; attempt: number; delivery_class: string | null
   error_code: string | null; error: unknown; started_at: string | null; finished_at: string | null
+  // Only the counting steps (fetch_pdf, source_similarity) carry an output here.
+  output: { page_count?: number | null; passage_count?: number; model?: string; sources?: number } | null
+}
+// What the search plan step reported, as the model wrote it.
+export type SearchPlan = {
+  question_interpretation: string; search_rationale: string; scope_boundaries: string[]
+  concepts: { label: string; role: string; synonyms: string[] }[]
+  queries: { provider_id: string; query_text: string; rationale: string }[]
 }
 export type Run = {
   id: string; research_id: string; scope_revision: number; kind: 'discovery' | 'answer'; status: RunStatus; stage: string
   pause_reason: string | null; error: unknown; budget: Record<string, number>; usage: Record<string, number>
   created_at: string; updated_at: string; version: number; steps?: Step[]
+  // plan null: this run wrote no search plan. screening_notes: the notes of every screening batch, in order.
+  plan: SearchPlan | null; screening_notes: string
 }
 export type SearchRun = {
   id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string

@@ -1,6 +1,6 @@
 # P5 dilim 4 — Taranmış PDF sayfalarını OCR ile okumak ve sayfayla denetlemek: tasarım notu
 
-**Tarih:** 16 Eylül 2026. **Durum:** §8'deki yedi soru sahibin yanıtıyla kapandı; her birinde önerilen seçenek seçildi ([D51](../decisions.md)). Kod yazılmadı; §9'daki alt adımlar kesinleşti.
+**Tarih:** 16 Eylül 2026. **Durum:** §8'deki yedi soru sahibin yanıtıyla kapandı; her birinde önerilen seçenek seçildi ([D51](../decisions.md)). §9'daki altı alt adım uygulandı (17 Eylül 2026); uygulamanın bu nottan farkları §10'da.
 
 **Kısaca:** Bugün metin katmanı olmayan bir PDF sayfası okunmaz. Böyle bir dosya `no_text` diye kaydedilir; yanıt o kaynağı özetinden okur, tablo hücresi "No text" alır. Bu dilim bu sayfaları yerel bir OCR aracıyla (Tesseract) okunur yapar. OCR metni ayrı bir çıkarım olarak yazılır: eski pasajlar silinmez (D45) ve orijinal sayfa referans olarak kalır. OCR'la okunan her pasaj ekranda ve model girdisinde öyle etiketlenir. OCR metninden gelen sayı ve denklemler için doğruluk iddia edilmez; kullanıcıya sayfayla karşılaştırma yolu gösterilir (plan T10).
 
@@ -176,3 +176,16 @@ Her alt adımda önce testler yazılır ve kırmızı görülür, sonra uygulan�
 4. **Görünümler ve model girdisi.** `has_ocr_text`, kanıtta `text_source`; StepInput şeması ve yöntem paketi; `ocr_numbers_unchecked` uyarısı.
 5. **Arayüz.** Sources satırı, PDF hazırlık paneli, etiketler, pasaj paneli, Connections kartı; `api.ts`, `i18n.ts`.
 6. **Kapanış.** Tam backend suite, build, lint, acceptance, `git diff --check`; karar kaydına Evidence ve Limits, bu nota uygulama farkları. Canlı kütüphaneye yazılmaz.
+
+## 10. Uygulama farkları
+
+17 Eylül 2026'da, alt adım 6'da yazıldı. Kanıt ve sınırlar [D51](../decisions.md)'de.
+
+- **Migration numaraları.** `passages.text_source` D52 ile gelen 0030'da (`text_layer`, `ocr`, `marker`); `asset_extractions.ocr_json` 0031'de; `pdf_ocr` run türü 0032'de. §4'teki tek 0030 taslağı böyle bölündü.
+- **Çalışma adımları.** `pdf_ocr` run'ı üç tür adım yazar: `ocr:pages` (metinsiz ve görüntülü sayfalar bir kez bulunur), sayfa başına `ocr:page:{n}`, `ocr:merge`. Bir sayfa başarısız olursa diğerleri yine okunur, run hiçbir şey yazmadan duraklar ve devam edince yalnız o sayfa okunur. Aynı Tesseract sürümü ve dillerle yazılmış bir okuma tekrarlanmaz (uç 409 döner).
+- **Düğmedeki sayfa sayısı.** "Read with OCR · {n} pages · English + Turkish" yerine düğme yalnız "Read with OCR" der; altındaki not "{n} pages have no text" ve dilleri yazar. Buradaki sayı metinsiz sayfaların hepsidir, boş sayfalar dahil: hangi sayfanın görüntü olduğu ancak run başlayınca bulunur. Türkçe verisi yoksa not "Turkish characters may be wrong" ve kurulum komutunu ekler; araç yoksa düğme kapalıdır ve not nedenini yazar. Başka bir run sürerken düğme kapalıdır.
+- **Kaynak durumu.** "OCR text on {k} of {n} pages · check against the page", amber tonda. Metni bulunamayan bir OCR okuması ayrı bir etiket almaz; mevcut "A later text extraction … was not used" notu onu söyler.
+- **Görünüm alanları.** Kaynak PDF'inde `ocr` (`pages_without_text`, `ocr_pages`, `last_read`), yanıt alıntısında `text_source`, `GET /api/ocr`. Bunlar alt adım 5'te eklendi.
+- **Connections kartı.** Tesseract'ı DEIXIS kurmaz; kart sürümü, kurulu ve eksik dilleri ve kurulum komutunu gösterir, bir "Check again" düğmesi vardır.
+- **Zaman çizelgesi.** `pdf_ocr` run'ı tek aşamalı bir kayıttır: dosya adı, okunan sayfa sayısı, metin bulunan ve atlanan boş sayfalar, "in use / not used" ve diller. Duraklarsa okunamayan sayfalar listelenir. `asset_ocr_read` Activity'de görünür.
+- **Ölçülmeyenler.** Arayüz yalnız İngilizce Tesseract verisiyle denendi; Tesseract kurulu değilken ekran tarayıcıda görülmedi. Canlı kütüphaneye yazılmadı.

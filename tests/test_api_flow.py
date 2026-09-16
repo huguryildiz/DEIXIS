@@ -110,7 +110,7 @@ def test_trash_restore_and_permanent_delete_with_evidence(tmp_path):
         assert client.get(f"/api/researches/{rid}/assets/{asset_id}/text").status_code == 404
         assert client.get(f"/api/researches/{rid}/bibliography").status_code == 404
         assert client.get("/api/search", params={"q": "molecule"}).json() == {"researches": [], "sources": []}
-        assert client.get("/api/trash").json()[0]["id"] == rid
+        assert client.get("/api/trash").json()["researches"][0]["id"] == rid
         assert client.delete(f"/api/researches/{rid}").status_code == 404
 
         assert client.post(f"/api/trash/{rid}/restore").json() == {"restored": True}
@@ -120,7 +120,7 @@ def test_trash_restore_and_permanent_delete_with_evidence(tmp_path):
         result = client.delete(f"/api/trash/{rid}")
         assert result.status_code == 200, result.text
         assert result.json() == {"deleted": True, "files_not_removed": []}
-        assert client.get("/api/trash").json() == []
+        assert client.get("/api/trash").json() == {"researches": [], "tables": [], "sources": [], "templates": []}
         assert client.get(f"/api/researches/{rid}").status_code == 404
         assert client.get(f"/api/researches/{rid}/assets/{asset_id}").status_code == 404
         assert client.delete(f"/api/trash/{rid}").status_code == 404

@@ -156,10 +156,39 @@ class Store:
                 raise RevisionConflict("Cancel or finish active runs before trashing this research")
             self.conn.execute("UPDATE researches SET trashed_at = ? WHERE id = ?", (now(), research_id))
 
-    def list_trash(self) -> list[dict[str, Any]]:
-        return [dict(r) for r in self.conn.execute(
+    def trash(self) -> dict[str, list[dict[str, Any]]]:
+        """What the Trash page lists, by kind, each with what it holds (D50).
+
+        A trashed research's tables and removed sources are not listed on their own: they go and come back with it.
+        """
+        researches = [dict(r) for r in self.conn.execute(
             "SELECT id, title, trashed_at FROM researches WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC"
         )]
+        tables = [dict(r) for r in self.conn.execute(
+            "SELECT t.id, t.title, t.research_id, r.title AS research_title, t.version, t.trashed_at,"
+            " (SELECT COUNT(*) FROM table_rows w WHERE w.table_id = t.id AND w.removed_at IS NULL) AS rows,"
+            " (SELECT COUNT(*) FROM table_columns c WHERE c.table_id = t.id AND c.removed_at IS NULL) AS columns,"
+            " (SELECT COUNT(*) FROM evidence_cells c WHERE c.table_id = t.id AND c.current_revision_id IS NOT NULL) AS cells,"
+            " (SELECT COUNT(*) FROM cell_revisions v JOIN evidence_cells c ON c.id = v.cell_id"
+            "  WHERE c.table_id = t.id AND v.kind IN ('human_edit', 'accept_proposal')) AS human_edits"
+            " FROM evidence_tables t JOIN researches r ON r.id = t.research_id"
+            " WHERE t.trashed_at IS NOT NULL AND r.trashed_at IS NULL ORDER BY t.trashed_at DESC"
+        )]
+        sources = [dict(r) for r in self.conn.execute(
+            "SELECT m.source_version_id, v.work_id, v.title, v.version_label, v.year, m.research_id, r.title AS research_title,"
+            " m.removed_at, m.removal_note, m.found_again_at,"
+            " (SELECT COUNT(*) FROM evidence_links l JOIN claims c ON c.id = l.claim_id JOIN answers a ON a.id = c.answer_id"
+            "  WHERE a.research_id = m.research_id AND l.source_version_id = m.source_version_id) AS quotes,"
+            " (SELECT COUNT(*) FROM evidence_cells c JOIN evidence_tables t ON t.id = c.table_id"
+            "  WHERE t.research_id = m.research_id AND c.source_version_id = m.source_version_id AND c.current_revision_id IS NOT NULL) AS cells"
+            " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id JOIN researches r ON r.id = m.research_id"
+            " WHERE m.removed_at IS NOT NULL AND r.trashed_at IS NULL ORDER BY m.removed_at DESC, v.title"
+        )]
+        templates = [dict(r) for r in self.conn.execute(
+            "SELECT id, name, trashed_at, json_array_length(columns_json) AS columns FROM table_templates"
+            " WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC"
+        )]
+        return {"researches": researches, "tables": tables, "sources": sources, "templates": templates}
 
     def restore_research(self, research_id: str) -> None:
         with transaction(self.conn):
@@ -834,6 +863,34 @@ class Store:
             else:
                 self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (ts, research_id))
             self._event(research_id, "asset_removed", {"source_version_id": svid, "asset_id": asset_id})
+
+    def restore_asset(self, research_id: str, svid: str, asset_id: str) -> None:
+        """Put a PDF removed as the wrong file back in use, with its passages; only while no other PDF is in use (D50).
+
+        A replaced file is not restored this way: replacing it again is the explicit action for that.
+        """
+        researches = [r[0] for r in self.conn.execute("SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (svid,))]
+        with transaction(self.conn):
+            if not self.conn.execute(
+                "SELECT 1 FROM source_assets WHERE id = ? AND source_version_id = ? AND removal_reason = 'wrong_file'", (asset_id, svid)
+            ).fetchone():
+                raise NotFound(asset_id)
+            if researches and self.conn.execute(
+                f"SELECT 1 FROM runs WHERE research_id IN ({', '.join('?' * len(researches))}) AND status IN"
+                f" ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1", (*researches, *ACTIVE_RUN_STATUSES)
+            ).fetchone():
+                raise RunInProgress(asset_id)
+            if self.has_asset(svid):
+                raise PdfInUse(svid)
+            ts = now()
+            self.conn.execute("UPDATE source_assets SET removed_at = NULL, removal_reason = NULL WHERE id = ?", (asset_id,))
+            # As removing it did: an included source's answer input changes, so the selection revision moves.
+            included = self.conn.execute(
+                "SELECT 1 FROM selections WHERE research_id = ? AND source_version_id = ? AND state = 'included'", (research_id, svid)
+            ).fetchone()
+            self.conn.execute(f"UPDATE researches SET updated_at = ?{', selection_revision = selection_revision + 1' if included else ''}"
+                              " WHERE id = ?", (ts, research_id))
+            self._event(research_id, "asset_restored", {"source_version_id": svid, "asset_id": asset_id})
 
     def source(self, svid: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT * FROM source_versions WHERE id = ?", (svid,)).fetchone()

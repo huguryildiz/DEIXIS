@@ -285,7 +285,8 @@ const json = (method: string, body: unknown, extra: Record<string, string> = {})
 
 export const api = {
   researches: () => request<ResearchSummary[]>('/api/researches'),
-  trash: () => request<TrashedResearch[]>('/api/trash'),
+  // The Trash list also holds tables, removed sources and templates (D50); the page shows researches until slice 3's interface step.
+  trash: () => request<{ researches: TrashedResearch[] }>('/api/trash').then(trash => trash.researches),
   moveToTrash: (id: string) => request<{ trashed: boolean }>(`/api/researches/${id}`, { method: 'DELETE' }),
   restore: (id: string) => request<{ restored: boolean }>(`/api/trash/${id}/restore`, { method: 'POST' }),
   deletePermanently: (id: string) => request<{ deleted: boolean; files_not_removed: string[] }>(`/api/trash/${id}`, { method: 'DELETE' }),

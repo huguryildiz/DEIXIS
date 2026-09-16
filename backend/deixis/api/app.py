@@ -490,8 +490,8 @@ def create_app(
                 "access_level": version["access_level"], "restored": False, "library": library_view(store)}
 
     @app.get("/api/trash")
-    async def list_trash(request: Request) -> list[dict[str, Any]]:
-        return store_of(request).list_trash()
+    async def list_trash(request: Request) -> dict[str, list[dict[str, Any]]]:
+        return store_of(request).trash()
 
     @app.post("/api/trash/{research_id}/restore")
     async def restore_research(research_id: str, request: Request) -> dict[str, bool]:
@@ -1005,6 +1005,16 @@ def create_app(
         store.remove_asset(research_id, source_version_id, asset_id)
         return research_view(store, research_id)
 
+    @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/restore")
+    async def restore_asset(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+        """Put a PDF removed as the wrong file back in use; 409 when another PDF is in use for the source (D50)."""
+        store = store_of(request)
+        store.research(research_id)
+        if not store.is_active_member(research_id, source_version_id):
+            raise HTTPException(404, "Source is not part of this research")
+        store.restore_asset(research_id, source_version_id, asset_id)
+        return research_view(store, research_id)
+
     def asset_in_use(store: Store, research_id: str, source_version_id: str, asset_id: str) -> dict[str, Any]:
         store.research(research_id)
         if not store.is_active_member(research_id, source_version_id):
@@ -1088,6 +1098,16 @@ def create_app(
         tables_of(request).trash_table(research_id, table_id, expected_version)
         return {"trashed": True}
 
+    @app.post(table_path + "/restore")
+    async def restore_table(research_id: str, table_id: str, body: ExpectedVersion, request: Request) -> dict[str, Any]:
+        tables = tables_of(request)
+        tables.restore_table(research_id, table_id, body.expected_version)
+        return tables.table_view(research_id, table_id)
+
+    @app.delete("/api/trash/tables/{table_id}")
+    async def purge_table(table_id: str, request: Request) -> dict[str, Any]:
+        return {"deleted": True, **tables_of(request).purge_table(table_id)}
+
     @app.post(table_path + "/rows")
     async def add_table_rows(research_id: str, table_id: str, body: TableRows, request: Request) -> dict[str, Any]:
         tables = tables_of(request)
@@ -1139,6 +1159,13 @@ def create_app(
         tables.remove_column(research_id, table_id, column_id, expected_version)
         return tables.table_view(research_id, table_id)
 
+    @app.post(table_path + "/columns/{column_id}/restore")
+    async def restore_table_column(research_id: str, table_id: str, column_id: str, body: ExpectedVersion,
+                                   request: Request) -> dict[str, Any]:
+        tables = tables_of(request)
+        tables.restore_column(research_id, table_id, column_id, body.expected_version)
+        return tables.table_view(research_id, table_id)
+
     @app.get(cell_path)
     async def get_cell(research_id: str, table_id: str, column_id: str, source_version_id: str, request: Request) -> dict[str, Any]:
         return tables_of(request).cell_view(research_id, table_id, column_id, source_version_id)
@@ -1183,6 +1210,15 @@ def create_app(
     async def trash_table_template(template_id: str, request: Request) -> dict[str, bool]:
         tables_of(request).trash_template(template_id)
         return {"trashed": True}
+
+    @app.post("/api/table-templates/{template_id}/restore")
+    async def restore_table_template(template_id: str, request: Request) -> dict[str, bool]:
+        tables_of(request).restore_template(template_id)
+        return {"restored": True}
+
+    @app.delete("/api/trash/templates/{template_id}")
+    async def purge_table_template(template_id: str, request: Request) -> dict[str, Any]:
+        return {"deleted": True, **tables_of(request).purge_template(template_id)}
 
     @app.get("/api/researches/{research_id}/events")
     async def events(research_id: str, request: Request, after: int = 0) -> list[dict[str, Any]]:

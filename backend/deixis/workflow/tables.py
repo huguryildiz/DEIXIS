@@ -13,7 +13,7 @@ from typing import Any
 
 from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
-from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
+from deixis.workflow.store import ACTIVE_RUN_STATUSES, EVIDENCE_STATUS_SQL, NotFound, Store
 
 ANSWER_FORMATS = ("choice", "number_unit", "yes_no", "text")
 CELL_STATES = ("value", "unknown", "not_reported", "not_verified", "not_applicable", "inaccessible", "not_found_in_inspected_scope")
@@ -245,10 +245,65 @@ class TableStore:
             self._changed(research_id, table_id)
 
     def trash_table(self, research_id: str, table_id: str, expected_version: int) -> None:
+        """Move a table to the trash; rows, columns, cells, revisions and proposals stay stored as they are (D50)."""
         with transaction(self.conn):
             check_expected_version(expected_version, self._table(research_id, table_id)["version"])
-            self.conn.execute("UPDATE evidence_tables SET trashed_at = ?, version = version + 1 WHERE id = ?", (now(), table_id))
-            self._changed(research_id, table_id, trashed=True)
+            if self.conn.execute(
+                "SELECT 1 FROM runs WHERE kind IN ('table_fill', 'cell_recheck', 'table_columns') AND json_extract(target_json, '$.table_id') = ?"
+                f" AND status IN ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1", (table_id, *ACTIVE_RUN_STATUSES)
+            ).fetchone():
+                raise RevisionConflict("Cancel or finish the run working on this table before moving it to the trash")
+            self.conn.execute("UPDATE evidence_tables SET trashed_at = ?, version = version + 1, updated_at = ? WHERE id = ?",
+                              (now(), now(), table_id))
+            self.store._event(research_id, "table_trashed", {"table_id": table_id})
+
+    def restore_table(self, research_id: str, table_id: str, expected_version: int) -> None:
+        """Bring a table back from the trash; a table of a trashed research comes back only with its research."""
+        with transaction(self.conn):
+            self.store.research(research_id)
+            row = self.conn.execute(
+                "SELECT version FROM evidence_tables WHERE id = ? AND research_id = ? AND trashed_at IS NOT NULL", (table_id, research_id)
+            ).fetchone()
+            if row is None:
+                raise NotFound(table_id)
+            check_expected_version(expected_version, row["version"])
+            self.conn.execute("UPDATE evidence_tables SET trashed_at = NULL, version = version + 1, updated_at = ? WHERE id = ?",
+                              (now(), table_id))
+            self.store._event(research_id, "table_restored", {"table_id": table_id})
+
+    def purge_table(self, table_id: str) -> dict[str, int]:
+        """Delete a trashed table permanently: its rows, columns, cells, revisions and evidence links (D50).
+
+        Passages, files, StepInputs and runs stay; other evidence may rest on them. Returns what was deleted.
+        """
+        with transaction(self.conn):
+            row = self.conn.execute(
+                "SELECT t.research_id, t.title FROM evidence_tables t JOIN researches r ON r.id = t.research_id"
+                " WHERE t.id = ? AND t.trashed_at IS NOT NULL AND r.trashed_at IS NULL", (table_id,)
+            ).fetchone()
+            if row is None:
+                raise NotFound(table_id)
+            if self.conn.execute(
+                f"SELECT 1 FROM runs WHERE research_id = ? AND status IN ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1",
+                (row["research_id"], *ACTIVE_RUN_STATUSES),
+            ).fetchone():
+                raise RevisionConflict("Active runs prevent permanent deletion")
+            impact = self.table_impact(table_id)
+            self.conn.execute("INSERT INTO table_purge_authorizations VALUES (?)", (table_id,))
+            _delete_tables(self.conn, "SELECT id FROM evidence_tables WHERE id = ?", (table_id,))
+            self.conn.execute("DELETE FROM table_purge_authorizations WHERE table_id = ?", (table_id,))
+            self.store._event(row["research_id"], "table_purged", {"table_id": table_id, "title": row["title"], **impact})
+        return impact
+
+    def table_impact(self, table_id: str) -> dict[str, int]:
+        """Cells that show a revision, and revisions a person wrote or chose, so a confirmation can name what is lost."""
+        cells = "SELECT id FROM evidence_cells WHERE table_id = ?"
+        return {
+            "cells": self.conn.execute("SELECT COUNT(*) FROM evidence_cells WHERE table_id = ? AND current_revision_id IS NOT NULL",
+                                       (table_id,)).fetchone()[0],
+            "human_edits": self.conn.execute(f"SELECT COUNT(*) FROM cell_revisions WHERE cell_id IN ({cells})"
+                                             " AND kind IN ('human_edit', 'accept_proposal')", (table_id,)).fetchone()[0],
+        }
 
     def add_rows(self, research_id: str, table_id: str, svids: list[str], expected_version: int) -> None:
         with transaction(self.conn):
@@ -343,6 +398,18 @@ class TableStore:
             self.conn.execute("UPDATE table_columns SET removed_at = ?, version = version + 1 WHERE id = ?", (now(), column_id))
             self._touch(table_id)
             self._changed(research_id, table_id)
+
+    def restore_column(self, research_id: str, table_id: str, column_id: str, expected_version: int) -> None:
+        """Bring a removed column back in its place, with its cells and their revisions."""
+        with transaction(self.conn):
+            self._table(research_id, table_id)
+            column = next((c for c in self._columns(table_id, include_removed=True) if c["id"] == column_id and c["removed_at"]), None)
+            if column is None:
+                raise NotFound(column_id)
+            check_expected_version(expected_version, column["version"])
+            self.conn.execute("UPDATE table_columns SET removed_at = NULL, version = version + 1 WHERE id = ?", (column_id,))
+            self._touch(table_id)
+            self.store._event(research_id, "column_restored", {"table_id": table_id, "column_id": column_id})
 
     # ---- cells ------------------------------------------------------------------------
     def _insert_revision(self, cell: dict[str, Any], key: str | None = None, **fields: Any) -> str:
@@ -624,6 +691,22 @@ class TableStore:
                                      (now(), template_id)).rowcount:
                 raise NotFound(template_id)
 
+    def restore_template(self, template_id: str) -> None:
+        with transaction(self.conn):
+            if not self.conn.execute("UPDATE table_templates SET trashed_at = NULL WHERE id = ? AND trashed_at IS NOT NULL",
+                                     (template_id,)).rowcount:
+                raise NotFound(template_id)
+
+    def purge_template(self, template_id: str) -> dict[str, int]:
+        """Delete a trashed template. A template holds column definitions only; tables made from it keep their own columns
+        (origin 'template') and lose only the pointer to it."""
+        with transaction(self.conn):
+            if not self.conn.execute("SELECT 1 FROM table_templates WHERE id = ? AND trashed_at IS NOT NULL", (template_id,)).fetchone():
+                raise NotFound(template_id)
+            unlinked = self.conn.execute("UPDATE evidence_tables SET template_id = NULL WHERE template_id = ?", (template_id,)).rowcount
+            self.conn.execute("DELETE FROM table_templates WHERE id = ?", (template_id,))
+        return {"tables_unlinked": unlinked}
+
     # ---- views ------------------------------------------------------------------------
     def tables(self, research_id: str) -> list[dict[str, Any]]:
         self.store.research(research_id)
@@ -739,15 +822,18 @@ class TableStore:
 
 def purge_tables(conn: Any, research_id: str) -> None:
     """Delete a research's tables during permanent deletion; the caller holds the purge authorization."""
-    tables = "SELECT id FROM evidence_tables WHERE research_id = ?"
+    _delete_tables(conn, "SELECT id FROM evidence_tables WHERE research_id = ?", (research_id,))
+
+
+def _delete_tables(conn: Any, tables: str, params: tuple[Any, ...]) -> None:
+    """Delete the selected tables and everything they hold; the caller holds a research or table purge authorization."""
     cells = f"SELECT id FROM evidence_cells WHERE table_id IN ({tables})"
-    conn.execute(f"UPDATE evidence_cells SET current_revision_id = NULL WHERE table_id IN ({tables})", (research_id,))
+    conn.execute(f"UPDATE evidence_cells SET current_revision_id = NULL WHERE table_id IN ({tables})", params)
     conn.execute(f"DELETE FROM cell_evidence_links WHERE cell_revision_id IN (SELECT id FROM cell_revisions WHERE cell_id IN ({cells}))",
-                 (research_id,))
-    conn.execute(f"DELETE FROM cell_revisions WHERE cell_id IN ({cells})", (research_id,))
-    conn.execute(f"DELETE FROM evidence_cells WHERE table_id IN ({tables})", (research_id,))
-    conn.execute(f"DELETE FROM table_rows WHERE table_id IN ({tables})", (research_id,))
-    conn.execute(f"DELETE FROM column_revisions WHERE column_id IN (SELECT id FROM table_columns WHERE table_id IN ({tables}))",
-                 (research_id,))
-    conn.execute(f"DELETE FROM table_columns WHERE table_id IN ({tables})", (research_id,))
-    conn.execute("DELETE FROM evidence_tables WHERE research_id = ?", (research_id,))
+                 params)
+    conn.execute(f"DELETE FROM cell_revisions WHERE cell_id IN ({cells})", params)
+    conn.execute(f"DELETE FROM evidence_cells WHERE table_id IN ({tables})", params)
+    conn.execute(f"DELETE FROM table_rows WHERE table_id IN ({tables})", params)
+    conn.execute(f"DELETE FROM column_revisions WHERE column_id IN (SELECT id FROM table_columns WHERE table_id IN ({tables}))", params)
+    conn.execute(f"DELETE FROM table_columns WHERE table_id IN ({tables})", params)
+    conn.execute(f"DELETE FROM evidence_tables WHERE id IN ({tables})", params)

@@ -1,6 +1,6 @@
 # P5 dilim 3 — Tablo ve kaynak için çöp kutusu, geri alma ve seçili kaynaklardan tablo: tasarım notu
 
-**Tarih:** 16 Eylül 2026. **Durum:** §8'deki yedi soru sahibin yanıtıyla kapandı; her birinde önerilen seçenek seçildi ([D50](../decisions.md)). §9'un 1. ve 2. alt adımları uygulandı (migration `0029_trash_and_corpus_removal.sql`); 3–8 bekliyor. Uygulama farkları §9'un sonunda.
+**Tarih:** 16 Eylül 2026. **Durum:** §8'deki yedi soru sahibin yanıtıyla kapandı; her birinde önerilen seçenek seçildi ([D50](../decisions.md)). §9'un 1–4. alt adımları uygulandı (migration `0029_trash_and_corpus_removal.sql`); 5–8 bekliyor. Uygulama farkları §9'un sonunda.
 
 **Kısaca:** Bugün yalnız araştırma çöpe gider ve geri gelir. Tablo çöpe atılabiliyor ama yalnız API ile ve geri getirme yolu yok. Bir kaynağı araştırmadan çıkarmanın hiçbir yolu yok. Bu dilim üç şey ekler. (1) Tablo, tablo şablonu ve "araştırmadan çıkarılan kaynak" da çöp kutusuna gider, oradan geri gelir. (2) Çöpe atma ve çıkarma işlemlerinden hemen sonra "Geri al" bildirimi çıkar. (3) Sources sekmesinde seçilen kaynaklarla tablo başlatılır. Hiçbir işlem pasajı, dosyayı, hücre revizyonunu ya da yanıt kanıtını silmez; kalıcı silme ayrı ve açıkça onaylanan bir eylemdir. Bir kaynağı araştırmadan çıkarmak kütüphanedeki kaydına ve ortak PDF'ine dokunmaz (T15).
 
@@ -226,3 +226,20 @@ Her alt adımda önce testler yazılır ve kırmızı görülür, sonra uygulan�
 - **Eski migration testleri.** `test_evidence_tables` (23'te) ve `test_provider_records` (25'te) bugünkü kodla üyelik yazdığı için eski migration klasörlerine 0029 da kopyalanır.
 
 **Sorgu sınıflaması.** *Etkin üyelik:* `included_sources`, `work_heads` (geri getirmede `include_removed`), `_settle_work_head` (başka sürümün seçimi), `work_versions`, `quick_search`, `research_view` kaynak listesi, `library_view` proje grupları, `library_work_view` araştırmaları, tablo satırları (`active_rows`, `_active_row`, `table_view`, `tables`), `_check_members`, ve API'de yükleme, PDF arama, aday PDF ekleme, PDF çekme, değiştirme, yeniden çıkarma, etki. *Herhangi bir üyelik:* `passage_view`; PDF ve düz metin açma (etkin üyelik ya da bu araştırmanın kanıtı o dosyaya bağlıysa); `purge_research` kaynak listesi ve paylaşım denetimi; `reextract_asset` ve `replace_asset` etkin run denetimi ve olayları; `asset_impact` araştırma listesi (orada da eski alıntılar dosyayı gösterir); `_join_if_same_publication`; `library_work_view` eserin varlığı; Library'den ekleme reddi. *`candidates` sorguları* (`_work_candidate`, `_flag_suspected_duplicates`, `candidates()`, `add_to_corpus`, `purge_research`) çıkarmaya bakmaz: tarama listesi etkin eser başlarıyla süzülür, aday ve sayılar geçmiş run'lar için değişmez.
+
+### Uygulama farkları (3. adım, 16 Eylül 2026)
+
+- **Tablo çöpe atma artık 409 verebilir.** Önceden run denetimi yoktu; şimdi bu tabloyu hedefleyen `table_fill`, `cell_recheck` ya da `table_columns` run'ı etkinse 409. Olay `table_changed` yerine `table_trashed`.
+- **Tek tablo kalıcı silmesi** araştırmada herhangi bir etkin run varken 409 verir (araştırma kalıcı silmesiyle aynı kural), yalnız tablo run'ında değil. Araştırması çöpteki tablo 404: araştırmayla gider. Yanıt `{deleted, cells, human_edits}`; "insan düzenlemesi" `human_edit` ve `accept_proposal` revizyonlarıdır. Research ve tek tablo silmesi aynı `_delete_tables` işlevini kullanır.
+- **Şablon kalıcı silmesi** onu kullanan tabloların `template_id` alanını boşaltır (`tables_unlinked` sayısı döner). Şablon yalnız sütun tanımı taşır ve tablo sütunları oluşturulurken kopyalanmıştır (`origin = 'template'`); başka seçenek, kullanılan şablonu hiç silinemez yapmaktı.
+- **Geri getirme uçları** beklenen sürümü gövdede (`{expected_version}`) alır, hücre yeniden kontrolü ve öneri kararı gibi. Sütun geri getirme, sütun çıkarmada olduğu gibi tablo sürümünü artırmaz; sütun sürümünü artırır.
+- **Çöp listesi sayıları.** Tablo satır sayısı tablodan çıkarılmamış bütün satırları sayar, kaynağı araştırmadan çıkarılmış olanlar dahil (çöp ekranı tablonun ne taşıdığını söyler). Kaynak öğesi sürüm başınadır (`work_id` ile gruplanabilir), `found_again_at` taşır.
+- **`GET /api/trash` yanıtı değişti**; arayüz 7. adıma kadar yalnız `researches` okur (`api.ts`'de tek satır). Mevcut Trash sayfası acceptance'ta çalışmaya devam ediyor.
+- Yeni olay adları (`table_trashed`, `table_restored`, `table_purged`, `column_restored`, `source_removed`, `source_restored`) Activity'de henüz etiketsiz, ham adıyla görünür; etiketler 7. adımda.
+
+### Uygulama farkları (4. adım, 16 Eylül 2026)
+
+- **Yalnız `wrong_file` geri gelir.** Değiştirilmiş (`replaced`) bir PDF bu uçla geri getirilmez (404); onu geri almak, eski dosyayla yeniden değiştirmektir. Kullanımdaki PDF'e ve başka kaynağın dosyasına da 404.
+- **Beklenen sürüm yok.** Asset'in sürüm alanı olmadığı için çatışma durumdan anlaşılır: kaynakta başka PDF kullanılıyorsa 409 (`PdfInUse`), dosya zaten geri gelmişse 404.
+- **Etkin run denetimi** kaynağı kullanan bütün araştırmalara bakar (`RunInProgress`, 409), değiştirme ve yeniden çıkarmadaki gibi; `remove_asset`'te bu denetim yoktu ve eklenmedi.
+- **Seçim revizyonu** yalnız isteği yapan araştırmada, kaynak orada dahilse artar; `remove_asset`'in bugünkü davranışının aynısı. Aynı kaynağı dahil eden öteki araştırmalarda revizyon ne çekmede ne geri getirmede değişir (mevcut asimetri, bu adımda değiştirilmedi).

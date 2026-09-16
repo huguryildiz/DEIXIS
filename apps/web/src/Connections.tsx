@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { BookMarked, Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, ScanText, Server, Sigma, Sparkles, SquareTerminal, TextSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -19,7 +19,15 @@ const hasProviderAccessMode = (mode: string | null) => mode === 'api_key' || mod
 const providerStatus = (mode: string | null) => mode === 'api_key' ? t('API key configured') : mode === 'keyless' ? t('No API key required') : t('Key not configured')
 const formatBytes = (bytes: number) => bytes / 1e9 >= 1 ? t('{gb} GB', { gb: (bytes / 1e9).toFixed(1) }) : t('{mb} MB', { mb: Math.round(bytes / 1e6) })
 
-type Selected = { kind: 'model' | 'provider' | 'local-tool' | 'equation-reader' | 'ocr-tool'; id: string }
+type Selected = { kind: 'model' | 'provider' | 'local-tool' | 'equation-reader' | 'ocr-tool' | 'api-key'; id: string }
+
+// One connection in a grid: icon, name and a status line with a dot, green when it can be used.
+function ConnectionTile({ icon, name, ok, status, active, onClick }: { icon: ReactNode; name: string; ok: boolean; status: string; active: boolean; onClick: () => void }) {
+  return <button type="button" className={`connection-card ${ok ? 'is-ready' : ''} ${active ? 'active' : ''}`} onClick={onClick}>
+    <span className="connection-card-icon">{icon}</span>
+    <span className="connection-card-text"><strong>{name}</strong><span className="connection-card-status" title={status}>{status}</span></span>
+  </button>
+}
 
 // Shared key management block: status + test/replace/remove, or the key form. Used for cloud model
 // keys (Gemini, OpenAI) and scholarly source keys inside their respective cards/sheets.
@@ -313,12 +321,18 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
       ? modelNames[selected.id] ?? selected.id
       : selected.kind === 'provider'
         ? providerNames[selected.id] ?? selected.id
-        : selected.kind === 'equation-reader' ? t('Equation reader (Marker)') : selected.kind === 'ocr-tool' ? t('OCR (Tesseract)') : localTool?.name || localToolNames[selected.id] || selected.id
+        : selected.kind === 'api-key' ? t('OpenAI API') : selected.kind === 'equation-reader' ? t('Equation reader (Marker)') : selected.kind === 'ocr-tool' ? t('OCR (Tesseract)') : localTool?.name || localToolNames[selected.id] || selected.id
     : ''
   const modelEntries = Object.entries(data?.models ?? {})
   const availableModels = modelEntries.filter(([, model]) => !isPlannedModel(model.reason))
   const plannedModels = modelEntries.filter(([, model]) => isPlannedModel(model.reason))
-  const modelCard = ([id, m]: (typeof modelEntries)[number]) => <button type="button" className={`connection-card ${m.ready ? 'is-ready' : ''} ${isActive('model', id) ? 'active' : ''}`} key={id} onClick={() => show({ kind: 'model', id })}><div className="connection-card-head"><ConnectionIcon id={id} /><strong>{modelNames[id] ?? id}</strong></div>{m.ready ? <span className="status-chip">{t('Ready')}</span> : <small>{m.reason ?? t('Not ready')}</small>}</button>
+  const signInModels = availableModels.filter(([, m]) => m.key_configured === undefined)
+  const keyModels = availableModels.filter(([, m]) => m.key_configured !== undefined)
+  const modelCard = ([id, m]: (typeof modelEntries)[number]) => <ConnectionTile key={id} icon={<ConnectionIcon id={id} />} name={modelNames[id] ?? id} ok={m.ready} status={m.ready ? t('Ready') : m.signed_in === false && m.installed ? t('Not signed in') : m.installed === false ? t('Not installed') : t('Not connected')} active={isActive('model', id)} onClick={() => show({ kind: 'model', id })} />
+  const toolCard = (tool: LocalTool) => <ConnectionTile key={tool.id} icon={<ConnectionIcon id={localToolIcon(tool.id)} />} name={tool.name || localToolNames[tool.id] || tool.id} ok={tool.installed} status={t(tool.job?.status === 'running' ? 'Installing…' : tool.installed ? 'Installed' : 'Not installed')} active={isActive('local-tool', tool.id)} onClick={() => show({ kind: 'local-tool', id: tool.id })} />
+  const providerCard = (p: Connections['providers'][number]) => <ConnectionTile key={p.id} icon={<ConnectionIcon id={p.id} />} name={providerNames[p.id] ?? p.id} ok={p.access_mode === 'api_key'} status={providerStatus(p.access_mode)} active={isActive('provider', p.id)} onClick={() => show({ kind: 'provider', id: p.id })} />
+  const keylessProviders = (data?.providers ?? []).filter(p => !providerKeyEnv[p.id])
+  const keyProviders = (data?.providers ?? []).filter(p => providerKeyEnv[p.id])
 
   const openaiKey = credentials?.keys.find(k => k.env === 'OPENAI_API_KEY')
   const geminiKey = credentials?.keys.find(k => k.env === 'GEMINI_API_KEY')
@@ -348,15 +362,14 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
     <section className="connections-group">
       <h2 className="with-icon"><Cloud size={20} aria-hidden />{t('Cloud models')}</h2>
       <p className="legacy-mini-note">{t('Passages are sent to the provider you choose. Once a key is saved it is never shown again; it can only be replaced or removed.')}</p>
-      <div className="legacy-connection-cards available-model-connections">
-        {availableModels.map(modelCard)}
-        <article className="connection-card openai-card">
-          <div className="connection-card-head"><ConnectionIcon id="openai" /><strong>{t('OpenAI API')}</strong></div>
-          {openaiKey && (openaiKey.configured ? <span className="status-chip">{t('Key configured')}</span> : <small>{t('Not connected')}</small>)}
-          {credentials && <KeyPanel env="OPENAI_API_KEY" entry={openaiKey} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
-        </article>
+      <h3 className="connections-subhead">{t('Account sign-in')}</h3>
+      <div className="connection-grid">{signInModels.map(modelCard)}</div>
+      <h3 className="connections-subhead">{t('API key')}</h3>
+      <div className="connection-grid">
+        {keyModels.map(modelCard)}
+        <ConnectionTile icon={<ConnectionIcon id="openai" />} name={t('OpenAI API')} ok={!!openaiKey?.configured} status={t(openaiKey?.configured ? 'Key configured' : 'Not connected')} active={isActive('api-key', 'OPENAI_API_KEY')} onClick={() => show({ kind: 'api-key', id: 'OPENAI_API_KEY' })} />
       </div>
-      {plannedModels.length > 0 && <details className="planned-connections"><summary>{t('Planned model connections · {n}', { n: plannedModels.length })}</summary><div className="legacy-connection-cards">{plannedModels.map(modelCard)}</div></details>}
+      {plannedModels.length > 0 && <details className="planned-connections"><summary>{t('Planned model connections · {n}', { n: plannedModels.length })}</summary><div className="connection-grid">{plannedModels.map(modelCard)}</div></details>}
     </section>
 
     <section className="connections-group">
@@ -369,21 +382,21 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
       </p>}
       {toolsError && <div className="legacy-boundary">{toolsError}</div>}
       <h3 className="connections-subhead with-icon"><SquareTerminal size={15} aria-hidden />{t('Command-line tools')}</h3>
-      <div className="local-tool-pills">{cliTools.map(tool => <button type="button" className={`local-tool-pill ${tool.installed ? 'is-ready' : ''} ${isActive('local-tool', tool.id) ? 'active' : ''}`} key={tool.id} onClick={() => show({ kind: 'local-tool', id: tool.id })}><ConnectionIcon id={localToolIcon(tool.id)} /><strong>{tool.name || localToolNames[tool.id] || tool.id}</strong><span className="local-tool-pill-status">{t(tool.installed ? 'Installed' : 'Not installed')}</span></button>)}</div>
+      <div className="connection-grid">{cliTools.map(toolCard)}</div>
       <h3 className="connections-subhead with-icon"><Server size={15} aria-hidden />{t('Local model servers')}</h3>
-      <div className="local-tool-pills">{serverTools.map(tool => <button type="button" className={`local-tool-pill ${tool.installed ? 'is-ready' : ''} ${isActive('local-tool', tool.id) ? 'active' : ''}`} key={tool.id} onClick={() => show({ kind: 'local-tool', id: tool.id })}><ConnectionIcon id={localToolIcon(tool.id)} /><strong>{tool.name || localToolNames[tool.id] || tool.id}</strong><span className="local-tool-pill-status">{t(tool.installed ? 'Installed' : 'Not installed')}</span></button>)}</div>
+      <div className="connection-grid">{serverTools.map(toolCard)}</div>
       <p className="legacy-mini-note">{t('Local models do not run research steps in this version; embedding models can be chosen for semantic search.')}</p>
       {reader && <>
         <h3 className="connections-subhead with-icon"><Sigma size={15} aria-hidden />{t('Equation reader')}</h3>
-        <div className="local-tool-pills"><button type="button" className={`local-tool-pill ${reader.installed && reader.models_downloaded ? 'is-ready' : ''} ${isActive('equation-reader', 'marker') ? 'active' : ''}`} onClick={() => show({ kind: 'equation-reader', id: 'marker' })}><Sigma size={16} aria-hidden /><strong>Marker</strong><span className="local-tool-pill-status">{reader.job?.status === 'running' ? t('Installing…') : t(reader.installed && reader.models_downloaded ? 'Installed' : 'Not installed')}</span></button></div>
+        <div className="connection-grid"><ConnectionTile icon={<Sigma size={18} aria-hidden />} name="Marker" ok={reader.installed && reader.models_downloaded} status={reader.job?.status === 'running' ? t('Installing…') : t(reader.installed && reader.models_downloaded ? 'Installed' : 'Not installed')} active={isActive('equation-reader', 'marker')} onClick={() => show({ kind: 'equation-reader', id: 'marker' })} /></div>
       </>}
       {ocrTool && <>
         <h3 className="connections-subhead with-icon"><ScanText size={15} aria-hidden />{t('OCR for scanned PDFs')}</h3>
-        <div className="local-tool-pills"><button type="button" className={`local-tool-pill ${ocrTool.available ? 'is-ready' : ''} ${isActive('ocr-tool', 'tesseract') ? 'active' : ''}`} onClick={() => show({ kind: 'ocr-tool', id: 'tesseract' })}><ScanText size={16} aria-hidden /><strong>Tesseract</strong><span className="local-tool-pill-status">{t(!ocrTool.available ? 'Not installed' : !ocrTool.missing_languages.length ? 'Installed' : ocrTool.languages.join() === 'eng' ? 'English only' : 'Languages missing')}</span></button></div>
+        <div className="connection-grid"><ConnectionTile icon={<ScanText size={18} aria-hidden />} name="Tesseract" ok={ocrTool.available} status={t(!ocrTool.available ? 'Not installed' : !ocrTool.missing_languages.length ? 'Installed' : ocrTool.languages.join() === 'eng' ? 'English only' : 'Languages missing')} active={isActive('ocr-tool', 'tesseract')} onClick={() => show({ kind: 'ocr-tool', id: 'tesseract' })} /></div>
       </>}
       {appTools.length > 0 && <>
         <h3 className="connections-subhead with-icon"><BookMarked size={15} aria-hidden />{t('Reference managers')}</h3>
-        <div className="local-tool-pills">{appTools.map(tool => <button type="button" className={`local-tool-pill ${tool.installed ? 'is-ready' : ''} ${isActive('local-tool', tool.id) ? 'active' : ''}`} key={tool.id} onClick={() => show({ kind: 'local-tool', id: tool.id })}><ConnectionIcon id={localToolIcon(tool.id)} /><strong>{tool.name || localToolNames[tool.id] || tool.id}</strong><span className="local-tool-pill-status">{t(tool.installed ? 'Installed' : 'Not installed')}</span></button>)}</div>
+        <div className="connection-grid">{appTools.map(toolCard)}</div>
         <p className="legacy-mini-note">{t('Collections are imported read-only from a research’s Sources tab or the home composer’s Add sources menu.')}</p>
       </>}
     </section>
@@ -413,13 +426,16 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
 
     <section className="connections-group">
       <h2 className="with-icon"><GraduationCap size={20} aria-hidden />{t('Scholarly sources')}</h2>
-      <div className="legacy-connection-cards">{data?.providers.map(p => <button type="button" className={`connection-card ${p.access_mode === 'api_key' ? 'is-key-configured' : ''} ${isActive('provider', p.id) ? 'active' : ''}`} key={p.id} onClick={() => show({ kind: 'provider', id: p.id })}><div className="connection-card-head"><ConnectionIcon id={p.id} /><strong>{providerNames[p.id] ?? p.id}</strong></div>{hasProviderAccessMode(p.access_mode) ? <span className={`status-chip ${p.access_mode === 'keyless' ? 'is-configured' : ''}`}>{providerStatus(p.access_mode)}</span> : <small>{providerStatus(p.access_mode)}</small>}</button>)}</div>
+      <h3 className="connections-subhead">{t('No API key')}</h3>
+      <div className="connection-grid">{keylessProviders.map(providerCard)}</div>
+      <h3 className="connections-subhead">{t('API key')}</h3>
+      <div className="connection-grid">{keyProviders.map(providerCard)}</div>
       <p className="legacy-mini-note">{t('Every provider with the access it needs is enabled for new researches, and the model chooses which to query. Access and remaining quota are recorded with each request rather than guaranteed in advance.')}</p>
     </section>
 
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent className={`detail-sheet source-sheet connection-sheet ${dark ? 'dark' : ''}`}>
-        <SheetHeader><SheetTitle>{t(selected?.kind === 'provider' ? 'Scholarly source' : selected?.kind === 'local-tool' || selected?.kind === 'equation-reader' || selected?.kind === 'ocr-tool' ? 'Local tool details' : 'Model connection')}</SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
+        <SheetHeader><SheetTitle>{t(selected?.kind === 'provider' ? 'Scholarly source' : selected?.kind === 'api-key' ? 'Model connection' : selected?.kind === 'local-tool' || selected?.kind === 'equation-reader' || selected?.kind === 'ocr-tool' ? 'Local tool details' : 'Model connection')}</SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
         <div className="sheet-body">
           {selected && <div className="connection-sheet-head">{selected.kind === 'equation-reader' ? <Sigma size={20} aria-hidden /> : selected.kind === 'ocr-tool' ? <ScanText size={20} aria-hidden /> : <ConnectionIcon id={selected.kind === 'local-tool' ? localToolIcon(selected.id) : selected.id} />}<h2 className="source-title">{name}</h2></div>}
           {selected?.kind === 'equation-reader' && reader && <EquationReaderDetails reader={reader} dark={dark} onChanged={loadReader} />}
@@ -465,13 +481,18 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
             </>}
             <ModelCatalogue model={model} />
           </>}
+          {selected?.kind === 'api-key' && <>
+            <span className={`status-chip ${openaiKey?.configured ? '' : 'is-configured'}`}>{t(openaiKey?.configured ? 'Key configured' : 'Not connected')}</span>
+            <p className="source-byline">{t('Passages are sent to the provider you choose. Once a key is saved it is never shown again; it can only be replaced or removed.')}</p>
+            {credentials && <KeyPanel env="OPENAI_API_KEY" entry={openaiKey} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
+          </>}
           {provider && <>
             {hasProviderAccessMode(provider.access_mode) && <span className={`status-chip ${provider.access_mode === 'keyless' ? 'is-configured' : ''}`}>{providerStatus(provider.access_mode)}</span>}
             <p className="source-byline">{provider.note}</p>
             <div className="connection-checks">{check(t('Access mode'), provider.access_mode ? t(provider.access_mode) : t('none'))}</div>
             {credentials && providerKeyEnv[provider.id] && <KeyPanel env={providerKeyEnv[provider.id]} entry={credentials.keys.find(k => k.env === providerKeyEnv[provider.id])} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
           </>}
-          {!localTool && selected?.kind !== 'equation-reader' && selected?.kind !== 'ocr-tool' && <Button variant="outline" className="connection-recheck" onClick={recheck} disabled={busy || refreshingModel === selected?.id}><RefreshCw size={14} />{t(provider ? (busy ? 'Refreshing…' : 'Refresh configuration') : (refreshingModel === selected?.id ? 'Checking…' : 'Check again'))}</Button>}
+          {!localTool && selected?.kind !== 'equation-reader' && selected?.kind !== 'ocr-tool' && selected?.kind !== 'api-key' && <Button variant="outline" className="connection-recheck" onClick={recheck} disabled={busy || refreshingModel === selected?.id}><RefreshCw size={14} />{t(provider ? (busy ? 'Refreshing…' : 'Refresh configuration') : (refreshingModel === selected?.id ? 'Checking…' : 'Check again'))}</Button>}
         </div>
       </SheetContent>
     </Sheet>

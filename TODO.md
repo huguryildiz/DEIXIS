@@ -71,3 +71,37 @@ The P4 gap was paywalled IEEE papers with no legal open copy.
     Zotero Connector import, or a later DEIXIS browser extension.
 - [ ] Independent of the run: give the fetcher an honest identity: a contact email in `User-Agent` (now only
       `DEIXIS/0.1 (local research workspace)`) and `Accept: application/pdf`.
+
+## Search query generation (deferred, 2026-09-16)
+
+The `search_plan` model step writes every provider query itself; the code only checks provider syntax
+(`providers/query_rules.py`, `domain/contracts.py::_check_search_plan`) and sends the rest back for repair.
+The model's `concepts` vocabulary is not used to build queries, only for BM25 ordering of sources. A live plan
+(k-connectivity / underwater WSN question) showed the cost: 8 queries that were pairwise combinations of the
+same 4 concepts, so the same first-ranked records came back from several queries.
+
+Elicit and Consensus skip query writing: they own an embedding index over the Semantic Scholar corpus and use
+the question as the vector query, then rerank the top few hundred with an LLM. DEIXIS cannot copy that (no
+own index, ~190 GB of vectors and days of embedding for 250M abstracts; OpenAlex and Semantic Scholar offer
+no public vector search). Screening already plays the rerank role.
+
+Decision for now: **do nothing** to the discovery layer. The only measurement (D13 follow-up) put the recall
+limit at the 48-passage answer input, not at discovery, and no case has shown a relevant paper missing from
+the search results.
+
+Trigger: the first real research where the user says a known relevant paper did not appear. Then check where
+that paper ranked in the provider results (`provider_search` payloads):
+
+- Ranked below `results_per_query`: do **wide fetch, local rank**. Raise `results_per_query` to a few hundred,
+  run the D30 title+abstract similarity (Gemini `gemini-embedding-2`, D29 provider choice) *before* screening
+  and feed screening batches from the similarity order. No new model, index or contract; Scopus records are
+  scored on title only. Measure before/after with `scripts/p4_eval` on the three all-provider runs.
+- Not returned at all: the query is the problem. Then move query composition into code: the model keeps
+  producing concept families and synonyms, the code builds each provider's `core AND (synonyms OR …)` query
+  from them (one query per concept family, no duplicate term pairs), and the repair round for syntax goes away.
+  Free-text model queries stay only as an optional extra.
+- Cheap and independent of the trigger: a warning (not a repair) in `_check_search_plan` when two queries'
+  term sets largely overlap.
+
+Not planned: a per-field local index (OpenAlex subset embedded with a local Ollama/LM Studio model) and a
+citation/recommendation snowball step. Both need a measured recall gap first.

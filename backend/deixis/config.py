@@ -55,10 +55,11 @@ class Settings:
         return os.environ.get("DEIXIS_CONTACT_EMAIL") or None
 
 
-def load_dotenv(path: Path) -> None:
-    """Fill unset environment variables from a local KEY=VALUE file. Values are never logged."""
+def load_dotenv(path: Path) -> set[str]:
+    """Fill unset environment variables from a local KEY=VALUE file and return the names it set. Values are never logged."""
+    loaded: set[str] = set()
     if not path.exists():
-        return
+        return loaded
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -67,6 +68,8 @@ def load_dotenv(path: Path) -> None:
         key, value = key.strip(), value.strip().strip('"').strip("'")
         if value and key not in os.environ:
             os.environ[key] = value
+            loaded.add(key)
+    return loaded
 
 
 def load_settings() -> Settings:
@@ -74,7 +77,7 @@ def load_settings() -> Settings:
 
     from deixis import credentials
 
-    load_dotenv(REPO_ROOT / ".env")
+    credentials.mark_dotenv(load_dotenv(REPO_ROOT / ".env"), REPO_ROOT / ".env")
     credentials.load_into_environment()
     return Settings(
         data_dir=default_data_dir(),

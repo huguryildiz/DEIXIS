@@ -105,7 +105,29 @@ def test_one_model_connection_can_be_freshly_queried(client):
     assert client.get("/api/connections/not-present?refresh=true").status_code == 404
 
 
-def test_keys_from_the_environment_are_left_alone_and_source_keys_are_not_tested(client, monkeypatch):
+def test_a_key_from_dotenv_is_replaced_and_removed_in_that_file(client, monkeypatch, tmp_path, memory_keychain):
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("# SYNTHETIC\nOPENALEX_API_KEY=openalex-old-key\nS2_API_KEY='s2-old-key'\n\n# end")
+    dotenv.chmod(0o600)
+    for name in ("OPENALEX_API_KEY", "S2_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    from deixis.config import load_dotenv
+    credentials.mark_dotenv(load_dotenv(dotenv), dotenv)
+    entry = next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == "OPENALEX_API_KEY")
+    assert (entry["configured"], entry["source"]) == (True, "dotenv")
+
+    saved = client.put("/api/credentials/OPENALEX_API_KEY", json={"value": "openalex-new-key"})
+    assert saved.status_code == 200 and saved.json()["key"]["source"] == "dotenv" and "openalex-new-key" not in saved.text
+    assert os.environ["OPENALEX_API_KEY"] == "openalex-new-key"
+    assert memory_keychain.get_password("DEIXIS", "OPENALEX_API_KEY") is None
+    assert client.delete("/api/credentials/S2_API_KEY").json()["key"]["configured"] is False
+    assert dotenv.read_text() == "# SYNTHETIC\nOPENALEX_API_KEY=openalex-new-key\n\n# end"
+    assert dotenv.stat().st_mode & 0o777 == 0o600
+    # A key added after removal goes to the keychain, as for any key that is not in .env.
+    assert client.put("/api/credentials/S2_API_KEY", json={"value": "s2-fresh-key"}).json()["key"]["source"] == "keychain"
+
+
+def test_keys_from_the_shell_are_left_alone_and_source_keys_are_not_tested(client, monkeypatch):
     monkeypatch.setenv("OPENALEX_API_KEY", "openalex-from-env")
     entry = next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == "OPENALEX_API_KEY")
     assert (entry["configured"], entry["source"], entry["testable"]) == (True, "environment", False)

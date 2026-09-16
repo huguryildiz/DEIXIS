@@ -600,11 +600,12 @@ def create_app(
 
     @app.put("/api/credentials/{env}")
     async def save_credential(env: str, body: KeyValue, request: Request) -> dict[str, Any]:
-        """Test a model key with one short request, then store it in the keychain; a key the API refuses is not stored."""
+        """Test a model key with one short request, then store it in .env or the keychain; a key the API refuses is not stored."""
         key = managed_key(env)
-        if credentials.status(env)["source"] == "environment":
-            raise HTTPException(409, f"{env} is set in .env or the shell; change or remove it there")
-        if credentials.keychain_name() is None:
+        source = credentials.status(env)["source"]
+        if source == "environment":
+            raise HTTPException(409, f"{env} is set in the shell; change or remove it there")
+        if source != "dotenv" and credentials.keychain_name() is None:
             raise HTTPException(503, "No system keychain is available; set the key in .env")
         result = await credentials.test(request.app.state.http, env, body.value) if key.testable else None
         if result and result["status"] in ("rejected", "failed"):
@@ -615,6 +616,8 @@ def create_app(
             raise HTTPException(409, str(exc)) from exc
         except KeyringError as exc:
             raise HTTPException(503, f"The keychain did not store the key ({type(exc).__name__})") from exc
+        except OSError as exc:
+            raise HTTPException(503, f".env could not be written ({type(exc).__name__})") from exc
         return {"key": credentials.status(env), "test": result}
 
     @app.delete("/api/credentials/{env}")
@@ -626,6 +629,8 @@ def create_app(
             raise HTTPException(409, str(exc)) from exc
         except KeyringError as exc:
             raise HTTPException(503, f"The keychain did not remove the key ({type(exc).__name__})") from exc
+        except OSError as exc:
+            raise HTTPException(503, f".env could not be written ({type(exc).__name__})") from exc
         return {"key": credentials.status(env)}
 
     @app.post("/api/credentials/{env}/test")

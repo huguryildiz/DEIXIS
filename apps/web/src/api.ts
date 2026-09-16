@@ -181,7 +181,7 @@ export type ModelHealth = {
 }
 export type Connections = { models: Record<string, ModelHealth>; providers: { id: string; implemented: boolean; access_mode: string | null; supplementary?: boolean; note: string }[] }
 export type Keychain = { available: boolean; name: string | null }
-export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'environment' | null; testable: boolean }
+export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'dotenv' | 'environment' | null; testable: boolean }
 export type Credentials = { keychain: Keychain; keys: KeyEntry[] }
 export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed'; detail: string; checked_at: string }
 export type LocalToolModel = { id: string; size_bytes: number | null; embedding: boolean }

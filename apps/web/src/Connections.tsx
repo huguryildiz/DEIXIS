@@ -42,7 +42,8 @@ function KeyPanel({ env, entry, keychain, dark, onSaved }: { env: string; entry:
   if (!entry) return null
   const id = `key-${env}`
 
-  if (entry.source === 'environment') return null
+  const inDotenv = entry.source === 'dotenv'
+  if (entry.source === 'environment') return <p className="key-note">{t('This key is set in the shell that started DEIXIS; change or remove it there.')}</p>
 
   function test() {
     setTesting(true)
@@ -65,9 +66,11 @@ function KeyPanel({ env, entry, keychain, dark, onSaved }: { env: string; entry:
   if (editing) return <form className="key-form" onSubmit={e => { e.preventDefault(); save() }}>
     <label htmlFor={id}>{t('API key')}</label>
     <input id={id} className="key-field" type="password" autoComplete="off" value={value} onChange={e => setValue(e.target.value)} />
-    <p className="key-form-note">{t('The key is tested with one short request before it is saved. It is stored in {keychain} and never shown again.', { keychain: keychain.name ?? t('the system keychain') })}</p>
+    <p className="key-form-note">{inDotenv
+      ? t(entry.testable ? 'The key is tested with one short request before it is saved. It replaces the line in .env and is never shown again.' : 'It replaces the line in .env and is never shown again.')
+      : t(entry.testable ? 'The key is tested with one short request before it is saved. It is stored in {keychain} and never shown again.' : 'It is stored in {keychain} and never shown again.', { keychain: keychain.name ?? t('the system keychain') })}</p>
     {formError && <p className="key-form-error" role="alert">{formError}</p>}
-    <div className="actions"><Button type="submit" size="sm" disabled={busy || !value.trim()}>{t(busy ? 'Testing and saving…' : 'Test and save')}</Button><Button type="button" variant="ghost" size="sm" onClick={() => { setEditing(false); setValue(''); setFormError('') }}>{t('Cancel')}</Button></div>
+    <div className="actions"><Button type="submit" size="sm" disabled={busy || !value.trim()}>{t(busy ? (entry.testable ? 'Testing and saving…' : 'Saving…') : (entry.testable ? 'Test and save' : 'Save'))}</Button><Button type="button" variant="ghost" size="sm" onClick={() => { setEditing(false); setValue(''); setFormError('') }}>{t('Cancel')}</Button></div>
   </form>
 
   if (!entry.configured) {
@@ -76,12 +79,13 @@ function KeyPanel({ env, entry, keychain, dark, onSaved }: { env: string; entry:
   }
 
   return <div className="key-panel">
+    <p className="key-note">{t(inDotenv ? 'Stored in .env' : 'Stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })}</p>
     <div className="actions">
       {entry.testable && <Button variant="outline" size="sm" onClick={test} disabled={testing}>{t(testing ? 'Testing…' : 'Test')}</Button>}
       <Button variant="outline" size="sm" onClick={() => setEditing(true)}>{t('Replace key')}</Button>
       <Button variant="outline" size="sm" className="is-destructive" onClick={() => setConfirmRemove(true)}>{t('Remove')}</Button>
     </div>
-    <ConfirmDialog open={confirmRemove} dark={dark} title={t('Remove this key?')} description={t('This connection stops working until a new key is added.')} confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={remove} onOpenChange={setConfirmRemove} />
+    <ConfirmDialog open={confirmRemove} dark={dark} title={t('Remove this key?')} description={t(inDotenv ? 'Its line is deleted from .env. This connection stops working until a new key is added.' : 'This connection stops working until a new key is added.')} confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={remove} onOpenChange={setConfirmRemove} />
   </div>
 }
 

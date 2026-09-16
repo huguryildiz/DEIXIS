@@ -1,15 +1,18 @@
-"""API keys kept in the system keychain and set from Settings (D29).
+"""API keys set from Settings (D29, D53).
 
-A key set in the shell or `.env` wins and cannot be changed from the app. Otherwise a key saved in Settings is stored
-in the system keychain (macOS Keychain, Windows Credential Locker, Secret Service) under the service `DEIXIS`, and put
-into the process environment, where connectors already read their keys at call time. Key values are never logged or
-returned by the API.
+A key set in the shell wins and cannot be changed from the app. A key read from `.env` is replaced or removed in that
+file. Otherwise a key saved in Settings is stored in the system keychain (macOS Keychain, Windows Credential Locker,
+Secret Service) under the service `DEIXIS`. Either way it is put into the process environment, where connectors already
+read their keys at call time. Key values are never logged or returned by the API.
 """
 
 from __future__ import annotations
 
 import os
+import re
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -46,10 +49,12 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("SERPAPI_API_KEY", "source", "serpapi"),
 )}
 _from_keychain: set[str] = set()
+_from_dotenv: set[str] = set()
+dotenv_path: Path | None = None
 
 
 class KeySourceConflict(Exception):
-    """The key is set in the shell or .env, which the app does not change."""
+    """The key is set in the shell, which the app does not change."""
 
 
 def keychain_name() -> str | None:
@@ -58,6 +63,43 @@ def keychain_name() -> str | None:
         return None
     return {"macOS": "macOS Keychain", "Windows": "Windows Credential Locker"}.get(
         type(backend).__module__.rsplit(".", 1)[-1], getattr(backend, "name", None) or type(backend).__name__)
+
+
+def mark_dotenv(names: set[str], path: Path) -> None:
+    """Remember which managed keys came from `.env`, so they are changed in that file."""
+    global dotenv_path
+    dotenv_path = path
+    _from_dotenv.clear()
+    _from_dotenv.update(names & MANAGED_KEYS.keys())
+
+
+def _rewrite_dotenv(env: str, value: str | None) -> None:
+    """Replace the key's line in `.env` (or drop it when value is None), keeping every other line and the file mode."""
+    assert dotenv_path is not None
+    pattern = re.compile(rf"^\s*{re.escape(env)}\s*=")
+    lines = dotenv_path.read_text(encoding="utf-8").splitlines(keepends=True) if dotenv_path.exists() else []
+    kept, replaced = [], False
+    for line in lines:
+        if pattern.match(line):
+            if value is not None and not replaced:
+                kept.append(f"{env}={value}\n")
+                replaced = True
+            continue
+        kept.append(line)
+    if value is not None and not replaced:
+        if kept and not kept[-1].endswith("\n"):
+            kept[-1] += "\n"
+        kept.append(f"{env}={value}\n")
+    mode = dotenv_path.stat().st_mode & 0o777 if dotenv_path.exists() else 0o600
+    fd, tmp = tempfile.mkstemp(dir=dotenv_path.parent, prefix=".env.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.writelines(kept)
+        os.chmod(tmp, mode)
+        os.replace(tmp, dotenv_path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def load_into_environment() -> None:
@@ -79,22 +121,33 @@ def load_into_environment() -> None:
 def status(env: str) -> dict[str, Any]:
     key = MANAGED_KEYS[env]
     configured = bool(os.environ.get(env))
-    source = ("keychain" if env in _from_keychain else "environment") if configured else None
+    source = ("keychain" if env in _from_keychain else "dotenv" if env in _from_dotenv else "environment") if configured else None
     return {"env": env, "group": key.group, "service": key.service, "configured": configured, "source": source,
             "testable": key.testable}
 
 
 def save(env: str, value: str) -> None:
-    if os.environ.get(env) and env not in _from_keychain:
-        raise KeySourceConflict(f"{env} is set in .env or the shell; change or remove it there")
+    source = status(env)["source"]
+    if source == "environment":
+        raise KeySourceConflict(f"{env} is set in the shell; change or remove it there")
+    if source == "dotenv":
+        _rewrite_dotenv(env, value)
+        os.environ[env] = value
+        return
     keyring.set_password(SERVICE, env, value)
     os.environ[env] = value
     _from_keychain.add(env)
 
 
 def delete(env: str) -> None:
-    if os.environ.get(env) and env not in _from_keychain:
-        raise KeySourceConflict(f"{env} is set in .env or the shell; change or remove it there")
+    source = status(env)["source"]
+    if source == "environment":
+        raise KeySourceConflict(f"{env} is set in the shell; change or remove it there")
+    if source == "dotenv":
+        _rewrite_dotenv(env, None)
+        os.environ.pop(env, None)
+        _from_dotenv.discard(env)
+        return
     try:
         keyring.delete_password(SERVICE, env)
     except PasswordDeleteError:

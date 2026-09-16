@@ -2,6 +2,24 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D53 — Replace and remove API keys read from `.env` from Settings
+
+**Status**: accepted
+**Date**: 2026-09-17
+
+**Context**: The owner asked (2026-09-17) for fields in the Connections drawer to add, replace and remove API keys. The drawer already had them (D29), but all ten managed keys on this computer came from `.env`, and D29 did not let the app change a `.env` key, so the drawer showed nothing. The owner chose to have the app edit `.env` over moving such keys into the keychain or only showing where they are set.
+
+**Decision**:
+
+- A managed key has one of three sources: the keychain, `.env`, or the shell that started DEIXIS. This supersedes D29's rule that a `.env` key cannot be changed from the app.
+- A key read from `.env` is replaced or removed in that file: its `NAME=value` line is rewritten or deleted, every other line and the file mode are kept, and the file is replaced atomically. The process environment is updated at once. A replaced model key is still tried with one short request first, as in D29.
+- A key set in the shell is still left alone, and the drawer says to change it there. A key that is not set is added to the keychain, as before, including a key just removed from `.env`.
+- The drawer names where a configured key is stored (`.env` or the keychain), shows Test for model keys, and Replace and Remove for the rest. Scholarly source keys are no longer described as tested before saving.
+
+**Evidence**: Backend tests: 508 passed, 1 failed (`tests/test_documents.py::test_extraction_is_stopped_when_it_exceeds_the_memory_limit` timed out instead of hitting the memory limit; that code is not touched here and another session was editing `documents/pdf.py`), `tests/test_p4_eval.py` excluded. A new test on a synthetic `.env` replaces one key, removes another, checks the file text, the 0600 mode, that the keychain is not written and that a key added after removal goes to the keychain. The web build and lint passed. A second instance on a scratch data directory read the real `.env` and showed "Stored in .env" with Replace key and Remove in the PubMed drawer. Not verified: replacing or removing a real key through the app.
+
+**Impact**: The local API can now write the untracked repository `.env` file, limited to the ten managed key names and to loopback requests with the CSRF token. A value is a single token without whitespace (8–400 characters), so it cannot add lines.
+
 ## D52 — Read equations as LaTeX with Marker, an optional local component, before an answer uses the PDF
 
 **Status**: accepted (implemented: reading, background and run waits, Settings install, retries, OCR pages, text source in StepInputs, equation check)

@@ -39,5 +39,7 @@ def memory_keychain(monkeypatch):
     previous, backend = keyring.get_keyring(), MemoryKeyring()
     keyring.set_keyring(backend)
     monkeypatch.setattr(credentials, "_from_keychain", set())
+    monkeypatch.setattr(credentials, "_from_dotenv", set())
+    monkeypatch.setattr(credentials, "dotenv_path", None)
     yield backend
     keyring.set_keyring(previous)

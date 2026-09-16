@@ -719,7 +719,7 @@ class TableStore:
 
     def _revision_view(self, revision: dict[str, Any]) -> dict[str, Any]:
         evidence = [dict(r) for r in self.conn.execute(
-            "SELECT l.passage_id, l.anchor_text, l.anchor_match, p.kind, p.physical_page, p.printed_label, p.asset_id,"
+            "SELECT l.passage_id, l.anchor_text, l.anchor_match, p.kind, p.physical_page, p.printed_label, p.asset_id, p.text_source,"
             f" {EVIDENCE_STATUS_SQL} AS evidence_status"
             " FROM cell_evidence_links l JOIN passages p ON p.id = l.passage_id"
             " LEFT JOIN source_assets a ON a.id = p.asset_id WHERE l.cell_revision_id = ? ORDER BY l.rowid", (revision["id"],)
@@ -744,6 +744,12 @@ class TableStore:
             flags.append("stale_column")
         evidence_statuses = {e["evidence_status"] for e in current_view["evidence"]} if current_view else set()
         flags += [status for status in SHADOWED_STATUSES if status in evidence_statuses]
+        from deixis.domain.contracts import value_has_number_or_math  # contracts imports this module
+
+        shown = current_view or (self._revision_view(pending) if pending else None)
+        if shown and shown["state"] == "value" and value_has_number_or_math(shown["value"]) and shown["evidence"] \
+                and all(e["text_source"] == "ocr" for e in shown["evidence"]):
+            flags.append("ocr_numbers_unchecked")  # the value is read only from OCR text of scanned pages (D51)
         if pending and pending["cell_version_at_request"] is not None and pending["cell_version_at_request"] < cell["version"]:
             flags.append("proposal_before_edit")
         if pending and pending["output_status"] != "structurally_valid":

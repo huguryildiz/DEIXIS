@@ -348,8 +348,26 @@ def _math_span_is_well_formed(span: str) -> bool:
     return not environments
 
 
+def has_number_or_math(text: str) -> bool:
+    return bool(re.search(r"\d", text)) or bool(_math_spans(text))
+
+
+def value_has_number_or_math(value: Any) -> bool:
+    """A cell value that states a number, or text with a number or equation; choice option ids do not count."""
+    if not isinstance(value, dict):
+        return False
+    number = value.get("number")
+    return (isinstance(number, (int, float)) and not isinstance(number, bool)) or any(
+        isinstance(v, str) and has_number_or_math(v) for k, v in value.items() if k != "option_ids")
+
+
+def _rests_only_on_ocr(passages: list[dict[str, Any] | None]) -> bool:
+    return bool(passages) and all(p is not None and p.get("text_source") == "ocr" for p in passages)
+
+
 def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
-    """Warn about damaged LaTeX and equations supported only by abstract-level passages."""
+    """Warn about damaged LaTeX, equations supported only by abstract-level passages, and numbers or equations supported
+    only by OCR text of scanned pages (D51)."""
     fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
     fields += [(f"/limitations/{i}/text", lim["text"]) for i, lim in enumerate(draft["limitations"])]
     fields += [(f"/unanswered_aspects/{i}", text) for i, text in enumerate(draft["unanswered_aspects"])]
@@ -367,6 +385,9 @@ def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: Valid
                 and all(p["reading_depth"] == "abstract" for p in cited):
             report.warnings.append(Issue("math_without_full_text", f"/claims/{i}/text",
                                          "the claim contains math but cites only abstract-level passages"))
+        if has_number_or_math(claim["text"]) and _rests_only_on_ocr([passages.get(pid) for pid in claim["passage_ids"]]):
+            report.warnings.append(Issue("ocr_numbers_unchecked", f"/claims/{i}/text",
+                                         "the claim states a number or equation read only from OCR text; check it against the PDF page"))
 
 
 def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
@@ -501,6 +522,10 @@ def _check_cells(step_input: dict[str, Any], allow: dict[str, set[str]], draft: 
         if state == "not_found_in_inspected_scope" and cited:
             report.issues.append(Issue("evidence_for_not_found", f"{path}/evidence",
                                        f"{column_id}: nothing was found, so no passage is cited"))
+        by_id = {p["passage_id"]: p for p in step_input["passages"]}
+        if state == "value" and value_has_number_or_math(cell["value"]) and _rests_only_on_ocr([by_id.get(pid) for pid in cited]):
+            report.warnings.append(Issue("ocr_numbers_unchecked", f"{path}/value",
+                                         f"{column_id}: the value states a number or equation read only from OCR text; check it against the PDF page"))
         if state == "not_applicable" and not (cell["note"] or "").strip():
             report.issues.append(Issue("not_applicable_without_note", f"{path}/note", column_id))
         if cell["note"] and (match := LOCATOR_IN_TEXT.search(cell["note"])):

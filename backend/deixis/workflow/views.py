@@ -173,6 +173,8 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "added_by": row["added_by"], "added_at": row["added_at"], "rank": row["rank"], "similarity": row["similarity"],
             # Whether an answer can read this version's PDF pages rather than its abstract (D49).
             "has_pdf_text": bool(assets) and store.has_pdf_text(svid),
+            # Some of that text was read with OCR from scanned pages and is labelled so (D51).
+            "has_ocr_text": bool(assets) and any(p["text_source"] == "ocr" for p in store.passages_for(svid)),
             # "other_version": another version of a found record (e.g. its submitted manuscript), stored separately.
             "version_role": "other_version" if row["added_by"] == "search" and row["candidate_id"] is None else "record",
             # A search result keeps the question revision it was found for; attached files belong to no revision.

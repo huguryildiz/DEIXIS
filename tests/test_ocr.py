@@ -5,14 +5,19 @@ Pages are SYNTHETIC images of typed text. Passing shows which pages are read and
 about OCR accuracy on real scans. Tests that run Tesseract are skipped when it is not installed.
 """
 
+import copy
 import json
 import shutil
 
 import pytest
 
 from deixis.documents import ocr, pdf
+from deixis.domain import contracts
 from deixis.storage import db
+from deixis.storage.db import new_id
+from deixis.workflow import views
 from deixis.workflow.store import Store
+from deixis.workflow.tables import TableStore
 from helpers import make_scanned_pdf
 
 needs_tesseract = pytest.mark.skipif(shutil.which("tesseract") is None, reason="Tesseract is not installed")
@@ -121,3 +126,67 @@ def test_an_ocr_extraction_that_found_no_text_is_rejected_and_the_old_text_stays
     assert [(p["physical_page"], p["text_source"]) for p in store.passages_for(svid)] == [(1, "text_layer")]
     event = next(e for e in store.events_after(rid, 0) if e["type"] == "asset_ocr_read")
     assert (event["payload"]["outcome"], event["payload"]["failed_pages"]) == ("rejected", [2])
+
+
+# ---- sub-step 4: OCR in model output checks and views -------------------------------------------
+def test_a_claim_with_a_number_resting_only_on_ocr_text_is_a_warning_not_an_issue():
+    from test_contracts import STEP_INPUTS
+    from test_phrasebank import CASES, anchored
+
+    si = copy.deepcopy(STEP_INPUTS["A_answer"])
+    next(p for p in si["passages"] if p["passage_id"] == "psg_SYNA1pg003")["text_source"] = "ocr"
+    draft = copy.deepcopy(next(c for c in CASES if c["name"] == "answer_valid")["output"])
+
+    def warned(text, passage_ids):
+        draft["claims"][0].update(text=text, passage_ids=passage_ids)
+        report = contracts.validate_model_output(si, anchored(draft))
+        assert report.ok, [vars(i) for i in report.issues]
+        return [w.path for w in report.warnings if w.code == "ocr_numbers_unchecked"]
+
+    assert warned("It has been reported that the budget is 40 molecules per frame.", ["psg_SYNA1pg003"]) == ["/claims/0/text"]
+    assert warned(r"It has been reported that $x \le Q$ is required.", ["psg_SYNA1pg003"]) == ["/claims/0/text"]
+    assert warned("It has been reported that a molecule budget per frame is imposed.", ["psg_SYNA1pg003"]) == []
+    assert warned("It has been reported that the budget is 40 molecules per frame.", ["psg_SYNA1pg003", "psg_SYNA1abs01"]) == []
+
+
+def test_a_cell_value_with_a_number_resting_only_on_ocr_text_is_a_warning_not_an_issue():
+    from test_table_extraction import cell_draft, cell_step_input
+
+    si = cell_step_input()
+    next(p for p in si["passages"] if p["passage_id"] == "psg_SYNA1pg003")["text_source"] = "ocr"
+    draft = cell_draft(si)
+    draft["cells"][2].update(state="value", value={"number": 40, "unit": "molecules", "as_stated": "40 molecules"}, note=None)
+    report = contracts.validate_model_output(si, draft)
+    assert report.ok, [vars(i) for i in report.issues]
+    assert [w.path for w in report.warnings if w.code == "ocr_numbers_unchecked"] == ["/cells/2/value"]
+
+
+def test_views_say_which_sources_and_cells_rest_on_ocr_text(tmp_path):
+    from test_evidence_tables import PACKET_SIZE, VALUE
+
+    store, rid, svid, aid, base = library_with_scan(tmp_path)
+    assert next(s for s in views.research_view(store, rid)["sources"] if s["source_version_id"] == svid)["has_ocr_text"] is False
+    read = ocr.merge(base, [ocr.OcrPage(2, "succeeded", "SYNTHETIC OCR text: packets of 128 bytes.")], ["eng"])
+    store.reextract_asset(aid, read, read.extraction_version, pdf.chunk_page)
+    assert next(s for s in views.research_view(store, rid)["sources"] if s["source_version_id"] == svid)["has_ocr_text"] is True
+
+    passages = {p["physical_page"]: p["id"] for p in store.passages_for(svid)}
+    run = store.create_run(rid, "answer", {"max_model_calls": 4}, None)
+    step = store.step(run["id"], "cell", "model:cell_extraction")
+    sti = new_id("sti")
+    store.insert_step_input(step["id"], rid, run["id"], 0, {"step_input_id": sti, "task_type": "cell_extraction", "scope_revision": 1,
+                            "skill_package_hash": "sha256:0"}, "base", "developer", "message", {})
+    tables = TableStore(store)
+
+    def flags(page, anchor):
+        tid = tables.create_table(rid, f"Packets {page}", [svid], None, None)
+        cid = tables.add_column(rid, tid, PACKET_SIZE, 1, None)
+        tables.save_model_output(rid, tid, cid, svid, column_revision=1, state="value", value=VALUE, note=None, reading_depth="selected_sections",
+                                 output_status="structurally_valid", run_id=run["id"], step_id=step["id"], step_input_id=sti,
+                                 links=[{"passage_id": passages[page], "source_version_id": svid, "anchor_text": anchor, "anchor_match": "exact"}],
+                                 model_connection="fake", resolved_model="fake-model", scope_revision=1, cell_version_at_request=None, recheck=False)
+        cell = tables.cell_view(rid, tid, cid, svid)
+        return "ocr_numbers_unchecked" in cell["flags"], [e["text_source"] for e in (cell["pending_proposal"] or cell["current"])["evidence"]]
+
+    assert flags(2, "packets of 128 bytes") == (True, ["ocr"])
+    assert flags(1, "SYNTHETIC text layer page") == (False, ["text_layer"])

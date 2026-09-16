@@ -36,7 +36,8 @@ function HighlightedPassageText({ passage, highlightText }: { passage: Passage; 
   </>
 }
 
-export function PassageSheet({ researchId, passageId, assetId = null, initialView = 'text', highlightText, expectHighlight = false, dark, onClose }: { researchId: string; passageId: string | null; assetId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; expectHighlight?: boolean; dark: boolean; onClose: () => void }) {
+// pdfRemoved: the passage's PDF was removed from the source; its stored text still opens, the PDF view stays off.
+export function PassageSheet({ researchId, passageId, assetId = null, initialView = 'text', highlightText, expectHighlight = false, pdfRemoved = false, dark, onClose }: { researchId: string; passageId: string | null; assetId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; expectHighlight?: boolean; pdfRemoved?: boolean; dark: boolean; onClose: () => void }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [assetText, setAssetText] = useState<AssetText | null>(null)
   const [error, setError] = useState('')
@@ -62,7 +63,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
   const source = passage?.source ?? assetText?.source
   const abstract = passage?.kind === 'abstract'
   const highlightAvailable = Boolean(passage && highlightText && passage.text.includes(highlightText))
-  const pdfAssetId = passage?.asset_id ?? assetText?.asset.id ?? null
+  const pdfAssetId = pdfRemoved ? null : passage?.asset_id ?? assetText?.asset.id ?? null
   return <Sheet open={passageId !== null || assetId !== null} onOpenChange={open => { if (!open) onClose() }}>
     <SheetContent className={`detail-sheet source-sheet ${full ? 'is-full' : ''} ${dark ? 'dark' : ''}`}>
       <SheetHeader><SheetTitle>{t('Source details')}</SheetTitle>
@@ -83,7 +84,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
           </div>
           <div className="source-view-tabs" role="tablist" aria-label={t('Source view')}>
             <button type="button" role="tab" aria-selected={viewMode === 'text'} aria-controls="source-text-view" onClick={() => setViewMode('text')}>{t('Plain text')}</button>
-            <button type="button" role="tab" aria-selected={viewMode === 'pdf'} aria-controls="source-pdf-view" disabled={!pdfAssetId} title={!pdfAssetId ? t('PDF is not available for this source.') : undefined} onClick={() => setViewMode('pdf')}>PDF</button>
+            <button type="button" role="tab" aria-selected={viewMode === 'pdf'} aria-controls="source-pdf-view" disabled={!pdfAssetId} title={!pdfAssetId ? t(pdfRemoved ? 'The PDF was removed from this source; its passages still open as text.' : 'PDF is not available for this source.') : undefined} onClick={() => setViewMode('pdf')}>PDF</button>
           </div>
           {viewMode === 'text' ? passage ? <div id="source-text-view" role="tabpanel">
             <h3 className="source-section">{abstract ? t('Abstract') : t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>

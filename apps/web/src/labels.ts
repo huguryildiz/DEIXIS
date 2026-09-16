@@ -1,4 +1,4 @@
-import type { Evidence, RunStatus, Source, SourceScope, Verdict } from './api'
+import type { Evidence, RunKind, RunStatus, Source, SourceScope, Verdict } from './api'
 import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
@@ -16,6 +16,10 @@ export const reasoningLabel = (id: string) => t(reasoningNames[id] ?? id)
 export const runStatusLabels: Record<RunStatus, string> = {
   queued: 'Queued', running: 'Running', pause_requested: 'Pausing after the current call', paused: 'Paused',
   completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled',
+}
+
+export const runKindLabels: Record<RunKind, string> = {
+  discovery: 'Search & screening', answer: 'Answer', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions',
 }
 
 const pauseReasons: Record<string, string> = {
@@ -38,6 +42,9 @@ const pauseReasons: Record<string, string> = {
   user_cancelled: 'You cancelled this run.',
   model_mismatch: 'The connection answered with a different model than the one chosen for this step. Its output was not used.',
   scope_revised: 'The question was revised while this run was working. Its remaining results were not applied.',
+  table_unavailable: 'The table was removed while this run was waiting.',
+  cell_unavailable: 'The cell’s column or row left the table before the recheck ran.',
+  no_text: 'The source has no stored text to read.',
 }
 export const pauseReasonText = (reason: string | null) => (reason ? t(pauseReasons[reason] ?? reason) : '')
 
@@ -65,6 +72,9 @@ export const stepLabel = (kind: string, key: string) => {
   if (kind === 'model:screening') return t('Screening proposal (model)')
   if (kind === 'model:grounded_answer') return t('Source-linked answer (model)')
   if (kind === 'model:answer_review') return t('Claim review (reviewer model)')
+  if (kind === 'model:cell_extraction') return t('Cell extraction (model)')
+  if (kind === 'model:table_columns') return t('Column suggestions (model)')
+  if (kind === 'table_no_text') return t('Source without stored text')
   if (kind.startsWith('provider_search')) return t('{provider} search {n}', { provider: providerName(kind.split(':')[1] ?? ''), n: Number(key.split(':')[1]) + 1 })
   if (kind === 'fetch_pdf') return t('Open-access PDF retrieval')
   if (kind === 'pdf_other_copy') return t('Search for another open copy')

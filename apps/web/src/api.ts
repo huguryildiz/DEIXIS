@@ -36,10 +36,16 @@ export type SearchPlan = {
   concepts: { label: string; role: string; synonyms: string[] }[]
   queries: { provider_id: string; query_text: string; rationale: string }[]
 }
+export type RunKind = 'discovery' | 'answer' | 'table_columns' | 'table_fill' | 'cell_recheck'
+// What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
+export type RunTarget = {
+  table_id: string; column_id?: string; source_version_id?: string; cell_version?: number
+  sources?: { source_version_id: string; column_ids: string[] }[]
+}
 export type Run = {
-  id: string; research_id: string; scope_revision: number; kind: 'discovery' | 'answer'; status: RunStatus; stage: string
+  id: string; research_id: string; scope_revision: number; kind: RunKind; status: RunStatus; stage: string
   pause_reason: string | null; error: unknown; budget: Record<string, number>; usage: Record<string, number>
-  created_at: string; updated_at: string; version: number; steps?: Step[]
+  created_at: string; updated_at: string; version: number; steps?: Step[]; target: RunTarget | null
   // plan null: this run wrote no search plan. screening_notes: the notes of every screening batch, in order.
   plan: SearchPlan | null; screening_notes: string
 }
@@ -141,6 +147,15 @@ export type SemanticSearchProvider = 'gemini' | 'openai' | 'ollama' | 'lm_studio
 export type SemanticSearchOption = { provider: SemanticSearchProvider; models: string[]; available: boolean; reason: string | null }
 export type SemanticSearch = { provider: SemanticSearchProvider; model: string | null; explicit: boolean; options: SemanticSearchOption[] }
 export type InstitutionalAccess = { status: 'institutional' | 'none' | 'unknown' | 'not_checked'; via?: string; reason?: string }
+export type LibraryVersion = { source_version_id: string; version_label: string | null; year: number | null; venue: string | null }
+export type LibraryResearch = { id: string; title: string; updated_at: string }
+export type LibraryEntry = {
+  work_id: string; title: string; authors: string[]; year: number | null; venue: string | null
+  publication_type: string | null; doi: string | null; landing_url: string | null
+  cited_by_count: number | null; cited_by_count_at: string | null
+  versions: LibraryVersion[]; researches: LibraryResearch[]; first_research_id: string | null; newest_source_at: string
+}
+export type LibraryView = { entries: LibraryEntry[]; counts: { works: number; versions: number; researches: number } }
 export type QuickFindResult = {
   researches: { id: string; title: string; question: string; updated_at: string }[]
   sources: { source_version_id: string; title: string; year: number | null; version_label: string | null; research_id: string; research_title: string }[]
@@ -149,6 +164,55 @@ export type ActivityEvent ={ id: number; type: string; run_id: string | null; pa
 export type ZoteroSource = 'local' | 'web'
 export type ZoteroCollection = { key: string; name: string }
 export type ZoteroImport = { items: number; pdfs_added: number; notes: { title: string; note: string }[] }
+
+// Evidence tables (P5, D37/D38). Types mirror backend/deixis/workflow/tables.py.
+export type AnswerFormat = 'choice' | 'number_unit' | 'yes_no' | 'text'
+export type CellState = 'value' | 'unknown' | 'not_reported' | 'not_verified' | 'not_applicable' | 'inaccessible' | 'not_found_in_inspected_scope'
+export type ColumnOption = { id: string; label: string }
+export type ColumnSpec = {
+  name: string; instruction: string; answer_format: AnswerFormat
+  // A new option has no id; an existing option keeps its id across column revisions.
+  options: { id?: string | null; label: string }[] | null; allow_multiple: boolean; unit_hint: string | null
+}
+export type TableColumn = {
+  id: string; position: number; revision: number; version: number; origin: 'user' | 'model_suggestion' | 'template'
+  name: string; instruction: string; answer_format: AnswerFormat; options: ColumnOption[] | null; allow_multiple: boolean; unit_hint: string | null
+}
+export type TableRow = {
+  source_version_id: string; work_id: string; title: string; authors: string[]; year: number | null; version_label: string | null
+  selection_state: 'included' | 'excluded' | 'pending' | null; added_by: 'included_at_creation' | 'user'; added_at: string; removed_at: string | null
+  access_level: 'pdf_available' | 'abstract' | 'metadata'
+}
+export type CellValue = { option_ids?: string[]; number?: number; unit?: string | null; as_stated?: string | null; answer?: 'yes' | 'no'; text?: string }
+export type CellEvidence = {
+  passage_id: string; anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null; kind: Evidence['kind']
+  physical_page: number | null; printed_label: string | null; asset_id: string | null; asset_removed: boolean
+}
+export type CellRevision = {
+  id: string; kind: 'model_fill' | 'model_proposal' | 'system_fill' | 'human_edit' | 'accept_proposal' | 'dismiss_proposal'
+  author: 'model' | 'human' | 'system'; based_on_revision_id: string | null; column_revision: number; state: CellState | null
+  value: CellValue | null; note: string | null; reading_depth: 'metadata' | 'abstract' | 'selected_sections' | 'full_text' | null
+  output_status: 'structurally_valid' | 'unverified_draft' | null; cell_version_at_request: number | null; scope_revision: number | null
+  run_id: string | null; created_at: string; model: { connection: string | null; resolved_model: string | null } | null; evidence: CellEvidence[]
+  decision?: 'accepted' | 'dismissed' | 'pending' | 'superseded'  // model proposals in a cell's history
+}
+export type CellFlag = 'stale_column' | 'pdf_withdrawn' | 'proposal_before_edit' | 'proposal_invalid'
+export type CellSummary = {
+  cell_id: string | null; column_id: string; source_version_id: string; version: number
+  current: CellRevision | null; pending_proposal: CellRevision | null; flags: CellFlag[]
+}
+export type CellView = CellSummary & { revisions: CellRevision[] }
+export type ColumnSuggestion = Omit<ColumnSpec, 'options'> & { options: { label: string }[] | null; rationale: string }
+export type TableView = {
+  table: { id: string; research_id: string; title: string; template_id: string | null; version: number; created_at: string; updated_at: string }
+  columns: TableColumn[]; rows: TableRow[]; removed_rows: TableRow[]; cells: CellSummary[]
+  counts: { rows: number; columns: number; with_value: number; empty: number; pending_proposals: number }
+  fill_estimate: { sources: number; sources_without_text: number; sources_beyond_limit: number; model_calls: number; max_model_calls: number }
+  column_suggestions: { run_id: string; step_id: string; columns: ColumnSuggestion[]; notes: string } | null
+}
+export type TableSummary = { id: string; title: string; version: number; created_at: string; updated_at: string; rows: number; columns: number }
+export type TableTemplate = { id: string; name: string; columns: ColumnSpec[]; created_at: string }
+export type CellEdit = { state: CellState; value: CellValue | null; note: string | null; keep_evidence_from: string | null; expected_version: number }
 
 export class ApiError extends Error {
   status: number
@@ -191,6 +255,7 @@ export const api = {
   restore: (id: string) => request<{ restored: boolean }>(`/api/trash/${id}/restore`, { method: 'POST' }),
   deletePermanently: (id: string) => request<{ deleted: boolean; files_not_removed: string[] }>(`/api/trash/${id}`, { method: 'DELETE' }),
   search: (q: string) => request<QuickFindResult>(`/api/search?q=${encodeURIComponent(q)}`),
+  library: () => request<LibraryView>('/api/library'),
   research: (id: string) => request<ResearchView>(`/api/researches/${id}`),
   create: (body: {
     question: string; source_scope: SourceScope; effort: Effort; model_connection: string; requested_model: string; reasoning_effort: string | null
@@ -242,6 +307,36 @@ export const api = {
   semanticSearch: () => request<SemanticSearch>('/api/semantic-search'),
   saveSemanticSearch: (provider: SemanticSearchProvider, model: string | null) =>
     request<SemanticSearch>('/api/semantic-search', json('PUT', { provider, model })),
+  tables: (id: string) => request<TableSummary[]>(`/api/researches/${id}/tables`),
+  table: (id: string, tableId: string) => request<TableView>(`/api/researches/${id}/tables/${tableId}`),
+  // rows omitted: the table starts with the research's included sources.
+  createTable: (id: string, body: { title: string; template_id?: string }, idempotencyKey: string) =>
+    request<TableView>(`/api/researches/${id}/tables`, json('POST', body, { 'Idempotency-Key': idempotencyKey })),
+  addTableRows: (id: string, tableId: string, sourceIds: string[], expectedVersion: number) =>
+    request<TableView>(`/api/researches/${id}/tables/${tableId}/rows`, json('POST', { source_version_ids: sourceIds, expected_version: expectedVersion })),
+  removeTableRow: (id: string, tableId: string, sourceId: string, expectedVersion: number) =>
+    request<TableView>(`/api/researches/${id}/tables/${tableId}/rows/${sourceId}?expected_version=${expectedVersion}`, { method: 'DELETE' }),
+  addColumn: (id: string, tableId: string, spec: ColumnSpec & { suggestion_step_id?: string }, expectedVersion: number, idempotencyKey: string) =>
+    request<TableView>(`/api/researches/${id}/tables/${tableId}/columns`, json('POST', { ...spec, expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+  reviseColumn: (id: string, tableId: string, columnId: string, spec: ColumnSpec, expectedVersion: number) =>
+    request<TableView>(`/api/researches/${id}/tables/${tableId}/columns/${columnId}`, json('PATCH', { ...spec, expected_version: expectedVersion })),
+  removeColumn: (id: string, tableId: string, columnId: string, expectedVersion: number) =>
+    request<TableView>(`/api/researches/${id}/tables/${tableId}/columns/${columnId}?expected_version=${expectedVersion}`, { method: 'DELETE' }),
+  suggestColumns: (id: string, tableId: string, idempotencyKey: string) =>
+    request<Run>(`/api/researches/${id}/tables/${tableId}/column-suggestions`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }),
+  fillTable: (id: string, tableId: string, expectedVersion: number, idempotencyKey: string) =>
+    request<Run>(`/api/researches/${id}/tables/${tableId}/fill`, json('POST', { expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+  cell: (id: string, tableId: string, columnId: string, sourceId: string) =>
+    request<CellView>(`/api/researches/${id}/tables/${tableId}/cells/${columnId}/${sourceId}`),
+  editCell: (id: string, tableId: string, columnId: string, sourceId: string, body: CellEdit, idempotencyKey: string) =>
+    request<CellView>(`/api/researches/${id}/tables/${tableId}/cells/${columnId}/${sourceId}`, json('PUT', body, { 'Idempotency-Key': idempotencyKey })),
+  recheckCell: (id: string, tableId: string, columnId: string, sourceId: string, expectedVersion: number, idempotencyKey: string) =>
+    request<Run>(`/api/researches/${id}/tables/${tableId}/cells/${columnId}/${sourceId}/recheck`, json('POST', { expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+  decideProposal: (id: string, tableId: string, columnId: string, sourceId: string, revisionId: string, decision: 'accept' | 'dismiss', expectedVersion: number, idempotencyKey: string) =>
+    request<CellView>(`/api/researches/${id}/tables/${tableId}/cells/${columnId}/${sourceId}/proposals/${revisionId}/${decision}`, json('POST', { expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+  tableTemplates: () => request<TableTemplate[]>('/api/table-templates'),
+  saveTableTemplate: (researchId: string, tableId: string, name: string, idempotencyKey: string) =>
+    request<TableTemplate>('/api/table-templates', json('POST', { name, research_id: researchId, table_id: tableId }, { 'Idempotency-Key': idempotencyKey })),
 }
 
 export const bibliographyUrl = (researchId: string, format: 'bibtex' | 'ris', sources: 'included' | 'cited') =>

@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpen, BookOpenText, CalendarDays, CircleCheck, CircleDot, CircleX, Copy, Download, FilePlus2, FileText, FileUp, Filter, Hand, Info, ListChecks, ListPlus, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, ScanSearch, Search, ShieldCheck, Sparkles, Trash2, Upload, UserPen, Users, X, type LucideIcon } from 'lucide-react'
+import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpen, BookOpenText, CalendarDays, CircleCheck, CircleDot, CircleX, Copy, Download, FilePlus2, FileText, FileUp, Filter, Hand, Info, ListChecks, ListPlus, LoaderCircle, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, ScanSearch, Search, ShieldCheck, Sparkles, Table2, Trash2, Upload, UserPen, Users, X, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type Limitation, type ModelOption, type ResearchView, type Run, type RunStatus, type Source, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
-import { accessParts, citedText, connectionName, fetchReasonText, locatorText, pauseReasonText, providerName, runStatusLabels, scopeLabels, stepLabel, verdictLabels, versionText } from './labels'
+import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type Limitation, type ModelOption, type ResearchView, type Run, type RunKind, type RunStatus, type Source, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
+import { accessParts, citedText, fetchReasonText, locatorText, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, stepLabel, verdictLabels, versionText } from './labels'
 import { PassageSheet } from './PassageSheet'
+import { EvidenceTab } from './EvidenceTable'
 import { MathText } from './MathText'
 import { Transcript } from './Transcript'
 import { ZoteroPanel } from './ZoteroPanel'
 import { useToast } from './Toast'
 import { ConnectionIcon } from './connectionIcons'
 import { ConfirmDialog } from './ConfirmDialog'
-import { effortLabels, effortOptions, modelRoles, Option, scopeOptions } from './Home'
+import { effortLabels, effortOptions, Option, scopeOptions } from './Home'
 import { citationStyles, formatReference, formatReferenceText, type CitationStyle } from './citations'
 import { t, uiLocale } from './i18n'
 
@@ -51,12 +52,14 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [view, setView] = useState<ResearchView | null>(null)
   const [error, setError] = useState('')
   const toast = useToast()
-  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'activity' ? initialTab : 'answer')
+  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'evidence' || initialTab === 'activity' ? initialTab : 'answer')
   const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean } | null>(null)
   const [pdfTarget, setPdfTarget] = useState<{ assetId: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [events, setEvents] = useState<ActivityEvent[]>([])
   const [zoteroOpen, setZoteroOpen] = useState(false)
+  // The counts under the question open the Sources tab, so the selection filter lives here rather than inside the list.
+  const [sourceFilter, setSourceFilter] = useState<StateFilter>('all')
   const [pdfFinding, setPdfFinding] = useState<string | null>(null)
   const [attachTarget, setAttachTarget] = useState<string | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ source: Source; assetId: string } | null>(null)
@@ -103,11 +106,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const previous = lastRun.current
     lastRun.current = { id: current.id, status: current.status }
     if (!previous || (previous.id === current.id && previous.status === current.status)) return
-    const label = t(current.kind === 'discovery' ? 'Search & screening' : 'Answer generation')
+    const label = t(current.kind === 'answer' ? 'Answer generation' : runKindLabels[current.kind])
     const reason = pauseReasonText(current.pause_reason)
     if (previous.id !== current.id) { if (ACTIVE.has(current.status)) toast('success', t('{label} started.', { label })); return }
     switch (current.status) {
       case 'completed': {
+        if (current.kind !== 'discovery' && current.kind !== 'answer') { toast('success', current.kind === 'cell_recheck' ? t('Recheck finished. Its result waits as a proposal in the cell.') : t('{label} finished.', { label })); break }
         const answer = view.answers.find(a => a.run_id === current.id)
         if (current.kind === 'discovery') toast('success', t('Search & screening finished. Review the sources and include the ones to use.'))
         else if (answer?.status === 'structurally_valid') toast('success', t('Answer ready.'))
@@ -182,44 +186,47 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const eff = effort || modelOptions.find(m => m.id === model)?.default_reasoning_effort
     return eff ? `${model}-${eff}` : model
   }
-  const literatureConnection = view.scope.literature_model ? view.scope.literature_connection ?? view.scope.model_connection : view.scope.model_connection
-  const reviewerConnection = view.reviewer.connection ?? view.scope.model_connection
+  // The stored title is the question cut to 160 characters until a valid answer names the research (D36); until then show it whole.
+  const heading = view.scope.question.startsWith(view.research.title) ? view.scope.question : view.research.title
+  // Each count is the way into the evidence it describes; the selection filter lives here so a count can set it.
+  const showSources = (filter: StateFilter) => { setSourceFilter(filter); setTab('sources'); tabsRef.current?.scrollIntoView({ block: 'start' }) }
+  const showAnswer = () => { setTab('answer'); requestAnimationFrame(() => document.getElementById('research-answer')?.scrollIntoView({ behavior: 'smooth', block: 'center' })) }
   return <section className="research-view legacy-research">
     <div className="section-label">{t('RESEARCH')} <span> {t('/ REVISION {n}', { n: view.research.current_scope_revision })}</span></div>
-    <TypewriterTitle text={view.research.title} />
-    <div className="session-meta session-chips">
-      <span className="meta-chip" title={t('Where DEIXIS looks for sources')}><ScopeIcon size={14} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
-      <span className="meta-chip" title={t('How much searching and reading a run may do')}><EffortIcon size={14} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
-      <span className="meta-chip" title={t('Writes the source-linked answer')}><modelRoles.answer.icon size={14} aria-hidden />{t('Answer')} · <ConnectionIcon id={view.scope.model_connection} /><span className="sr-only">{connectionName(view.scope.model_connection)} · </span>{modelText(view.scope.requested_model, view.scope.reasoning_effort)}</span>
-      {/* A research without a literature model (created before model roles) searches with its research model. */}
-      <span className="meta-chip" title={t('Plans the searches and screens the candidates')}><ScanSearch size={14} aria-hidden />{t('Literature')} · <ConnectionIcon id={literatureConnection} /><span className="sr-only">{connectionName(literatureConnection)} · </span>{modelText(view.scope.literature_model ?? view.scope.requested_model, view.scope.literature_model ? view.scope.literature_reasoning_effort : view.scope.reasoning_effort)}</span>
-      <span className="meta-chip" title={t('Reviews each claim against its cited passages when an answer completes; never changes the answer')}><ShieldCheck size={14} aria-hidden />{view.reviewer.model ? <>{t('Reviewer')} · <ConnectionIcon id={reviewerConnection} /><span className="sr-only">{connectionName(reviewerConnection)} · </span>{modelText(view.reviewer.model, view.reviewer.reasoning_effort)}{view.reviewer.mode === 'default' && ` ${t('(default)')}`}</> : t(view.reviewer.mode === 'off' ? 'Reviewer off' : 'No reviewer set')}</span>    </div>
+    <TypewriterTitle text={heading} />
+    {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the tab that can show it. Scope and depth close the line. */}
+    <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
+      {([['found', 'Found', 'all'], ['unique', 'Unique works', 'all'], ['included', 'Included', 'included'], ['inspected', 'Given to the model', 'all'], ['cited', 'Cited', null]] as const)
+        .map(([key, label, filter]) => <button key={key} type="button" onClick={() => (filter ? showSources(filter) : showAnswer())}><strong>{view.counts[key]}</strong><span>{t(label)}</span></button>)}
+      <span title={t('Where DEIXIS looks for sources')}><ScopeIcon size={13} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
+      <span title={t('How much searching and reading a run may do')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
+    </div>
 
-    {/* Counts and run controls sit above the tabs so they stay reachable from Sources and Activity; the Answer tab tells the run step by step. */}
-    {(run || view.sources.length > 0) && <div className={`legacy-progress run-card${run ? ` is-${run.status}` : ''}`}>
-      {run && <div className="legacy-progress-head">
-        <strong>{t(run.kind === 'discovery' ? 'Search & screening' : 'Answer')} · {t(runStatusLabels[run.status])}</strong>
-        {(active || run.status === 'paused') && <div className="run-actions">
-          {active && run.status !== 'pause_requested' && <Button variant="outline" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />{t('Pause')}</Button>}
+    <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => setTab(String(value))}>
+      <div className="research-tabs-bar">
+        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger><TabsTrigger value="evidence">{t('Evidence')}</TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
+        {/* The live run carries its own quiet Pause; these controls ride with the tabs so pause, resume and cancel stay reachable from every tab. */}
+        {run && (active || run.status === 'paused') && <div className="run-strip">
+          <span className="run-strip-status">{active && <LoaderCircle size={13} className="chat-spin" aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
+          {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />{t('Pause')}</Button>}
           {run.status === 'paused' && <Button variant="default" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'resume'))}><Play size={14} />{t('Resume')}</Button>}
           <Button variant="destructive" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'cancel'))}><X size={14} />{t('Cancel')}</Button>
         </div>}
-      </div>}
-      <div className="legacy-counts run-counts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
-        {([['found', 'Found'], ['unique', 'Unique works'], ['included', 'Included'], ['inspected', 'Given to the model'], ['cited', 'Cited']] as const).map(([key, label]) => <div key={key}><strong>{view.counts[key]}</strong><span>{t(label)}</span></div>)}
       </div>
-    </div>}
-
-    <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => setTab(String(value))}>
-      <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
 
       <TabsContent value="answer">
-        <Transcript view={view} modelText={modelText}
+        {/* Table runs show in the run strip and Activity; the conversation tells search and answer runs. */}
+        <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'answer') }} modelText={modelText} busy={busy}
+          onControl={(target, action) => act(() => api.controlRun(target.id, action))}
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
-          latestAnswer={answer ? <AnswerBlock researchId={id} title={view.research.title} version={view.answers.length} answer={answer} sources={view.sources} busy={busy} dark={dark} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} /> : null} />
+          latestAnswer={answer ? <AnswerBlock researchId={id} title={heading} version={view.answers.length} answer={answer} sources={view.sources} busy={busy} dark={dark} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} /> : null} />
+        {/* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads. */}
         <div className="answer-actions">
-          <Button disabled={busy || active || !included} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
-          {hasAcademic && <Button variant="outline" disabled={busy || active} onClick={startDiscovery}><Search size={15} />{t(view.search_runs.length ? 'Search again' : 'Search providers')}</Button>}
+          <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !included} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
+          {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
+          {hasAcademic && (view.search_runs.length
+            ? <Button className="quiet-action" variant="ghost" disabled={busy || active} onClick={startDiscovery}>{t('Search again')}</Button>
+            : <Button variant="outline" disabled={busy || active} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
         </div>
       </TabsContent>
 
@@ -237,13 +244,17 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           </div></div>
         {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
         {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}</span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {t(s.status.replace('_', ' '))} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
-        <SourceList sources={view.sources} busy={busy}
+        <SourceList sources={view.sources} busy={busy} filter={sourceFilter} onFilter={setSourceFilter}
           onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
           onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
           onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
           onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} onAttachCandidate={(source, candidateId) => { void attachPdfCandidate(source, candidateId) }} onOpenPdf={(_, assetId) => setPdfTarget({ assetId })}
           onRemoveAsset={removeSourcePdf} pdfFinding={pdfFinding} />
         </section>
+      </TabsContent>
+
+      <TabsContent value="evidence">
+        <EvidenceTab researchId={id} view={view} dark={dark} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
       </TabsContent>
 
       <TabsContent value="activity">
@@ -398,7 +409,8 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
     {suggestion && <PdfSuggestions notes={suggestion.notes} sources={suggestion.sources} busy={busy} onAttachPdf={onAttachPdf} />}
   </div>
   return <>
-    <button type="button" className="report-artifact" onClick={() => setReportOpen(true)} aria-label={t('Open report: {title}', { title })}>
+    {/* The "Cited" count above the tabs scrolls here: the answer card is where the citations live. */}
+    <button type="button" id="research-answer" className="report-artifact" onClick={() => setReportOpen(true)} aria-label={t('Open report: {title}', { title })}>
       <span className="report-artifact-preview" aria-hidden="true"><strong>{title}</strong><span>{preview}</span></span>
       <span className="report-artifact-copy">
         <span className="report-artifact-kind" aria-hidden="true"><Sparkles size={16} strokeWidth={1.8} /></span>
@@ -554,8 +566,7 @@ const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
 
 type SourceActions = { onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; pdfFinding: string | null }
 
-function SourceList({ sources, busy, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, pdfFinding }: { sources: Source[]; busy: boolean } & SourceActions) {
-  const [filter, setFilter] = useState<StateFilter>('all')
+function SourceList({ sources, busy, filter, onFilter, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, pdfFinding }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void } & SourceActions) {
   const [pdfFilter, setPdfFilter] = useState<PdfFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SourceSort>('relevant')
@@ -578,7 +589,7 @@ function SourceList({ sources, busy, onSelect, onReason, onAbstract, onDiscoverP
   return <>
     {families.length > 1 && <div className="source-toolbar">
       <div className="source-filters" role="group" aria-label={t('Show sources')}>
-        {stateFilters.map(([key, label]) => <button key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}>{t(label)}<span>{counts[key]}</span></button>)}
+        {stateFilters.map(([key, label]) => <button key={key} aria-pressed={filter === key} onClick={() => onFilter(key)}>{t(label)}<span>{counts[key]}</span></button>)}
       </div>
       <label className="source-search"><Search size={14} aria-hidden /><input type="search" aria-label={t('Filter sources')} placeholder={t('Title, author, venue or DOI')} value={query} onChange={e => setQuery(e.target.value)} /></label>
       <Select value={pdfFilter} onValueChange={value => { if (value) setPdfFilter(value as PdfFilter) }}>
@@ -598,7 +609,7 @@ function SourceList({ sources, busy, onSelect, onReason, onAbstract, onDiscoverP
       onSelect={state => onSelect(source, state)} onReason={reason => onReason(source, reason)} onAbstract={() => onAbstract(source)}
       onDiscoverPdf={() => onDiscoverPdf(source)} onAttachPdf={() => onAttachPdf(source)} onAttachCandidate={candidateId => onAttachCandidate(source, candidateId)} onOpenPdf={assetId => onOpenPdf(source, assetId)}
       onRemoveAsset={assetId => onRemoveAsset(source, assetId)} finding={pdfFinding === source.source_version_id} />)}</div>
-    {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { setFilter('all'); setPdfFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
+    {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { onFilter('all'); setPdfFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
   </>
 }
 
@@ -709,7 +720,7 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
   switch (event.type) {
     case 'research_created': return lucide(FilePlus2, t('Research created'))
     case 'scope_revised': return lucide(PencilLine, t('Question revised (revision {n})', { n: String(p.scope_revision) }))
-    case 'run_queued': return lucide(ListPlus, t(p.kind === 'discovery' ? 'Search run queued' : 'Answer run queued'))
+    case 'run_queued': return lucide(ListPlus, p.kind === 'discovery' || p.kind === 'answer' ? t(p.kind === 'discovery' ? 'Search run queued' : 'Answer run queued') : t('{label} queued', { label: t(runKindLabels[String(p.kind) as RunKind] ?? String(p.kind)) }))
     case 'run_started': return lucide(Play, t('Run started'))
     case 'run_completed': return lucide(CircleCheck, t('Run completed'), [statusChip('completed')])
     case 'run_paused': return lucide(Pause, t('Run paused'), reason)
@@ -729,6 +740,8 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'asset_removed': return lucide(Trash2, t('PDF removed from a source'))
     case 'selection_changed': return lucide(UserPen, t('You marked a source'), [{ label: t(selectionStates[String(p.state)] ?? String(p.state)), tone: selectionTones[String(p.state)] ?? 'neutral' }])
     case 'answer_saved': return lucide(MessageSquareQuote, t('Answer saved'), [statusChip(p.status)])
+    case 'table_changed': return lucide(Table2, t('Evidence table changed'))
+    case 'cell_revision_saved': return lucide(PencilLine, t('Cell revision saved'), [{ label: t(String(p.kind).replaceAll('_', ' ')), tone: 'neutral' }])
     case 'answer_reviewed': return lucide(ShieldCheck, t('Answer review saved'), [statusChip(p.status)])
     default: return lucide(Activity, event.type)
   }

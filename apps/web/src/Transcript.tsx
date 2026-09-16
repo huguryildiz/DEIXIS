@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, Check, ChevronDown, ChevronRight, LoaderCircle, Minus, Search, Sparkles, TriangleAlert } from 'lucide-react'
+import { ArrowDown, Check, ChevronDown, ChevronRight, LoaderCircle, Minus, Pause, Sparkles, TriangleAlert } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import type { ResearchView, Run, Verdict } from './api'
-import { fetchReasonText, pauseReasonText, providerName, runStatusLabels, stepLabel, verdictLabels } from './labels'
+import { connectionName, fetchReasonText, pauseReasonText, providerName, runStatusLabels, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { t, uiLocale } from './i18n'
 
-// The research page as a conversation: the question, then one DEIXIS turn per run whose steps appear as they happen.
+// The research as a record of work: one node per run on a thin rail, each run one line per phase, details a disclosure deeper.
 // The page's event stream refreshes the view; a one-second clock keeps running durations moving between events.
-// Run controls stay in the run card above the tabs, so they are reachable from every tab.
+// The live run carries a quiet Pause; cancel and resume also sit next to the tabs, so they are reachable from every tab.
 
 type PhaseKey = 'plan' | 'search' | 'screen' | 'pdf' | 'semantic' | 'answer' | 'review'
 type PhaseState = 'done' | 'running' | 'attention' | 'waiting' | 'skipped'
@@ -42,6 +43,12 @@ function phaseOf(kind: string): PhaseKey | null {
 }
 
 const durationText = (seconds: number) => (seconds < 60 ? t('{s} s', { s: seconds }) : t('{m} min {s} s', { m: Math.floor(seconds / 60), s: seconds % 60 }))
+// When the run started: the clock alone for today, with the day for anything older, so the wait between runs is visible.
+function startedText(iso: string) {
+  const at = new Date(iso)
+  const time = at.toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
+  return at.toDateString() === new Date().toDateString() ? t('today {time}', { time }) : `${at.toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short' })} ${time}`
+}
 const secondsBetween = (from: string, to: number) => Math.max(0, Math.round((to - Date.parse(from)) / 1000))
 const present = (values: (string | null)[]) => values.filter((v): v is string => Boolean(v)).sort()
 const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unknown'
@@ -56,8 +63,9 @@ function totalTokens(usage: unknown): number | null {
 }
 
 type ModelText = (model: string | null, effort: string | null) => string
+type Control = (run: Run, action: 'pause' | 'resume' | 'cancel') => void
 
-export function Transcript({ view, emptyText, latestAnswer, modelText }: { view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText }) {
+export function Transcript({ view, emptyText, latestAnswer, modelText, busy, onControl }: { view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText; busy: boolean; onControl: Control }) {
   const runs = [...view.runs].reverse()  // the view lists the newest run first
   const active = runs.some(r => ACTIVE.has(r.status))
   const end = useRef<HTMLDivElement>(null)
@@ -75,9 +83,9 @@ export function Transcript({ view, emptyText, latestAnswer, modelText }: { view:
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [active])
+  // The question is the page heading and the revision box; it is not repeated here.
   return <div className="chat">
-    <div className="chat-user">{view.scope.question}</div>
-    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText}>
+    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} busy={busy} onControl={onControl}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
     {!runs.length && <p className="chat-say">{emptyText}</p>}
@@ -86,12 +94,11 @@ export function Transcript({ view, emptyText, latestAnswer, modelText }: { view:
   </div>
 }
 
-function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; view: ResearchView; now: number; latest: boolean; modelText: ModelText; children: ReactNode }) {
+function RunTurn({ run, view, now, latest, modelText, busy, onControl, children }: { run: Run; view: ResearchView; now: number; latest: boolean; modelText: ModelText; busy: boolean; onControl: Control; children: ReactNode }) {
   const active = ACTIVE.has(run.status)
   const [open, setOpen] = useState<boolean | null>(null)
-  const [queriesOpen, setQueriesOpen] = useState(true)
-  // The plan summary and its concept list share one disclosure control.
-  const [conceptsOpen, setConceptsOpen] = useState(true)
+  // Each phase reads as one line; what it found (plan text, concepts, queries, counts) opens under it on request.
+  const [openPhases, setOpenPhases] = useState<Partial<Record<PhaseKey, boolean>>>({})
   // A finished run folds away once something follows it; the latest search stays open so its queries can be read.
   const expanded = open ?? (run.status !== 'completed' || (latest && run.kind === 'discovery'))
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
@@ -104,9 +111,10 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
   const answer = view.answers.find(a => a.run_id === run.id)
   const started = present(steps.map(s => s.started_at))[0] ?? run.created_at
   const unknownSteps = steps.filter(s => s.status === 'outcome_unknown')
-  // A failed search no longer stops the run (D18); name what is missing so the results are not read as complete.
-  const failedSearches = [...new Set(steps.filter(s => s.kind.startsWith('provider_search') && troubled(s))
-    .map(s => `${providerName(s.kind.split(':')[1] ?? '')} (${t((s.error_code ?? 'failed').replace('_', ' '))})`))]
+  // A failed search no longer stops the run (D18); name the provider that is missing so the results are not read as
+  // complete. Why it failed stays on its query row in the phase details, where the other provider results are.
+  const failedProviders = [...new Map(steps.filter(s => s.kind.startsWith('provider_search') && troubled(s))
+    .map(s => [s.kind.split(':')[1] ?? '', providerName(s.kind.split(':')[1] ?? '')])).entries()]
   const runningSearch = groups[order.indexOf('search')]?.find(s => s.status === 'running')
   const plan = run.plan
   // The screening the run itself proposed on, and the sources the answer run reads.
@@ -127,7 +135,7 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
 
   const title = (key: PhaseKey, state: PhaseState, group: Step[]) => {
     const finished = searches.filter(s => s.status === 'completed' || s.status === 'zero_results').length
-    if (state === 'done' && key === 'search') return plural(finished, 'Conducted {n} search', 'Conducted {n} searches')
+    if ((state === 'done' || state === 'attention') && key === 'search' && finished) return plural(finished, 'Conducted {n} search', 'Conducted {n} searches')
     if (state === 'done' && key === 'pdf') return plural(group.filter(s => s.status === 'succeeded').length, 'Downloaded {n} open-access PDF', 'Downloaded {n} open-access PDFs')
     if (state === 'done' && key === 'review' && answer?.review?.status === 'completed') return plural(answer.review.reviews.length, 'Reviewed {n} claim', 'Reviewed {n} claims')
     const [running, done, idle] = titles[key]
@@ -147,22 +155,10 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
       }
       case 'search': {
         if (!searches.length) return ''
-        // Per provider: the records taken, and the total the provider reported when it is larger than what was taken.
-        const perProvider = new Map<string, { taken: number; total: number | null }>()
-        searches.forEach(s => {
-          const seen = perProvider.get(s.provider) ?? { taken: 0, total: null }
-          perProvider.set(s.provider, { taken: seen.taken + (s.status === 'completed' ? s.result_count : 0),
-            total: s.provider_total === null ? seen.total : (seen.total ?? 0) + s.provider_total })
-        })
+        // The line keeps the totals only; the per-provider figures are in the phase details, on the query rows.
         const found = searches.reduce((sum, s) => sum + (s.status === 'completed' ? s.result_count : 0), 0)
-        // One provider: the query rows below already name it with its counts, so the line keeps only the total.
-        const parts = perProvider.size > 1
-          ? [...perProvider].map(([id, { taken, total }]) => `${providerName(id)} ${total !== null && total > taken ? t('{count} of {total}', { count: taken, total: compact(total) }) : taken}`)
-          : [plural(found, '{n} record', '{n} records')]
-        // This run's own records against the works kept for its question revision; the research-wide counts would mix in older runs.
-        const unique = new Set(screened.map(s => s.work_id)).size  // versions of one work count once
-        if (state === 'done' && found && found !== unique) parts.push(t('{found} found → {unique} unique', { found, unique }))
-        return parts.join(' · ')
+        // Unique works are counted per question revision, not per run, so the line keeps only what this run's searches returned.
+        return plural(found, '{n} record', '{n} records')
       }
       case 'screen': {
         const done = group.filter(s => s.status === 'succeeded').length
@@ -208,8 +204,22 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
 
   // What the finished phase found, from the counts and fields the model already wrote; nothing is narrated for it.
   const report = (key: PhaseKey, state: PhaseState, group: Step[]): ReactNode => {
-    if (state !== 'done') return null
+    // A search phase reports even when a provider failed: the totals of the providers that did answer still hold.
+    if (state !== 'done' && !(key === 'search' && state === 'attention')) return null
     switch (key) {
+      case 'search': {
+        // Per provider: the records taken, and the total the provider reported when it is larger than what was taken.
+        const perProvider = new Map<string, { taken: number; total: number | null }>()
+        searches.forEach(s => {
+          const seen = perProvider.get(s.provider) ?? { taken: 0, total: null }
+          perProvider.set(s.provider, { taken: seen.taken + (s.status === 'completed' ? s.result_count : 0),
+            total: s.provider_total === null ? seen.total : (seen.total ?? 0) + s.provider_total })
+        })
+        if (perProvider.size < 2) return null  // a single provider is already named on each query row below
+        return <p className="chat-provider-totals">{[...perProvider].map(([id, { taken, total }]) => <span key={id}>
+          <ConnectionIcon id={id} />{providerName(id)} {total !== null && total > taken ? t('{count} of {total}', { count: taken, total: compact(total) }) : taken}
+        </span>)}</p>
+      }
       case 'plan': {
         if (!plan) return null
         return <>
@@ -288,7 +298,7 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
     review: { role: 'Reviewer', connection: answer?.review?.model?.connection ?? view.reviewer.connection ?? scope.model_connection, model: answer?.review?.model?.resolved_model ?? view.reviewer.model, effort: view.reviewer.reasoning_effort },
   }
   const providers = new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(view.scope.providers.map(providerName))
-  // Worded as what happened, so it reads apart from the run card's "Search & screening · Completed" status above the tabs.
+  // Worded as what happened, so it reads apart from the run strip's status next to the tabs.
   const outcome = active ? 'active' : run.status
   const label = t((run.kind === 'discovery' ? discoveryHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
   const olderRevision = run.scope_revision !== view.research.current_scope_revision
@@ -297,20 +307,24 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
   const spend = [t('Model calls {calls}/{limit}', { calls: run.usage.model_calls ?? 0, limit: run.budget.max_model_calls ?? 0 }),
     t('provider requests {requests}/{limit}', { requests: run.usage.provider_requests ?? 0, limit: run.budget.max_provider_requests ?? 0 }),
     ...(tokens === null ? [] : [t('{n} answer tokens', { n: compact(tokens) })])].join(' · ')
-  return <section className="chat-turn">
-    <div className={`chat-group${active ? ' is-active' : ''}`}>
+  // Which model ran each model phase of this run, listed once here rather than on every step line.
+  const models = order.filter((key, i) => agents[key]?.model && stateOf(i) !== 'skipped').map(key => agents[key]!)
+    .filter((agent, i, all) => all.findIndex(a => a.role === agent.role) === i)  // the literature model plans and screens; name it once
+    .map(agent => <span key={agent.role} className="chat-run-model"><ConnectionIcon id={agent.connection} /><span className="sr-only">{connectionName(agent.connection)} · </span>{[t(agent.role), modelText(agent.model, agent.effort)].filter(Boolean).join(' · ')}</span>)
+  return <section className={`chat-turn${active ? ' is-active' : ''}`}>
+    <div className="chat-group">
       <button type="button" className="chat-toggle" aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
         {expanded ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
         <span className={active ? 'shimmer-text' : undefined}>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span>
         {active && <LoaderCircle size={14} className="chat-spin" aria-hidden />}
+        <span className="chat-when">{startedText(started)}</span>
         <time>{durationText(secondsBetween(started, clock))}</time>
       </button>
       {expanded && <>
-        {latest && <div className="chat-run-plan" role="note">
+        {latest && active && <div className="chat-run-plan" role="note">
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />
           <div><p className="chat-run-plan-title">{run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : t('Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
         </div>}
-        {run.status !== 'queued' && <details className="chat-run-meta"><summary>{t('Run details')}</summary><p>{spend}</p></details>}
         <ol className="chat-steps">{order.map((key, i) => {
         const state = stateOf(i)
         const group = groups[i]
@@ -318,61 +332,66 @@ function RunTurn({ run, view, now, latest, modelText, children }: { run: Run; vi
         const text = detail(key, state, group)
         const hasQueries = key === 'search' && (searches.length > 0 || Boolean(runningSearch && active))
         const hasConcepts = key === 'plan' && state === 'done' && Boolean(plan?.concepts.length)
-        const listOpen = hasQueries ? queriesOpen : conceptsOpen
         const note = report(key, state, group)
+        const hasDetails = hasQueries || hasConcepts || Boolean(note)
+        // Closed by default; a search in progress shows its queries so the live row can be read.
+        const detailsOpen = openPhases[key] ?? (hasQueries && state === 'running')
+        // A search that did not complete belongs to the search line itself, in the attention colour, not to a paragraph after the run (D18).
+        const missed = key === 'search' ? failedProviders : []
         return <li key={key} className={`chat-step is-${state}`}>
           <div className="chat-step-line">
             <span className="chat-step-icon" role="img" aria-label={t(state === 'done' ? 'Done' : state === 'running' ? 'In progress' : state === 'attention' ? 'Stopped here' : state === 'waiting' ? 'Waiting' : 'Not run')}>
               {state === 'done' ? <Check size={13} strokeWidth={2.5} /> : state === 'running' ? <LoaderCircle size={14} className="chat-spin" /> : state === 'attention' ? <TriangleAlert size={13} /> : state === 'skipped' ? <Minus size={13} /> : null}
             </span>
-            {hasQueries || hasConcepts
-              ? <button type="button" className="chat-step-title" aria-expanded={listOpen} onClick={() => (hasQueries ? setQueriesOpen(!queriesOpen) : setConceptsOpen(!conceptsOpen))}><span className={state === 'running' ? 'shimmer-text' : undefined}>{title(key, state, group)}</span>{listOpen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}</button>
-              : <span className={`chat-step-title${state === 'running' ? ' shimmer-text' : ''}`}>{title(key, state, group)}</span>}
-            {agents[key]?.model && state !== 'skipped' && <span className={`agent-chip${state === 'running' ? ' is-running' : ''}`} title={t('Model that runs this step')}>
-              <ConnectionIcon id={agents[key].connection} />{[t(agents[key].role), modelText(agents[key].model, agents[key].effort)].filter(Boolean).join(' · ')}
-            </span>}
-            {text && <small>{text}</small>}
+            <span className="chat-step-main">
+              {hasDetails
+                ? <button type="button" className="chat-step-title" aria-expanded={detailsOpen} onClick={() => setOpenPhases({ ...openPhases, [key]: !detailsOpen })}><span className={state === 'running' ? 'shimmer-text' : undefined}>{title(key, state, group)}</span>{detailsOpen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}</button>
+                : <span className={`chat-step-title${state === 'running' ? ' shimmer-text' : ''}`}>{title(key, state, group)}</span>}
+              {(text || missed.length > 0) && <small>{text}{text && missed.length ? ' · ' : ''}
+                {missed.length > 0 && <em className="chat-step-missed">{missed.map(([id]) => <ConnectionIcon key={id} id={id} />)}{t('{list} did not complete', { list: missed.map(([, name]) => name).join(', ') })}</em>}</small>}
+            </span>
             <time>{seconds === null ? '' : durationText(seconds)}</time>
           </div>
-          {note && (!hasConcepts || conceptsOpen) && <div className="chat-step-note">{note}</div>}
-          {hasConcepts && conceptsOpen && <div className="query-box">
-            {plan?.concepts.map(c => <div key={c.label} className="query-row">
-              <span className="query-text">{c.synonyms.length ? `${c.label} · ${c.synonyms.join(', ')}` : c.label}</span>
-              <span className="query-meta"><span className="query-result">{t(c.role.replace('_', ' '))}</span></span>
-            </div>)}
-          </div>}
-          {hasQueries && queriesOpen && <div className="query-box">
+          {note && detailsOpen && <div className="chat-step-note">{note}</div>}
+          {hasConcepts && detailsOpen && <ul className="chat-list">
+            {plan?.concepts.map(c => <li key={c.label}>
+              <span className="chat-list-text"><b>{c.label}</b>{c.synonyms.length ? ` · ${c.synonyms.join(', ')}` : ''}</span>
+              <small>{t(c.role.replace('_', ' '))}</small>
+            </li>)}
+          </ul>}
+          {hasQueries && detailsOpen && <ul className="chat-list">
             {searches.map(s => {
               const ok = s.status === 'completed' || s.status === 'zero_results'
               const why = rationaleOf(s.provider, s.query_text)
-              return <div key={s.id} className={`query-row${ok ? '' : ' is-attention'}`} title={s.query_text}>
-                <Search size={14} aria-hidden />
-                {why
-                  ? <span className="query-stack"><code className="query-text query-code">{s.query_text}</code><small>{why}</small></span>
-                  : <code className="query-text query-code">{s.query_text}</code>}
-                <span className={`query-meta${ok ? ' is-ok' : ' is-error'}`}>
-                  <span className="query-provider"><ConnectionIcon id={s.provider} />{providerName(s.provider)}</span>
-                  <span className="query-result">{ok ? t('{count} of {total}', { count: s.result_count, total: s.provider_total === null ? '?' : compact(s.provider_total) }) : t(s.status.replace('_', ' '))}</span>
-                </span>
-              </div>
+              return <li key={s.id} className={ok ? undefined : 'is-attention'}>
+                <span className="chat-list-text"><code>{s.query_text}</code>{why && <small>{why}</small>}</span>
+                <span className="chat-list-meta"><ConnectionIcon id={s.provider} />{providerName(s.provider)} · <b>{ok ? t('{count} / {total}', { count: s.result_count, total: s.provider_total === null ? '?' : compact(s.provider_total) }) : t(s.status.replace('_', ' '))}</b></span>
+              </li>
             })}
-            {runningSearch && active && <div className="query-row is-running">
-              <LoaderCircle size={14} className="chat-spin" aria-hidden />
-              <span className="query-text shimmer-text">{t('{provider} · searching', { provider: providerName(runningSearch.kind.split(':')[1] ?? '') })}</span>
-            </div>}
-          </div>}
+            {runningSearch && active && <li className="is-running">
+              <span className="chat-list-text shimmer-text">{t('Searching')}</span>
+              <span className="chat-list-meta"><LoaderCircle size={13} className="chat-spin" aria-hidden /><ConnectionIcon id={runningSearch.kind.split(':')[1] ?? ''} />{providerName(runningSearch.kind.split(':')[1] ?? '')}</span>
+            </li>}
+          </ul>}
         </li>
         })}</ol>
+        <div className="chat-run-foot">
+          {/* What ran this run and what it spent: one quiet line under the phases, not a disclosure. */}
+          {run.status !== 'queued' && <p className="chat-run-meta">
+            {models.length > 0 && <span className="chat-run-models">{models}</span>}
+            <span>{spend}</span>
+          </p>}
+          {/* The live run's own quiet control; resume and cancel stay with the tabs, where every tab reaches them. */}
+          {active && run.status !== 'pause_requested' && <Button className="chat-run-pause" variant="ghost" size="sm" disabled={busy} onClick={() => onControl(run, 'pause')}><Pause size={13} />{t('Pause')}</Button>}
+        </div>
       </>}
     </div>
 
-    {failedSearches.length > 0 && run.status !== 'paused' && <p className="chat-say is-muted">{t('Some searches did not complete: {list}. The results of the other searches are used.', { list: failedSearches.join(', ') })}</p>}
     {run.status === 'paused' && <div className="chat-note is-warning">
       <p>{pauseReasonText(run.pause_reason)}</p>
       {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
     </div>}
     {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className="chat-note is-warning"><p>{pauseReasonText(run.pause_reason)}</p></div>}
-    {run.kind === 'discovery' && run.status === 'completed' && latest && !answer && <p className="chat-say">{t(view.counts.included === 1 ? 'Found {unique} unique works; {included} is included. Check the Sources tab, then generate an answer.' : 'Found {unique} unique works; {included} are included. Check the Sources tab, then generate an answer.', { unique: view.counts.unique, included: view.counts.included })}</p>}
     {children}
     {!children && answer && run.kind === 'answer' && <div className="answer-history-note"><span className="answer-history-icon" aria-hidden="true"><TriangleAlert size={14} /></span><span>{t('An earlier answer: {status}.', { status: t(answer.status.replaceAll('_', ' ')) })}</span></div>}
   </section>

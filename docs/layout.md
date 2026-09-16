@@ -16,7 +16,7 @@ DEIXIS/
 ├── apps/web/                   first-slice React UI served by the backend
 ├── contracts/research/         language-neutral JSON Schema model-step contracts
 ├── methods/deixis-research/    app-loaded method package with Quaestio provenance;
-│                               references/academic-phrasebank/phrases.txt holds the phrase frames
+│                               references/phrases.md holds the phrase frames
 ├── tests/                      deterministic tests, synthetic fixtures, prepared model-behavior cases,
 │                               acceptance/ fixture server for the browser run in apps/web/e2e
 ├── scripts/                    isolated probes and real-model case runners

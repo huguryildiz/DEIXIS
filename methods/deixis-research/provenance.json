@@ -46,9 +46,9 @@
     }
   ],
   "phrasebank": {
-    "deixis_file": "references/academic-phrasebank/phrases.txt",
+    "deixis_file": "references/phrases.md",
     "source": "Academic Phrasebank, 2015 enhanced edition (John Morley, The University of Manchester), phrase sections of printed pages 7-91. Copyright remains with The University of Manchester.",
-    "form": "converted once on 2026-09-14: one frame per line under # section and ## subsection headings, table rows written with {a | b} alternatives; nine frames split or joined by the conversion were repaired by hand",
+    "form": "converted once on 2026-09-14: one frame per list item under # section and ## subsection headings, table rows written with {a | b} alternatives; nine frames split or joined by the conversion were repaired by hand",
     "turkish": "each frame is followed by a `tr:` line, a literal Turkish rendering written on 2026-09-14 by Claude Sonnet subagents; checked by script for equal alternative groups and slots, spot-read by the implementing agent, not reviewed by a human translator",
     "use": "versioned at the user's decision (2026-09-14); loaded into grounded_answer steps only, English frames or their Turkish renderings by question language; every answer sentence is checked against the frames of the answer language (contracts._check_phrasing); its hash is part of skill_package_hash"
   },

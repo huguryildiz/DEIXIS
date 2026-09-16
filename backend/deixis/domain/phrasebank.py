@@ -12,7 +12,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-PHRASEBANK = "references/academic-phrasebank/phrases.txt"
+PHRASEBANK = "references/phrases.md"
 LANGUAGES = ("en", "tr")
 MIN_MATCHED = 3
 MIN_COVERAGE = 0.7
@@ -58,7 +58,7 @@ class _Pattern:
 
 
 def parse(text: str) -> tuple[list[str], list[Frame]]:
-    """Header lines and frames. `# ` starts a section, `## ` a subsection, `tr: ` renders the previous frame."""
+    """Header lines and frames. `# ` starts a section, `## ` a subsection, `- ` a frame, `tr: ` renders the previous frame."""
     header: list[str] = []
     frames: list[Frame] = []
     section = subsection = ""
@@ -67,11 +67,11 @@ def parse(text: str) -> tuple[list[str], list[Frame]]:
             subsection = line[3:]
         elif line.startswith("# "):
             section, subsection = line[2:], ""
-        elif line.startswith("tr: ") and frames:
-            frames[-1].text["tr"] = line[4:]
+        elif line.lstrip().startswith("tr: ") and frames:
+            frames[-1].text["tr"] = line.lstrip()[4:]
         elif line.strip():
             if section:
-                frames.append(Frame(section, subsection, {"en": line}))
+                frames.append(Frame(section, subsection, {"en": line.removeprefix("- ")}))
             else:
                 header.append(line)
     return header, frames

@@ -122,13 +122,16 @@ def test_a_removed_source_is_not_given_to_the_answer_and_its_quote_and_cited_pdf
         view, run = wait_run(client, rid, client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()["id"])
         assert run["status"] == "completed", run
         quote = view["answers"][0]["claims"][0]["evidence"][0]
-        assert quote["source_version_id"] == cited["source_version_id"]
+        assert quote["source_version_id"] == cited["source_version_id"] and quote["removed_from_research"] is False
+        assert client.get(f"/api/researches/{rid}/passages/{quote['passage_id']}").json()["removed_from_research"] is False
         uncited = upload(client, rid, "uncited.pdf", "SYNTHETIC second molecule release report.")
 
         mark_removed(store, rid, cited["source_version_id"], uncited["source_version_id"])
         assert client.get(f"/api/researches/{rid}").json()["sources"] == []
         assert client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).status_code == 422
-        assert client.get(f"/api/researches/{rid}/passages/{quote['passage_id']}").status_code == 200
+        passage = client.get(f"/api/researches/{rid}/passages/{quote['passage_id']}")
+        assert passage.status_code == 200 and passage.json()["removed_from_research"] is True  # the quote and passage say so (D50)
+        assert client.get(f"/api/researches/{rid}").json()["answers"][0]["claims"][0]["evidence"][0]["removed_from_research"] is True
         assert client.get(f"/api/researches/{rid}/assets/{cited['access']['assets'][0]['id']}").status_code == 200
         assert client.get(f"/api/researches/{rid}/assets/{uncited['access']['assets'][0]['id']}").status_code == 404
         assert client.get("/api/search", params={"q": "cited"}).json()["sources"] == []

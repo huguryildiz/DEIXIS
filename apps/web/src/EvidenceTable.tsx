@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { BookOpenText, Ellipsis, FileText, LayoutTemplate, ListPlus, PencilLine, Plus, RotateCw, Save, Sparkles, Trash2, TriangleAlert } from 'lucide-react'
+import { ArchiveRestore, BookOpenText, Ellipsis, FileText, LayoutTemplate, ListPlus, PencilLine, Plus, RotateCw, Save, Sparkles, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -7,7 +7,7 @@ import { api, ApiError, type AnswerFormat, type CellEdit, type CellEvidence, typ
 import { ConfirmDialog } from './ConfirmDialog'
 import { PassageSheet } from './PassageSheet'
 import { locatorText, versionText } from './labels'
-import { useToast } from './Toast'
+import { useToast, type ToastAction } from './Toast'
 import { t, uiLocale } from './i18n'
 import './EvidenceTable.css'
 
@@ -76,10 +76,12 @@ function revisionMeta(rev: CellRevision) {
 type EditorTarget = { mode: 'add' } | { mode: 'edit'; column: TableColumn } | { mode: 'suggestion'; suggestion: ColumnSuggestion; stepId: string }
 type ModelText = (model: string | null, effort: string | null) => string
 
-export function EvidenceTab({ researchId, view, dark, modelText, onRunStarted }: { researchId: string; view: ResearchView; dark: boolean; modelText: ModelText; onRunStarted: () => void }) {
+// initialTableId: the table to show first, e.g. one just started from chosen sources.
+export function EvidenceTab({ researchId, view, dark, initialTableId = null, modelText, onRunStarted }: { researchId: string; view: ResearchView; dark: boolean; initialTableId?: string | null; modelText: ModelText; onRunStarted: () => void }) {
   const toast = useToast()
   const [tables, setTables] = useState<TableSummary[] | null>(null)
-  const [chosen, setChosen] = useState<string | null>(null)
+  const [chosen, setChosen] = useState<string | null>(initialTableId)
+  const [trashedTables, setTrashedTables] = useState(0)
   const [table, setTable] = useState<TableView | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -108,9 +110,18 @@ export function EvidenceTab({ researchId, view, dark, modelText, onRunStarted }:
     return () => { live = false }
   }, [fetchTable, view.last_event_id])
 
-  async function act(action: () => Promise<unknown>, success?: string) {
+  // Without a table, say whether this research has tables in the Trash (D50).
+  const noTables = tables?.length === 0
+  useEffect(() => {
+    if (!noTables) return
+    let live = true
+    api.trash().then(trash => { if (live) setTrashedTables(trash.tables.filter(x => x.research_id === researchId).length) }, () => { /* the link is left out */ })
+    return () => { live = false }
+  }, [noTables, researchId, view.last_event_id])
+
+  async function act(action: () => Promise<unknown>, success?: string, undo?: ToastAction) {
     setBusy(true)
-    try { await action(); if (success) toast('success', success); await load() }
+    try { await action(); if (success) toast('success', success, undo); await load() }
     catch (e) {
       // 409: the table, column or run state changed after this screen loaded (another tab, or a run that moved on).
       if (conflict(e)) { toast('warning', t('Not applied: {message}. The page now shows the latest state.', { message: errorText(e) })); await load() }
@@ -146,6 +157,7 @@ export function EvidenceTab({ researchId, view, dark, modelText, onRunStarted }:
           <LayoutTemplate size={17} aria-hidden /><span><strong>{t('Start from a template')}</strong><small>{t('Columns saved from an earlier table')}</small></span>
         </button>
       </div>
+      {trashedTables > 0 && <p className="evidence-trash-link"><ArchiveRestore size={14} aria-hidden />{t(trashedTables === 1 ? '{n} table of this research is in the Trash.' : '{n} tables of this research are in the Trash.', { n: trashedTables })} <a href="#/trash">{t('Show in Trash')}</a></p>}
       {templatesOpen && <div className="evidence-templates">
         {templates === null ? <p>{t('Loading templates…')}</p> : templates.length ? <ul>{templates.map(tpl => <li key={tpl.id}>
           <button type="button" disabled={busy} onClick={() => act(() => createTable(tpl.id), t('Table started from “{name}”.', { name: tpl.name }))}>
@@ -195,7 +207,19 @@ export function EvidenceTab({ researchId, view, dark, modelText, onRunStarted }:
       <h2 id="evidence-heading">{table.table.title}</h2>
       <p>{t('{rows} rows · {columns} columns · {filled} cells with a value · {empty} empty · {pending} proposals waiting', { rows: table.counts.rows, columns: table.counts.columns, filled: table.counts.with_value, empty: table.counts.empty, pending: table.counts.pending_proposals })}{table.removed_rows.length ? ` · ${t('{n} removed rows keep their cells', { n: table.removed_rows.length })}` : ''}</p>
     </div>
-      {tables.length > 1 && <select className="evidence-table-choice" aria-label={t('Table')} value={tableId} onChange={e => setChosen(e.target.value)}>{tables.map(x => <option key={x.id} value={x.id}>{x.title}</option>)}</select>}
+      <div className="evidence-table-head-actions">
+        {tables.length > 1 && <select className="evidence-table-choice" aria-label={t('Table')} value={tableId} onChange={e => setChosen(e.target.value)}>{tables.map(x => <option key={x.id} value={x.id}>{x.title}</option>)}</select>}
+        <DropdownMenu>
+          <DropdownMenuTrigger className="evidence-table-menu" disabled={busy} aria-label={t('Actions for table {title}', { title: table.table.title })}><Ellipsis size={16} /></DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-auto">
+            <DropdownMenuItem onClick={() => {
+              const version = table.table.version
+              void act(() => api.trashTable(researchId, tableId, version), t('Table moved to Trash. Its cells and edits are kept.'),
+                { label: t('Undo'), run: () => { void act(async () => { await api.restoreTable(researchId, tableId, version + 1); setChosen(tableId) }, t('Table restored.')) } })
+            }}><Trash2 size={15} />{t('Move to Trash')}</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
 
     <div className="evidence-toolbar">
@@ -263,7 +287,8 @@ export function EvidenceTab({ researchId, view, dark, modelText, onRunStarted }:
                     <DropdownMenu>
                       <DropdownMenuTrigger className="evidence-row-menu" disabled={busy} aria-label={t('Row actions for {title}', { title: row.title })}><Ellipsis size={15} /></DropdownMenuTrigger>
                       <DropdownMenuContent align="start" className="w-auto">
-                        <DropdownMenuItem variant="destructive" onClick={() => act(() => api.removeTableRow(researchId, tableId, row.source_version_id, table.table.version), t('Row removed from the table. Its cells are kept and return if you add the source again.'))}><Trash2 size={15} />{t('Remove from table')}</DropdownMenuItem>
+                        <DropdownMenuItem variant="destructive" onClick={() => act(() => api.removeTableRow(researchId, tableId, row.source_version_id, table.table.version), t('Row removed from the table. Its cells are kept and return if you add the source again.'),
+                          { label: t('Undo'), run: () => { void act(() => api.addTableRows(researchId, tableId, [row.source_version_id], table.table.version + 1), t('Row restored with its cells.')) } })}><Trash2 size={15} />{t('Remove from table')}</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -287,9 +312,10 @@ export function EvidenceTab({ researchId, view, dark, modelText, onRunStarted }:
     {editor && <ColumnEditor key={editor.mode === 'edit' ? editor.column.id : editor.mode} target={editor} busy={busy} dark={dark}
       onSave={spec => saveColumn(editor, spec)} onClose={() => setEditor(null)} onRemove={column => { setEditor(null); setRemoving(column) }} />}
     <ConfirmDialog open={Boolean(removing)} dark={dark} title={t('Remove column?')}
-      description={t('The column leaves the table. Its cells and their history stay stored, but this screen offers no way to bring the column back yet.')}
+      description={t('The column leaves the table. Its cells and their history stay stored; Undo in the notification brings the column back with them.')}
       context={removing?.name} confirmLabel={t('Remove column')} cancelLabel={t('Cancel')} busy={busy}
-      onConfirm={() => { const column = removing; setRemoving(null); if (column) void act(() => api.removeColumn(researchId, tableId, column.id, column.version), t('Column removed.')) }}
+      onConfirm={() => { const column = removing; setRemoving(null); if (column) void act(() => api.removeColumn(researchId, tableId, column.id, column.version), t('Column removed.'),
+        { label: t('Undo'), run: () => { void act(() => api.restoreColumn(researchId, tableId, column.id, column.version + 1), t('Column restored with its cells.')) } }) }}
       onOpenChange={open => { if (!open) setRemoving(null) }} />
     {cellTarget && cellColumn && cellRow && <CellPanel researchId={researchId} tableId={tableId} column={cellColumn} row={cellRow} refresh={view.last_event_id}
       source={view.sources.find(s => s.source_version_id === cellRow.source_version_id)} activeRun={activeRun} rechecking={rechecking === `${cellColumn.id}:${cellRow.source_version_id}`}

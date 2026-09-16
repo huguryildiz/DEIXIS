@@ -99,6 +99,7 @@ export type Evidence = {
   passage_id: string; source_version_id: string; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
   printed_label: string | null; reading_depth: string; title: string; version_label: string | null; anchor_text: string | null
   evidence_status: EvidenceStatus
+  removed_from_research: boolean  // the source was removed from this research later; the quote still opens (D50)
 }
 export type Claim = {
   id: string; label: string; section: string | null; text: string; support_type: 'source_stated' | 'analyst_inference'; semantic_review: string; evidence: Evidence[]
@@ -119,7 +120,11 @@ export type Answer = {
   source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D45)
   review: AnswerReview | null
 }
-export type Counts = { found: number; unique: number; included: number; excluded: number; pending: number; inspected: number; cited: number }
+export type Counts = {
+  found: number; unique: number; included: number; excluded: number; pending: number; inspected: number; cited: number
+  // Works the user removed from this research, and those of them a later search found again; neither is listed (D50).
+  removed: number; removed_found_again: number
+}
 export type ResearchView = {
   research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string }
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
@@ -131,10 +136,19 @@ export type ResearchSummary = {
   answer_count: number; created_at: string; updated_at: string
 }
 export type TrashedResearch = { id: string; title: string; trashed_at: string }
+// The Trash page's groups (D50); a trashed research's tables and removed sources go and come back with it and are not listed.
+export type TrashedTable = { id: string; title: string; research_id: string; research_title: string; version: number; trashed_at: string; rows: number; columns: number; cells: number; human_edits: number }
+export type RemovedSource = {
+  source_version_id: string; work_id: string; title: string; version_label: string | null; year: number | null; research_id: string; research_title: string
+  removed_at: string; removal_note: string | null; found_again_at: string | null; quotes: number; cells: number
+}
+export type TrashedTemplate = { id: string; name: string; trashed_at: string; columns: number }
+export type Trash = { researches: TrashedResearch[]; tables: TrashedTable[]; sources: RemovedSource[]; templates: TrashedTemplate[] }
 export type Passage = {
   id: string; kind: Evidence['kind']; text: string; physical_page: number | null; printed_label: string | null
   abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; reading_depth: string; asset_id: string | null
   evidence_status: EvidenceStatus
+  removed_from_research: boolean
   source: { id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; landing_url: string | null; version_label: string | null; origin: string; cited_by_count: number | null; cited_by_count_at: string | null }
 }
 export type ModelOption = {
@@ -285,8 +299,7 @@ const json = (method: string, body: unknown, extra: Record<string, string> = {})
 
 export const api = {
   researches: () => request<ResearchSummary[]>('/api/researches'),
-  // The Trash list also holds tables, removed sources and templates (D50); the page shows researches until slice 3's interface step.
-  trash: () => request<{ researches: TrashedResearch[] }>('/api/trash').then(trash => trash.researches),
+  trash: () => request<Trash>('/api/trash'),
   moveToTrash: (id: string) => request<{ trashed: boolean }>(`/api/researches/${id}`, { method: 'DELETE' }),
   restore: (id: string) => request<{ restored: boolean }>(`/api/trash/${id}/restore`, { method: 'POST' }),
   deletePermanently: (id: string) => request<{ deleted: boolean; files_not_removed: string[] }>(`/api/trash/${id}`, { method: 'DELETE' }),
@@ -326,6 +339,14 @@ export const api = {
     files.forEach(file => form.append('files', file))
     return request<{ matches: PdfMatch[] }>(`/api/researches/${id}/uploads/match`, { method: 'POST', body: form })
   },
+  // Takes sources out of this research; the library record, its files and the evidence citing it stay (D50).
+  removeSources: (id: string, sourceIds: string[], note?: string) =>
+    request<ResearchView & { changed_source_version_ids: string[] }>(`/api/researches/${id}/sources`, json('DELETE', { source_version_ids: sourceIds, note })),
+  restoreSources: (id: string, sourceIds: string[]) =>
+    request<ResearchView & { changed_source_version_ids: string[] }>(`/api/researches/${id}/sources/restore`, json('POST', { source_version_ids: sourceIds })),
+  // Puts a PDF removed as the wrong file back in use; 409 when another PDF is in use for the source.
+  restoreAsset: (id: string, sourceId: string, assetId: string) =>
+    request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/restore`, { method: 'POST' }),
   removeAsset: (id: string, sourceId: string, assetId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}`, { method: 'DELETE' }),
   assetImpact: (id: string, sourceId: string, assetId: string) =>
@@ -366,9 +387,14 @@ export const api = {
     request<SemanticSearch>('/api/semantic-search', json('PUT', { provider, model })),
   tables: (id: string) => request<TableSummary[]>(`/api/researches/${id}/tables`),
   table: (id: string, tableId: string) => request<TableView>(`/api/researches/${id}/tables/${tableId}`),
-  // rows omitted: the table starts with the research's included sources.
-  createTable: (id: string, body: { title: string; template_id?: string }, idempotencyKey: string) =>
+  // rows omitted: the table starts with the research's included sources; given, those sources in that order, included or not.
+  createTable: (id: string, body: { title: string; template_id?: string; rows?: string[] }, idempotencyKey: string) =>
     request<TableView>(`/api/researches/${id}/tables`, json('POST', body, { 'Idempotency-Key': idempotencyKey })),
+  trashTable: (id: string, tableId: string, expectedVersion: number) =>
+    request<{ trashed: boolean }>(`/api/researches/${id}/tables/${tableId}?expected_version=${expectedVersion}`, { method: 'DELETE' }),
+  restoreTable: (id: string, tableId: string, expectedVersion: number) =>
+    request<TableView>(`/api/researches/${id}/tables/${tableId}/restore`, json('POST', { expected_version: expectedVersion })),
+  purgeTable: (tableId: string) => request<{ deleted: boolean; cells: number; human_edits: number }>(`/api/trash/tables/${tableId}`, { method: 'DELETE' }),
   addTableRows: (id: string, tableId: string, sourceIds: string[], expectedVersion: number) =>
     request<TableView>(`/api/researches/${id}/tables/${tableId}/rows`, json('POST', { source_version_ids: sourceIds, expected_version: expectedVersion })),
   removeTableRow: (id: string, tableId: string, sourceId: string, expectedVersion: number) =>
@@ -379,6 +405,8 @@ export const api = {
     request<TableView>(`/api/researches/${id}/tables/${tableId}/columns/${columnId}`, json('PATCH', { ...spec, expected_version: expectedVersion })),
   removeColumn: (id: string, tableId: string, columnId: string, expectedVersion: number) =>
     request<TableView>(`/api/researches/${id}/tables/${tableId}/columns/${columnId}?expected_version=${expectedVersion}`, { method: 'DELETE' }),
+  restoreColumn: (id: string, tableId: string, columnId: string, expectedVersion: number) =>
+    request<TableView>(`/api/researches/${id}/tables/${tableId}/columns/${columnId}/restore`, json('POST', { expected_version: expectedVersion })),
   suggestColumns: (id: string, tableId: string, idempotencyKey: string) =>
     request<Run>(`/api/researches/${id}/tables/${tableId}/column-suggestions`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }),
   fillTable: (id: string, tableId: string, expectedVersion: number, idempotencyKey: string) =>
@@ -394,6 +422,8 @@ export const api = {
   tableTemplates: () => request<TableTemplate[]>('/api/table-templates'),
   saveTableTemplate: (researchId: string, tableId: string, name: string, idempotencyKey: string) =>
     request<TableTemplate>('/api/table-templates', json('POST', { name, research_id: researchId, table_id: tableId }, { 'Idempotency-Key': idempotencyKey })),
+  restoreTemplate: (templateId: string) => request<{ restored: boolean }>(`/api/table-templates/${templateId}/restore`, { method: 'POST' }),
+  purgeTemplate: (templateId: string) => request<{ deleted: boolean; tables_unlinked: number }>(`/api/trash/templates/${templateId}`, { method: 'DELETE' }),
 }
 
 export const bibliographyUrl = (researchId: string, format: 'bibtex' | 'ris', sources: 'included' | 'cited') =>

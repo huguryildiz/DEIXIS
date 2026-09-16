@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { BadgeCheck, BookOpenText, ExternalLink, FileText, Info, Link2, Maximize2, Minimize2, TriangleAlert } from 'lucide-react'
+import { BadgeCheck, BookOpenText, ExternalLink, FileText, Info, Link2, ListMinus, Maximize2, Minimize2, RotateCcw, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, assetUrl, type AssetText, type Passage, type Source } from './api'
@@ -76,7 +76,8 @@ function HighlightedPassageText({ passage, highlightTexts }: { passage: Passage;
 // pdfRemoved: the passage's PDF was removed from the source; its stored text still opens, the PDF view stays off.
 // A passage also reports this itself (evidence_status, D45), as it does a replaced file or an earlier text extraction.
 // sources: the research's source rows; the one matching the opened source adds its screening state, similarity and citation.
-export function PassageSheet({ researchId, passageId, assetId = null, initialView = 'text', highlightText, highlightTexts, expectHighlight = false, pdfRemoved = false, sources, dark, onClose }: { researchId: string; passageId: string | null; assetId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void }) {
+// onRestoreSource: offered when the passage's source was removed from this research (D50).
+export function PassageSheet({ researchId, passageId, assetId = null, initialView = 'text', highlightText, highlightTexts, expectHighlight = false, pdfRemoved = false, sources, dark, onClose, onRestoreSource }: { researchId: string; passageId: string | null; assetId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [assetText, setAssetText] = useState<AssetText | null>(null)
   const [error, setError] = useState('')
@@ -140,6 +141,8 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
             <button type="button" role="tab" aria-selected={viewMode === 'text'} aria-controls="source-text-view" onClick={() => setViewMode('text')}>{t(abstract ? 'Abstract' : 'Plain text')}</button>
             <button type="button" role="tab" aria-selected={viewMode === 'pdf'} aria-controls="source-pdf-view" disabled={!pdfAssetId} title={!pdfAssetId ? t(removed ? 'The PDF was removed from this source; its passages still open as text.' : 'PDF is not available for this source.') : undefined} onClick={() => setViewMode('pdf')}>PDF</button>
           </div>
+          {passage?.removed_from_research && <p className="source-notice is-removed"><ListMinus size={15} aria-hidden /><span>{t('This source was removed from this research. Its passages still open where this research cites them; it is not listed or given to new answers and cells.')}
+            {onRestoreSource && <> <button type="button" className="source-notice-action" onClick={() => onRestoreSource(passage.source.id)}><RotateCcw size={13} aria-hidden />{t('Restore to this research')}</button></>}</span></p>}
           {passage && status !== 'current' && <p className="source-notice"><TriangleAlert size={15} aria-hidden />{status === 'pdf_replaced'
             ? t('This passage comes from a PDF that was later replaced. It opens the previous file, which is no longer read in new answers or cells.')
             : status === 'pdf_removed' ? t('This passage comes from a PDF that was removed from the source. Its stored text still opens; the PDF view is off.')

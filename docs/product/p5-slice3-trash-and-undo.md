@@ -1,6 +1,6 @@
 # P5 dilim 3 — Tablo ve kaynak için çöp kutusu, geri alma ve seçili kaynaklardan tablo: tasarım notu
 
-**Tarih:** 16 Eylül 2026. **Durum:** §8'deki yedi soru sahibin yanıtıyla kapandı; her birinde önerilen seçenek seçildi ([D50](../decisions.md)). §9'un 1–4. alt adımları uygulandı (migration `0029_trash_and_corpus_removal.sql`); 5–8 bekliyor. Uygulama farkları §9'un sonunda.
+**Tarih:** 16 Eylül 2026. **Durum:** §8'deki yedi soru sahibin yanıtıyla kapandı; her birinde önerilen seçenek seçildi ([D50](../decisions.md)). §9'un 1–8. alt adımları uygulandı (migration `0029_trash_and_corpus_removal.sql`). Uygulama farkları §9'un sonunda.
 
 **Kısaca:** Bugün yalnız araştırma çöpe gider ve geri gelir. Tablo çöpe atılabiliyor ama yalnız API ile ve geri getirme yolu yok. Bir kaynağı araştırmadan çıkarmanın hiçbir yolu yok. Bu dilim üç şey ekler. (1) Tablo, tablo şablonu ve "araştırmadan çıkarılan kaynak" da çöp kutusuna gider, oradan geri gelir. (2) Çöpe atma ve çıkarma işlemlerinden hemen sonra "Geri al" bildirimi çıkar. (3) Sources sekmesinde seçilen kaynaklarla tablo başlatılır. Hiçbir işlem pasajı, dosyayı, hücre revizyonunu ya da yanıt kanıtını silmez; kalıcı silme ayrı ve açıkça onaylanan bir eylemdir. Bir kaynağı araştırmadan çıkarmak kütüphanedeki kaydına ve ortak PDF'ine dokunmaz (T15).
 
@@ -243,3 +243,23 @@ Her alt adımda önce testler yazılır ve kırmızı görülür, sonra uygulan�
 - **Beklenen sürüm yok.** Asset'in sürüm alanı olmadığı için çatışma durumdan anlaşılır: kaynakta başka PDF kullanılıyorsa 409 (`PdfInUse`), dosya zaten geri gelmişse 404.
 - **Etkin run denetimi** kaynağı kullanan bütün araştırmalara bakar (`RunInProgress`, 409), değiştirme ve yeniden çıkarmadaki gibi; `remove_asset`'te bu denetim yoktu ve eklenmedi.
 - **Seçim revizyonu** yalnız isteği yapan araştırmada, kaynak orada dahilse artar; `remove_asset`'in bugünkü davranışının aynısı. Aynı kaynağı dahil eden öteki araştırmalarda revizyon ne çekmede ne geri getirmede değişir (mevcut asimetri, bu adımda değiştirilmedi).
+
+### Uygulama farkları (5–6. adımlar, 16 Eylül 2026)
+
+- **Kod değişikliği yok.** 5. adımın tek satırı (`_check_members` → `is_active_member`) 1. adımda yapılmıştı; `storage/backup.py` bütün SQLite anlık görüntüsünü ve çekilmiş olanlar dahil her `source_assets` dosyasını zaten alıyordu. Yeni testler (`tests/test_table_from_sources.py`, `tests/test_trash_backup.py`) ilk çalıştırmada geçti; boş olmadıklarını görmek için kod geçici olarak bozuldu (`was_member`; yedekte `removed_at IS NULL`) ve testler kırmızıya döndü, sonra kod geri alındı.
+- **İdempotency tekrarı üyeliğe bakmaz.** Aynı anahtarla gelen istek, arada kaynak çıkarılmış ya da satırlar değişmiş olsa bile mevcut tabloyu döner (anahtar denetimi `_check_members`'tan önce). Bugünkü davranış; değiştirilmedi.
+- **Yinelenen satır kimliği** bir kez satır olur; hata değildir.
+- **Yedek testi sentetik kütüphanede.** Canlı kütüphanenin kopyasında yedek/geri yükleme bu adımda denenmedi.
+
+### Uygulama farkları (7–8. adımlar, 16 Eylül 2026)
+
+- **Backend'e tek alan eklendi.** Arayüzdeki etiket için yanıt kanıtı ve pasaj görünümü `removed_from_research` taşır (views.py). Hücre kanıtına eklenmedi: çıkarılmış kaynağın satırı tabloda gizli olduğundan hücre paneli açılamaz; bu yüzden hücre panelinde etiket yok.
+- **Satır menüsü yerine metin düğmesi.** Kaynak satırlarının menüsü olmadığı için "Araştırmadan çıkar" satırın bağlantı düğmeleri arasında sade bir düğmedir. Seçim kutusu diğer sürüm satırlarında da var (tablo satırı sürümdür).
+- **Onaydaki "m araştırma daha" sayısı** Library görünümünden (`GET /api/library`) eser bazında hesaplanır; istek başarısız olursa cümle çıkar. Bir kaydın başka sürümleri de sayılır ("n başka sürüm de çıkar").
+- **Onay rengi.** `ConfirmDialog` bir `neutral` biçimi aldı (bilgi işareti, kırmızı olmayan düğme): kaynak çıkarma ve seçili kaynaklardan tablo. Kırmızı yalnız PDF kaldırma ve kalıcı silmede kaldı.
+- **Tablo başlatma onayı yalnız dahil olmayan kaynak varken** çıkar; hepsi dahilse tablo doğrudan başlar ve Evidence sekmesi o tabloyla açılır. "Mevcut tabloya ekle" onaysızdır ve o tabloyu açar.
+- **Geri alma uçları.** Satır çıkarmanın ayrı geri getirme ucu olmadığı için Undo `add_rows`'u beklenen sürümle çağırır. Araştırmayı kenar çubuğundan çöpe atma da Undo gösterir (araştırma geri yüklemenin beklenen sürümü yok). Bildirim sağlayıcısı bunun için `App.tsx`'ten `main.tsx`'e taşındı. Eylemli bildirim 12 saniye durur, fare ya da odak üzerindeyken kapanmaz.
+- **Çıkarılmış sütun** yalnız bildirimden geri gelir; çıkarılmış sütunları listeleyen bir ekran yok. Sütun çıkarma onayındaki "bu ekranda geri getirme yolu yok" cümlesi değişti.
+- **Çöp sayfası** `TrashPage.tsx`'e taşındı; kalıcı silme onayı acceptance'ın beklediği `alertdialog` olarak kaldı. Kaynak öğesi eser başınadır; geri yükleme o eserin çıkarılmış sürümlerini birlikte gönderir. Sayfa açıklama metni türleri kapsayacak şekilde değişti.
+- **Stiller** yeni `Trash.css` dosyasında; `workspace.css`'e sahibin commit'lenmemiş değişiklikleri olduğu için dokunulmadı.
+- **Acceptance'ta görülmeyenler.** Yanlış PDF'i bildirimden geri alma, şablon ve sütun geri yükleme tarayıcıda denenmedi (API testleri var). Türkçe ekranlar görsel olarak denetlenmedi.

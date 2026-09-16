@@ -55,6 +55,9 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
 
     answers = []
     cited_sources: set[str] = set()
+    # A quote of a source removed from this research still opens; the view names the removal (D50).
+    removed = {r[0] for r in conn.execute(
+        "SELECT source_version_id FROM corpus_memberships WHERE research_id = ? AND removed_at IS NOT NULL", (research_id,))}
     for a in conn.execute("SELECT * FROM answers WHERE research_id = ? ORDER BY created_at DESC, rowid DESC", (research_id,)):
         draft = _json(a["draft_json"])
         claims = []
@@ -63,7 +66,8 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
                 {"passage_id": e["passage_id"], "source_version_id": e["source_version_id"], "kind": e["kind"],
                  "physical_page": e["physical_page"], "printed_label": e["printed_label"],
                  "reading_depth": "abstract" if e["kind"] == "abstract" else "selected_sections", "title": e["title"],
-                 "version_label": e["version_label"], "anchor_text": e["anchor_text"], "evidence_status": e["evidence_status"]}
+                 "version_label": e["version_label"], "anchor_text": e["anchor_text"], "evidence_status": e["evidence_status"],
+                 "removed_from_research": e["source_version_id"] in removed}
                 for e in conn.execute(
                     "SELECT l.passage_id, l.source_version_id, l.anchor_text, p.kind, p.physical_page, p.printed_label, s.title, s.version_label,"
                     f" {EVIDENCE_STATUS_SQL} AS evidence_status FROM evidence_links l"
@@ -437,6 +441,7 @@ def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, A
         "reading_depth": "abstract" if passage["kind"] == "abstract" else "selected_sections",
         "asset_id": passage["asset_id"],
         "evidence_status": store.evidence_statuses([passage_id])[passage_id],
+        "removed_from_research": not store.is_active_member(research_id, passage["source_version_id"]),
         "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
                                             "cited_by_count", "cited_by_count_at")},
     }

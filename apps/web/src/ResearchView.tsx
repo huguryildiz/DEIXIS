@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpenText, ChevronRight, CircleCheck, CircleDot, CircleX, Copy, Download, FilePlus2, FileText, FileUp, Filter, Hand, Info, ListChecks, ListPlus, LoaderCircle, Replace, ScanText, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, Search, ShieldCheck, Sparkles, Table2, Trash2, Upload, UserPen, X, type LucideIcon } from 'lucide-react'
+import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpenText, ChevronRight, CircleCheck, CircleDot, CircleX, Copy, Download, FilePlus2, FileText, FileUp, Filter, Hand, Info, ListChecks, ListMinus, ListPlus, LoaderCircle, Replace, RotateCcw, ScanText, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, Search, ShieldCheck, Sparkles, Table2, Trash2, Upload, UserPen, X, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip } from '@/components/ui/tooltip'
-import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Limitation, type ModelOption, type ResearchView, type Run, type RunKind, type RunStatus, type Source, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Limitation, type ModelOption, type ResearchView, type Run, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
 import { accessParts, citedText, fetchReasonText, locatorText, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { EvidenceTab } from './EvidenceTable'
@@ -13,7 +14,7 @@ import { MathText } from './MathText'
 import { Transcript } from './Transcript'
 import { PdfReadiness } from './PdfReadiness'
 import { ZoteroPanel } from './ZoteroPanel'
-import { useToast } from './Toast'
+import { useToast, type ToastAction } from './Toast'
 import { ConnectionIcon } from './connectionIcons'
 import { ConfirmDialog } from './ConfirmDialog'
 import { effortLabels, effortOptions, Option, scopeOptions } from './Home'
@@ -70,6 +71,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [replacePick, setReplacePick] = useState<{ source: Source; assetId: string } | null>(null)
   const [replaceTarget, setReplaceTarget] = useState<{ source: Source; assetId: string; file: File; impact: AssetImpact } | null>(null)
   const [openReportId, setOpenReportId] = useState<string | null>(null)
+  // Sources chosen for a table or for removal (D50). Kept only while the Sources tab is open.
+  const [picked, setPicked] = useState<string[]>([])
+  const [removal, setRemoval] = useState<{ ids: string[]; versions: number; elsewhere: number | null } | null>(null)
+  const [tableStart, setTableStart] = useState<{ ids: string[]; notIncluded: number } | null>(null)
+  const [focusTable, setFocusTable] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const sourceFileInput = useRef<HTMLInputElement>(null)
   const replaceFileInput = useRef<HTMLInputElement>(null)
@@ -136,9 +142,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     }
   }, [view, toast])
 
-  async function act(action: () => Promise<unknown>, success?: string) {
+  async function act(action: () => Promise<unknown>, success?: string, undo?: ToastAction) {
     setBusy(true)
-    try { await action(); if (success) toast('success', success); await load(); onChanged() }
+    try { await action(); if (success) toast('success', success, undo); await load(); onChanged() }
     catch (e) {
       // 409: the research or run changed after this page loaded (another tab, or a run that moved on).
       if (e instanceof ApiError && e.status === 409) { toast('warning', t('Not applied: {message}. The page now shows the latest state.', { message: e.message })); await load() }
@@ -178,7 +184,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (!removeTarget) return
     const { source, assetId } = removeTarget
     setRemoveTarget(null)
-    void act(() => api.removeAsset(id, source.source_version_id, assetId), t('PDF removed from the source.'))
+    // Undo puts the same file back while no other PDF is in use for the source (D50).
+    void act(() => api.removeAsset(id, source.source_version_id, assetId), t('PDF removed from the source.'),
+      { label: t('Undo'), run: () => { void act(() => api.restoreAsset(id, source.source_version_id, assetId), t('PDF restored to the source.')) } })
   }
   const chooseReplacement = (source: Source, assetId: string) => { setReplacePick({ source, assetId }); replaceFileInput.current?.click() }
   const reviewReplacement = async (list: FileList | null) => {
@@ -205,6 +213,49 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (notes.length) toast('warning', `${added} ${notes.map(n => `${n.title}: ${n.note}.`).join(' ')}`)
     else toast('success', added)
   })
+
+  // A record's selection is its work's; another version follows it (D48).
+  const workState = (source: Source) => (view.sources.find(s => s.work_id === source.work_id && s.version_role === 'record') ?? source).selection.state
+  const inSourceOrder = (ids: string[]) => view.sources.filter(s => ids.includes(s.source_version_id))
+  const askRemoval = async (ids: string[]) => {
+    const chosen = inSourceOrder(ids)
+    // Removing a record takes its other versions in this research with it; the confirmation counts them.
+    const versions = view.sources.filter(s => s.version_role === 'other_version' && !ids.includes(s.source_version_id)
+      && chosen.some(c => c.version_role === 'record' && c.work_id === s.work_id)).length
+    setRemoval({ ids, versions, elsewhere: null })
+    try {
+      const works = new Set(chosen.map(s => s.work_id))
+      const elsewhere = (await api.library()).entries.filter(e => works.has(e.work_id) && e.researches.some(r => r.id !== id)).length
+      setRemoval(current => (current && current.ids === ids ? { ...current, elsewhere } : current))
+    } catch { /* the confirmation leaves out the count of other research */ }
+  }
+  const confirmRemoval = () => {
+    if (!removal) return
+    const { ids } = removal
+    setRemoval(null)
+    let changed: string[] = []
+    void act(async () => { changed = (await api.removeSources(id, ids)).changed_source_version_ids; setPicked([]) },
+      t(ids.length === 1 ? 'Source removed from this research.' : '{n} sources removed from this research.', { n: ids.length }),
+      { label: t('Undo'), run: () => { void act(() => api.restoreSources(id, changed), t('Restored to this research.')) } })
+  }
+  const startTable = (ids: string[]) => act(async () => {
+    const created = await api.createTable(id, { title: t('Evidence table'), rows: inSourceOrder(ids).map(s => s.source_version_id) }, crypto.randomUUID())
+    setPicked([])
+    setFocusTable(created.table.id)
+    setTab('evidence')
+  }, t(ids.length === 1 ? 'Table started with {n} row.' : 'Table started with {n} rows.', { n: ids.length }))
+  const askTableStart = (ids: string[]) => {
+    const notIncluded = inSourceOrder(ids).filter(s => workState(s) !== 'included').length
+    if (notIncluded) setTableStart({ ids, notIncluded })
+    else void startTable(ids)
+  }
+  const addToTable = (table: TableSummary, ids: string[]) => act(async () => {
+    const current = await api.table(id, table.id)
+    await api.addTableRows(id, table.id, inSourceOrder(ids).map(s => s.source_version_id), current.table.version)
+    setPicked([])
+    setFocusTable(table.id)
+    setTab('evidence')
+  }, t('Rows added to {title}.', { title: table.title }))
 
   const ScopeIcon = scopeOptions[view.scope.source_scope].icon
   const EffortIcon = effortOptions[view.scope.effort].icon
@@ -236,7 +287,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <span title={t('How much searching and reading a run may do')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
     </div>
 
-    <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => setTab(String(value))}>
+    <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => { setTab(String(value)); setPicked([]) }}>
       <div className="research-tabs-bar">
         <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger><TabsTrigger value="evidence">{t('Evidence')}</TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
         {/* The live run carries its own quiet Pause; these controls ride with the tabs so pause, resume and cancel stay reachable from every tab. */}
@@ -280,17 +331,22 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           </div></div>
         {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
         {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}</span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {t(s.status.replace('_', ' '))} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
-        <SourceList sources={view.sources} busy={busy} filter={sourceFilter} onFilter={setSourceFilter}
+        {view.counts.removed > 0 && <p className="removed-summary"><ListMinus size={14} aria-hidden /><span>{t(view.counts.removed === 1 ? 'You removed {n} source from this research.' : 'You removed {n} sources from this research.', { n: view.counts.removed })}
+          {view.counts.removed_found_again > 0 && ` ${t(view.counts.removed_found_again === 1 ? '{n} of them was found again by a later search and is not listed.' : '{n} of them were found again by a later search and are not listed.', { n: view.counts.removed_found_again })}`}</span>
+          <a href="#/trash">{t('Show in Trash')}</a></p>}
+        <SourceList sources={view.sources} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
           onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
           onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
           onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
           onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} onAttachCandidate={(source, candidateId) => { void attachPdfCandidate(source, candidateId) }} onOpenPdf={(_, assetId) => setPdfTarget({ assetId })}
           onRemoveAsset={removeSourcePdf} onReplaceAsset={chooseReplacement} onReextract={(source, assetId) => { void reextract(source, assetId) }} pdfFinding={pdfFinding} />
+        {picked.length > 0 && <SelectionBar researchId={id} count={picked.length} busy={busy} active={active} onStartTable={() => askTableStart(picked)} onAddToTable={table => { void addToTable(table, picked) }}
+          onRemove={() => { void askRemoval(picked) }} onClear={() => setPicked([])} />}
         </section>
       </TabsContent>
 
       <TabsContent value="evidence">
-        <EvidenceTab researchId={id} view={view} dark={dark} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
+        <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
       </TabsContent>
 
       <TabsContent value="artifacts">
@@ -314,11 +370,24 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}
       onConfirm={confirmRemoveSourcePdf} onOpenChange={open => { if (!open) setRemoveTarget(null) }} />
+    <ConfirmDialog open={Boolean(removal)} dark={dark} neutral
+      title={t(removal?.ids.length === 1 ? 'Remove the source from this research?' : 'Remove {n} sources from this research?', { n: removal?.ids.length ?? 0 })}
+      description={removal ? [t(removal.ids.length === 1 ? 'It leaves this research’s source list, answer input and tables; its table cells are kept. The library record and its PDF are not deleted, and earlier quotes keep opening. You can restore it from the notification or the Trash.' : 'They leave this research’s source list, answer input and tables; their table cells are kept. The library record and its PDF are not deleted, and earlier quotes keep opening. You can restore them from the notification or the Trash.'),
+        removal.versions > 0 && t(removal.versions === 1 ? '{n} other version of these works goes with them.' : '{n} other versions of these works go with them.', { n: removal.versions }),
+        removal.elsewhere ? t(removal.elsewhere === 1 ? '{n} of them is also used in other research, where nothing changes.' : '{n} of them are also used in other research, where nothing changes.', { n: removal.elsewhere }) : ''].filter(Boolean).join(' ') : ''}
+      context={removal ? inSourceOrder(removal.ids).map(s => s.title).join(' · ') : undefined} confirmLabel={t('Remove from research')} cancelLabel={t('Cancel')} busy={busy}
+      onConfirm={confirmRemoval} onOpenChange={open => { if (!open) setRemoval(null) }} />
+    <ConfirmDialog open={Boolean(tableStart)} dark={dark} neutral
+      title={t('Start a table from {n} sources?', { n: tableStart?.ids.length ?? 0 })}
+      description={tableStart ? t(tableStart.notIncluded === 1 ? '{k} of them is not included. A table row does not change its selection, and the answer still reads included sources only.' : '{k} of them are not included. A table row does not change their selection, and the answer still reads included sources only.', { k: tableStart.notIncluded }) : ''}
+      confirmLabel={t('Start table')} cancelLabel={t('Cancel')} busy={busy}
+      onConfirm={() => { const target = tableStart; setTableStart(null); if (target) void startTable(target.ids) }} onOpenChange={open => { if (!open) setTableStart(null) }} />
     <ConfirmDialog open={Boolean(replaceTarget)} dark={dark} title={t('Replace PDF?')}
       description={replaceTarget ? `${t('{file} will be read in later answers and cells instead of the current file. The current file is not deleted: evidence that cites it keeps opening it.', { file: replaceTarget.file.name })} ${t(replaceTarget.impact.researches.length === 1 ? 'The source is used in {n} research;' : 'The source is used in {n} researches;', { n: replaceTarget.impact.researches.length })} ${t('{cells} evidence table cells and {quotes} answer quotes cite the current file.', { cells: replaceTarget.impact.cells, quotes: replaceTarget.impact.quotes })}` : ''}
       context={replaceTarget?.source.title} confirmLabel={t('Replace PDF')} cancelLabel={t('Cancel')} busy={busy}
       onConfirm={confirmReplacement} onOpenChange={open => { if (!open) setReplaceTarget(null) }} />
-    <PassageSheet researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : 'text'} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }} />
+    <PassageSheet researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : 'text'} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }}
+      onRestoreSource={svid => { setPassageTarget(null); void act(() => api.restoreSources(id, [svid]), t('Restored to this research.')) }} />
     {olderReport && <AnswerBlock researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
       reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf} />}
   </section>
@@ -416,7 +485,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
       {heading && <h3>{heading}</h3>}
       {claims.map(claim => <p className="claim" key={claim.id}>
         <MathText text={claim.text} />{claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}
-        {claim.evidence.map(e => <button key={e.passage_id} className="cite-chip" title={`${e.title} · ${versionText(e.version_label)} · ${locatorText(e)}`} onClick={() => onOpen(e.passage_id, e.anchor_text)}>[{refs.get(e.passage_id)?.n}]</button>)}
+        {claim.evidence.map(e => <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>[{refs.get(e.passage_id)?.n}]</button>)}
         {claim.review && <span className={`review-badge is-${claim.review.verdict}`} title={t('Reviewer: {reason}', { reason: claim.review.reason })}><ShieldCheck size={11} aria-hidden />{t(verdictLabels[claim.review.verdict])}</span>}
         {claim.review && claim.review.verdict !== 'supported' && <small className="review-reason">{t('Reviewer: {reason}', { reason: claim.review.reason })}</small>}
       </p>)}
@@ -445,6 +514,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
             <span className="ref-pills">
               <span className={`ref-pill ${e.kind === 'abstract' ? 'is-abstract' : 'is-text'}`}>{e.kind === 'abstract' ? <BookOpenText size={12} aria-hidden /> : <FileText size={12} aria-hidden />}{locator.charAt(0).toUpperCase() + locator.slice(1)}</span>
               <span className={`ref-pill is-${versionTones[e.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(e.version_label)}</span>
+              {e.removed_from_research && <span className="ref-pill is-removed"><ListMinus size={12} aria-hidden />{t('Removed from this research')}</span>}
             </span>
           </span>
         </button></li>
@@ -610,9 +680,9 @@ const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
   title: (a, b) => a.title.localeCompare(b.title),
 }
 
-type SourceActions = { onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; onReplaceAsset: (source: Source, assetId: string) => void; onReextract: (source: Source, assetId: string) => void; pdfFinding: string | null }
+type SourceActions = { onRemoveFromResearch: (source: Source) => void; onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; onReplaceAsset: (source: Source, assetId: string) => void; onReextract: (source: Source, assetId: string) => void; pdfFinding: string | null }
 
-function SourceList({ sources, busy, filter, onFilter, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, pdfFinding }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void } & SourceActions) {
+function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveFromResearch, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, pdfFinding }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; picked: string[]; onPick: (ids: string[]) => void } & SourceActions) {
   const [pdfFilter, setPdfFilter] = useState<PdfFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SourceSort>('relevant')
@@ -631,9 +701,15 @@ function SourceList({ sources, busy, filter, onFilter, onSelect, onReason, onAbs
   const matches = (s: Source) => [s.title, s.venue, s.doi, ...s.authors].some(text => text?.toLocaleLowerCase().includes(needle))
   const shown = families.filter(f => (filter === 'all' || f[0].selection.state === filter) && (pdfFilter === 'all' || (pdfFilter === 'with_pdf' ? hasPdf(f) : !hasPdf(f))) && (!needle || f.some(matches)))
     .sort((a, b) => sourceCompare[sort](a[0], b[0]))
+  const shownIds = shown.flat().map(s => s.source_version_id)
+  const allShownPicked = shownIds.length > 0 && shownIds.every(sid => picked.includes(sid))
+  const togglePick = (sid: string, on: boolean) => onPick(on ? [...picked, sid] : picked.filter(p => p !== sid))
   if (!sources.length) return <p className="empty-inline">{t('No sources yet.')}</p>
   return <>
     {families.length > 1 && <div className="source-toolbar">
+      <label className="source-pick-all"><input type="checkbox" checked={allShownPicked} disabled={!shownIds.length}
+        ref={node => { if (node) node.indeterminate = !allShownPicked && shownIds.some(sid => picked.includes(sid)) }}
+        onChange={e => onPick(e.target.checked ? [...new Set([...picked, ...shownIds])] : picked.filter(sid => !shownIds.includes(sid)))} /><span>{t('Select shown')}</span></label>
       <div className="source-filters" role="group" aria-label={t('Show sources')}>
         {stateFilters.map(([key, label]) => <button key={key} aria-pressed={filter === key} onClick={() => onFilter(key)}>{t(label)}<span>{counts[key]}</span></button>)}
       </div>
@@ -651,7 +727,8 @@ function SourceList({ sources, busy, filter, onFilter, onSelect, onReason, onAbs
         </SelectContent>
       </Select>
     </div>}
-    <div className="source-list">{shown.flat().map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
+    <div className={`source-list${picked.length ? ' has-selection-bar' : ''}`}>{shown.flat().map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
+      picked={picked.includes(source.source_version_id)} onPick={on => togglePick(source.source_version_id, on)} onRemoveFromResearch={() => onRemoveFromResearch(source)}
       duplicates={source.suspected_duplicates.map(d => ({ basis: d.basis, source: sources.find(s => s.source_version_id === d.source_version_id) }))}
       readsVersion={sources.find(s => s.source_version_id === source.answer_reads_version_id)}
       onSelect={state => onSelect(source, state)} onReason={reason => onReason(source, reason)} onAbstract={() => onAbstract(source)}
@@ -659,6 +736,24 @@ function SourceList({ sources, busy, filter, onFilter, onSelect, onReason, onAbs
       onRemoveAsset={assetId => onRemoveAsset(source, assetId)} onReplaceAsset={assetId => onReplaceAsset(source, assetId)} onReextract={assetId => onReextract(source, assetId)} finding={pdfFinding === source.source_version_id} />)}</div>
     {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { onFilter('all'); setPdfFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
   </>
+}
+
+// The bar under the Sources list while sources are chosen (D50): a table from them, rows for a table, or removal.
+function SelectionBar({ researchId, count, busy, active, onStartTable, onAddToTable, onRemove, onClear }: { researchId: string; count: number; busy: boolean; active: boolean; onStartTable: () => void; onAddToTable: (table: TableSummary) => void; onRemove: () => void; onClear: () => void }) {
+  const [tables, setTables] = useState<TableSummary[] | null>(null)
+  useEffect(() => { api.tables(researchId).then(setTables, () => setTables([])) }, [researchId])
+  return <div className="selection-bar" role="region" aria-label={t('Chosen sources')}>
+    <strong aria-live="polite">{t(count === 1 ? '{n} source chosen' : '{n} sources chosen', { n: count })}</strong>
+    <div className="selection-bar-actions">
+      <Button size="sm" disabled={busy} onClick={onStartTable}><Table2 size={14} aria-hidden />{t('Start table')}</Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger disabled={busy || !tables?.length} render={<Button size="sm" variant="outline" />} title={tables && !tables.length ? t('This research has no table yet') : undefined}><ListPlus size={14} aria-hidden />{t('Add to table')}</DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-auto">{(tables ?? []).map(table => <DropdownMenuItem key={table.id} onClick={() => onAddToTable(table)}><Table2 size={15} />{table.title}</DropdownMenuItem>)}</DropdownMenuContent>
+      </DropdownMenu>
+      <Button size="sm" variant="outline" disabled={busy || active} title={active ? t('Available when the active run finishes') : undefined} onClick={onRemove}><ListMinus size={14} aria-hidden />{t('Remove from research')}</Button>
+      <Button size="sm" variant="ghost" onClick={onClear}>{t('Clear')}</Button>
+    </div>
+  </div>
 }
 
 // Types a status line out once, then leaves it in place; screen readers get the whole line at once.
@@ -672,7 +767,7 @@ function TypedText({ text, className }: { text: string; className?: string }) {
   return <span className={className}><span className="sr-only">{text}</span><span aria-hidden>{text.slice(0, shown)}</span></span>
 }
 
-function SourceRow({ source, busy, duplicates, readsVersion, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, finding }: { source: Source; busy: boolean; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onAttachCandidate: (candidateId: string) => void; onOpenPdf: (assetId: string) => void; onRemoveAsset: (assetId: string) => void; onReplaceAsset: (assetId: string) => void; onReextract: (assetId: string) => void; finding: boolean; duplicates: { basis: Source['suspected_duplicates'][number]['basis']; source?: Source }[]; readsVersion?: Source }) {
+function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplicates, readsVersion, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, finding }: { source: Source; busy: boolean; picked: boolean; onPick: (on: boolean) => void; onRemoveFromResearch: () => void; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onAttachCandidate: (candidateId: string) => void; onOpenPdf: (assetId: string) => void; onRemoveAsset: (assetId: string) => void; onReplaceAsset: (assetId: string) => void; onReextract: (assetId: string) => void; finding: boolean; duplicates: { basis: Source['suspected_duplicates'][number]['basis']; source?: Source }[]; readsVersion?: Source }) {
   const s = source.selection
   const other = source.version_role === 'other_version'
   const authors = source.authors.join(', ')
@@ -685,7 +780,8 @@ function SourceRow({ source, busy, duplicates, readsVersion, onSelect, onReason,
   const unusable = candidates.filter(c => c.access_status !== 'downloaded').length
   const lookupSummary = [t('{p} services · {n} checks', { p: new Set(discoveries.map(d => d.provider)).size, n: discoveries.length }), unusable && t(unusable === 1 ? '{n} file not usable' : '{n} files not usable', { n: unusable })].filter(Boolean).join(' · ')
   const primaryAction = source.access.assets.length ? 'pdf' : 'abstract'
-  return <div className={`source-row is-${s.state}${other ? ' is-other-version' : ''}`}>
+  return <div className={`source-row has-pick is-${s.state}${other ? ' is-other-version' : ''}${picked ? ' is-picked' : ''}`}>
+    <input type="checkbox" className="source-pick" checked={picked} onChange={e => onPick(e.target.checked)} aria-label={t('Select {title}', { title: source.title })} />
     <div className="source-main">
       {other && <span className="version-note">{t('Another version of the record above: {version}. It follows the record’s selection; passages cited from it are labelled with this version.', { version: versionText(source.version_label) })}</span>}
       <strong className="source-title">{source.title}</strong>
@@ -725,6 +821,7 @@ function SourceRow({ source, busy, duplicates, readsVersion, onSelect, onReason,
           {source.doi && <a href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" />DOI</a>}
           {source.doi && <button disabled={busy || finding} onClick={onDiscoverPdf}><Search size={14} aria-hidden />{finding ? <span className="shimmer-text">{t('Web Search is running…')}</span> : t(source.access.assets.length ? 'Refresh metadata' : 'Find PDF')}</button>}
           {!source.access.assets.length && <button disabled={busy || finding} onClick={onAttachPdf}><FileUp size={14} aria-hidden />{t('Attach PDF')}</button>}
+          <button disabled={busy} onClick={onRemoveFromResearch} title={t('Take this source out of this research; the library record, its PDF and earlier quotes stay')}><ListMinus size={14} aria-hidden />{t('Remove from research')}</button>
         </div>
       </div>
     </div>
@@ -847,6 +944,13 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'selection_changed': return lucide(UserPen, t('You marked a source'), [{ label: t(selectionStates[String(p.state)] ?? String(p.state)), tone: selectionTones[String(p.state)] ?? 'neutral' }])
     case 'answer_saved': return lucide(MessageSquareQuote, t('Answer saved'), [statusChip(p.status)])
     case 'table_changed': return lucide(Table2, t('Evidence table changed'))
+    case 'table_trashed': return lucide(Trash2, t('Evidence table moved to Trash'))
+    case 'table_restored': return lucide(RotateCcw, t('Evidence table restored'))
+    case 'table_purged': return lucide(Trash2, t('Evidence table permanently deleted'))
+    case 'column_restored': return lucide(RotateCcw, t('Table column restored'))
+    case 'source_removed': return lucide(ListMinus, t(Array.isArray(p.source_version_ids) && p.source_version_ids.length === 1 ? 'You removed a source from this research' : 'You removed {n} sources from this research', { n: Array.isArray(p.source_version_ids) ? p.source_version_ids.length : 0 }))
+    case 'source_restored': return lucide(RotateCcw, t(Array.isArray(p.source_version_ids) && p.source_version_ids.length === 1 ? 'You restored a source to this research' : 'You restored {n} sources to this research', { n: Array.isArray(p.source_version_ids) ? p.source_version_ids.length : 0 }))
+    case 'asset_restored': return lucide(RotateCcw, t('PDF restored to a source'))
     case 'cell_revision_saved': return lucide(PencilLine, t('Cell revision saved'), [{ label: t(String(p.kind).replaceAll('_', ' ')), tone: 'neutral' }])
     case 'answer_reviewed': return lucide(ShieldCheck, t('Answer review saved'), [statusChip(p.status)])
     default: return lucide(Activity, event.type)

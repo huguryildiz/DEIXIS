@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Ban, CircleCheck, CirclePause, CircleX, ChevronDown, ChevronRight, Ellipsis, FlaskConical, Landmark, Library, LoaderCircle, Menu, MessageCirclePlus, Moon, PanelLeftClose, PanelLeftOpen, Plus, RotateCcw, Search, Settings2, ShieldAlert, Sun, Trash2, type LucideIcon } from 'lucide-react'
-import { AlertDialog } from '@base-ui/react/alert-dialog'
+import { Ban, CircleCheck, CirclePause, CircleX, ChevronDown, ChevronRight, Ellipsis, FlaskConical, Landmark, Library, LoaderCircle, Menu, MessageCirclePlus, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, ShieldAlert, Sun, Trash2, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, type InstitutionalAccess, type ResearchSummary, type RunStatus, type TrashedResearch } from './api'
+import { api, type InstitutionalAccess, type ResearchSummary, type RunStatus } from './api'
 import { runStatusLabels } from './labels'
 import { Home } from './Home'
 import { ResearchPage } from './ResearchView'
 import { SettingsPage } from './Settings'
 import { LibraryPage } from './LibraryPage'
 import { QuickFind } from './QuickFind'
-import { ToastProvider } from './Toast'
+import { useToast } from './Toast'
+import { TrashPage } from './TrashPage'
 import { setUiLanguage, t, uiLanguage, uiLocale, type UiLanguage } from './i18n'
 import './App.css'
 import './LegacyWorkspace.css'
 import './workspace.css'
+import './Trash.css'
 
 type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: 'connections' } | { view: 'trash' } | { view: 'library' }
 type ThemeChoice = 'system' | 'light' | 'dark'
@@ -73,10 +74,6 @@ function sinceLabel(iso: string): string {
 export default function App() {
   const [route, setRoute] = useState<Route>(parseHash)
   const [researches, setResearches] = useState<ResearchSummary[]>([])
-  const [trashed, setTrashed] = useState<TrashedResearch[]>([])
-  const [trashLoading, setTrashLoading] = useState(false)
-  const [trashError, setTrashError] = useState('')
-  const [pendingDelete, setPendingDelete] = useState<TrashedResearch | null>(null)
   const [listError, setListError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [actionBusy, setActionBusy] = useState<string | null>(null)
@@ -90,6 +87,7 @@ export default function App() {
   const [resizing, setResizing] = useState(false)
   const asideRef = useRef<HTMLElement>(null)
   const [language, setLanguage] = useState<UiLanguage>(uiLanguage)
+  const toast = useToast()
   const dark = theme === 'dark' || (theme === 'system' && systemDark)
 
   useEffect(() => {
@@ -124,13 +122,6 @@ export default function App() {
     document.addEventListener('visibilitychange', refreshIfVisible)
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refreshIfVisible) }
   }, [refreshList])
-  const refreshTrash = useCallback(() => {
-    setTrashLoading(true)
-    api.trash().then(list => { setTrashed(list); setTrashError('') })
-      .catch((error: Error) => setTrashError(error.message))
-      .finally(() => setTrashLoading(false))
-  }, [])
-  useEffect(() => { if (route.view === 'trash') refreshTrash() }, [route, refreshTrash])
 
   async function moveToTrash(research: ResearchSummary) {
     setActionBusy(research.id)
@@ -140,34 +131,9 @@ export default function App() {
       setResearches(items => items.filter(item => item.id !== research.id))
       if (activeId === research.id) go({ view: 'home' })
       else refreshList()
-      setActionMessage(t('Moved to Trash.'))
+      // Undo calls the Trash page's restore (D50).
+      toast('success', t('Moved to Trash.'), { label: t('Undo'), run: () => { api.restore(research.id).then(() => { refreshList(); toast('success', t('Research restored.')) }, (error: Error) => toast('error', t('Could not restore research: {message}', { message: error.message }))) } })
     } catch (error) { setActionMessage(t('Could not move to Trash: {message}', { message: (error as Error).message })) }
-    finally { setActionBusy(null) }
-  }
-
-  async function restoreResearch(research: TrashedResearch) {
-    setActionBusy(research.id)
-    setActionMessage('')
-    try {
-      await api.restore(research.id)
-      setTrashed(items => items.filter(item => item.id !== research.id))
-      refreshList()
-      setActionMessage(t('Research restored.'))
-    } catch (error) { setActionMessage(t('Could not restore research: {message}', { message: (error as Error).message })) }
-    finally { setActionBusy(null) }
-  }
-
-  async function deletePermanently(research: TrashedResearch) {
-    setPendingDelete(null)
-    setActionBusy(research.id)
-    setActionMessage('')
-    try {
-      const result = await api.deletePermanently(research.id)
-      setTrashed(items => items.filter(item => item.id !== research.id))
-      setActionMessage(result.files_not_removed.length
-        ? t('Research deleted, but {n} file(s) could not be removed from disk.', { n: result.files_not_removed.length })
-        : t('Research permanently deleted.'))
-    } catch (error) { setActionMessage(t('Could not permanently delete research: {message}', { message: (error as Error).message })) }
     finally { setActionBusy(null) }
   }
 
@@ -240,7 +206,7 @@ export default function App() {
   const activeId = route.view === 'research' ? route.id : null
   const crumb = t(route.view === 'settings' ? 'Settings' : route.view === 'trash' ? 'Trash' : route.view === 'research' ? 'Research' : route.view === 'library' ? 'Library' : 'New research')
 
-  return <ToastProvider><div className={`app ${dark ? 'dark' : ''} ${collapsed ? 'sidebar-collapsed' : ''} ${sidebarWidth !== null ? 'sidebar-resized' : ''} ${resizing ? 'sidebar-resizing' : ''}`} style={sidebarWidth !== null ? { '--sidebar-width': `${sidebarWidth}px` } as CSSProperties : undefined}>
+  return <div className={`app ${dark ? 'dark' : ''} ${collapsed ? 'sidebar-collapsed' : ''} ${sidebarWidth !== null ? 'sidebar-resized' : ''} ${resizing ? 'sidebar-resizing' : ''}`} style={sidebarWidth !== null ? { '--sidebar-width': `${sidebarWidth}px` } as CSSProperties : undefined}>
     {sidebar && <button className="mobile-scrim" aria-label={t('Close navigation')} onClick={() => setSidebar(false)} />}
     <aside ref={asideRef} className={`sidebar ${sidebar ? 'is-open' : ''}`}>
       <div className="sidebar-head">
@@ -297,24 +263,10 @@ export default function App() {
         {route.view === 'research' && <ResearchPage key={`${route.id}/${route.tab ?? ''}`} id={route.id} initialTab={route.tab} dark={dark} onChanged={refreshList} />}
         {route.view === 'library' && <LibraryPage onOpenResearch={id => go({ view: 'research', id })} />}
         {route.view === 'settings' && <SettingsPage key={route.tab ?? 'defaults'} dark={dark} tab={route.tab ?? 'defaults'} onTab={tab => go({ view: 'settings', tab: tab === 'connections' ? 'connections' : undefined })} />}
-        {route.view === 'trash' && <section className="trash-page"><h1>{t('Trash')}</h1><p className="trash-hint">{t('Restore a research, or permanently delete it and its unshared evidence. Shared sources remain available to other research.')}</p>{actionMessage && <p role="status" className="trash-message">{actionMessage}</p>}{trashError ? <p role="alert">{t('Could not load Trash: {message}', { message: trashError })} <Button variant="outline" onClick={refreshTrash}>{t('Retry')}</Button></p> : trashLoading ? <p role="status">{t('Loading Trash…')}</p> : !trashed.length ? <p>{t('Trash is empty.')}</p> : trashed.map(r => <div className="trash-row" key={r.id}><span title={r.title}>{r.title}</span><div><Button variant="outline" disabled={actionBusy === r.id} onClick={() => restoreResearch(r)}><RotateCcw size={15} />{t('Restore')}</Button><Button variant="destructive" className="trash-delete" disabled={actionBusy === r.id} onClick={() => setPendingDelete(r)}><Trash2 size={15} />{t('Delete permanently')}</Button></div></div>)}</section>}
-        <AlertDialog.Root open={pendingDelete !== null} onOpenChange={open => { if (!open) setPendingDelete(null) }}>
-          <AlertDialog.Portal>
-            <AlertDialog.Backdrop className="confirm-backdrop" />
-            <AlertDialog.Popup className={`confirm-dialog ${dark ? 'dark' : ''}`}>
-              <AlertDialog.Title className="confirm-title">{t('Delete permanently?')}</AlertDialog.Title>
-              <p className="confirm-subject">{pendingDelete?.title}</p>
-              <AlertDialog.Description className="confirm-description">{t('Its unshared evidence and files are removed too. Sources shared with other research stay. This cannot be undone.')}</AlertDialog.Description>
-              <div className="confirm-actions">
-                <AlertDialog.Close render={<Button variant="outline" />}>{t('Cancel')}</AlertDialog.Close>
-                <Button variant="destructive" className="trash-delete" onClick={() => pendingDelete && deletePermanently(pendingDelete)}><Trash2 size={15} />{t('Delete permanently')}</Button>
-              </div>
-            </AlertDialog.Popup>
-          </AlertDialog.Portal>
-        </AlertDialog.Root>
+        {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
       </main>
       <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} />
       <footer><span>{t('© 2026 DEIXIS · Designed & built by')} <a href="https://huguryildiz.com" target="_blank" rel="noopener noreferrer">Hüseyin Uğur Yıldız</a><a className="footer-github" href="https://github.com/huguryildiz/DEIXIS" target="_blank" rel="noopener noreferrer" aria-label={t('DEIXIS on GitHub')} title={t('DEIXIS on GitHub')}><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" /></svg></a></span></footer>
     </div>
-  </div></ToastProvider>
+  </div>
 }

@@ -24,7 +24,7 @@ import httpx
 
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
-from deixis.documents import acquisition, embeddings, math_reader, pdf
+from deixis.documents import acquisition, embeddings, math_reader, ocr, pdf
 from deixis.domain import contracts, phrasebank
 from deixis.domain.rules import (MAX_SCHEMA_REPAIRS, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH, after_invalid_output,
                                  effective_reviewer, step_model)
@@ -154,6 +154,8 @@ class ResearchFlow:
                 await self._answer(run, scope)
             elif run["kind"] == "pdf_collection":
                 await self._inspect(run, limit=None)
+            elif run["kind"] == "pdf_ocr":
+                await self._pdf_ocr(run)
             elif run["kind"] == "table_fill":
                 await self._table_fill(run, scope)
             elif run["kind"] == "cell_recheck":
@@ -396,6 +398,70 @@ class ResearchFlow:
                                            output["result"], {"ok": True, "issues": [], "warnings": output.get("warnings", [])}, links,
                                            selection_revision=step_selection)
         await self._review(run, scope, answer_id, output["result"])
+
+    async def _pdf_ocr(self, run: dict[str, Any]) -> None:
+        """Read a PDF's scanned pages with the local Tesseract, one step per page, and write the OCR extraction (D51).
+
+        A page read once is not read again when the run resumes. When a page fails the other pages are still read, then the
+        run pauses and nothing is written; resuming reads the failed pages again. The question's scope does not matter here.
+        """
+        run_id, asset_id, langs = run["id"], run["target"]["asset_id"], run["target"]["languages"]
+        asset = self.store.asset(asset_id)
+        if asset["removed_at"] is not None:
+            self._fail(run_id, "asset_removed", {"asset_id": asset_id})
+        path = self.deps.settings.papers_dir / asset["storage_path"]
+
+        step = self.store.step(run_id, "ocr:pages", "ocr_pages")
+        if step["status"] == "succeeded":
+            found = step["output"]
+        else:
+            self._checkpoint(run_id)
+            self.store.start_step(step["id"])
+            extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+            if extraction.status == "failed":
+                self.store.finish_step(step["id"], "failed", error_code="extraction_failed", error={"error": extraction.error})
+                self._fail(run_id, "extraction_failed", {"error": extraction.error})
+            found = {"page_count": extraction.page_count, "image_pages": extraction.image_pages, "blank_pages": extraction.blank_pages}
+            self.store.finish_step(step["id"], "succeeded", output=found)
+
+        pages, failed = [], {}
+        for number in found["image_pages"]:
+            self._checkpoint(run_id)
+            step = self.store.step(run_id, f"ocr:page:{number}", "ocr_page")
+            result = step["output"]
+            if step["status"] != "succeeded":
+                self.store.start_step(step["id"])
+                page = await asyncio.to_thread(ocr.read_page, path, number, langs)
+                if page.status == "failed":
+                    self.store.finish_step(step["id"], "failed", error_code="ocr_page_failed", error={"error": page.error})
+                    failed[str(number)] = page.error
+                    continue
+                result = {"status": page.status, "text": page.text, "printed_label": page.printed_label}
+                self.store.finish_step(step["id"], "succeeded", output=result)
+            pages.append(ocr.OcrPage(number, result["status"], result["text"], printed_label=result["printed_label"]))
+        if failed:
+            self._pause(run_id, "ocr_pages_failed", {"failed_pages": sorted(map(int, failed)), "errors": failed})
+
+        self._checkpoint(run_id)
+        step = self.store.step(run_id, "ocr:merge", "ocr_merge")
+        if step["status"] == "succeeded":
+            return
+        self.store.start_step(step["id"])
+        base = await asyncio.to_thread(pdf.extract_pdf, path)
+        try:
+            read = ocr.merge(base, pages, langs)
+        except ValueError as exc:  # the extractor changed since the pages were found
+            self.store.finish_step(step["id"], "failed", error_code="ocr_pages_changed", error={"error": str(exc)})
+            self._fail(run_id, "ocr_pages_changed", {"error": str(exc)})
+        try:
+            report = self.store.reextract_asset(asset_id, read, read.extraction_version, pdf.chunk_page, allow_run_id=run_id)
+        except RunInProgress:  # another research using this source has a run
+            self.store.finish_step(step["id"], "failed", error_code="ocr_blocked_by_run", error={"asset_id": asset_id})
+            self._pause(run_id, "ocr_blocked_by_run", {"asset_id": asset_id})
+        except NotFound:
+            self.store.finish_step(step["id"], "failed", error_code="asset_removed", error={"asset_id": asset_id})
+            self._fail(run_id, "asset_removed", {"asset_id": asset_id})
+        self.store.finish_step(step["id"], "succeeded", output=report)
 
     async def _inspect(self, run: dict[str, Any], limit: int | None) -> None:
         """Retrieve the included works' open PDFs. An answer run stops after `limit` downloads; a PDF collection run,

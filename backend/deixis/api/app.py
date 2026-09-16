@@ -27,6 +27,7 @@ from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
 from deixis.documents import embeddings
 from deixis.documents import math_reader
+from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import skill
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict
@@ -1063,6 +1064,24 @@ def create_app(
         if asset["source_version_id"] != source_version_id or asset["removed_at"] is not None:
             raise HTTPException(404, "Asset is not the PDF in use for this source")
         return asset
+
+    @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/ocr", status_code=202)
+    async def read_with_ocr(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+        """Start a `pdf_ocr` run that reads the PDF's scanned pages with the local Tesseract; no file leaves the machine (D51)."""
+        store = store_of(request)
+        asset = asset_in_use(store, research_id, source_version_id, asset_id)
+        if asset["extraction_status"] == "succeeded":
+            raise HTTPException(422, "Text was extracted from every page of this PDF")
+        status = await asyncio.to_thread(ocr.tesseract_status)
+        if not status["available"]:
+            raise HTTPException(422, status["reason"])
+        version = ocr.target_version(pdf.EXTRACTION_VERSION, status["version"], status["languages"])
+        if store.conn.execute("SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?", (asset_id, version)).fetchone():
+            raise HTTPException(409, "This PDF was already read with this OCR version and these languages")
+        run = store.create_run(research_id, "pdf_ocr", {"max_model_calls": 0, "max_provider_requests": 0}, None,
+                               target={"asset_id": asset_id, "source_version_id": source_version_id, "languages": status["languages"]})
+        request.app.state.worker.wake()
+        return run
 
     @app.get("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/impact")
     async def asset_impact(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:

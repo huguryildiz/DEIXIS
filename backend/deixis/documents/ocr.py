@@ -81,6 +81,11 @@ def read_page(path: Path, page: int, langs, timeout: float = TIMEOUT_SECONDS, ma
     return OcrPage(page, "succeeded" if text else "no_text", text, printed_label=raw["printed_label"])
 
 
+def target_version(base_version: str, version: str | None, langs) -> str:
+    """The extraction version of an OCR reading; D52's equation reader finds the OCR part by its `-v<n>` ending."""
+    return f"{base_version}+ocr-tesseract-{version}-{'+'.join(langs)}-{OCR_VERSION}"
+
+
 def merge(extraction: pdf.Extraction, pages: list[OcrPage], langs) -> pdf.Extraction:
     """A new extraction: the text layer pages unchanged plus the OCR text of image pages that were read."""
     numbers = [p.physical_page for p in pages]
@@ -94,7 +99,7 @@ def merge(extraction: pdf.Extraction, pages: list[OcrPage], langs) -> pdf.Extrac
            "pages_read": sum(p.status != "failed" for p in pages), "pages_with_text": len(read),
            "blank_pages": len(extraction.blank_pages), "failed_pages": sorted(p.physical_page for p in pages if p.status == "failed")}
     return replace(extraction, status=status, pages=merged, ocr=ocr,
-                   extraction_version=f"{extraction.extraction_version}+ocr-tesseract-{version}-{'+'.join(langs)}-{OCR_VERSION}")
+                   extraction_version=target_version(extraction.extraction_version, version, langs))
 
 
 def _read_in_process(path: str, page_number: int, language: str) -> dict:

@@ -24,6 +24,9 @@ MAX_FILL_SOURCES = 25  # sources one fill run reads; the rest stay empty for ano
 MAX_COLUMNS_PER_CALL = 8  # columns one cell extraction call answers for its source
 CALLS_PER_REQUEST = 2  # a model call and its one schema repair
 SHADOWED_STATUSES = ("pdf_removed", "pdf_replaced", "text_superseded")  # cell flags, in display order (D45)
+# A row whose source was removed from the research is hidden and not filled; its cells stay and return with the source (D50).
+SOURCE_ACTIVE_SQL = ("EXISTS (SELECT 1 FROM corpus_memberships m JOIN evidence_tables et ON et.research_id = m.research_id"
+                     " WHERE et.id = t.table_id AND m.source_version_id = t.source_version_id AND m.removed_at IS NULL)")
 
 
 class InvalidTableInput(Exception):
@@ -144,7 +147,8 @@ class TableStore:
 
     def _active_row(self, table_id: str, svid: str) -> None:
         if not self.conn.execute(
-            "SELECT 1 FROM table_rows WHERE table_id = ? AND source_version_id = ? AND removed_at IS NULL", (table_id, svid)
+            f"SELECT 1 FROM table_rows t WHERE t.table_id = ? AND t.source_version_id = ? AND t.removed_at IS NULL AND {SOURCE_ACTIVE_SQL}",
+            (table_id, svid)
         ).fetchone():
             raise InvalidTableInput("This source is not a row of the table")
 
@@ -229,7 +233,7 @@ class TableStore:
         return tid
 
     def _check_members(self, research_id: str, svids: list[str]) -> None:
-        missing = [svid for svid in svids if not self.store.is_member(research_id, svid)]
+        missing = [svid for svid in svids if not self.store.is_active_member(research_id, svid)]
         if missing:
             raise InvalidTableInput(f"Not a source of this research: {', '.join(missing)}")
 
@@ -498,7 +502,7 @@ class TableStore:
     def active_rows(self, table_id: str) -> list[str]:
         return [r[0] for r in self.conn.execute(
             "SELECT t.source_version_id FROM table_rows t JOIN source_versions v ON v.id = t.source_version_id"
-            " WHERE t.table_id = ? AND t.removed_at IS NULL ORDER BY t.created_at, v.title", (table_id,)
+            f" WHERE t.table_id = ? AND t.removed_at IS NULL AND {SOURCE_ACTIVE_SQL} ORDER BY t.created_at, v.title", (table_id,)
         )]
 
     def fill_plan(self, research_id: str, table_id: str, column_ids: list[str] | None = None,
@@ -624,10 +628,10 @@ class TableStore:
     def tables(self, research_id: str) -> list[dict[str, Any]]:
         self.store.research(research_id)
         return [dict(r) for r in self.conn.execute(
-            "SELECT t.id, t.title, t.version, t.created_at, t.updated_at,"
-            " (SELECT COUNT(*) FROM table_rows r WHERE r.table_id = t.id AND r.removed_at IS NULL) AS rows,"
-            " (SELECT COUNT(*) FROM table_columns c WHERE c.table_id = t.id AND c.removed_at IS NULL) AS columns"
-            " FROM evidence_tables t WHERE t.research_id = ? AND t.trashed_at IS NULL ORDER BY t.created_at", (research_id,)
+            "SELECT et_outer.id, et_outer.title, et_outer.version, et_outer.created_at, et_outer.updated_at,"
+            f" (SELECT COUNT(*) FROM table_rows t WHERE t.table_id = et_outer.id AND t.removed_at IS NULL AND {SOURCE_ACTIVE_SQL}) AS rows,"
+            " (SELECT COUNT(*) FROM table_columns c WHERE c.table_id = et_outer.id AND c.removed_at IS NULL) AS columns"
+            " FROM evidence_tables et_outer WHERE et_outer.research_id = ? AND et_outer.trashed_at IS NULL ORDER BY et_outer.created_at", (research_id,)
         )]
 
     def _revision_view(self, revision: dict[str, Any]) -> dict[str, Any]:
@@ -677,7 +681,7 @@ class TableStore:
             " EXISTS (SELECT 1 FROM passages p WHERE p.source_version_id = t.source_version_id AND p.kind = 'abstract') AS has_abstract"
             " FROM table_rows t JOIN source_versions v ON v.id = t.source_version_id"
             " LEFT JOIN selections sel ON sel.research_id = ? AND sel.source_version_id = t.source_version_id"
-            " WHERE t.table_id = ? ORDER BY t.created_at, v.title", (research_id, table_id)
+            f" WHERE t.table_id = ? AND {SOURCE_ACTIVE_SQL} ORDER BY t.created_at, v.title", (research_id, table_id)
         ):
             rows.append({"source_version_id": r["source_version_id"], "work_id": r["work_id"], "title": r["title"],
                          "authors": json.loads(r["authors_json"]), "year": r["year"], "version_label": r["version_label"],

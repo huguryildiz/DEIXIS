@@ -210,3 +210,23 @@ def test_zotero_pdfs_attach_the_library_copy_to_included_works_without_pdf_text(
         article = next(s for s in body["sources"] if s["doi"] == "10.1/zot")
         assert article["has_pdf_text"] and article["access"]["assets"][0]["origin"] == "user_upload"
         assert all(r.method == "GET" for r in seen)  # nothing is written to Zotero
+
+
+def test_reimporting_a_collection_leaves_a_source_removed_from_the_research_removed(tmp_path):
+    files = {}
+    for key in ("PDFA1234", "LNKD1234", "STND1234"):
+        path = tmp_path / f"{key} file.pdf"
+        path.write_bytes(make_pdf([f"SYNTHETIC text of {key}"]))
+        files[key] = path.as_uri()
+    app = app_for(tmp_path, zotero_client(files, []))
+    with TestClient(app) as client:
+        rid = start(client)
+        body = client.post(f"/api/researches/{rid}/zotero-imports", json={"source": "local", "collection_key": COLLECTION}).json()
+        article = next(s for s in body["sources"] if s["title"] == "SYNTHETIC diffusion scheduling")
+        app.state.store.remove_sources(rid, [article["source_version_id"]], None)
+
+        again = client.post(f"/api/researches/{rid}/zotero-imports", json={"source": "local", "collection_key": COLLECTION}).json()
+        assert article["source_version_id"] not in {s["source_version_id"] for s in again["sources"]}
+        assert again["zotero_import"]["notes"] == [{"title": "SYNTHETIC diffusion scheduling",
+                                                    "note": "Removed from this research earlier; not added back. Restore it to use it here."}]
+        assert (again["counts"]["removed"], again["counts"]["removed_found_again"]) == (1, 1)

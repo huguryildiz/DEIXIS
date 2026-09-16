@@ -40,7 +40,7 @@ from deixis.storage import db
 from deixis.workflow import bibliography
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.providers.common import normalize_doi
-from deixis.workflow.store import NotFound, PdfInUse, RunInProgress, SameFile, Store, title_key
+from deixis.workflow.store import NotASource, NotFound, PdfInUse, RunInProgress, SameFile, Store, title_key
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, research_view
 from deixis.workflow.worker import Worker
@@ -126,6 +126,15 @@ class ScopeRevision(BaseModel):
 
 class LibraryAddition(BaseModel):
     work_id: str = Field(min_length=1, max_length=200)
+
+
+class SourceRemoval(BaseModel):
+    source_version_ids: list[str] = Field(min_length=1, max_length=500)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class SourceRestore(BaseModel):
+    source_version_ids: list[str] = Field(min_length=1, max_length=500)
 
 
 class ZoteroSourceChoice(BaseModel):
@@ -369,6 +378,10 @@ def create_app(
     async def source_run_in_progress(_: Request, exc: RunInProgress):
         return JSONResponse({"detail": "A research using this source has a run in progress; try again when it has stopped"}, status_code=409)
 
+    @app.exception_handler(NotASource)
+    async def not_a_source(_: Request, exc: NotASource):
+        return JSONResponse({"detail": f"Not a source of this research: {exc}"}, status_code=422)
+
     @app.exception_handler(SameFile)
     async def same_file(_: Request, exc: SameFile):
         return JSONResponse({"detail": "This file is already the PDF in use"}, status_code=422)
@@ -464,10 +477,17 @@ def create_app(
             raise HTTPException(404, "Work is not in the library")
         if any(r["id"] == research_id for r in work["researches"]):
             raise HTTPException(409, "This work is already a source of that research")
+        if removed := [v["source_version_id"] for v in work["versions"] if store.was_member(research_id, v["source_version_id"])]:
+            # Adding one work on purpose undoes its removal; the versions come back as they were (D50).
+            store.restore_sources(research_id, removed)
+            svid = store.work_heads(research_id)[body.work_id]
+            level = next(v["access_level"] for v in work["versions"] if v["source_version_id"] == svid)
+            return {"work_id": body.work_id, "research_id": research_id, "source_version_id": svid, "access_level": level,
+                    "restored": True, "library": library_view(store)}
         version = library_version_to_add(work)
         store.add_to_corpus(research_id, version["source_version_id"], "library", selection_state="included", selection_origin="user")
         return {"work_id": body.work_id, "research_id": research_id, "source_version_id": version["source_version_id"],
-                "access_level": version["access_level"], "library": library_view(store)}
+                "access_level": version["access_level"], "restored": False, "library": library_view(store)}
 
     @app.get("/api/trash")
     async def list_trash(request: Request) -> list[dict[str, Any]]:
@@ -716,6 +736,19 @@ def create_app(
         store.research(research_id)
         return store.set_user_selection(research_id, source_version_id, body.state, body.expected_version, body.reason)
 
+    @app.delete("/api/researches/{research_id}/sources")
+    async def remove_sources(research_id: str, body: SourceRemoval, request: Request) -> dict[str, Any]:
+        """Remove sources from this research; the library record, its files and the evidence citing it stay (D50)."""
+        store = store_of(request)
+        removed = store.remove_sources(research_id, body.source_version_ids, body.note)
+        return {**research_view(store, research_id), "changed_source_version_ids": removed}
+
+    @app.post("/api/researches/{research_id}/sources/restore")
+    async def restore_sources(research_id: str, body: SourceRestore, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        restored = store.restore_sources(research_id, body.source_version_ids)
+        return {**research_view(store, research_id), "changed_source_version_ids": restored}
+
     @app.post("/api/researches/{research_id}/uploads", status_code=201)
     async def upload(research_id: str, request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
         store = store_of(request)
@@ -730,6 +763,8 @@ def create_app(
         filename = Path(file.filename or "document.pdf").name
         if existing:
             svid = existing["source_version_id"]
+            if store.was_member(research_id, svid) and not store.is_active_member(research_id, svid):
+                store.restore_sources(research_id, [svid])  # uploading the same file again undoes its removal (D50)
         else:
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             title = re.sub(r"[_\s]+", " ", Path(filename).stem).strip()[:200] or "Uploaded PDF"
@@ -745,7 +780,7 @@ def create_app(
         """Attach a user-selected PDF to an existing bibliographic source version."""
         store = store_of(request)
         store.research(research_id)
-        if not store.is_member(research_id, source_version_id):
+        if not store.is_active_member(research_id, source_version_id):
             raise HTTPException(404, "Source is not part of this research")
         settings.papers_dir.mkdir(parents=True, exist_ok=True)
         sha, size, path = await store_upload(file, settings.papers_dir)
@@ -782,7 +817,7 @@ def create_app(
         """Collect Unpaywall, OpenAlex, Crossref and CORE locations, retrieve verified versions, and use explicit web search only if none is retrieved."""
         store = store_of(request)
         store.research(research_id)
-        if not store.is_member(research_id, source_version_id):
+        if not store.is_active_member(research_id, source_version_id):
             raise HTTPException(404, "Source is not part of this research")
         source = store.source(source_version_id)
         if not source.get("doi"):
@@ -802,7 +837,7 @@ def create_app(
         """Retrieve a version-uncertain PDF candidate after the user has checked that it is this source's version."""
         store = store_of(request)
         store.research(research_id)
-        if not store.is_member(research_id, source_version_id):
+        if not store.is_active_member(research_id, source_version_id):
             raise HTTPException(404, "Source is not part of this research")
         candidate = next((c for c in store.pdf_candidates(source_version_id) if c["id"] == candidate_id), None)
         if candidate is None:
@@ -838,6 +873,11 @@ def create_app(
             with db.transaction(store.conn):
                 svid, _ = store.upsert_provider_source("zotero", item.record, payload_path)
                 store.add_to_corpus(research_id, svid, "zotero_import", selection_state="included", selection_origin="user")
+            if not store.is_active_member(research_id, svid):
+                # Importing a whole collection again does not undo a removal; the PDF is not attached either (D50).
+                notes.append({"title": item.record.title,
+                              "note": "Removed from this research earlier; not added back. Restore it to use it here."})
+                continue
             if item.pdf_problem:
                 notes.append({"title": item.record.title, "note": item.pdf_problem})
             if item.pdf_key is None or store.has_asset(svid):
@@ -922,10 +962,12 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         asset = store.asset(asset_id)
-        # A replaced file still opens, read-only in the viewer, where this research's evidence cites it (D45).
-        withdrawn = asset["removed_at"] is not None and not (
-            asset["removal_reason"] == "replaced" and store.research_cites_asset(research_id, asset_id))
-        if withdrawn or not store.is_member(research_id, asset["source_version_id"]):
+        # A replaced file, or the file of a source removed from this research, still opens read-only in the viewer where
+        # this research's evidence cites it (D45, D50).
+        svid = asset["source_version_id"]
+        cited = asset["removal_reason"] in (None, "replaced") and store.was_member(research_id, svid) and store.research_cites_asset(research_id, asset_id)
+        in_use = asset["removed_at"] is None and store.is_active_member(research_id, svid)
+        if not (in_use or cited):
             raise HTTPException(404, "Asset is not part of this research")
         root = settings.papers_dir.resolve()
         path = (root / asset["storage_path"]).resolve()
@@ -938,7 +980,8 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         asset = store.asset(asset_id)
-        if asset["removed_at"] is not None or not store.is_member(research_id, asset["source_version_id"]):
+        if asset["removed_at"] is not None or not (store.is_active_member(research_id, asset["source_version_id"]) or (
+                store.was_member(research_id, asset["source_version_id"]) and store.research_cites_asset(research_id, asset_id))):
             raise HTTPException(404, "Asset is not part of this research")
         source = store.source(asset["source_version_id"])
         passages = [p for p in store.passages_for(asset["source_version_id"]) if p["asset_id"] == asset_id]
@@ -954,7 +997,7 @@ def create_app(
         """Withdraw a mistaken PDF from future answers while retaining its audit record."""
         store = store_of(request)
         store.research(research_id)
-        if not store.is_member(research_id, source_version_id):
+        if not store.is_active_member(research_id, source_version_id):
             raise HTTPException(404, "Source is not part of this research")
         asset = store.asset(asset_id)
         if asset["source_version_id"] != source_version_id or asset["removed_at"] is not None:
@@ -964,7 +1007,7 @@ def create_app(
 
     def asset_in_use(store: Store, research_id: str, source_version_id: str, asset_id: str) -> dict[str, Any]:
         store.research(research_id)
-        if not store.is_member(research_id, source_version_id):
+        if not store.is_active_member(research_id, source_version_id):
             raise HTTPException(404, "Source is not part of this research")
         asset = store.asset(asset_id)
         if asset["source_version_id"] != source_version_id or asset["removed_at"] is not None:

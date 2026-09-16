@@ -86,7 +86,7 @@ def test_records_of_one_arxiv_preprint_are_versions_of_one_work_with_one_candida
     unversioned, arxiv_source = store.find_source_by_identifier("openalex", "W5"), store.find_source_by_identifier("arxiv", "2101.00001v1")
     assert unversioned != arxiv_source and store.source(unversioned)["work_id"] == store.source(arxiv_source)["work_id"]
     assert [c["source_version_id"] for c in store.candidates(rid)] == [unversioned]  # screened once, as the first found
-    assert store.is_member(rid, arxiv_source) and store.suspected_duplicates(rid) == {}
+    assert store.is_active_member(rid, arxiv_source) and store.suspected_duplicates(rid) == {}
 
 
 def test_same_title_without_shared_doi_is_flagged_not_merged(store):
@@ -323,7 +323,8 @@ def test_migration_joins_records_of_one_arxiv_preprint_found_before_d46(tmp_path
     old = tmp_path / "migrations"
     old.mkdir()
     for path in real.glob("*.sql"):
-        if int(path.name.split("_", 1)[0]) <= 25:
+        # Today's code writes memberships with 0029's columns (D50), so that migration comes along.
+        if int(path.name.split("_", 1)[0]) <= 25 or path.name.startswith("0029_"):
             shutil.copy(path, old / path.name)
     monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
     monkeypatch.setattr(store_module, "ARXIV_DOI_PREFIX", "not-linked-before-d46")

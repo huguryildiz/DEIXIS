@@ -272,7 +272,8 @@ def test_evidence_links_rebuild_keeps_links_and_their_rules(tmp_path, monkeypatc
     old = tmp_path / "migrations"
     old.mkdir()
     for path in REAL_MIGRATIONS.glob("*.sql"):
-        if int(path.name.split("_", 1)[0]) <= 23:
+        # Today's code writes memberships with 0029's columns (D50), so that migration comes along.
+        if int(path.name.split("_", 1)[0]) <= 23 or path.name.startswith("0029_"):
             shutil.copy(path, old / path.name)
     monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
     lib = make_lib(tmp_path)

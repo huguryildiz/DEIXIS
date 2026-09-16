@@ -46,7 +46,7 @@ def test_adding_a_library_work_includes_its_deepest_version_once(tmp_path):
         body = response.json()
         # The preprint's stored abstract outranks the richer but text-less published record.
         assert (body["source_version_id"], body["access_level"]) == (preprint, "abstract")
-        assert store.is_member(target, preprint) and not store.is_member(target, published)
+        assert store.is_active_member(target, preprint) and not store.is_active_member(target, published)
         row = store.conn.execute("SELECT m.added_by, s.state, s.origin FROM corpus_memberships m JOIN selections s"
                                  " USING (research_id, source_version_id) WHERE m.research_id = ?", (target,)).fetchone()
         assert tuple(row) == ("library", "included", "user")

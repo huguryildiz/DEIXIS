@@ -78,6 +78,10 @@ class SameFile(Exception):
     """A PDF can only be replaced by a different file (D45)."""
 
 
+class NotASource(Exception):
+    """A source version that was never a source of the research (D50); the API answers 422."""
+
+
 class Store:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
@@ -260,7 +264,7 @@ class Store:
         sources = self.conn.execute(
             "SELECT v.id AS source_version_id, v.title, v.year, v.version_label, m.research_id, r.title AS research_title"
             " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id JOIN researches r ON r.id = m.research_id"
-            " WHERE r.trashed_at IS NULL AND instr(lower(v.title), lower(?)) > 0 ORDER BY r.updated_at DESC, v.title LIMIT ?", (text, limit * 2)
+            " WHERE r.trashed_at IS NULL AND m.removed_at IS NULL AND instr(lower(v.title), lower(?)) > 0 ORDER BY r.updated_at DESC, v.title LIMIT ?", (text, limit * 2)
         ).fetchall()
         return {"researches": [dict(r) for r in researches], "sources": [dict(r) for r in sources]}
 
@@ -1018,16 +1022,18 @@ class Store:
                     joined += 1
         return joined
 
-    def work_heads(self, research_id: str) -> dict[str, str]:
+    def work_heads(self, research_id: str, include_removed: bool = False) -> dict[str, str]:
         """The record that heads each work in the research: a published record, else the first record (D46, D48).
 
         A record is a candidate or a source added other than by search; other versions found by search never head a work.
+        Sources removed from the research head nothing unless include_removed (D50).
         """
         heads: dict[str, dict[str, Any]] = {}
         for row in self.conn.execute(
             "SELECT v.id, v.work_id, v.doi, v.version_label FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
             " LEFT JOIN candidates c ON c.research_id = m.research_id AND c.source_version_id = m.source_version_id"
-            " WHERE m.research_id = ? AND (c.id IS NOT NULL OR m.added_by != 'search') ORDER BY m.created_at, c.rank", (research_id,)
+            f" WHERE m.research_id = ?{'' if include_removed else ' AND m.removed_at IS NULL'} AND (c.id IS NOT NULL OR m.added_by != 'search')"
+            " ORDER BY m.created_at, c.rank", (research_id,)
         ):
             current = heads.get(row["work_id"])
             if current is None or (is_published(dict(row)) and not is_published(current)):
@@ -1049,6 +1055,7 @@ class Store:
         source = self.conn.execute(
             "SELECT s.* FROM selections s JOIN source_versions v ON v.id = s.source_version_id"
             " JOIN candidates c ON c.research_id = s.research_id AND c.source_version_id = s.source_version_id"
+            " JOIN corpus_memberships m ON m.research_id = s.research_id AND m.source_version_id = s.source_version_id AND m.removed_at IS NULL"
             " WHERE s.research_id = ? AND v.work_id = ? AND s.source_version_id != ? AND s.origin != 'default'"
             " ORDER BY s.origin = 'user' DESC, s.updated_at DESC LIMIT 1", (research_id, work_id, head)
         ).fetchone()
@@ -1075,7 +1082,7 @@ class Store:
         """The research's other versions of svid's work, those with a PDF in use first, then in the order found."""
         return [r[0] for r in self.conn.execute(
             "SELECT v.id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
-            " WHERE m.research_id = ? AND v.id != ? AND v.work_id = (SELECT work_id FROM source_versions WHERE id = ?)"
+            " WHERE m.research_id = ? AND m.removed_at IS NULL AND v.id != ? AND v.work_id = (SELECT work_id FROM source_versions WHERE id = ?)"
             " ORDER BY EXISTS (SELECT 1 FROM source_assets a WHERE a.source_version_id = v.id AND a.removed_at IS NULL) DESC, m.created_at",
             (research_id, svid, svid)
         )]
@@ -1115,10 +1122,25 @@ class Store:
                       scope_revision: int | None = None, candidate: bool = True) -> None:
         ts = now()
         with transaction(self.conn):
-            self.conn.execute(
-                "INSERT OR IGNORE INTO corpus_memberships (research_id, source_version_id, added_by, created_at) VALUES (?, ?, ?, ?)",
-                (research_id, svid, added_by, ts),
-            )
+            membership = self.conn.execute(
+                "SELECT removed_at FROM corpus_memberships WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
+            ).fetchone()
+            # A search or a Zotero collection import adds many records at once; it never undoes the user's removal (D50).
+            bulk = added_by in ("search", "zotero_import")
+            if membership is None:
+                # A new version of a work the user removed from this research joins it removed.
+                work_removed = bulk and self.conn.execute(
+                    "SELECT MIN(m.removed_at IS NOT NULL) FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+                    " WHERE m.research_id = ? AND v.work_id = (SELECT work_id FROM source_versions WHERE id = ?)", (research_id, svid)
+                ).fetchone()[0] == 1
+                self.conn.execute(
+                    "INSERT INTO corpus_memberships (research_id, source_version_id, added_by, created_at, removed_at, found_again_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?)", (research_id, svid, added_by, ts, *((ts, ts) if work_removed else (None, None))),
+                )
+            elif membership["removed_at"] is not None and bulk:
+                # Found again: it stays removed, and the Sources summary counts it (D50).
+                self.conn.execute("UPDATE corpus_memberships SET found_again_at = ? WHERE research_id = ? AND source_version_id = ?",
+                                  (ts, research_id, svid))
             if added_by == "search" and candidate:
                 # A record found again under a newer question revision becomes a candidate of that revision; found again
                 # under the same revision (another query or provider), it keeps its best rank and the search that gave it.
@@ -1142,7 +1164,94 @@ class Store:
                 )
                 self._bump_selection_revision(research_id, None, selection_state)
 
-    def is_member(self, research_id: str, svid: str) -> bool:
+    def remove_sources(self, research_id: str, svids: list[str], note: str | None) -> list[str]:
+        """Take sources out of the research; returns the source versions removed (D50).
+
+        The membership row stays, so the research's answers and cells still open what they cite, and nothing about the
+        source, its files, passages or embeddings changes. Removing a work's head removes every version of the work here.
+        """
+        with transaction(self.conn):
+            self._check_corpus_change(research_id, svids)
+            heads = set(self.work_heads(research_id).values())
+            chosen: list[str] = []
+            for svid in dict.fromkeys(svids):
+                if not self.is_active_member(research_id, svid):
+                    continue
+                chosen += [svid] + (self.work_versions(research_id, svid) if svid in heads else [])
+            chosen = list(dict.fromkeys(chosen))
+            if not chosen:
+                return []
+            ts = now()
+            self.conn.executemany(
+                "UPDATE corpus_memberships SET removed_at = ?, removal_note = ?, found_again_at = NULL WHERE research_id = ? AND source_version_id = ?",
+                [(ts, (note or "").strip() or None, research_id, svid) for svid in chosen],
+            )
+            self._corpus_changed(research_id, "source_removed", chosen, ts)
+        return chosen
+
+    def restore_sources(self, research_id: str, svids: list[str]) -> list[str]:
+        """Put removed sources back; returns the source versions restored.
+
+        A version comes back with the versions of its work removed in the same action, and with its work's head when that
+        was removed, so a version never shows without its record.
+        """
+        with transaction(self.conn):
+            self._check_corpus_change(research_id, svids)
+            removed = {r[0]: r[1] for r in self.conn.execute(
+                "SELECT source_version_id, removed_at FROM corpus_memberships WHERE research_id = ? AND removed_at IS NOT NULL", (research_id,))}
+            heads = self.work_heads(research_id, include_removed=True)
+
+            def group(svid: str) -> list[str]:
+                return [other for other, at in removed.items() if at == removed[svid]
+                        and self.source(other)["work_id"] == self.source(svid)["work_id"]]
+
+            chosen: list[str] = []
+            for svid in dict.fromkeys(svids):
+                if svid not in removed:
+                    continue
+                chosen += group(svid)
+                head = heads.get(self.source(svid)["work_id"])
+                if head in removed:
+                    chosen += group(head)
+            chosen = list(dict.fromkeys(chosen))
+            if not chosen:
+                return []
+            self.conn.executemany(
+                "UPDATE corpus_memberships SET removed_at = NULL, removal_note = NULL, found_again_at = NULL"
+                " WHERE research_id = ? AND source_version_id = ?", [(research_id, svid) for svid in chosen],
+            )
+            self._corpus_changed(research_id, "source_restored", chosen, now())
+        return chosen
+
+    def _check_corpus_change(self, research_id: str, svids: list[str]) -> None:
+        self.research(research_id)
+        if self.conn.execute(
+            f"SELECT 1 FROM runs WHERE research_id = ? AND status IN ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1",
+            (research_id, *ACTIVE_RUN_STATUSES),
+        ).fetchone():
+            raise RevisionConflict("Cancel or finish active runs before changing this research's sources")
+        if missing := [svid for svid in dict.fromkeys(svids) if not self.was_member(research_id, svid)]:
+            raise NotASource(", ".join(missing))
+
+    def _corpus_changed(self, research_id: str, event: str, svids: list[str], ts: str) -> None:
+        """An included source entering or leaving the corpus changes what an answer reads, as a selection change does."""
+        marks = ", ".join("?" * len(svids))
+        included = self.conn.execute(
+            f"SELECT 1 FROM selections WHERE research_id = ? AND state = 'included' AND source_version_id IN ({marks}) LIMIT 1",
+            (research_id, *svids),
+        ).fetchone()
+        self.conn.execute(f"UPDATE researches SET updated_at = ?{', selection_revision = selection_revision + 1' if included else ''}"
+                          " WHERE id = ?", (ts, research_id))
+        self._event(research_id, event, {"source_version_ids": svids})
+
+    def is_active_member(self, research_id: str, svid: str) -> bool:
+        """A source of the research now: lists, model inputs and new work (uploads, PDF lookups, table rows) need this."""
+        return self.conn.execute(
+            "SELECT 1 FROM corpus_memberships WHERE research_id = ? AND source_version_id = ? AND removed_at IS NULL", (research_id, svid)
+        ).fetchone() is not None
+
+    def was_member(self, research_id: str, svid: str) -> bool:
+        """A source of the research now or before a removal (D50): opening the research's evidence needs only this."""
         return self.conn.execute(
             "SELECT 1 FROM corpus_memberships WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
         ).fetchone() is not None
@@ -1222,7 +1331,9 @@ class Store:
 
     def included_sources(self, research_id: str) -> list[str]:
         return [r[0] for r in self.conn.execute(
-            "SELECT source_version_id FROM selections WHERE research_id = ? AND state = 'included' ORDER BY updated_at", (research_id,)
+            "SELECT s.source_version_id FROM selections s JOIN corpus_memberships m"
+            " ON m.research_id = s.research_id AND m.source_version_id = s.source_version_id AND m.removed_at IS NULL"
+            " WHERE s.research_id = ? AND s.state = 'included' ORDER BY s.updated_at", (research_id,)
         )]
 
     def answer_order_facts(self, research_id: str, svids: list[str]) -> dict[str, tuple[bool, int]]:

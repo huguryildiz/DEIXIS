@@ -122,7 +122,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         " FROM corpus_memberships m JOIN source_versions s ON s.id = m.source_version_id"
         " JOIN selections sel ON sel.research_id = m.research_id AND sel.source_version_id = m.source_version_id"
         " LEFT JOIN candidates c ON c.research_id = m.research_id AND c.source_version_id = m.source_version_id"
-        " WHERE m.research_id = ? ORDER BY m.created_at, c.rank", (similarity_model, research_id)
+        " WHERE m.research_id = ? AND m.removed_at IS NULL ORDER BY m.created_at, c.rank", (similarity_model, research_id)
     ):
         svid = row["id"]
         # The PDF in use, whether its text comes from the current extractor, and a later extraction that was not taken (D45).
@@ -225,6 +225,11 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         "pending": sum(s["selection"]["state"] == "pending" for s in sources if s["version_role"] == "record"),
         "inspected": works(latest_given["source_ids"]) if latest_given else 0,
         "cited": works(cited_sources),
+        # Works the user removed from this research, and those a later search found again; neither is listed (D50).
+        **dict(zip(("removed", "removed_found_again"), conn.execute(
+            "SELECT COUNT(DISTINCT v.work_id), COUNT(DISTINCT CASE WHEN m.found_again_at IS NOT NULL THEN v.work_id END)"
+            " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+            " WHERE m.research_id = ? AND m.removed_at IS NOT NULL", (research_id,)).fetchone())),
     }
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
     reviewer = effective_reviewer(scope, store.setting("reviewer"))
@@ -268,6 +273,7 @@ def library_view(store: Store) -> dict[str, Any]:
         "SELECT v.id AS source_version_id, v.work_id, v.title, v.authors_json, v.year, v.venue, v.volume, v.issue,"
         " v.pages, v.publication_type, v.doi, v.landing_url, v.version_label, v.cited_by_count, v.cited_by_count_at,"
         " v.created_at AS source_created_at, r.id AS research_id, r.title AS research_title, r.updated_at AS research_updated_at,"
+        " m.removed_at,"
         f" {_HAS_PDF_TEXT} AS has_pdf_text, {_HAS_ABSTRACT} AS has_abstract"
         " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
         " JOIN researches r ON r.id = m.research_id WHERE r.trashed_at IS NULL"
@@ -288,7 +294,8 @@ def library_view(store: Store) -> dict[str, Any]:
                 "access_level": _access_level(row["has_pdf_text"], row["has_abstract"]),
             }
         rid = row["research_id"]
-        if rid not in work["researches"]:
+        # A source removed from a research stays in the library but not in that research's project group (D50).
+        if row["removed_at"] is None and rid not in work["researches"]:
             work["researches"][rid] = {"id": rid, "title": row["research_title"], "updated_at": row["research_updated_at"]}
 
     entries = []
@@ -371,7 +378,7 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
         ).fetchone()
         members = conn.execute(
             "SELECT r.id, r.title, r.updated_at FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
-            " WHERE m.source_version_id = ? AND r.trashed_at IS NULL ORDER BY r.updated_at DESC", (svid,)
+            " WHERE m.source_version_id = ? AND m.removed_at IS NULL AND r.trashed_at IS NULL ORDER BY r.updated_at DESC", (svid,)
         ).fetchall()
         for member in members:
             researches.setdefault(member["id"], {"id": member["id"], "title": member["title"],
@@ -420,7 +427,7 @@ def _review_view(store: Store, answer_id: str) -> dict[str, Any] | None:
 
 def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, Any] | None:
     passage = store.passage(passage_id)
-    if not store.is_member(research_id, passage["source_version_id"]):
+    if not store.was_member(research_id, passage["source_version_id"]):
         return None
     source = store.source(passage["source_version_id"])
     return {

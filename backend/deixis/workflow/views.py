@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from deixis.documents import embeddings
+from deixis.documents import embeddings, pdf
 from deixis.domain.rules import effective_reviewer, result_applicability
-from deixis.workflow.store import Store
+from deixis.workflow.store import EVIDENCE_STATUS_SQL, Store
 
 
 # What the transcript reports from a search plan; the rest of the stored output stays out of the view.
@@ -38,10 +38,13 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         # A v1 plan holds the queries the model wrote; a v2 plan's queries were compiled from its concepts and stored beside it (D44).
         run["plan"] = ({k: output["result"][k] for k in PLAN_FIELDS}
                        | {"queries": output["result"].get("queries", output.get("queries", []))}) if output else None
-        # Screening runs in batches; the notes of the batches read as one paragraph.
-        run["screening_notes"] = " ".join(
-            note for o in _model_outputs(store, run["id"], "model:screening") if (note := (o.get("result") or {}).get("notes", "").strip())
-        )
+        # Screening runs in batches; each batch's note is its own line, timed by its step.
+        run["screening_notes"] = [
+            {"step_id": r["id"], "text": note} for r in store.conn.execute(
+                "SELECT id, output_json FROM run_steps WHERE run_id = ? AND kind = 'model:screening' AND status = 'succeeded'"
+                " AND output_json IS NOT NULL ORDER BY rowid", (run["id"],))
+            if (note := (json.loads(r["output_json"]).get("result") or {}).get("notes", "").strip())
+        ]
         runs.append(run)
 
     search_runs = [
@@ -52,7 +55,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
 
     answers = []
     cited_sources: set[str] = set()
-    for a in conn.execute("SELECT * FROM answers WHERE research_id = ? ORDER BY created_at DESC LIMIT 10", (research_id,)):
+    for a in conn.execute("SELECT * FROM answers WHERE research_id = ? ORDER BY created_at DESC, rowid DESC", (research_id,)):
         draft = _json(a["draft_json"])
         claims = []
         for c in conn.execute("SELECT * FROM claims WHERE answer_id = ? ORDER BY ordinal", (a["id"],)):
@@ -60,10 +63,12 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
                 {"passage_id": e["passage_id"], "source_version_id": e["source_version_id"], "kind": e["kind"],
                  "physical_page": e["physical_page"], "printed_label": e["printed_label"],
                  "reading_depth": "abstract" if e["kind"] == "abstract" else "selected_sections", "title": e["title"],
-                 "version_label": e["version_label"], "anchor_text": e["anchor_text"]}
+                 "version_label": e["version_label"], "anchor_text": e["anchor_text"], "evidence_status": e["evidence_status"]}
                 for e in conn.execute(
-                    "SELECT l.passage_id, l.source_version_id, l.anchor_text, p.kind, p.physical_page, p.printed_label, s.title, s.version_label FROM evidence_links l"
+                    "SELECT l.passage_id, l.source_version_id, l.anchor_text, p.kind, p.physical_page, p.printed_label, s.title, s.version_label,"
+                    f" {EVIDENCE_STATUS_SQL} AS evidence_status FROM evidence_links l"
                     " JOIN passages p ON p.id = l.passage_id JOIN source_versions s ON s.id = l.source_version_id"
+                    " LEFT JOIN source_assets a ON a.id = p.asset_id"
                     " WHERE l.claim_id = ? ORDER BY l.rowid", (c["id"],)
                 )
             ]
@@ -83,6 +88,9 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         validation = _json(a["validation_json"]) or {}
         answers.append({
             "id": a["id"], "run_id": a["run_id"], "status": a["status"], "scope_revision": a["scope_revision"],
+            # A report keeps the number and title it was saved with; later answers and title changes do not rewrite them.
+            "report_version": a["report_version"],
+            "report_title": (draft or {}).get("title") if a["status"] == "structurally_valid" else None,
             "applicability": result_applicability(a["scope_revision"], research["current_scope_revision"],
                                                   a["selection_revision"], research["selection_revision"]),
             "answer_language": a["answer_language"], "created_at": a["created_at"], "claims": claims,
@@ -94,6 +102,9 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "validation": validation,
             "model": {"connection": session["connection"], "requested_model": session["requested_model"],
                       "resolved_model": session["resolved_model"], "token_usage": _json(session["token_usage_json"])} if session else None,
+            # A file or text extraction this answer read is no longer in use; its quotes still open what was read (D45).
+            "source_text_changed": bool(given) and any(
+                status != "current" for status in store.evidence_statuses([p["passage_id"] for p in given["passages"]]).values()),
             "inputs_given": {"sources": len(given["sources"]), "passages": len(given["passages"]),
                              "source_ids": [s["source_id"] for s in given["sources"]]} if given else None,
             "review": review,
@@ -114,9 +125,16 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         " WHERE m.research_id = ? ORDER BY m.created_at, c.rank", (similarity_model, research_id)
     ):
         svid = row["id"]
-        assets = [dict(r) for r in conn.execute(
-            "SELECT id, extraction_status, page_count, origin, byte_size, original_filename FROM source_assets"
+        # The PDF in use, whether its text comes from the current extractor, and a later extraction that was not taken (D45).
+        assets = [dict(r) | {"current_extraction": r["extraction_version"] == pdf.EXTRACTION_VERSION, "rejected_extraction": dict(rejected) if (rejected := conn.execute(
+            "SELECT extraction_version, rejection_reason, created_at FROM asset_extractions WHERE asset_id = ? AND outcome = 'rejected'"
+            " ORDER BY created_at DESC, rowid DESC LIMIT 1", (r["id"],)).fetchone()) else None} for r in conn.execute(
+            "SELECT id, extraction_status, extraction_version, page_count, origin, byte_size, original_filename FROM source_assets"
             " WHERE source_version_id = ? AND removed_at IS NULL", (svid,)
+        )]
+        replaced_assets = [dict(r) for r in conn.execute(
+            "SELECT id, original_filename, removed_at, replaced_by_asset_id FROM source_assets"
+            " WHERE source_version_id = ? AND removal_reason = 'replaced' ORDER BY removed_at DESC", (svid,)
         )]
         abstract = conn.execute(
             "SELECT id, abstract_origin FROM passages WHERE source_version_id = ? AND kind = 'abstract' LIMIT 1", (svid,)
@@ -134,7 +152,9 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "id", "provider", "candidate_url", "landing_url", "version_label", "license", "identity_status",
             "version_status", "access_status", "http_status", "error_code", "final_url", "discovered_at", "attempted_at"
         )} for r in conn.execute(
-            "SELECT * FROM pdf_candidates WHERE source_version_id = ? ORDER BY discovered_at, rowid", (svid,)
+            # Web results under another paper's title, stored before those were dropped at lookup, are not shown.
+            "SELECT * FROM pdf_candidates WHERE source_version_id = ? AND identity_status != 'unverified'"
+            " ORDER BY discovered_at, rowid", (svid,)
         )]
         sources.append({
             "source_version_id": svid, "work_id": row["work_id"], "title": row["title"], "authors": json.loads(row["authors_json"]),
@@ -143,6 +163,8 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "version_label": row["version_label"], "publication_type": row["publication_type"], "origin": row["origin"],
             "cited_by_count": row["cited_by_count"], "cited_by_count_at": row["cited_by_count_at"],
             "added_by": row["added_by"], "added_at": row["added_at"], "rank": row["rank"], "similarity": row["similarity"],
+            # Whether an answer can read this version's PDF pages rather than its abstract (D49).
+            "has_pdf_text": bool(assets) and store.has_pdf_text(svid),
             # "other_version": another version of a found record (e.g. its submitted manuscript), stored separately.
             "version_role": "other_version" if row["added_by"] == "search" and row["candidate_id"] is None else "record",
             # A search result keeps the question revision it was found for; attached files belong to no revision.
@@ -151,7 +173,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             else result_applicability(row["found_in_revision"], research["current_scope_revision"]),
             "access": {"abstract_passage_id": abstract["id"] if abstract else None,
                        "abstract_origin": abstract["abstract_origin"] if abstract else None,
-                       "oa_pdf_url": row["oa_pdf_url"], "oa_pdf_version": row["oa_pdf_version"], "assets": assets,
+                       "oa_pdf_url": row["oa_pdf_url"], "oa_pdf_version": row["oa_pdf_version"], "assets": assets, "replaced_assets": replaced_assets,
                        "fetch": dict(fetch) if fetch else None, "other_copy": dict(other_copy) if other_copy else None,
                        "pdf_candidates": pdf_candidates,
                        "pdf_discoveries": store.pdf_discoveries(research_id, svid)},
@@ -166,6 +188,17 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             # Possibly the same publication as another source (same title, or a preprint naming its DOI); never merged.
             "suspected_duplicates": duplicates.get(svid, []),
         })
+
+    # A work has one record, its head: a published record, else the first (D46, D48). Another candidate of the same work
+    # (a preprint screened before its published record joined the work) is shown as another version of the head.
+    heads = store.work_heads(research_id)
+    for s in sources:
+        if s["version_role"] == "record" and heads.get(s["work_id"]) != s["source_version_id"]:
+            s["version_role"] = "other_version"
+        # The version whose text an answer reads when it is not the head itself (D48).
+        s["answer_reads_version_id"] = None
+        if s["version_role"] == "record" and (reads := store.answer_version(research_id, s["source_version_id"])) != s["source_version_id"]:
+            s["answer_reads_version_id"] = reads
 
     # Other versions follow the record of their work and share its question revision.
     ordered: list[dict[str, Any]] = []
@@ -186,9 +219,10 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     counts = {
         "found": sum(s["result_count"] for s in search_runs),
         "unique": works(work_of),
-        "included": works(s["source_version_id"] for s in sources if s["selection"]["state"] == "included"),
-        "excluded": sum(s["selection"]["state"] == "excluded" for s in sources),
-        "pending": sum(s["selection"]["state"] == "pending" for s in sources),
+        # A work's selection is its head's; other versions follow it (D48).
+        "included": sum(s["selection"]["state"] == "included" for s in sources if s["version_role"] == "record"),
+        "excluded": sum(s["selection"]["state"] == "excluded" for s in sources if s["version_role"] == "record"),
+        "pending": sum(s["selection"]["state"] == "pending" for s in sources if s["version_role"] == "record"),
         "inspected": works(latest_given["source_ids"]) if latest_given else 0,
         "cited": works(cited_sources),
     }
@@ -395,6 +429,7 @@ def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, A
         "extraction_version": passage["extraction_version"], "payload_ref": passage["payload_ref"],
         "reading_depth": "abstract" if passage["kind"] == "abstract" else "selected_sections",
         "asset_id": passage["asset_id"],
+        "evidence_status": store.evidence_statuses([passage_id])[passage_id],
         "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
                                             "cited_by_count", "cited_by_count_at")},
     }

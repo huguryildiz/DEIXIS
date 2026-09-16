@@ -45,6 +45,12 @@ class FixtureServer {
     return file
   }
 
+  replacementPdf() {
+    const file = path.join(this.dataDir, '..', `replacement-${this.port}.pdf`)
+    spawnSync(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', '0', '--write-replacement-pdf', file], { cwd: REPO, env: this.env() })
+    return file
+  }
+
   url(hash = '') { return `http://127.0.0.1:${this.port}/${hash}` }
 }
 
@@ -181,14 +187,14 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await shot(page, 'D-excluded-with-reason')
   })
 
-  test('C: the submitted manuscript is a separate version of the same work and is included explicitly', async () => {
+  test('C: the submitted manuscript is a separate version of the same work and follows the record’s selection', async () => {
     const manuscript = row(page, 'SYNTHETIC molecule schedule letter', true)
-    await expect(manuscript.getByText('Another version of the record above: submitted manuscript.')).toBeVisible()
+    await expect(manuscript.getByText('Another version of the record above: submitted manuscript. It follows the record’s selection')).toBeVisible()
     await expect(row(page, 'SYNTHETIC molecule schedule letter').locator('.source-pills')).toContainText('different version (submitted manuscript) · not used for this version')
     await expect(page.locator('.research-facts')).toContainText('5Unique works')  // six version rows, five works
-    await manuscript.getByRole('button', { name: 'Include' }).click()
-    await expect(manuscript.getByRole('button', { name: 'Include' })).toBeDisabled()
-    await shot(page, 'C-other-version-included')
+    await expect(manuscript.getByRole('button', { name: 'Include' })).toHaveCount(0)  // D48: only the work's head has a selection
+    await expect(row(page, 'SYNTHETIC molecule schedule letter').getByRole('button', { name: 'Include' })).toBeDisabled()
+    await shot(page, 'C-other-version-follows-record')
   })
 
   test('G: untrusted abstract text is shown as text and changes nothing', async () => {
@@ -213,7 +219,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
 
   test('A: an answer citation opens the stored passage of the cited source version', async () => {
     await openTab(page, /Answer/)
-    await page.getByRole('button', { name: 'Generate source-linked answer' }).click()
+    await page.getByRole('button', { name: 'Generate answer now' }).click()
     await expect(page.getByText('Ran answer generation')).toBeVisible()
     const artifact = page.getByRole('button', { name: /Open report:/ })
     await expect(artifact).toContainText('Report · V1')
@@ -289,18 +295,19 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await expect(reference.locator('.ref-pills')).toContainText('Abstract')
     await reference.getByRole('button').click()
     const sheet = page.getByRole('dialog', { name: 'Source details' })
-    await expect(sheet.getByText('Abstract · no page or full-text reading')).toBeVisible()
+    await expect(sheet.locator('.source-chips')).toContainText('Abstract only')
+    await expect(sheet.locator('.source-section')).toHaveText('Abstract')  // no page locator
     await expect(sheet.getByRole('tab', { name: 'PDF' })).toBeDisabled()
     await shot(page, 'B-abstract-only')
     await page.keyboard.press('Escape')
   })
 
   test('C: evidence from the manuscript stays labelled with the manuscript version', async () => {
-    // Both versions are included, so both are cited separately: the record by its abstract, the manuscript by its PDF.
+    // D48: the answer reads one version per work. The record has no PDF text, so the manuscript's open PDF is read and cited as the manuscript.
     const letter = page.locator('.report-sheet .reference-list li', { hasText: 'SYNTHETIC molecule schedule letter' })
-    await expect(letter).toHaveCount(2)
-    await expect(letter.filter({ hasText: 'submitted manuscript' }).locator('.ref-pills')).toContainText('PDF p. 1')
-    await expect(letter.filter({ hasText: 'published version' }).locator('.ref-pills')).toContainText('Abstract')
+    await expect(letter).toHaveCount(1)
+    await expect(letter).toContainText('submitted manuscript')
+    await expect(letter.locator('.ref-pills')).toContainText('PDF p. 1')
     await shot(page, 'C-manuscript-citation')
   })
 
@@ -340,7 +347,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await report.getByRole('button', { name: 'Close' }).click()
     await openTab(page, /Sources/)
     await expect(row(page, 'SYNTHETIC optimization of hospital visiting hours').getByText('Your reason: No optimization model')).toBeVisible()
-    await expect(row(page, 'SYNTHETIC molecule schedule letter', true).getByRole('button', { name: 'Include' })).toBeDisabled()
+    await expect(row(page, 'SYNTHETIC molecule schedule letter').getByRole('button', { name: 'Include' })).toBeDisabled()
     await shot(page, `F-${label}`)
   }
 
@@ -394,7 +401,7 @@ test.describe.serial('Failures: E and B (code check)', () => {
   test('B: an answer that keeps asserting a page is never shown as a cited answer', async () => {
     await startResearch(page, server, 'SYNTHETIC [invent-locator] How is molecule release scheduling optimized?')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    await page.getByRole('button', { name: 'Generate source-linked answer' }).click()
+    await page.getByRole('button', { name: 'Generate answer now' }).click()
     await expect(page.getByText('Ran answer generation')).toBeVisible()
     const boundary = page.getByText('The model output failed validation after one repair attempt')
     await expect(boundary).toBeVisible()
@@ -549,6 +556,58 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await shot(page, 'evidence-table-mobile-dark')
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.getByRole('button', { name: 'Use light theme' }).click()
+  })
+})
+
+test.describe.serial('Replacing a source PDF (P5 slice 2, D45)', () => {
+  const server = new FixtureServer(8797)
+  let page: Page
+  const title = 'SYNTHETIC molecule release scheduling with bisection'
+  test.beforeAll(async ({ browser }: { browser: Browser }) => { await server.start(); page = await browser.newPage() })
+  test.afterAll(async () => { await server.stop() })
+
+  test('the confirmation names what cites the file; the answer and its quote keep the previous file', async () => {
+    await startResearch(page, server, 'SYNTHETIC: How is molecule release scheduling optimized?')
+    await expect(page.getByText('Ran search & screening')).toBeVisible()
+    await openTab(page, /Answer/)
+    await page.getByRole('button', { name: 'Generate answer now' }).click()
+    await expect(page.getByText('Ran answer generation')).toBeVisible()
+    await page.getByRole('button', { name: /Open report:/ }).click()
+    await expect(page.locator('.report-sheet .legacy-boundary', { hasText: 'A PDF this answer read' })).toHaveCount(0)
+    await page.locator('.report-sheet').getByRole('button', { name: 'Close' }).click()
+
+    await openTab(page, /Sources/)
+    const source = row(page, title)
+    const chooser = page.waitForEvent('filechooser')
+    await source.getByRole('button', { name: 'Replace PDF' }).click()
+    await (await chooser).setFiles(server.replacementPdf())
+    const confirm = page.getByRole('dialog', { name: 'Replace PDF?' })
+    await expect(confirm).toContainText('The source is used in 1 research;')
+    await expect(confirm).toContainText('0 evidence table cells and 1 answer quotes cite the current file.')
+    await shot(page, 'D45-replace-confirmation')
+    await confirm.getByRole('button', { name: 'Replace PDF' }).click()
+    await expect(page.getByText('PDF replaced.')).toBeVisible()
+    await expect(source).toContainText('Previous PDF replaced on')
+    await shot(page, 'D45-source-row-replaced')
+
+    await openTab(page, /Answer/)
+    await page.getByRole('button', { name: /Open report:/ }).click()
+    await expect(page.locator('.report-sheet .legacy-boundary', { hasText: 'A PDF this answer read was replaced' })).toBeVisible()
+    await shot(page, 'D45-report-source-text-changed')
+    await page.locator('.report-sheet .reference-list li', { hasText: title }).getByRole('button').click()
+    const sheet = page.getByRole('dialog', { name: 'Source details' })
+    await expect(sheet.locator('.source-notice')).toContainText('comes from a PDF that was later replaced')
+    await expect(sheet.locator('mark.citation-highlight')).toBeVisible()  // the stored anchor of the previous file's passage
+    await shot(page, 'D45-citation-previous-pdf-text')
+    await sheet.getByRole('tab', { name: 'PDF' }).click()
+    await expect(sheet.locator('.pdf-viewer canvas')).toHaveAttribute('width', /\d{3,}/)
+    await shot(page, 'D45-citation-previous-pdf')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await sheet.getByRole('tab', { name: 'Plain text' }).click()
+    expect(await sheet.locator('.sheet-body').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+    await shot(page, 'D45-citation-previous-pdf-mobile')
+    await page.keyboard.press('Escape')
+    await page.setViewportSize({ width: 1280, height: 900 })
   })
 })
 

@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpen, BookOpenText, CalendarDays, CircleCheck, CircleDot, CircleX, Copy, Download, FilePlus2, FileText, FileUp, Filter, Hand, Info, ListChecks, ListPlus, LoaderCircle, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, ScanSearch, Search, ShieldCheck, Sparkles, Table2, Trash2, Upload, UserPen, Users, X, type LucideIcon } from 'lucide-react'
+import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpenText, ChevronRight, CircleCheck, CircleDot, CircleX, Copy, Download, FilePlus2, FileText, FileUp, Filter, Hand, Info, ListChecks, ListPlus, LoaderCircle, Replace, ScanText, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, Search, ShieldCheck, Sparkles, Table2, Trash2, Upload, UserPen, X, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type Limitation, type ModelOption, type ResearchView, type Run, type RunKind, type RunStatus, type Source, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
+import { Tooltip } from '@/components/ui/tooltip'
+import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Limitation, type ModelOption, type ResearchView, type Run, type RunKind, type RunStatus, type Source, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
 import { accessParts, citedText, fetchReasonText, locatorText, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { EvidenceTab } from './EvidenceTable'
 import { MathText } from './MathText'
 import { Transcript } from './Transcript'
+import { PdfReadiness } from './PdfReadiness'
 import { ZoteroPanel } from './ZoteroPanel'
 import { useToast } from './Toast'
 import { ConnectionIcon } from './connectionIcons'
@@ -33,7 +35,8 @@ function TypewriterTitle({ text }: { text: string }) {
       return () => cancelAnimationFrame(frame)
     }
     const started = performance.now()
-    const duration = Math.min(900, Math.max(450, text.length * 12))
+    // Slow enough to read as typing: about 28 ms a character, within 0.6–2.6 s.
+    const duration = Math.min(2600, Math.max(600, text.length * 28))
     let frame = 0
     const write = (now: number) => {
       const count = Math.ceil(Math.min(1, (now - started) / duration) * text.length)
@@ -52,7 +55,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [view, setView] = useState<ResearchView | null>(null)
   const [error, setError] = useState('')
   const toast = useToast()
-  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'evidence' || initialTab === 'activity' ? initialTab : 'answer')
+  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'evidence' || initialTab === 'artifacts' || initialTab === 'activity' ? initialTab : 'answer')
   const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean } | null>(null)
   const [pdfTarget, setPdfTarget] = useState<{ assetId: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -63,8 +66,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [pdfFinding, setPdfFinding] = useState<string | null>(null)
   const [attachTarget, setAttachTarget] = useState<string | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ source: Source; assetId: string } | null>(null)
+  // Replacing a PDF: the file is chosen first, then the confirmation names what still cites the old file (D45).
+  const [replacePick, setReplacePick] = useState<{ source: Source; assetId: string } | null>(null)
+  const [replaceTarget, setReplaceTarget] = useState<{ source: Source; assetId: string; file: File; impact: AssetImpact } | null>(null)
+  const [openReportId, setOpenReportId] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const sourceFileInput = useRef<HTMLInputElement>(null)
+  const replaceFileInput = useRef<HTMLInputElement>(null)
   const firstEvent = useRef<number | null>(null)
   const tabsRef = useRef<HTMLDivElement>(null)
   const jumped = useRef(false)
@@ -172,6 +180,24 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     setRemoveTarget(null)
     void act(() => api.removeAsset(id, source.source_version_id, assetId), t('PDF removed from the source.'))
   }
+  const chooseReplacement = (source: Source, assetId: string) => { setReplacePick({ source, assetId }); replaceFileInput.current?.click() }
+  const reviewReplacement = async (list: FileList | null) => {
+    const file = list?.[0]
+    if (!file || !replacePick) return
+    try { setReplaceTarget({ ...replacePick, file, impact: await api.assetImpact(id, replacePick.source.source_version_id, replacePick.assetId) }) }
+    catch (e) { toast('error', errorText(e)) }
+  }
+  const confirmReplacement = () => {
+    if (!replaceTarget) return
+    const { source, assetId, file } = replaceTarget
+    setReplaceTarget(null)
+    void act(() => api.replaceAsset(id, source.source_version_id, assetId, file), t('PDF replaced. Its text was extracted page by page (no OCR); earlier evidence still opens the previous file.'))
+  }
+  const reextract = (source: Source, assetId: string) => act(async () => {
+    const { reextraction } = await api.reextractAsset(id, source.source_version_id, assetId)
+    if (reextraction.outcome === 'rejected') toast('warning', t('The new extraction was not used: {reason}. The earlier text stays in use.', { reason: reextraction.rejection_reason ?? '' }))
+    else toast('success', t(reextraction.outcome === 'unchanged' ? 'This text already comes from the current extractor.' : 'Text extracted again. Later answers and cells read the new text; earlier evidence still opens the text it cited.'))
+  })
   const importZotero = (source: ZoteroSource, key: string) => act(async () => {
     const { items, pdfs_added: pdfs, notes } = (await api.zoteroImport(id, source, key)).zotero_import
     setZoteroOpen(false)
@@ -192,6 +218,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // Each count is the way into the evidence it describes; the selection filter lives here so a count can set it.
   const showSources = (filter: StateFilter) => { setSourceFilter(filter); setTab('sources'); tabsRef.current?.scrollIntoView({ block: 'start' }) }
   const showAnswer = () => { setTab('answer'); requestAnimationFrame(() => document.getElementById('research-answer')?.scrollIntoView({ behavior: 'smooth', block: 'center' })) }
+  // Reports are the research's artifacts: every answer that passed validation, newest first, with the number and title saved with it.
+  const reports = view.answers.filter(a => a.status === 'structurally_valid').map(a => ({ answer: a, version: a.report_version ?? 0, title: a.report_title ?? heading }))
+  // The latest report's sheet lives in its card on the Answer tab; from any other tab, or for an older version, it opens here.
+  const olderReport = reports.find(r => r.answer.id === openReportId && (r.answer.id !== answer?.id || tab !== 'answer'))
+  const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
   return <section className="research-view legacy-research">
     <div className="section-label">{t('RESEARCH')} <span> {t('/ REVISION {n}', { n: view.research.current_scope_revision })}</span></div>
     <TypewriterTitle text={heading} />
@@ -207,7 +238,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
     <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => setTab(String(value))}>
       <div className="research-tabs-bar">
-        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger><TabsTrigger value="evidence">{t('Evidence')}</TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
+        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger><TabsTrigger value="evidence">{t('Evidence')}</TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
         {/* The live run carries its own quiet Pause; these controls ride with the tabs so pause, resume and cancel stay reachable from every tab. */}
         {run && (active || run.status === 'paused') && <div className="run-strip">
           <span className="run-strip-status">{active && <LoaderCircle size={13} className="chat-spin" aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
@@ -219,23 +250,25 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
       <TabsContent value="answer">
         {/* Table runs show in the run strip and Activity; the conversation tells search and answer runs. */}
-        <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'answer') }} modelText={modelText} busy={busy}
+        <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'pdf_collection' || r.kind === 'answer') }} modelText={modelText} busy={busy}
           onControl={(target, action) => act(() => api.controlRun(target.id, action))}
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
-          latestAnswer={answer ? <AnswerBlock researchId={id} title={heading} version={view.answers.length} answer={answer} sources={view.sources} busy={busy} dark={dark} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} /> : null} />
-        {/* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads. */}
+          latestAnswer={answer ? <AnswerBlock researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} /> : null} />
+        {/* Before the first answer, the next step is getting the included sources' PDFs (D49); the panel carries the answer button. */}
+        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic} act={act} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} /> :
+        /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads. */
         <div className="answer-actions">
           <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !included} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
           {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
           {hasAcademic && (view.search_runs.length
             ? <Button className="quiet-action" variant="ghost" disabled={busy || active} onClick={startDiscovery}>{t('Search again')}</Button>
             : <Button variant="outline" disabled={busy || active} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
-        </div>
+        </div>}
       </TabsContent>
 
       <TabsContent value="sources">
         <section className="sources-panel" aria-labelledby="sources-heading">
-        <div className="workspace-pane-head"><div><h2 id="sources-heading">{t('Sources and access')}</h2><p>{t('Your choice always overrides the model’s screening proposal. Access, retrieval and inspection are separate states.')}</p></div>
+        <div className="workspace-pane-head"><div><h2 id="sources-heading">{t('Sources and access')}</h2><p>{t('Only included sources are used when the answer is written. Undecided and excluded sources are left out.')}</p></div>
           <div className="section-actions">
             {included > 0 && <ExportLinks researchId={id} sources="included" />}
             {view.scope.source_scope !== 'academic' && <>
@@ -252,12 +285,18 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
           onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
           onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} onAttachCandidate={(source, candidateId) => { void attachPdfCandidate(source, candidateId) }} onOpenPdf={(_, assetId) => setPdfTarget({ assetId })}
-          onRemoveAsset={removeSourcePdf} pdfFinding={pdfFinding} />
+          onRemoveAsset={removeSourcePdf} onReplaceAsset={chooseReplacement} onReextract={(source, assetId) => { void reextract(source, assetId) }} pdfFinding={pdfFinding} />
         </section>
       </TabsContent>
 
       <TabsContent value="evidence">
         <EvidenceTab researchId={id} view={view} dark={dark} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
+      </TabsContent>
+
+      <TabsContent value="artifacts">
+        {reports.length ? <ul className="artifact-list">{reports.map(({ answer: a, version, title }) => <li key={a.id}><button type="button" onClick={() => setOpenReportId(a.id)}>
+          <FileText size={16} aria-hidden /><span><strong>{title}</strong><small>{t('Report')} · V{version}{a.applicability !== 'current' ? ` · ${t('earlier')}` : ''} · {new Date(a.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'medium' })}</small></span><ArrowUpRight size={15} aria-hidden />
+        </button></li>)}</ul> : <p className="empty-inline">{t('No reports yet. Generate a source-linked answer to create one.')}</p>}
       </TabsContent>
 
       <TabsContent value="activity">
@@ -267,6 +306,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {/* Outside the tabs: the answer's PDF suggestions attach through the same picker as the Sources tab. */}
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void upload(e.target.files); e.target.value = '' }} />
     <input ref={sourceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void uploadToSource(e.target.files); e.target.value = '' }} />
+    <input ref={replaceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void reviewReplacement(e.target.files); e.target.value = '' }} />
 
     <RevisionForm key={view.research.version} question={view.scope.question} disabled={busy || active}
       onSubmit={text => act(() => api.reviseScope(id, text, view.research.version), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />
@@ -274,7 +314,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}
       onConfirm={confirmRemoveSourcePdf} onOpenChange={open => { if (!open) setRemoveTarget(null) }} />
+    <ConfirmDialog open={Boolean(replaceTarget)} dark={dark} title={t('Replace PDF?')}
+      description={replaceTarget ? `${t('{file} will be read in later answers and cells instead of the current file. The current file is not deleted: evidence that cites it keeps opening it.', { file: replaceTarget.file.name })} ${t(replaceTarget.impact.researches.length === 1 ? 'The source is used in {n} research;' : 'The source is used in {n} researches;', { n: replaceTarget.impact.researches.length })} ${t('{cells} evidence table cells and {quotes} answer quotes cite the current file.', { cells: replaceTarget.impact.cells, quotes: replaceTarget.impact.quotes })}` : ''}
+      context={replaceTarget?.source.title} confirmLabel={t('Replace PDF')} cancelLabel={t('Cancel')} busy={busy}
+      onConfirm={confirmReplacement} onOpenChange={open => { if (!open) setReplaceTarget(null) }} />
     <PassageSheet researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : 'text'} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }} />
+    {olderReport && <AnswerBlock researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
+      reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf} />}
   </section>
 }
 
@@ -296,9 +342,8 @@ async function writeClipboard(text: string) {
   if (!copied) throw new Error('copy failed')
 }
 
-function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, onOpen, onAttachPdf }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void }) {
+function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void }) {
   const [style, setStyle] = useState<CitationStyle>(() => { try { const saved = localStorage.getItem('deixis-citation-style'); return saved && Object.keys(citationStyles).includes(saved) ? saved as CitationStyle : 'apa' } catch { return 'apa' } })
-  const [reportOpen, setReportOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const toast = useToast()
   const chooseStyle = (next: CitationStyle) => { setStyle(next); try { localStorage.setItem('deixis-citation-style', next) } catch { /* the choice still applies for this tab */ } }
@@ -365,6 +410,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
     <div className="section-label">{t('SOURCE-LINKED ANSWER')}{answer.applicability === 'stale_scope' ? ` ${t('· EARLIER QUESTION REVISION')}` : answer.applicability === 'stale_selection' ? ` ${t('· EARLIER SOURCE SELECTION')}` : ''}</div>
     {answer.applicability === 'stale_scope' && <div className="legacy-boundary">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</div>}
     {answer.applicability === 'stale_selection' && <div className="legacy-boundary">{t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}</div>}
+    {answer.source_text_changed && <div className="legacy-boundary">{t('A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.')}</div>}
     {answer.capability_notice && <div className="legacy-boundary">{answer.capability_notice}</div>}
     {sections.map(({ heading, claims }, index) => <section className="answer-section" key={index}>
       {heading && <h3>{heading}</h3>}
@@ -411,16 +457,15 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
   </div>
   return <>
     {/* The "Cited" count above the tabs scrolls here: the answer card is where the citations live. */}
-    <button type="button" id="research-answer" className="report-artifact" onClick={() => setReportOpen(true)} aria-label={t('Open report: {title}', { title })}>
+    {showCard && <button type="button" id="research-answer" className="report-artifact" onClick={() => onReportOpenChange(true)} aria-label={t('Open report: {title}', { title })}>
       <span className="report-artifact-preview" aria-hidden="true"><strong>{title}</strong><span>{preview}</span></span>
       <span className="report-artifact-copy">
-        <span className="report-artifact-kind" aria-hidden="true"><Sparkles size={16} strokeWidth={1.8} /></span>
+        <span className="report-artifact-meta"><Sparkles size={13} strokeWidth={1.8} aria-hidden />{t('Report')} · V{version}</span>
         <strong>{title}</strong>
-        <span className="report-artifact-meta">{t('Report')} · V{version}</span>
       </span>
-      <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={19} /></span>
-    </button>
-    <Sheet open={reportOpen} onOpenChange={open => { setReportOpen(open); if (!open) setCopied(false) }}>
+      <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
+    </button>}
+    <Sheet open={reportOpen} onOpenChange={open => { onReportOpenChange(open); if (!open) setCopied(false) }}>
       <SheetContent className={`detail-sheet report-sheet ${dark ? 'dark' : ''}`}>
         <SheetHeader className="report-toolbar">
           <div className="report-toolbar-title"><FileText size={17} aria-hidden /><SheetTitle>{title}</SheetTitle></div>
@@ -565,9 +610,9 @@ const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
   title: (a, b) => a.title.localeCompare(b.title),
 }
 
-type SourceActions = { onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; pdfFinding: string | null }
+type SourceActions = { onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; onReplaceAsset: (source: Source, assetId: string) => void; onReextract: (source: Source, assetId: string) => void; pdfFinding: string | null }
 
-function SourceList({ sources, busy, filter, onFilter, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, pdfFinding }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void } & SourceActions) {
+function SourceList({ sources, busy, filter, onFilter, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, pdfFinding }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void } & SourceActions) {
   const [pdfFilter, setPdfFilter] = useState<PdfFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SourceSort>('relevant')
@@ -607,59 +652,117 @@ function SourceList({ sources, busy, filter, onFilter, onSelect, onReason, onAbs
       </Select>
     </div>}
     <div className="source-list">{shown.flat().map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
+      duplicates={source.suspected_duplicates.map(d => ({ basis: d.basis, source: sources.find(s => s.source_version_id === d.source_version_id) }))}
+      readsVersion={sources.find(s => s.source_version_id === source.answer_reads_version_id)}
       onSelect={state => onSelect(source, state)} onReason={reason => onReason(source, reason)} onAbstract={() => onAbstract(source)}
       onDiscoverPdf={() => onDiscoverPdf(source)} onAttachPdf={() => onAttachPdf(source)} onAttachCandidate={candidateId => onAttachCandidate(source, candidateId)} onOpenPdf={assetId => onOpenPdf(source, assetId)}
-      onRemoveAsset={assetId => onRemoveAsset(source, assetId)} finding={pdfFinding === source.source_version_id} />)}</div>
+      onRemoveAsset={assetId => onRemoveAsset(source, assetId)} onReplaceAsset={assetId => onReplaceAsset(source, assetId)} onReextract={assetId => onReextract(source, assetId)} finding={pdfFinding === source.source_version_id} />)}</div>
     {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { onFilter('all'); setPdfFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
   </>
 }
 
-function SourceRow({ source, busy, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, finding }: { source: Source; busy: boolean; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onAttachCandidate: (candidateId: string) => void; onOpenPdf: (assetId: string) => void; onRemoveAsset: (assetId: string) => void; finding: boolean }) {
+// Types a status line out once, then leaves it in place; screen readers get the whole line at once.
+function TypedText({ text, className }: { text: string; className?: string }) {
+  const [shown, setShown] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? text.length : 0)
+  useEffect(() => {
+    if (shown >= text.length) return
+    const timer = window.setTimeout(() => setShown(n => n + 1), 22)
+    return () => window.clearTimeout(timer)
+  }, [shown, text])
+  return <span className={className}><span className="sr-only">{text}</span><span aria-hidden>{text.slice(0, shown)}</span></span>
+}
+
+function SourceRow({ source, busy, duplicates, readsVersion, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, finding }: { source: Source; busy: boolean; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onAttachCandidate: (candidateId: string) => void; onOpenPdf: (assetId: string) => void; onRemoveAsset: (assetId: string) => void; onReplaceAsset: (assetId: string) => void; onReextract: (assetId: string) => void; finding: boolean; duplicates: { basis: Source['suspected_duplicates'][number]['basis']; source?: Source }[]; readsVersion?: Source }) {
   const s = source.selection
   const other = source.version_role === 'other_version'
   const authors = source.authors.join(', ')
-  const citationDetails = [source.volume && t('vol. {value}', { value: source.volume }), source.issue && t('no. {value}', { value: source.issue }), source.pages && t('pp. {value}', { value: source.pages })].filter(Boolean).join(' · ')
-  const meta: [LucideIcon, string | number | null | false][] = [[Users, authors], [CalendarDays, source.year], [BookOpen, source.venue], [BookOpen, citationDetails], [Quote, citedText(source.cited_by_count)], [Search, source.provider_records.map(providerName).join(', ')]]
-  const shown = meta.filter(([, text]) => text)
+  const citationDetails = [source.volume && t('vol. {value}', { value: source.volume }), source.issue && t('no. {value}', { value: source.issue }), source.pages && t('pp. {value}', { value: source.pages })].filter(Boolean).join(', ')
+  // A citation-style byline: who and when, then where it appeared and how often OpenAlex counts it cited.
+  const byline = [authors, source.year].filter(Boolean).join(' · ')
+  const venueLine = [citationDetails, citedText(source.cited_by_count)].filter(Boolean)
+  const discoveries = source.access.pdf_discoveries
+  const candidates = source.access.pdf_candidates
+  const unusable = candidates.filter(c => c.access_status !== 'downloaded').length
+  const lookupSummary = [t('{p} services · {n} checks', { p: new Set(discoveries.map(d => d.provider)).size, n: discoveries.length }), unusable && t(unusable === 1 ? '{n} file not usable' : '{n} files not usable', { n: unusable })].filter(Boolean).join(' · ')
+  const primaryAction = source.access.assets.length ? 'pdf' : 'abstract'
   return <div className={`source-row is-${s.state}${other ? ' is-other-version' : ''}`}>
     <div className="source-main">
-      {other && <span className="version-note">{t('Another version of the record above: {version}. It is not screened separately; passages cited from it are labelled with this version.', { version: versionText(source.version_label) })}</span>}
-      <strong>{source.title}</strong>
-      <div className="source-meta">
-        {shown.length ? shown.map(([Icon, text], i) => <span key={i}><Icon size={13} aria-hidden />{text}</span>)
-          : <span>{t(source.origin === 'user_upload' ? 'Uploaded PDF' : 'No bibliographic details from the provider')}</span>}
+      {other && <span className="version-note">{t('Another version of the record above: {version}. It follows the record’s selection; passages cited from it are labelled with this version.', { version: versionText(source.version_label) })}</span>}
+      <strong className="source-title">{source.title}</strong>
+      {byline || source.venue || venueLine.length ? <div className="source-byline">
+        {byline && <span>{byline}</span>}
+        {(source.venue || venueLine.length > 0) && <span>{source.venue && <em>{source.venue}</em>}{source.venue && venueLine.length > 0 && ' · '}{venueLine.join(' · ')}</span>}
+      </div> : <div className="source-byline"><span>{t(source.origin === 'user_upload' ? 'Uploaded PDF' : 'No bibliographic details from the provider')}</span></div>}
+      <div className="source-pills source-status">
+        {source.version_label && <span className={`source-fact is-${versionTones[source.version_label] ?? 'unstated'}`}>{versionText(source.version_label)}</span>}
+        {accessParts(source).map(part => <span key={part.text} className={`source-fact is-${part.tone}`}>{part.text}</span>)}
+        {readsVersion && <Tooltip content={t('This record has no PDF text, so answers read the PDF of {version} below. Passages cited from it are labelled with that version; the two are not counted as separate sources.', { version: versionText(readsVersion.version_label) })}><span className="source-fact is-plain" tabIndex={0}>{t('answers read {version}', { version: versionText(readsVersion.version_label) })}</span></Tooltip>}
+        {source.cited_in_latest_answer && <span className="source-fact is-cited">{t('cited in the latest answer')}</span>}
+        {source.similarity !== null && <Tooltip content={t(source.access.abstract_passage_id ? 'Embedding similarity between the research question and this source’s title and stored abstract. Used for ordering only; it is not a relevance judgment.' : 'Embedding similarity between the research question and this source’s title. No abstract was available. Used for ordering only; it is not a relevance judgment.')}><span className="source-fact is-similarity" tabIndex={0}>{t('Similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</span></Tooltip>}
+        {source.provider_records.length > 0 && <span className="source-fact is-plain">{t('Found in {providers}', { providers: source.provider_records.map(providerName).join(', ') })}</span>}
+        {duplicates.length > 0 && <Tooltip content={<ul className="duplicate-tip">{duplicates.map((d, i) => <li key={i}>{d.source ? [versionText(d.source.version_label), d.source.provider_records.map(providerName).join(', ')].filter(Boolean).join(' · ') : t('a source not in this list')} — {t(d.basis === 'published_doi' ? 'a preprint that names the other record’s DOI' : 'same title')}</li>)}</ul>}><span className="source-fact is-plain is-duplicate" tabIndex={0}>{t(duplicates.length === 1 ? 'may duplicate {n} other source · not merged' : 'may duplicate {n} other sources · not merged', { n: duplicates.length })}</span></Tooltip>}
       </div>
-      <div className="ref-pills source-pills">
-        {source.version_label && <span className={`ref-pill is-${versionTones[source.version_label] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(source.version_label)}</span>}
-        {accessParts(source).map(part => <span key={part.text} className={`ref-pill is-${part.tone}`}>{part.tone === 'abstract' ? <BookOpenText size={12} aria-hidden /> : <FileText size={12} aria-hidden />}{part.text}</span>)}
-        {source.similarity !== null && <span className="ref-pill is-similarity" title={t(source.access.abstract_passage_id ? 'Embedding similarity between the research question and this source’s title and stored abstract. Used for ordering only; it is not a relevance judgment.' : 'Embedding similarity between the research question and this source’s title. No abstract was available. Used for ordering only; it is not a relevance judgment.')}><ScanSearch size={12} aria-hidden />{t('Similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</span>}
-        {source.suspected_duplicates.length > 0 && <span className="ref-pill is-unstated" title={source.suspected_duplicates.map(d => t(d.basis === 'published_doi' ? 'a preprint that names the other record’s DOI' : 'same title')).join('; ')}><FileText size={12} aria-hidden />{t(source.suspected_duplicates.length === 1 ? 'may duplicate {n} other source · not merged' : 'may duplicate {n} other sources · not merged', { n: source.suspected_duplicates.length })}</span>}
-        {source.cited_in_latest_answer && <span className="ref-pill is-cited"><MessageSquareQuote size={12} aria-hidden />{t('cited in the latest answer')}</span>}
-      </div>
-      {finding && <p className="pdf-search-status" role="status"><Search size={13} aria-hidden /><span className="shimmer-text">{t('Checking Unpaywall, OpenAlex and Crossref; Web Search will run if no verified PDF is retrieved…')}</span></p>}
-      {!finding && source.access.pdf_discoveries.length > 0 && <details className="source-provenance"><summary><Search size={13} aria-hidden />{t('PDF lookup details')}<span>{t('{n} checks', { n: source.access.pdf_discoveries.length })}</span></summary><div className="pdf-candidate-list">
-        {source.access.pdf_discoveries.map((search, i) => <span key={`${search.provider}-${search.created_at}-${i}`}><ConnectionIcon id={search.provider} />{providerName(search.provider)} · {t(search.status.replace('_', ' '))} · {search.result_count}{search.http_status ? ` · HTTP ${search.http_status}` : ''}</span>)}
-        {source.access.pdf_candidates.map(candidate => <span key={candidate.id}><ConnectionIcon id={candidate.provider} />{providerName(candidate.provider)} · {t(candidate.version_status === 'match' ? 'version verified' : candidate.version_status === 'different' ? 'different version' : 'version uncertain')} · {candidate.access_status === 'http_error' ? `HTTP ${candidate.http_status ?? '?'}` : t(candidate.access_status.replace('_', ' '))}{candidate.identity_status === 'unverified' && ` · ${t('title does not match')}`}{' · '}<a href={candidate.candidate_url} target="_blank" rel="noreferrer">{t('Open file')}</a>{candidate.version_status === 'uncertain' && (candidate.identity_status === 'doi_verified' || candidate.identity_status === 'title_verified') && !source.access.assets.length && <>{' · '}<button disabled={busy} onClick={() => onAttachCandidate(candidate.id)} title={t('Open the file first and check that it is this version of the work, not a preprint or another edition. An attached file’s pages can be cited in answers.')}>{t('Same version, attach')}</button></>}</span>)}
-      </div></details>}
       {source.applicability === 'stale_scope' && <p className="proposal is-stale">{t(s.proposal ? 'Found for question revision {n}; the proposal below was made for that question. Search again to screen it for the current question.' : 'Found for question revision {n}. Search again to screen it for the current question.', { n: source.found_in_revision ?? '?' })}</p>}
-      {s.proposal && <p className="proposal"><Sparkles size={13} aria-hidden />{t('Model proposal:')} <em className={`verdict is-${s.proposal}`}>{t(s.proposal)}</em> — {s.proposal_reason} <span>({t(s.proposal_basis?.replaceAll('_', ' ') ?? '')})</span>{s.origin === 'user' ? ` ${t('· overridden by you')}` : ''}</p>}
+      {s.proposal && !other && <p className="proposal is-model"><span className="proposal-tag">{t('Model proposal:')}</span> <span><em className={`verdict is-${s.proposal}`}>{t(s.proposal)}</em> — {s.proposal_reason} <span>({t(s.proposal_basis?.replaceAll('_', ' ') ?? '')})</span>{s.origin === 'user' ? ` ${t('· overridden by you')}` : ''}</span></p>}
       {s.origin === 'user' && s.user_reason && <p className="proposal"><UserPen size={13} aria-hidden />{t('Your reason: {reason}', { reason: s.user_reason })}</p>}
       {s.origin === 'user' && s.state === 'excluded' && !s.user_reason && <ReasonForm busy={busy} onSave={onReason} />}
-      <div className="source-links">
-        {source.access.abstract_passage_id && <button onClick={onAbstract}><BookOpenText size={14} aria-hidden />{t('Read abstract')}</button>}
-        {source.doi && <a href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" />DOI</a>}
-        {source.access.assets.map(asset => <span className="source-asset-actions" key={asset.id}>
-          <button type="button" onClick={() => onOpenPdf(asset.id)} title={asset.original_filename ?? undefined}><FileText size={14} aria-hidden />{t('Open PDF')}</button>
-          <button className="is-destructive" disabled={busy} onClick={() => onRemoveAsset(asset.id)} title={asset.original_filename ?? undefined}><Trash2 size={14} aria-hidden />{t('Remove PDF')}</button>
-        </span>)}
-        {source.doi && <button disabled={busy || finding} onClick={onDiscoverPdf}><Search size={14} aria-hidden />{finding ? <span className="shimmer-text">{t('Web Search is running…')}</span> : t(source.access.assets.length ? 'Refresh metadata' : 'Find PDF')}</button>}
-        {!source.access.assets.length && <button disabled={busy || finding} onClick={onAttachPdf}><FileUp size={14} aria-hidden />{t('Attach PDF')}</button>}
+      {finding && <p className="pdf-search-status" role="status"><Search size={13} aria-hidden /><TypedText className="shimmer-text" text={t('Checking Unpaywall, OpenAlex and Crossref; Web Search will run if no verified PDF is retrieved…')} /></p>}
+      {source.access.assets.map(asset => asset.rejected_extraction && <p key={asset.id} className="proposal"><ScanText size={13} aria-hidden />{t('A later text extraction ({version}) was not used: {reason}. The earlier text stays in use.', { version: asset.rejected_extraction.extraction_version, reason: asset.rejected_extraction.rejection_reason })}</p>)}
+      {source.access.replaced_assets.length > 0 && <p className="proposal"><Replace size={13} aria-hidden />{t(source.access.replaced_assets[0].original_filename ? 'Previous file {file} replaced on {date}. Evidence that cites it still opens it.' : 'Previous PDF replaced on {date}. Evidence that cites it still opens it.', { file: source.access.replaced_assets[0].original_filename ?? '', date: new Date(source.access.replaced_assets[0].removed_at).toLocaleDateString(uiLocale(), { dateStyle: 'medium' }) })}</p>}
+      <div className="source-foot">
+        {!finding && discoveries.length > 0 && <details className="source-provenance">
+          <summary><ChevronRight size={14} className="source-provenance-chev" aria-hidden /><strong>{t(source.access.assets.length ? 'PDF attached' : 'No usable PDF found')}</strong><span>{lookupSummary}</span></summary>
+          <PdfLookupTable source={source} busy={busy} onAttachCandidate={onAttachCandidate} />
+        </details>}
+        <div className="source-links">
+          {source.access.assets.map(asset => <span className="source-asset-actions" key={asset.id}>
+            <button type="button" className="is-primary" onClick={() => onOpenPdf(asset.id)} title={asset.original_filename ?? undefined}><FileText size={14} aria-hidden />{t('Open PDF')}</button>
+            <button disabled={busy} onClick={() => onReplaceAsset(asset.id)} title={t('Use another file for this source version; evidence that cites the current file keeps it')}><Replace size={14} aria-hidden />{t('Replace PDF')}</button>
+            {asset.current_extraction === false && <button disabled={busy} onClick={() => onReextract(asset.id)} title={t('Text extracted as {version}. Extract it again with the current extractor.', { version: asset.extraction_version ?? '?' })}><ScanText size={14} aria-hidden />{t('Extract text again')}</button>}
+            <button className="is-destructive" disabled={busy} onClick={() => onRemoveAsset(asset.id)} title={asset.original_filename ?? undefined}><Trash2 size={14} aria-hidden />{t('Remove PDF')}</button>
+          </span>)}
+          {source.access.abstract_passage_id && <button className={primaryAction === 'abstract' ? 'is-primary' : undefined} onClick={onAbstract}><BookOpenText size={14} aria-hidden />{t('Read abstract')}</button>}
+          {source.doi && <a href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" />DOI</a>}
+          {source.doi && <button disabled={busy || finding} onClick={onDiscoverPdf}><Search size={14} aria-hidden />{finding ? <span className="shimmer-text">{t('Web Search is running…')}</span> : t(source.access.assets.length ? 'Refresh metadata' : 'Find PDF')}</button>}
+          {!source.access.assets.length && <button disabled={busy || finding} onClick={onAttachPdf}><FileUp size={14} aria-hidden />{t('Attach PDF')}</button>}
+        </div>
       </div>
     </div>
-    <div className="selection-toggle" role="group" aria-label={t('Selection for {title}', { title: source.title })}>
+    {!other && <div className="selection-toggle" role="group" aria-label={t('Selection for {title}', { title: source.title })}>
       {(['included', 'pending', 'excluded'] as const).map(state => <button key={state} className={`is-${state}`} aria-pressed={s.state === state} disabled={busy || s.state === state} onClick={() => onSelect(state)}>{t(state === 'included' ? 'Include' : state === 'excluded' ? 'Exclude' : 'Undecided')}</button>)}
-    </div>
+    </div>}
   </div>
+}
+
+// One row per lookup service: its checks collapse into a try count, and the files it offered sit in its row.
+function PdfLookupTable({ source, busy, onAttachCandidate }: { source: Source; busy: boolean; onAttachCandidate: (candidateId: string) => void }) {
+  const discoveries = source.access.pdf_discoveries
+  const candidates = source.access.pdf_candidates
+  const providers = [...new Set([...discoveries.map(d => d.provider), ...candidates.map(c => c.provider)])]
+  return <div className="pdf-lookup-wrap"><table className="pdf-lookup">
+    <thead><tr><th scope="col">{t('Service')}</th><th scope="col">{t('Result')}</th><th scope="col">{t('Checks')}</th><th scope="col">{t('Detail')}</th></tr></thead>
+    <tbody>{providers.map(provider => {
+      const checks = discoveries.filter(d => d.provider === provider)
+      const files = candidates.filter(c => c.provider === provider)
+      const last = checks[checks.length - 1]
+      const result = files.some(c => c.access_status === 'downloaded') ? { tone: 'ok', text: t('PDF retrieved') }
+        : files.length ? { tone: 'warn', text: t(files.length === 1 ? '{n} file not usable' : '{n} files not usable', { n: files.length }) }
+        : last?.status === 'zero_results' ? { tone: '', text: t('No match') }
+        : last?.status === 'completed' ? { tone: '', text: t('completed') }
+        : { tone: 'bad', text: t((last?.status ?? 'failed').replaceAll('_', ' ')) }
+      const otherTitles = Math.max(0, ...checks.map(d => d.other_title_count ?? 0))
+      const notes = [...new Set(checks.map(d => [d.error_code?.replaceAll('_', ' '), d.http_status && `HTTP ${d.http_status}`].filter(Boolean).join(' · ')).filter(Boolean))]
+      if (otherTitles) notes.unshift(t(otherTitles === 1 ? '{n} result under another title, not kept' : '{n} results under other titles, not kept', { n: otherTitles }))
+      return <tr key={provider}>
+        <td className="pdf-lookup-service"><ConnectionIcon id={provider} />{providerName(provider)}</td>
+        <td className={result.tone && `is-${result.tone}`}>{result.text}</td>
+        <td className="pdf-lookup-count">{checks.length}</td>
+        <td>{files.length ? files.map(candidate => <span className="pdf-lookup-file" key={candidate.id}>
+          {t(candidate.version_status === 'match' ? 'version verified' : candidate.version_status === 'different' ? 'different version' : 'version uncertain')} · {candidate.access_status === 'http_error' ? `HTTP ${candidate.http_status ?? '?'}` : t(candidate.access_status.replace('_', ' '))}{candidate.identity_status === 'unverified' && ` · ${t('title does not match')}`}{' · '}<a href={candidate.candidate_url} target="_blank" rel="noreferrer">{t('Open file')}</a>{candidate.version_status === 'uncertain' && (candidate.identity_status === 'doi_verified' || candidate.identity_status === 'title_verified') && !source.access.assets.length && <>{' · '}<button disabled={busy} onClick={() => onAttachCandidate(candidate.id)} title={t('Open the file first and check that it is this version of the work, not a preprint or another edition. An attached file’s pages can be cited in answers.')}>{t('Same version, attach')}</button></>}
+        </span>) : notes.join('; ')}</td>
+      </tr>
+    })}</tbody>
+  </table></div>
 }
 
 function RevisionForm({ question, disabled, onSubmit }: { question: string; disabled: boolean; onSubmit: (text: string) => void }) {
@@ -739,6 +842,8 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'search_recorded': return brand(String(p.provider), t('{provider} search', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} records', { count: String(p.result_count) }), tone: 'neutral' }])
     case 'pdf_discovery_recorded': return brand(String(p.provider), t('{provider} PDF lookup', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} candidates', { count: String(p.result_count) }), tone: 'neutral' }, ...errorChip])
     case 'asset_removed': return lucide(Trash2, t('PDF removed from a source'))
+    case 'asset_replaced': return lucide(Replace, t('PDF replaced on a source'))
+    case 'asset_reextracted': return lucide(ScanText, t('PDF text extracted again'), [p.outcome === 'current' ? { label: t('in use'), tone: 'ok' } : { label: t('not used'), tone: 'warn' }, { label: String(p.extraction_version), tone: 'neutral' }])
     case 'selection_changed': return lucide(UserPen, t('You marked a source'), [{ label: t(selectionStates[String(p.state)] ?? String(p.state)), tone: selectionTones[String(p.state)] ?? 'neutral' }])
     case 'answer_saved': return lucide(MessageSquareQuote, t('Answer saved'), [statusChip(p.status)])
     case 'table_changed': return lucide(Table2, t('Evidence table changed'))

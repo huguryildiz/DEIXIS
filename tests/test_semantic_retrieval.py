@@ -190,6 +190,8 @@ def test_screened_sources_are_scored_once_and_shown_only_while_semantic_search_i
     score_sources(store, rid, run, handler)
     assert "SYNTHETIC bakery\n\nSYNTHETIC bread every morning." in sent  # title and abstract are embedded together
     assert {s["title"]: s["similarity"] for s in research_view(store, rid)["sources"]} == {"SYNTHETIC bakery": 0.0, "SYNTHETIC routing energy": 1.0}
+    (step,) = [s for s in store.run_steps(run["id"]) if s["operation_key"] == "source_similarity"]
+    assert step["output"]["sources"] == 2  # the transcript reads this count
     sent.clear()
     score_sources(store, rid, run, handler)
     assert sent == []  # a score is kept per source, question revision and model

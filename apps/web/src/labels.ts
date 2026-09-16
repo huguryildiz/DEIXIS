@@ -21,7 +21,7 @@ export const runStatusLabels: Record<RunStatus, string> = {
 }
 
 export const runKindLabels: Record<RunKind, string> = {
-  discovery: 'Search & screening', answer: 'Answer', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
+  discovery: 'Search & screening', answer: 'Answer', pdf_collection: 'PDF collection', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
 }
 
 const pauseReasons: Record<string, string> = {
@@ -66,7 +66,7 @@ export const connectionNames: Record<string, string> = { codex: 'Codex', claude:
 export const connectionName = (id: string) => connectionNames[id] ?? id
 export const isPlannedModel = (reason?: string | null) => reason === 'Adapter not implemented in this version'
 
-export const localToolNames: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex CLI', gemini_cli: 'Gemini CLI', ollama: 'Ollama', lm_studio: 'LM Studio' }
+export const localToolNames: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex CLI', gemini_cli: 'Gemini CLI', ollama: 'Ollama', lm_studio: 'LM Studio', zotero: 'Zotero' }
 export const localToolIcon = (id: string) => (id === 'gemini_cli' ? 'gemini' : id)
 
 export const stepLabel = (kind: string, key: string) => {

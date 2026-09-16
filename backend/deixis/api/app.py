@@ -39,7 +39,8 @@ from deixis.providers.registry import CONNECTORS, available_providers
 from deixis.storage import db
 from deixis.workflow import bibliography
 from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.store import NotFound, Store
+from deixis.providers.common import normalize_doi
+from deixis.workflow.store import NotFound, PdfInUse, RunInProgress, SameFile, Store, title_key
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, research_view
 from deixis.workflow.worker import Worker
@@ -108,7 +109,7 @@ class SemanticChoice(BaseModel):
 
 
 class StartRun(BaseModel):
-    kind: Literal["discovery", "answer", "research_title"]
+    kind: Literal["discovery", "answer", "pdf_collection", "research_title"]
 
 
 class SelectionChange(BaseModel):
@@ -125,6 +126,10 @@ class ScopeRevision(BaseModel):
 
 class LibraryAddition(BaseModel):
     work_id: str = Field(min_length=1, max_length=200)
+
+
+class ZoteroSourceChoice(BaseModel):
+    source: Literal["local", "web"]
 
 
 class ZoteroImport(BaseModel):
@@ -203,6 +208,30 @@ class TemplateCreate(BaseModel):
     table_id: str = Field(max_length=40)
 
 
+DOI_IN_TEXT = re.compile(r"\b10\.\d+/[^\s\"<>]+")
+ARXIV_IN_TEXT = re.compile(r"arXiv:\s*(\d{4}\.\d{4,5})", re.IGNORECASE)
+MATCH_TEXT_CHARS = 6000
+
+
+def match_pdf_to_source(text: str, sources: list[dict[str, Any]]) -> tuple[str | None, str | None]:
+    """The source a dropped PDF belongs to, from a DOI or arXiv identifier in its first pages, else its title (D49).
+
+    Returns (source_version_id, basis). The user confirms every match before the file is attached.
+    """
+    head = text[:MATCH_TEXT_CHARS]
+    dois = {normalize_doi(d.rstrip(".,;:)]}")) for d in DOI_IN_TEXT.findall(head)}
+    dois |= {f"10.48550/arxiv.{a}" for a in ARXIV_IN_TEXT.findall(head)}
+    for source in sources:
+        if normalize_doi(source["doi"]) in dois:
+            return source["id"], "doi"
+    body = f" {title_key(head)} "
+    titled = [s for s in sources if len(title_key(s["title"]).split()) >= 4 and f" {title_key(s['title'])} " in body]
+    # One work only; its versions share a title, so the first listed (the included record) is proposed for the user to check.
+    if len({s["work_id"] for s in titled}) == 1:
+        return titled[0]["id"], "title"
+    return None, None
+
+
 async def store_upload(file: UploadFile, papers_dir: Path) -> tuple[str, int, Path]:
     """Copy an upload into the papers folder in chunks while hashing, without holding the whole file in memory."""
     digest, size, head = hashlib.sha256(), 0, b""
@@ -251,6 +280,7 @@ def create_app(
         conn = db.connect(settings.db_path)
         db.migrate(conn)
         store = Store(conn)
+        store.link_published_versions()  # preprints flagged beside their published record before D48
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.USER_AGENT})
         adapter_map = adapters if adapters is not None else {
             "codex": CodexAdapter(codex_home=settings.codex_home, workspace=settings.data_dir / "codex-workspace"),
@@ -330,6 +360,18 @@ def create_app(
     @app.exception_handler(NotFound)
     async def not_found(_: Request, exc: NotFound):
         return JSONResponse({"detail": f"Not found: {exc}"}, status_code=404)
+
+    @app.exception_handler(PdfInUse)
+    async def pdf_in_use(_: Request, exc: PdfInUse):
+        return JSONResponse({"detail": "This source already has a PDF in use; replace it instead"}, status_code=409)
+
+    @app.exception_handler(RunInProgress)
+    async def source_run_in_progress(_: Request, exc: RunInProgress):
+        return JSONResponse({"detail": "A research using this source has a run in progress; try again when it has stopped"}, status_code=409)
+
+    @app.exception_handler(SameFile)
+    async def same_file(_: Request, exc: SameFile):
+        return JSONResponse({"detail": "This file is already the PDF in use"}, status_code=422)
 
     @app.exception_handler(RevisionConflict)
     async def conflict(_: Request, exc: RevisionConflict):
@@ -631,12 +673,15 @@ def create_app(
         scope = store.scope(research_id)
         if body.kind == "discovery" and scope["source_scope"] == "attached":
             raise HTTPException(422, "Academic search is not part of this research's source scope")
-        if body.kind == "answer" and not store.included_sources(research_id):
+        if body.kind in ("answer", "pdf_collection") and not store.included_works(research_id):
             raise HTTPException(422, "Include at least one source before generating an answer")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
             budget = {"max_model_calls": 2, "max_provider_requests": 0}
+        elif body.kind == "pdf_collection":
+            # Downloads and open-copy lookups only; no model is called and no search is run.
+            budget = {"max_model_calls": 0, "max_provider_requests": 0}
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
         run = store.create_run(research_id, body.kind, budget, key)
         request.app.state.worker.wake()
@@ -708,11 +753,29 @@ def create_app(
             "SELECT 1 FROM source_assets WHERE source_version_id = ? AND sha256 = ? AND removed_at IS NULL",
             (source_version_id, sha)
         ).fetchone():
+            if store.has_asset(source_version_id):
+                raise PdfInUse(source_version_id)
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             filename = Path(file.filename or "document.pdf").name
             store.add_asset_with_pages(source_version_id, sha, size, path.name, "user_upload", None, filename,
                                        extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
         return research_view(store, research_id)
+
+    @app.post("/api/researches/{research_id}/uploads/match")
+    async def match_uploads(research_id: str, request: Request, files: list[UploadFile] = File(...)) -> dict[str, Any]:
+        """Propose which included source each dropped PDF belongs to; nothing is attached until the user confirms (D49)."""
+        store = store_of(request)
+        store.research(research_id)
+        candidates = [store.source(svid) for head in store.included_works(research_id)
+                      for svid in [head, *store.work_versions(research_id, head)]]
+        settings.papers_dir.mkdir(parents=True, exist_ok=True)
+        matches = []
+        for file in files[:50]:
+            _, _, path = await store_upload(file, settings.papers_dir)
+            extraction = await asyncio.to_thread(pdf.extract_pdf, path, MATCH_TEXT_CHARS)
+            svid, basis = match_pdf_to_source("\n".join(page.text for page in extraction.pages), candidates)
+            matches.append({"filename": Path(file.filename or "document.pdf").name, "source_version_id": svid, "basis": basis})
+        return {"matches": matches}
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/pdf-discovery")
     async def discover_source_pdf(research_id: str, source_version_id: str, request: Request) -> dict[str, Any]:
@@ -796,6 +859,42 @@ def create_app(
             pdfs_added += 1
         return {**research_view(store, research_id), "zotero_import": {"items": len(items), "pdfs_added": pdfs_added, "notes": notes}}
 
+    @app.post("/api/researches/{research_id}/zotero-pdfs")
+    async def zotero_pdfs(research_id: str, body: ZoteroSourceChoice, request: Request) -> dict[str, Any]:
+        """Attach PDFs from the user's Zotero library to included works that have no PDF text yet (D49).
+
+        An item matches by DOI or by title. The file is the user's own copy, attached like an upload to the work's record.
+        """
+        store = store_of(request)
+        store.research(research_id)
+        library, http = zotero.library(body.source), request.app.state.http
+        missing = [head for head in store.included_works(research_id)
+                   if not store.has_pdf_text(store.answer_version(research_id, head)) and not store.has_asset(head)]
+        added, notes = 0, []
+        for svid in missing:
+            source = store.source(svid)
+            item = await zotero.find_pdf(http, library, source["doi"], source["title"])
+            if item is None:
+                continue
+            if item.pdf_key is None:
+                notes.append({"title": source["title"], "note": item.pdf_problem})
+                continue
+            try:
+                data = await zotero.pdf_bytes(http, library, item.pdf_key, request.app.state.fetch_pdf)
+            except zotero.ZoteroError as exc:
+                notes.append({"title": source["title"], "note": f"PDF not added: {exc}"})
+                continue
+            sha = hashlib.sha256(data).hexdigest()
+            settings.papers_dir.mkdir(parents=True, exist_ok=True)
+            path = settings.papers_dir / f"{sha}.pdf"
+            if not path.exists():
+                path.write_bytes(data)
+            extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+            store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
+                                       item.pdf_filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+            added += 1
+        return {**research_view(store, research_id), "zotero_pdfs": {"checked": len(missing), "added": added, "notes": notes}}
+
     @app.get("/api/researches/{research_id}/bibliography")
     async def export_bibliography(research_id: str, request: Request,
                                   fmt: Literal["bibtex", "ris"] = Query("bibtex", alias="format"),
@@ -823,7 +922,10 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         asset = store.asset(asset_id)
-        if asset["removed_at"] is not None or not store.is_member(research_id, asset["source_version_id"]):
+        # A replaced file still opens, read-only in the viewer, where this research's evidence cites it (D45).
+        withdrawn = asset["removed_at"] is not None and not (
+            asset["removal_reason"] == "replaced" and store.research_cites_asset(research_id, asset_id))
+        if withdrawn or not store.is_member(research_id, asset["source_version_id"]):
             raise HTTPException(404, "Asset is not part of this research")
         root = settings.papers_dir.resolve()
         path = (root / asset["storage_path"]).resolve()
@@ -859,6 +961,52 @@ def create_app(
             raise HTTPException(404, "Asset is not attached to this source")
         store.remove_asset(research_id, source_version_id, asset_id)
         return research_view(store, research_id)
+
+    def asset_in_use(store: Store, research_id: str, source_version_id: str, asset_id: str) -> dict[str, Any]:
+        store.research(research_id)
+        if not store.is_member(research_id, source_version_id):
+            raise HTTPException(404, "Source is not part of this research")
+        asset = store.asset(asset_id)
+        if asset["source_version_id"] != source_version_id or asset["removed_at"] is not None:
+            raise HTTPException(404, "Asset is not the PDF in use for this source")
+        return asset
+
+    @app.get("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/impact")
+    async def asset_impact(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+        """What a replacement would leave pointing at the old file, across every research using the source."""
+        store = store_of(request)
+        asset_in_use(store, research_id, source_version_id, asset_id)
+        return store.asset_impact(asset_id)
+
+    @app.put("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}")
+    async def replace_asset(research_id: str, source_version_id: str, asset_id: str, request: Request,
+                            file: UploadFile = File(...)) -> dict[str, Any]:
+        """Replace the PDF in use with another file; evidence citing the old file keeps its passages (D45)."""
+        store = store_of(request)
+        asset_in_use(store, research_id, source_version_id, asset_id)
+        settings.papers_dir.mkdir(parents=True, exist_ok=True)
+        sha, size, path = await store_upload(file, settings.papers_dir)
+        if sha == store.asset(asset_id)["sha256"]:
+            raise SameFile(asset_id)
+        extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+        store.replace_asset(asset_id, sha, size, path.name, "user_upload", None, Path(file.filename or "document.pdf").name,
+                            extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+        return research_view(store, research_id)
+
+    @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/extractions")
+    async def reextract_asset(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+        """Extract the PDF in use again with the current extractor; it becomes current only if it loses no visible text (D45)."""
+        store = store_of(request)
+        asset = asset_in_use(store, research_id, source_version_id, asset_id)
+        if asset["extraction_version"] == pdf.EXTRACTION_VERSION:
+            return {**research_view(store, research_id), "reextraction": {"asset_id": asset_id, "outcome": "unchanged"}}
+        root = settings.papers_dir.resolve()
+        path = (root / asset["storage_path"]).resolve()
+        if not path.is_relative_to(root) or not path.exists():
+            raise HTTPException(404, "File missing")
+        extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+        report = store.reextract_asset(asset_id, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+        return {**research_view(store, research_id), "reextraction": report}
 
     # ---- evidence tables (P5, D37) -------------------------------------------------------------
     def tables_of(request: Request) -> TableStore:

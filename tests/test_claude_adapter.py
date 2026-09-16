@@ -1,7 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 
-from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 
 from deixis.models import claude
 
@@ -85,3 +85,37 @@ def test_run_step_uses_requested_selector_effort_and_structured_output(monkeypat
     assert (options.model, options.effort, options.fallback_model, options.max_turns) == ("opus", "max", None, 1)
     assert options.output_format == {"type": "json_schema", "schema": {"type": "object"}}
     assert options.system_prompt == "BASE\n\nDEVELOPER"
+
+
+def test_structured_output_block_is_not_reported_as_external_tool_use(monkeypatch, tmp_path):
+    prepare(monkeypatch)
+
+    class StructuredClient(FakeClient):
+        async def receive_response(self):
+            yield AssistantMessage([ToolUseBlock("internal-1", "StructuredOutput", {"claims": []})], "claude-opus-5")
+            yield ResultMessage("success", 1, 1, False, 1, "session-1", structured_output={"claims": []})
+
+    monkeypatch.setattr(claude, "ClaudeSDKClient", StructuredClient)
+    result = asyncio.run(claude.ClaudeCodeAdapter(tmp_path).run_step(
+        "BASE", "DEVELOPER", "MESSAGE", {"type": "object"}, "opus", "max",
+    ))
+    assert result.status == "completed" and result.raw_text == '{"claims": []}'
+    assert result.tool_item_types == []
+
+
+def test_other_tool_use_is_still_reported_with_structured_output(monkeypatch, tmp_path):
+    prepare(monkeypatch)
+
+    class ToolClient(FakeClient):
+        async def receive_response(self):
+            yield AssistantMessage([
+                ToolUseBlock("internal-1", "StructuredOutput", {"claims": []}),
+                ToolUseBlock("external-1", "Read", {"file_path": "/tmp/example"}),
+            ], "claude-opus-5")
+            yield ResultMessage("success", 1, 1, False, 1, "session-1", structured_output={"claims": []})
+
+    monkeypatch.setattr(claude, "ClaudeSDKClient", ToolClient)
+    result = asyncio.run(claude.ClaudeCodeAdapter(tmp_path).run_step(
+        "BASE", "DEVELOPER", "MESSAGE", {"type": "object"}, "opus", "max",
+    ))
+    assert result.tool_item_types == ["Read"]

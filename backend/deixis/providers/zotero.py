@@ -125,6 +125,39 @@ async def collection_items(client: httpx.AsyncClient, lib: Library, collection_k
     return items, rows
 
 
+def _title_key(title: str | None) -> str:
+    return re.sub(r"\W+", " ", (title or "").casefold()).strip()
+
+
+async def find_pdf(client: httpx.AsyncClient, lib: Library, doi: str | None, title: str) -> ZoteroItem | None:
+    """The library's item for a source, by the same DOI or the same title, with its first readable PDF (D49).
+
+    Searched by title first, then by DOI across all fields; an item found but without a readable PDF is returned with
+    `pdf_problem` set, and None means the library has no such item.
+    """
+    wanted_doi, wanted_title = normalize_doi(doi), _title_key(title)
+    searches = [{"q": title[:200], "qmode": "titleCreatorYear"}] + ([{"q": wanted_doi, "qmode": "everything"}] if wanted_doi else [])
+    for query in searches:
+        for row in await _get_all(client, lib, "/items/top", query):
+            data = row["data"]
+            if data.get("itemType") in ("note", "annotation", "attachment"):
+                continue
+            record = _record(row, lib.source, False)
+            if not ((wanted_doi and record.doi == wanted_doi) or (wanted_title and _title_key(record.title) == wanted_title)):
+                continue
+            item = ZoteroItem(record)
+            pdfs = [c["data"] for c in await _get_all(client, lib, f"/items/{data['key']}/children")
+                    if c["data"].get("contentType") == "application/pdf"]
+            readable = sorted((a for a in pdfs if a.get("linkMode") in lib.file_link_modes), key=lambda a: a.get("dateAdded", ""))
+            if readable:
+                item.pdf_key, item.pdf_filename = readable[0]["key"], readable[0].get("filename")
+            else:
+                item.pdf_problem = ("its PDF is a linked file, which zotero.org does not store" if pdfs and lib.source == "web"
+                                    else "its PDF attachment has no file" if pdfs else "the item has no PDF")
+            return item
+    return None
+
+
 async def pdf_bytes(client: httpx.AsyncClient, lib: Library, attachment_key: str,
                     fetch_pdf: Callable[[str], Awaitable[FetchResult]]) -> bytes:
     """The attachment's PDF. The zotero.org storage URL is fetched without the API key."""
@@ -203,10 +236,10 @@ def _error(lib: Library, outcome: SearchOutcome) -> ZoteroError:
     return ZoteroError(f"The Zotero request failed ({outcome.http_status or outcome.error or outcome.status}).")
 
 
-async def _get_all(client: httpx.AsyncClient, lib: Library, path: str) -> list[dict[str, Any]]:
+async def _get_all(client: httpx.AsyncClient, lib: Library, path: str, query: dict[str, str] | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     while True:
-        params = {"limit": WEB_PAGE_SIZE, "start": len(rows)} if lib.source == "web" else {}
+        params = (query or {}) | ({"limit": WEB_PAGE_SIZE, "start": len(rows)} if lib.source == "web" else {})
         response, outcome = await send(client, lib.base + path, params, lib.headers, f"GET Zotero {lib.source} {path}",
                                        lib.access_mode, secrets=(lib.secret,))
         if response is None:

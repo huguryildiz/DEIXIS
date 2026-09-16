@@ -46,6 +46,8 @@ class Lookup:
     http_status: int | None = None
     error_code: str | None = None
     record: ProviderRecord | None = None
+    # Web search only: results whose title is not this work's title. They are counted, not kept as candidates.
+    other_title_count: int = 0
 
 
 def _version_status(candidate: str | None, source: str | None) -> str:
@@ -231,13 +233,15 @@ async def web_lookup(client: httpx.AsyncClient, doi: str, title: str, api_key: s
         if payload.get("error") and not payload.get("organic_results"):
             return Lookup("failed", [], 200, str(payload["error"])[:200])
         expected = _title_key(title)
-        candidates = []
+        candidates, other_titles = [], 0
         for result in payload.get("organic_results") or []:
-            actual = _title_key(result.get("title"))
-            identity = "title_verified" if actual == expected else "unverified"
+            # Scholar also returns related papers for a quoted title; a PDF of another paper is not a copy of this one.
+            if _title_key(result.get("title")) != expected:
+                other_titles += 1
+                continue
             for url in _web_pdf_links(result):
-                candidates.append(Candidate("web_search", url, result.get("link"), None, None, identity, "uncertain"))
-        return Lookup("completed" if candidates else "zero_results", _unique(candidates), 200)
+                candidates.append(Candidate("web_search", url, result.get("link"), None, None, "title_verified", "uncertain"))
+        return Lookup("completed" if candidates else "zero_results", _unique(candidates), 200, other_title_count=other_titles)
     except (json.JSONDecodeError, TypeError) as exc:
         return Lookup("parse_error", [], 200, type(exc).__name__)
 

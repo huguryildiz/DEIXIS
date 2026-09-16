@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { BadgeCheck, BookOpenText, ExternalLink, FileText, Info, Link2, Maximize2, Minimize2 } from 'lucide-react'
+import { BadgeCheck, BookOpenText, ExternalLink, FileText, Info, Link2, Maximize2, Minimize2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, assetUrl, type AssetText, type Passage, type Source } from './api'
@@ -12,6 +12,35 @@ import { PdfViewer } from './PdfViewer'
 function readablePassageText(kind: Passage['kind'], text: string) {
   // Keep paragraph breaks, but undo the single line breaks introduced by PDF layout extraction.
   return kind === 'pdf_page' ? text.replace(/(?<!\n)\n(?!\n)/g, ' ') : text
+}
+
+// Reading aids for extracted PDF text (D47): section headings stand out and author affiliation notes are folded away.
+const SECTION_HEADING = /^(?:(?:[IVXL]+|\d+(?:\.\d+)*|[A-H])\.?\s+[A-Z][^.]{1,76}|Abstract|References|Acknowledge?ments?|Appendix)$/
+const AUTHOR_NOTE = /\b(?:is|are) with the\b|\be-?mail:|^Corresponding author|^Manuscript received|^This work was (?:supported|funded)/i
+
+function pagesOf(passages: AssetText['passages']) {
+  const pages: AssetText['passages'][] = []
+  for (const item of passages) {
+    const last = pages[pages.length - 1]
+    if (last && last[0].physical_page === item.physical_page) last.push(item)
+    else pages.push([item])
+  }
+  return pages
+}
+
+function PdfPageText({ passages, showNotes }: { passages: AssetText['passages']; showNotes: boolean }) {
+  // Passages are cut at a fixed length; a cut that did not end a sentence, or one inside a reference entry, continues the paragraph.
+  const text = passages.map(item => readablePassageText(item.kind, item.text)).reduce((all, next) => {
+    const last = all.slice(all.lastIndexOf('\n\n') + 1).trim()
+    const continues = !/[.:?!)]$/.test(last) || (/^\[\d{1,4}\]\s/.test(last) && !/^\[\d{1,4}\]\s/.test(next))
+    return !all ? next : continues ? `${all} ${next}` : `${all}\n\n${next}`
+  }, '')
+  const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
+  return <>{paragraphs.map((paragraph, index) => SECTION_HEADING.test(paragraph)
+    ? <h5 key={index} className="pdf-text-heading">{paragraph}</h5>
+    : AUTHOR_NOTE.test(paragraph)
+      ? showNotes && <p key={index} className="passage-text pdf-text-note"><PassageMathText text={paragraph} /></p>
+      : <p key={index} className="passage-text"><PassageMathText text={paragraph} /></p>)}</>
 }
 
 // Marks every located anchor; overlapping anchors are merged into one mark, and the first mark is scrolled into view.
@@ -45,6 +74,7 @@ function HighlightedPassageText({ passage, highlightTexts }: { passage: Passage;
 }
 
 // pdfRemoved: the passage's PDF was removed from the source; its stored text still opens, the PDF view stays off.
+// A passage also reports this itself (evidence_status, D45), as it does a replaced file or an earlier text extraction.
 // sources: the research's source rows; the one matching the opened source adds its screening state, similarity and citation.
 export function PassageSheet({ researchId, passageId, assetId = null, initialView = 'text', highlightText, highlightTexts, expectHighlight = false, pdfRemoved = false, sources, dark, onClose }: { researchId: string; passageId: string | null; assetId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void }) {
   const [passage, setPassage] = useState<Passage | null>(null)
@@ -52,6 +82,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
   const [error, setError] = useState('')
   const [full, setFull] = useState(false)
   const [allAuthors, setAllAuthors] = useState(false)
+  const [showNotes, setShowNotes] = useState(false)
   const [viewMode, setViewMode] = useState<'text' | 'pdf'>(initialView)
 
   useEffect(() => {
@@ -73,7 +104,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
   const abstract = passage?.kind === 'abstract'
   const highlights = highlightTexts ?? (highlightText ? [highlightText] : [])
   const highlightAvailable = Boolean(passage && highlights.length && highlights.every(text => passage.text.includes(text)))
-  const pdfAssetId = pdfRemoved ? null : passage?.asset_id ?? assetText?.asset.id ?? null
+  const status = passage?.evidence_status ?? 'current'
+  const removed = pdfRemoved || status === 'pdf_removed'
+  const pdfAssetId = removed ? null : passage?.asset_id ?? assetText?.asset.id ?? null
   const row = source ? sources?.find(s => s.source_version_id === source.id) : undefined
   const selectionText = { included: 'Included', excluded: 'Excluded', pending: 'Undecided' } as const
   return <Sheet open={passageId !== null || assetId !== null} onOpenChange={open => { if (!open) onClose() }}>
@@ -105,18 +138,22 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
           </dl>}
           <div className="source-view-tabs" role="tablist" aria-label={t('Source view')}>
             <button type="button" role="tab" aria-selected={viewMode === 'text'} aria-controls="source-text-view" onClick={() => setViewMode('text')}>{t(abstract ? 'Abstract' : 'Plain text')}</button>
-            <button type="button" role="tab" aria-selected={viewMode === 'pdf'} aria-controls="source-pdf-view" disabled={!pdfAssetId} title={!pdfAssetId ? t(pdfRemoved ? 'The PDF was removed from this source; its passages still open as text.' : 'PDF is not available for this source.') : undefined} onClick={() => setViewMode('pdf')}>PDF</button>
+            <button type="button" role="tab" aria-selected={viewMode === 'pdf'} aria-controls="source-pdf-view" disabled={!pdfAssetId} title={!pdfAssetId ? t(removed ? 'The PDF was removed from this source; its passages still open as text.' : 'PDF is not available for this source.') : undefined} onClick={() => setViewMode('pdf')}>PDF</button>
           </div>
+          {passage && status !== 'current' && <p className="source-notice"><TriangleAlert size={15} aria-hidden />{status === 'pdf_replaced'
+            ? t('This passage comes from a PDF that was later replaced. It opens the previous file, which is no longer read in new answers or cells.')
+            : status === 'pdf_removed' ? t('This passage comes from a PDF that was removed from the source. Its stored text still opens; the PDF view is off.')
+            : t('This passage comes from an earlier text extraction ({version}). New answers and cells read the current extraction, which may split or word the page differently.', { version: passage.extraction_version ?? '?' })}</p>}
           {viewMode === 'text' ? passage ? <div id="source-text-view" role="tabpanel">
             {abstract && !pdfAssetId && <p className="source-notice"><Info size={15} aria-hidden />{t('No PDF is attached, so only the abstract can be inspected. Claims citing this source rest on the abstract alone.')}</p>}
             <h3 className="source-section">{abstract ? t('Abstract') : t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
             {expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
             <p className="passage-text"><HighlightedPassageText passage={passage} highlightTexts={highlights} /></p>
           </div> : assetText ? <div id="source-text-view" role="tabpanel" className="asset-text-view">
-            <h3 className="source-section">{t('Extracted PDF text')}</h3>
-            {assetText.passages.length ? assetText.passages.map((item, index) => <section className="pdf-text-page" key={item.id}>
-              {(index === 0 || item.physical_page !== assetText.passages[index - 1]?.physical_page) && <h4>{item.physical_page ? t('PDF p. {page}', { page: item.physical_page }) : t('Extracted text')}</h4>}
-              <p className="passage-text"><PassageMathText text={readablePassageText(item.kind, item.text)} /></p>
+            <h3 className="source-section">{t('Extracted PDF text')}{assetText.passages.some(item => item.text.split(/\n{2,}/).some(p => AUTHOR_NOTE.test(p.trim()))) && <button type="button" className="pdf-text-notes-toggle" onClick={() => setShowNotes(v => !v)}>{t(showNotes ? 'Hide author notes' : 'Show author notes')}</button>}</h3>
+            {assetText.passages.length ? pagesOf(assetText.passages).map(page => <section className="pdf-text-page" key={page[0].id}>
+              <h4>{page[0].physical_page ? t('PDF p. {page}', { page: page[0].physical_page }) : t('Extracted text')}</h4>
+              <PdfPageText passages={page} showNotes={showNotes} />
             </section>) : <div className="legacy-boundary">{t('No text was extracted from this PDF.')}</div>}
           </div> : null : pdfAssetId && <div id="source-pdf-view" role="tabpanel" className="source-pdf-view">
             <PdfViewer url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? 1} title={source.title} />

@@ -18,18 +18,64 @@ from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
+# What became of a passage's file since the passage was stored (D45), over `passages p LEFT JOIN source_assets a`.
+EVIDENCE_STATUS_SQL = (
+    "CASE WHEN a.id IS NULL THEN 'current'"
+    " WHEN a.removed_at IS NOT NULL THEN CASE a.removal_reason WHEN 'replaced' THEN 'pdf_replaced' ELSE 'pdf_removed' END"
+    " WHEN p.extraction_version IS NOT a.extraction_version THEN 'text_superseded' ELSE 'current' END"
+)
 MIN_TITLE_KEY_CHARS = 12  # shorter normalized titles ("Introduction") say too little to suspect a duplicate
+ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions (D46)
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
-STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "source_similarity")
-STEP_OUTPUT_KEYS = ("semantic_retrieval",)
+STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy")
+STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")
 
 
 def title_key(title: str | None) -> str:
     return re.sub(r"\W+", " ", (title or "").casefold()).strip()
 
 
+def is_preprint(source: dict[str, Any]) -> bool:
+    label = source.get("version_label") or ""
+    return (source.get("doi") or "").startswith(ARXIV_DOI_PREFIX) or label == "submittedVersion" or label.startswith("arXiv")
+
+
+def is_published(source: dict[str, Any]) -> bool:
+    """A record under its own registered DOI that is not a preprint's (D48)."""
+    return bool(source.get("doi")) and not is_preprint(source)
+
+
+def _surnames(authors: list[str]) -> list[str]:
+    return [re.sub(r"\W+", "", name.split()[-1].casefold()) for name in authors if name.split()]
+
+
+def same_publication(a: dict[str, Any], b: dict[str, Any], basis: str) -> bool:
+    """A preprint and a published record of one paper (D48): the preprint names the published DOI, or the two share the
+    title, the first author and at least half of the shorter author list. Two published records never qualify."""
+    if is_preprint(a) == is_preprint(b) or not (is_published(a) or is_published(b)):
+        return False
+    if basis == "published_doi":
+        return True
+    first, second = _surnames(a["authors"]), _surnames(b["authors"])
+    if not first or not second or first[0] != second[0]:
+        return False
+    return len(set(first) & set(second)) * 2 >= min(len(set(first)), len(set(second)))
+
+
 class NotFound(Exception):
     pass
+
+
+class PdfInUse(Exception):
+    """A source version has at most one PDF in use; another file replaces it (D45)."""
+
+
+class RunInProgress(Exception):
+    """A research using the source has a queued, running or pause-requested run (D45)."""
+
+
+class SameFile(Exception):
+    """A PDF can only be replaced by a different file (D45)."""
 
 
 class Store:
@@ -174,6 +220,7 @@ class Store:
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (source_id,))
+                self.conn.execute("DELETE FROM asset_extractions WHERE asset_id IN (SELECT id FROM source_assets WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (source_id,))
                 self.conn.execute("DELETE FROM source_versions WHERE id = ?", (source_id,))
                 self.conn.execute("DELETE FROM works WHERE id = ? AND NOT EXISTS (SELECT 1 FROM source_versions WHERE work_id = ?)", (source["work_id"], source["work_id"]))
@@ -270,7 +317,7 @@ class Store:
             if active:
                 raise RevisionConflict(f"run {active['id']} is still active")
             run_id, ts = new_id("run"), now()
-            stage = {"discovery": "discovery", "answer": "inspection", "research_title": "intake"}.get(kind, "extraction")
+            stage = {"discovery": "discovery", "answer": "inspection", "pdf_collection": "inspection", "research_title": "intake"}.get(kind, "extraction")
             self.conn.execute(
                 "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
@@ -452,8 +499,9 @@ class Store:
 
         A DOI names one registered version, so the same DOI from several providers is one source version with a mapping
         per provider. A record whose DOI covers several file versions (`merge_by_doi` false, e.g. arXiv) never merges,
-        and title matches never merge; `record_search` flags those as suspected duplicates. Other versions the provider
-        lists for the record become separate source versions of the same work.
+        and title matches never merge; `record_search` flags those as suspected duplicates. Records with one arXiv DOI
+        (an arXiv version, or another provider's record of the preprint) are separate versions of one work (D46).
+        Other versions the provider lists for the record become separate source versions of the same work.
         """
         existing = self.find_source_by_identifier(provider, record.provider_record_id)
         if existing is None and record.doi and record.merge_by_doi:
@@ -502,9 +550,15 @@ class Store:
         )
 
     def _insert_provider_record(self, provider: str, record: Any, payload_path: str | None) -> tuple[str, str]:
-        ts = now()
-        wid, svid = new_id("wrk"), new_id("srv")
-        self.conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (wid, ts))
+        ts, svid = now(), new_id("srv")
+        same_preprint = self.conn.execute(
+            "SELECT work_id FROM source_versions WHERE doi = ? ORDER BY created_at, id LIMIT 1", (record.doi,)
+        ).fetchone() if record.doi and record.doi.startswith(ARXIV_DOI_PREFIX) else None
+        if same_preprint:
+            wid = same_preprint["work_id"]
+        else:
+            wid = new_id("wrk")
+            self.conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (wid, ts))
         self.conn.execute(
             "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label, publication_type, doi,"
             " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at, cited_by_count, cited_by_count_at,"
@@ -566,8 +620,8 @@ class Store:
         digest = hashlib.sha256(text.encode()).hexdigest()
         existing = self.conn.execute(
             "SELECT id FROM passages WHERE source_version_id = ? AND kind = ? AND IFNULL(asset_id, '') = IFNULL(?, '')"
-            " AND IFNULL(physical_page, 0) = IFNULL(?, 0) AND text_sha256 = ?",
-            (svid, kind, asset_id, page, digest),
+            " AND IFNULL(physical_page, 0) = IFNULL(?, 0) AND text_sha256 = ? AND extraction_version IS ?",
+            (svid, kind, asset_id, page, digest, extraction_version),
         ).fetchone()
         if existing:
             return existing["id"]
@@ -598,18 +652,160 @@ class Store:
                              extraction_version: str, chunker: Any) -> str:
         aid = new_id("ast")
         with transaction(self.conn):
+            try:
+                self.conn.execute(
+                    "INSERT INTO source_assets (id, source_version_id, sha256, byte_size, media_type, storage_path, original_filename,"
+                    " retrieved_from, retrieved_at, origin, extraction_status, extraction_version, extraction_error, page_count)"
+                    " VALUES (?, ?, ?, ?, 'application/pdf', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (aid, svid, sha256, size, storage_path, filename, retrieved_from, now(), origin,
+                     extraction.status, extraction_version, extraction.error, extraction.page_count),
+                )
+            except sqlite3.IntegrityError as exc:
+                if self.has_asset(svid):
+                    raise PdfInUse(svid) from exc
+                raise
+            self._write_extraction(svid, aid, extraction, extraction_version, chunker, "current")
+        return aid
+
+    def _write_extraction(self, svid: str, aid: str, extraction: Any, extraction_version: str, chunker: Any,
+                          outcome: str, rejection_reason: str | None = None) -> None:
+        passage_ids = []
+        for page in extraction.pages:
+            for start, end, text in chunker(page.text):
+                passage_ids.append((page.physical_page, self._insert_passage(
+                    svid, aid, "pdf_page", page.physical_page, page.printed_label, None, f"chars:{start}-{end}", extraction_version, text)))
+        self.conn.execute(
+            "INSERT INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages, passage_count,"
+            " outcome, rejection_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (new_id("ext"), aid, extraction_version, extraction.status, extraction.error, extraction.page_count,
+             len({page for page, _ in passage_ids}), len(set(pid for _, pid in passage_ids)), outcome, rejection_reason, now()),
+        )
+
+    def reextract_asset(self, asset_id: str, extraction: Any, extraction_version: str, chunker: Any,
+                        dry_run: bool = False) -> dict[str, Any]:
+        """Write a new text extraction of a PDF in use; it becomes current only if it loses nothing visible (D45).
+
+        Current: its status is not worse, its page count is equal and it has text on no fewer pages. Otherwise it is
+        recorded as rejected and the old text stays in use. Old passages are shadowed, never deleted.
+        """
+        asset = self.asset(asset_id)
+        if asset["removed_at"] is not None:
+            raise NotFound(asset_id)
+        if self.conn.execute("SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?",
+                             (asset_id, extraction_version)).fetchone():
+            return {"asset_id": asset_id, "outcome": "unchanged"}
+        old = self.conn.execute(
+            "SELECT status, page_count, text_pages, passage_count FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'",
+            (asset_id,)).fetchone()
+        rank = {"succeeded": 3, "partial": 2, "no_text": 1, "failed": 0}
+        text_pages = len({page.physical_page for page in extraction.pages if chunker(page.text)})
+        reason = None
+        if old is not None:
+            if rank.get(extraction.status, 0) < rank.get(old["status"], 0):
+                reason = f"status {extraction.status} is worse than {old['status']}"
+            elif extraction.page_count != old["page_count"]:
+                reason = f"page count {extraction.page_count} differs from {old['page_count']}"
+            elif text_pages < old["text_pages"]:
+                reason = f"text on {text_pages} pages, fewer than {old['text_pages']}"
+        report = {"asset_id": asset_id, "source_version_id": asset["source_version_id"], "outcome": "rejected" if reason else "current",
+                  "rejection_reason": reason, "old_version": asset["extraction_version"], "text_pages": text_pages,
+                  "old_text_pages": old["text_pages"] if old else None}
+        if dry_run:
+            return report
+        researches = [r[0] for r in self.conn.execute(
+            "SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (asset["source_version_id"],))]
+        with transaction(self.conn):
+            active = self.conn.execute(
+                f"SELECT 1 FROM runs WHERE research_id IN ({', '.join('?' * len(researches))}) AND status IN"
+                f" ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1", (*researches, *ACTIVE_RUN_STATUSES)
+            ).fetchone() if researches else None
+            if active:
+                raise RunInProgress(asset_id)
+            if not reason:
+                self.conn.execute("UPDATE asset_extractions SET outcome = 'superseded' WHERE asset_id = ? AND outcome = 'current'",
+                                  (asset_id,))
+            self._write_extraction(asset["source_version_id"], asset_id, extraction, extraction_version, chunker,
+                                   report["outcome"], reason)
+            if not reason:
+                self.conn.execute(
+                    "UPDATE source_assets SET extraction_version = ?, extraction_status = ?, extraction_error = ?, page_count = ?"
+                    " WHERE id = ?", (extraction_version, extraction.status, extraction.error, extraction.page_count, asset_id))
+            for research_id in researches:
+                self._event(research_id, "asset_reextracted", {k: report[k] for k in ("asset_id", "source_version_id", "outcome", "rejection_reason")}
+                            | {"extraction_version": extraction_version})
+        return report
+
+    def replace_asset(self, asset_id: str, sha256: str, size: int, storage_path: str, origin: str, retrieved_from: str | None,
+                      filename: str | None, extraction: Any, extraction_version: str, chunker: Any) -> str:
+        """Put another file in use for the source version, in every research that uses it (D45).
+
+        The new file gets its own passages even when its text is the same; the old file is marked replaced, and the evidence
+        that cites its passages keeps them. The selection does not change, so no selection revision is bumped.
+        """
+        asset = self.asset(asset_id)
+        if asset["removed_at"] is not None:
+            raise NotFound(asset_id)
+        if asset["sha256"] == sha256:
+            raise SameFile(asset_id)
+        svid, aid, ts = asset["source_version_id"], new_id("ast"), now()
+        researches = [r[0] for r in self.conn.execute("SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (svid,))]
+        with transaction(self.conn):
+            if researches and self.conn.execute(
+                f"SELECT 1 FROM runs WHERE research_id IN ({', '.join('?' * len(researches))}) AND status IN"
+                f" ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1", (*researches, *ACTIVE_RUN_STATUSES)
+            ).fetchone():
+                raise RunInProgress(asset_id)
+            # The old file leaves use first, so the one-file-in-use index holds throughout the transaction.
+            self.conn.execute("UPDATE source_assets SET removed_at = ?, removal_reason = 'replaced' WHERE id = ?", (ts, asset_id))
             self.conn.execute(
                 "INSERT INTO source_assets (id, source_version_id, sha256, byte_size, media_type, storage_path, original_filename,"
                 " retrieved_from, retrieved_at, origin, extraction_status, extraction_version, extraction_error, page_count)"
                 " VALUES (?, ?, ?, ?, 'application/pdf', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (aid, svid, sha256, size, storage_path, filename, retrieved_from, now(), origin,
+                (aid, svid, sha256, size, storage_path, filename, retrieved_from, ts, origin,
                  extraction.status, extraction_version, extraction.error, extraction.page_count),
             )
-            for page in extraction.pages:
-                for start, end, text in chunker(page.text):
-                    self._insert_passage(svid, aid, "pdf_page", page.physical_page, page.printed_label, None,
-                                         f"chars:{start}-{end}", extraction_version, text)
+            self.conn.execute("UPDATE source_assets SET replaced_by_asset_id = ? WHERE id = ?", (aid, asset_id))
+            self._write_extraction(svid, aid, extraction, extraction_version, chunker, "current")
+            for research_id in researches:
+                self._event(research_id, "asset_replaced", {"source_version_id": svid, "asset_id": asset_id, "replaced_by_asset_id": aid})
+                self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (ts, research_id))
         return aid
+
+    def evidence_statuses(self, passage_ids: list[str]) -> dict[str, str]:
+        found: dict[str, str] = {}
+        for start in range(0, len(passage_ids), 500):
+            chunk = passage_ids[start:start + 500]
+            found.update({r[0]: r[1] for r in self.conn.execute(
+                f"SELECT p.id, {EVIDENCE_STATUS_SQL} FROM passages p LEFT JOIN source_assets a ON a.id = p.asset_id"
+                f" WHERE p.id IN ({','.join('?' * len(chunk))})", chunk)})
+        return found
+
+    def research_cites_asset(self, research_id: str, asset_id: str) -> bool:
+        """Whether an answer or an evidence table cell of this research links a passage of the file."""
+        return self.conn.execute(
+            "SELECT 1 FROM evidence_links l JOIN claims c ON c.id = l.claim_id JOIN answers an ON an.id = c.answer_id"
+            " JOIN passages p ON p.id = l.passage_id WHERE an.research_id = ? AND p.asset_id = ?"
+            " UNION ALL SELECT 1 FROM cell_evidence_links l JOIN cell_revisions r ON r.id = l.cell_revision_id"
+            " JOIN evidence_cells ce ON ce.id = r.cell_id JOIN evidence_tables t ON t.id = ce.table_id"
+            " JOIN passages p ON p.id = l.passage_id WHERE t.research_id = ? AND p.asset_id = ? LIMIT 1",
+            (research_id, asset_id, research_id, asset_id),
+        ).fetchone() is not None
+
+    def asset_impact(self, asset_id: str) -> dict[str, Any]:
+        """What cites this file's passages: researches using its source, evidence table cells and answer quotes."""
+        asset = self.asset(asset_id)
+        researches = [dict(r) for r in self.conn.execute(
+            "SELECT r.id, r.title FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
+            " WHERE m.source_version_id = ? AND r.trashed_at IS NULL ORDER BY r.updated_at DESC", (asset["source_version_id"],)
+        )]
+        cells = self.conn.execute(
+            "SELECT COUNT(DISTINCT r.cell_id) FROM cell_evidence_links l JOIN cell_revisions r ON r.id = l.cell_revision_id"
+            " JOIN passages p ON p.id = l.passage_id WHERE p.asset_id = ?", (asset_id,)
+        ).fetchone()[0]
+        quotes = self.conn.execute(
+            "SELECT COUNT(*) FROM evidence_links l JOIN passages p ON p.id = l.passage_id WHERE p.asset_id = ?", (asset_id,)
+        ).fetchone()[0]
+        return {"asset_id": asset_id, "researches": researches, "cells": cells, "quotes": quotes}
 
     def remove_asset(self, research_id: str, svid: str, asset_id: str) -> None:
         """Withdraw an attachment from future use while retaining its immutable audit evidence."""
@@ -621,7 +817,7 @@ class Store:
             if asset is None:
                 raise NotFound(asset_id)
             ts = now()
-            self.conn.execute("UPDATE source_assets SET removed_at = ? WHERE id = ?", (ts, asset_id))
+            self.conn.execute("UPDATE source_assets SET removed_at = ?, removal_reason = 'wrong_file' WHERE id = ?", (ts, asset_id))
             included = self.conn.execute(
                 "SELECT 1 FROM selections WHERE research_id = ? AND source_version_id = ? AND state = 'included'",
                 (research_id, svid),
@@ -649,9 +845,10 @@ class Store:
         with transaction(self.conn):
             self.conn.execute(
                 "INSERT INTO pdf_discovery_runs (id, research_id, source_version_id, provider, query_text, status,"
-                " result_count, http_status, error_code, created_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " result_count, other_title_count, http_status, error_code, created_at, finished_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (run_id, research_id, svid, provider, query, outcome.status, len(outcome.candidates),
-                 outcome.http_status, outcome.error_code, ts, ts),
+                 getattr(outcome, "other_title_count", 0), outcome.http_status, outcome.error_code, ts, ts),
             )
             self._event(research_id, "pdf_discovery_recorded", {
                 "source_version_id": svid, "provider": provider, "status": outcome.status,
@@ -685,8 +882,8 @@ class Store:
 
     def pdf_discoveries(self, research_id: str, svid: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.conn.execute(
-            "SELECT provider, query_text, status, result_count, http_status, error_code, created_at, finished_at"
-            " FROM pdf_discovery_runs WHERE research_id = ? AND source_version_id = ? ORDER BY created_at, rowid",
+            "SELECT provider, query_text, status, result_count, other_title_count, http_status, error_code, created_at,"
+            " finished_at FROM pdf_discovery_runs WHERE research_id = ? AND source_version_id = ? ORDER BY created_at, rowid",
             (research_id, svid),
         )]
 
@@ -720,7 +917,11 @@ class Store:
             for rank, record in enumerate(records):
                 svid, _ = self.upsert_provider_source(provider, record, payload_path)
                 found.append(svid)
-                self.add_to_corpus(search_fields["research_id"], svid, "search", srid, rank, scope_revision=search_fields["scope_revision"])
+                # A version of a work that already has a candidate here is found again as that candidate (D46).
+                record_svid = self._work_candidate(search_fields["research_id"], svid) or svid
+                self.add_to_corpus(search_fields["research_id"], record_svid, "search", srid, rank, scope_revision=search_fields["scope_revision"])
+                if record_svid != svid:
+                    self.add_to_corpus(search_fields["research_id"], svid, "search", srid, candidate=False)
                 for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
                     self.add_to_corpus(search_fields["research_id"], other, "search", srid, candidate=False)
             self._flag_suspected_duplicates(search_fields["research_id"], found)
@@ -728,8 +929,26 @@ class Store:
             self.finish_step(step_id, step_status, output=output, **step_fields)
         return srid
 
+    def _work_candidate(self, research_id: str, svid: str) -> str | None:
+        """Another source version of svid's work that is a candidate of the research, unless svid is one itself.
+
+        A published record is its own candidate when the work's candidates are only preprints, so it can head the work (D48).
+        """
+        row = self.conn.execute(
+            "SELECT c.source_version_id, c.source_version_id = ? AS own FROM candidates c"
+            " JOIN source_versions v ON v.id = c.source_version_id"
+            " WHERE c.research_id = ? AND v.work_id = (SELECT work_id FROM source_versions WHERE id = ?)"
+            " ORDER BY own DESC, c.created_at LIMIT 1", (svid, research_id, svid)
+        ).fetchone()
+        if not row or row[1]:
+            return None
+        return None if is_published(self.source(svid)) and not is_published(self.source(row[0])) else row[0]
+
     def _flag_suspected_duplicates(self, research_id: str, svids: list[str]) -> None:
-        """Record candidates of other works that may be the same publication; nothing is merged."""
+        """Record candidates of other works that may be the same publication; nothing is merged.
+
+        A preprint and its published record become versions of one work instead of being flagged (D48).
+        """
         rows = {r["id"]: r for r in self.conn.execute(
             "SELECT v.id, v.work_id, v.title, v.doi FROM candidates c JOIN source_versions v ON v.id = c.source_version_id"
             " WHERE c.research_id = ?", (research_id,)
@@ -754,13 +973,122 @@ class Store:
             ).fetchall()
             pairs |= {(svid, r[0], "published_doi") for r in linked}
         ts = now()
-        for a, b, basis in pairs:
-            if b in rows and rows[a]["work_id"] != rows[b]["work_id"]:
+        for a, b, basis in sorted(pairs, key=lambda pair: pair[2] != "published_doi"):
+            if b in rows and not self._join_if_same_publication(a, b, basis):
                 first, second = sorted((a, b))
                 self.conn.execute(
                     "INSERT OR IGNORE INTO suspected_duplicates (research_id, source_version_id, other_source_version_id, basis, created_at)"
                     " VALUES (?, ?, ?, ?, ?)", (research_id, first, second, basis, ts),
                 )
+
+    def _join_if_same_publication(self, a: str, b: str, basis: str) -> bool:
+        """Put a preprint and its published record in one work, headed by the published record (D48).
+
+        True when the two already share a work or were joined; false when they stay separate works. The versions stay
+        separate source versions: nothing about either record is merged, and evidence never moves between them.
+        """
+        first, second = self.source(a), self.source(b)
+        if first["work_id"] == second["work_id"]:
+            return True
+        if not same_publication(first, second, basis):
+            return False
+        keep, drop = (first, second) if is_published(first) else (second, first)
+        self.conn.execute("UPDATE source_versions SET work_id = ? WHERE work_id = ?", (keep["work_id"], drop["work_id"]))
+        self.conn.execute("DELETE FROM works WHERE id = ?", (drop["work_id"],))
+        self.conn.execute(
+            "DELETE FROM suspected_duplicates WHERE (SELECT work_id FROM source_versions WHERE id = source_version_id)"
+            " = (SELECT work_id FROM source_versions WHERE id = other_source_version_id)"
+        )
+        for (research_id,) in self.conn.execute(
+            "SELECT DISTINCT m.research_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+            " WHERE v.work_id = ?", (keep["work_id"],)
+        ).fetchall():
+            self._settle_work_head(research_id, keep["work_id"])
+        return True
+
+    def link_published_versions(self) -> int:
+        """Join preprints and published records flagged as suspected duplicates before D48; returns the pairs joined."""
+        joined = 0
+        with transaction(self.conn):
+            for r in self.conn.execute(
+                "SELECT source_version_id, other_source_version_id, basis FROM suspected_duplicates ORDER BY basis != 'published_doi'"
+            ).fetchall():
+                a, b = self.source(r[0]), self.source(r[1])
+                if a["work_id"] != b["work_id"] and self._join_if_same_publication(r[0], r[1], r[2]):
+                    joined += 1
+        return joined
+
+    def work_heads(self, research_id: str) -> dict[str, str]:
+        """The record that heads each work in the research: a published record, else the first record (D46, D48).
+
+        A record is a candidate or a source added other than by search; other versions found by search never head a work.
+        """
+        heads: dict[str, dict[str, Any]] = {}
+        for row in self.conn.execute(
+            "SELECT v.id, v.work_id, v.doi, v.version_label FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+            " LEFT JOIN candidates c ON c.research_id = m.research_id AND c.source_version_id = m.source_version_id"
+            " WHERE m.research_id = ? AND (c.id IS NOT NULL OR m.added_by != 'search') ORDER BY m.created_at, c.rank", (research_id,)
+        ):
+            current = heads.get(row["work_id"])
+            if current is None or (is_published(dict(row)) and not is_published(current)):
+                heads[row["work_id"]] = dict(row)
+        return {wid: row["id"] for wid, row in heads.items()}
+
+    def _settle_work_head(self, research_id: str, work_id: str) -> None:
+        """Give a new head the selection its work already had in this research.
+
+        When a published record joins a work whose preprint was screened or chosen, the head has no decision of its own
+        yet; it takes the other record's user choice, else its model proposal. A head with its own decision keeps it.
+        """
+        head = self.work_heads(research_id).get(work_id)
+        if head is None:
+            return
+        current = self.conn.execute("SELECT * FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, head)).fetchone()
+        if current is None or current["origin"] != "default":
+            return
+        source = self.conn.execute(
+            "SELECT s.* FROM selections s JOIN source_versions v ON v.id = s.source_version_id"
+            " JOIN candidates c ON c.research_id = s.research_id AND c.source_version_id = s.source_version_id"
+            " WHERE s.research_id = ? AND v.work_id = ? AND s.source_version_id != ? AND s.origin != 'default'"
+            " ORDER BY s.origin = 'user' DESC, s.updated_at DESC LIMIT 1", (research_id, work_id, head)
+        ).fetchone()
+        if source is None:
+            return
+        self.conn.execute(
+            "UPDATE selections SET state = ?, origin = ?, user_reason = ?, proposal = ?, proposal_reason = ?, proposal_basis = ?,"
+            " proposal_step_id = ?, version = version + 1, updated_at = ? WHERE research_id = ? AND source_version_id = ?",
+            (source["state"], source["origin"], source["user_reason"], source["proposal"], source["proposal_reason"],
+             source["proposal_basis"], source["proposal_step_id"], now(), research_id, head),
+        )
+        self.conn.execute(
+            "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (research_id, head, current["state"], source["state"], source["origin"], "taken from another version of the same work", now()),
+        )
+        self._bump_selection_revision(research_id, current["state"], source["state"])
+
+    def included_works(self, research_id: str) -> list[str]:
+        """Heads of the works included in the research: a work counts once, by its head's selection (D48)."""
+        heads = set(self.work_heads(research_id).values())
+        return [svid for svid in self.included_sources(research_id) if svid in heads]
+
+    def work_versions(self, research_id: str, svid: str) -> list[str]:
+        """The research's other versions of svid's work, those with a PDF in use first, then in the order found."""
+        return [r[0] for r in self.conn.execute(
+            "SELECT v.id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+            " WHERE m.research_id = ? AND v.id != ? AND v.work_id = (SELECT work_id FROM source_versions WHERE id = ?)"
+            " ORDER BY EXISTS (SELECT 1 FROM source_assets a WHERE a.source_version_id = v.id AND a.removed_at IS NULL) DESC, m.created_at",
+            (research_id, svid, svid)
+        )]
+
+    def answer_version(self, research_id: str, head: str) -> str:
+        """The version of a work whose text an answer reads: the head when it has PDF text, else the first other version
+        with PDF text, else the head's abstract (D48). One version per work, so versions never corroborate each other."""
+        if self.has_pdf_text(head):
+            return head
+        return next((svid for svid in self.work_versions(research_id, head) if self.has_pdf_text(svid)), head)
+
+    def has_pdf_text(self, svid: str) -> bool:
+        return any(p["kind"] == "pdf_page" for p in self.passages_for(svid))
 
     def suspected_duplicates(self, research_id: str) -> dict[str, list[dict[str, str]]]:
         result: dict[str, list[dict[str, str]]] = {}
@@ -915,9 +1243,13 @@ class Store:
         return facts
 
     def passages_for(self, svid: str) -> list[dict[str, Any]]:
+        """Passages a model step may read: an abstract, or text of the PDF in use from its current extraction (D45).
+
+        Passages of a removed file or of another extraction stay resolvable through `passage` for the evidence citing them.
+        """
         return [dict(r) for r in self.conn.execute(
             "SELECT p.* FROM passages p WHERE p.source_version_id = ? AND (p.asset_id IS NULL OR EXISTS"
-            " (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL))"
+            " (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL AND a.extraction_version IS p.extraction_version))"
             " ORDER BY p.kind, p.physical_page, p.rowid", (svid,)
         )]
 
@@ -928,7 +1260,7 @@ class Store:
         rows = self.conn.execute(
             f"SELECT p.* FROM passages_fts f JOIN passages p ON p.rowid = f.rowid"
             f" WHERE passages_fts MATCH ? AND p.source_version_id IN ({marks}) AND (p.asset_id IS NULL OR EXISTS"
-            f" (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL))"
+            f" (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL AND a.extraction_version IS p.extraction_version))"
             " ORDER BY bm25(passages_fts) LIMIT ?",
             (fts_query, *svids, limit),
         ).fetchall()
@@ -1009,11 +1341,14 @@ class Store:
             ).fetchone()
             if existing:
                 return existing["id"]  # saved before a restart; a resumed run must not duplicate it
+            report_version = self.conn.execute(
+                "SELECT IFNULL(MAX(report_version), 0) + 1 FROM answers WHERE research_id = ?", (research_id,)
+            ).fetchone()[0] if status == "structurally_valid" else None
             self.conn.execute(
                 "INSERT INTO answers (id, research_id, run_id, step_id, step_input_id, scope_revision, selection_revision, status,"
-                " answer_language, draft_json, validation_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " answer_language, draft_json, validation_json, report_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (aid, research_id, run_id, step_id, step_input_id, scope_revision, selection_revision, status,
-                 (draft or {}).get("answer_language"), dumps(draft) if draft is not None else None, dumps(validation), now()),
+                 (draft or {}).get("answer_language"), dumps(draft) if draft is not None else None, dumps(validation), report_version, now()),
             )
             if status == "structurally_valid" and draft is not None:
                 claim_ids = {}

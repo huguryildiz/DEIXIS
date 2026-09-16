@@ -297,17 +297,20 @@ export function EvidenceTab({ researchId, view, dark, modelText, onRunStarted }:
   </section>
 }
 
+// What became of a cited passage's file (D45); the label names it in words, not only by color.
+const evidenceStatusLabels = { pdf_removed: 'PDF removed', pdf_replaced: 'Previous PDF', text_superseded: 'Earlier text' } as const
+
 function CellButton({ column, row, summary, live, position, focusable, onFocus, onOpen }: { column: TableColumn; row: TableRow; summary: CellSummary | undefined; live: 'fill' | 'recheck' | null; position: string; focusable: boolean; onFocus: () => void; onOpen: () => void }) {
   const current = summary?.current ?? null
   const flags = summary?.flags ?? []
   const pending = summary?.pending_proposal ?? null
   const text = current ? revisionText(column, current) : t('Empty')
-  // Amber: something waits for attention (a proposal, a changed column, a removed PDF); red: a proposal that failed validation.
+  // Amber: something waits for attention (a proposal, a changed column, cited text no longer in use); red: a proposal that failed validation.
   const marks = [
     pending && !flags.includes('proposal_invalid') && { tone: 'attention', label: t('New proposal') },
     flags.includes('proposal_invalid') && { tone: 'blocking', label: t('Invalid proposal') },
     flags.includes('stale_column') && { tone: 'attention', label: t('Column changed') },
-    flags.includes('pdf_withdrawn') && { tone: 'attention', label: t('PDF removed') },
+    ...(['pdf_removed', 'pdf_replaced', 'text_superseded'] as const).map(flag => flags.includes(flag) && { tone: 'attention', label: t(evidenceStatusLabels[flag]) }),
   ].filter((m): m is { tone: string; label: string } => Boolean(m))
   const provenance = current ? [t(authorLabels[current.author]), current.reading_depth && t(depthLabels[current.reading_depth]), current.state === 'not_verified' && t('no linked evidence')].filter(Boolean).join(' · ') : ''
   const liveText = live === 'recheck' ? t('Rechecking…') : live === 'fill' ? t('Filling…') : ''
@@ -486,7 +489,9 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
             </> : <p className="evidence-current is-state">{t('Empty: no value recorded yet.')}</p>}
             {rechecking && <p className="evidence-live" role="status"><span className="shimmer-text">{t('Rechecking this cell…')}</span></p>}
             {flags.includes('stale_column') && current && <p className="evidence-flag-note is-attention">{t('Made under an earlier definition of this column (revision {old}). It stays until you edit it or use a newer proposal.', { old: current.column_revision })}</p>}
-            {flags.includes('pdf_withdrawn') && <p className="evidence-flag-note is-attention">{t('A PDF this value cites was removed from the source. The cited passages still open as text; the PDF view is off.')}</p>}
+            {flags.includes('pdf_removed') && <p className="evidence-flag-note is-attention">{t('A PDF this value cites was removed from the source. The cited passages still open as text; the PDF view is off.')}</p>}
+            {flags.includes('pdf_replaced') && <p className="evidence-flag-note is-attention">{t('This value cites a PDF that was later replaced. Its evidence still opens the previous file; a recheck reads the current file.')}</p>}
+            {flags.includes('text_superseded') && <p className="evidence-flag-note is-attention">{t('This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction.')}</p>}
             {current && hasValue(current) && (current.evidence.length ? <EvidenceList items={current.evidence} onShow={showEvidence} />
               : <p className="evidence-sub">{t('No linked evidence: this value was recorded without a passage.')}</p>)}
           </section>
@@ -548,7 +553,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
           <p className="panel-note">{t('Semantic support not checked. DEIXIS located each quote in a passage of this source version; it did not check that the passage supports the value.')}</p>
         </>}
       </div>
-      {evidence && <PassageSheet researchId={researchId} passageId={evidence[0].passage_id} highlightTexts={evidence.flatMap(e => e.anchor_text ? [e.anchor_text] : [])} expectHighlight pdfRemoved={evidence[0].asset_removed} sources={source ? [source] : undefined} dark={dark} onClose={() => setEvidence(null)} />}
+      {evidence && <PassageSheet researchId={researchId} passageId={evidence[0].passage_id} highlightTexts={evidence.flatMap(e => e.anchor_text ? [e.anchor_text] : [])} expectHighlight pdfRemoved={evidence[0].evidence_status === 'pdf_removed'} sources={source ? [source] : undefined} dark={dark} onClose={() => setEvidence(null)} />}
     </SheetContent>
   </Sheet>
 }
@@ -565,7 +570,7 @@ function EvidenceList({ items, onShow }: { items: CellEvidence[]; onShow: (items
     const first = group[0]
     const quotes = group.flatMap(item => item.anchor_text ? [item.anchor_text] : [])
     return <li key={first.passage_id}>
-      <span className="evidence-locator">{first.kind === 'abstract' ? <BookOpenText size={13} aria-hidden /> : <FileText size={13} aria-hidden />}{locatorText(first)}{first.asset_removed && <><TriangleAlert size={12} aria-hidden />{t('PDF removed')}</>}</span>
+      <span className="evidence-locator">{first.kind === 'abstract' ? <BookOpenText size={13} aria-hidden /> : <FileText size={13} aria-hidden />}{locatorText(first)}{first.evidence_status !== 'current' && <><TriangleAlert size={12} aria-hidden />{t(evidenceStatusLabels[first.evidence_status])}</>}</span>
       {quotes.length ? <div className="evidence-quotes">{quotes.map((quote, i) => <q key={i} className="evidence-quote"><mark>{quote}</mark></q>)}</div>
         : <span className="evidence-sub">{t('No located quote for this passage.')}</span>}
       <Button variant="outline" size="sm" onClick={() => onShow(group)}>{t('Show evidence')}</Button>

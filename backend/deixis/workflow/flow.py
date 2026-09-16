@@ -150,6 +150,8 @@ class ResearchFlow:
                 await self._discovery(run, scope)
             elif run["kind"] == "answer":
                 await self._answer(run, scope)
+            elif run["kind"] == "pdf_collection":
+                await self._inspect(run, limit=None)
             elif run["kind"] == "table_fill":
                 await self._table_fill(run, scope)
             elif run["kind"] == "cell_recheck":
@@ -229,7 +231,10 @@ class ResearchFlow:
 
         self._checkpoint(run_id, revision)
         self.store.update_run(run_id, stage="screening")
-        candidates = [c for c in self.store.candidates(rid, revision) if c["origin"] != "user"][: budget["max_candidates"]]
+        # A work is screened once, through its head; its other versions follow the head's selection (D46, D48).
+        heads = set(self.store.work_heads(rid).values())
+        candidates = [c for c in self.store.candidates(rid, revision)
+                      if c["origin"] != "user" and c["source_version_id"] in heads][: budget["max_candidates"]]
         # Map through all candidates: a resumed run may apply a proposal made for an earlier candidate list.
         by_candidate = {c["candidate_id"]: c["source_version_id"] for c in self.store.candidates(rid)}
         for start in range(0, len(candidates), SCREENING_BATCH):
@@ -249,7 +254,7 @@ class ResearchFlow:
 
         # Derive a short title from the question and the included sources once screening is done. A structurally valid
         # answer later replaces it (store.save_answer). Optional: the run continues with the provisional title on failure.
-        if self.store.included_sources(rid):
+        if self.store.included_works(rid):
             try:
                 await self._research_title(run, scope, optional=True)
             except OptionalStepFailed:
@@ -258,7 +263,7 @@ class ResearchFlow:
     async def _research_title(self, run: dict[str, Any], scope: dict[str, Any], optional: bool = False) -> None:
         """Name the research from its question and included sources' titles and abstracts (D39, D42)."""
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
-        included = self.store.included_sources(rid)
+        included = self.store.included_works(rid)
         abstracts = [p for svid in included for p in self.store.passages_for(svid) if p["kind"] == "abstract"]
         self._checkpoint(run_id, revision)
         output = await self._model_step(run, scope, "research_title", "research_title", source_ids=included,
@@ -352,29 +357,10 @@ class ResearchFlow:
     # ---- answer ---------------------------------------------------------------------
     async def _answer(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
         run_id, rid = run["id"], run["research_id"]
-        included = self.store.included_sources(rid)
+        heads = self.store.included_works(rid)  # one per included work
         selection_revision = self.store.selection_revision(rid)  # read together with the included set it describes
-        if not included:
-            self._fail(run_id, "no_included_sources")
-        self.store.update_run(run_id, stage="inspection")
-        downloads = 0
-        for svid in included:
-            self._checkpoint(run_id)
-            source = self.store.source(svid)
-            # A PDF from a different version (e.g. a submitted manuscript for a published record) is not attached.
-            same_version = source["oa_pdf_version"] is not None and source["oa_pdf_version"] == source["version_label"]
-            if not (source["origin"] == "provider" and source["oa_pdf_url"] and same_version and not self.store.has_asset(svid)):
-                continue
-            # A link that refused in an earlier run is not requested again; a timeout or lost connection is.
-            refusal = self.store.pdf_link_refusal(svid, source["oa_pdf_url"])
-            if (refusal is not None and not self._needs_other_copy(rid, source, refusal)) or downloads >= MAX_DOWNLOADS_PER_RUN:
-                continue
-            downloads += 1
-            if refusal is None:
-                await self._fetch_pdf(run, source)
-                refusal = self.store.pdf_link_refusal(svid, source["oa_pdf_url"])
-            if refusal is not None and self._needs_other_copy(rid, source, refusal):
-                await self._find_other_copy(run, source)
+        await self._inspect(run, limit=MAX_DOWNLOADS_PER_RUN)
+        included = [self.store.answer_version(rid, head) for head in heads]
 
         self._checkpoint(run_id)
         self.store.update_run(run_id, stage="answer")
@@ -407,6 +393,45 @@ class ResearchFlow:
                                            output["result"], {"ok": True, "issues": [], "warnings": output.get("warnings", [])}, links,
                                            selection_revision=step_selection)
         await self._review(run, scope, answer_id, output["result"])
+
+    async def _inspect(self, run: dict[str, Any], limit: int | None) -> None:
+        """Retrieve the included works' open PDFs. An answer run stops after `limit` downloads; a PDF collection run,
+        which the user starts before an answer, tries every work (D49). A retrieved PDF is not fetched again."""
+        run_id, rid = run["id"], run["research_id"]
+        heads = self.store.included_works(rid)
+        if not heads:
+            self._fail(run_id, "no_included_sources")
+        self.store.update_run(run_id, stage="inspection")
+        downloads = 0
+        for head in heads:
+            self._checkpoint(run_id)
+            downloads += await self._acquire_pdf(run, head, downloads, limit)
+            # A head without PDF text (often a paywalled published record) is read through an open version of the
+            # same work, such as its arXiv preprint; the passages carry that version's label (D48).
+            for other in [] if self.store.has_pdf_text(head) else self.store.work_versions(rid, head):
+                if not self.store.has_pdf_text(other):
+                    self._checkpoint(run_id)
+                    downloads += await self._acquire_pdf(run, other, downloads, limit)
+                if self.store.has_pdf_text(other):
+                    break
+
+    async def _acquire_pdf(self, run: dict[str, Any], svid: str, downloads: int, limit: int | None) -> int:
+        """Retrieve the source's open PDF of the same version, if it has none yet; returns the downloads it counted."""
+        source = self.store.source(svid)
+        # A PDF from a different version (e.g. a submitted manuscript for a published record) is not attached.
+        same_version = source["oa_pdf_version"] is not None and source["oa_pdf_version"] == source["version_label"]
+        if not (source["origin"] == "provider" and source["oa_pdf_url"] and same_version and not self.store.has_asset(svid)):
+            return 0
+        # A link that refused in an earlier run is not requested again; a timeout or lost connection is.
+        refusal = self.store.pdf_link_refusal(svid, source["oa_pdf_url"])
+        if (refusal is not None and not self._needs_other_copy(run["research_id"], source, refusal)) or (limit is not None and downloads >= limit):
+            return 0
+        if refusal is None:
+            await self._fetch_pdf(run, source)
+            refusal = self.store.pdf_link_refusal(svid, source["oa_pdf_url"])
+        if refusal is not None and self._needs_other_copy(run["research_id"], source, refusal):
+            await self._find_other_copy(run, source)
+        return 1
 
     async def _review(self, run: dict[str, Any], scope: dict[str, Any], answer_id: str, draft: dict[str, Any]) -> None:
         """Ask the reviewer model whether each claim's cited passages support it; the answer itself is never changed."""

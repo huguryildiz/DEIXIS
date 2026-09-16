@@ -161,6 +161,23 @@ def test_web_search_candidates_remain_version_uncertain():
     assert result.candidates[0].version_status == "uncertain"
 
 
+def test_web_search_results_under_another_title_are_counted_not_kept():
+    def handler(request):
+        return httpx.Response(200, json={"organic_results": [
+            {"title": "A related synthetic paper", "link": "https://other.example/item",
+             "resources": [{"file_format": "PDF", "link": "https://other.example/related.pdf"}]},
+            {"title": "Another related paper", "link": "https://third.example/paper.pdf"},
+        ]})
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.web_lookup(client, "10.1/test", "Exact synthetic title", "key")
+
+    result = run(check())
+    assert result.candidates == []
+    assert result.status == "zero_results" and result.other_title_count == 2
+
+
 def test_acquisition_records_403_then_downloads_second_verified_location(tmp_path):
     connection = db.connect(tmp_path / "library.sqlite")
     db.migrate(connection)

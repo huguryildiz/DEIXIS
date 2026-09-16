@@ -2,6 +2,119 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D50 — Trash tables, templates and sources removed from a research; undo from a notification; start a table from selected sources
+
+**Status**: accepted (design; not implemented)
+**Date**: 2026-09-16
+
+**Context**: P5 lists a trash for the library and tables, and T15 requires that removing a source from a research's corpus does not delete a shared PDF. Only researches could be trashed and restored. A table could be trashed through the API only, with no restore; templates likewise. There was no way to take a source out of a research: Exclude is a screening decision that keeps the source listed with its reason, and D41 left the Library without a remove action. `Store.is_member` also gates opening a passage or PDF from evidence, so deleting a membership row would break old quotes. The cell revision, column revision and cell evidence delete triggers open only under a research purge authorization, so a single table cannot be deleted permanently today. Read-only counts on the live library: 1 table, 0 templates, 2,526 memberships, 510 source versions in more than one research. Design note: `docs/product/p5-slice3-trash-and-undo.md`. The owner chose the recommended option on all seven open questions.
+
+**Decision**:
+
+- The existing Trash page groups researches, evidence tables, sources removed from a research and table templates; each item names its research and what it holds. A trashed research's tables are not listed separately. Nothing in the trash expires.
+- A table goes to the trash with its expected version (409 if a table run targets it) and comes back with its rows, columns, cells, edits and proposals; it cannot be restored while its research is in the trash. Tables and templates can be deleted permanently one at a time from the trash; a table needs its own purge authorization in the three delete triggers. Passages, files, StepInputs and runs are never deleted by a table purge.
+- Removing a source from a research sets `corpus_memberships.removed_at`; the row stays. Lists, answer input, PDF collection, table fills and the Library's project groups use active memberships only; opening evidence keeps using any membership, and a removed source's PDF opens where this research's evidence cites it. The selection row is kept; if the source was included, the selection revision is bumped. A later search that finds it again leaves it removed and counts it in the Sources summary. Removing a work's head removes every version of that work in the research. The library record, assets, passages, embeddings and files are unchanged, and a source used by another research is unaffected there. A removed source is deleted permanently only with its research, and a research purge treats a removed membership elsewhere as shared. Active runs answer 409.
+- A table row whose source was removed is hidden, its cells kept and not planned for a fill; it returns when the source is restored.
+- Moving to the trash, removing a source, removing a table row or column and removing a wrong PDF show an "Undo" action in the notification. Undo calls the same restore endpoint as the Trash page, carries an expected version, and answers 409 when something changed in between; a wrong PDF comes back only if no other PDF is in use for that source version. Removed columns gain a restore endpoint.
+- The Sources tab gets per-row selection and a bar with "Start table", "Add to table" and "Remove from research". Any active source can become a table row, included or not (D37); the confirmation counts the ones not included.
+- Implementation starts after the D45–D49 working tree is committed.
+
+**Limits**: Nothing is implemented or tested yet. Deleting a work or file from the whole library, trash expiry, undoing a cell revision, notes, starting a table from the Library and OCR are outside this decision. A permanent table purge cannot be undone except from a backup.
+
+## D49 — Collect the included sources' PDFs before the answer, and let the user add the rest
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: The answer button fetched PDFs and wrote the answer in one run, capped at 8 downloads. A source whose PDF could not be reached was read from its abstract, and the user saw that only after the answer. The owner asked for a stop between screening and the answer: show how many sources are read from abstracts, collect the open PDFs in bulk, let the user upload the rest (also several at once and from Zotero), then generate the answer. The design followed a three-state mockup the owner approved.
+
+**Decision**:
+
+- A new run kind `pdf_collection` (migration 0028) runs the answer run's inspection for every included work without the download cap: each open link of the same version, one lookup for another open copy after a refused link (D35), and another version's PDF when the record has none (D48). It calls no model. A later answer run does not fetch a retrieved PDF again, and it keeps its 8-download cap.
+- Before the first answer, the Answer tab shows a readiness panel instead of the answer button. Before collection it lists included sources, PDFs in hand and abstract-only sources, with "Collect open-access PDFs" as the primary action and "Generate answer now" as a text action. During collection each work is a row (PDF, checking, none open, queued), with pause and resume. After collection it lists the works still without PDF text with the reason (publisher refused, no open copy, no open link, another version, no text layer) and an upload per row. The answer button there names how many sources are read from abstracts only; it never blocks.
+- Sources report `has_pdf_text`; the panel counts a work as read in full when the version an answer reads has PDF text.
+- Several PDFs can be dropped at once: `POST /uploads/match` reads each file's first text and proposes the included work by a DOI or arXiv identifier, else by an exact normalized title (at least four words). The user confirms or changes each target; nothing is attached before that, and a file matching a work that already has its PDF is not proposed.
+- "Add from Zotero" (`POST /zotero-pdfs`, local app or zotero.org) looks each work without PDF text up in the library by title, then by DOI, and attaches the item's first readable PDF to the work's record as the user's own copy. Only GET requests reach Zotero.
+
+**Evidence**: API tests cover a collection run (no model call, PDF text reported, no fetch in the following answer run), DOI and title matching with nothing attached, and Zotero lookups by title and by DOI with a missing linked file reported as a note. On a copy of the live library, the research "quantum network routing" went from 2 to 16 of 22 included sources with PDF text in one collection run; the remaining 6 had no open link or no open copy. The three panel states and the match list were checked by screenshot. Zotero was not installed on the development machine, so its path was exercised only against mocked responses, and the error text for a closed Zotero was seen in the app.
+
+**Limits**: Matching reads text, so a scanned PDF without a text layer is not matched. A title match proposes the work's record even when the file is its preprint. Answer quality with more full texts was not measured.
+
+## D48 — A published record heads the work of its preprint, and an answer reads the preprint's open PDF when the record has none
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: D46 kept a published version (another DOI) and its preprint as separate works flagged "may duplicate · not merged". An IEEE article and its arXiv preprint were screened as separate sources, counted twice and shown as two cards; the published record had no open PDF, while the arXiv copy did. The owner asked for the published record to head the group with the preprints under it, and for answers to read the open preprint PDF when the published one is not accessible.
+
+**Decision**:
+
+- A preprint (arXiv DOI, `submittedVersion` or an `arXiv vN` label) and a published record (its own non-preprint DOI) join one work when the preprint names the published DOI, or when both have the same normalized title, the same first-author surname and at least half of the shorter author list's surnames in common. Two published records, or two preprints under different DOIs, are never joined this way and stay suspected duplicates. Source versions are never merged.
+- In a research, a work's head is its published record, else its first record. Screening sees heads only. When a published record joins a work whose preprint was already screened or chosen, the head takes that selection unless it has its own. The work's selection is its head's; other versions have no selection control and their own earlier selections no longer count.
+- An answer gives one version per included work: the head if it has PDF text, else the first other version with PDF text (retrieving that version's own open PDF if needed), else the head's abstract. Passages keep that version's ID and label, so a citation shows it came from the preprint; versions of one work are never given side by side.
+- Flags stored before this change are joined at startup (`Store.link_published_versions`).
+
+**Evidence**: Unit tests in `tests/test_provider_records.py` (joining in both orders, selection handover, author and published-pair refusals, startup join) and updated API flow tests (the letter's open manuscript is retrieved and read, one letter version in the answer input). On the live library the startup join put 8 works' preprints under their published records (e.g. "Maximizing Entanglement Routing Rate…"); 47 same-title flags remain. Checked in the running app by screenshot. Answer quality with preprint text was not measured.
+
+**Limits**: Surname matching is weak for common surnames; the title must also match exactly after normalization. A preprint can differ from the published text; the version label is the only signal. Title-only matches are not offered for manual joining yet. Evidence tables still list source versions as rows independently of works.
+
+## D47 — Extract PDF text by layout blocks and re-extract every PDF in use
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: PDF text was the flat page text in MuPDF order (and pypdf's for 56 older files). On an IEEE article the first-page author affiliation footnote sat inside a sentence of the introduction ("challenges in the first T. N. Nguyen is with the Department…"), the arXiv identifier stamped along the margin and page numbers ran into body text, and section headings were not set apart. The owner asked for a new extraction version for new PDFs and for re-extracting the existing ones now. D45 had kept the chunker unchanged in its slice; its re-extraction step (sub-step 2) was not yet written.
+
+**Decision**:
+
+- `pymupdf-<version>-layout-v1` builds page text from MuPDF text blocks. It drops lines that are not horizontal, blocks holding only a page number, and small-type blocks in the top 7% of the page (running heads). Blocks set below 87% of the document's most common type size (author notes, captions, tables, footnotes) follow the page's body blocks as their own paragraphs instead of being deleted. Short numbered or standard headings ("I. INTRODUCTION", "A. Model", "References") are their own paragraph. A word hyphenated at a line end ("chan-" / "nels") is joined. The IEEE download notice is still removed (D43) and the chunker is unchanged.
+- `Store.reextract_asset` implements D45's re-extraction rule: the new extraction becomes current only if its status is not worse, its page count equal and its text pages not fewer; otherwise it is recorded as rejected and the old text stays in use. Old passages are shadowed, never deleted. It refuses while a research using the source has a queued, running or pause-requested run and writes an `asset_reextracted` event to each research that uses the source. `python -m deixis reextract [--dry-run]` runs it for every PDF in use whose extraction is not the current version.
+- `layout-v2` (same day) keeps a numbered reference entry ("[39] …") as one paragraph: MuPDF had split one entry into several blocks and put the end of one entry and the start of the next in one block. The live library was re-extracted again (69 of 69 current).
+- The Plain text view of a PDF shows headings as headings, joins a paragraph or reference entry cut by a passage boundary, and folds author affiliation notes ("is with the", "e-mail:", "Corresponding author", "Manuscript received") behind "Show author notes".
+
+**Evidence**: A synthetic layout test covers dropped page furniture, the moved note, the hyphen join and the heading. On a restored copy of the live library (backup `~/Library/Application Support/DEIXIS-backups/deixis-backup-20260916T135835911260Z`), all 69 PDFs in use re-extracted as `current`, none rejected. Non-space characters kept, new against old: pymupdf `chunks-v1/v2` 13 files, mean 0.967 (min 0.933); pypdf 56 files, mean 0.991 (min 0.829). An inspection of the largest word losses found bioRxiv's rotated licence stamp (the 0.829 file), duplicated glyphs of bold math symbols, ligature and hyphen fragments, and rotated figure axis labels. The same run was then applied to the live library with the server stopped and no active runs. The IEEE article's 21 section headings came out as their own paragraphs and its author notes after page 1's body text. Extraction quality on other layouts is not measured.
+
+**Limits**: Rotated figure axis labels and rotated table text are dropped. Type-size classes are guessed per document; a paper whose body is set in several sizes may move real body text after the page. Heading detection is a pattern and can miss unnumbered headings or catch a short numbered sentence. Equations are still garbled text; this does not recover math. D45's views (`evidence_status`, `source_text_changed` on answers) are not implemented yet, so an answer or cell whose passages were shadowed is not yet marked in the UI; its links still open the old passage.
+
+## D46 — Records of one arXiv preprint are versions of one work with one candidate
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: D13 never merges records with an arXiv DOI (`10.48550/arxiv.<id>`), because that DOI names every version of the preprint. In practice arXiv returned `2207.11821v1` and OpenAlex returned the same preprint under the unversioned arXiv DOI (labeled "submitted manuscript"). They were stored as two works, screened twice (both proposed `include`), counted as two unique sources and shown as two cards flagged "may duplicate · not merged". The same publication's IEEE record, found by four providers under its own DOI, was already one source. The owner chose to show these once while keeping both records.
+
+**Decision**:
+
+- A new provider record whose DOI starts with `10.48550/arxiv.` joins the work of the earliest source version with the same DOI. Versions are still stored separately and never merged, because the unversioned record does not say which arXiv version it describes.
+- In a research, a work has one candidate. When a search finds a version of a work that already has a candidate there, it counts as finding that candidate again (best rank, newer question revision), and the version joins the corpus as another version: it is not screened on its own and is shown under the record. The first version found stays the record.
+- Migration 0026 moves already stored versions with one arXiv DOI into the work of the earliest one, removes the works left empty and drops suspected-duplicate flags between versions of one work. Candidates and selections stay as they are. The research view shows a later candidate of the same work as another version of the first one.
+- A published version (another DOI, linked only through `published_doi`) and title matches stay separate works with a suspected-duplicate flag, as in D13.
+
+**Evidence**: Unit tests in `tests/test_provider_records.py` cover linking when OpenAlex finds the preprint before arXiv, one candidate, no duplicate flag, and the migration on data written before this change (one work, arXiv record first, the unversioned record as another version, one unique source). Not checked against the live library or a real search.
+
+**Limits**: The record keeps whatever version was found first, which can be the unversioned copy rather than the arXiv version with a PDF. In researches from before this change, both copies keep their own screening proposal and selection; if both are included, the answer step still receives both. Other preprint servers' DOIs (for example bioRxiv) are not covered.
+
+## D45 — A replaced PDF or a new text extraction adds passages and shadows the old ones; old evidence keeps pointing at what it read
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: P5's acceptance condition says a version or index change must not break earlier evidence (implementation plan §9, T03). Evidence links point at immutable passages, but the code had no notion of replacing a file or re-extracting one. A probe on synthetic records showed: `upload_to_source` adds a second PDF with different bytes beside the first; with two copies of the same text, a cell extraction StepInput carried every passage twice (`passage_scope` 4 of 4 for a two-page text) and `_retrieve` chose two passages with the same text and skipped the whole-small-document path; `_insert_passage` returned the old passage ID and old `extraction_version` for the same text written under a new version. Read-only counts on the live library: 67 PDFs in use, none of them twice on one source version; 56 extracted by pypdf and 11 by PyMuPDF `chunks-v1`, none by `chunks-v2` (D43); 44 source versions with a PDF are used by more than one research. Design note: `docs/product/p5-slice2-source-versions.md`. The owner chose the recommended option on all seven open questions.
+
+**Decision**:
+
+- A source version has at most one PDF in use. Adding a PDF where one is in use answers 409; replacing is a separate action. Replacing adds the new file as a new asset (new passage IDs even for identical text) and, in the same transaction, marks the old asset removed with `removal_reason = 'replaced'` and the new asset's ID. Removing a mistaken file records `wrong_file`. Assets belong to the library, so a replacement applies in every research that uses the source; the confirmation shows the affected researches, cells and quotes.
+- Re-extraction writes the same asset's pages under the new `extraction_version`, which becomes part of the passage deduplication key, so identical text gets a new passage ID carrying its own version. Each extraction is recorded per asset (`current`, `superseded`, `rejected`). A new extraction becomes current only if its status is not worse, its page count is equal and it has text on no fewer pages; otherwise it is `rejected`, the old text stays in use and the reason is shown. This check guards against visible loss; it does not show the new text is more accurate.
+- A passage is shadowed when its asset was removed or its extraction is not the asset's current one. Shadowed passages are never given to a model step again (fill, recheck, answer, column suggestions, semantic ranking) and still resolve by ID. Nothing is deleted, rewritten or moved: cell revisions, evidence links, answers and reviews keep the passages they recorded (D37).
+- Views compute an evidence status per passage: `current`, `pdf_removed` (text only), `pdf_replaced` (text, and the old PDF read-only in a research whose evidence cites it) and `text_superseded` (text and the same PDF). Cells split `pdf_withdrawn` into these marks; `include_stale` fills also plan cells whose evidence is shadowed, as proposals only. An answer shows `source_text_changed` when a passage its StepInput was given is no longer current; replacement and re-extraction do not bump the selection revision.
+- Re-extraction is started by the user: per source, or in bulk from `deixis reextract` with a `--dry-run` that writes nothing. On the live library it runs first on a copy, and the bulk run needs the owner's approval.
+- Replacement and re-extraction answer 409 while any research using the source has a queued, running or pause-requested run.
+- The chunker does not change in this slice. Quotes that cross a chunk boundary stay a separate decision; page-relative character ranges (`payload_ref`) are kept so a later version can locate a quote across adjacent chunks.
+
+**Evidence**: Migration 0027 (`asset_extractions`, `removal_reason`, `replaced_by_asset_id`, the one-PDF-in-use index). `Store.reextract_asset` and `deixis reextract` were written under D47; this decision adds `Store.replace_asset` and `asset_impact`, `PUT …/assets/{id}`, `POST …/assets/{id}/extractions`, `GET …/assets/{id}/impact`, the computed `evidence_status`, cell flags `pdf_removed`/`pdf_replaced`/`text_superseded` (replacing `pdf_withdrawn`), the answer's `source_text_changed`, and the Sources, report, cell and passage labels. Tests with synthetic records and the scripted fake adapter: `tests/test_source_versions.py` (migration from 26 and its refusal with two PDFs in use, the new deduplication key, one PDF in use, shadowed passages, re-extraction), `tests/test_asset_replacement.py` (after a replacement with identical text a recheck StepInput and `_retrieve` carry each text once — the probe before this change found every text twice; old cell evidence unchanged; refusals for the same file and an active run; API and CSRF; backup/restore keeping both files, both extractions and the old evidence; deleting another research keeps a replaced file that is still cited), `tests/test_evidence_status.py` (each cell mark, a stale fill that only proposes, answer and passage status, the old PDF opening only where cited). Backend suite 452 passed, 1 failed (the known memory-limit test). Web build passes; lint adds no warning. Playwright: a new case replaces a cited PDF through the confirmation (1 research, 0 cells, 1 quote) and opens the quote on the previous file's text and PDF at desktop width and 390 px; in two full runs the main flow stopped once at case B (a label the committed source panel redesign removed) and once at case C (while D46–D48 version grouping was in progress in the same working tree), neither in code this change touches.
+
+**Limits**: Evidence tables' new labels are covered by backend tests and a build, not by a browser run. The replace confirmation uses the shared destructive-style dialog although nothing is deleted. The equal-page and text-page check is an unmeasured default. Replacing a file does not check that the new file is the same publication version; that stays the user's responsibility as in D33. The same file recorded under two different works (seen twice on the live library) is an identity-matching problem outside this decision.
+
 ## D44 — Compile provider queries from the search plan's concepts instead of letting the model write them
 
 **Status**: accepted

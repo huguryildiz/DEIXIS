@@ -1,4 +1,3 @@
-Academic Phrasebank (The University of Manchester), 2015 enhanced edition: phrase sections.
 Notation: X, Y, Z and … are slots; {a | b} means choose one alternative. One frame per line.
 
 

@@ -13,7 +13,7 @@ from typing import Any
 
 from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
-from deixis.workflow.store import NotFound, Store
+from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
 
 ANSWER_FORMATS = ("choice", "number_unit", "yes_no", "text")
 CELL_STATES = ("value", "unknown", "not_reported", "not_verified", "not_applicable", "inaccessible", "not_found_in_inspected_scope")
@@ -23,6 +23,7 @@ MAX_OPTIONS = 20
 MAX_FILL_SOURCES = 25  # sources one fill run reads; the rest stay empty for another fill (D37)
 MAX_COLUMNS_PER_CALL = 8  # columns one cell extraction call answers for its source
 CALLS_PER_REQUEST = 2  # a model call and its one schema repair
+SHADOWED_STATUSES = ("pdf_removed", "pdf_replaced", "text_superseded")  # cell flags, in display order (D45)
 
 
 class InvalidTableInput(Exception):
@@ -502,7 +503,8 @@ class TableStore:
 
     def fill_plan(self, research_id: str, table_id: str, column_ids: list[str] | None = None,
                   include_stale: bool = False) -> dict[str, Any]:
-        """The cells a fill would read: empty cells and, with include_stale, values made under an earlier column revision.
+        """The cells a fill would read: empty cells and, with include_stale, values made under an earlier column revision
+        or citing passages no longer given to a model (a removed or replaced PDF, an earlier extraction).
 
         Rows are taken in table order up to MAX_FILL_SOURCES sources. A source without stored text needs no model call.
         """
@@ -510,11 +512,15 @@ class TableStore:
         sources, beyond = [], 0
         for svid in self.active_rows(table_id):
             cells = {r["column_id"]: r for r in self.conn.execute(
-                "SELECT c.column_id, c.version, r.column_revision FROM evidence_cells c LEFT JOIN cell_revisions r"
+                "SELECT c.column_id, c.version, r.column_revision, EXISTS (SELECT 1 FROM cell_evidence_links l"
+                f" JOIN passages p ON p.id = l.passage_id LEFT JOIN source_assets a ON a.id = p.asset_id"
+                f" WHERE l.cell_revision_id = r.id AND {EVIDENCE_STATUS_SQL} <> 'current') AS shadowed"
+                " FROM evidence_cells c LEFT JOIN cell_revisions r"
                 " ON r.id = c.current_revision_id WHERE c.table_id = ? AND c.source_version_id = ?", (table_id, svid)
             )}
+            # Stale: made under an earlier column revision, or citing a file or extraction no longer in use (D45).
             targets = [c["id"] for c in columns if c["id"] not in cells or cells[c["id"]]["column_revision"] is None
-                       or (include_stale and cells[c["id"]]["column_revision"] != c["current_revision"])]
+                       or (include_stale and (cells[c["id"]]["column_revision"] != c["current_revision"] or cells[c["id"]]["shadowed"]))]
             if not targets:
                 continue
             if len(sources) == MAX_FILL_SOURCES:
@@ -625,9 +631,10 @@ class TableStore:
         )]
 
     def _revision_view(self, revision: dict[str, Any]) -> dict[str, Any]:
-        evidence = [dict(r) | {"asset_removed": bool(r["asset_removed"])} for r in self.conn.execute(
+        evidence = [dict(r) for r in self.conn.execute(
             "SELECT l.passage_id, l.anchor_text, l.anchor_match, p.kind, p.physical_page, p.printed_label, p.asset_id,"
-            " a.removed_at IS NOT NULL AS asset_removed FROM cell_evidence_links l JOIN passages p ON p.id = l.passage_id"
+            f" {EVIDENCE_STATUS_SQL} AS evidence_status"
+            " FROM cell_evidence_links l JOIN passages p ON p.id = l.passage_id"
             " LEFT JOIN source_assets a ON a.id = p.asset_id WHERE l.cell_revision_id = ? ORDER BY l.rowid", (revision["id"],)
         )]
         return {
@@ -648,8 +655,8 @@ class TableStore:
         flags = []
         if current_view and current_view["column_revision"] != column["current_revision"]:
             flags.append("stale_column")
-        if current_view and any(e["asset_removed"] for e in current_view["evidence"]):
-            flags.append("pdf_withdrawn")
+        evidence_statuses = {e["evidence_status"] for e in current_view["evidence"]} if current_view else set()
+        flags += [status for status in SHADOWED_STATUSES if status in evidence_statuses]
         if pending and pending["cell_version_at_request"] is not None and pending["cell_version_at_request"] < cell["version"]:
             flags.append("proposal_before_edit")
         if pending and pending["output_status"] != "structurally_valid":

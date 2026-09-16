@@ -2,7 +2,8 @@
 
 Detection reads the PATH, app bundles, `--version` output and the model servers' loopback endpoints. An install runs
 the one package-manager command fixed for that tool id, never a command taken from a request. Codex and Claude Code run
-research steps; the other CLI is detected only, and a local server's embedding models can rank answer passages.
+research steps; the other CLI is detected only, and a local server's embedding models can rank answer passages. Zotero
+is the one reference manager: its local API is where a collection import reads from (D16).
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ OUTPUT_TAIL_CHARS = 4000
 class Tool:
     id: str
     name: str
-    kind: str  # 'cli' or 'server'
+    kind: str  # 'cli', 'server' or 'app'
     binary: str
     install: tuple[str, ...]  # argv; the first item is the package manager, looked up on PATH
     url: str
@@ -53,6 +54,8 @@ TOOLS = {t.id: t for t in (
          app="/Applications/Ollama.app", endpoint="http://127.0.0.1:11434"),
     Tool("lm_studio", "LM Studio", "server", "lms", ("brew", "install", "--cask", "lm-studio"), "https://lmstudio.ai/download",
          app="/Applications/LM Studio.app", endpoint="http://127.0.0.1:1234"),
+    Tool("zotero", "Zotero", "app", "zotero", ("brew", "install", "--cask", "zotero"), "https://www.zotero.org/download/",
+         role="imports", app="/Applications/Zotero.app", endpoint="http://127.0.0.1:23119"),
 )}
 
 
@@ -130,7 +133,21 @@ class LocalTools:
         }
         if tool.kind == "server":
             status |={"endpoint": tool.endpoint, "running": models is not None, "models": models or []}
+        if tool.kind == "app":
+            local_api = await self._zotero_local_api(tool)
+            status["installed"] = status["installed"] or local_api is not None
+            status |= {"endpoint": tool.endpoint, "running": local_api is not None, "local_api": bool(local_api),
+                       # zotero.org import reads these from .env; they are reported as set or not, never shown.
+                       "web_configured": bool(os.environ.get("ZOTERO_API_KEY") and os.environ.get("ZOTERO_LIBRARY_ID"))}
         return status
+
+    async def _zotero_local_api(self, tool: Tool) -> bool | None:
+        """True when the local API reads, False when Zotero answers with it turned off, None when Zotero does not answer."""
+        try:
+            response = await self._client.get(f"{tool.endpoint}/api/users/0/collections", params={"limit": 1}, timeout=2)
+        except httpx.HTTPError:
+            return None
+        return response.status_code == 200
 
     async def _server_models(self, tool: Tool) -> list[dict[str, Any]] | None:
         """Models the running server lists, or None when it does not answer."""

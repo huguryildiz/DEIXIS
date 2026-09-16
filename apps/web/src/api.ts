@@ -36,7 +36,7 @@ export type SearchPlan = {
   concepts: { label: string; role: string; synonyms: string[] }[]
   queries: { provider_id: string; query_text: string; rationale: string }[]
 }
-export type RunKind = 'discovery' | 'answer' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title'
+export type RunKind = 'discovery' | 'answer' | 'pdf_collection' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   table_id: string; column_id?: string; source_version_id?: string; cell_version?: number
@@ -46,14 +46,23 @@ export type Run = {
   id: string; research_id: string; scope_revision: number; kind: RunKind; status: RunStatus; stage: string
   pause_reason: string | null; error: unknown; budget: Record<string, number>; usage: Record<string, number>
   created_at: string; updated_at: string; version: number; steps?: Step[]; target: RunTarget | null
-  // plan null: this run wrote no search plan. screening_notes: the notes of every screening batch, in order.
-  plan: SearchPlan | null; screening_notes: string
+  // plan null: this run wrote no search plan. screening_notes: the note of each screening batch, in order, with its step.
+  plan: SearchPlan | null; screening_notes: { step_id: string; text: string }[]
 }
 export type SearchRun = {
   id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null } | null
 }
-export type Asset = { id: string; extraction_status: string; page_count: number | null; origin: string; byte_size: number; original_filename: string | null }
+export type Asset = {
+  id: string; extraction_status: string; extraction_version?: string | null; page_count: number | null; origin: string; byte_size: number; original_filename: string | null
+  // Sources only (D45): whether the text comes from the current extractor, and a later extraction that was not taken.
+  current_extraction?: boolean; rejected_extraction?: { extraction_version: string; rejection_reason: string; created_at: string } | null
+}
+// What became of a cited passage's file since it was stored (D45).
+export type EvidenceStatus = 'current' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded'
+export type ReplacedAsset = { id: string; original_filename: string | null; removed_at: string; replaced_by_asset_id: string }
+export type AssetImpact = { asset_id: string; researches: { id: string; title: string }[]; cells: number; quotes: number }
+export type Reextraction = { asset_id: string; outcome: 'current' | 'rejected' | 'unchanged'; rejection_reason?: string | null }
 export type AssetText = {
   asset: Asset
   passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null }[]
@@ -66,9 +75,10 @@ export type PdfCandidate = {
   http_status: number | null; error_code: string | null; final_url: string | null; discovered_at: string; attempted_at: string | null
 }
 export type PdfDiscovery = {
-  provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'web_search'; query_text: string; status: string; result_count: number
+  provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'web_search'; query_text: string; status: string; result_count: number; other_title_count: number
   http_status: number | null; error_code: string | null; created_at: string; finished_at: string | null
 }
+export type PdfMatch = { filename: string; source_version_id: string | null; basis: 'doi' | 'title' | null }
 export type Source = {
   source_version_id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null
   volume: string | null; issue: string | null; pages: string | null
@@ -76,7 +86,11 @@ export type Source = {
   cited_by_count: number | null; cited_by_count_at: string | null
   origin: 'provider' | 'user_upload'; added_by: string; added_at: string; rank: number | null; similarity: number | null
   found_in_revision: number | null; applicability: 'current' | 'stale_scope'; version_role: 'record' | 'other_version'
-  access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; fetch: { status: string; error_code: string | null; http_status: number | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; pdf_discoveries: PdfDiscovery[] }
+  // The other version of the work whose text answers read, when the record has no PDF text (D48).
+  answer_reads_version_id: string | null
+  // Whether an answer reads this version's PDF pages rather than its abstract (D49).
+  has_pdf_text: boolean
+  access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; replaced_assets: ReplacedAsset[]; fetch: { status: string; error_code: string | null; http_status: number | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; pdf_discoveries: PdfDiscovery[] }
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null }
   cited_in_latest_answer: boolean
   provider_records: string[]; suspected_duplicates: { source_version_id: string; basis: 'same_title' | 'published_doi' }[]
@@ -84,6 +98,7 @@ export type Source = {
 export type Evidence = {
   passage_id: string; source_version_id: string; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
   printed_label: string | null; reading_depth: string; title: string; version_label: string | null; anchor_text: string | null
+  evidence_status: EvidenceStatus
 }
 export type Claim = {
   id: string; label: string; section: string | null; text: string; support_type: 'source_stated' | 'analyst_inference'; semantic_review: string; evidence: Evidence[]
@@ -94,12 +109,14 @@ export type ValidationIssue = { code: string; path: string; message: string }
 export type Answer = {
   id: string; run_id: string; status: 'structurally_valid' | 'unverified_draft' | 'clarification' | 'no_evidence'
   scope_revision: number; applicability: 'current' | 'stale_scope' | 'stale_selection'; answer_language: string | null; created_at: string
+  report_version: number | null; report_title: string | null
   claims: Claim[]; limitations: Limitation[]; unanswered_aspects: string[]; capability_notice: string | null
   clarification: { question: string; ambiguity: string; why_it_matters: string; options: string[] } | null
   unverified_draft: { claims?: { claim_label: string; text: string }[] } | null
   validation: { ok?: boolean; issues?: ValidationIssue[]; warnings?: ValidationIssue[]; note?: string }
   model: { connection: string; requested_model: string | null; resolved_model: string | null; token_usage: unknown } | null
   inputs_given: { sources: number; passages: number; source_ids: string[] } | null
+  source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D45)
   review: AnswerReview | null
 }
 export type Counts = { found: number; unique: number; included: number; excluded: number; pending: number; inspected: number; cited: number }
@@ -117,6 +134,7 @@ export type TrashedResearch = { id: string; title: string; trashed_at: string }
 export type Passage = {
   id: string; kind: Evidence['kind']; text: string; physical_page: number | null; printed_label: string | null
   abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; reading_depth: string; asset_id: string | null
+  evidence_status: EvidenceStatus
   source: { id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; landing_url: string | null; version_label: string | null; origin: string; cited_by_count: number | null; cited_by_count_at: string | null }
 }
 export type ModelOption = {
@@ -138,9 +156,10 @@ export type LocalToolModel = { id: string; size_bytes: number | null; embedding:
 export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; url: string }
 export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string } | null
 export type LocalTool = {
-  id: 'claude_code' | 'codex' | 'gemini_cli' | 'ollama' | 'lm_studio'; name: string; kind: 'cli' | 'server'
-  installed: boolean; version: string | null; path: string | null; role: 'runs_steps' | 'detected'
-  running?: boolean; endpoint?: string; models?: LocalToolModel[]; install: LocalToolInstall; job: LocalToolJob
+  id: 'claude_code' | 'codex' | 'gemini_cli' | 'ollama' | 'lm_studio' | 'zotero'; name: string; kind: 'cli' | 'server' | 'app'
+  installed: boolean; version: string | null; path: string | null; role: 'runs_steps' | 'detected' | 'imports'
+  running?: boolean; endpoint?: string; models?: LocalToolModel[]; local_api?: boolean; web_configured?: boolean
+  install: LocalToolInstall; job: LocalToolJob
 }
 export type LocalTools = { machine: { chip: string | null; memory_gb: number | null; disk_free_gb: number | null }; tools: LocalTool[] }
 export type SemanticSearchProvider = 'gemini' | 'openai' | 'ollama' | 'lm_studio' | 'off'
@@ -202,7 +221,7 @@ export type TableRow = {
 export type CellValue = { option_ids?: string[]; number?: number; unit?: string | null; as_stated?: string | null; answer?: 'yes' | 'no'; text?: string }
 export type CellEvidence = {
   passage_id: string; anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null; kind: Evidence['kind']
-  physical_page: number | null; printed_label: string | null; asset_id: string | null; asset_removed: boolean
+  physical_page: number | null; printed_label: string | null; asset_id: string | null; evidence_status: EvidenceStatus
 }
 export type CellRevision = {
   id: string; kind: 'model_fill' | 'model_proposal' | 'system_fill' | 'human_edit' | 'accept_proposal' | 'dismiss_proposal'
@@ -212,7 +231,7 @@ export type CellRevision = {
   run_id: string | null; created_at: string; model: { connection: string | null; resolved_model: string | null } | null; evidence: CellEvidence[]
   decision?: 'accepted' | 'dismissed' | 'pending' | 'superseded'  // model proposals in a cell's history
 }
-export type CellFlag = 'stale_column' | 'pdf_withdrawn' | 'proposal_before_edit' | 'proposal_invalid'
+export type CellFlag = 'stale_column' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded' | 'proposal_before_edit' | 'proposal_invalid'
 export type CellSummary = {
   cell_id: string | null; column_id: string; source_version_id: string; version: number
   current: CellRevision | null; pending_proposal: CellRevision | null; flags: CellFlag[]
@@ -297,13 +316,31 @@ export const api = {
     form.append('file', file)
     return request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/uploads`, { method: 'POST', body: form })
   },
+  // Attaches PDFs from the user's Zotero library to included works that have no PDF text yet (D49).
+  zoteroPdfs: (id: string, source: ZoteroSource) =>
+    request<ResearchView & { zotero_pdfs: { checked: number; added: number; notes: { title: string; note: string }[] } }>(`/api/researches/${id}/zotero-pdfs`, json('POST', { source })),
+  // Proposes the included source each PDF belongs to (DOI, arXiv id, or title); nothing is attached (D49).
+  matchUploads: (id: string, files: File[]) => {
+    const form = new FormData()
+    files.forEach(file => form.append('files', file))
+    return request<{ matches: PdfMatch[] }>(`/api/researches/${id}/uploads/match`, { method: 'POST', body: form })
+  },
   removeAsset: (id: string, sourceId: string, assetId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}`, { method: 'DELETE' }),
+  assetImpact: (id: string, sourceId: string, assetId: string) =>
+    request<AssetImpact>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/impact`),
+  replaceAsset: (id: string, sourceId: string, assetId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}`, { method: 'PUT', body: form })
+  },
+  reextractAsset: (id: string, sourceId: string, assetId: string) =>
+    request<ResearchView & { reextraction: Reextraction }>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/extractions`, { method: 'POST' }),
   discoverPdf: (id: string, sourceId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-discovery`, { method: 'POST' }),
   attachPdfCandidate: (id: string, sourceId: string, candidateId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-candidates/${candidateId}/attach`, { method: 'POST' }),
-  startRun: (id: string, kind: 'discovery' | 'answer' | 'research_title', idempotencyKey: string) =>
+  startRun: (id: string, kind: 'discovery' | 'answer' | 'pdf_collection' | 'research_title', idempotencyKey: string) =>
     request<Run>(`/api/researches/${id}/runs`, json('POST', { kind }, { 'Idempotency-Key': idempotencyKey })),
   controlRun: (runId: string, action: 'pause' | 'resume' | 'cancel') => request<Run>(`/api/runs/${runId}/${action}`, { method: 'POST' }),
   select: (id: string, sourceId: string, state: Source['selection']['state'], expectedVersion: number, reason?: string) =>

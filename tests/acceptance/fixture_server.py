@@ -139,9 +139,13 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--write-hostile-pdf", type=Path, help="Write the untrusted-text PDF used by case G and exit")
+    parser.add_argument("--write-replacement-pdf", type=Path, help="Write a SYNTHETIC PDF used to replace a source's file (D45) and exit")
     args = parser.parse_args()
     if args.write_hostile_pdf:
         args.write_hostile_pdf.write_bytes(make_pdf([HOSTILE_PDF_TEXT]))
+        return
+    if args.write_replacement_pdf:
+        args.write_replacement_pdf.write_bytes(make_pdf(["SYNTHETIC replacement scan: release scheduling by bisection, full page."]))
         return
     settings = Settings(data_dir=args.data_dir, port=args.port)
     app = create_app(settings, adapters={"codex": ScriptedCodex()},

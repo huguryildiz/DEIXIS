@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, Server, Sparkles, SquareTerminal, TextSearch } from 'lucide-react'
+import { BookMarked, Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, Server, Sparkles, SquareTerminal, TextSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -107,6 +107,7 @@ function LocalToolDetails({ tool, dark, onChanged }: { tool: LocalTool; dark: bo
       {tool.version && <><dt>{t('Version')}</dt><dd>{tool.version}</dd></>}
       {tool.path && <><dt>{t('Path')}</dt><dd className="local-tool-path">{tool.path.split('/').map((part, i) => <span key={i}>{i > 0 && '/'}{part}<wbr /></span>)}</dd></>}
       {tool.role === 'detected' && <><dt>{t('Role')}</dt><dd>{t('Detected only; it does not run steps')}</dd></>}
+      {tool.role === 'imports' && <><dt>{t('Role')}</dt><dd>{t('Imports a collection into a research, read-only')}</dd></>}
     </dl>}
     {tool.kind === 'server' && tool.installed && (tool.running
       ? <>
@@ -116,6 +117,10 @@ function LocalToolDetails({ tool, dark, onChanged }: { tool: LocalTool; dark: bo
           : <p className="local-tool-note">{t('No models found.')}</p>}
       </>
       : <p className="local-tool-note">{t(tool.id === 'ollama' ? 'Start it with `ollama serve`' : 'Open LM Studio and start its local server')}</p>)}
+    {tool.kind === 'app' && tool.installed && <>
+      <p className="local-tool-note">{!tool.running ? t('Not running. Open Zotero to import from this computer.') : tool.local_api ? t('Local API on · {endpoint}', { endpoint: tool.endpoint ?? '' }) : t('Running, but its local API is off. Turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.')}</p>
+      <p className="local-tool-note">{t(tool.web_configured ? 'zotero.org: ZOTERO_API_KEY and ZOTERO_LIBRARY_ID are set.' : 'zotero.org: set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID in .env to import from the web library.')}</p>
+    </>}
     {!tool.installed && (tool.install.available
       ? <>
         <div className="cmd"><code>{tool.install.command.split(' ').map((word, i) => <span key={i}>{i > 0 && ' '}<span>{word}</span></span>)}</code></div>
@@ -247,6 +252,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
 
   const cliTools = (tools?.tools ?? []).filter(tool => tool.kind === 'cli')
   const serverTools = (tools?.tools ?? []).filter(tool => tool.kind === 'server')
+  const appTools = (tools?.tools ?? []).filter(tool => tool.kind === 'app')
   const machine = tools?.machine
   const hasMachineInfo = machine && (machine.chip || machine.memory_gb != null || machine.disk_free_gb != null)
 
@@ -293,6 +299,11 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
       <h3 className="connections-subhead with-icon"><Server size={15} aria-hidden />{t('Local model servers')}</h3>
       <div className="local-tool-pills">{serverTools.map(tool => <button type="button" className={`local-tool-pill ${tool.installed ? 'is-ready' : ''} ${isActive('local-tool', tool.id) ? 'active' : ''}`} key={tool.id} onClick={() => show({ kind: 'local-tool', id: tool.id })}><ConnectionIcon id={localToolIcon(tool.id)} /><strong>{tool.name || localToolNames[tool.id] || tool.id}</strong><span className="local-tool-pill-status">{t(tool.installed ? 'Installed' : 'Not installed')}</span></button>)}</div>
       <p className="legacy-mini-note">{t('Local models do not run research steps in this version; embedding models can be chosen for semantic search.')}</p>
+      {appTools.length > 0 && <>
+        <h3 className="connections-subhead with-icon"><BookMarked size={15} aria-hidden />{t('Reference managers')}</h3>
+        <div className="local-tool-pills">{appTools.map(tool => <button type="button" className={`local-tool-pill ${tool.installed ? 'is-ready' : ''} ${isActive('local-tool', tool.id) ? 'active' : ''}`} key={tool.id} onClick={() => show({ kind: 'local-tool', id: tool.id })}><ConnectionIcon id={localToolIcon(tool.id)} /><strong>{tool.name || localToolNames[tool.id] || tool.id}</strong><span className="local-tool-pill-status">{t(tool.installed ? 'Installed' : 'Not installed')}</span></button>)}</div>
+        <p className="legacy-mini-note">{t('Collections are imported read-only from a research’s Sources tab or the home composer’s Add sources menu.')}</p>
+      </>}
     </section>
 
     <section className="connections-group">
@@ -313,7 +324,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
             </label>
           })}
         </div>
-        {semProvider && <p className="legacy-mini-note">{semProvider === 'off' ? t('Passages are ranked by keyword match only; no text is sent anywhere.') : semProvider === 'gemini' ? t('Passage text is sent to {service}.', { service: 'Google' }) : semProvider === 'openai' ? t('Passage text is sent to {service}.', { service: 'OpenAI' }) : t('Passage text stays on this computer.')}</p>}
+        {semProvider && <p className="legacy-mini-note">{semProvider === 'off' ? t('Sources get no similarity score; passages are ranked by keyword match only. No text is sent anywhere.') : semProvider === 'gemini' ? t('Passage text is sent to {service}.', { service: 'Google' }) : semProvider === 'openai' ? t('Passage text is sent to {service}.', { service: 'OpenAI' }) : t('Passage text stays on this computer.')}</p>}
         <div className="actions"><Button size="sm" disabled={semBusy || !semProvider || (needsModel(semProvider) && !semModel)} onClick={saveSemantic}>{t(semBusy ? 'Saving…' : 'Save')}</Button></div>
       </>}
     </section>

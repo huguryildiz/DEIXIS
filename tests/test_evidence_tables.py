@@ -321,7 +321,7 @@ def test_withdrawn_pdf_is_flagged_and_its_evidence_still_resolves(lib):
     model_output(lib, passage=passage)
     lib.store.remove_asset(lib.rid, lib.published, asset)
     view = cell(lib)
-    assert "pdf_withdrawn" in view["flags"] and view["current"]["evidence"][0]["physical_page"] == 4
+    assert "pdf_removed" in view["flags"] and view["current"]["evidence"][0]["physical_page"] == 4
     assert lib.store.passage(passage)["text"].startswith("Packets of 128 bytes")
 
 

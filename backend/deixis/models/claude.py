@@ -128,6 +128,13 @@ class ClaudeCodeAdapter:
         )
         text_parts: list[str] = []
         tool_types: list[str] = []
+        structured_output_received = False
+
+        def external_tools() -> list[str]:
+            # Claude's JSON-schema output is an internal StructuredOutput block.
+            # Accept it only when the SDK also delivered the structured result.
+            return [name for name in tool_types if not (structured_output_received and name == "StructuredOutput")]
+
         actual_model: str | None = None
         session_id: str | None = None
         usage: dict[str, Any] | None = None
@@ -150,13 +157,14 @@ class ClaudeCodeAdapter:
                                 session_id = item.session_id
                                 usage = item.usage or usage
                                 if item.structured_output is not None:
+                                    structured_output_received = True
                                     text_parts = [json.dumps(item.structured_output, ensure_ascii=False)]
                                 elif item.result and not text_parts:
                                     text_parts = [item.result]
                                 if item.is_error:
                                     return ModelStepResult(
                                         "failed", raw_text="".join(text_parts) or None, resolved_model=actual_model,
-                                        external_thread_id=session_id, token_usage=usage, tool_item_types=tool_types,
+                                        external_thread_id=session_id, token_usage=usage, tool_item_types=external_tools(),
                                         error="; ".join(item.errors or []) or item.result or item.subtype,
                                         delivery_class="after_send_unknown", requested_model_verified=True,
                                     )
@@ -172,7 +180,7 @@ class ClaudeCodeAdapter:
             self._active = None
         return ModelStepResult(
             "completed", raw_text="".join(text_parts), resolved_model=actual_model or requested_model,
-            external_thread_id=session_id, token_usage=usage, tool_item_types=tool_types,
+            external_thread_id=session_id, token_usage=usage, tool_item_types=external_tools(),
             requested_model_verified=True,
         )
 

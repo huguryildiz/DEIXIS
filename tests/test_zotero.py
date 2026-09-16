@@ -156,3 +156,57 @@ def test_unavailable_zotero_and_academic_scope_explain_what_to_do(tmp_path, monk
         academic = start(client, scope="academic")
         refused = client.post(f"/api/researches/{academic}/zotero-imports", json={"source": "local", "collection_key": COLLECTION})
         assert refused.status_code == 422 and "source scope" in refused.json()["detail"]
+
+
+def test_zotero_pdfs_attach_the_library_copy_to_included_works_without_pdf_text(tmp_path):
+    local_pdf = tmp_path / "art.pdf"
+    local_pdf.write_bytes(make_pdf(["SYNTHETIC Zotero copy of the diffusion paper."]))
+    works = [
+        {"id": "https://openalex.org/W1", "doi": "https://doi.org/10.1/zot", "display_name": "SYNTHETIC diffusion scheduling",
+         "publication_year": 2021, "type": "article", "authorships": [], "ids": {}, "primary_location": {}, "best_oa_location": None,
+         "abstract_inverted_index": {"We": [0], "schedule": [1]}},
+        {"id": "https://openalex.org/W2", "doi": "https://doi.org/10.1/cnf", "display_name": "SYNTHETIC relay budget planning",
+         "publication_year": 2019, "type": "article", "authorships": [], "ids": {}, "primary_location": {}, "best_oa_location": None,
+         "abstract_inverted_index": {"Relays": [0], "share": [1]}},
+    ]
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        path = request.url.path
+        if request.url.host == "api.openalex.org":
+            return httpx.Response(200, json={"meta": {"count": len(works)}, "results": works})
+        if path.endswith("/items/top"):
+            # The title search finds the article; the relay paper is found only by its DOI, with a linked file.
+            query = request.url.params["q"]
+            if query == "SYNTHETIC diffusion scheduling":
+                return httpx.Response(200, json=[ROWS[0]])
+            return httpx.Response(200, json=[ROWS[3]] if query == "10.1/cnf" else [])
+        if path.endswith("/items/ART12345/children"):
+            return httpx.Response(200, json=[ROWS[1], ROWS[2]])
+        if path.endswith("/items/CNF12345/children"):
+            return httpx.Response(200, json=[ROWS[4]])
+        if path.endswith("/items/PDFA1234/file"):
+            return httpx.Response(302, headers={"location": local_pdf.as_uri()})
+        return httpx.Response(404)
+
+    with TestClient(app_for(tmp_path, httpx.AsyncClient(transport=httpx.MockTransport(handler)))) as client:
+        rid = start(client, scope="academic")
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        for _ in range(150):
+            view = client.get(f"/api/researches/{rid}").json()
+            if next(r for r in view["runs"] if r["id"] == run["id"])["status"] == "completed":
+                break
+            __import__("time").sleep(0.1)
+        assert all(s["selection"]["state"] == "included" for s in view["sources"]), view["sources"]
+
+        response = client.post(f"/api/researches/{rid}/zotero-pdfs", json={"source": "local"})
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["zotero_pdfs"]["checked"] == 2 and body["zotero_pdfs"]["added"] == 1
+        # The relay paper is found by DOI; its linked file is missing, and the note says so instead of failing the request.
+        assert body["zotero_pdfs"]["notes"] == [{"title": "SYNTHETIC relay budget planning",
+                                                 "note": "PDF not added: Zotero did not return the file (HTTP 404)"}]
+        article = next(s for s in body["sources"] if s["doi"] == "10.1/zot")
+        assert article["has_pdf_text"] and article["access"]["assets"][0]["origin"] == "user_upload"
+        assert all(r.method == "GET" for r in seen)  # nothing is written to Zotero

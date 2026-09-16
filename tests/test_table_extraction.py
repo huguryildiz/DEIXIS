@@ -389,8 +389,12 @@ def test_recheck_reads_only_this_source_versions_retained_passages(tmp_path):
 
     lib = library(tmp_path, cite_the_preprint)
     preprint_abstract = next(iter(passage_ids(lib, lib.preprint)))
+    # One PDF is in use at a time (D45): the fixture's file is withdrawn, a wrong file added and withdrawn, then the pages added again.
+    (first,) = {p["asset_id"] for p in lib.store.passages_for(lib.published) if p["asset_id"]}
+    lib.store.remove_asset(lib.rid, lib.published, first)
     withdrawn = add_pdf(lib.store, lib.published, ["SYNTHETIC withdrawn page: packets of 512 bytes."], "2" * 64)
     lib.store.remove_asset(lib.rid, lib.published, withdrawn)
+    add_pdf(lib.store, lib.published, ["SYNTHETIC page one: packets of 128 bytes minimize energy per bit.", "SYNTHETIC page two: a relay forwards each packet once."], "3" * 64)
     run = recheck(lib, lib.published, 0)
     assert execute(lib, run)["status"] == "completed"
     (payload,) = stored_inputs(lib, run["id"])[:1]

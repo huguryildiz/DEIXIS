@@ -57,6 +57,39 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...]) ->
     return 0
 
 
+def reextract(settings: Settings, dry_run: bool) -> int:
+    """Extract every PDF in use again with the current extractor; one line per file, then a summary (D45, D47)."""
+    from collections import Counter
+
+    from deixis.documents import pdf
+    from deixis.storage import db
+    from deixis.workflow.store import RunInProgress, Store
+
+    conn = db.connect(settings.db_path)
+    db.migrate(conn)
+    store = Store(conn)
+    assets = conn.execute(
+        "SELECT a.id, a.storage_path, a.extraction_version, v.title FROM source_assets a JOIN source_versions v ON v.id = a.source_version_id"
+        " WHERE a.removed_at IS NULL AND a.extraction_version IS NOT ? ORDER BY a.retrieved_at", (pdf.EXTRACTION_VERSION,)
+    ).fetchall()
+    outcomes: Counter[str] = Counter()
+    for asset in assets:
+        path = settings.papers_dir / asset["storage_path"]
+        if not path.exists():
+            outcome, detail = "file_missing", ""
+        else:
+            try:
+                report = store.reextract_asset(asset["id"], pdf.extract_pdf(path), pdf.EXTRACTION_VERSION, pdf.chunk_page, dry_run=dry_run)
+                outcome, detail = report["outcome"], report.get("rejection_reason") or ""
+            except RunInProgress:
+                outcome, detail = "run_in_progress", ""
+        outcomes[outcome] += 1
+        print(f"{outcome:16} {asset['id']}  {asset['extraction_version'] or '-'}  {asset['title'][:60]}  {detail}")
+    print(f"{'Dry run: ' if dry_run else ''}{len(assets)} PDFs, " + ", ".join(f"{n} {k}" for k, n in sorted(outcomes.items())))
+    conn.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="deixis")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -68,8 +101,12 @@ def main(argv: list[str] | None = None) -> int:
     save.add_argument("destination", type=Path, help="Folder in which a new dated backup folder is created")
     load = sub.add_parser("restore", help="Restore a backup into a data directory that has no library yet")
     load.add_argument("backup", type=Path, help="A backup folder created by `deixis backup`")
+    again = sub.add_parser("reextract", help="Extract the text of every PDF in use again with the current extractor")
+    again.add_argument("--dry-run", action="store_true", help="Report what would become current or be rejected; write nothing")
     args = parser.parse_args(argv)
     settings = load_settings()
+    if args.command == "reextract":
+        return reextract(settings, args.dry_run)
     if args.command in ("backup", "restore"):
         try:
             if args.command == "backup":

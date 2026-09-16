@@ -26,6 +26,7 @@ const titles: Record<PhaseKey, [string, string, string]> = {
   review: ['Reviewing the claims', 'Reviewed the claims', 'Claim review'],
 }
 const discoveryHeadings: Record<string, string> = { active: 'Searching and screening', completed: 'Ran search & screening', paused: 'Search & screening paused', failed: 'Search & screening failed', cancelled: 'Search & screening cancelled' }
+const collectionHeadings: Record<string, string> = { active: 'Collecting open-access PDFs', completed: 'Collected open-access PDFs', paused: 'PDF collection paused', failed: 'PDF collection failed', cancelled: 'PDF collection cancelled' }
 const answerHeadings: Record<string, string> = { active: 'Generating the answer', completed: 'Ran answer generation', paused: 'Answer generation paused', failed: 'Answer generation failed', cancelled: 'Answer generation cancelled' }
 // The run's stage names the phase it has reached before that phase records its first step.
 const stagePhases: Record<string, PhaseKey> = { screening: 'screen', inspection: 'pdf', answer: 'answer', claim_check: 'review' }
@@ -51,6 +52,13 @@ function startedText(iso: string) {
 }
 const secondsBetween = (from: string, to: number) => Math.max(0, Math.round((to - Date.parse(from)) / 1000))
 const present = (values: (string | null)[]) => values.filter((v): v is string => Boolean(v)).sort()
+const stepSeconds = (s?: Step) => (s?.started_at && s.finished_at ? secondsBetween(s.started_at, Date.parse(s.finished_at)) : null)
+// An embedding model is stored bare for Gemini and as "connection:model" for the others.
+const EMBEDDING_CONNECTIONS = new Set(['openai', 'ollama', 'lm_studio'])
+const embeddingOf = (stored: string) => {
+  const [head, ...rest] = stored.split(':')
+  return EMBEDDING_CONNECTIONS.has(head) ? { connection: head, model: rest.join(':') } : { connection: 'gemini', model: stored }
+}
 const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unknown'
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
@@ -83,8 +91,10 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, busy, onC
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [active])
-  // The question is the page heading and the revision box; it is not repeated here.
-  return <div className="chat">
+  // The current question opens the timeline as the user's turn.
+  return <>
+  <div className="chat-question"><p dir="auto">{view.scope.question}</p></div>
+  <div className="chat">
     {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} busy={busy} onControl={onControl}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
@@ -92,6 +102,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, busy, onC
     <div ref={end} className="chat-end" />
     {active && !atEnd && <button type="button" className="chat-jump" onClick={() => end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })}><ArrowDown size={15} aria-hidden />{t('Jump to latest')}</button>}
   </div>
+  </>
 }
 
 function RunTurn({ run, view, now, latest, modelText, busy, onControl, children }: { run: Run; view: ResearchView; now: number; latest: boolean; modelText: ModelText; busy: boolean; onControl: Control; children: ReactNode }) {
@@ -104,7 +115,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
 
   const steps = run.steps ?? []
-  const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
+  const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen'] : run.kind === 'pdf_collection' ? ['pdf'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
   const reached = Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
   const searches = view.search_runs.filter(s => s.run_id === run.id)
@@ -235,12 +246,19 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
           basis.length ? t('Judged from: {list}', { list: basis.map(([b, n]) => `${n} ${t(basisLabels[b] ?? b)}`).join(' · ') }) : '',
           changed ? plural(changed, 'You changed {n} proposal', 'You changed {n} proposals') : '',
         ].filter(Boolean)
+        const similarityModel = similarity ? embeddingOf(similarity.output?.model ?? similarity.kind.slice('similarity:'.length)) : null
+        const timed = (step?: Step) => { const s = stepSeconds(step); return s === null ? null : <time>{durationText(s)}</time> }
+        // One line per finding, each with the time its step took.
         return <>
-          {similarity && <p>{similarity.status === 'succeeded'
-            ? plural(similarity.output?.sources ?? 0, 'Ranked {n} source by similarity ({model})', 'Ranked {n} sources by similarity ({model})', { model: similarity.output?.model ?? similarity.kind.split(':')[1] ?? '' })
-            : t('Similarity unavailable; ordered by search position')}</p>}
-          {lines.length > 0 && <p>{lines.join(' · ')}</p>}
-          {run.screening_notes && <p>{run.screening_notes}</p>}
+          {similarity && similarityModel && <p className="chat-report-line">
+            <span>{similarity.status === 'succeeded'
+              ? <>{plural(similarity.output?.sources ?? 0, 'Similarity to the question: {n} source scored', 'Similarity to the question: {n} sources scored')}
+                <span className="chat-run-model chat-report-model"><ConnectionIcon id={similarityModel.connection} /><span className="sr-only">{connectionName(similarityModel.connection)} · </span>{similarityModel.model}</span></>
+              : t('Similarity unavailable; ordered by search position')}</span>
+            {timed(similarity)}
+          </p>}
+          {lines.length > 0 && <p className="chat-report-line"><span>{lines.join(' · ')}</span></p>}
+          {run.screening_notes.map(note => <p key={note.step_id} className="chat-report-line"><span>{note.text}</span>{timed(steps.find(s => s.id === note.step_id))}</p>)}
         </>
       }
       case 'pdf': {
@@ -286,10 +304,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
     model: scope.literature_model ?? scope.requested_model, effort: scope.literature_model ? scope.literature_reasoning_effort : scope.reasoning_effort }
   const embeddingStep = steps.find(s => s.kind.startsWith('embedding:'))
   const embeddingStoredModel = embeddingStep?.kind.slice('embedding:'.length) ?? ''
-  const embeddingParts = embeddingStoredModel.split(':')
-  const embeddingConnections = new Set(['openai', 'ollama', 'lm_studio'])
-  const embeddingConnection = embeddingConnections.has(embeddingParts[0]) ? embeddingParts[0] : 'gemini'
-  const embeddingModel = embeddingConnections.has(embeddingParts[0]) ? embeddingParts.slice(1).join(':') : embeddingStoredModel
+  const { connection: embeddingConnection, model: embeddingModel } = embeddingOf(embeddingStoredModel)
   const embeddingProviders: Record<string, string> = { gemini: 'Gemini', openai: 'OpenAI', ollama: 'Ollama', lm_studio: 'LM Studio' }
   const agents: Partial<Record<PhaseKey, { role: string; connection: string; model: string | null; effort: string | null }>> = {
     plan: literature, screen: literature,
@@ -300,7 +315,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
   const providers = new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(view.scope.providers.map(providerName))
   // Worded as what happened, so it reads apart from the run strip's status next to the tabs.
   const outcome = active ? 'active' : run.status
-  const label = t((run.kind === 'discovery' ? discoveryHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
+  const label = t((run.kind === 'discovery' ? discoveryHeadings : run.kind === 'pdf_collection' ? collectionHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
   const olderRevision = run.scope_revision !== view.research.current_scope_revision
   const tokens = totalTokens(answer?.model?.token_usage)
   // What the run spent against what it was allowed; the token figure is the answer step's own, and no cost is estimated.
@@ -323,7 +338,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
       {expanded && <>
         {latest && active && <div className="chat-run-plan" role="note">
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />
-          <div><p className="chat-run-plan-title">{run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : t('Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
+          <div><p className="chat-run-plan-title">{run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : t('Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
         </div>}
         <ol className="chat-steps">{order.map((key, i) => {
         const state = stateOf(i)
@@ -377,7 +392,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
         })}</ol>
         <div className="chat-run-foot">
           {/* What ran this run and what it spent: one quiet line under the phases, not a disclosure. */}
-          {run.status !== 'queued' && <p className="chat-run-meta">
+          {run.status !== 'queued' && run.kind !== 'pdf_collection' && <p className="chat-run-meta">
             {models.length > 0 && <span className="chat-run-models">{models}</span>}
             <span>{spend}</span>
           </p>}

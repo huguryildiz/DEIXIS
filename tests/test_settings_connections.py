@@ -146,6 +146,9 @@ def test_local_tools_report_clis_running_servers_and_embedding_models(client, pa
     assert [(m["id"], m["embedding"]) for m in ollama["models"]] == [("qwen3:8b", False), ("nomic-embed-text:latest", True)]
     assert ollama["install"]["available"] is False and "brew" in ollama["install"]["unavailable_reason"]
     assert (tools["lm_studio"]["installed"], tools["lm_studio"]["running"], tools["lm_studio"]["models"]) == (False, False, [])
+    zotero = tools["zotero"]
+    assert (zotero["kind"], zotero["role"], zotero["installed"], zotero["running"], zotero["local_api"]) == ("app", "imports", False, False, False)
+    assert zotero["install"]["command"] == "brew install --cask zotero"
 
 
 def wait_job(client, tool_id, timeout=10):
@@ -212,3 +215,23 @@ def test_version_is_the_output_line_that_names_one(tmp_path):
     tool.write_text('#!/bin/sh\necho "Warning: could not connect to a running Ollama instance"\necho "Warning: client version is 0.34.0"\n')
     tool.chmod(0o755)
     assert local_tools._command_output([str(tool), "--version"]) == "client version is 0.34.0"
+
+
+def test_zotero_reports_whether_its_local_api_is_on(client, monkeypatch):
+    replies = {"status": None}
+
+    async def fake_get(url, params=None, timeout=None):
+        if replies["status"] is None or ":23119/" not in url:
+            raise httpx.ConnectError("connection refused")
+        return httpx.Response(replies["status"], json=[])
+
+    tools = client.app.state.local_tools
+    monkeypatch.setattr(tools._client, "get", fake_get)
+    monkeypatch.setenv("ZOTERO_API_KEY", "SYNTHETIC")
+    monkeypatch.setenv("ZOTERO_LIBRARY_ID", "1")
+    zotero = lambda: next(t for t in client.get("/api/local-tools?refresh=true").json()["tools"] if t["id"] == "zotero")
+    assert (zotero()["installed"], zotero()["running"], zotero()["web_configured"]) == (False, False, True)
+    replies["status"] = 403
+    assert (zotero()["installed"], zotero()["running"], zotero()["local_api"]) == (True, True, False)
+    replies["status"] = 200
+    assert zotero()["local_api"] is True

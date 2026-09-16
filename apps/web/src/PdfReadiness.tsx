@@ -5,6 +5,7 @@ import { api, type PdfMatch, type ResearchView, type Source, type ZoteroSource }
 import { ConnectionIcon } from './connectionIcons'
 import { fetchReasonText } from './labels'
 import { t } from './i18n'
+import { useToast } from './Toast'
 
 // Between screening and the answer (D49): how many included works an answer can read in full, a run that collects their
 // open PDFs, and ways to add the rest (a PDF per row, several dropped at once, or the user's Zotero library).
@@ -48,7 +49,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
   const [matching, setMatching] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [zoteroSource, setZoteroSource] = useState<ZoteroSource>('local')
-  const [zoteroNote, setZoteroNote] = useState('')
+  const toast = useToast()
   const fileInput = useRef<HTMLInputElement>(null)
 
   const total = records.length
@@ -89,8 +90,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
       <div className="pdf-ready-bar" aria-hidden><i className="is-pdf" style={{ width: pct(inHand) }} /><i className="is-run" style={{ width: pct(count('none')) }} /></div>
       <ul className="pdf-ready-rows">
         {states.map(([record, state]) => <li key={record.source_version_id}>
-          <span className="pdf-ready-title">{record.title}</span>
-          <span className="pdf-ready-meta">{[record.venue, state === 'checking' ? t(stepsOf(record).some(s => s.kind === 'pdf_other_copy' && s.status === 'running') ? 'looking for another open copy' : 'downloading') : state === 'queued' ? t('waiting') : state === 'done' && pagesOf(record) ? plural(pagesOf(record), '{n} page', '{n} pages') : state === 'none' ? missingReason(record, versionsOf(record)) : ''].filter(Boolean).join(' · ')}</span>
+          <RowHead record={record} facts={[state === 'checking' ? t(stepsOf(record).some(s => s.kind === 'pdf_other_copy' && s.status === 'running') ? 'looking for another open copy' : 'downloading') : state === 'queued' ? t('waiting') : state === 'done' && pagesOf(record) ? plural(pagesOf(record), '{n} page', '{n} pages') : state === 'none' ? { text: missingReason(record, versionsOf(record)), tone: 'abstract' } : '']} />
           <span className="pdf-ready-side">
             {state === 'done' && <span className="pdf-pill is-ok">{doneSeconds(record) === null ? t('PDF') : t('PDF · {time}', { time: durationText(doneSeconds(record)!) })}</span>}
             {state === 'checking' && <span className="pdf-pill is-run"><span className="pdf-spin" aria-hidden />{t('Checking')}</span>}
@@ -142,7 +142,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
         return { file: pdfs[i], match, target: record && !full(record) ? record.source_version_id : '', hasPdf: Boolean(record && full(record)) }
       }))
     } catch (e) {
-      setZoteroNote(e instanceof Error ? e.message : String(e))
+      toast('error', e instanceof Error ? e.message : String(e))
     } finally { setMatching(false) }
   }
   const attachProposals = () => {
@@ -154,13 +154,12 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
     }, plural(chosen.length, '{n} PDF attached. Its text was extracted page by page (no OCR).', '{n} PDFs attached. Their text was extracted page by page (no OCR).'))
   }
   const fromZotero = () => {
-    setZoteroNote('')
     const before = new Set(missing.map(r => r.source_version_id))
     void act(async () => {
       const result = await api.zoteroPdfs(researchId, zoteroSource)
       const { added, checked, notes } = result.zotero_pdfs
       touch(result.sources.filter(s => before.has(s.source_version_id) && s.has_pdf_text).map(s => s.source_version_id))
-      setZoteroNote([t('Zotero: {added} of {checked} PDFs added.', { added, checked }), ...notes.map(n => `${n.title}: ${n.note}.`)].join(' '))
+      toast(added < checked || notes.length ? 'warning' : 'success', [t('Zotero: {added} of {checked} PDFs added.', { added, checked }), ...notes.map(n => `${n.title}: ${n.note}.`)].join(' '))
     })
   }
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
@@ -178,8 +177,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
       <div className="pdf-ready-group"><h3>{t('Needs your PDF')}</h3><small>{stillMissing}</small></div>
       <ul className="pdf-ready-rows">
         {needs.map(record => <li key={record.source_version_id}>
-          <span className="pdf-ready-title">{record.title}</span>
-          <span className="pdf-ready-meta">{[record.venue, record.year].filter(Boolean).join(' · ')}{!full(record) && <span className="pdf-pill is-warn">{missingReason(record, versionsOf(record))}</span>}</span>
+          <RowHead record={record} facts={[!full(record) && { text: missingReason(record, versionsOf(record)), tone: 'abstract' }]} />
           <span className="pdf-ready-side">{full(record)
             ? <span className="pdf-pill is-ok">{t('Uploaded · {pages}', { pages: plural(pagesOf(record), '{n} page', '{n} pages') })}</span>
             : <Button variant="outline" size="sm" disabled={busy} onClick={() => { touch([record.source_version_id]); onUpload(record) }}>{t('Upload PDF')}</Button>}</span>
@@ -215,14 +213,12 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
           </span>
           <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void matchFiles(Array.from(e.target.files ?? [])); e.target.value = '' }} />
         </div>}
-      {zoteroNote && <p className="pdf-ready-hint">{zoteroNote}</p>}
     </>}
 
     {readFull.length > 0 && <details className="pdf-ready-full">
       <summary className="pdf-ready-group"><h3>{t('Read in full')}</h3><small>{t('{n} · {pages}', { n: readFull.length, pages: plural(pages, '{n} page', '{n} pages') })}</small></summary>
       <ul className="pdf-ready-rows">{readFull.map(record => <li key={record.source_version_id}>
-        <span className="pdf-ready-title">{record.title}</span>
-        <span className="pdf-ready-meta">{[record.venue, record.year, pagesOf(record) ? plural(pagesOf(record), '{n} page', '{n} pages') : ''].filter(Boolean).join(' · ')}</span>
+        <RowHead record={record} facts={[pagesOf(record) > 0 && { text: plural(pagesOf(record), '{n} page', '{n} pages'), tone: 'text' }]} />
       </li>)}</ul>
     </details>}
 
@@ -232,6 +228,20 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
       {hasAcademic && <button type="button" className="pdf-ready-link" disabled={busy} onClick={onSearchAgain}>{t('Search again')}</button>}
     </div>
   </section>
+}
+
+// A row head in the Sources list style: serif title, authors · year, the venue in italics, then dotted facts.
+type Fact = string | false | { text: string; tone: string }
+function RowHead({ record, facts }: { record: Source; facts: Fact[] }) {
+  const byline = [record.authors.join(', '), record.year].filter(Boolean).join(' · ')
+  const shown = facts.filter(Boolean) as Exclude<Fact, false>[]
+  return <span className="pdf-ready-head">
+    <strong className="pdf-ready-title">{record.title}</strong>
+    {(byline || record.venue) && <span className="source-byline">{byline && <span>{byline}</span>}{record.venue && <span><em>{record.venue}</em></span>}</span>}
+    {shown.length > 0 && <span className="source-status">{shown.map(f => typeof f === 'string'
+      ? <span key={f} className="source-fact is-plain">{f}</span>
+      : <span key={f.text} className={`source-fact is-${f.tone}`}>{f.text}</span>)}</span>}
+  </span>
 }
 
 function Depth({ cells }: { cells: [number, string][] }) {

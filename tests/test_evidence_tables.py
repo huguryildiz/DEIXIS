@@ -72,6 +72,10 @@ def test_foreign_keys_off_migration_rolls_back_on_a_violation(tmp_path, monkeypa
 # ---- store rules ----------------------------------------------------------------------------
 @pytest.fixture
 def lib(tmp_path):
+    return make_lib(tmp_path)
+
+
+def make_lib(tmp_path):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     store = Store(conn)
@@ -101,12 +105,13 @@ def step_input(lib) -> str:
     return sti
 
 
-def model_output(lib, sv=None, recheck=False, status="structurally_valid", passage=None, at_version=None, value=VALUE, sti=None):
+def model_output(lib, sv=None, recheck=False, status="structurally_valid", passage=None, at_version=None, value=VALUE, sti=None,
+                 anchors=("128 bytes",)):
     sv = sv or lib.published
     passage = passage or lib.abstracts[sv]
     return lib.tables.save_model_output(
         lib.rid, lib.tid, lib.cid, sv, column_revision=1, state="value", value=value, note=None, reading_depth="abstract",
-        output_status=status, links=[{"passage_id": passage, "source_version_id": sv, "anchor_text": "128 bytes", "anchor_match": "exact"}],
+        output_status=status, links=[{"passage_id": passage, "source_version_id": sv, "anchor_text": a, "anchor_match": "exact"} for a in anchors],
         run_id=lib.run_id, step_id=lib.step_id, step_input_id=sti or step_input(lib), model_connection="fake",
         resolved_model="fake-model", scope_revision=1, cell_version_at_request=at_version, recheck=recheck)
 
@@ -246,6 +251,45 @@ def test_revisions_are_immutable_and_evidence_stays_with_its_source_version(lib)
     with pytest.raises(sqlite3.DatabaseError, match="immutable"):
         lib.conn.execute("DELETE FROM column_revisions WHERE column_id = ?", (lib.cid,))
     with pytest.raises(sqlite3.DatabaseError, match="source version"):  # the preprint's passage, same work
+        lib.conn.execute("INSERT INTO cell_evidence_links (cell_revision_id, passage_id, source_version_id) VALUES (?, ?, ?)",
+                         (revision, lib.abstracts[lib.preprint], lib.preprint))
+
+
+def test_a_revision_links_several_quotes_of_one_passage_and_refuses_a_repeated_one(lib):
+    passage = lib.abstracts[lib.published]
+    model_output(lib, anchors=("Packets of 128 bytes", "128 bytes"))
+    proposal = model_output(lib, recheck=True, anchors=("Packets of 128 bytes", "128 bytes"))
+    accepted = decide(lib, proposal, True, 1)
+    view = cell(lib)
+    assert view["current"]["id"] == accepted
+    assert [(e["passage_id"], e["anchor_text"]) for e in view["current"]["evidence"]] == [(passage, "Packets of 128 bytes"), (passage, "128 bytes")]
+    with pytest.raises(sqlite3.IntegrityError):
+        lib.conn.execute("INSERT INTO cell_evidence_links (cell_revision_id, passage_id, source_version_id, anchor_text) VALUES (?, ?, ?, '128 bytes')",
+                         (accepted, passage, lib.published))
+
+
+def test_evidence_links_rebuild_keeps_links_and_their_rules(tmp_path, monkeypatch):
+    old = tmp_path / "migrations"
+    old.mkdir()
+    for path in REAL_MIGRATIONS.glob("*.sql"):
+        if int(path.name.split("_", 1)[0]) <= 23:
+            shutil.copy(path, old / path.name)
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
+    lib = make_lib(tmp_path)
+    revision = model_output(lib)
+    with pytest.raises(sqlite3.IntegrityError):  # before 0024 a passage is linked once per revision
+        lib.conn.execute("INSERT INTO cell_evidence_links (cell_revision_id, passage_id, source_version_id, anchor_text) VALUES (?, ?, ?, 'Packets')",
+                         (revision, lib.abstracts[lib.published], lib.published))
+
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", REAL_MIGRATIONS)
+    assert 24 in db.migrate(lib.conn)
+    (evidence,) = cell(lib)["current"]["evidence"]
+    assert (evidence["passage_id"], evidence["anchor_text"], evidence["anchor_match"]) == (lib.abstracts[lib.published], "128 bytes", "exact")
+    lib.conn.execute("INSERT INTO cell_evidence_links (cell_revision_id, passage_id, source_version_id, anchor_text) VALUES (?, ?, ?, 'Packets')",
+                     (revision, lib.abstracts[lib.published], lib.published))
+    with pytest.raises(sqlite3.DatabaseError, match="immutable"):
+        lib.conn.execute("DELETE FROM cell_evidence_links WHERE cell_revision_id = ?", (revision,))
+    with pytest.raises(sqlite3.DatabaseError, match="source version"):
         lib.conn.execute("INSERT INTO cell_evidence_links (cell_revision_id, passage_id, source_version_id) VALUES (?, ?, ?)",
                          (revision, lib.abstracts[lib.preprint], lib.preprint))
 

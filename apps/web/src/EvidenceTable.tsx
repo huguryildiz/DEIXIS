@@ -432,7 +432,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [problem, setProblem] = useState('')
-  const [evidence, setEvidence] = useState<CellEvidence | null>(null)
+  const [evidence, setEvidence] = useState<CellEvidence[] | null>(null)
   const sv = row.source_version_id
 
   const load = useCallback(() => api.cell(researchId, tableId, column.id, sv).then(c => { setCell(c); setError('') }, e => setError(errorText(e))), [researchId, tableId, column.id, sv])
@@ -459,7 +459,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
   const current = cell?.current ?? null
   const pending = cell?.pending_proposal ?? null
   const flags = cell?.flags ?? []
-  const showEvidence = (item: CellEvidence) => setEvidence(item)
+  const showEvidence = (items: CellEvidence[]) => setEvidence(items)
   const save = () => {
     if (!cell || !draft) return
     const body = editBody(column, draft, current, cell.version)
@@ -548,17 +548,29 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
           <p className="panel-note">{t('Semantic support not checked. DEIXIS located each quote in a passage of this source version; it did not check that the passage supports the value.')}</p>
         </>}
       </div>
-      {evidence && <PassageSheet researchId={researchId} passageId={evidence.passage_id} highlightText={evidence.anchor_text} expectHighlight pdfRemoved={evidence.asset_removed} dark={dark} onClose={() => setEvidence(null)} />}
+      {evidence && <PassageSheet researchId={researchId} passageId={evidence[0].passage_id} highlightTexts={evidence.flatMap(e => e.anchor_text ? [e.anchor_text] : [])} expectHighlight pdfRemoved={evidence[0].asset_removed} dark={dark} onClose={() => setEvidence(null)} />}
     </SheetContent>
   </Sheet>
 }
 
-function EvidenceList({ items, onShow }: { items: CellEvidence[]; onShow: (item: CellEvidence) => void }) {
-  return <ul className="evidence-list">{items.map(item => <li key={item.passage_id}>
-    <span className="evidence-locator">{item.kind === 'abstract' ? <BookOpenText size={13} aria-hidden /> : <FileText size={13} aria-hidden />}{locatorText(item)}{item.asset_removed && <><TriangleAlert size={12} aria-hidden />{t('PDF removed')}</>}</span>
-    {item.anchor_text ? <q className="evidence-quote"><mark>{item.anchor_text}</mark></q> : <span className="evidence-sub">{t('No located quote for this passage.')}</span>}
-    <Button variant="outline" size="sm" onClick={() => onShow(item)}>{t('Show evidence')}</Button>
-  </li>)}</ul>
+// One entry per passage: a revision can quote several spans of the same passage (D43), and the passage opens with all of them marked.
+function EvidenceList({ items, onShow }: { items: CellEvidence[]; onShow: (items: CellEvidence[]) => void }) {
+  const groups: CellEvidence[][] = []
+  for (const item of items) {
+    const group = groups.find(g => g[0].passage_id === item.passage_id)
+    if (group) group.push(item)
+    else groups.push([item])
+  }
+  return <ul className="evidence-list">{groups.map(group => {
+    const first = group[0]
+    const quotes = group.flatMap(item => item.anchor_text ? [item.anchor_text] : [])
+    return <li key={first.passage_id}>
+      <span className="evidence-locator">{first.kind === 'abstract' ? <BookOpenText size={13} aria-hidden /> : <FileText size={13} aria-hidden />}{locatorText(first)}{first.asset_removed && <><TriangleAlert size={12} aria-hidden />{t('PDF removed')}</>}</span>
+      {quotes.length ? <div className="evidence-quotes">{quotes.map((quote, i) => <q key={i} className="evidence-quote"><mark>{quote}</mark></q>)}</div>
+        : <span className="evidence-sub">{t('No located quote for this passage.')}</span>}
+      <Button variant="outline" size="sm" onClick={() => onShow(group)}>{t('Show evidence')}</Button>
+    </li>
+  })}</ul>
 }
 
 function ValueInputs({ column, draft, onChange }: { column: TableColumn; draft: Draft; onChange: (draft: Draft) => void }) {

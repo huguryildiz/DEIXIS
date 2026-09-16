@@ -46,11 +46,15 @@ Goal: answer every column in `extraction_target.columns` for the one source
      `unknown`, not a guess.
    - `text`: `{"text": ...}`, at most 500 characters, close to the source's own
      words. Do not add interpretation the passages do not state.
-5. For each cited passage add one `evidence` item. Its `quote` is the shortest
-   exact, contiguous span of that passage that supports the answer. Copy it
-   exactly: keep its language, punctuation, symbols and extraction damage; do not
-   translate, repair, paraphrase, add ellipses or join separate spans. If no exact
-   span supports the answer, that passage does not support it and is not cited.
+5. For each supporting span add one `evidence` item. Its `quote` is the shortest
+   exact, contiguous span that supports the answer, and its `passage_id` is the
+   passage that contains that span. The same sentence can appear in more than
+   one passage of a source; cite the one whose text you copied. Copy it exactly:
+   keep its language, punctuation, symbols and extraction damage; do not
+   translate, repair, paraphrase, add ellipses or join separate spans. When two
+   separate spans of one passage support the answer, give each its own item with
+   the same `passage_id`; never repeat the same quote. If no exact span supports
+   the answer, that passage does not support it and is not cited.
 6. Keep `note` to a short reason, or null. Do not put page, equation, table,
    figure or section numbers in it; the application shows locators from its own
    records.

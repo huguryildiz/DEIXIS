@@ -18,6 +18,27 @@ def test_extract_pdf_keeps_physical_pages(tmp_path):
     assert "molecule budget" in result.pages[1].text
 
 
+def test_extraction_drops_the_ieee_xplore_download_notice(tmp_path):
+    path = tmp_path / "watermarked.pdf"
+    path.write_bytes(make_pdf([
+        "SYNTHETIC body line one about packet sizes.\n"
+        "Authorized licensed use limited to: SYNTHETIC University. Downloaded on\n"
+        "September 15,2026 at 19:38:51 UTC from IEEE Xplore.  Restrictions apply.\n"
+        "SYNTHETIC body line two about relays.",
+    ]))
+    text = pdf.extract_pdf(path).pages[0].text
+    assert "Authorized licensed" not in text and "Restrictions apply" not in text and "IEEE Xplore" not in text
+    assert "body line one about packet sizes." in text and "body line two about relays." in text
+    assert pdf.EXTRACTION_VERSION.endswith("-chunks-v2")
+
+    one_line = ("ends here.\nAuthorized licensed use limited to: SYNTHETIC University. Downloaded on September 15,2026 at 19:45:08 UTC"
+                " from IEEE Xplore.  Restrictions apply. \nNext")
+    assert pdf.remove_download_notices(one_line) == "ends here.\nNext"
+    # Only the whole notice is removed; a sentence that mentions licensed use stays.
+    mention = "Authorized licensed use limited to: members. The rest of this sentence is body text."
+    assert pdf.remove_download_notices(mention) == mention
+
+
 def test_non_pdf_bytes_fail_extraction(tmp_path):
     path = tmp_path / "not.pdf"
     path.write_bytes(b"<html>not a pdf</html>")

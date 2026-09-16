@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { FileText, Fingerprint, Link2, MapPin, Maximize2, Minimize2, Quote, ScanText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -14,30 +14,38 @@ function readablePassageText(kind: Passage['kind'], text: string) {
   return kind === 'pdf_page' ? text.replace(/(?<!\n)\n(?!\n)/g, ' ') : text
 }
 
-function HighlightedPassageText({ passage, highlightText }: { passage: Passage; highlightText?: string | null }) {
+// Marks every located anchor; overlapping anchors are merged into one mark, and the first mark is scrolled into view.
+function HighlightedPassageText({ passage, highlightTexts }: { passage: Passage; highlightTexts: string[] }) {
   const highlightRef = useRef<HTMLElement>(null)
-  const start = highlightText ? passage.text.indexOf(highlightText) : -1
+  const ranges: [number, number][] = []
+  for (const [start, end] of highlightTexts.map(text => [passage.text.indexOf(text), passage.text.indexOf(text) + text.length]).filter(([start]) => start >= 0).sort((a, b) => a[0] - b[0])) {
+    const last = ranges[ranges.length - 1]
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end)
+    else ranges.push([start, end])
+  }
+  const first = ranges[0]?.[0] ?? -1
 
   useEffect(() => {
-    if (start < 0) return
+    if (first < 0) return
     const frame = requestAnimationFrame(() => highlightRef.current?.scrollIntoView({ block: 'center' }))
     return () => cancelAnimationFrame(frame)
-  }, [passage, highlightText, start])
+  }, [passage, first])
 
-  if (start < 0 || !highlightText) return <PassageMathText text={readablePassageText(passage.kind, passage.text)} />
+  if (!ranges.length) return <PassageMathText text={readablePassageText(passage.kind, passage.text)} />
 
-  const end = start + highlightText.length
   return <>
-    <PassageMathText text={readablePassageText(passage.kind, passage.text.slice(0, start))} />
-    <mark ref={highlightRef} className="citation-highlight" aria-label={t('Exact text cited in the answer')}>
-      <PassageMathText text={readablePassageText(passage.kind, passage.text.slice(start, end))} />
-    </mark>
-    <PassageMathText text={readablePassageText(passage.kind, passage.text.slice(end))} />
+    {ranges.map(([start, end], i) => <Fragment key={start}>
+      <PassageMathText text={readablePassageText(passage.kind, passage.text.slice(i ? ranges[i - 1][1] : 0, start))} />
+      <mark ref={i === 0 ? highlightRef : undefined} className="citation-highlight" aria-label={t('Exact text cited in the answer')}>
+        <PassageMathText text={readablePassageText(passage.kind, passage.text.slice(start, end))} />
+      </mark>
+    </Fragment>)}
+    <PassageMathText text={readablePassageText(passage.kind, passage.text.slice(ranges[ranges.length - 1][1]))} />
   </>
 }
 
 // pdfRemoved: the passage's PDF was removed from the source; its stored text still opens, the PDF view stays off.
-export function PassageSheet({ researchId, passageId, assetId = null, initialView = 'text', highlightText, expectHighlight = false, pdfRemoved = false, dark, onClose }: { researchId: string; passageId: string | null; assetId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; expectHighlight?: boolean; pdfRemoved?: boolean; dark: boolean; onClose: () => void }) {
+export function PassageSheet({ researchId, passageId, assetId = null, initialView = 'text', highlightText, highlightTexts, expectHighlight = false, pdfRemoved = false, dark, onClose }: { researchId: string; passageId: string | null; assetId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; pdfRemoved?: boolean; dark: boolean; onClose: () => void }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [assetText, setAssetText] = useState<AssetText | null>(null)
   const [error, setError] = useState('')
@@ -62,7 +70,8 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
 
   const source = passage?.source ?? assetText?.source
   const abstract = passage?.kind === 'abstract'
-  const highlightAvailable = Boolean(passage && highlightText && passage.text.includes(highlightText))
+  const highlights = highlightTexts ?? (highlightText ? [highlightText] : [])
+  const highlightAvailable = Boolean(passage && highlights.length && highlights.every(text => passage.text.includes(text)))
   const pdfAssetId = pdfRemoved ? null : passage?.asset_id ?? assetText?.asset.id ?? null
   return <Sheet open={passageId !== null || assetId !== null} onOpenChange={open => { if (!open) onClose() }}>
     <SheetContent className={`detail-sheet source-sheet ${full ? 'is-full' : ''} ${dark ? 'dark' : ''}`}>
@@ -89,7 +98,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
           {viewMode === 'text' ? passage ? <div id="source-text-view" role="tabpanel">
             <h3 className="source-section">{abstract ? t('Abstract') : t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
             {expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
-            <p className="passage-text"><HighlightedPassageText passage={passage} highlightText={highlightText} /></p>
+            <p className="passage-text"><HighlightedPassageText passage={passage} highlightTexts={highlights} /></p>
             {passage.abstract_origin === 'provider_openalex_inverted_index' && <p className="source-fine">{t('Rebuilt from OpenAlex’s abstract index; wording and punctuation may differ from the publisher’s text.')}</p>}
 
             <dl className="source-facts">

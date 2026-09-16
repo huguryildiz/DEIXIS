@@ -114,6 +114,7 @@
 .evidence-list{margin:12px 0 0;padding:0;list-style:none}
 .evidence-list li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:start;padding:10px 0;border-top:1px solid color-mix(in srgb,var(--line),transparent 30%)}
 .evidence-locator{display:inline-flex;flex-wrap:wrap;align-items:center;gap:5px;color:var(--muted);font-size:11.5px}
+.evidence-quotes{display:flex;grid-column:1;flex-direction:column;gap:6px;min-width:0}
 .evidence-quote{display:-webkit-box;grid-column:1;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:4;color:var(--ink);font-size:12.5px;line-height:1.6;quotes:none;overflow-wrap:anywhere}
 .evidence-quote mark{padding:.05em .1em;border-radius:3px;background:color-mix(in srgb,var(--accent),transparent 82%);color:var(--ink);box-decoration-break:clone;-webkit-box-decoration-break:clone}
 .evidence-list li>[data-slot=button]{grid-column:2;grid-row:1 / span 2;align-self:center}

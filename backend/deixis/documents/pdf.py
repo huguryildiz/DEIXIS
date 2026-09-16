@@ -5,6 +5,10 @@ equations/tables may still be garbled. Ligatures come out as plain letters. The
 original page stays the reference. Passages extracted earlier with pypdf keep their
 own `extraction_version`; they are not re-extracted.
 
+From `chunks-v2` the IEEE Xplore download notice stamped on every page ("Authorized licensed
+use limited to: ... Restrictions apply.") is removed from page text before chunking (D43).
+Passages stored by `chunks-v1` keep the notice; nothing is re-extracted.
+
 The child process is limited in time, pages, total extracted text and memory. The memory
 limit is a watchdog on the child's peak resident size: it stops the child shortly after the
 limit is crossed rather than preventing the allocation. There is no memory limit on Windows yet.
@@ -24,7 +28,7 @@ from pathlib import Path
 
 import pymupdf
 
-EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-chunks-v1"
+EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-chunks-v2"
 # MuPDF's default text flags without TEXT_PRESERVE_LIGATURES, so "ﬁ" is extracted as "fi".
 TEXT_FLAGS = pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_MEDIABOX_CLIP
 MAX_PAGES = 400
@@ -33,6 +37,11 @@ MAX_MEMORY_BYTES = 1024 * 1024 * 1024
 MEMORY_EXIT_CODE = 3
 TIMEOUT_SECONDS = 90
 CHUNK_CHARS = 1400
+# A licensing stamp added by the download site, not text of the publication. Only the whole notice matches, and each gap
+# is bounded, so body text next to it is kept.
+DOWNLOAD_NOTICE = re.compile(
+    r"Authorized licensed use limited to:.{0,200}?Downloaded on.{0,80}?from IEEE Xplore\.\s*Restrictions apply\.[ \t]*\n?", re.S
+)
 
 
 @dataclass
@@ -107,11 +116,15 @@ def extract_pdf(path: Path, max_chars: int = MAX_TEXT_CHARS, max_memory: int = M
     if completed.returncode != 0:
         return Extraction("failed", error=completed.stderr.decode(errors="replace")[-400:])
     raw = json.loads(completed.stdout)
-    pages = [PageText(**p) for p in raw["pages"] if p["text"].strip()]
+    pages = [PageText(p["physical_page"], p["printed_label"], text) for p in raw["pages"] if (text := remove_download_notices(p["text"])).strip()]
     if not pages:
         return Extraction("no_text", page_count=raw["page_count"])
     status = "partial" if raw["failed_pages"] or raw["truncated"] or len(pages) < raw["page_count"] else "succeeded"
     return Extraction(status, page_count=raw["page_count"], pages=pages)
+
+
+def remove_download_notices(text: str) -> str:
+    return DOWNLOAD_NOTICE.sub("", text)
 
 
 def chunk_page(text: str, limit: int = CHUNK_CHARS) -> list[tuple[int, int, str]]:

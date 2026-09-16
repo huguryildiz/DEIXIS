@@ -94,13 +94,45 @@ def other_version_passage(cell):
     (lambda d: d["cells"][3].update(evidence=copy.deepcopy(d["cells"][0]["evidence"])), ["evidence_for_not_found"]),
     (lambda d: d["cells"][3].update(state="not_applicable"), ["not_applicable_without_note"]),
     (lambda d: d["cells"][2].update(note="The budget is set on page 3."), ["locator_in_note"]),
-    (lambda d: d["cells"][0]["evidence"].append(copy.deepcopy(d["cells"][0]["evidence"][0])), ["duplicate_passage_id"]),
+    (lambda d: d["cells"][0]["evidence"].append(copy.deepcopy(d["cells"][0]["evidence"][0])), ["duplicate_evidence_quote"]),
 ])
 def test_cell_draft_checks(change, codes):
     si = cell_step_input()
     draft = cell_draft(si)
     change(draft)
     assert contracts.validate_model_output(si, draft).codes() == codes
+
+
+def test_a_cell_may_quote_one_passage_more_than_once_but_not_repeat_a_quote():
+    si = cell_step_input()
+    draft = cell_draft(si)
+    draft["cells"][0]["evidence"].append({"passage_id": "psg_SYNA1abs01", "quote": "an inter-symbol interference constraint"})
+    report = contracts.validate_model_output(si, draft)
+    assert report.ok, [vars(i) for i in report.issues]
+    assert [(link["passage_id"], link["anchor_text"]) for link in contracts.cell_links(si, draft["cells"][0])] == [
+        ("psg_SYNA1abs01", "We formulate release-time scheduling as a mixed-integer linear program"),
+        ("psg_SYNA1abs01", "an inter-symbol interference constraint"),
+    ]
+
+    # A second quote that locates the same words of the passage adds no evidence.
+    same_words = cell_draft(si)
+    same_words["cells"][0]["evidence"].append({"passage_id": "psg_SYNA1abs01", "quote": "we formulate release-time  scheduling as a mixed-integer linear program"})
+    assert contracts.validate_model_output(si, same_words).codes() == ["duplicate_evidence_quote"]
+
+
+def test_a_quote_that_is_in_another_given_passage_of_the_source_names_that_passage_but_is_not_moved():
+    si = cell_step_input()
+    draft = cell_draft(si)
+    draft["cells"][0]["evidence"] = [{"passage_id": "psg_SYNA1abs01", "quote": "subject to a total molecule budget per frame"}]
+    (issue,) = contracts.validate_model_output(si, draft).issues
+    assert issue.code == "anchor_not_in_passage" and "psg_SYNA1pg003" in issue.message
+    assert draft["cells"][0]["evidence"][0]["passage_id"] == "psg_SYNA1abs01"
+    assert contracts.cell_links(si, draft["cells"][0])[0]["anchor_text"] is None
+
+    nowhere = cell_draft(si)
+    nowhere["cells"][0]["evidence"][0]["quote"] = "SYNTHETIC. This sentence is not in any passage."
+    (issue,) = contracts.validate_model_output(si, nowhere).issues
+    assert issue.code == "anchor_not_in_passage" and "psg_SYNA1pg003" not in issue.message
 
 
 @pytest.mark.parametrize("state", ["not_reported", "inaccessible", "not_verified"])
@@ -374,6 +406,27 @@ def test_recheck_reads_only_this_source_versions_retained_passages(tmp_path):
     assert view["current"] is None and view["pending_proposal"]["evidence"] == [] and "proposal_invalid" in view["flags"]
     with pytest.raises(InvalidTableInput):
         lib.tables.decide_proposal(lib.rid, lib.tid, lib.cid, lib.published, view["pending_proposal"]["id"], True, view["version"], None)
+
+
+def test_a_repair_message_names_passages_and_columns_by_the_handles_the_model_saw(tmp_path):
+    attempts = []
+
+    def wrong_passage_first(si):
+        draft = json.loads(valid_response(si))
+        if not attempts:  # quote page two under page one's handle
+            draft["cells"][0]["evidence"] = [{"passage_id": si["passages"][0]["passage_id"], "quote": si["passages"][1]["text"]}]
+        attempts.append(si["step_input_id"])
+        return json.dumps(draft)
+
+    lib = library(tmp_path, wrong_passage_first)
+    run = recheck(lib, lib.published, 0)
+    assert execute(lib, run)["status"] == "completed" and len(attempts) == 2
+    (repair,) = lib.conn.execute("SELECT user_message FROM step_inputs WHERE run_id = ? AND attempt = 1", (run["id"],)).fetchone()
+    issues = json.loads(repair.split("not in the allowlist.\n", 1)[1])
+    assert [i["code"] for i in issues] == ["anchor_not_in_passage"]
+    assert issues[0]["message"].startswith("col_C0000001:psg_P0000001:") and "psg_P0000002" in issues[0]["message"]
+    assert not any(record in repair for record in passage_ids(lib, lib.published) | {lib.cid, lib.published})
+    assert cell(lib, lib.published)["pending_proposal"]["output_status"] == "structurally_valid"
 
 
 def test_a_recheck_without_any_storable_answer_fails_the_run(tmp_path):

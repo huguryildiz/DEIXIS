@@ -571,14 +571,22 @@ def _check_cells(step_input: dict[str, Any], allow: dict[str, set[str]], draft: 
         except InvalidTableInput as exc:
             report.issues.append(Issue("invalid_cell_value", f"{path}/value", f"{column_id}: {exc}"))
         cited = [e["passage_id"] for e in cell["evidence"]]
+        located: set[tuple[str, str]] = set()
         for j, item in enumerate(cell["evidence"]):
             if item["passage_id"] not in allow["passage_ids"]:
                 report.issues.append(Issue("unknown_passage_id", f"{path}/evidence/{j}/passage_id", item["passage_id"]))
-            elif locate_anchor(item["quote"], passage_text[item["passage_id"]]) is None:
-                report.issues.append(Issue("anchor_not_in_passage", f"{path}/evidence/{j}/quote",
-                                           f"{column_id}:{item['passage_id']}: the quoted text was not found in the cited passage"))
-        if len(set(cited)) != len(cited):
-            report.issues.append(Issue("duplicate_passage_id", f"{path}/evidence", column_id))
+            elif (anchor := locate_anchor(item["quote"], passage_text[item["passage_id"]])) is None:
+                message = f"{column_id}:{item['passage_id']}: the quoted text was not found in the cited passage"
+                if elsewhere := _passages_quoting(step_input, item["passage_id"], item["quote"]):
+                    message += (f"; it is in {', '.join(elsewhere)} of the same source. Cite the passage that contains the quote,"
+                                " or remove this evidence item if that passage does not support the answer")
+                report.issues.append(Issue("anchor_not_in_passage", f"{path}/evidence/{j}/quote", message))
+            elif (item["passage_id"], anchor.text) in located:
+                # Several spans of one passage are separate evidence (D43); the same located words twice add nothing.
+                report.issues.append(Issue("duplicate_evidence_quote", f"{path}/evidence/{j}/quote",
+                                           f"{column_id}:{item['passage_id']}: this quote repeats an earlier quote of the same passage"))
+            else:
+                located.add((item["passage_id"], anchor.text))
         if state in ("value", "unknown") and not cited:
             report.issues.append(Issue(f"{state}_without_evidence", f"{path}/evidence",
                                        f"{column_id}: a '{state}' cell cites at least one passage with an exact quote"))
@@ -593,6 +601,17 @@ def _check_cells(step_input: dict[str, Any], allow: dict[str, set[str]], draft: 
     for column_id in columns:
         if column_id not in seen:
             report.issues.append(Issue("column_without_answer", "/cells", column_id))
+
+
+def _passages_quoting(step_input: dict[str, Any], cited: str, quote: str, limit: int = 3) -> list[str]:
+    """Other passages of the cited passage's source version in this StepInput that contain the quote (D43).
+
+    Named in the repair issue only; the evidence item still cites the passage the model gave, so moving it stays a model repair.
+    """
+    by_id = {p["passage_id"]: p for p in step_input["passages"]}
+    source = by_id[cited]["source_id"]
+    return [p["passage_id"] for p in step_input["passages"]
+            if p["passage_id"] != cited and p["source_id"] == source and locate_anchor(quote, p["text"]) is not None][:limit]
 
 
 def _check_column_proposal(step_input: dict[str, Any], proposal: dict[str, Any], report: ValidationReport) -> None:
@@ -774,6 +793,16 @@ def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
     return shown
 
 
+def issues_with_handles(step_input: dict[str, Any], issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Repair issues as the model saw its StepInput: record IDs in messages are replaced by their handles."""
+    handles = citation_handles(step_input)
+    if not handles:
+        return issues
+    pattern = re.compile("|".join(re.escape(i) for i in sorted(handles, key=len, reverse=True)))
+    return [issue | {"message": pattern.sub(lambda m: handles[m.group(0)], issue["message"])} if isinstance(issue.get("message"), str) else issue
+            for issue in issues]
+
+
 def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict[str, Any]:
     """Map handles in a grounded answer or cell draft back to IDs; anything else is left for validation to report."""
     real = {handle: identifier for identifier, handle in citation_handles(step_input).items()}
@@ -806,14 +835,15 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
 def cell_links(step_input: dict[str, Any], cell: dict[str, Any]) -> list[dict[str, Any]]:
     """Evidence links of one cell answer: passages of the StepInput only, with the located passage words as anchor."""
     passages = {p["passage_id"]: p for p in step_input["passages"]}
-    links: dict[str, dict[str, Any]] = {}
+    links: dict[tuple[str, str | None], dict[str, Any]] = {}
     for item in cell["evidence"]:
         passage = passages.get(item["passage_id"])
-        if passage is None or passage["passage_id"] in links:
+        if passage is None:
             continue
         anchor = locate_anchor(item["quote"], passage["text"])
-        links[passage["passage_id"]] = {"passage_id": passage["passage_id"], "source_version_id": passage["source_id"],
-                                        "anchor_text": anchor.text if anchor else None, "anchor_match": anchor.kind if anchor else None}
+        key = (passage["passage_id"], anchor.text if anchor else None)  # one link per located span of a passage (D43)
+        links.setdefault(key, {"passage_id": passage["passage_id"], "source_version_id": passage["source_id"],
+                               "anchor_text": anchor.text if anchor else None, "anchor_match": anchor.kind if anchor else None})
     return list(links.values())
 
 

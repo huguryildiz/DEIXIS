@@ -812,7 +812,10 @@ class ResearchFlow:
             developer = prompt.developer_instructions(self.deps.package, task_type, phrasebank.frames_language(payload))
             # Answer, review and cell steps show short handles; the stored StepInput keeps the record IDs they map back to.
             shown = contracts.with_citation_handles(payload) if task_type in ("grounded_answer", "answer_review", "cell_extraction") else payload
-            message = prompt.step_message(shown) if repair_issues is None else prompt.repair_message(shown, repair_issues)
+            if repair_issues is None:
+                message = prompt.step_message(shown)
+            else:  # issues name records by ID; the model knows them only by the handles it was shown
+                message = prompt.repair_message(shown, contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues)
             self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema, selection_revision)
             session = self.store.start_model_session(rid, run_id, step["id"], payload["step_input_id"], connection, requested_model)
             result = await adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort)

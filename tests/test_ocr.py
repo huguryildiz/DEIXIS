@@ -66,7 +66,7 @@ def test_a_scanned_page_is_read_and_merged_as_ocr_text(tmp_path):
     assert merged.status == "partial"  # the blank page still has no text
     assert merged.ocr == {"engine": "tesseract", "version": ocr.tesseract_status(("eng",))["version"], "languages": ["eng"],
                           "pages_read": 1, "pages_with_text": 1, "blank_pages": 1, "failed_pages": []}
-    assert merged.extraction_version == f"{pdf.EXTRACTION_VERSION}+ocr-tesseract-{merged.ocr['version']}-eng-v1"
+    assert merged.extraction_version == f"{pdf.EXTRACTION_VERSION}+ocr-tesseract-{merged.ocr['version']}-eng-{ocr.OCR_VERSION}"
 
 
 @needs_tesseract
@@ -190,3 +190,12 @@ def test_views_say_which_sources_and_cells_rest_on_ocr_text(tmp_path):
 
     assert flags(2, "packets of 128 bytes") == (True, ["ocr"])
     assert flags(1, "SYNTHETIC text layer page") == (False, ["text_layer"])
+
+
+def test_ocr_text_joins_words_hyphenated_at_a_line_or_block_end_in_any_lowercase_letters():
+    lines = ["Bölge şefliği bakım memuru mevcuduna gö-", "re ayrımlara ayrılır."]
+    assert pdf._join_lines(lines) == "Bölge şefliği bakım memuru mevcuduna gö-\nre ayrımlara ayrılır."  # the text layer is unchanged
+    assert ocr._page_text([{"lines": lines}]) == "Bölge şefliği bakım memuru mevcuduna göre ayrımlara ayrılır."
+    assert ocr._page_text([{"lines": ["Amerikan orman-"]}, {"lines": ["cısı ormanın korunması"]}, {"lines": ["x-"]}, {"lines": ["Arkansas"]}]) \
+        == "Amerikan ormancısı ormanın korunması\n\nx-\n\nArkansas"
+    assert ocr.OCR_VERSION == "v2"

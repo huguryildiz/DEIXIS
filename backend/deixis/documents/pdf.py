@@ -110,10 +110,12 @@ def _body_size(layouts: list[tuple]) -> float:
     return max(sizes, key=sizes.get) if sizes else 0.0
 
 
-def _join_lines(lines: list[str]) -> str:
+def _join_lines(lines: list[str], lower=re.compile(r"[a-z]").fullmatch) -> str:
+    """Lines of a block; a word hyphenated at a line end is joined when `lower` accepts the letters around the hyphen.
+    The text layer keeps ASCII letters (changing that changes its extraction version); OCR text passes any lowercase letter."""
     text = ""
     for line in (line.strip() for line in lines):
-        if re.search(r"[a-z]-$", text) and re.match(r"[a-z]", line):
+        if len(text) > 1 and text[-1] == "-" and lower(text[-2]) and line and lower(line[0]):
             text = text[:-1] + line  # a word hyphenated at the line end
         else:
             text = f"{text}\n{line}" if text else line

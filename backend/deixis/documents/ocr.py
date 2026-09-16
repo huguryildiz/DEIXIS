@@ -28,7 +28,7 @@ LANGUAGES = ("eng", "tur")
 DPI = 300
 TIMEOUT_SECONDS = 60  # per page; provisional until measured on real scans
 MAX_MEMORY_BYTES = 1024 * 1024 * 1024
-OCR_VERSION = "v1"
+OCR_VERSION = "v2"  # v2: words hyphenated at a line or block end are joined in any lowercase letters ("gö-/re")
 
 
 @dataclass
@@ -102,13 +102,25 @@ def merge(extraction: pdf.Extraction, pages: list[OcrPage], langs) -> pdf.Extrac
                    extraction_version=target_version(extraction.extraction_version, version, langs))
 
 
+def _page_text(blocks: list[dict]) -> str:
+    """Blocks as paragraphs; OCR often ends a block at a hyphenated line end, so such a word is joined across blocks too."""
+    parts: list[str] = []
+    for block in blocks:
+        text = pdf._join_lines(block["lines"], str.islower)
+        if parts and len(parts[-1]) > 1 and parts[-1][-1] == "-" and parts[-1][-2].islower() and text[:1].islower():
+            parts[-1] = parts[-1][:-1] + text
+        else:
+            parts.append(text)
+    return "\n\n".join(parts)
+
+
 def _read_in_process(path: str, page_number: int, language: str) -> dict:
     with pymupdf.open(path, filetype="pdf") as doc:
         if not doc.is_pdf or not 1 <= page_number <= doc.page_count:
             raise ValueError("not a page of this PDF")
         page = doc[page_number - 1]
         textpage = page.get_textpage_ocr(language=language, dpi=DPI, full=True)
-        text = "\n\n".join(pdf._join_lines(block["lines"]) for block in pdf._blocks(page, textpage))
+        text = _page_text(pdf._blocks(page, textpage))
         label = page.get_label() or None
     return {"text": text, "printed_label": label if label != str(page_number) else None}
 

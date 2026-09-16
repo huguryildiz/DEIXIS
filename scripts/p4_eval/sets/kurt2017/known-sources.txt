@@ -39,8 +39,8 @@ Impact of IEEE 802.11 MAC packet size on performance of wireless sensor networks
 10.1109/inecce.2011.5953871
 
 # stratum: underground
-# [25] Crossref also resolves the alias 10.1109/infocom.2007.54 to this work
-10.1109/infocom.2008.54
+# [25] Crossref resolves both DOIs to this work
+10.1109/infocom.2008.54 | 10.1109/infocom.2007.54
 
 # stratum: body_area
 # [26]

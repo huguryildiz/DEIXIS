@@ -3,6 +3,8 @@
   snapshot  automated link checks, live DOI identity check, optional known-source coverage, human review sheet
   reopen    after a backend restart: the answer, selections and passage links are compared with the snapshot
   score     reads the ticked review sheet and reports the human judgements
+  cells     one evidence table: fill steps, cell states and a review sheet (sampled values, every not-found and number/equation cell)
+  cells-score  reads the ticked cell sheet
 
 Automated checks, the live identity check and the human review are reported separately. Nothing here decides
 whether a passage semantically supports a claim; only the person filling review.md does.
@@ -15,6 +17,7 @@ import difflib
 import html
 import json
 import os
+import random
 import re
 import sys
 from pathlib import Path
@@ -95,7 +98,10 @@ def identity(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def coverage(known_file: Path, view: dict[str, Any], answer: dict[str, Any]) -> list[dict[str, Any]]:
-    """A `# stratum: name` line assigns the entries below it to a stratum, so different retrieval targets are counted apart."""
+    """A `# stratum: name` line assigns the entries below it to a stratum, so different retrieval targets are counted apart.
+
+    `doi | alias` on one line lists DOIs that name the same work; any of them matches.
+    """
     given = set((answer.get("inputs_given") or {}).get("source_ids", []))
     cited = {e["source_version_id"] for c in answer["claims"] for e in c["evidence"]}
     rows, stratum = [], "all"
@@ -105,12 +111,14 @@ def coverage(known_file: Path, view: dict[str, Any], answer: dict[str, Any]) -> 
             stratum = marker.group(1)
         if not entry or entry.startswith("#"):
             continue
-        doi = entry.lower().removeprefix("https://doi.org/") if re.match(r"(https://doi\.org/)?10\.\d{4,9}/", entry, re.I) else None
-        matches = [s for s in view["sources"] if (doi and s["doi"] == doi) or (not doi and similar(entry, s["title"]) >= 0.9)]
+        dois = {part.strip().lower().removeprefix("https://doi.org/") for part in entry.split("|")} \
+            if re.match(r"(https://doi\.org/)?10\.\d{4,9}/", entry, re.I) else set()
+        matches = [s for s in view["sources"] if (dois and (s["doi"] or "").lower() in dois) or (not dois and similar(entry, s["title"]) >= 0.9)]
         ids = {s["source_version_id"] for s in matches}
         rows.append({"known": entry, "stratum": stratum, "found": bool(matches),
                      "included": any(s["selection"]["state"] == "included" for s in matches),
                      "given_to_model": bool(ids & given), "cited": bool(ids & cited),
+                     "pdf_origins": sorted({a["origin"] for s in matches for a in s["access"]["assets"]}),
                      "exclusion_reasons": [s["selection"]["user_reason"] or s["selection"]["proposal_reason"] for s in matches if s["selection"]["state"] == "excluded"]})
     return rows
 
@@ -168,7 +176,8 @@ def snapshot(args: argparse.Namespace) -> None:
     out.mkdir(parents=True, exist_ok=True)
     with httpx.Client(base_url=args.base, timeout=60) as api:
         view = api.get(f"/api/researches/{args.research}").json()
-        answer = next((a for a in view["answers"] if a["status"] == "structurally_valid"), None)
+        answer = next((a for a in view["answers"] if a["id"] == args.answer), None) if args.answer else \
+            next((a for a in view["answers"] if a["status"] == "structurally_valid"), None)
         if answer is None and view["answers"]:
             # No citable answer (e.g. an unverified draft): search and selection coverage is still measured; nothing counts as cited.
             answer = {**view["answers"][0], "claims": []}
@@ -263,6 +272,96 @@ def compare(args: argparse.Namespace) -> None:
               + " | ".join(cells) + f" | {precision if precision is not None else 'not scored'} | {calls}")
 
 
+CELL_VERDICTS = ["Doğru", "Kısmen doğru", "Yanlış"]
+ABSENCE = ["Yayında gerçekten yok", "Yayında var (kaçırılmış)"]
+EXACT = ["Sayfayla karakter karakter uyuşuyor", "Sayfayla uyuşmuyor"]
+
+
+def is_exact_column(column: dict[str, Any]) -> bool:
+    """Number and equation cells are checked against the page character by character (M7)."""
+    return column["answer_format"] == "number_unit" or "denklem" in column["name"].casefold()
+
+
+def cell_summary(table: dict[str, Any], runs: list[dict[str, Any]]) -> dict[str, Any]:
+    steps = [s for r in runs for s in r["steps"] if s["kind"] == "model:table_fill"]
+    valid = [c["current"] for c in table["cells"] if c["current"] and c["current"]["output_status"] == "structurally_valid"]
+    count = lambda items: {k: sum(i == k for i in items) for k in dict.fromkeys(items)}
+    return {"rows": len(table["rows"]), "columns": len(table["columns"]),
+            "fill_steps": {"succeeded": sum(s["status"] == "succeeded" for s in steps), "total": len(steps)},
+            "valid_cells": count([c["state"] for c in valid]),
+            "unverified_proposals": sum(c["pending_proposal"] is not None and c["current"] is None for c in table["cells"]),
+            "valid_values_by_depth": count([c["reading_depth"] for c in valid if c["state"] == "value"]),
+            "evidence_anchor_match": count([e["anchor_match"] for c in valid for e in c["evidence"]])}
+
+
+def cell_sheet(table: dict[str, Any], sample: int, seed: int) -> str:
+    columns = {c["id"]: c for c in table["columns"]}
+    titles = {r["source_version_id"]: r["title"] for r in table["rows"]}
+    valid = [c for c in table["cells"] if c["current"] and c["current"]["output_status"] == "structurally_valid"]
+    values = [c for c in valid if c["current"]["state"] == "value" and not is_exact_column(columns[c["column_id"]])]
+    exact = [c for c in valid if c["current"]["state"] == "value" and is_exact_column(columns[c["column_id"]])]
+    absent = [c for c in valid if c["current"]["state"] == "not_found_in_inspected_scope"]
+    picked = random.Random(seed).sample(values, min(sample, len(values)))
+
+    def block(prefix: str, n: int, cell: dict[str, Any], choices: list[str]) -> list[str]:
+        cur = cell["current"]
+        lines = [f"### {prefix}{n} · {columns[cell['column_id']]['name']} · {titles.get(cell['source_version_id'], cell['source_version_id'])}", "",
+                 f"`{cell['source_version_id']}` · {cur['reading_depth']} · değer: {json.dumps(cur['value'], ensure_ascii=False)}"
+                 + (f" · not: {cur['note']}" if cur.get("note") else ""), ""]
+        for e in cur["evidence"]:
+            where = "özet" if e["kind"] == "abstract" else f"PDF s. {e['physical_page']}"
+            lines += [f"> ({where}, {e['anchor_match']}) {e['anchor_text']}", ""]
+        return lines + [f"- [ ] {v}" for v in choices] + ["", "Not:", ""]
+
+    lines = [f"# Hücre incelemesi · tablo `{table['table']['id']}`", "",
+             f"Rastgele {len(picked)} değer hücresi (tohum {seed}, toplam {len(values)}), bütün `not_found` ({len(absent)}) ve sayı/denklem ({len(exact)}) hücreleri.", "",
+             f"## Değer hücreleri (M5) · toplam {len(values)}", ""]
+    for n, cell in enumerate(picked, 1):
+        lines += block("V", n, cell, CELL_VERDICTS)
+    lines += [f"## İncelenen kapsamda bulunamadı (M5, S4) · toplam {len(absent)}", ""]
+    for n, cell in enumerate(absent, 1):
+        lines += block("N", n, cell, ABSENCE)
+    lines += [f"## Sayı ve denklem hücreleri (M7) · toplam {len(exact)}", ""]
+    for n, cell in enumerate(exact, 1):
+        lines += block("E", n, cell, CELL_VERDICTS + EXACT)
+    return "\n".join(lines)
+
+
+def score_cells(sheet: Path) -> dict[str, Any]:
+    text = sheet.read_text(encoding="utf-8")
+    ticked = lambda block, label: re.search(rf"- \[[xX]\] {re.escape(label)}(\n|$)", block) is not None
+    blocks = {p: [b for b in re.split(r"^### ", text, flags=re.M)[1:] if b.startswith(p)] for p in "VNE"}
+    verdicts = lambda bs: {"judged": sum(any(ticked(b, v) for v in CELL_VERDICTS) for b in bs), "total": len(bs),
+                           "correct": sum(ticked(b, CELL_VERDICTS[0]) for b in bs), "partial": sum(ticked(b, CELL_VERDICTS[1]) for b in bs),
+                           "wrong": sum(ticked(b, CELL_VERDICTS[2]) for b in bs)}
+    result = {"values": verdicts(blocks["V"]),
+              "not_found": {"judged": sum(any(ticked(b, v) for v in ABSENCE) for b in blocks["N"]), "total": len(blocks["N"]),
+                            "truly_absent": sum(ticked(b, ABSENCE[0]) for b in blocks["N"]), "present": sum(ticked(b, ABSENCE[1]) for b in blocks["N"])},
+              "exact": {**verdicts(blocks["E"]), "match_page": sum(ticked(b, EXACT[0]) for b in blocks["E"]),
+                        "mismatch_page": sum(ticked(b, EXACT[1]) for b in blocks["E"])}}
+    return result
+
+
+def cells(args: argparse.Namespace) -> None:
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    with httpx.Client(base_url=args.base, timeout=60) as api:
+        table = api.get(f"/api/researches/{args.research}/tables/{args.table}").json()
+        view = api.get(f"/api/researches/{args.research}").json()
+    runs = [r for r in view["runs"] if r["kind"] == "table_fill" and (r.get("target") or {}).get("table_id", args.table) == args.table]
+    summary = cell_summary(table, runs)
+    (out / "table.json").write_text(json.dumps(table, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "cells-automated.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "cells.md").write_text(cell_sheet(table, args.sample, args.seed), encoding="utf-8")
+    print(json.dumps(summary, ensure_ascii=False))
+
+
+def cells_score(args: argparse.Namespace) -> None:
+    result = score_cells(Path(args.out) / "cells.md")
+    (Path(args.out) / "cells-human.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    print(json.dumps(result))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -273,11 +372,21 @@ def main() -> None:
             cmd.add_argument("--research", required=True)
             cmd.add_argument("--base", default="http://127.0.0.1:8765")
         if name == "snapshot":
-            cmd.add_argument("--known", help="Text file with one DOI or title per line; `# stratum: name` lines group the entries below")
+            cmd.add_argument("--known", help="Text file with one DOI (`doi | alias` for several) or title per line; `# stratum: name` lines group the entries below")
+            cmd.add_argument("--answer", help="Answer id to measure; default: the newest structurally valid answer")
+    cmd = sub.add_parser("cells")
+    cmd.add_argument("--out", required=True)
+    cmd.add_argument("--research", required=True)
+    cmd.add_argument("--table", required=True)
+    cmd.add_argument("--base", default="http://127.0.0.1:8765")
+    cmd.add_argument("--sample", type=int, default=20)
+    cmd.add_argument("--seed", type=int, default=20260917)
+    cmd = sub.add_parser("cells-score")
+    cmd.add_argument("--out", required=True)
     cmd = sub.add_parser("compare")
     cmd.add_argument("outs", nargs="+", help="Output directories of measured runs")
     args = parser.parse_args()
-    {"snapshot": snapshot, "reopen": reopen, "score": score, "compare": compare}[args.command](args)
+    {"snapshot": snapshot, "reopen": reopen, "score": score, "compare": compare, "cells": cells, "cells-score": cells_score}[args.command](args)
 
 
 if __name__ == "__main__":

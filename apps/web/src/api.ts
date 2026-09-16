@@ -28,7 +28,9 @@ export type Step = {
   id: string; operation_key: string; kind: string; status: string; attempt: number; delivery_class: string | null
   error_code: string | null; error: unknown; started_at: string | null; finished_at: string | null
   // Only small counting/provenance outputs carry through this view; model prose remains in its own artifact view.
-  output: { page_count?: number | null; passage_count?: number; model?: string; sources?: number; passages?: number; embedded?: number } | null
+  output: { page_count?: number | null; passage_count?: number; model?: string; sources?: number; passages?: number; embedded?: number
+    // A pdf_ocr run (D51): the pages without text it found, and whether the merged OCR text was taken into use.
+    image_pages?: number[]; blank_pages?: number[]; outcome?: 'current' | 'rejected' | 'unchanged'; rejection_reason?: string | null } | null
 }
 // What the search plan step reported, as the model wrote it.
 export type SearchPlan = {
@@ -36,11 +38,13 @@ export type SearchPlan = {
   concepts: { label: string; role: string; synonyms: string[] }[]
   queries: { provider_id: string; query_text: string; rationale: string }[]
 }
-export type RunKind = 'discovery' | 'answer' | 'pdf_collection' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title'
+export type RunKind = 'discovery' | 'answer' | 'pdf_collection' | 'pdf_ocr' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   table_id: string; column_id?: string; source_version_id?: string; cell_version?: number
   sources?: { source_version_id: string; column_ids: string[] }[]
+  // pdf_ocr (D51): the PDF read and the Tesseract languages used.
+  asset_id?: string; languages?: string[]
 }
 export type Run = {
   id: string; research_id: string; scope_revision: number; kind: RunKind; status: RunStatus; stage: string
@@ -60,7 +64,15 @@ export type Asset = {
   // Sources only (D52): whether Marker has read the PDF's pages with mathematics.
   // A read's `equations_to_check` counts display equations that did not match the PDF's text layer, on pages `to_check`.
   equations?: { state: 'read' | 'no_math' | 'failed' | 'reading' | 'pending'; reason?: string | null; attempts?: number; pages?: number; started_at?: string; to_check?: number[]; equations_to_check?: number }
+  // Sources only (D51): pages of the text in use without text (blank pages included), pages read with OCR, the latest OCR reading.
+  ocr?: { pages_without_text: number; ocr_pages: number; last_read: OcrRead | null }
 }
+export type OcrRead = {
+  outcome: 'current' | 'rejected' | 'superseded'; rejection_reason: string | null; created_at: string
+  engine: string; version: string | null; languages: string[]; pages_read: number; pages_with_text: number; blank_pages: number; failed_pages: number[]
+}
+// The local Tesseract (D51): usable when it runs and has data for at least one language.
+export type OcrTool = { available: boolean; version: string | null; languages: string[]; missing_languages: string[]; reason: string | null }
 // What became of a cited passage's file since it was stored (D45).
 export type EvidenceStatus = 'current' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded'
 export type ReplacedAsset = { id: string; original_filename: string | null; removed_at: string; replaced_by_asset_id: string }
@@ -93,6 +105,8 @@ export type Source = {
   answer_reads_version_id: string | null
   // Whether an answer reads this version's PDF pages rather than its abstract (D49).
   has_pdf_text: boolean
+  // Some of that text was read with OCR from scanned pages (D51).
+  has_ocr_text: boolean
   access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; replaced_assets: ReplacedAsset[]; fetch: { status: string; error_code: string | null; http_status: number | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; pdf_discoveries: PdfDiscovery[] }
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null }
   cited_in_latest_answer: boolean
@@ -102,6 +116,7 @@ export type Evidence = {
   passage_id: string; source_version_id: string; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
   printed_label: string | null; reading_depth: string; title: string; version_label: string | null; anchor_text: string | null
   evidence_status: EvidenceStatus
+  text_source: 'text_layer' | 'ocr' | 'marker' | null  // null for abstracts; 'ocr' text was not checked against the page (D51)
   removed_from_research: boolean  // the source was removed from this research later; the quote still opens (D50)
 }
 export type Claim = {
@@ -247,6 +262,7 @@ export type CellValue = { option_ids?: string[]; number?: number; unit?: string 
 export type CellEvidence = {
   passage_id: string; anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null; kind: Evidence['kind']
   physical_page: number | null; printed_label: string | null; asset_id: string | null; evidence_status: EvidenceStatus
+  text_source: 'text_layer' | 'ocr' | 'marker' | null
 }
 export type CellRevision = {
   id: string; kind: 'model_fill' | 'model_proposal' | 'system_fill' | 'human_edit' | 'accept_proposal' | 'dismiss_proposal'
@@ -256,7 +272,7 @@ export type CellRevision = {
   run_id: string | null; created_at: string; model: { connection: string | null; resolved_model: string | null } | null; evidence: CellEvidence[]
   decision?: 'accepted' | 'dismissed' | 'pending' | 'superseded'  // model proposals in a cell's history
 }
-export type CellFlag = 'stale_column' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded' | 'proposal_before_edit' | 'proposal_invalid'
+export type CellFlag = 'stale_column' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded' | 'proposal_before_edit' | 'proposal_invalid' | 'ocr_numbers_unchecked'
 export type CellSummary = {
   cell_id: string | null; column_id: string; source_version_id: string; version: number
   current: CellRevision | null; pending_proposal: CellRevision | null; flags: CellFlag[]
@@ -396,6 +412,10 @@ export const api = {
   removeEquationReader: () => request<EquationReader>('/api/equation-reader', { method: 'DELETE' }),
   rereadEquations: (id: string, sourceId: string, assetId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/equations`, { method: 'POST' }),
+  ocr: () => request<OcrTool>('/api/ocr'),
+  // Starts a pdf_ocr run that reads the PDF's pages without text with the local Tesseract (D51).
+  readWithOcr: (id: string, sourceId: string, assetId: string) =>
+    request<Run>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/ocr`, { method: 'POST' }),
   localTools: (refresh = false) => request<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`),
   installLocalTool: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/install`, { method: 'POST' }),
   cancelLocalToolInstall: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/cancel`, { method: 'POST' }),

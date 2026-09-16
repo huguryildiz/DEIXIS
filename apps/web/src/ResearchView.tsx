@@ -6,7 +6,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Limitation, type ModelOption, type ResearchView, type Run, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
+import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Limitation, type ModelOption, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
 import { accessParts, citedText, fetchReasonText, locatorText, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { EvidenceTab } from './EvidenceTable'
@@ -19,6 +19,8 @@ import { ConnectionIcon } from './connectionIcons'
 import { ConfirmDialog } from './ConfirmDialog'
 import { effortLabels, effortOptions, Option, scopeOptions } from './Home'
 import { citationStyles, formatReference, formatReferenceText, type CitationStyle } from './citations'
+import { OCR_LABEL, ocrLanguagesText, ocrOffer } from './ocr'
+import { OcrButton, OcrNote } from './OcrNote'
 import { t, uiLocale } from './i18n'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
@@ -62,6 +64,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [busy, setBusy] = useState(false)
   const [events, setEvents] = useState<ActivityEvent[]>([])
   const [zoteroOpen, setZoteroOpen] = useState(false)
+  const [ocrTool, setOcrTool] = useState<OcrTool | null>(null)
   // The counts under the question open the Sources tab, so the selection filter lives here rather than inside the list.
   const [sourceFilter, setSourceFilter] = useState<StateFilter>('all')
   const [pdfFinding, setPdfFinding] = useState<string | null>(null)
@@ -107,6 +110,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const stop = subscribe(id, firstEvent.current ?? 0, () => { clearTimeout(timer); timer = setTimeout(() => { void load(); onChanged() }, 250) })
     return () => { stop(); clearTimeout(timer) }
   }, [id, loaded, load, onChanged])
+
+  // The local Tesseract is asked once a PDF has pages without text, so its rows can offer OCR or say why it is off (D51).
+  const needsOcr = Boolean(view?.sources.some(s => s.access.assets.some(a => a.ocr?.pages_without_text && a.extraction_status !== 'succeeded')))
+  useEffect(() => {
+    if (!needsOcr) return
+    api.ocr().then(setOcrTool).catch(e => toast('error', t('Could not check the OCR tool: {error}', { error: errorText(e) })))
+  }, [needsOcr, toast])
 
   useEffect(() => {
     if (tab !== 'activity') return
@@ -206,6 +216,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (reextraction.outcome === 'rejected') toast('warning', t('The new extraction was not used: {reason}. The earlier text stays in use.', { reason: reextraction.rejection_reason ?? '' }))
     else toast('success', t(reextraction.outcome === 'unchanged' ? 'This text already comes from the current extractor.' : 'Text extracted again. Later answers and cells read the new text; earlier evidence still opens the text it cited.'))
   })
+  const readWithOcr = (source: Source, assetId: string) => act(() => api.readWithOcr(id, source.source_version_id, assetId))
   const rereadEquations = (source: Source, assetId: string) => act(async () => {
     await api.rereadEquations(id, source.source_version_id, assetId)
     toast('success', t('The equations of this PDF are being read again in the background.'))
@@ -305,12 +316,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
       <TabsContent value="answer">
         {/* Table runs show in the run strip and Activity; the conversation tells search and answer runs. */}
-        <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'pdf_collection' || r.kind === 'answer') }} modelText={modelText} busy={busy}
+        <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'pdf_collection' || r.kind === 'pdf_ocr' || r.kind === 'answer') }} modelText={modelText} busy={busy}
           onControl={(target, action) => act(() => api.controlRun(target.id, action))}
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
           latestAnswer={answer ? <AnswerBlock researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} /> : null} />
         {/* Before the first answer, the next step is getting the included sources' PDFs (D49); the panel carries the answer button. */}
-        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic} act={act} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} /> :
+        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic} act={act} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} /> :
         /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads. */
         <div className="answer-actions">
           <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !included} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
@@ -343,7 +354,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
           onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
           onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} onAttachCandidate={(source, candidateId) => { void attachPdfCandidate(source, candidateId) }} onOpenPdf={(_, assetId) => setPdfTarget({ assetId })}
-          onRemoveAsset={removeSourcePdf} onReplaceAsset={chooseReplacement} onReextract={(source, assetId) => { void reextract(source, assetId) }} onRereadEquations={(source, assetId) => { void rereadEquations(source, assetId) }} pdfFinding={pdfFinding} />
+          onRemoveAsset={removeSourcePdf} onReplaceAsset={chooseReplacement} onReextract={(source, assetId) => { void reextract(source, assetId) }} onRereadEquations={(source, assetId) => { void rereadEquations(source, assetId) }} pdfFinding={pdfFinding}
+          ocr={{ tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } }} />
         {picked.length > 0 && <SelectionBar researchId={id} count={picked.length} busy={busy} active={active} onStartTable={() => askTableStart(picked)} onAddToTable={table => { void addToTable(table, picked) }}
           onRemove={() => { void askRemoval(picked) }} onClear={() => setPicked([])} />}
         </section>
@@ -459,7 +471,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
       lines.push(`## ${t('Cited passages')}`, '')
       refs.forEach(({ n, e }) => {
         const source = sources.find(s => s.source_version_id === e.source_version_id)
-        lines.push(`[${n}] ${source ? formatReferenceText(style, source) : e.title} — ${locatorText(e)}`)
+        lines.push(`[${n}] ${source ? formatReferenceText(style, source) : e.title} — ${locatorText(e)}${e.text_source === 'ocr' ? ` (${t(OCR_LABEL)})` : ''}`)
       })
       lines.push('')
     }
@@ -489,7 +501,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
       {heading && <h3>{heading}</h3>}
       {claims.map(claim => <p className="claim" key={claim.id}>
         <MathText text={claim.text} />{claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}
-        {claim.evidence.map(e => <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>[{refs.get(e.passage_id)?.n}]</button>)}
+        {claim.evidence.map(e => <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>[{refs.get(e.passage_id)?.n}]</button>)}
         {claim.review && <span className={`review-badge is-${claim.review.verdict}`} title={t('Reviewer: {reason}', { reason: claim.review.reason })}><ShieldCheck size={11} aria-hidden />{t(verdictLabels[claim.review.verdict])}</span>}
         {claim.review && claim.review.verdict !== 'supported' && <small className="review-reason">{t('Reviewer: {reason}', { reason: claim.review.reason })}</small>}
       </p>)}
@@ -518,6 +530,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
             <span className="ref-pills">
               <span className={`ref-pill ${e.kind === 'abstract' ? 'is-abstract' : 'is-text'}`}>{e.kind === 'abstract' ? <BookOpenText size={12} aria-hidden /> : <FileText size={12} aria-hidden />}{locator.charAt(0).toUpperCase() + locator.slice(1)}</span>
               <span className={`ref-pill is-${versionTones[e.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(e.version_label)}</span>
+              {e.text_source === 'ocr' && <span className="ref-pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}
               {e.removed_from_research && <span className="ref-pill is-removed"><ListMinus size={12} aria-hidden />{t('Removed from this research')}</span>}
             </span>
           </span>
@@ -613,6 +626,7 @@ const phrasingCodes = new Set(['sentence_without_phrasebank_frame', 'own_work_ph
 const mathLabels: Record<string, string> = {
   math_not_well_formed: 'Math is not well formed',
   math_without_full_text: 'Math cites abstract text only',
+  ocr_numbers_unchecked: 'Number or equation read only from OCR text',
   anchor_not_in_passage: 'Citation opens without a highlight',
   missing_citation_anchor: 'Citation opens without a highlight',
 }
@@ -684,9 +698,11 @@ const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
   title: (a, b) => a.title.localeCompare(b.title),
 }
 
-type SourceActions = { onRemoveFromResearch: (source: Source) => void; onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; onReplaceAsset: (source: Source, assetId: string) => void; onReextract: (source: Source, assetId: string) => void; onRereadEquations: (source: Source, assetId: string) => void; pdfFinding: string | null }
+type SourceActions = { onRemoveFromResearch: (source: Source) => void; onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; onReplaceAsset: (source: Source, assetId: string) => void; onReextract: (source: Source, assetId: string) => void; onRereadEquations: (source: Source, assetId: string) => void; pdfFinding: string | null; ocr: OcrContext }
+// What the Sources rows need to offer OCR (D51): the local tool, the runs that may be reading a PDF, and the action.
+type OcrContext = { tool: OcrTool | null; runs: Run[]; onRead: (source: Source, assetId: string) => void }
 
-function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveFromResearch, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, pdfFinding }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; picked: string[]; onPick: (ids: string[]) => void } & SourceActions) {
+function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveFromResearch, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, pdfFinding, ocr }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; picked: string[]; onPick: (ids: string[]) => void } & SourceActions) {
   const [pdfFilter, setPdfFilter] = useState<PdfFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SourceSort>('relevant')
@@ -737,7 +753,7 @@ function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveF
       readsVersion={sources.find(s => s.source_version_id === source.answer_reads_version_id)}
       onSelect={state => onSelect(source, state)} onReason={reason => onReason(source, reason)} onAbstract={() => onAbstract(source)}
       onDiscoverPdf={() => onDiscoverPdf(source)} onAttachPdf={() => onAttachPdf(source)} onAttachCandidate={candidateId => onAttachCandidate(source, candidateId)} onOpenPdf={assetId => onOpenPdf(source, assetId)}
-      onRemoveAsset={assetId => onRemoveAsset(source, assetId)} onReplaceAsset={assetId => onReplaceAsset(source, assetId)} onReextract={assetId => onReextract(source, assetId)} onRereadEquations={assetId => onRereadEquations(source, assetId)} finding={pdfFinding === source.source_version_id} />)}</div>
+      onRemoveAsset={assetId => onRemoveAsset(source, assetId)} onReplaceAsset={assetId => onReplaceAsset(source, assetId)} onReextract={assetId => onReextract(source, assetId)} onRereadEquations={assetId => onRereadEquations(source, assetId)} finding={pdfFinding === source.source_version_id} ocr={ocr} />)}</div>
     {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { onFilter('all'); setPdfFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
   </>
 }
@@ -771,7 +787,7 @@ function TypedText({ text, className }: { text: string; className?: string }) {
   return <span className={className}><span className="sr-only">{text}</span><span aria-hidden>{text.slice(0, shown)}</span></span>
 }
 
-function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplicates, readsVersion, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, finding }: { source: Source; busy: boolean; picked: boolean; onPick: (on: boolean) => void; onRemoveFromResearch: () => void; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onAttachCandidate: (candidateId: string) => void; onOpenPdf: (assetId: string) => void; onRemoveAsset: (assetId: string) => void; onReplaceAsset: (assetId: string) => void; onReextract: (assetId: string) => void; onRereadEquations: (assetId: string) => void; finding: boolean; duplicates: { basis: Source['suspected_duplicates'][number]['basis']; source?: Source }[]; readsVersion?: Source }) {
+function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplicates, readsVersion, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, finding, ocr }: { source: Source; busy: boolean; picked: boolean; onPick: (on: boolean) => void; onRemoveFromResearch: () => void; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onAttachCandidate: (candidateId: string) => void; onOpenPdf: (assetId: string) => void; onRemoveAsset: (assetId: string) => void; onReplaceAsset: (assetId: string) => void; onReextract: (assetId: string) => void; onRereadEquations: (assetId: string) => void; finding: boolean; ocr: OcrContext; duplicates: { basis: Source['suspected_duplicates'][number]['basis']; source?: Source }[]; readsVersion?: Source }) {
   const s = source.selection
   const other = source.version_role === 'other_version'
   const authors = source.authors.join(', ')
@@ -784,6 +800,7 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
   const unusable = candidates.filter(c => c.access_status !== 'downloaded').length
   const lookupSummary = [t('{p} services · {n} checks', { p: new Set(discoveries.map(d => d.provider)).size, n: discoveries.length }), unusable && t(unusable === 1 ? '{n} file not usable' : '{n} files not usable', { n: unusable })].filter(Boolean).join(' · ')
   const primaryAction = source.access.assets.length ? 'pdf' : 'abstract'
+  const ocrOffers = new Map(source.access.assets.map(asset => [asset.id, ocrOffer(asset, ocr.tool, ocr.runs)]))
   return <div className={`source-row has-pick is-${s.state}${other ? ' is-other-version' : ''}${picked ? ' is-picked' : ''}`}>
     <input type="checkbox" className="source-pick" checked={picked} onChange={e => onPick(e.target.checked)} aria-label={t('Select {title}', { title: source.title })} />
     <div className="source-main">
@@ -808,6 +825,7 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
       {s.origin === 'user' && s.state === 'excluded' && !s.user_reason && <ReasonForm busy={busy} onSave={onReason} />}
       {finding && <p className="pdf-search-status" role="status"><Search size={13} aria-hidden /><TypedText className="shimmer-text" text={t('Checking Unpaywall, OpenAlex and Crossref; Web Search will run if no verified PDF is retrieved…')} /></p>}
       {source.access.assets.map(asset => asset.rejected_extraction && <p key={asset.id} className="proposal"><ScanText size={13} aria-hidden />{t('A later text extraction ({version}) was not used: {reason}. The earlier text stays in use.', { version: asset.rejected_extraction.extraction_version, reason: asset.rejected_extraction.rejection_reason })}</p>)}
+      {[...ocrOffers.entries()].map(([assetId, offer]) => offer && <OcrNote key={assetId} offer={offer} />)}
       {source.access.replaced_assets.length > 0 && <p className="proposal"><Replace size={13} aria-hidden />{t(source.access.replaced_assets[0].original_filename ? 'Previous file {file} replaced on {date}. Evidence that cites it still opens it.' : 'Previous PDF replaced on {date}. Evidence that cites it still opens it.', { file: source.access.replaced_assets[0].original_filename ?? '', date: new Date(source.access.replaced_assets[0].removed_at).toLocaleDateString(uiLocale(), { dateStyle: 'medium' }) })}</p>}
       <div className="source-foot">
         {!finding && discoveries.length > 0 && <details className="source-provenance">
@@ -820,6 +838,7 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
             <button disabled={busy} onClick={() => onReplaceAsset(asset.id)} title={t('Use another file for this source version; evidence that cites the current file keeps it')}><Replace size={14} aria-hidden />{t('Replace PDF')}</button>
             {asset.current_extraction === false && <button disabled={busy} onClick={() => onReextract(asset.id)} title={t('Text extracted as {version}. Extract it again with the current extractor.', { version: asset.extraction_version ?? '?' })}><ScanText size={14} aria-hidden />{t('Extract text again')}</button>}
             {asset.equations?.state === 'failed' && <button disabled={busy} onClick={() => onRereadEquations(asset.id)} title={asset.equations.reason ?? undefined}><Sigma size={14} aria-hidden />{t('Read equations again')}</button>}
+            {ocrOffers.get(asset.id) && <OcrButton offer={ocrOffers.get(asset.id)!} busy={busy} onRead={() => ocr.onRead(source, asset.id)} />}
             <button className="is-destructive" disabled={busy} onClick={() => onRemoveAsset(asset.id)} title={asset.original_filename ?? undefined}><Trash2 size={14} aria-hidden />{t('Remove PDF')}</button>
           </span>)}
           {source.access.abstract_passage_id && <button className={primaryAction === 'abstract' ? 'is-primary' : undefined} onClick={onAbstract}><BookOpenText size={14} aria-hidden />{t('Read abstract')}</button>}
@@ -946,6 +965,7 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'asset_removed': return lucide(Trash2, t('PDF removed from a source'))
     case 'asset_replaced': return lucide(Replace, t('PDF replaced on a source'))
     case 'equations_failed': return lucide(Sigma, t('Reading a PDF’s equations failed'), [{ label: t('attempt {n}', { n: String(p.attempts) }), tone: 'warn' }])
+    case 'asset_ocr_read': return lucide(ScanText, t('PDF pages read with OCR'), [p.outcome === 'current' ? { label: t('in use'), tone: 'ok' } : { label: t('not used'), tone: 'warn' }, { label: t('{k} of {n} pages with text', { k: String(p.pages_with_text), n: String(p.pages_read) }), tone: 'neutral' }, { label: ocrLanguagesText(Array.isArray(p.languages) ? p.languages.map(String) : []), tone: 'neutral' }])
     case 'asset_reextracted': return lucide(ScanText, t('PDF text extracted again'), [p.outcome === 'current' ? { label: t('in use'), tone: 'ok' } : { label: t('not used'), tone: 'warn' }, { label: String(p.extraction_version), tone: 'neutral' }])
     case 'selection_changed': return lucide(UserPen, t('You marked a source'), [{ label: t(selectionStates[String(p.state)] ?? String(p.state)), tone: selectionTones[String(p.state)] ?? 'neutral' }])
     case 'answer_saved': return lucide(MessageSquareQuote, t('Answer saved'), [statusChip(p.status)])

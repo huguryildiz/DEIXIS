@@ -21,7 +21,7 @@ export const runStatusLabels: Record<RunStatus, string> = {
 }
 
 export const runKindLabels: Record<RunKind, string> = {
-  discovery: 'Search & screening', answer: 'Answer', pdf_collection: 'PDF collection', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
+  discovery: 'Search & screening', answer: 'Answer', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
 }
 
 const pauseReasons: Record<string, string> = {
@@ -50,6 +50,11 @@ const pauseReasons: Record<string, string> = {
   equations_failed: 'Reading the equations of a PDF failed. Resume to answer from that PDF’s text layer.',
   equations_blocked_by_run: 'A PDF’s equations could not be stored while another run uses the same source. Resume when that run ends.',
   equation_reader_unavailable: 'The equation reader (Marker) could not start. Resume to answer from the PDFs’ text layer.',
+  ocr_pages_failed: 'OCR could not read some pages. Nothing was stored; resuming reads only those pages again.',
+  ocr_blocked_by_run: 'The OCR text could not be stored while another run uses the same source. Resume when that run ends.',
+  ocr_pages_changed: 'The PDF’s pages without text changed while OCR was running. Nothing was stored; start OCR again.',
+  asset_removed: 'The PDF was removed from the source before OCR finished. Nothing was stored.',
+  extraction_failed: 'The PDF could not be opened to find its pages without text.',
 }
 export const pauseReasonText = (reason: string | null) => (reason ? t(pauseReasons[reason] ?? reason) : '')
 
@@ -85,6 +90,9 @@ export const stepLabel = (kind: string, key: string) => {
   if (kind === 'fetch_pdf') return t('Open-access PDF retrieval')
   if (kind === 'pdf_other_copy') return t('Search for another open copy')
   if (kind === 'read_equations') return t('Reading equations (Marker)')
+  if (kind === 'ocr_pages') return t('Finding pages without text')
+  if (kind === 'ocr_page') return t('OCR of PDF p. {page}', { page: key.split(':')[2] ?? '?' })
+  if (kind === 'ocr_merge') return t('Storing the OCR text')
   return kind
 }
 
@@ -111,16 +119,18 @@ export const versionText = (label: string | null) => (label ? t(versionNames[lab
 export const citedText = (count: number | null) => (count === null ? '' : t('cited by {count} (OpenAlex)', { count: count.toLocaleString(uiLocale()) }))
 
 // Each part carries a tone so the source list can colour usable text apart from gaps.
-export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unstated'; text: string }[] {
-  const parts: { tone: 'text' | 'abstract' | 'unstated'; text: string }[] = []
+export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unstated' | 'ocr'; text: string }[] {
+  const parts: { tone: 'text' | 'abstract' | 'unstated' | 'ocr'; text: string }[] = []
   const asset = source.access.assets[0]
-  if (asset) parts.push(asset.extraction_status === 'no_text' ? { tone: 'unstated', text: t('PDF without a text layer (no OCR in this version)') } : { tone: 'text', text: t('PDF · {pages} pages · text {status}', { pages: asset.page_count ?? '?', status: t(asset.extraction_status) }) })
+  if (asset) parts.push(asset.extraction_status === 'no_text' ? { tone: 'unstated', text: t('PDF without a text layer') } : { tone: 'text', text: t('PDF · {pages} pages · text {status}', { pages: asset.page_count ?? '?', status: t(asset.extraction_status) }) })
   else if (source.access.fetch?.status === 'failed') {
     const reason = fetchReasonText(source.access.fetch.error_code, source.access.fetch.http_status)
     parts.push({ tone: 'unstated', text: source.access.other_copy?.status === 'failed' ? t('PDF not retrieved ({reason}) · no other open copy found · attach the PDF yourself', { reason }) : t('PDF not retrieved ({reason})', { reason }) })
   }
   else if (source.access.oa_pdf_url && source.access.oa_pdf_version !== source.version_label) parts.push({ tone: 'unstated', text: t('Open-access PDF is a different version ({version}) · not used for this version', { version: versionText(source.access.oa_pdf_version) }) })
   else if (source.access.oa_pdf_url) parts.push({ tone: 'unstated', text: t('Open-access PDF listed · not yet retrieved') })
+  // OCR pages are named apart from the text layer and are not checked against the page (D51).
+  if (asset?.ocr?.ocr_pages) parts.push({ tone: 'ocr', text: t('OCR text on {k} of {n} pages · check against the page', { k: asset.ocr.ocr_pages, n: asset.page_count ?? '?' }) })
   const equations = asset?.equations
   if (equations?.state === 'reading') parts.push({ tone: 'unstated', text: t('Reading equations · {n} pages', { n: equations.pages ?? '?' }) })
   else if (equations?.state === 'pending') parts.push({ tone: 'unstated', text: t('Equations not read yet') })

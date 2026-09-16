@@ -7,6 +7,7 @@ import { api, ApiError, type AnswerFormat, type CellEdit, type CellEvidence, typ
 import { ConfirmDialog } from './ConfirmDialog'
 import { PassageSheet } from './PassageSheet'
 import { locatorText, versionText } from './labels'
+import { OCR_LABEL } from './ocr'
 import { useToast, type ToastAction } from './Toast'
 import { t, uiLocale } from './i18n'
 import './EvidenceTable.css'
@@ -337,6 +338,7 @@ function CellButton({ column, row, summary, live, position, focusable, onFocus, 
     flags.includes('proposal_invalid') && { tone: 'blocking', label: t('Invalid proposal') },
     flags.includes('stale_column') && { tone: 'attention', label: t('Column changed') },
     ...(['pdf_removed', 'pdf_replaced', 'text_superseded'] as const).map(flag => flags.includes(flag) && { tone: 'attention', label: t(evidenceStatusLabels[flag]) }),
+    flags.includes('ocr_numbers_unchecked') && { tone: 'attention', label: t('OCR number') },
   ].filter((m): m is { tone: string; label: string } => Boolean(m))
   const provenance = current ? [t(authorLabels[current.author]), current.reading_depth && t(depthLabels[current.reading_depth]), current.state === 'not_verified' && t('no linked evidence')].filter(Boolean).join(' · ') : ''
   const liveText = live === 'recheck' ? t('Rechecking…') : live === 'fill' ? t('Filling…') : ''
@@ -517,6 +519,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
             {flags.includes('stale_column') && current && <p className="evidence-flag-note is-attention">{t('Made under an earlier definition of this column (revision {old}). It stays until you edit it or use a newer proposal.', { old: current.column_revision })}</p>}
             {flags.includes('pdf_removed') && <p className="evidence-flag-note is-attention">{t('A PDF this value cites was removed from the source. The cited passages still open as text; the PDF view is off.')}</p>}
             {flags.includes('pdf_replaced') && <p className="evidence-flag-note is-attention">{t('This value cites a PDF that was later replaced. Its evidence still opens the previous file; a recheck reads the current file.')}</p>}
+            {flags.includes('ocr_numbers_unchecked') && current && <p className="evidence-flag-note is-attention">{t('This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.')}</p>}
             {flags.includes('text_superseded') && <p className="evidence-flag-note is-attention">{t('This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction.')}</p>}
             {current && hasValue(current) && (current.evidence.length ? <EvidenceList items={current.evidence} onShow={showEvidence} />
               : <p className="evidence-sub">{t('No linked evidence: this value was recorded without a passage.')}</p>)}
@@ -529,6 +532,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
               <div><span>{t('Proposal')}</span><strong>{revisionText(column, pending)}</strong><small>{revisionMeta(pending)}</small></div>
             </div>
             {flags.includes('proposal_before_edit') && <p className="evidence-flag-note is-attention">{t('Requested before the cell last changed. Compare it with the current value before using it.')}</p>}
+            {flags.includes('ocr_numbers_unchecked') && !current && <p className="evidence-flag-note is-attention">{t('This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.')}</p>}
             {flags.includes('proposal_invalid') && <p className="evidence-flag-note is-blocking">{t('This proposal failed validation after one repair. It is kept for the record and cannot be used.')}</p>}
             {pending.note && <p className="evidence-note"><span>{t('Model note')}</span>{pending.note}</p>}
             {pending.evidence.length > 0 && <EvidenceList items={pending.evidence} onShow={showEvidence} />}
@@ -596,7 +600,7 @@ function EvidenceList({ items, onShow }: { items: CellEvidence[]; onShow: (items
     const first = group[0]
     const quotes = group.flatMap(item => item.anchor_text ? [item.anchor_text] : [])
     return <li key={first.passage_id}>
-      <span className="evidence-locator">{first.kind === 'abstract' ? <BookOpenText size={13} aria-hidden /> : <FileText size={13} aria-hidden />}{locatorText(first)}{first.evidence_status !== 'current' && <><TriangleAlert size={12} aria-hidden />{t(evidenceStatusLabels[first.evidence_status])}</>}</span>
+      <span className="evidence-locator">{first.kind === 'abstract' ? <BookOpenText size={13} aria-hidden /> : <FileText size={13} aria-hidden />}{locatorText(first)}{first.evidence_status !== 'current' && <><TriangleAlert size={12} aria-hidden />{t(evidenceStatusLabels[first.evidence_status])}</>}{first.text_source === 'ocr' && <span className="evidence-ocr">{t(OCR_LABEL)}</span>}</span>
       {quotes.length ? <div className="evidence-quotes">{quotes.map((quote, i) => <q key={i} className="evidence-quote"><mark>{quote}</mark></q>)}</div>
         : <span className="evidence-sub">{t('No located quote for this passage.')}</span>}
       <Button variant="outline" size="sm" onClick={() => onShow(group)}>{t('Show evidence')}</Button>

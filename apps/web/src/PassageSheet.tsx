@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { BadgeCheck, BookOpenText, ExternalLink, FileText, Info, Link2, ListMinus, Maximize2, Minimize2, RotateCcw, TriangleAlert } from 'lucide-react'
+import { BadgeCheck, BookOpenText, ExternalLink, FileText, Info, Link2, ListMinus, Maximize2, Minimize2, RotateCcw, ScanText, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, assetUrl, type AssetText, type Passage, type Source } from './api'
@@ -8,6 +8,7 @@ import { t, uiLocale } from './i18n'
 import { PassageMathText } from './PassageMathText'
 import { ConnectionIcon } from './connectionIcons'
 import { PdfViewer } from './PdfViewer'
+import { OCR_LABEL } from './ocr'
 
 function readablePassageText(kind: Passage['kind'], text: string) {
   // Keep paragraph breaks, but undo the single line breaks introduced by PDF layout extraction.
@@ -128,6 +129,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
             {assetText ? <span className="ref-pill is-text"><FileText size={12} aria-hidden />{t(assetText.passages.length ? 'PDF with extracted text' : 'PDF without extracted text')}</span>
               : abstract ? <span className="ref-pill is-abstract"><BookOpenText size={12} aria-hidden />{t('Abstract only')}</span>
               : <span className="ref-pill is-text"><FileText size={12} aria-hidden />{t('PDF text passage')}</span>}
+            {passage?.text_source === 'ocr' && <span className="ref-pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}
             {source.origin === 'user_upload' && <span className="ref-pill">{t('uploaded by you')}</span>}
             {source.doi ? <a className="source-link-chip" href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer" title={t('Open DOI')}><ConnectionIcon id="doi" /><span>{source.doi}</span><ExternalLink size={12} aria-hidden /></a>
               : source.landing_url && <a className="source-link-chip" href={source.landing_url} target="_blank" rel="noreferrer"><Link2 size={13} aria-hidden /><span>{t('Publisher page')}</span><ExternalLink size={12} aria-hidden /></a>}
@@ -150,6 +152,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
           {viewMode === 'text' && passage?.text_source === 'marker' && (passage.equations_to_check
             ? <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(passage.equations_to_check === 1 ? 'Page read from the page image (Marker). {n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : 'Page read from the page image (Marker). {n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: passage.equations_to_check })}</p>
             : <p className="source-notice"><Info size={15} aria-hidden />{t('Page read from the page image (Marker). Equations are LaTeX; check them against the PDF page.')}</p>)}
+          {/* OCR text (D51) is read from the page image and never checked against it; the PDF view opens on the same page. */}
+          {viewMode === 'text' && passage?.text_source === 'ocr' && <p className="source-notice"><TriangleAlert size={15} aria-hidden /><span>{t('This page was read from its scanned image with OCR (Tesseract) on this computer. Letters, numbers and equations may be misread; check them against the PDF page.')}
+            {pdfAssetId && <> <button type="button" className="source-notice-action" onClick={() => setViewMode('pdf')}><FileText size={13} aria-hidden />{t('Show this page in the PDF')}</button></>}</span></p>}
           {viewMode === 'text' ? passage ? <div id="source-text-view" role="tabpanel">
             {abstract && !pdfAssetId && <p className="source-notice"><Info size={15} aria-hidden />{t('No PDF is attached, so only the abstract can be inspected. Claims citing this source rest on the abstract alone.')}</p>}
             <h3 className="source-section">{abstract ? t('Abstract') : t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
@@ -158,7 +163,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
           </div> : assetText ? <div id="source-text-view" role="tabpanel" className="asset-text-view">
             <h3 className="source-section">{t('Extracted PDF text')}{assetText.passages.some(item => item.text.split(/\n{2,}/).some(p => AUTHOR_NOTE.test(p.trim()))) && <button type="button" className="pdf-text-notes-toggle" onClick={() => setShowNotes(v => !v)}>{t(showNotes ? 'Hide author notes' : 'Show author notes')}</button>}</h3>
             {assetText.passages.length ? pagesOf(assetText.passages).map(page => <section className="pdf-text-page" key={page[0].id}>
-              <h4>{page[0].physical_page ? t('PDF p. {page}', { page: page[0].physical_page }) : t('Extracted text')}</h4>
+              <h4>{page[0].physical_page ? t('PDF p. {page}', { page: page[0].physical_page }) : t('Extracted text')}{page[0].text_source === 'ocr' && <span className="ref-pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}</h4>
               {(page[0].equations_to_check ?? 0) > 0 && <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(page[0].equations_to_check === 1 ? '{n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : '{n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: page[0].equations_to_check ?? 0 })}</p>}
               <PdfPageText passages={page} showNotes={showNotes} />
             </section>) : <div className="legacy-boundary">{t('No text was extracted from this PDF.')}</div>}

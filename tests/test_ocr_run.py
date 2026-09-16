@@ -121,3 +121,23 @@ def test_the_ocr_action_checks_the_tool_the_source_the_file_and_other_runs(tmp_p
 
         assert client.request("DELETE", f"/api/researches/{rid}/sources", json={"source_version_ids": [svid]}).status_code == 200
         assert client.post(ocr_url(rid, svid, aid)).status_code == 404  # removed from the research
+
+
+def test_the_tool_status_and_each_pdf_s_ocr_state_are_shown_for_the_interface(tmp_path, monkeypatch):
+    fake_reader(monkeypatch)
+    with TestClient(app_for(tmp_path)) as raw:
+        client = session(raw)
+        assert client.get("/api/ocr").json() == READY
+        rid = create(client, source_scope="attached")
+        svid, aid = upload(client, rid, SCAN)
+
+        def state():
+            source = next(s for s in client.get(f"/api/researches/{rid}").json()["sources"] if s["source_version_id"] == svid)
+            return source["has_ocr_text"], source["access"]["assets"][0]["ocr"]
+
+        assert state() == (False, {"pages_without_text": 3, "ocr_pages": 0, "last_read": None})
+        wait_run(client, rid, client.post(ocr_url(rid, svid, aid)).json()["id"])
+        has_ocr, after = state()
+        assert has_ocr and (after["pages_without_text"], after["ocr_pages"]) == (1, 2)
+        assert {k: after["last_read"][k] for k in ("outcome", "version", "languages", "pages_with_text", "blank_pages", "failed_pages")} \
+            == {"outcome": "current", "version": "5.5.2", "languages": ["eng"], "pages_with_text": 2, "blank_pages": 1, "failed_pages": []}

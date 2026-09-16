@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type DragEvent } from 'react'
-import { Download, Pause, Play, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { Download, Pause, Play, ScanText, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, type PdfMatch, type ResearchView, type Source, type ZoteroSource } from './api'
+import { api, type OcrTool, type PdfMatch, type ResearchView, type Source, type ZoteroSource } from './api'
 import { ConnectionIcon } from './connectionIcons'
 import { fetchReasonText } from './labels'
+import { OCR_LABEL, ocrOffer } from './ocr'
+import { OcrNote } from './OcrNote'
 import { t } from './i18n'
 import { useToast } from './Toast'
 
@@ -17,10 +19,11 @@ type Proposal = { file: File; match: PdfMatch; target: string; hasPdf: boolean }
 const durationText = (seconds: number) => (seconds < 60 ? t('{s} s', { s: seconds }) : t('{m} min {s} s', { m: Math.floor(seconds / 60), s: seconds % 60 }))
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 
-export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearchAgain, onAnswer, onUpload }: {
+export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearchAgain, onAnswer, onUpload, ocrTool, onReadWithOcr }: {
   researchId: string; view: ResearchView; busy: boolean; hasAcademic: boolean
   act: (action: () => Promise<unknown>, success?: string) => Promise<void>
   onSearchAgain: () => void; onAnswer: () => void; onUpload: (source: Source) => void
+  ocrTool: OcrTool | null; onReadWithOcr: (source: Source, assetId: string) => void
 }) {
   const byId = new Map(view.sources.map(s => [s.source_version_id, s]))
   const records = view.sources.filter(s => s.version_role === 'record' && s.selection.state === 'included')
@@ -29,6 +32,17 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
   const reading = (record: Source) => (record.answer_reads_version_id ? byId.get(record.answer_reads_version_id) ?? record : record)
   const full = (record: Source) => reading(record).has_pdf_text
   const pagesOf = (record: Source) => reading(record).access.assets[0]?.page_count ?? 0
+  // A PDF with pages without text can be read with OCR (D51); its row names what OCR would read and offers the action.
+  const ocrOf = (record: Source) => {
+    const asset = reading(record).access.assets[0]
+    const offer = asset && ocrOffer(asset, ocrTool, view.runs)
+    return asset && offer ? { asset, offer, source: reading(record) } : null
+  }
+  const ocrAction = (record: Source) => {
+    const ocr = ocrOf(record)
+    return ocr && ocr.offer.kind !== 'reading' && <Button variant="outline" size="sm" disabled={busy || ocr.offer.kind === 'off' || ocr.offer.blocked} title={ocr.offer.kind === 'off' ? ocr.offer.reason : ocr.offer.blocked ? t('Available when the current run ends') : undefined} onClick={() => onReadWithOcr(ocr.source, ocr.asset.id)}><ScanText size={13} />{t('Read with OCR')}</Button>
+  }
+  const ocrNote = (record: Source) => { const ocr = ocrOf(record); return ocr && <OcrNote offer={ocr.offer} /> }
 
   // The latest collection run counts only when no search came after it.
   const collection = view.runs.find(r => r.kind === 'pdf_collection')
@@ -177,8 +191,8 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
       <div className="pdf-ready-group"><h3>{t('Needs your PDF')}</h3><small>{stillMissing}</small></div>
       <ul className="pdf-ready-rows">
         {needs.map(record => <li key={record.source_version_id}>
-          <RowHead record={record} facts={[!full(record) && { text: missingReason(record, versionsOf(record)), tone: 'abstract' }]} />
-          <span className="pdf-ready-side">{full(record)
+          <RowHead record={record} facts={[!full(record) && { text: missingReason(record, versionsOf(record)), tone: 'abstract' }]} note={ocrNote(record)} />
+          <span className="pdf-ready-side">{ocrAction(record)}{full(record)
             ? <span className="pdf-pill is-ok">{t('Uploaded · {pages}', { pages: plural(pagesOf(record), '{n} page', '{n} pages') })}</span>
             : <Button variant="outline" size="sm" disabled={busy} onClick={() => { touch([record.source_version_id]); onUpload(record) }}>{t('Upload PDF')}</Button>}</span>
         </li>)}
@@ -218,7 +232,8 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
     {readFull.length > 0 && <details className="pdf-ready-full">
       <summary className="pdf-ready-group"><h3>{t('Read in full')}</h3><small>{t('{n} · {pages}', { n: readFull.length, pages: plural(pages, '{n} page', '{n} pages') })}</small></summary>
       <ul className="pdf-ready-rows">{readFull.map(record => <li key={record.source_version_id}>
-        <RowHead record={record} facts={[pagesOf(record) > 0 && { text: plural(pagesOf(record), '{n} page', '{n} pages'), tone: 'text' }]} />
+        <RowHead record={record} facts={[pagesOf(record) > 0 && { text: plural(pagesOf(record), '{n} page', '{n} pages'), tone: 'text' }, reading(record).has_ocr_text && { text: t(OCR_LABEL), tone: 'ocr' }]} note={ocrNote(record)} />
+        {ocrAction(record) && <span className="pdf-ready-side">{ocrAction(record)}</span>}
       </li>)}</ul>
     </details>}
 
@@ -232,7 +247,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
 
 // A row head in the Sources list style: serif title, authors · year, the venue in italics, then dotted facts.
 type Fact = string | false | { text: string; tone: string }
-function RowHead({ record, facts }: { record: Source; facts: Fact[] }) {
+function RowHead({ record, facts, note }: { record: Source; facts: Fact[]; note?: ReactNode }) {
   const byline = [record.authors.join(', '), record.year].filter(Boolean).join(' · ')
   const shown = facts.filter(Boolean) as Exclude<Fact, false>[]
   return <span className="pdf-ready-head">
@@ -241,6 +256,7 @@ function RowHead({ record, facts }: { record: Source; facts: Fact[] }) {
     {shown.length > 0 && <span className="source-status">{shown.map(f => typeof f === 'string'
       ? <span key={f} className="source-fact is-plain">{f}</span>
       : <span key={f.text} className={`source-fact is-${f.tone}`}>{f.text}</span>)}</span>}
+    {note}
   </span>
 }
 

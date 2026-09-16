@@ -26,6 +26,21 @@ def _model_outputs(store: Store, run_id: str, kind: str) -> list[dict[str, Any]]
     )]
 
 
+def ocr_state(store: Store, asset_id: str) -> dict[str, Any]:
+    """Pages of the text in use without text (blank pages included), pages read with OCR, and the latest OCR reading (D51)."""
+    conn = store.conn
+    asset = store.asset(asset_id)
+    pages = {r["physical_page"]: r["ocr"] for r in conn.execute(
+        "SELECT physical_page, MAX(text_source = 'ocr') AS ocr FROM passages WHERE asset_id = ? AND kind = 'pdf_page'"
+        " AND extraction_version IS ? GROUP BY physical_page", (asset_id, asset["extraction_version"]))}
+    last = conn.execute(
+        "SELECT outcome, rejection_reason, ocr_json, created_at FROM asset_extractions WHERE asset_id = ? AND ocr_json IS NOT NULL"
+        " ORDER BY created_at DESC, rowid DESC LIMIT 1", (asset_id,)).fetchone()
+    return {"pages_without_text": max(0, (asset["page_count"] or 0) - len(pages)), "ocr_pages": sum(1 for o in pages.values() if o),
+            "last_read": {"outcome": last["outcome"], "rejection_reason": last["rejection_reason"], "created_at": last["created_at"]}
+            | json.loads(last["ocr_json"]) if last else None}
+
+
 def research_view(store: Store, research_id: str) -> dict[str, Any]:
     conn = store.conn
     research = store.research(research_id)
@@ -68,9 +83,9 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
                  "physical_page": e["physical_page"], "printed_label": e["printed_label"],
                  "reading_depth": "abstract" if e["kind"] == "abstract" else "selected_sections", "title": e["title"],
                  "version_label": e["version_label"], "anchor_text": e["anchor_text"], "evidence_status": e["evidence_status"],
-                 "removed_from_research": e["source_version_id"] in removed}
+                 "text_source": e["text_source"], "removed_from_research": e["source_version_id"] in removed}
                 for e in conn.execute(
-                    "SELECT l.passage_id, l.source_version_id, l.anchor_text, p.kind, p.physical_page, p.printed_label, s.title, s.version_label,"
+                    "SELECT l.passage_id, l.source_version_id, l.anchor_text, p.kind, p.physical_page, p.printed_label, p.text_source, s.title, s.version_label,"
                     f" {EVIDENCE_STATUS_SQL} AS evidence_status FROM evidence_links l"
                     " JOIN passages p ON p.id = l.passage_id JOIN source_versions s ON s.id = l.source_version_id"
                     " LEFT JOIN source_assets a ON a.id = p.asset_id"
@@ -134,7 +149,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         # A math extraction (D52) builds on the current extractor's text; its own "nothing to read" or failed attempts are
         # reported as the PDF's equation state, not as a rejected re-extraction.
         assets = [dict(r) | {"current_extraction": (r["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION,
-                             "equations": equation_state(store, r["id"]), "rejected_extraction": dict(rejected) if (rejected := conn.execute(
+                             "equations": equation_state(store, r["id"]), "ocr": ocr_state(store, r["id"]), "rejected_extraction": dict(rejected) if (rejected := conn.execute(
             "SELECT extraction_version, rejection_reason, created_at FROM asset_extractions WHERE asset_id = ? AND outcome = 'rejected'"
             " AND extraction_version NOT LIKE '%+marker-%' ORDER BY created_at DESC, rowid DESC LIMIT 1", (r["id"],)).fetchone()) else None} for r in conn.execute(
             "SELECT id, extraction_status, extraction_version, page_count, origin, byte_size, original_filename FROM source_assets"

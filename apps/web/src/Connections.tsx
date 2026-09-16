@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BookMarked, Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, Server, Sigma, Sparkles, SquareTerminal, TextSearch } from 'lucide-react'
+import { BookMarked, Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, ScanText, Server, Sigma, Sparkles, SquareTerminal, TextSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
-import { api, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type LocalTools, type ModelHealth, type SemanticSearch, type SemanticSearchProvider } from './api'
+import { api, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type SemanticSearch, type SemanticSearchProvider } from './api'
 import { ConnectionIcon } from './connectionIcons'
 import { useToast } from './Toast'
+import { ocrLanguagesText } from './ocr'
 import { t } from './i18n'
 import { connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames, reasoningLabel } from './labels'
 
@@ -18,7 +19,7 @@ const hasProviderAccessMode = (mode: string | null) => mode === 'api_key' || mod
 const providerStatus = (mode: string | null) => mode === 'api_key' ? t('API key configured') : mode === 'keyless' ? t('No API key required') : t('Key not configured')
 const formatBytes = (bytes: number) => bytes / 1e9 >= 1 ? t('{gb} GB', { gb: (bytes / 1e9).toFixed(1) }) : t('{mb} MB', { mb: Math.round(bytes / 1e6) })
 
-type Selected = { kind: 'model' | 'provider' | 'local-tool' | 'equation-reader'; id: string }
+type Selected = { kind: 'model' | 'provider' | 'local-tool' | 'equation-reader' | 'ocr-tool'; id: string }
 
 // Shared key management block: status + test/replace/remove, or the key form. Used for cloud model
 // keys (Gemini, OpenAI) and scholarly source keys inside their respective cards/sheets.
@@ -186,6 +187,24 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
   </div>
 }
 
+// The local OCR tool (D51): detected, not installed by DEIXIS; the command to install it is shown when it or a language is missing.
+function OcrToolDetails({ tool, onRefresh }: { tool: OcrTool; onRefresh: () => Promise<void> }) {
+  const [refreshing, setRefreshing] = useState(false)
+  const refresh = () => { setRefreshing(true); void onRefresh().finally(() => setRefreshing(false)) }
+  return <div className="local-tool-details-panel">
+    <span className={`status-chip ${tool.available && !tool.missing_languages.length ? '' : 'is-configured'}`}>{t(!tool.available ? 'Not installed' : tool.missing_languages.length ? 'Installed · languages missing' : 'Installed')}</span>
+    <p className="local-tool-note">{t('Tesseract reads PDF pages that have no text layer, such as scanned articles, when you choose Read with OCR on a source. It runs on this computer; no file leaves it, and the PDF is not changed.')}</p>
+    <p className="local-tool-note">{t('OCR text is labelled wherever it is quoted. On four scanned articles about 0.2–1.5% of characters were misread and equations were unusable; numbers and equations from OCR text are not checked against the page.')}</p>
+    <dl className="local-tool-facts">
+      <dt>{t('Version')}</dt><dd>{tool.version ?? t('not found')}</dd>
+      {tool.available && <><dt>{t('Languages')}</dt><dd>{ocrLanguagesText(tool.languages)}</dd></>}
+      {tool.missing_languages.length > 0 && <><dt>{t('Missing')}</dt><dd>{ocrLanguagesText(tool.missing_languages)}</dd></>}
+    </dl>
+    {tool.reason && <p className="local-tool-note">{tool.reason}</p>}
+    <Button variant="outline" className="connection-recheck" onClick={refresh} disabled={refreshing}><RefreshCw size={14} />{t(refreshing ? 'Checking…' : 'Check again')}</Button>
+  </div>
+}
+
 function ModelCatalogue({ model }: { model: ModelHealth }) {
   const models = model.models ?? []
   return <>
@@ -214,6 +233,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
   const [tools, setTools] = useState<LocalTools | null>(null)
   const [toolsError, setToolsError] = useState('')
   const [reader, setReader] = useState<EquationReader | null>(null)
+  const [ocrTool, setOcrTool] = useState<OcrTool | null>(null)
   const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
   const [semError, setSemError] = useState('')
   const [semProvider, setSemProvider] = useState<SemanticSearchProvider | null>(null)
@@ -228,12 +248,14 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
   const loadCredentials = useCallback(() => { api.credentials().then(setCredentials).catch(() => { /* shown inline per key panel */ }) }, [])
   const loadTools = useCallback((refresh: boolean) => api.localTools(refresh).then(result => { setTools(result); setToolsError('') }).catch((e: Error) => { setToolsError(e.message) }), [])
   const loadReader = useCallback(() => api.equationReader().then(setReader).catch((e: Error) => { setToolsError(e.message) }), [])
+  const loadOcr = useCallback(() => api.ocr().then(setOcrTool).catch((e: Error) => { setToolsError(e.message) }), [])
   const loadSemantic = useCallback(() => { api.semanticSearch().then(result => { setSemantic(result); setSemError('') }).catch((e: Error) => setSemError(e.message)) }, [])
   useEffect(() => { load(false) }, [load])
   useEffect(() => { loadCredentials() }, [loadCredentials])
   useEffect(() => { loadTools(false) }, [loadTools])
   useEffect(() => { loadSemantic() }, [loadSemantic])
   useEffect(() => { void loadReader() }, [loadReader])
+  useEffect(() => { void loadOcr() }, [loadOcr])
   useEffect(() => {
     if (reader?.job?.status !== 'running' && !reader?.reading) return
     const timer = window.setInterval(() => { void loadReader() }, reader?.job?.status === 'running' ? 2000 : 10000)
@@ -291,7 +313,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
       ? modelNames[selected.id] ?? selected.id
       : selected.kind === 'provider'
         ? providerNames[selected.id] ?? selected.id
-        : selected.kind === 'equation-reader' ? t('Equation reader (Marker)') : localTool?.name || localToolNames[selected.id] || selected.id
+        : selected.kind === 'equation-reader' ? t('Equation reader (Marker)') : selected.kind === 'ocr-tool' ? t('OCR (Tesseract)') : localTool?.name || localToolNames[selected.id] || selected.id
     : ''
   const modelEntries = Object.entries(data?.models ?? {})
   const availableModels = modelEntries.filter(([, model]) => !isPlannedModel(model.reason))
@@ -355,6 +377,10 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
         <h3 className="connections-subhead with-icon"><Sigma size={15} aria-hidden />{t('Equation reader')}</h3>
         <div className="local-tool-pills"><button type="button" className={`local-tool-pill ${reader.installed && reader.models_downloaded ? 'is-ready' : ''} ${isActive('equation-reader', 'marker') ? 'active' : ''}`} onClick={() => show({ kind: 'equation-reader', id: 'marker' })}><Sigma size={16} aria-hidden /><strong>Marker</strong><span className="local-tool-pill-status">{reader.job?.status === 'running' ? t('Installing…') : t(reader.installed && reader.models_downloaded ? 'Installed' : 'Not installed')}</span></button></div>
       </>}
+      {ocrTool && <>
+        <h3 className="connections-subhead with-icon"><ScanText size={15} aria-hidden />{t('OCR for scanned PDFs')}</h3>
+        <div className="local-tool-pills"><button type="button" className={`local-tool-pill ${ocrTool.available ? 'is-ready' : ''} ${isActive('ocr-tool', 'tesseract') ? 'active' : ''}`} onClick={() => show({ kind: 'ocr-tool', id: 'tesseract' })}><ScanText size={16} aria-hidden /><strong>Tesseract</strong><span className="local-tool-pill-status">{t(!ocrTool.available ? 'Not installed' : !ocrTool.missing_languages.length ? 'Installed' : ocrTool.languages.join() === 'eng' ? 'English only' : 'Languages missing')}</span></button></div>
+      </>}
       {appTools.length > 0 && <>
         <h3 className="connections-subhead with-icon"><BookMarked size={15} aria-hidden />{t('Reference managers')}</h3>
         <div className="local-tool-pills">{appTools.map(tool => <button type="button" className={`local-tool-pill ${tool.installed ? 'is-ready' : ''} ${isActive('local-tool', tool.id) ? 'active' : ''}`} key={tool.id} onClick={() => show({ kind: 'local-tool', id: tool.id })}><ConnectionIcon id={localToolIcon(tool.id)} /><strong>{tool.name || localToolNames[tool.id] || tool.id}</strong><span className="local-tool-pill-status">{t(tool.installed ? 'Installed' : 'Not installed')}</span></button>)}</div>
@@ -393,10 +419,11 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
 
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent className={`detail-sheet source-sheet connection-sheet ${dark ? 'dark' : ''}`}>
-        <SheetHeader><SheetTitle>{t(selected?.kind === 'provider' ? 'Scholarly source' : selected?.kind === 'local-tool' || selected?.kind === 'equation-reader' ? 'Local tool details' : 'Model connection')}</SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
+        <SheetHeader><SheetTitle>{t(selected?.kind === 'provider' ? 'Scholarly source' : selected?.kind === 'local-tool' || selected?.kind === 'equation-reader' || selected?.kind === 'ocr-tool' ? 'Local tool details' : 'Model connection')}</SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
         <div className="sheet-body">
-          {selected && <div className="connection-sheet-head">{selected.kind === 'equation-reader' ? <Sigma size={20} aria-hidden /> : <ConnectionIcon id={selected.kind === 'local-tool' ? localToolIcon(selected.id) : selected.id} />}<h2 className="source-title">{name}</h2></div>}
+          {selected && <div className="connection-sheet-head">{selected.kind === 'equation-reader' ? <Sigma size={20} aria-hidden /> : selected.kind === 'ocr-tool' ? <ScanText size={20} aria-hidden /> : <ConnectionIcon id={selected.kind === 'local-tool' ? localToolIcon(selected.id) : selected.id} />}<h2 className="source-title">{name}</h2></div>}
           {selected?.kind === 'equation-reader' && reader && <EquationReaderDetails reader={reader} dark={dark} onChanged={loadReader} />}
+          {selected?.kind === 'ocr-tool' && ocrTool && <OcrToolDetails tool={ocrTool} onRefresh={loadOcr} />}
           {localTool && <LocalToolDetails key={localTool.id} tool={localTool} dark={dark} onChanged={() => loadTools(true)} />}
           {model && <>
             {refreshingModel === selected?.id && <p className="source-byline connection-catalog-refresh"><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Refreshing model catalogue…')}</p>}
@@ -444,7 +471,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
             <div className="connection-checks">{check(t('Access mode'), provider.access_mode ? t(provider.access_mode) : t('none'))}</div>
             {credentials && providerKeyEnv[provider.id] && <KeyPanel env={providerKeyEnv[provider.id]} entry={credentials.keys.find(k => k.env === providerKeyEnv[provider.id])} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
           </>}
-          {!localTool && selected?.kind !== 'equation-reader' && <Button variant="outline" className="connection-recheck" onClick={recheck} disabled={busy || refreshingModel === selected?.id}><RefreshCw size={14} />{t(provider ? (busy ? 'Refreshing…' : 'Refresh configuration') : (refreshingModel === selected?.id ? 'Checking…' : 'Check again'))}</Button>}
+          {!localTool && selected?.kind !== 'equation-reader' && selected?.kind !== 'ocr-tool' && <Button variant="outline" className="connection-recheck" onClick={recheck} disabled={busy || refreshingModel === selected?.id}><RefreshCw size={14} />{t(provider ? (busy ? 'Refreshing…' : 'Refresh configuration') : (refreshingModel === selected?.id ? 'Checking…' : 'Check again'))}</Button>}
         </div>
       </SheetContent>
     </Sheet>

@@ -278,6 +278,7 @@ button.chat-step-title svg{color:var(--muted)}
 .ref-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .ref-pill{--pill:var(--muted);display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--pill),transparent 88%);color:color-mix(in srgb,var(--pill),var(--ink) 25%);font-size:11px;line-height:1.5}
 .ref-pill.is-abstract{--pill:#a8489a}
+.ref-pill.is-ocr{--pill:var(--tone-uncertain,#b06d0f)}
 .ref-pill.is-text{--pill:#2f6fdb}
 .ref-pill.is-published{--pill:#2e8b4f}
 .ref-pill.is-accepted{--pill:#7c5cc4}
@@ -342,7 +343,7 @@ button.chat-step-title svg{color:var(--muted)}
 .source-fact.is-plain{color:var(--muted)}
 .source-fact.is-published,.source-fact.is-text{--fact:var(--tone-include)}
 .source-fact.is-accepted{--fact:#7c5cc4}
-.source-fact.is-submitted,.source-fact.is-abstract{--fact:var(--tone-uncertain)}
+.source-fact.is-submitted,.source-fact.is-abstract,.source-fact.is-ocr{--fact:var(--tone-uncertain)}
 .source-fact.is-cited{--fact:var(--accent)}
 .source-fact.is-similarity{--fact:#39759b;font-variant-numeric:tabular-nums;cursor:help}
 .dark .source-fact.is-similarity{--fact:#7fb2d6}
@@ -360,6 +361,10 @@ button.chat-step-title svg{color:var(--muted)}
 .legacy-research .proposal.is-stale{padding-left:9px;border-left:2px solid var(--accent);color:var(--ink)}
 .proposal span span{font-size:11px}
 .proposal>span:not(.proposal-tag){min-width:0}
+.proposal.ocr-note{display:flex;align-items:flex-start;gap:6px;color:var(--muted)}
+.proposal.ocr-note>svg{flex:none;margin:3px 0 0;color:var(--muted)}
+.pdf-ready-head .ocr-note{margin-top:6px!important}
+.pdf-text-page h4 .ref-pill{margin-left:8px;vertical-align:1px}
 /* Footer: the PDF lookup summary, then the actions. */
 .source-foot{display:grid;justify-items:start;gap:4px;margin-top:10px}
 .source-links{display:flex;flex-wrap:wrap;gap:2px;font-size:12px}

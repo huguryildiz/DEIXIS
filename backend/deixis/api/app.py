@@ -1065,6 +1065,11 @@ def create_app(
             raise HTTPException(404, "Asset is not the PDF in use for this source")
         return asset
 
+    @app.get("/api/ocr")
+    async def ocr_status() -> dict[str, Any]:
+        """The local Tesseract: installed or not, its version, the languages it can read and the install command (D51)."""
+        return await asyncio.to_thread(ocr.tesseract_status)
+
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/ocr", status_code=202)
     async def read_with_ocr(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
         """Start a `pdf_ocr` run that reads the PDF's scanned pages with the local Tesseract; no file leaves the machine (D51)."""

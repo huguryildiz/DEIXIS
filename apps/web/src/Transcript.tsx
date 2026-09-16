@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, Check, ChevronDown, ChevronRight, LoaderCircle, Minus, Pause, Sparkles, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { ResearchView, Run, Verdict } from './api'
+import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { connectionName, fetchReasonText, pauseReasonText, providerName, runStatusLabels, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { t, uiLocale } from './i18n'
@@ -10,7 +11,7 @@ import { t, uiLocale } from './i18n'
 // The page's event stream refreshes the view; a one-second clock keeps running durations moving between events.
 // The live run carries a quiet Pause; cancel and resume also sit next to the tabs, so they are reachable from every tab.
 
-type PhaseKey = 'plan' | 'search' | 'screen' | 'pdf' | 'semantic' | 'answer' | 'review'
+type PhaseKey = 'plan' | 'search' | 'screen' | 'pdf' | 'ocr' | 'semantic' | 'answer' | 'review'
 type PhaseState = 'done' | 'running' | 'attention' | 'waiting' | 'skipped'
 type Step = NonNullable<Run['steps']>[number]
 
@@ -21,12 +22,14 @@ const titles: Record<PhaseKey, [string, string, string]> = {
   search: ['Searching the providers', 'Searched the providers', 'Provider searches'],
   screen: ['Screening the candidates', 'Screened the candidates', 'Screening'],
   pdf: ['Downloading open-access PDFs', 'Downloaded open-access PDFs', 'Open-access PDFs'],
+  ocr: ['Reading scanned pages with OCR', 'Read scanned pages with OCR', 'OCR of scanned pages'],
   semantic: ['Preparing semantic search', 'Prepared semantic search', 'Semantic search'],
   answer: ['Writing the answer', 'Wrote the answer', 'Source-linked answer'],
   review: ['Reviewing the claims', 'Reviewed the claims', 'Claim review'],
 }
 const discoveryHeadings: Record<string, string> = { active: 'Searching and screening', completed: 'Ran search & screening', paused: 'Search & screening paused', failed: 'Search & screening failed', cancelled: 'Search & screening cancelled' }
 const collectionHeadings: Record<string, string> = { active: 'Collecting open-access PDFs', completed: 'Collected open-access PDFs', paused: 'PDF collection paused', failed: 'PDF collection failed', cancelled: 'PDF collection cancelled' }
+const ocrHeadings: Record<string, string> = { active: 'Reading a PDF with OCR', completed: 'Read a PDF with OCR', paused: 'OCR reading paused', failed: 'OCR reading failed', cancelled: 'OCR reading cancelled' }
 const answerHeadings: Record<string, string> = { active: 'Generating the answer', completed: 'Ran answer generation', paused: 'Answer generation paused', failed: 'Answer generation failed', cancelled: 'Answer generation cancelled' }
 // The run's stage names the phase it has reached before that phase records its first step.
 const stagePhases: Record<string, PhaseKey> = { screening: 'screen', inspection: 'pdf', answer: 'answer', claim_check: 'review' }
@@ -37,6 +40,7 @@ function phaseOf(kind: string): PhaseKey | null {
   if (kind.startsWith('provider_search')) return 'search'
   if (kind === 'model:screening') return 'screen'
   if (kind === 'fetch_pdf' || kind === 'pdf_other_copy') return 'pdf'
+  if (kind.startsWith('ocr_')) return 'ocr'
   if (kind.startsWith('embedding:')) return 'semantic'
   if (kind === 'model:grounded_answer') return 'answer'
   if (kind === 'model:answer_review') return 'review'
@@ -115,13 +119,14 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
 
   const steps = run.steps ?? []
-  const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen'] : run.kind === 'pdf_collection' ? ['pdf'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
+  const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen'] : run.kind === 'pdf_collection' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
   const reached = Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
   const searches = view.search_runs.filter(s => s.run_id === run.id)
   const answer = view.answers.find(a => a.run_id === run.id)
   const started = present(steps.map(s => s.started_at))[0] ?? run.created_at
   const unknownSteps = steps.filter(s => s.status === 'outcome_unknown')
+  const failedOcrPages = steps.filter(s => s.kind === 'ocr_page' && troubled(s)).map(s => s.operation_key.split(':')[2])
   // A failed search no longer stops the run (D18); name the provider that is missing so the results are not read as
   // complete. Why it failed stays on its query row in the phase details, where the other provider results are.
   const failedProviders = [...new Map(steps.filter(s => s.kind.startsWith('provider_search') && troubled(s))
@@ -133,6 +138,10 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
   const included = view.sources.filter(s => s.selection.state === 'included')
   // The similarity step belongs to no phase of its own; the screening phase reports it.
   const similarity = steps.find(s => s.kind.startsWith('similarity:'))
+  // A pdf_ocr run (D51): its PDF, the pages without text it found, and what became of the merged text.
+  const ocrSource = run.kind === 'pdf_ocr' ? view.sources.find(s => s.source_version_id === run.target?.source_version_id) : undefined
+  const ocrAsset = ocrSource?.access.assets.find(a => a.id === run.target?.asset_id)
+  const ocrPages = steps.find(s => s.kind === 'ocr_pages')?.output?.image_pages
   const rationaleOf = (provider: string, query: string) => plan?.queries.find(q => q.provider_id === provider && q.query_text === query)?.rationale ?? ''
 
   const stateOf = (i: number): PhaseState => {
@@ -148,6 +157,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
     const finished = searches.filter(s => s.status === 'completed' || s.status === 'zero_results').length
     if ((state === 'done' || state === 'attention') && key === 'search' && finished) return plural(finished, 'Conducted {n} search', 'Conducted {n} searches')
     if (state === 'done' && key === 'pdf') return plural(group.filter(s => s.status === 'succeeded').length, 'Downloaded {n} open-access PDF', 'Downloaded {n} open-access PDFs')
+    if (state === 'done' && key === 'ocr' && ocrPages) return plural(ocrPages.length, 'Read {n} scanned page with OCR', 'Read {n} scanned pages with OCR')
     if (state === 'done' && key === 'review' && answer?.review?.status === 'completed') return plural(answer.review.reviews.length, 'Reviewed {n} claim', 'Reviewed {n} claims')
     const [running, done, idle] = titles[key]
     return t(state === 'running' ? running : state === 'done' ? done : idle)
@@ -188,6 +198,18 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
           state === 'done' && pages ? t('{pages} pages · {passages} passages', { pages, passages: ok.reduce((sum, s) => sum + (s.output?.passage_count ?? 0), 0) }) : '',
           failed ? t('{n} not downloaded ({reasons})', { n: failed, reasons: reasons.map(([reason, n]) => `${n} ${reason}`).join(', ') }) : '']
         return parts.filter(Boolean).join(' · ')
+      }
+      case 'ocr': {
+        const read = group.filter(s => s.kind === 'ocr_page' && s.status === 'succeeded').length
+        const failed = group.filter(s => s.kind === 'ocr_page' && troubled(s)).length
+        const merged = group.find(s => s.kind === 'ocr_merge' && s.status === 'succeeded')?.output
+        const last = ocrAsset?.ocr?.last_read
+        return [ocrSource?.title ?? '', ocrPages && state !== 'done' ? t('{done} of {total} pages read', { done: read, total: ocrPages.length }) : '',
+          failed ? plural(failed, '{n} page not read', '{n} pages not read') : '',
+          merged && last ? plural(last.pages_with_text, '{n} with text', '{n} with text') : '',
+          merged && last?.blank_pages ? plural(last.blank_pages, '{n} blank page skipped', '{n} blank pages skipped') : '',
+          merged ? (merged.outcome === 'current' ? t('in use') : t('not used: {reason}', { reason: merged.rejection_reason ?? '' })) : '',
+          run.target?.languages ? ocrLanguages(run.target.languages) : ''].filter(Boolean).join(' · ')
       }
       case 'semantic': {
         if (state === 'running') return attemptText
@@ -315,7 +337,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
   const providers = new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(view.scope.providers.map(providerName))
   // Worded as what happened, so it reads apart from the run strip's status next to the tabs.
   const outcome = active ? 'active' : run.status
-  const label = t((run.kind === 'discovery' ? discoveryHeadings : run.kind === 'pdf_collection' ? collectionHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
+  const label = t((run.kind === 'discovery' ? discoveryHeadings : run.kind === 'pdf_collection' ? collectionHeadings : run.kind === 'pdf_ocr' ? ocrHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
   const olderRevision = run.scope_revision !== view.research.current_scope_revision
   const tokens = totalTokens(answer?.model?.token_usage)
   // What the run spent against what it was allowed; the token figure is the answer step's own, and no cost is estimated.
@@ -338,7 +360,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
       {expanded && <>
         {latest && active && <div className="chat-run-plan" role="note">
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />
-          <div><p className="chat-run-plan-title">{run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : t('Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
+          <div><p className="chat-run-plan-title">{run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t('Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
         </div>}
         <ol className="chat-steps">{order.map((key, i) => {
         const state = stateOf(i)
@@ -392,7 +414,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
         })}</ol>
         <div className="chat-run-foot">
           {/* What ran this run and what it spent: one quiet line under the phases, not a disclosure. */}
-          {run.status !== 'queued' && run.kind !== 'pdf_collection' && <p className="chat-run-meta">
+          {run.status !== 'queued' && run.kind !== 'pdf_collection' && run.kind !== 'pdf_ocr' && <p className="chat-run-meta">
             {models.length > 0 && <span className="chat-run-models">{models}</span>}
             <span>{spend}</span>
           </p>}
@@ -404,6 +426,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
 
     {run.status === 'paused' && <div className="chat-note is-warning">
       <p>{pauseReasonText(run.pause_reason)}</p>
+      {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
       {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
     </div>}
     {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className="chat-note is-warning"><p>{pauseReasonText(run.pause_reason)}</p></div>}

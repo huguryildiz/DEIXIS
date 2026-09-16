@@ -229,6 +229,7 @@ def test_question_to_cited_answer_and_restart(tmp_path):
 
         passage = client.get(f"/api/researches/{rid}/passages/{evidence['passage_id']}").json()
         assert passage["source"]["id"] == evidence["source_version_id"]
+        assert evidence["text_source"] == passage["text_source"]  # a quote says whether its text was read with OCR (D51)
         pdf_sources = [s for s in view["sources"] if s["access"]["assets"]]
         assert len(pdf_sources) == 3  # downloaded OA PDF + the letter's open manuscript (D48) + uploaded file
         letter, manuscript = [s for s in view["sources"] if "letter" in s["title"]]

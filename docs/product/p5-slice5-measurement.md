@@ -1,6 +1,6 @@
 # P5 dilim 5 — Bilinen kaynak kümesiyle ölçüm: arama, PDF, pasaj, tablo hücresi ve yanıt: tasarım notu
 
-**Tarih:** 17 Eylül 2026. **Durum:** Taslak. §8'deki sorular sahibin yanıtını bekliyor. Kod yazılmadı, model ya da sağlayıcı çağrısı yapılmadı.
+**Tarih:** 17 Eylül 2026. **Durum:** Kabul edildi (17 Eylül 2026): sahip §8'deki yedi soruda da ilk seçeneği seçti. Alt adım 1 sahibin girdisini bekliyor (§10). Kod yazılmadı, model ya da sağlayıcı çağrısı yapılmadı.
 
 **Kısaca:** P5'in son dilimi yeni bir özellik değil, bir ölçümdür. Soru şu: DEIXIS gerçek bir soruda, gerçek modelle, kullanıcının bildiği kaynaklardan kaçını bulur, kaçının PDF'ini alır, modele doğru pasajı verir, tablo hücresine doğru değeri yazar ve yanıttaki iddiayı gerçekten destekleyen pasaja bağlar? Bu beş aşama ayrı ölçülür ve tek bir "doğruluk" sayısında birleştirilmez (plan §9 "P5 PDF edinme önerisi", §10). Bugüne kadarki bütün içerik denetimleri Claude'un okumasıdır, bir insanın değil. Ayrıca D43'ten sonra arama (D44), PDF çıkarımı (D47), PDF toplama (D49), denklem okuma (D52) ve OCR (D51) değişti; bunların hiçbiri gerçek modelle uçtan uca yeniden ölçülmedi.
 
@@ -87,7 +87,7 @@ Sayılar §8 yanıtlarından sonra kesinleşir. Mevcut ölçümlere dayanan ilk 
 
 ## 8. Sahibe sorulanlar
 
-Her soruda önerim ilk seçenek.
+Her soruda önerim ilk seçenek. **Sahibin yanıtı (17 Eylül 2026): yedisinde de a.**
 
 1. **Hangi sorular.**
    - a. Kurt 2017 (mevcut 18 bilinen eser, katmanlar gözden geçirilir) + sahibin seçeceği tutulmuş ikinci bir soru ve onun 10–20 bilinen eseri. (öneri)
@@ -126,3 +126,16 @@ Her soruda önerim ilk seçenek.
 4. **Etiketleme.** Sahibin örneği ve Claude'un kalanı; uyuşma.
 5. **Rapor ve karar.** Karar kaydına D-girdisi (Evidence ve Limits); plan §10'a sonuç satırları; S4 için ayrı öneri.
 6. **Kapanış.** Ölçümün gösterdiği ilk iki sorun için ayrı tasarım notu önerisi; bu dilimde düzeltme yapılmaz.
+
+## 10. Alt adım 1 için sahipten beklenenler
+
+1. **İkinci soru** ve onun 10–20 bilinen eseri (DOI; yoksa tam başlık), katmanlarıyla (ör. doğrudan ilgili / komşu bağlam).
+2. **Kurt katmanlarının gözden geçirilmesi.** D34'teki 18 eserlik liste depoda ya da `.local/` altında tam olarak durmuyor; elde kalan, Kurt 2017'nin [12]–[28] numaralı kaynaklarının başlıkları (`.local/kurt-search-probe-reference-analysis-2026-09-16.json`) ve 8 DOI'lik geçici katman dosyası (`.local/kurt-deixis-eval-2026-09-16/known-sources.txt`). Liste bu 17 kaynaktan yeniden kurulur, DOI'si olmayanlar Crossref'te başlıkla aranır, katmanları sahip onaylar.
+3. **Sabit sütunlar** (soru başına 5–6). Kurt için taslak:
+   - Optimize edilen amaç (enerji verimliliği, ömür, verim, gecikme)
+   - Kanal ve hata modeli (BER/PER ifadesi, kodlama)
+   - Optimum paket boyutu (sayı + birim, hangi koşulda)
+   - Amaç fonksiyonu ya da enerji modeli denklemi (formülasyon)
+   - Ağ ve uygulama bağlamı (WSN, akıllı şebeke, sualtı, beden alan ağı)
+   - Değerlendirme yöntemi (analitik, benzetim, test ortamı)
+4. **Cevap sayfaları**: her bilinen eser için soruyu cevaplayan sayfa numaraları. Sahibin etiketleyeceği örneğin parçasıdır (§8 soru 2); PDF'i kopyada olan eserler için Claude önce aday sayfa listesi çıkarır, sahip onaylar ya da düzeltir.

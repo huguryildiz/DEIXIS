@@ -38,7 +38,7 @@ from deixis.workflow.store import NotFound, Store
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
 
 CAPABILITIES = {
-    "supported_tasks": ["search_plan", "screening", "grounded_answer", "answer_review", "cell_extraction", "table_columns"],
+    "supported_tasks": ["search_plan", "screening", "grounded_answer", "answer_review", "cell_extraction", "table_columns", "research_title"],
     "unsupported_tasks": ["synthesis", "candidate_development", "claim_check", "experiment"],
 }
 MAX_DOWNLOADS_PER_RUN = 8
@@ -153,6 +153,8 @@ class ResearchFlow:
                 await self._table_fill(run, scope)
             elif run["kind"] == "cell_recheck":
                 await self._cell_recheck(run, scope)
+            elif run["kind"] == "research_title":
+                await self._research_title(run, scope)
             else:
                 await self._table_columns(run, scope)
         except RunStopped:
@@ -235,6 +237,28 @@ class ResearchFlow:
                     decision["evidence_basis"], step["id"],
                 )
         await self._source_similarity(run, scope, candidates)
+
+        # Derive a short title from the question and the included sources once screening is done. A structurally valid
+        # answer later replaces it (store.save_answer). Optional: the run continues with the provisional title on failure.
+        if self.store.included_sources(rid):
+            try:
+                await self._research_title(run, scope, optional=True)
+            except OptionalStepFailed:
+                return
+
+    async def _research_title(self, run: dict[str, Any], scope: dict[str, Any], optional: bool = False) -> None:
+        """Name the research from its question and included sources' titles and abstracts (D39, D42)."""
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        included = self.store.included_sources(rid)
+        abstracts = [p for svid in included for p in self.store.passages_for(svid) if p["kind"] == "abstract"]
+        self._checkpoint(run_id, revision)
+        output = await self._model_step(run, scope, "research_title", "research_title", source_ids=included,
+                                        passage_rows=abstracts, optional=optional)
+        self._checkpoint(run_id, revision)
+        if not output.get("invalid"):
+            self.store.set_research_title(rid, revision, output["result"]["title"])
+        elif not optional:
+            self._fail(run_id, "invalid_model_output", {"step": "research_title", "issues": output["issues"]})
 
     async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]]) -> None:
         """Score screened sources by the similarity of their title and abstract to the question (D30).

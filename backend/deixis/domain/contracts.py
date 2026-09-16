@@ -32,6 +32,7 @@ SCHEMA_FILES = {
     "AnswerReview": "answer-review.schema.json",
     "EvidenceCellDraft": "evidence-cell-draft.schema.json",
     "TableColumnProposal": "table-column-proposal.schema.json",
+    "ResearchTitle": "research-title.schema.json",
     "StepInput": "step-input.schema.json",
 }
 SCHEMA_VERSIONS = {
@@ -42,6 +43,7 @@ SCHEMA_VERSIONS = {
     "AnswerReview": "deixis.answer_review.v1",
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
     "TableColumnProposal": "deixis.table_column_proposal.v1",
+    "ResearchTitle": "deixis.research_title.v1",
 }
 # Model outputs each task may return. More than one output type is wrapped in an
 # object with one nullable property per type; exactly one must be non-null.
@@ -52,6 +54,7 @@ TASK_OUTPUTS = {
     "answer_review": ("AnswerReview",),
     "cell_extraction": ("EvidenceCellDraft",),
     "table_columns": ("TableColumnProposal",),
+    "research_title": ("ResearchTitle",),
 }
 EXTRACTION_TASKS = ("cell_extraction", "table_columns")
 # The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's (D37).
@@ -273,6 +276,8 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         _check_cells(step_input, allow, result, report)
     elif output_type == "TableColumnProposal":
         _check_column_proposal(step_input, result, report)
+    elif output_type == "ResearchTitle":
+        _check_title(step_input, result, report)
     return report
 
 
@@ -664,11 +669,27 @@ def locate_anchor(quote: str, passage: str) -> AnchorMatch | None:
     return AnchorMatch("fuzzy", passage[spans[start][0]:spans[end - 1][1]], round(ratio, 3))
 
 
+def _title_words(title: str) -> int:
+    return len(re.findall(r"[^\W_]+(?:['’.-][^\W_]+)*", title, re.UNICODE))
+
+
+def _check_title(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
+    """A discovery-time title is derived from the question and sources; it must be short and not a verbatim copy."""
+    title = draft["title"].strip()
+    words = _title_words(title)
+    if not title:
+        report.issues.append(Issue("title_empty", "/title", "title must not be empty"))
+    elif words > 15:
+        report.issues.append(Issue("title_too_long", "/title", f"expected at most 15 words, got {words}"))
+    if title and title == step_input["question"]["text"].strip():
+        report.issues.append(Issue("title_copies_question", "/title", "rewrite the title from the question and sources"))
+
+
 def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
-    title_words = re.findall(r"[^\W_]+(?:['’.-][^\W_]+)*", draft["title"], re.UNICODE)
-    if len(title_words) > 20:
+    title_words = _title_words(draft["title"])
+    if title_words > 15:
         report.issues.append(Issue("answer_title_too_long", "/title",
-                                   f"expected at most 20 words, got {len(title_words)}"))
+                                   f"expected at most 15 words, got {title_words}"))
     labels: set[str] = set()
     cited_by_claim: dict[str, set[str]] = {}
     for i, claim in enumerate(draft["claims"]):

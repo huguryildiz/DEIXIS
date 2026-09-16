@@ -199,6 +199,174 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
                          "reasoning_effort": reviewer[2] if reviewer else None}}
 
 
+# Reading depth of one stored source version. A PDF text layer, an abstract and bare metadata are
+# different evidence levels (AGENTS.md), so the library names the level instead of a generic badge.
+_HAS_PDF_TEXT = ("EXISTS (SELECT 1 FROM passages p JOIN source_assets a ON a.id = p.asset_id"
+                 " WHERE p.source_version_id = v.id AND a.removed_at IS NULL)")
+_HAS_ABSTRACT = "EXISTS (SELECT 1 FROM passages p WHERE p.source_version_id = v.id AND p.kind = 'abstract')"
+_ACCESS_ORDER = ["metadata", "abstract", "pdf_available"]
+
+
+def _access_level(has_pdf_text: int, has_abstract: int) -> str:
+    return "pdf_available" if has_pdf_text else "abstract" if has_abstract else "metadata"
+
+
+# Rank one version of a work as the representative shown in the library table: richer bibliographic
+# records first, so a bare preprint never hides the published version's metadata.
+def _library_representative_score(row: dict[str, Any]) -> tuple[int, ...]:
+    return (
+        1 if row["cited_by_count"] is not None else 0,
+        1 if row["authors"] else 0,
+        1 if row["year"] is not None else 0,
+        1 if row["venue"] else 0,
+        1 if row["doi"] else 0,
+        1 if row["version_label"] else 0,
+        1 if row["publication_type"] else 0,
+    )
+
+
+def library_view(store: Store) -> dict[str, Any]:
+    """Every work (publication) in any non-trashed research, with its versions and the researches it belongs to."""
+    conn = store.conn
+    rows = conn.execute(
+        "SELECT v.id AS source_version_id, v.work_id, v.title, v.authors_json, v.year, v.venue, v.volume, v.issue,"
+        " v.pages, v.publication_type, v.doi, v.landing_url, v.version_label, v.cited_by_count, v.cited_by_count_at,"
+        " v.created_at AS source_created_at, r.id AS research_id, r.title AS research_title, r.updated_at AS research_updated_at,"
+        f" {_HAS_PDF_TEXT} AS has_pdf_text, {_HAS_ABSTRACT} AS has_abstract"
+        " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+        " JOIN researches r ON r.id = m.research_id WHERE r.trashed_at IS NULL"
+        " ORDER BY v.created_at DESC, r.updated_at DESC"
+    ).fetchall()
+
+    works: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        work = works.setdefault(row["work_id"], {"versions": {}, "researches": {}})
+        svid = row["source_version_id"]
+        if svid not in work["versions"]:
+            work["versions"][svid] = {
+                "source_version_id": svid, "title": row["title"], "version_label": row["version_label"], "year": row["year"],
+                "venue": row["venue"], "doi": row["doi"], "authors": json.loads(row["authors_json"]),
+                "publication_type": row["publication_type"], "landing_url": row["landing_url"],
+                "cited_by_count": row["cited_by_count"], "cited_by_count_at": row["cited_by_count_at"],
+                "source_created_at": row["source_created_at"],
+                "access_level": _access_level(row["has_pdf_text"], row["has_abstract"]),
+            }
+        rid = row["research_id"]
+        if rid not in work["researches"]:
+            work["researches"][rid] = {"id": rid, "title": row["research_title"], "updated_at": row["research_updated_at"]}
+
+    entries = []
+    for work_id, work in works.items():
+        versions = list(work["versions"].values())
+        versions.sort(key=lambda v: (v["source_created_at"] is None, v["source_created_at"] or ""), reverse=True)
+        representative = max(versions, key=_library_representative_score)
+        researches = sorted(work["researches"].values(), key=lambda r: r["updated_at"] or "", reverse=True)
+        entries.append({
+            "work_id": work_id,
+            "title": representative["title"],
+            "authors": representative["authors"],
+            "year": representative["year"], "venue": representative["venue"],
+            "publication_type": representative["publication_type"], "doi": representative["doi"],
+            "landing_url": representative["landing_url"],
+            "cited_by_count": max((v["cited_by_count"] for v in versions if v["cited_by_count"] is not None), default=None),
+            "cited_by_count_at": representative["cited_by_count_at"],
+            "versions": [{"source_version_id": v["source_version_id"], "version_label": v["version_label"],
+                          "year": v["year"], "venue": v["venue"], "access_level": v["access_level"]} for v in versions],
+            # The best reading depth any stored version of this work reaches; the panel lists each version separately.
+            "access_level": max((v["access_level"] for v in versions), key=_ACCESS_ORDER.index),
+            "researches": researches,
+            "first_research_id": researches[0]["id"] if researches else None,
+            "newest_source_at": max(v["source_created_at"] or "" for v in versions),
+        })
+
+    # Most recently added works first; within a tie, newest active research first.
+    entries.sort(key=lambda e: (e["newest_source_at"], e["first_research_id"] or ""), reverse=True)
+    # Every active research, including ones with no source yet, so each can be a group and a drop target.
+    researches = [dict(r) for r in conn.execute(
+        "SELECT id, title, updated_at FROM researches WHERE trashed_at IS NULL ORDER BY updated_at DESC"
+    )]
+    return {
+        "entries": entries,
+        "researches": researches,
+        "counts": {"works": len(entries), "versions": sum(len(e["versions"]) for e in entries),
+                   "researches": len({r["id"] for e in entries for r in e["researches"]})},
+    }
+
+
+def library_version_to_add(work: dict[str, Any]) -> dict[str, Any]:
+    """The one version of a work that joins a research when the user adds the work from the Library.
+
+    The deepest stored reading comes first, so a paywalled published record never replaces a preprint whose
+    text DEIXIS holds; among equals, the richer bibliographic record. Other versions stay out: they are
+    different evidence, not copies.
+    """
+    return max(work["versions"], key=lambda v: (_ACCESS_ORDER.index(v["access_level"]), _library_representative_score(v)))
+
+
+def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
+    """One work in reading depth: every stored version with its access level, abstract and PDF asset.
+
+    Versions stay separate. A preprint and a published version are different evidence, so the panel
+    never merges their abstracts or files into one record.
+    """
+    conn = store.conn
+    rows = conn.execute(
+        "SELECT v.id AS source_version_id, v.work_id, v.title, v.authors_json, v.year, v.venue, v.doi,"
+        " v.landing_url, v.version_label, v.publication_type, v.cited_by_count, v.cited_by_count_at,"
+        f" v.created_at AS source_created_at, {_HAS_PDF_TEXT} AS has_pdf_text, {_HAS_ABSTRACT} AS has_abstract"
+        " FROM source_versions v WHERE v.work_id = ?"
+        " AND EXISTS (SELECT 1 FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
+        "  WHERE m.source_version_id = v.id AND r.trashed_at IS NULL)"
+        " ORDER BY v.created_at DESC", (work_id,)
+    ).fetchall()
+    if not rows:
+        return None
+
+    versions, researches = [], {}
+    for row in rows:
+        svid = row["source_version_id"]
+        abstract = conn.execute(
+            "SELECT text, abstract_origin FROM passages WHERE source_version_id = ? AND kind = 'abstract'"
+            " ORDER BY created_at DESC LIMIT 1", (svid,)
+        ).fetchone()
+        asset = conn.execute(
+            "SELECT id, page_count, original_filename, extraction_status FROM source_assets"
+            " WHERE source_version_id = ? AND removed_at IS NULL ORDER BY retrieved_at DESC LIMIT 1", (svid,)
+        ).fetchone()
+        members = conn.execute(
+            "SELECT r.id, r.title, r.updated_at FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
+            " WHERE m.source_version_id = ? AND r.trashed_at IS NULL ORDER BY r.updated_at DESC", (svid,)
+        ).fetchall()
+        for member in members:
+            researches.setdefault(member["id"], {"id": member["id"], "title": member["title"],
+                                                 "updated_at": member["updated_at"]})
+        versions.append({
+            "source_version_id": svid, "version_label": row["version_label"], "year": row["year"],
+            "venue": row["venue"], "doi": row["doi"], "landing_url": row["landing_url"],
+            "publication_type": row["publication_type"], "authors": json.loads(row["authors_json"]),
+            "cited_by_count": row["cited_by_count"], "added_at": row["source_created_at"],
+            "access_level": _access_level(row["has_pdf_text"], row["has_abstract"]),
+            "abstract": abstract["text"] if abstract else None,
+            "abstract_origin": abstract["abstract_origin"] if abstract else None,
+            # The PDF opens through a research that holds this version; the asset route is research-scoped.
+            "asset": {"id": asset["id"], "page_count": asset["page_count"],
+                      "original_filename": asset["original_filename"],
+                      "extraction_status": asset["extraction_status"]} if asset else None,
+            "research_id": members[0]["id"] if members else None,
+        })
+
+    titles = {row["source_version_id"]: row["title"] for row in rows}
+    representative = max(versions, key=_library_representative_score)
+    return {
+        "work_id": work_id, "title": titles[representative["source_version_id"]], "authors": representative["authors"],
+        "year": representative["year"], "venue": representative["venue"], "doi": representative["doi"],
+        "landing_url": representative["landing_url"], "publication_type": representative["publication_type"],
+        "cited_by_count": max((v["cited_by_count"] for v in versions if v["cited_by_count"] is not None), default=None),
+        "versions": versions,
+        "researches": sorted(researches.values(), key=lambda r: r["updated_at"] or "", reverse=True),
+    }
+
+
 def _review_view(store: Store, answer_id: str) -> dict[str, Any] | None:
     review = store.answer_review(answer_id)
     if review is None:

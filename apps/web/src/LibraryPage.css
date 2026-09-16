@@ -1,0 +1,172 @@
+/* The Library is a working list, not a document: it keeps the shared page gutter and heading rhythm
+   of the other workspace views (.collection) and then runs the table across the full width. */
+.main-shell .library-page{max-width:none;margin-bottom:64px}
+.library-page>p{max-width:78ch}
+
+.library-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:2px 0 13px;border-bottom:1px solid var(--line)}
+.library-search{flex:1;min-width:220px;display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;border:1px solid var(--strong-line,var(--line));border-radius:7px;background:var(--field-surface,var(--raised-surface));color:var(--muted)}
+.library-search:focus-within{border-color:var(--accent)}
+.library-search svg{flex:none}
+.library-search input{flex:1;min-width:0;height:100%;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;outline:none}
+.library-search input::placeholder{color:var(--muted)}
+
+.library-page .library-tool{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 11px;border:1px solid var(--strong-line,var(--line));border-radius:7px;background:var(--field-surface,var(--raised-surface));color:var(--ink);font-size:12px;white-space:nowrap}
+.library-page .library-tool:hover{background:var(--hover-surface)}
+.library-tool-value{color:var(--accent);font-weight:600}
+.library-menu-label{padding:5px 6px 4px;color:var(--muted-foreground);font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.library-menu-note{max-width:26ch;margin:0;padding:4px 6px 5px;color:var(--muted-foreground);font-size:11px;line-height:1.5}
+
+.library-density{display:inline-flex;border:1px solid var(--strong-line,var(--line));border-radius:7px;overflow:hidden}
+.library-density button{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;background:var(--field-surface,transparent);color:var(--muted)}
+.library-density button+button{border-left:1px solid var(--strong-line,var(--line))}
+.library-density button[aria-pressed=true]{background:var(--hover-surface);color:var(--ink)}
+
+.library-counts{display:flex;flex-wrap:wrap;gap:4px 8px;margin:0 0 0 auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.library-counts span:first-child{color:var(--ink);font-weight:600}
+
+.library-status{margin-top:22px;color:var(--muted);font-size:13px}
+.library-page .legacy-boundary{margin-top:18px}
+
+.library-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:26px;align-items:start;margin-top:2px}
+.library-layout.has-panel{grid-template-columns:minmax(0,1fr) minmax(310px,390px)}
+
+/* Table: dense, aligned columns with one reading line per work. */
+.library-table-wrap{min-width:0;overflow-x:auto}
+.library-table{width:100%;min-width:900px;border-collapse:collapse;table-layout:fixed;font-size:13px}
+.library-table th{padding:0;border-bottom:1px solid var(--strong-line,var(--line));text-align:left;vertical-align:bottom;overflow:hidden;color:var(--muted);font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;white-space:nowrap}
+.library-table thead th{position:sticky;top:0;z-index:1;background:var(--paper);padding:11px 12px 9px}
+.library-table thead th:has(button){padding:0}
+.library-table th button{display:inline-flex;align-items:center;gap:6px;width:100%;padding:11px 12px 9px;border:0;background:transparent;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit}
+.library-table th button:hover{color:var(--ink)}
+.library-table th svg{flex:none;opacity:.7}
+
+.library-table td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-table tbody tr{cursor:pointer}
+.library-table tbody tr:hover{background:var(--hover-surface)}
+.library-table tbody tr.is-selected{background:color-mix(in srgb,var(--accent),transparent 92%)}
+.library-table tbody tr.is-selected td{border-bottom-color:color-mix(in srgb,var(--accent),transparent 65%)}
+
+.library-col-paper{width:31%}
+.library-col-authors{width:16%}
+.library-col-venue{width:15%}
+.library-col-access{width:124px}
+.library-col-year{width:82px;font-variant-numeric:tabular-nums}
+.library-col-citations{width:104px;text-align:right;font-variant-numeric:tabular-nums}
+.library-table th.library-col-citations button{justify-content:flex-end}
+.library-col-projects{width:14%}
+.library-col-added{width:118px;font-variant-numeric:tabular-nums}
+
+/* With the details panel open the list keeps only the columns that identify a work;
+   venue, citations, projects and the save date are all repeated inside the panel. */
+.library-layout.has-panel .library-table{min-width:430px}
+.library-layout.has-panel :is(.library-col-venue,.library-col-citations,.library-col-projects,.library-col-added){display:none}
+.library-layout.has-panel .library-col-paper{width:46%}
+.library-layout.has-panel .library-col-authors{width:26%}
+
+.library-title{display:block;width:100%;padding:0;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13.5px;font-weight:600;line-height:1.4;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-title:hover{color:var(--accent)}
+.library-version-note{display:block;margin-top:3px;font-size:11px;color:var(--muted)}
+
+/* Comfortable rows let a long title use a second line; compact keeps every work on one. */
+.library-table-wrap[data-density=comfortable] .library-table td{padding-block:13px}
+.library-table-wrap[data-density=comfortable] .library-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal}
+.library-table-wrap[data-density=compact] .library-table td{padding-block:7px;font-size:12.5px}
+.library-table-wrap[data-density=compact] .library-version-note{display:none}
+
+.library-access{display:inline-block;max-width:100%;padding:1px 8px;border-radius:999px;background:color-mix(in srgb,var(--muted),transparent 88%);color:color-mix(in srgb,var(--ink),var(--muted) 30%);font-size:11px;line-height:1.6;white-space:nowrap}
+.library-access[data-level=pdf_available]{background:color-mix(in srgb,var(--tone-include),transparent 87%);color:color-mix(in srgb,var(--tone-include),var(--ink) 30%)}
+.library-access[data-level=abstract]{background:color-mix(in srgb,var(--tone-uncertain),transparent 88%);color:color-mix(in srgb,var(--tone-uncertain),var(--ink) 30%)}
+
+/* Details panel: one work at reading depth, beside the list rather than over it. */
+.library-panel{position:sticky;top:16px;align-self:start;max-height:calc(100svh - 48px);display:flex;flex-direction:column;border:1px solid var(--strong-line,var(--line));border-radius:11px;background:var(--raised-surface,var(--paper));overflow:hidden}
+.library-panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 10px 11px 16px;border-bottom:1px solid var(--line)}
+.library-panel-head strong{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.library-panel-body{flex:1;min-height:0;overflow:auto;padding:18px 18px 24px}
+.library-panel-body h2{margin:0;font-family:'DM Sans Variable',sans-serif;font-size:16px;font-weight:650;line-height:1.4;letter-spacing:-.01em}
+.library-panel-body h3{margin:22px 0 9px;padding-top:15px;border-top:1px solid var(--line);font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.library-panel-authors{margin:9px 0 0;color:var(--muted);font-size:12.5px;line-height:1.55}
+.library-panel-meta{margin:4px 0 0;color:var(--muted);font-size:12px}
+.library-panel-link{display:inline-flex;align-items:center;gap:6px;margin-top:9px;color:var(--accent);font-size:12px;overflow-wrap:anywhere}
+.library-panel-link:hover{text-decoration:underline;text-underline-offset:3px}
+.library-panel-note{margin:8px 0 0;color:var(--muted);font-size:11.5px;line-height:1.6}
+
+.library-version-list{display:grid;gap:9px;margin:0;padding:0;list-style:none}
+.library-version-list li{padding:11px 12px;border:1px solid var(--line);border-radius:8px}
+.library-version-head{display:flex;align-items:center;justify-content:space-between;gap:9px}
+.library-version-head strong{min-width:0;font-size:12.5px;font-weight:600;overflow-wrap:anywhere}
+.library-version-file{margin:7px 0 0;color:var(--muted);font-size:11.5px;overflow-wrap:anywhere}
+.library-page .library-version-open{margin-top:9px;height:30px;border-color:var(--strong-line,var(--line));font-size:12px}
+
+.library-abstract{margin:0;color:var(--ink);font-size:13px;line-height:1.7}
+
+.library-panel-projects{display:grid;gap:2px}
+.library-panel-projects button{display:flex;align-items:center;justify-content:space-between;gap:9px;width:100%;padding:7px 0;border:0;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;text-align:left}
+.library-panel-projects button:hover{color:var(--accent)}
+.library-panel-projects button svg{flex:none;opacity:.6}
+
+/* The PDF takes the whole workspace, as it does in the passage inspector. */
+.library-reader .back-button{margin-bottom:18px}
+.library-reader h2{margin:0;font-family:'DM Sans Variable',sans-serif;font-size:19px;font-weight:650;letter-spacing:-.02em;line-height:1.35}
+.library-reader-caption{margin:6px 0 16px;color:var(--muted);font-size:12.5px}
+.library-reader-frame{border:1px solid var(--strong-line,var(--line));border-radius:11px;overflow:hidden}
+.library-reader-frame .pdf-viewer{height:clamp(460px,calc(100svh - 270px),900px)}
+
+@media(max-width:1180px){
+  .library-layout.has-panel{grid-template-columns:minmax(0,1fr)}
+  .library-panel{position:static;max-height:none;order:-1}
+  .library-panel-body{max-height:min(60svh,560px)}
+}
+@media(max-width:720px){
+  .library-counts{width:100%;margin-left:0}
+  .library-table-wrap{margin-inline:-4px}
+}
+
+/* Grouping by project and pagination. */
+.library-page .library-group-choice{width:auto;padding:0 11px;font-size:12px;white-space:nowrap}
+.library-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:10px 12px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.library-pager span:first-child{margin-right:auto}
+.library-pager button{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid var(--strong-line,var(--line));border-radius:6px;background:var(--field-surface,transparent);color:var(--ink)}
+.library-pager button:hover:not(:disabled){background:var(--hover-surface)}
+.library-pager button:disabled{opacity:.4;cursor:default}
+.library-group-pager td{padding:0 !important;cursor:default}
+.library-table tbody tr.library-group-pager:hover{background:transparent}
+
+.library-table .library-group-row th{padding:0;border-bottom:1px solid var(--strong-line,var(--line));background:var(--paper);color:var(--ink);font-size:12.5px;font-weight:600;letter-spacing:0;text-transform:none;white-space:normal}
+.library-table tbody.library-group+tbody.library-group .library-group-row th{border-top:14px solid var(--paper)}
+.library-table tbody tr.library-group-row{cursor:default}
+.library-table tbody tr.library-group-row:hover{background:transparent}
+.library-group-head{display:flex;align-items:center;gap:10px;padding:8px 12px 8px 4px;min-width:0}
+.library-table .library-group-row .library-group-toggle{display:inline-flex;align-items:center;gap:7px;flex:0 1 auto;width:auto;min-width:0;padding:2px 4px;letter-spacing:0;text-transform:none;border:0;border-radius:5px;background:transparent;color:inherit;font:inherit;text-align:left}
+.library-group-toggle svg{flex:none;color:var(--muted)}
+.library-group-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-group-count{flex:none;padding:0 7px;border-radius:999px;background:color-mix(in srgb,var(--muted),transparent 88%);color:var(--muted);font-size:11px;font-weight:600;line-height:1.7;font-variant-numeric:tabular-nums}
+.library-table .library-group-row .library-group-open{display:inline-flex;align-items:center;gap:4px;margin-left:auto;flex:none;width:auto;padding:2px 4px;letter-spacing:0;text-transform:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:500}
+.library-table .library-group-row .library-group-open:hover{color:var(--accent)}
+.library-drop-hint{flex:none;color:var(--muted);font-size:11.5px;font-weight:500}
+.library-table tbody tr.library-group-empty{cursor:default}
+.library-table tbody tr.library-group-empty:hover{background:transparent}
+.library-group-empty td{padding:12px 12px 12px 32px;font-size:12.5px;font-style:italic}
+
+/* Dragging a row onto a project: the target outlines itself; a project that already holds the work stays inert. */
+.library-table tbody tr[draggable=true]{cursor:grab}
+.library-table tbody tr.is-dragging{opacity:.5}
+.library-col-paper{position:relative}
+.library-grip{position:absolute;left:0;top:50%;translate:0 -50%;color:var(--muted);opacity:0;transition:opacity .15s}
+.library-table tbody tr:hover .library-grip{opacity:.7}
+.library-table tbody.library-group[data-drop=ready] .library-group-row th{background:color-mix(in srgb,var(--accent),var(--paper) 94%)}
+.library-table tbody.library-group[data-drop=over]{outline:2px solid var(--accent);outline-offset:-2px}
+.library-table tbody.library-group[data-drop=over] .library-group-row th{background:color-mix(in srgb,var(--accent),var(--paper) 86%)}
+.library-table tbody.library-group[data-drop=over] .library-drop-hint{color:var(--accent)}
+.library-table tbody.library-group[data-drop=present]{opacity:.55}
+
+.library-dock{position:fixed;left:50%;bottom:20px;z-index:40;translate:-50% 0;display:grid;gap:8px;width:min(920px,calc(100vw - 32px));max-height:min(42svh,340px);padding:12px 14px;border:1px solid var(--strong-line,var(--line));border-radius:12px;background:var(--raised-surface,var(--paper));box-shadow:0 12px 32px color-mix(in srgb,#000,transparent 70%);overflow:auto}
+.library-dock-label{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-dock-targets{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px}
+.library-dock-target{min-width:0;padding:7px 10px;border:1px dashed var(--strong-line,var(--line));border-radius:7px;color:var(--ink);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-dock-target[data-drop=over]{border-style:solid;border-color:var(--accent);background:color-mix(in srgb,var(--accent),transparent 90%);color:var(--accent)}
+.library-dock-target[data-drop=present]{opacity:.45}
+
+.library-page .library-add-trigger{margin-top:10px}
+.library-add-menu{max-width:320px}
+
+@media(prefers-reduced-motion:reduce){.library-grip{transition:none}}

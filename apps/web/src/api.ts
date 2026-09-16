@@ -36,7 +36,7 @@ export type SearchPlan = {
   concepts: { label: string; role: string; synonyms: string[] }[]
   queries: { provider_id: string; query_text: string; rationale: string }[]
 }
-export type RunKind = 'discovery' | 'answer' | 'table_columns' | 'table_fill' | 'cell_recheck'
+export type RunKind = 'discovery' | 'answer' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   table_id: string; column_id?: string; source_version_id?: string; cell_version?: number
@@ -147,15 +147,31 @@ export type SemanticSearchProvider = 'gemini' | 'openai' | 'ollama' | 'lm_studio
 export type SemanticSearchOption = { provider: SemanticSearchProvider; models: string[]; available: boolean; reason: string | null }
 export type SemanticSearch = { provider: SemanticSearchProvider; model: string | null; explicit: boolean; options: SemanticSearchOption[] }
 export type InstitutionalAccess = { status: 'institutional' | 'none' | 'unknown' | 'not_checked'; via?: string; reason?: string }
-export type LibraryVersion = { source_version_id: string; version_label: string | null; year: number | null; venue: string | null }
+// Reading depth of a stored source version: a PDF text layer, an abstract, or bare metadata.
+export type AccessLevel = 'pdf_available' | 'abstract' | 'metadata'
+export type LibraryVersion = { source_version_id: string; version_label: string | null; year: number | null; venue: string | null; access_level: AccessLevel }
 export type LibraryResearch = { id: string; title: string; updated_at: string }
 export type LibraryEntry = {
   work_id: string; title: string; authors: string[]; year: number | null; venue: string | null
   publication_type: string | null; doi: string | null; landing_url: string | null
-  cited_by_count: number | null; cited_by_count_at: string | null
+  cited_by_count: number | null; cited_by_count_at: string | null; access_level: AccessLevel
   versions: LibraryVersion[]; researches: LibraryResearch[]; first_research_id: string | null; newest_source_at: string
 }
-export type LibraryView = { entries: LibraryEntry[]; counts: { works: number; versions: number; researches: number } }
+export type LibraryView = { entries: LibraryEntry[]; researches: LibraryResearch[]; counts: { works: number; versions: number; researches: number } }
+export type LibraryAddition = { work_id: string; research_id: string; source_version_id: string; access_level: AccessLevel; library: LibraryView }
+export type LibraryWorkVersion = {
+  source_version_id: string; version_label: string | null; year: number | null; venue: string | null
+  doi: string | null; landing_url: string | null; publication_type: string | null; authors: string[]
+  cited_by_count: number | null; added_at: string; access_level: AccessLevel
+  abstract: string | null; abstract_origin: string | null
+  asset: { id: string; page_count: number | null; original_filename: string | null; extraction_status: string } | null
+  research_id: string | null
+}
+export type LibraryWork = {
+  work_id: string; title: string; authors: string[]; year: number | null; venue: string | null
+  doi: string | null; landing_url: string | null; publication_type: string | null; cited_by_count: number | null
+  versions: LibraryWorkVersion[]; researches: LibraryResearch[]
+}
 export type QuickFindResult = {
   researches: { id: string; title: string; question: string; updated_at: string }[]
   sources: { source_version_id: string; title: string; year: number | null; version_label: string | null; research_id: string; research_title: string }[]
@@ -256,6 +272,9 @@ export const api = {
   deletePermanently: (id: string) => request<{ deleted: boolean; files_not_removed: string[] }>(`/api/trash/${id}`, { method: 'DELETE' }),
   search: (q: string) => request<QuickFindResult>(`/api/search?q=${encodeURIComponent(q)}`),
   library: () => request<LibraryView>('/api/library'),
+  libraryWork: (workId: string) => request<LibraryWork>(`/api/library/works/${encodeURIComponent(workId)}`),
+  addLibrarySource: (researchId: string, workId: string) =>
+    request<LibraryAddition>(`/api/researches/${researchId}/library-sources`, json('POST', { work_id: workId })),
   research: (id: string) => request<ResearchView>(`/api/researches/${id}`),
   create: (body: {
     question: string; source_scope: SourceScope; effort: Effort; model_connection: string; requested_model: string; reasoning_effort: string | null
@@ -284,7 +303,7 @@ export const api = {
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-discovery`, { method: 'POST' }),
   attachPdfCandidate: (id: string, sourceId: string, candidateId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-candidates/${candidateId}/attach`, { method: 'POST' }),
-  startRun: (id: string, kind: 'discovery' | 'answer', idempotencyKey: string) =>
+  startRun: (id: string, kind: 'discovery' | 'answer' | 'research_title', idempotencyKey: string) =>
     request<Run>(`/api/researches/${id}/runs`, json('POST', { kind }, { 'Idempotency-Key': idempotencyKey })),
   controlRun: (runId: string, action: 'pause' | 'resume' | 'cancel') => request<Run>(`/api/runs/${runId}/${action}`, { method: 'POST' }),
   select: (id: string, sourceId: string, state: Source['selection']['state'], expectedVersion: number, reason?: string) =>

@@ -41,7 +41,7 @@ from deixis.workflow import bibliography
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.store import NotFound, Store
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
-from deixis.workflow.views import passage_view, research_view
+from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, research_view
 from deixis.workflow.worker import Worker
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -108,7 +108,7 @@ class SemanticChoice(BaseModel):
 
 
 class StartRun(BaseModel):
-    kind: Literal["discovery", "answer"]
+    kind: Literal["discovery", "answer", "research_title"]
 
 
 class SelectionChange(BaseModel):
@@ -121,6 +121,10 @@ class ScopeRevision(BaseModel):
     question: str = Field(min_length=3, max_length=4000)
     steering: str | None = Field(default=None, max_length=2000)
     expected_version: int
+
+
+class LibraryAddition(BaseModel):
+    work_id: str = Field(min_length=1, max_length=200)
 
 
 class ZoteroImport(BaseModel):
@@ -397,6 +401,32 @@ def create_app(
     async def list_researches(request: Request) -> list[dict[str, Any]]:
         return store_of(request).list_researches()
 
+    @app.get("/api/library")
+    async def library(request: Request) -> dict[str, Any]:
+        return library_view(store_of(request))
+
+    @app.get("/api/library/works/{work_id}")
+    async def library_work(work_id: str, request: Request) -> dict[str, Any]:
+        view = library_work_view(store_of(request), work_id)
+        if view is None:
+            raise HTTPException(404, "Work is not in the library")
+        return view
+
+    @app.post("/api/researches/{research_id}/library-sources", status_code=201)
+    async def add_library_source(research_id: str, body: LibraryAddition, request: Request) -> dict[str, Any]:
+        """Add one Library work to a research as a source the user included (D41)."""
+        store = store_of(request)
+        store.research(research_id)
+        work = library_work_view(store, body.work_id)
+        if work is None:
+            raise HTTPException(404, "Work is not in the library")
+        if any(r["id"] == research_id for r in work["researches"]):
+            raise HTTPException(409, "This work is already a source of that research")
+        version = library_version_to_add(work)
+        store.add_to_corpus(research_id, version["source_version_id"], "library", selection_state="included", selection_origin="user")
+        return {"work_id": body.work_id, "research_id": research_id, "source_version_id": version["source_version_id"],
+                "access_level": version["access_level"], "library": library_view(store)}
+
     @app.get("/api/trash")
     async def list_trash(request: Request) -> list[dict[str, Any]]:
         return store_of(request).list_trash()
@@ -604,6 +634,9 @@ def create_app(
         if body.kind == "answer" and not store.included_sources(research_id):
             raise HTTPException(422, "Include at least one source before generating an answer")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
+        if body.kind == "research_title":
+            # One title call and its single schema repair; nothing is searched.
+            budget = {"max_model_calls": 2, "max_provider_requests": 0}
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
         run = store.create_run(research_id, body.kind, budget, key)
         request.app.state.worker.wake()

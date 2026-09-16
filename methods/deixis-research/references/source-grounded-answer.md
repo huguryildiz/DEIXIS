@@ -93,7 +93,7 @@ supplied passages. Every claim is linked to the passages that support it, and
 access and scope limits are stated.
 
 1. Write `title` as a concise descriptive title in the answer language. Aim for
-   15–20 words and never exceed 20 words. Do not copy the full question, end the
+   12–15 words and never exceed 15 words. Do not copy the full question, end the
    title with a question mark, or add claims that the supplied passages do not
    support.
 2. Read all passages. Note each passage's `reading_depth` and locator kind
@@ -162,7 +162,7 @@ access and scope limits are stated.
 
 Claim text, limitation text, unanswered aspects and the capability notice are
 written with the Academic Phrasebank frames in
-[academic-phrasebank/phrases.txt](academic-phrasebank/phrases.txt).
+[phrases.md](phrases.md).
 
 - Build each sentence on one phrasebank frame where one fits. Replace only its slots (`X`, `Y`,
   `Z`, `…` and the example content words such as topic nouns, author names and

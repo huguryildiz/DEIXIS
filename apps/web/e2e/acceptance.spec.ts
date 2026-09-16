@@ -109,9 +109,10 @@ test('recent research moves to Trash, restores, then can be permanently deleted'
   await server.start()
   const page = await browser.newPage()
   try {
-    const title = 'SYNTHETIC trash flow research'
-    await startResearch(page, server, title)
+    await startResearch(page, server, 'SYNTHETIC trash flow research')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
+    // Discovery names the research (D39); the scripted model's title replaces the question in the list.
+    const title = 'Synthetic short research title'
     await expect(page.locator('.recent-row', { hasText: title })).toBeVisible()
     await page.getByRole('button', { name: `Actions for ${title}` }).click()
     await page.getByRole('menuitem', { name: 'Move to Trash' }).click()
@@ -128,8 +129,8 @@ test('recent research moves to Trash, restores, then can be permanently deleted'
     await page.getByRole('button', { name: `Actions for ${title}` }).click()
     await page.getByRole('menuitem', { name: 'Move to Trash' }).click()
     await page.getByRole('button', { name: 'Trash', exact: true }).click()
-    page.once('dialog', dialog => dialog.accept())
     await page.getByRole('button', { name: 'Delete permanently' }).click()
+    await page.getByRole('alertdialog', { name: 'Delete permanently?' }).getByRole('button', { name: 'Delete permanently' }).click()
     await expect(page.getByText('Trash is empty.')).toBeVisible()
   } finally { await page.close(); await server.stop() }
 })

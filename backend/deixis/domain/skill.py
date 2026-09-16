@@ -23,6 +23,7 @@ RUNTIME_FILES = {
     "answer_review": ("SKILL.md", "references/answer-review.md"),
     "cell_extraction": ("SKILL.md", "references/evidence-table.md"),
     "table_columns": ("SKILL.md", "references/evidence-table.md"),
+    "research_title": ("SKILL.md", "references/research-title.md"),
 }
 PROVENANCE_REQUIRED = (
     "package",

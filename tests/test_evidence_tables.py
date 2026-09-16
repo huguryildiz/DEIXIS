@@ -45,7 +45,7 @@ def test_runs_rebuild_keeps_rows_and_foreign_keys(tmp_path, monkeypatch):
     store.step(run_id, "search:0", "provider_search:openalex")
 
     monkeypatch.setattr(db, "MIGRATIONS_DIR", REAL_MIGRATIONS)
-    assert db.migrate(conn) == [19, 20]
+    assert db.migrate(conn)[:2] == [19, 20]  # later migrations may follow
     assert store.run(run_id)["idempotency_key"] == "key-1" and store.run(run_id)["target"] is None
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     assert "REFERENCES runs(id)" in conn.execute("SELECT sql FROM sqlite_master WHERE name = 'run_steps'").fetchone()[0]

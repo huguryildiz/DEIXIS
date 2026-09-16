@@ -55,6 +55,8 @@ def valid_response(si: dict[str, Any]) -> str:
                         for c in si["claims_under_review"]],
             "notes": "",
         })
+    if task == "research_title":
+        return json.dumps(envelope(si, "deixis.research_title.v1") | {"title": "Synthetic short research title"})
     first = si["passages"][0]
     return json.dumps(envelope(si, "deixis.grounded_answer_draft.v3") | {
         "title": "Synthetic evidence for release scheduling and optimization in constrained molecular communication networks",

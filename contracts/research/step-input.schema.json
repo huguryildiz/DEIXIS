@@ -52,7 +52,8 @@
         "grounded_answer",
         "answer_review",
         "cell_extraction",
-        "table_columns"
+        "table_columns",
+        "research_title"
       ]
     },
     "scope_revision": {

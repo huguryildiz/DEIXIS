@@ -757,7 +757,8 @@ def test_submitted_and_published_versions_stay_separate_versions_of_one_work(tmp
         assert record["work_id"] == manuscript["work_id"] and record["source_version_id"] != manuscript["source_version_id"]
         assert (manuscript["version_label"], manuscript["doi"], manuscript["access"]["abstract_passage_id"]) == ("submittedVersion", None, None)
         assert manuscript["selection"]["origin"] == "default"  # not screened as a separate candidate
-        assert len(adapter.calls[-1]["candidates"]) == 3
+        screening = [c for c in adapter.calls if c["task_type"] == "screening"][-1]
+        assert len(screening["candidates"]) == 3
 
         client.patch(f"/api/researches/{rid}/selections/{manuscript['source_version_id']}",
                      json={"state": "included", "expected_version": manuscript["selection"]["version"]})
@@ -913,6 +914,7 @@ def test_literature_model_runs_search_steps_and_the_research_model_writes_the_an
         run_to_end(client, rid, "discovery")
         view = run_to_end(client, rid, "answer")
         assert set(adapter.sent) == {("search_plan", "lit-model", "low"), ("screening", "lit-model", "low"),
+                                     ("research_title", "answer-model", "high"),
                                      ("grounded_answer", "answer-model", "high")}
         assert view["answers"][0]["review"] is None and view["reviewer"]["model"] is None  # no reviewer set anywhere
         revised = client.post(f"/api/researches/{rid}/scope", json={"question": "How is molecule release timing optimized?",
@@ -954,7 +956,8 @@ def test_each_role_can_use_a_model_from_another_connection(tmp_path):
                      review_mode="custom", review_connection="gemini", review_model="review-model")
         run_to_end(client, rid, "discovery")
         view = run_to_end(client, rid, "answer")
-        assert set(answer.sent) == {("grounded_answer", "answer-model", "high")}
+        assert set(answer.sent) == {("research_title", "answer-model", "high"),
+                                    ("grounded_answer", "answer-model", "high")}
         assert set(other.sent) == {("search_plan", "lit-model", "low"), ("screening", "lit-model", "low"),
                                    ("answer_review", "review-model", None)}
         assert view["reviewer"] == {"mode": "custom", "connection": "gemini", "model": "review-model", "reasoning_effort": None}

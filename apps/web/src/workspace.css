@@ -38,8 +38,15 @@
 .trash-row>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
 .trash-row>div{display:flex;gap:8px;flex:none}
 .trash-row button{gap:7px}
-.trash-row .trash-delete{background:color-mix(in srgb,var(--destructive),transparent 92%);border-color:color-mix(in srgb,var(--destructive),transparent 78%);color:var(--destructive)}
-.trash-row .trash-delete:hover{background:color-mix(in srgb,var(--destructive),transparent 84%)}
+.confirm-backdrop{position:fixed;inset:0;z-index:50;background:rgb(15 17 21/.32);backdrop-filter:blur(2px);transition:opacity .15s}.confirm-backdrop[data-starting-style],.confirm-backdrop[data-ending-style]{opacity:0}
+.confirm-dialog{--paper:#f8f9fb;--ink:#262a30;--muted:#5b6475;--line:#e6e8eb;--accent:#3b5b9a;position:fixed;z-index:51;inset:0;margin:auto;height:fit-content;width:min(460px,calc(100vw - 32px));padding:28px 28px 22px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font-family:'DM Sans Variable',sans-serif;box-shadow:0 24px 60px -20px rgb(0 0 0/.35);transition:opacity .15s,scale .15s}.confirm-dialog[data-starting-style],.confirm-dialog[data-ending-style]{opacity:0;scale:.97}
+.confirm-dialog.dark{--paper:#15171b;--ink:#e6e8eb;--muted:#9aa2ad;--line:#2b3038;--accent:#93acdf}
+.confirm-title{font-family:'Newsreader Variable',serif;font-size:28px;font-weight:450;letter-spacing:-.5px;line-height:1.15;margin:0}
+.confirm-subject{margin:16px 0 0;padding:12px 14px;border-left:2px solid var(--line);background:color-mix(in srgb,var(--ink),transparent 96%);border-radius:0 6px 6px 0;font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+.confirm-description{margin:14px 0 0;font-size:13px;line-height:1.6;color:var(--muted)}
+.confirm-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:24px}.confirm-actions button{gap:7px}
+.trash-row .trash-delete,.confirm-actions .trash-delete{background:color-mix(in srgb,var(--destructive),transparent 92%);border-color:color-mix(in srgb,var(--destructive),transparent 78%);color:var(--destructive)}
+.trash-row .trash-delete:hover,.confirm-actions .trash-delete:hover{background:color-mix(in srgb,var(--destructive),transparent 84%)}
 @media(max-width:600px){.trash-row{align-items:flex-start;flex-direction:column}.trash-row>span{max-width:100%}.app .recent-row .recent-more{opacity:1}}
 /* The evidence counts under the question: one line, each count a way into the tab that can show it. */
 .legacy-research .research-facts{display:flex;flex-wrap:wrap;align-items:baseline;gap:7px 20px;margin:18px 0 24px}
@@ -68,8 +75,8 @@
 .math-display{display:block;margin:10px 0;overflow-x:auto;overflow-y:hidden}
 .phrasing-note summary{cursor:pointer}
 .phrasing-note ul{margin:6px 0 0}
-/* The question is the heading until an answer names the research (D36): let it wrap whole, balanced, without dominating. */
-.legacy-research h1{max-width:30ch;font-size:clamp(24px,3.2vw,32px);line-height:1.22;letter-spacing:-.018em;text-wrap:balance}
+/* The question is the provisional heading until the discovery-time title or an answer names the research (D36, D39). */
+.legacy-research h1{font-size:clamp(18px,2vw,24px);line-height:1.25;letter-spacing:-.01em;text-wrap:balance}
 /* The revision box is a section of the page, not a second card. */
 .app .legacy-research .legacy-followup{margin-top:46px;padding:22px 0 0;border:0;border-top:1px solid var(--line);border-radius:0;background:none}
 .app .legacy-research .legacy-followup textarea{padding:11px 13px;border:1px solid var(--strong-line,var(--line));border-radius:8px;background:var(--field-surface,transparent);color:var(--ink)}
@@ -669,3 +676,4 @@ button.chat-step-title svg{color:var(--muted)}
 .local-tool-details-panel .cmd code span span{white-space:nowrap}
 .semantic-choice strong{font-size:13px;font-weight:600}
 @media(max-width:600px){.settings-tabs{gap:0}.semantic-model{margin-left:0;width:100%}.local-tool-pills{gap:7px}.local-tool-pill{max-width:100%}}
+.research-view .research-title-suggest{margin:2px 0 10px -8px;color:var(--muted);font-size:12.5px}

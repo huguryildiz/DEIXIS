@@ -107,15 +107,30 @@ def test_missing_citation_anchor_rejects_the_draft():
     assert "psg_" in report.issues[0].message
 
 
-def test_answer_title_has_a_strict_twenty_word_ceiling():
+def test_answer_title_has_a_strict_fifteen_word_ceiling():
     draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
-    draft["title"] = " ".join(f"word{n}" for n in range(21))
+    draft["title"] = " ".join(f"word{n}" for n in range(16))
     report = contracts.validate_model_output(STEP_INPUTS["A_answer"], draft)
     assert report.codes() == ["answer_title_too_long"]
     assert report.issues[0].path == "/title"
 
-    draft["title"] = " ".join(f"word{n}" for n in range(20))
+    draft["title"] = " ".join(f"word{n}" for n in range(15))
     assert contracts.validate_model_output(STEP_INPUTS["A_answer"], draft).ok
+
+
+def test_research_title_rejects_long_titles_and_verbatim_question():
+    si = {"question": {"text": "What is the effect of X on Y?"}}
+    report = contracts.ValidationReport()
+    contracts._check_title(si, {"title": " ".join(f"word{n}" for n in range(16))}, report)
+    assert report.codes() == ["title_too_long"]
+
+    report = contracts.ValidationReport()
+    contracts._check_title(si, {"title": si["question"]["text"]}, report)
+    assert report.codes() == ["title_copies_question"]
+
+    report = contracts.ValidationReport()
+    contracts._check_title(si, {"title": "  "}, report)
+    assert report.codes() == ["title_empty"]
 
 
 def test_anchor_for_a_passage_the_claim_does_not_cite_is_still_an_issue():

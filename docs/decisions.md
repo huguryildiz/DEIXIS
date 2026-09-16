@@ -2,6 +2,74 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D42 — Name an older research on request with a research title run
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: D39 names a research at the end of discovery, but every research created before it still carried its question (cut to 160 characters) as its title, and none of their answers predates D36's answer title. In the Library's project groups and drop panel (D41) these titles look alike once truncated. The owner asked for short titles for them.
+
+**Decision**:
+
+- A research can start a run of kind `research_title` (`POST /api/researches/{id}/runs`, migration 0022 widens the `runs` kind CHECK by rebuilding the table as 0019 did). It has one model step, the same `research_title` step and contract as discovery's, on the question and the currently included sources' titles and abstracts; a research with no included source is named from its question alone. Its budget is two model calls (one call and its single repair) and no provider request; its stage is `intake`.
+- Unlike discovery's optional step, a failure here pauses or fails this run visibly. A valid title goes through `set_research_title` for the run's scope revision, so a later valid answer still renames the research.
+- The research header offers "Suggest a short title" while the title is still the question, no run is active and the latest run is not paused (a newer run would hide that run's Resume in the run strip). The conversation timeline does not show these runs; the run strip and Activity do.
+
+**Evidence**: `tests/test_library.py` runs the step with the synthetic fake adapter for a research with an included source and one without. On the live library, 14 of the 16 active researches were named by `gpt-5.6-luna` (their own research model) on 2026-09-16; the two whose latest discovery run is paused were left unchanged.
+
+**Limits**: A title is a model proposal used as a label, not an answer claim; nothing checks it against the sources beyond the 15-word and not-the-question rules.
+
+## D41 — Group the Library by project and add a work to a research by dragging it
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: With 959 works the D40 table rendered every row at once and gave no way to reuse a work found in one research inside another. The owner asked for draggable rows, pagination and a per-project view, and chose drag-to-project (adding the work as a source) and grouping by project over a project filter.
+
+**Decision**:
+
+- The Library groups works by project by default (a toggle switches to one flat list; the choice is remembered per browser). Every active research is a collapsible group, including one with no source yet; a work used by several researches appears in each group. Groups page at 10 works, the flat list at 25; search, filter, sort or grouping changes return to the first page.
+- A row can be dragged onto a project group, or, in the flat list, onto a project in a drop panel that appears during the drag. A project that already holds any version of the work is not a drop target. The work details panel offers the same action as an "Add to a project" menu, so it does not depend on a pointer.
+- `POST /api/researches/{id}/library-sources` with a `work_id` adds **one** stored version of that work to the research: the one with the deepest stored reading (PDF text, then abstract, then metadata), and among equals the richer bibliographic record. Other versions are not added; they are different evidence. The version joins with `added_by = 'library'` (migration 0021 widens the CHECK) and a selection `included` with origin `user`, which bumps the selection revision like any user inclusion. A work already in the research answers 409, an unknown work or trashed research 404.
+
+**Evidence**: `tests/test_library.py` covers the group list including an empty research, the deepest-version choice on a synthetic work whose published record has no text and whose preprint has an abstract, the membership and selection rows written, and the 409, 404 and CSRF refusals. The drag, drop highlight, pagination and drop panel were checked in Chrome against a copy of the live library on a separate port and data directory (one work added there); the live library was not changed.
+
+**Limits**: Adding does not fetch, extract or screen anything, and it does not start a run; the research's next answer run sees the new included source. There is no remove action in the Library; the user excludes the source inside the research. The drop panel lists research titles, which older researches still carry as long questions and can look alike when truncated.
+
+## D40 — The Library is a reading-depth table with a work details panel
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: The Library page listed works as stacked rows inside a centred 1100px column, so its heading sat further right than every other workspace view and the page never showed what DEIXIS had actually stored for a work. The owner asked for the density and interaction of Elicit's library, keeping DEIXIS terminology and provenance.
+
+**Decision**:
+
+- The Library keeps the shared page frame of the other views (`.collection`: eyebrow, serif heading, subtitle, same gutter) and then runs a dense fixed-layout table across the full workspace width: paper, authors, venue, reading depth, year, citations, projects, added. Paper, year, citations and added are sortable; a density toggle switches between a two-line and a one-line title and is remembered per browser.
+- `library_view` now reports a **reading depth** per source version and rolled up per work — `pdf_available` (a stored PDF with extracted text), `abstract`, or `metadata` — computed the same way as the evidence table's `access_level`. It is labelled as what DEIXIS stored, never as quality, and it drives the one filter in the toolbar.
+- Selecting a row opens a details panel beside the list, fed by a new `GET /api/library/works/{work_id}` (`library_work_view`). The panel lists every stored version separately with its own reading depth, PDF filename and page count, and shows the abstract of the first version that has one, naming that version and saying when the text was rebuilt from the OpenAlex index. Versions are never merged.
+- A version with a stored PDF opens in the existing DEIXIS PDF viewer, in the full workspace, through the research-scoped asset route that already enforces membership.
+
+**Limits**: the panel reads stored records only — it neither fetches nor re-extracts anything. Reading depth describes what is stored, not whether the passage supports any claim. The list renders every work at once; it is not virtualized.
+
+## D39 — Cap research titles at 15 words and name the research during discovery
+
+**Status**: accepted
+**Date**: 2026-09-16
+
+**Context**: D36 derived the research title only from a structurally valid grounded answer, and let the model write 15–20 words. Until a valid answer existed the header showed the full question, which could be long. The owner asked for a shorter header title, a smaller font, and a full-width header.
+
+**Decision**:
+
+- The grounded answer's `title` ceiling moves from 20 to 15 words; validation rejects more than 15 Unicode words with one bounded repair.
+- A new single-output model step `research_title` runs at the end of discovery, after screening and source similarity, on the question and the included sources' titles and abstracts. Its output `ResearchTitle` v1 (`deixis.research_title.v1`) carries only a `title` of at most 15 words, not copied verbatim from the question. It is optional: a failure keeps the provisional question-as-title and the run continues.
+- The step writes the title through `set_research_title`, gated on the current scope revision. A structurally valid answer later still renames the research via `save_answer`, so the discovery-time title never outranks answer evidence.
+- The header title spans the research view's full width (the `max-width:30ch` cap is removed) and renders at a smaller size.
+
+**Evidence**: `tests/test_contracts.py` covers the 15-word ceiling and the `research_title` empty, too-long and verbatim-question rejections; the synthetic fake adapter returns a valid short title for the new task. The acceptance trash test now finds the research by that discovery-time title. Backend suite (2026-09-16, with D40–D41): 405 passed, 1 failed (`test_extraction_is_stopped_when_it_exceeds_the_memory_limit`, which times out before the memory limit on this machine and is outside this change); acceptance suite 21 passed.
+
+**Limits**: The discovery-time title is a model proposal shown as the header label, not an evidence-bound answer claim. No real model has written one yet.
+
 ## D38 — Extract evidence table cells one source version at a time, from that version's passages only
 
 **Status**: accepted

@@ -19,7 +19,7 @@ export const runStatusLabels: Record<RunStatus, string> = {
 }
 
 export const runKindLabels: Record<RunKind, string> = {
-  discovery: 'Search & screening', answer: 'Answer', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions',
+  discovery: 'Search & screening', answer: 'Answer', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
 }
 
 const pauseReasons: Record<string, string> = {
@@ -74,6 +74,7 @@ export const stepLabel = (kind: string, key: string) => {
   if (kind === 'model:answer_review') return t('Claim review (reviewer model)')
   if (kind === 'model:cell_extraction') return t('Cell extraction (model)')
   if (kind === 'model:table_columns') return t('Column suggestions (model)')
+  if (kind === 'model:research_title') return t('Research title (model)')
   if (kind === 'table_no_text') return t('Source without stored text')
   if (kind.startsWith('provider_search')) return t('{provider} search {n}', { provider: providerName(kind.split(':')[1] ?? ''), n: Number(key.split(':')[1]) + 1 })
   if (kind === 'fetch_pdf') return t('Open-access PDF retrieval')

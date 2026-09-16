@@ -149,6 +149,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
   const startAnswer = () => act(() => api.startRun(id, 'answer', crypto.randomUUID()))
   const startDiscovery = () => act(() => api.startRun(id, 'discovery', crypto.randomUUID()))
+  const startTitle = () => act(() => api.startRun(id, 'research_title', crypto.randomUUID()))
   const upload = (list: FileList | null) => list && act(async () => { for (const file of Array.from(list)) await api.upload(id, file) }, t('PDF added and included. Its text was extracted page by page (no OCR).'))
   const uploadToSource = (list: FileList | null) => list && attachTarget && act(async () => {
     for (const file of Array.from(list)) await api.uploadToSource(id, attachTarget, file)
@@ -194,6 +195,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   return <section className="research-view legacy-research">
     <div className="section-label">{t('RESEARCH')} <span> {t('/ REVISION {n}', { n: view.research.current_scope_revision })}</span></div>
     <TypewriterTitle text={heading} />
+    {heading === view.scope.question && !active && run?.status !== 'paused' && <Button variant="ghost" size="sm" className="research-title-suggest" disabled={busy} onClick={startTitle}
+      title={t('The model names the research from its question and included sources, in at most 15 words.')}><Sparkles size={14} aria-hidden />{t('Suggest a short title')}</Button>}
     {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the tab that can show it. Scope and depth close the line. */}
     <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
       {([['found', 'Found', 'all'], ['unique', 'Unique works', 'all'], ['included', 'Included', 'included'], ['inspected', 'Given to the model', 'all'], ['cited', 'Cited', null]] as const)

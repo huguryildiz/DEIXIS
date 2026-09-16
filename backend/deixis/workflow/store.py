@@ -270,7 +270,7 @@ class Store:
             if active:
                 raise RevisionConflict(f"run {active['id']} is still active")
             run_id, ts = new_id("run"), now()
-            stage = {"discovery": "discovery", "answer": "inspection"}.get(kind, "extraction")
+            stage = {"discovery": "discovery", "answer": "inspection", "research_title": "intake"}.get(kind, "extraction")
             self.conn.execute(
                 "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
@@ -854,6 +854,14 @@ class Store:
                 (research_id, svid, current["state"], state, reason, now()),
             )
             self._bump_selection_revision(research_id, current["state"], state)
+
+    def set_research_title(self, research_id: str, scope_revision: int, title: str) -> None:
+        """Apply a discovery-time title for the active question revision. A valid answer may rename it later."""
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE researches SET title = ?, updated_at = ? WHERE id = ? AND current_scope_revision = ?",
+                (title.strip(), now(), research_id, scope_revision),
+            )
 
     def set_user_selection(self, research_id: str, svid: str, state: str, expected_version: int, reason: str | None) -> dict[str, Any]:
         with transaction(self.conn):

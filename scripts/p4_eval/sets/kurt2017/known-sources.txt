@@ -1,0 +1,51 @@
+# Known set for P5 slice 5 (docs/product/p5-slice5-measurement.md), frozen before any run.
+# Source: Kurt, Yildiz, Yigit, Tavli, Gungor, "Packet Size Optimization in Wireless Sensor Networks
+# for Smart Grid Applications", IEEE TIE 2017 (PDF sha256 2905d698...8224). Strata follow the paper's
+# own grouping on page 1: "terrestrial WSNs [12]-[20], underwater WSNs [21]-[24], underground WSNs [25],
+# and body area WSNs [26]-[28]". DOIs resolved by exact title in Crossref on 2026-09-17; references
+# without a Crossref DOI are listed by title. Neither this file nor the paper is given to DEIXIS.
+
+# stratum: self
+10.1109/tie.2016.2619319
+
+# stratum: terrestrial
+# [12] no Crossref DOI (WSN4DC 2013)
+Survey On Packet Size Optimization Techniques In Wireless Sensor Networks
+# [13]
+10.1109/snpa.2003.1203351
+# [14]
+10.1109/infcom.2010.5462063
+# [15]
+10.1145/1921621.1921622
+# [16]
+10.1109/twc.2012.021412.021512.111398
+# [17]
+10.1109/tpds.2012.264
+# [18]
+10.1109/sahcn.2013.6644980
+# [19]
+10.1109/iccomm.2014.6866706
+# [20] no Crossref DOI (IOSR JECE 2015)
+Impact of IEEE 802.11 MAC packet size on performance of wireless sensor networks
+
+# stratum: underwater
+# [21]
+10.1109/joe.2012.2197271
+# [22]
+10.1016/j.jksuci.2011.09.001
+# [23]
+10.1109/oceanse.2005.1511686
+# [24]
+10.1109/inecce.2011.5953871
+
+# stratum: underground
+# [25] Crossref also resolves the alias 10.1109/infocom.2007.54 to this work
+10.1109/infocom.2008.54
+
+# stratum: body_area
+# [26]
+10.1109/itab.2010.5687687
+# [27]
+10.4218/etrij.11.0110.0270
+# [28]
+10.1109/lwc.2014.2321765

@@ -130,7 +130,7 @@ Her soruda önerim ilk seçenek. **Sahibin yanıtı (17 Eylül 2026): yedisinde 
 ## 10. Alt adım 1 için sahipten beklenenler
 
 1. **İkinci soru** ve onun 10–20 bilinen eseri (DOI; yoksa tam başlık), katmanlarıyla (ör. doğrudan ilgili / komşu bağlam).
-2. **Kurt katmanlarının gözden geçirilmesi.** D34'teki 18 eserlik liste depoda ya da `.local/` altında tam olarak durmuyor; elde kalan, Kurt 2017'nin [12]–[28] numaralı kaynaklarının başlıkları (`.local/kurt-search-probe-reference-analysis-2026-09-16.json`) ve 8 DOI'lik geçici katman dosyası (`.local/kurt-deixis-eval-2026-09-16/known-sources.txt`). Liste bu 17 kaynaktan yeniden kurulur, DOI'si olmayanlar Crossref'te başlıkla aranır, katmanları sahip onaylar.
+2. **Kurt bilinen kümesi — donduruldu (17 Eylül 2026).** Sahibin verdiği makale PDF'inden (`kurt2017packet.pdf`) kuruldu: [`scripts/p4_eval/sets/kurt2017/known-sources.txt`](../../scripts/p4_eval/sets/kurt2017/known-sources.txt). Hedef makale + [12]–[28] arası 17 eser; katmanlar makalenin 1. sayfadaki kendi gruplamasıdır (karasal 9, sualtı 4, yeraltı 1, beden alan ağı 3). 15'inin DOI'si Crossref'te tam başlıkla bulundu; [12] ve [20]'nin DOI'si yok, başlıkla eşlenir. D34 "hedef + 18 eser" diyordu; makalenin paket boyutu listesi 17 eserdir, fark kayıtta yok. [25]'in iki DOI'si aynı esere gider (`infocom.2008.54`, `infocom.2007.54`); `measure.py` şimdilik tek DOI eşlediği için araç adımında takma ad desteği eklenir.
 3. **Sabit sütunlar** (soru başına 5–6). Kurt için taslak:
    - Optimize edilen amaç (enerji verimliliği, ömür, verim, gecikme)
    - Kanal ve hata modeli (BER/PER ifadesi, kodlama)

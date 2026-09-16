@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type Limitation, type ModelOption, type ResearchView, type Run, type RunKind, type RunStatus, type Source, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
-import { accessParts, citedText, fetchReasonText, locatorText, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, stepLabel, verdictLabels, versionText } from './labels'
+import { accessParts, citedText, fetchReasonText, locatorText, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { EvidenceTab } from './EvidenceTable'
 import { MathText } from './MathText'
@@ -274,11 +274,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}
       onConfirm={confirmRemoveSourcePdf} onOpenChange={open => { if (!open) setRemoveTarget(null) }} />
-    <PassageSheet researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : 'text'} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }} />
+    <PassageSheet researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : 'text'} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }} />
   </section>
 }
-
-const versionTones: Record<string, string> = { publishedVersion: 'published', acceptedVersion: 'accepted', submittedVersion: 'submitted' }
 
 function reportFilename(title: string, version: number) {
   const base = title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 80)

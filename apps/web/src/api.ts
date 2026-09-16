@@ -74,7 +74,7 @@ export type Source = {
   volume: string | null; issue: string | null; pages: string | null
   doi: string | null; landing_url: string | null; version_label: string | null; publication_type: string | null
   cited_by_count: number | null; cited_by_count_at: string | null
-  origin: 'provider' | 'user_upload'; added_by: string; rank: number | null; similarity: number | null
+  origin: 'provider' | 'user_upload'; added_by: string; added_at: string; rank: number | null; similarity: number | null
   found_in_revision: number | null; applicability: 'current' | 'stale_scope'; version_role: 'record' | 'other_version'
   access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; fetch: { status: string; error_code: string | null; http_status: number | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; pdf_discoveries: PdfDiscovery[] }
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null }

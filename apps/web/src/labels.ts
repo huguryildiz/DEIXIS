@@ -9,6 +9,8 @@ export const scopeLabels: Record<SourceScope, string> = {
   attached_and_academic: 'Files + academic search',
 }
 
+export const versionTones: Record<string, string> = { publishedVersion: 'published', acceptedVersion: 'accepted', submittedVersion: 'submitted' }
+
 // Codex reports effort ids such as "xhigh"; unknown ids are shown as given.
 const reasoningNames: Record<string, string> = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra' }
 export const reasoningLabel = (id: string) => t(reasoningNames[id] ?? id)

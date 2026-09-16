@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { FileText, Fingerprint, Link2, MapPin, Maximize2, Minimize2, Quote, ScanText } from 'lucide-react'
+import { BadgeCheck, BookOpenText, ExternalLink, FileText, Info, Link2, Maximize2, Minimize2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { api, assetUrl, type AssetText, type Passage } from './api'
-import { locatorText, versionText } from './labels'
+import { api, assetUrl, type AssetText, type Passage, type Source } from './api'
+import { locatorText, providerName, versionText, versionTones } from './labels'
 import { t, uiLocale } from './i18n'
 import { PassageMathText } from './PassageMathText'
 import { ConnectionIcon } from './connectionIcons'
@@ -45,7 +45,8 @@ function HighlightedPassageText({ passage, highlightTexts }: { passage: Passage;
 }
 
 // pdfRemoved: the passage's PDF was removed from the source; its stored text still opens, the PDF view stays off.
-export function PassageSheet({ researchId, passageId, assetId = null, initialView = 'text', highlightText, highlightTexts, expectHighlight = false, pdfRemoved = false, dark, onClose }: { researchId: string; passageId: string | null; assetId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; pdfRemoved?: boolean; dark: boolean; onClose: () => void }) {
+// sources: the research's source rows; the one matching the opened source adds its screening state, similarity and citation.
+export function PassageSheet({ researchId, passageId, assetId = null, initialView = 'text', highlightText, highlightTexts, expectHighlight = false, pdfRemoved = false, sources, dark, onClose }: { researchId: string; passageId: string | null; assetId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [assetText, setAssetText] = useState<AssetText | null>(null)
   const [error, setError] = useState('')
@@ -73,6 +74,8 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
   const highlights = highlightTexts ?? (highlightText ? [highlightText] : [])
   const highlightAvailable = Boolean(passage && highlights.length && highlights.every(text => passage.text.includes(text)))
   const pdfAssetId = pdfRemoved ? null : passage?.asset_id ?? assetText?.asset.id ?? null
+  const row = source ? sources?.find(s => s.source_version_id === source.id) : undefined
+  const selectionText = { included: 'Included', excluded: 'Excluded', pending: 'Undecided' } as const
   return <Sheet open={passageId !== null || assetId !== null} onOpenChange={open => { if (!open) onClose() }}>
     <SheetContent className={`detail-sheet source-sheet ${full ? 'is-full' : ''} ${dark ? 'dark' : ''}`}>
       <SheetHeader><SheetTitle>{t('Source details')}</SheetTitle>
@@ -81,45 +84,49 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
         {error && <div className="legacy-boundary">{error}</div>}
         {!passage && !assetText && !error && <p>{t(assetId ? 'Loading PDF text…' : 'Loading passage…')}</p>}
         {(passage || assetText) && source && <>
+          {(source.venue || source.year) && <p className="source-venue">{source.venue && <i>{source.venue}</i>}{source.venue && source.year && <span aria-hidden className="source-dot" />}{source.year}</p>}
           <h2 className="source-title">{source.title}</h2>
           {source.authors.length > 0 && <p className="source-byline">{source.authors.length > 3 && !allAuthors
             ? <>{source.authors.slice(0, 2).join(', ')}, <button className="author-more" onClick={() => setAllAuthors(true)}>{t('and {n} more', { n: source.authors.length - 2 })}</button></>
             : source.authors.join(', ')}</p>}
-          <p className="source-byline">{[source.venue, source.year, source.version_label ? versionText(source.version_label) : t('version not stated by the provider'), source.origin === 'user_upload' && t('uploaded by you')].filter(Boolean).join(' · ')}</p>
           <div className="source-chips">
-            {source.doi ? <a className="source-chip" href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" />DOI</a>
-              : source.landing_url && <a className="source-chip" href={source.landing_url} target="_blank" rel="noreferrer"><Link2 size={15} />{t('Publisher page')}</a>}
-            <span className="source-access"><FileText size={15} />{t(assetText ? (assetText.passages.length ? 'PDF with extracted text' : 'PDF without extracted text') : abstract ? 'Abstract only' : 'PDF text passage')}</span>
+            <span className={`ref-pill is-${versionTones[source.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{source.version_label ? versionText(source.version_label) : t('version not stated by the provider')}</span>
+            {assetText ? <span className="ref-pill is-text"><FileText size={12} aria-hidden />{t(assetText.passages.length ? 'PDF with extracted text' : 'PDF without extracted text')}</span>
+              : abstract ? <span className="ref-pill is-abstract"><BookOpenText size={12} aria-hidden />{t('Abstract only')}</span>
+              : <span className="ref-pill is-text"><FileText size={12} aria-hidden />{t('PDF text passage')}</span>}
+            {source.origin === 'user_upload' && <span className="ref-pill">{t('uploaded by you')}</span>}
+            {source.doi ? <a className="source-link-chip" href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer" title={t('Open DOI')}><ConnectionIcon id="doi" /><span>{source.doi}</span><ExternalLink size={12} aria-hidden /></a>
+              : source.landing_url && <a className="source-link-chip" href={source.landing_url} target="_blank" rel="noreferrer"><Link2 size={13} aria-hidden /><span>{t('Publisher page')}</span><ExternalLink size={12} aria-hidden /></a>}
           </div>
+          {row && <dl className="source-role">
+            <div><dt>{t('Screening')}</dt><dd>{t(selectionText[row.selection.state])}</dd></div>
+            <div><dt>{t('Similarity')}</dt><dd title={t('Used for ordering only; it is not a relevance judgment.')}>{row.similarity === null ? '—' : row.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</dd></div>
+            <div><dt>{t('Latest answer')}</dt><dd>{t(row.cited_in_latest_answer ? 'Cited' : 'Not cited')}</dd></div>
+          </dl>}
           <div className="source-view-tabs" role="tablist" aria-label={t('Source view')}>
-            <button type="button" role="tab" aria-selected={viewMode === 'text'} aria-controls="source-text-view" onClick={() => setViewMode('text')}>{t('Plain text')}</button>
+            <button type="button" role="tab" aria-selected={viewMode === 'text'} aria-controls="source-text-view" onClick={() => setViewMode('text')}>{t(abstract ? 'Abstract' : 'Plain text')}</button>
             <button type="button" role="tab" aria-selected={viewMode === 'pdf'} aria-controls="source-pdf-view" disabled={!pdfAssetId} title={!pdfAssetId ? t(pdfRemoved ? 'The PDF was removed from this source; its passages still open as text.' : 'PDF is not available for this source.') : undefined} onClick={() => setViewMode('pdf')}>PDF</button>
           </div>
           {viewMode === 'text' ? passage ? <div id="source-text-view" role="tabpanel">
+            {abstract && !pdfAssetId && <p className="source-notice"><Info size={15} aria-hidden />{t('No PDF is attached, so only the abstract can be inspected. Claims citing this source rest on the abstract alone.')}</p>}
             <h3 className="source-section">{abstract ? t('Abstract') : t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
             {expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
             <p className="passage-text"><HighlightedPassageText passage={passage} highlightTexts={highlights} /></p>
-            {passage.abstract_origin === 'provider_openalex_inverted_index' && <p className="source-fine">{t('Rebuilt from OpenAlex’s abstract index; wording and punctuation may differ from the publisher’s text.')}</p>}
-
-            <dl className="source-facts">
-              <dt><MapPin size={14} aria-hidden />{t('Location')}</dt><dd>{abstract ? t('Abstract · no page or full-text reading') : locatorText(passage)}{passage.payload_ref?.startsWith('chars:') ? ` ${t('· text span {span}', { span: passage.payload_ref.slice(6) })}` : ''}</dd>
-              {passage.extraction_version && <><dt><ScanText size={14} aria-hidden />{t('Extraction')}</dt><dd>{t('{version} · no OCR', { version: passage.extraction_version })}</dd></>}
-              {source.doi && <><dt><Fingerprint size={14} aria-hidden />{t('Identifier')}</dt><dd>doi:{source.doi}</dd></>}
-              {source.cited_by_count !== null && <><dt><Quote size={14} aria-hidden />{t('Citations')}</dt><dd>{source.cited_by_count.toLocaleString(uiLocale())} · OpenAlex{source.cited_by_count_at ? `, ${source.cited_by_count_at.slice(0, 10)}` : ''}</dd></>}
-            </dl>
-            <p className="panel-note">{t('This shows where the citation points. Whether the passage supports the claim has not been checked by DEIXIS.')}</p>
           </div> : assetText ? <div id="source-text-view" role="tabpanel" className="asset-text-view">
             <h3 className="source-section">{t('Extracted PDF text')}</h3>
             {assetText.passages.length ? assetText.passages.map((item, index) => <section className="pdf-text-page" key={item.id}>
               {(index === 0 || item.physical_page !== assetText.passages[index - 1]?.physical_page) && <h4>{item.physical_page ? t('PDF p. {page}', { page: item.physical_page }) : t('Extracted text')}</h4>}
               <p className="passage-text"><PassageMathText text={readablePassageText(item.kind, item.text)} /></p>
             </section>) : <div className="legacy-boundary">{t('No text was extracted from this PDF.')}</div>}
-            <dl className="source-facts"><dt><MapPin size={14} aria-hidden />{t('Location')}</dt><dd>{t('{n} extracted pages', { n: assetText.asset.page_count ?? 0 })}</dd><dt><ScanText size={14} aria-hidden />{t('Extraction')}</dt><dd>{t(assetText.asset.extraction_status)} · {t('no OCR')}</dd></dl>
           </div> : null : pdfAssetId && <div id="source-pdf-view" role="tabpanel" className="source-pdf-view">
             <PdfViewer url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? 1} title={source.title} />
           </div>}
         </>}
       </div>
+      {row && (passage || assetText) && <footer className="source-sheet-foot">
+        {row.provider_records.length > 0 && <span>{t('Found via')} {row.provider_records.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<b>{providerName(id)}</b></Fragment>)}</span>}
+        {row.added_at && <span>{t(row.origin === 'user_upload' ? 'Uploaded {date}' : 'Added {date}', { date: new Date(row.added_at).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short', year: 'numeric' }) })}</span>}
+      </footer>}
     </SheetContent>
   </Sheet>
 }

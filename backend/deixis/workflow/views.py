@@ -104,7 +104,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     similarity_model = embeddings.Embedder(provider, model).stored_model if provider != "off" and model else None
     sources = []
     for row in conn.execute(
-        "SELECT m.added_by, s.*, sel.state, sel.origin AS selection_origin, sel.version AS selection_version, sel.proposal,"
+        "SELECT m.added_by, m.created_at AS added_at, s.*, sel.state, sel.origin AS selection_origin, sel.version AS selection_version, sel.proposal,"
         " sel.proposal_reason, sel.proposal_basis, sel.user_reason, c.id AS candidate_id, c.rank, c.scope_revision AS found_in_revision,"
         " (SELECT ss.similarity FROM source_similarities ss WHERE ss.research_id = m.research_id AND ss.source_version_id = m.source_version_id"
         "  AND ss.scope_revision = c.scope_revision AND ss.model = ?) AS similarity"
@@ -142,7 +142,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             "pages": row["pages"], "doi": row["doi"], "landing_url": row["landing_url"],
             "version_label": row["version_label"], "publication_type": row["publication_type"], "origin": row["origin"],
             "cited_by_count": row["cited_by_count"], "cited_by_count_at": row["cited_by_count_at"],
-            "added_by": row["added_by"], "rank": row["rank"], "similarity": row["similarity"],
+            "added_by": row["added_by"], "added_at": row["added_at"], "rank": row["rank"], "similarity": row["similarity"],
             # "other_version": another version of a found record (e.g. its submitted manuscript), stored separately.
             "version_role": "other_version" if row["added_by"] == "search" and row["candidate_id"] is None else "record",
             # A search result keeps the question revision it was found for; attached files belong to no revision.

@@ -548,7 +548,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
           <p className="panel-note">{t('Semantic support not checked. DEIXIS located each quote in a passage of this source version; it did not check that the passage supports the value.')}</p>
         </>}
       </div>
-      {evidence && <PassageSheet researchId={researchId} passageId={evidence[0].passage_id} highlightTexts={evidence.flatMap(e => e.anchor_text ? [e.anchor_text] : [])} expectHighlight pdfRemoved={evidence[0].asset_removed} dark={dark} onClose={() => setEvidence(null)} />}
+      {evidence && <PassageSheet researchId={researchId} passageId={evidence[0].passage_id} highlightTexts={evidence.flatMap(e => e.anchor_text ? [e.anchor_text] : [])} expectHighlight pdfRemoved={evidence[0].asset_removed} sources={source ? [source] : undefined} dark={dark} onClose={() => setEvidence(null)} />}
     </SheetContent>
   </Sheet>
 }

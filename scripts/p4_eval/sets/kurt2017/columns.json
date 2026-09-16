@@ -1,0 +1,8 @@
+[
+ {"name": "Optimizasyon amacı", "answer_format": "text", "instruction": "Paket boyutu (ve varsa iletim gücü) seçiminde kaynakta açıkça optimize edilen amacı yazın: enerji verimliliği, ağ ömrü, verim, gecikme ya da güvenilirlik. Kısıt olarak geçen ölçütleri amaçla karıştırmayın."},
+ {"name": "Kanal ve hata modeli", "answer_format": "text", "instruction": "Kullanılan kanal, yol kaybı ve bit/paket hata modelini kaynaktaki adıyla yazın (ör. log-normal gölgelenme, O-QPSK BER, BSC, ölçülmüş yol kaybı) ve varsa hata düzeltme kodlamasını ekleyin."},
+ {"name": "Optimum paket boyutu", "answer_format": "number_unit", "unit_hint": "bayt", "instruction": "Kaynağın bulduğu optimum paket ya da yük boyutunu sayı ve birimle yazın; birden fazla koşul varsa en açık raporlanan koşulu ve değeri alıntıyla verin. Kaynak tek bir değer vermiyorsa bunu belirtin."},
+ {"name": "Amaç ya da enerji modeli denklemi", "answer_format": "text", "instruction": "Paket boyutunun girdiği amaç fonksiyonunu ya da paket başına enerji ifadesini kaynakta yazıldığı biçimde LaTeX ile verin (ör. başarılı alım olasılığı ya da enerji verimliliği ifadesi). Denklem kaynakta yoksa bunu belirtin."},
+ {"name": "Ağ ve uygulama bağlamı", "answer_format": "text", "instruction": "Çalışmanın ağ türünü ve uygulama ortamını yazın: karasal WSN, su altı, yer altı, vücut alanı ağı, bilişsel radyo, akıllı şebeke ya da diğer."},
+ {"name": "Değerlendirme yöntemi", "answer_format": "text", "instruction": "Sonuçların nasıl elde edildiğini yazın: analitik model, matematiksel programlama (MIP/LP), benzetim, test ortamı ya da gerçek ölçüm; kullanılan araç ya da platform adı kaynakta geçiyorsa ekleyin."}
+]

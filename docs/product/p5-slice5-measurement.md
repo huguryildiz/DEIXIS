@@ -139,3 +139,31 @@ Her soruda önerim ilk seçenek. **Sahibin yanıtı (17 Eylül 2026): yedisinde 
    - Ağ ve uygulama bağlamı (WSN, akıllı şebeke, sualtı, beden alan ağı)
    - Değerlendirme yöntemi (analitik, benzetim, test ortamı)
 4. **Cevap sayfaları**: her bilinen eser için soruyu cevaplayan sayfa numaraları. Sahibin etiketleyeceği örneğin parçasıdır (§8 soru 2); PDF'i kopyada olan eserler için Claude önce aday sayfa listesi çıkarır, sahip onaylar ya da düzeltir.
+
+## 11. Dondurulan girdiler ve sahibin devri (17 Eylül 2026)
+
+Sahip sütunları onayladı, ikinci soruyu Claude'un hazırlamasını ve ölçümün otonom tamamlanmasını istedi; ardından P5'in bu ölçümle kapanmasını istedi. Bu yüzden §8'deki bazı seçimler şöyle uygulanır; her biri raporda ayrıca yazılır.
+
+**Sorular ve kümeler** (`scripts/p4_eval/sets/`):
+- S1 `kurt2017/`: D34'teki soru (karşılaştırılabilirlik için aynen), §10'daki bilinen küme, onaylı 6 sütun.
+- S2 `uwsn-kconn2022/` (tutulmuş): sahibin ortak yazarı olduğu Yildiz vd., "On the Tradeoff Between Network Lifetime and k-Connectivity-Based Reliability in UWSNs" (IEEE IoT J 2022). Bilinen küme Crossref'teki 33 kaynaktan; katmanları (k-bağlantılılık 15, su altı bağlamı 7) Claude başlıklardan atadı, sahip değil. Makale kapalı erişim, metni okunmadı. Soru ve 6 sütun Claude'un; S1'den sonra hiçbir ayar yapılmaz.
+
+**§8'den sapmalar:**
+- *Etiketleme (soru 2):* sahip etiketlemeyi devretti; bütün etiketler Claude'un, rapor "ajan denetimi" der. İnsan–ajan uyuşması ölçülmez.
+- *Cevap sayfaları (M4):* önceden işaretlenmiş sayfa yok. M4, bilinen ve modele verilen kaynaklarda okuma derinliğine (PDF sayfası mı, yalnız özet mi) indirgenir; verilen pasajın soruyu cevaplayıp cevaplamadığı sonradan Claude'ca okunur ve "önceden dondurulmamış" diye işaretlenir.
+- *Tarama düzeltmesi (S1):* Claude bilinen kümeyi gördüğü için sahibin yerine düzeltme yapmaz; modelin dahil önerileri olduğu gibi kullanılır.
+- *PDF (soru 4):* önce DEIXIS yolları (`pdf_collection` çalışması); ardından kopyada sahibin daha önce yüklediği PDF'ler varsa ayrı sayılır, yeni PDF eklenmez.
+- *Çalışma kodu:* ölçüm, commit'lenmiş bir `git worktree` üzerinde koşar; ana çalışma ağacındaki başka oturumların commit'lenmemiş değişiklikleri ölçüme girmez.
+
+**Önceden yazılan beklentiler (kesin):**
+
+| # | S1 Kurt | S2 k-bağlantılılık | Varsayım yanlış sayılır |
+|---|---|---|---|
+| M1 | 17 eserden 8–12'si bulunur | k-bağlantılılık katmanında 15'ten 5–10'u | S1'de 8'in, S2'de 4'ün altı |
+| M2 | bulunan bilinen eserlerin ≥ %70'i dahil önerilir | aynı | %50'nin altı |
+| M3 | DEIXIS yollarıyla dahil bilinen eserlerin ≤ %30'unda PDF metni | ≤ %30 | %50'nin üstü (beklenenden iyi; yine yazılır) |
+| M5 | değer hücrelerinde yanlış < %10 | < %10 | > %20 |
+| M6 | yanlış atıf 0–1, kısmen destekli 1–3 | aynı | yanlış atıf ≥ 3 |
+| M7 | denklem/sayı hücrelerinin ≥ %80'i sayfayla uyuşur | aynı | < %60 |
+| M8 | hücre adımlarının ≥ %80'i geçerli | aynı | < %60 |
+| S3 | iki yanıt arasında alıntılanan bilinen eser sayısı en çok 2 fark eder | — | 4 ve üstü fark |

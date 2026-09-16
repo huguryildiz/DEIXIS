@@ -1,0 +1,8 @@
+[
+ {"name": "Güvenilirlik tanımı", "answer_format": "text", "instruction": "Kaynağın güvenilirliği nasıl tanımladığını yazın: k-bağlantılılık (k değeriyle), k-kapsama, hata toleransı, kritik düğüm ya da başka bir ölçüt. Dikkate alınan arıza türünü (düğüm, bağlantı, çoklu arıza) ekleyin."},
+ {"name": "k-bağlantılılık yöntemi", "answer_format": "text", "instruction": "k-bağlantılılığın nasıl sağlandığını, tespit edildiğini ya da onarıldığını yazın: yerleşim deseni, röle düğümü ekleme, topoloji ya da güç kontrolü, dağıtık tespit algoritması, bağlantı onarımı ya da matematiksel programlama kısıtı."},
+ {"name": "Ömür ya da enerji modeli denklemi", "answer_format": "text", "instruction": "Ağ ömrünün ya da enerji tüketiminin modellendiği amaç fonksiyonunu ya da temel enerji ifadesini kaynakta yazıldığı biçimde LaTeX ile verin. Denklem kaynakta yoksa bunu belirtin."},
+ {"name": "Güvenilirliğin ömre maliyeti", "answer_format": "number_unit", "unit_hint": "%", "instruction": "k-bağlantılılık ya da hata toleransı gereksinimi arttığında ağ ömründeki ya da enerji tüketimindeki değişimi sayı ve birimle yazın; birden fazla koşul varsa en açık raporlanan koşulu alıntıyla verin. Kaynak böyle bir sayı vermiyorsa bunu belirtin."},
+ {"name": "Ağ ortamı", "answer_format": "text", "instruction": "Çalışmanın ağ türünü ve ortamını yazın: karasal WSN, su altı akustik ya da optik ağ, kablosuz aktüatör ağı, heterojen ağ ya da diğer."},
+ {"name": "Değerlendirme yöntemi", "answer_format": "text", "instruction": "Sonuçların nasıl elde edildiğini yazın: analitik model, matematiksel programlama (MIP/LP), benzetim, test ortamı ya da gerçek ölçüm; kullanılan araç kaynakta geçiyorsa ekleyin."}
+]

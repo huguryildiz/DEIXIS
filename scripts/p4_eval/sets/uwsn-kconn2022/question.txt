@@ -1,0 +1,1 @@
+Kablosuz sensör ağlarında, özellikle su altı sensör ağlarında, k-bağlantılılığa dayalı güvenilirlik ile ağ ömrü ve enerji tüketimi arasındaki ilişki nasıl modellenmiş; k-bağlantılılık hangi yöntemlerle (düğüm yerleşimi, topoloji kontrolü, tespit, onarım, matematiksel programlama) sağlanmış ya da korunmuş ve bunun ömre maliyeti nasıl ölçülmüş?

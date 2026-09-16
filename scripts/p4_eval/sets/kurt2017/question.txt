@@ -1,0 +1,1 @@
+Kablosuz sensör ağlarında veri paketi boyutu optimizasyonu, ağ ömrü ve enerji verimliliği için nasıl modellenmiş; iletim gücüyle ortak optimizasyon ve ACK/yeniden iletim varsayımları nasıl ele alınmış; hangi ortamlarda (karasal, su altı, yer altı, vücut alanı, akıllı şebeke) ve hangi yöntemlerle (analitik model, MIP/LP, simülasyon, deney) çalışılmış?

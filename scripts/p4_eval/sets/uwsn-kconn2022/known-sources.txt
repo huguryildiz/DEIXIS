@@ -1,0 +1,59 @@
+# Held-out known set for P5 slice 5 (docs/product/p5-slice5-measurement.md), frozen before any run.
+# Source: Yildiz et al., "On the Tradeoff Between Network Lifetime and k-Connectivity-Based Reliability in UWSNs",
+# IEEE IoT Journal 2022 (DOI 10.1109/jiot.2022.3188558), co-authored by the owner. The reference list comes from
+# Crossref's deposited references (33 entries) on 2026-09-17; the PDF was not read (the article is closed access).
+# Strata were assigned by Claude from reference titles, not by the owner and not from the paper's text; the owner
+# delegated this choice. Reference numbers follow Crossref's keys (ref1..ref33). Not given to DEIXIS.
+
+# stratum: self
+10.1109/jiot.2022.3188558
+
+# stratum: k_connectivity
+# k-connectivity, fault tolerance, connectivity detection and restoration in (wireless) sensor networks
+# ref6
+10.1109/telfor.2018.8611852
+# ref7
+10.1007/11776178_26
+# ref8
+10.1007/s11277-021-08613-x
+# ref9
+10.1109/tnet.2010.2040191
+# ref10
+10.1007/s11277-021-08881-7
+# ref11
+10.1109/access.2018.2833632
+# ref14
+10.1007/978-3-319-04483-5_14
+# ref15
+10.1109/tpds.2014.2316142
+# ref16
+10.1109/tnet.2021.3104356
+# ref17
+10.1016/j.comcom.2017.11.005
+# ref18
+10.1016/j.adhoc.2017.06.005
+# ref21
+10.1109/icccn.2007.4317793
+# ref22
+10.1109/tr.2018.2873917
+# ref23
+10.1016/j.adhoc.2014.07.012
+# ref24
+10.1109/tr.2020.2970268
+
+# stratum: uwsn_context
+# underwater sensor networks: architecture, surveys, lifetime; adjacent context, not presumed positives
+# ref1
+10.1109/tii.2019.2946618
+# ref2
+10.1109/comst.2020.3048190
+# ref3
+10.1109/comst.2021.3134955
+# ref4
+10.1109/tii.2018.2841830
+# ref5
+10.1109/joe.2013.2291135
+# ref25
+10.3390/s130607454
+# ref27
+10.1109/waina.2016.156

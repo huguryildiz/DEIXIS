@@ -24,7 +24,7 @@ import httpx
 
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
-from deixis.documents import acquisition, embeddings, pdf
+from deixis.documents import acquisition, embeddings, math_reader, pdf
 from deixis.domain import contracts, phrasebank
 from deixis.domain.rules import (MAX_SCHEMA_REPAIRS, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH, after_invalid_output,
                                  effective_reviewer, step_model)
@@ -35,7 +35,8 @@ from deixis.providers import query_compiler
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, normalize_doi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, new_id, now
-from deixis.workflow.store import NotFound, Store
+from deixis.workflow.equations import equation_state
+from deixis.workflow.store import NotFound, RunInProgress, Store
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
 
 CAPABILITIES = {
@@ -135,6 +136,7 @@ class FlowDeps:
     package: SkillPackage
     http: httpx.AsyncClient
     fetch_pdf: Callable[[str], Awaitable[fetch_module.FetchResult]] = fetch_module.fetch_pdf
+    equations: Any = None  # workflow.equations.EquationService when the equation reader is set up (D52)
 
 
 class ResearchFlow:
@@ -361,6 +363,7 @@ class ResearchFlow:
         selection_revision = self.store.selection_revision(rid)  # read together with the included set it describes
         await self._inspect(run, limit=MAX_DOWNLOADS_PER_RUN)
         included = [self.store.answer_version(rid, head) for head in heads]
+        await self._read_equations(run, included)
 
         self._checkpoint(run_id)
         self.store.update_run(run_id, stage="answer")
@@ -414,6 +417,37 @@ class ResearchFlow:
                     downloads += await self._acquire_pdf(run, other, downloads, limit)
                 if self.store.has_pdf_text(other):
                     break
+
+    async def _read_equations(self, run: dict[str, Any], svids: list[str]) -> None:
+        """Wait until the equations of the PDFs an answer or a table cell reads have been read with Marker (D52).
+
+        Without the equation reader nothing waits. A failed read pauses the run with its reason; resuming continues
+        with that PDF's text layer, since its step stays failed.
+        """
+        service = self.deps.equations
+        if service is None or not service.available():
+            return
+        run_id = run["id"]
+        assets = [r[0] for svid in svids for r in self.store.conn.execute(
+            "SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,))]
+        for asset_id in assets:
+            step = self.store.step(run_id, f"equations:{asset_id}", "read_equations")
+            if step["status"] in ("succeeded", "failed") or equation_state(self.store, asset_id)["state"] in ("read", "no_math"):
+                continue
+            self._checkpoint(run_id)
+            self.store.start_step(step["id"])
+            try:
+                state = await service.read_asset(asset_id, run_id)
+            except RunInProgress:
+                self.store.finish_step(step["id"], "failed", error_code="equations_blocked_by_run", error={"asset_id": asset_id})
+                self._pause(run_id, "equations_blocked_by_run", {"asset_id": asset_id})
+            except math_reader.MathReaderUnavailable as exc:
+                self.store.finish_step(step["id"], "failed", error_code="equation_reader_unavailable", error={"error": str(exc)})
+                self._pause(run_id, "equation_reader_unavailable", {"error": str(exc)})
+            if state["state"] == "failed":
+                self.store.finish_step(step["id"], "failed", error_code="equations_failed", error={"asset_id": asset_id, **state})
+                self._pause(run_id, "equations_failed", {"asset_id": asset_id, **state})
+            self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, **state})
 
     async def _acquire_pdf(self, run: dict[str, Any], svid: str, downloads: int, limit: int | None) -> int:
         """Retrieve the source's open PDF of the same version, if it has none yet; returns the downloads it counted."""
@@ -628,6 +662,7 @@ class ResearchFlow:
         """
         run_id, target = run["id"], run["target"]
         tables = TableStore(self.store)
+        await self._read_equations(run, [planned["source_version_id"] for planned in target["sources"]])
         for planned in target["sources"]:
             self._checkpoint(run_id)
             svid = planned["source_version_id"]
@@ -661,6 +696,7 @@ class ResearchFlow:
         columns = [c for c in self._live_columns(run, tables) if c["id"] == target["column_id"]]
         if not columns or svid not in tables.active_rows(target["table_id"]):
             self._fail(run_id, "cell_unavailable")
+        await self._read_equations(run, [svid])
         self._checkpoint(run_id)
         output = await self._extraction(run, scope, "cell_recheck", svid, columns, MAX_RECHECK_PASSAGES)
         if output is None:
@@ -781,7 +817,8 @@ class ResearchFlow:
             "passage_id": p["id"], "source_id": p["source_version_id"],
             "reading_depth": "abstract" if p["kind"] == "abstract" else "selected_sections",
             "locator": {"kind": p["kind"], "physical_page": p["physical_page"], "printed_label": p["printed_label"]},
-            "abstract_origin": p["abstract_origin"], "text": p["text"],
+            "abstract_origin": p["abstract_origin"],
+            "text_source": None if p["kind"] == "abstract" else p.get("text_source", "text_layer"), "text": p["text"],
         } for p in passage_rows]
         language = scope["language_hint"] if scope["language_hint"] and re.fullmatch(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})*", scope["language_hint"]) else None
         review = {"claims_under_review": claims} if task_type == "answer_review" else {}

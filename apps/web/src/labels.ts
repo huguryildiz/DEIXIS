@@ -47,6 +47,9 @@ const pauseReasons: Record<string, string> = {
   table_unavailable: 'The table was removed while this run was waiting.',
   cell_unavailable: 'The cell’s column or row left the table before the recheck ran.',
   no_text: 'The source has no stored text to read.',
+  equations_failed: 'Reading the equations of a PDF failed. Resume to answer from that PDF’s text layer.',
+  equations_blocked_by_run: 'A PDF’s equations could not be stored while another run uses the same source. Resume when that run ends.',
+  equation_reader_unavailable: 'The equation reader (Marker) could not start. Resume to answer from the PDFs’ text layer.',
 }
 export const pauseReasonText = (reason: string | null) => (reason ? t(pauseReasons[reason] ?? reason) : '')
 
@@ -81,6 +84,7 @@ export const stepLabel = (kind: string, key: string) => {
   if (kind.startsWith('provider_search')) return t('{provider} search {n}', { provider: providerName(kind.split(':')[1] ?? ''), n: Number(key.split(':')[1]) + 1 })
   if (kind === 'fetch_pdf') return t('Open-access PDF retrieval')
   if (kind === 'pdf_other_copy') return t('Search for another open copy')
+  if (kind === 'read_equations') return t('Reading equations (Marker)')
   return kind
 }
 
@@ -117,6 +121,13 @@ export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unst
   }
   else if (source.access.oa_pdf_url && source.access.oa_pdf_version !== source.version_label) parts.push({ tone: 'unstated', text: t('Open-access PDF is a different version ({version}) · not used for this version', { version: versionText(source.access.oa_pdf_version) }) })
   else if (source.access.oa_pdf_url) parts.push({ tone: 'unstated', text: t('Open-access PDF listed · not yet retrieved') })
+  const equations = asset?.equations
+  if (equations?.state === 'reading') parts.push({ tone: 'unstated', text: t('Reading equations · {n} pages', { n: equations.pages ?? '?' }) })
+  else if (equations?.state === 'pending') parts.push({ tone: 'unstated', text: t('Equations not read yet') })
+  else if (equations?.state === 'read') parts.push(equations.equations_to_check
+    ? { tone: 'unstated', text: t(equations.equations_to_check === 1 ? 'Equations read (LaTeX) · {n} to check against the page' : 'Equations read (LaTeX) · {n} to check against the pages', { n: equations.equations_to_check }) }
+    : { tone: 'text', text: t('Equations read (LaTeX)') })
+  else if (equations?.state === 'failed') parts.push({ tone: 'unstated', text: t('Equations could not be read') })
   if (source.access.abstract_passage_id) parts.push({ tone: 'abstract', text: t(source.access.abstract_origin === 'provider_openalex_inverted_index' ? 'Abstract (rebuilt from OpenAlex index)' : 'Abstract') })
   if (!parts.length) parts.push({ tone: 'unstated', text: t('Metadata only') })
   return parts

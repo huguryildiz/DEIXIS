@@ -7,6 +7,7 @@ from typing import Any
 
 from deixis.documents import embeddings, pdf
 from deixis.domain.rules import effective_reviewer, result_applicability
+from deixis.workflow.equations import equation_state, equations_to_check
 from deixis.workflow.store import EVIDENCE_STATUS_SQL, Store
 
 
@@ -130,9 +131,12 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     ):
         svid = row["id"]
         # The PDF in use, whether its text comes from the current extractor, and a later extraction that was not taken (D45).
-        assets = [dict(r) | {"current_extraction": r["extraction_version"] == pdf.EXTRACTION_VERSION, "rejected_extraction": dict(rejected) if (rejected := conn.execute(
+        # A math extraction (D52) builds on the current extractor's text; its own "nothing to read" or failed attempts are
+        # reported as the PDF's equation state, not as a rejected re-extraction.
+        assets = [dict(r) | {"current_extraction": (r["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION,
+                             "equations": equation_state(store, r["id"]), "rejected_extraction": dict(rejected) if (rejected := conn.execute(
             "SELECT extraction_version, rejection_reason, created_at FROM asset_extractions WHERE asset_id = ? AND outcome = 'rejected'"
-            " ORDER BY created_at DESC, rowid DESC LIMIT 1", (r["id"],)).fetchone()) else None} for r in conn.execute(
+            " AND extraction_version NOT LIKE '%+marker-%' ORDER BY created_at DESC, rowid DESC LIMIT 1", (r["id"],)).fetchone()) else None} for r in conn.execute(
             "SELECT id, extraction_status, extraction_version, page_count, origin, byte_size, original_filename FROM source_assets"
             " WHERE source_version_id = ? AND removed_at IS NULL", (svid,)
         )]
@@ -437,7 +441,9 @@ def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, A
     return {
         "id": passage["id"], "kind": passage["kind"], "text": passage["text"], "physical_page": passage["physical_page"],
         "printed_label": passage["printed_label"], "abstract_origin": passage["abstract_origin"],
-        "extraction_version": passage["extraction_version"], "payload_ref": passage["payload_ref"],
+        "extraction_version": passage["extraction_version"], "payload_ref": passage["payload_ref"], "text_source": passage["text_source"],
+        "equations_to_check": equations_to_check(store, passage["asset_id"], passage["extraction_version"]).get(passage["physical_page"], 0)
+        if passage["text_source"] == "marker" else 0,
         "reading_depth": "abstract" if passage["kind"] == "abstract" else "selected_sections",
         "asset_id": passage["asset_id"],
         "evidence_status": store.evidence_statuses([passage_id])[passage_id],

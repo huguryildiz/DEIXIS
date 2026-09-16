@@ -64,7 +64,7 @@ class PageText:
     physical_page: int
     printed_label: str | None
     text: str
-    text_source: str = "text_layer"  # text_layer or ocr
+    text_source: str = "text_layer"  # text_layer, ocr, or marker (a page with mathematics read by Marker, D52)
 
 
 @dataclass
@@ -76,6 +76,7 @@ class Extraction:
     image_pages: list[int] = field(default_factory=list)  # pages without text that hold an image
     blank_pages: list[int] = field(default_factory=list)  # pages without text or image
     ocr: dict | None = None
+    math: dict | None = None  # the equation reading merged into this extraction (D52)
     extraction_version: str = EXTRACTION_VERSION
 
 

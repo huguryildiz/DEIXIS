@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BookMarked, Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, Server, Sparkles, SquareTerminal, TextSearch } from 'lucide-react'
+import { BookMarked, Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, Server, Sigma, Sparkles, SquareTerminal, TextSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
-import { api, type Connections, type Credentials, type KeyEntry, type Keychain, type LocalTool, type LocalTools, type ModelHealth, type SemanticSearch, type SemanticSearchProvider } from './api'
+import { api, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type LocalTools, type ModelHealth, type SemanticSearch, type SemanticSearchProvider } from './api'
 import { ConnectionIcon } from './connectionIcons'
 import { useToast } from './Toast'
 import { t } from './i18n'
@@ -18,7 +18,7 @@ const hasProviderAccessMode = (mode: string | null) => mode === 'api_key' || mod
 const providerStatus = (mode: string | null) => mode === 'api_key' ? t('API key configured') : mode === 'keyless' ? t('No API key required') : t('Key not configured')
 const formatBytes = (bytes: number) => bytes / 1e9 >= 1 ? t('{gb} GB', { gb: (bytes / 1e9).toFixed(1) }) : t('{mb} MB', { mb: Math.round(bytes / 1e6) })
 
-type Selected = { kind: 'model' | 'provider' | 'local-tool'; id: string }
+type Selected = { kind: 'model' | 'provider' | 'local-tool' | 'equation-reader'; id: string }
 
 // Shared key management block: status + test/replace/remove, or the key form. Used for cloud model
 // keys (Gemini, OpenAI) and scholarly source keys inside their respective cards/sheets.
@@ -142,6 +142,50 @@ function LocalToolDetails({ tool, dark, onChanged }: { tool: LocalTool; dark: bo
   </div>
 }
 
+const installSteps = ['Creating its Python environment…', 'Installing Marker…', 'Downloading its models (about 3.3 GB)…']
+
+function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationReader; dark: boolean; onChanged: () => Promise<void> }) {
+  const [confirm, setConfirm] = useState<'install' | 'remove' | null>(null)
+  const [busy, setBusy] = useState(false)
+  const toast = useToast()
+  const job = reader.job
+  const running = job?.status === 'running'
+  const ready = reader.installed && reader.models_downloaded
+  const counts = reader.pdfs
+  function run(action: () => Promise<unknown>) {
+    setBusy(true)
+    action().then(() => { setConfirm(null); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+  }
+  return <div className="local-tool-details-panel">
+    <span className={`status-chip ${ready ? '' : 'is-configured'}`}>{t(ready ? 'Installed' : 'Not installed')}</span>
+    <p className="local-tool-note">{t('Marker reads PDF pages with mathematics from the page image and writes their equations as LaTeX, so answers and table cells read the equations instead of broken PDF text. It runs on this computer; no file leaves it. Answers and cells wait until the equations of the PDFs they read are read.')}</p>
+    <p className="local-tool-note">{t('About one Marker equation in fifty was misread in a test on three papers, and a misread equation looks correct. Equations that do not match the PDF’s own text are marked to check against the page.')}</p>
+    <dl className="local-tool-facts">
+      <dt>{t('Package')}</dt><dd>{reader.package}</dd>
+      {reader.size_bytes > 0 && <><dt>{t('Size on disk')}</dt><dd>{formatBytes(reader.size_bytes)}</dd></>}
+      {!ready && <><dt>{t('Needs')}</dt><dd>{t('About 4.4 GB of disk · {gb} GB free', { gb: reader.disk_free_gb })}</dd></>}
+      {reader.installed && <><dt>{t('PDFs')}</dt><dd>{t('{read} read · {pending} waiting · {none} without equations · {failed} failed', { read: counts.read ?? 0, pending: (counts.pending ?? 0) + (counts.reading ?? 0), none: counts.no_math ?? 0, failed: counts.failed ?? 0 })}</dd></>}
+    </dl>
+    {reader.reading && <p className="local-tool-note local-tool-progress-head"><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Reading the equations of a PDF · {n} pages', { n: reader.reading.pages })}</p>}
+    {!ready && !running && (reader.install.available
+      ? <div className="actions"><Button variant="outline" size="sm" onClick={() => setConfirm('install')}>{t('Install')}</Button></div>
+      : <p className="local-tool-note">{reader.install.unavailable_reason}<br /><a href={reader.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
+    {job && <>
+      {running
+        ? <p className="local-tool-note local-tool-progress-head"><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Step {step} of {steps}: {what}', { step: job.step, steps: job.steps, what: t(installSteps[job.step - 1] ?? '') })}</p>
+        : <p className="local-tool-note">{t(job.status === 'succeeded' ? 'Install finished.' : job.status === 'cancelled' ? 'Installation cancelled.' : 'Install failed.')}</p>}
+      {job.status === 'failed' && <>
+        {errorLines(job.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
+      </>}
+      {job.output && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{job.output}</pre></details>}
+      {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={() => run(api.cancelEquationReaderInstall)} disabled={busy}>{t('Cancel installation')}</Button></div>}
+    </>}
+    {reader.installed && !running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={() => setConfirm('remove')} disabled={busy || !!reader.reading}>{t('Remove')}</Button></div>}
+    <ConfirmDialog open={confirm === 'install'} dark={dark} title={t('Install the equation reader?')} description={t('This downloads Marker and its models, about 4.4 GB, into the DEIXIS data folder. It can take several minutes. Marker’s code is GPL-3.0 and its models have their own license. Afterwards the stored PDFs are read in the background; that can take hours for a large library.')} context={reader.path} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.installEquationReader)} onOpenChange={open => setConfirm(open ? 'install' : null)} />
+    <ConfirmDialog open={confirm === 'remove'} dark={dark} title={t('Remove the equation reader?')} description={t('Marker and its models are deleted. Equations already read stay in the stored text; new PDFs are no longer read.')} confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.removeEquationReader)} onOpenChange={open => setConfirm(open ? 'remove' : null)} />
+  </div>
+}
+
 function ModelCatalogue({ model }: { model: ModelHealth }) {
   const models = model.models ?? []
   return <>
@@ -169,6 +213,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [tools, setTools] = useState<LocalTools | null>(null)
   const [toolsError, setToolsError] = useState('')
+  const [reader, setReader] = useState<EquationReader | null>(null)
   const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
   const [semError, setSemError] = useState('')
   const [semProvider, setSemProvider] = useState<SemanticSearchProvider | null>(null)
@@ -182,11 +227,18 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
   }, [])
   const loadCredentials = useCallback(() => { api.credentials().then(setCredentials).catch(() => { /* shown inline per key panel */ }) }, [])
   const loadTools = useCallback((refresh: boolean) => api.localTools(refresh).then(result => { setTools(result); setToolsError('') }).catch((e: Error) => { setToolsError(e.message) }), [])
+  const loadReader = useCallback(() => api.equationReader().then(setReader).catch((e: Error) => { setToolsError(e.message) }), [])
   const loadSemantic = useCallback(() => { api.semanticSearch().then(result => { setSemantic(result); setSemError('') }).catch((e: Error) => setSemError(e.message)) }, [])
   useEffect(() => { load(false) }, [load])
   useEffect(() => { loadCredentials() }, [loadCredentials])
   useEffect(() => { loadTools(false) }, [loadTools])
   useEffect(() => { loadSemantic() }, [loadSemantic])
+  useEffect(() => { void loadReader() }, [loadReader])
+  useEffect(() => {
+    if (reader?.job?.status !== 'running' && !reader?.reading) return
+    const timer = window.setInterval(() => { void loadReader() }, reader?.job?.status === 'running' ? 2000 : 10000)
+    return () => window.clearInterval(timer)
+  }, [reader, loadReader])
   useEffect(() => { if (semantic) { setSemProvider(semantic.provider); setSemModel(semantic.model) } }, [semantic])
   useEffect(() => {
     if (!tools?.tools.some(tool => tool.job?.status === 'running')) return
@@ -239,7 +291,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
       ? modelNames[selected.id] ?? selected.id
       : selected.kind === 'provider'
         ? providerNames[selected.id] ?? selected.id
-        : localTool?.name || localToolNames[selected.id] || selected.id
+        : selected.kind === 'equation-reader' ? t('Equation reader (Marker)') : localTool?.name || localToolNames[selected.id] || selected.id
     : ''
   const modelEntries = Object.entries(data?.models ?? {})
   const availableModels = modelEntries.filter(([, model]) => !isPlannedModel(model.reason))
@@ -299,6 +351,10 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
       <h3 className="connections-subhead with-icon"><Server size={15} aria-hidden />{t('Local model servers')}</h3>
       <div className="local-tool-pills">{serverTools.map(tool => <button type="button" className={`local-tool-pill ${tool.installed ? 'is-ready' : ''} ${isActive('local-tool', tool.id) ? 'active' : ''}`} key={tool.id} onClick={() => show({ kind: 'local-tool', id: tool.id })}><ConnectionIcon id={localToolIcon(tool.id)} /><strong>{tool.name || localToolNames[tool.id] || tool.id}</strong><span className="local-tool-pill-status">{t(tool.installed ? 'Installed' : 'Not installed')}</span></button>)}</div>
       <p className="legacy-mini-note">{t('Local models do not run research steps in this version; embedding models can be chosen for semantic search.')}</p>
+      {reader && <>
+        <h3 className="connections-subhead with-icon"><Sigma size={15} aria-hidden />{t('Equation reader')}</h3>
+        <div className="local-tool-pills"><button type="button" className={`local-tool-pill ${reader.installed && reader.models_downloaded ? 'is-ready' : ''} ${isActive('equation-reader', 'marker') ? 'active' : ''}`} onClick={() => show({ kind: 'equation-reader', id: 'marker' })}><Sigma size={16} aria-hidden /><strong>Marker</strong><span className="local-tool-pill-status">{reader.job?.status === 'running' ? t('Installing…') : t(reader.installed && reader.models_downloaded ? 'Installed' : 'Not installed')}</span></button></div>
+      </>}
       {appTools.length > 0 && <>
         <h3 className="connections-subhead with-icon"><BookMarked size={15} aria-hidden />{t('Reference managers')}</h3>
         <div className="local-tool-pills">{appTools.map(tool => <button type="button" className={`local-tool-pill ${tool.installed ? 'is-ready' : ''} ${isActive('local-tool', tool.id) ? 'active' : ''}`} key={tool.id} onClick={() => show({ kind: 'local-tool', id: tool.id })}><ConnectionIcon id={localToolIcon(tool.id)} /><strong>{tool.name || localToolNames[tool.id] || tool.id}</strong><span className="local-tool-pill-status">{t(tool.installed ? 'Installed' : 'Not installed')}</span></button>)}</div>
@@ -337,9 +393,10 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
 
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent className={`detail-sheet source-sheet connection-sheet ${dark ? 'dark' : ''}`}>
-        <SheetHeader><SheetTitle>{t(selected?.kind === 'provider' ? 'Scholarly source' : selected?.kind === 'local-tool' ? 'Local tool details' : 'Model connection')}</SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
+        <SheetHeader><SheetTitle>{t(selected?.kind === 'provider' ? 'Scholarly source' : selected?.kind === 'local-tool' || selected?.kind === 'equation-reader' ? 'Local tool details' : 'Model connection')}</SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
         <div className="sheet-body">
-          {selected && <div className="connection-sheet-head"><ConnectionIcon id={selected.kind === 'local-tool' ? localToolIcon(selected.id) : selected.id} /><h2 className="source-title">{name}</h2></div>}
+          {selected && <div className="connection-sheet-head">{selected.kind === 'equation-reader' ? <Sigma size={20} aria-hidden /> : <ConnectionIcon id={selected.kind === 'local-tool' ? localToolIcon(selected.id) : selected.id} />}<h2 className="source-title">{name}</h2></div>}
+          {selected?.kind === 'equation-reader' && reader && <EquationReaderDetails reader={reader} dark={dark} onChanged={loadReader} />}
           {localTool && <LocalToolDetails key={localTool.id} tool={localTool} dark={dark} onChanged={() => loadTools(true)} />}
           {model && <>
             {refreshingModel === selected?.id && <p className="source-byline connection-catalog-refresh"><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Refreshing model catalogue…')}</p>}
@@ -387,7 +444,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
             <div className="connection-checks">{check(t('Access mode'), provider.access_mode ? t(provider.access_mode) : t('none'))}</div>
             {credentials && providerKeyEnv[provider.id] && <KeyPanel env={providerKeyEnv[provider.id]} entry={credentials.keys.find(k => k.env === providerKeyEnv[provider.id])} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
           </>}
-          {!localTool && <Button variant="outline" className="connection-recheck" onClick={recheck} disabled={busy || refreshingModel === selected?.id}><RefreshCw size={14} />{t(provider ? (busy ? 'Refreshing…' : 'Refresh configuration') : (refreshingModel === selected?.id ? 'Checking…' : 'Check again'))}</Button>}
+          {!localTool && selected?.kind !== 'equation-reader' && <Button variant="outline" className="connection-recheck" onClick={recheck} disabled={busy || refreshingModel === selected?.id}><RefreshCw size={14} />{t(provider ? (busy ? 'Refreshing…' : 'Refresh configuration') : (refreshingModel === selected?.id ? 'Checking…' : 'Check again'))}</Button>}
         </div>
       </SheetContent>
     </Sheet>

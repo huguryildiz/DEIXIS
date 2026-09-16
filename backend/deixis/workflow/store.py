@@ -649,7 +649,8 @@ class Store:
         return svid
 
     def _insert_passage(self, svid: str, asset_id: str | None, kind: str, page: int | None, label: str | None,
-                        abstract_origin: str | None, payload_ref: str | None, extraction_version: str | None, text: str) -> str:
+                        abstract_origin: str | None, payload_ref: str | None, extraction_version: str | None, text: str,
+                        text_source: str = "text_layer") -> str:
         digest = hashlib.sha256(text.encode()).hexdigest()
         existing = self.conn.execute(
             "SELECT id FROM passages WHERE source_version_id = ? AND kind = ? AND IFNULL(asset_id, '') = IFNULL(?, '')"
@@ -661,8 +662,11 @@ class Store:
         pid, ts = new_id("psg"), now()
         self.conn.execute(
             "INSERT INTO passages (id, source_version_id, asset_id, kind, physical_page, printed_label, abstract_origin, payload_ref,"
-            " extraction_version, text, text_sha256, retrieved_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (pid, svid, asset_id, kind, page, label, abstract_origin, payload_ref, extraction_version, text, digest, ts, ts),
+            " extraction_version, text, text_sha256, retrieved_at, created_at" + (", text_source" if text_source != "text_layer" else "")
+            + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?" + (", ?" if text_source != "text_layer" else "") + ")",
+            # The text layer is the column's default, so code before migration 0030's text sources writes the same rows.
+            (pid, svid, asset_id, kind, page, label, abstract_origin, payload_ref, extraction_version, text, digest, ts, ts)
+            + ((text_source,) if text_source != "text_layer" else ()),
         )
         return pid
 
@@ -706,16 +710,20 @@ class Store:
         for page in extraction.pages:
             for start, end, text in chunker(page.text):
                 passage_ids.append((page.physical_page, self._insert_passage(
-                    svid, aid, "pdf_page", page.physical_page, page.printed_label, None, f"chars:{start}-{end}", extraction_version, text)))
+                    svid, aid, "pdf_page", page.physical_page, page.printed_label, None, f"chars:{start}-{end}", extraction_version, text,
+                    getattr(page, "text_source", "text_layer"))))
+        math = getattr(extraction, "math", None)
         self.conn.execute(
             "INSERT INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages, passage_count,"
-            " outcome, rejection_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " outcome, rejection_reason, created_at" + (", math_json" if math is not None else "") + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
+            + (", ?" if math is not None else "") + ")",
             (new_id("ext"), aid, extraction_version, extraction.status, extraction.error, extraction.page_count,
-             len({page for page, _ in passage_ids}), len(set(pid for _, pid in passage_ids)), outcome, rejection_reason, now()),
+             len({page for page, _ in passage_ids}), len(set(pid for _, pid in passage_ids)), outcome, rejection_reason, now())
+            + ((dumps(math),) if math is not None else ()),
         )
 
     def reextract_asset(self, asset_id: str, extraction: Any, extraction_version: str, chunker: Any,
-                        dry_run: bool = False) -> dict[str, Any]:
+                        dry_run: bool = False, allow_run_id: str | None = None) -> dict[str, Any]:
         """Write a new text extraction of a PDF in use; it becomes current only if it loses nothing visible (D45).
 
         Current: its status is not worse, its page count is equal and it has text on no fewer pages. Otherwise it is
@@ -748,9 +756,10 @@ class Store:
         researches = [r[0] for r in self.conn.execute(
             "SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (asset["source_version_id"],))]
         with transaction(self.conn):
+            # The run that asked for this extraction (an answer waiting for its sources' equations, D52) does not block it.
             active = self.conn.execute(
                 f"SELECT 1 FROM runs WHERE research_id IN ({', '.join('?' * len(researches))}) AND status IN"
-                f" ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1", (*researches, *ACTIVE_RUN_STATUSES)
+                f" ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) AND id IS NOT ? LIMIT 1", (*researches, *ACTIVE_RUN_STATUSES, allow_run_id)
             ).fetchone() if researches else None
             if active:
                 raise RunInProgress(asset_id)

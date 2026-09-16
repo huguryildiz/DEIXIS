@@ -26,6 +26,7 @@ from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
 from deixis.documents import embeddings
+from deixis.documents import math_reader
 from deixis.documents import pdf
 from deixis.domain import skill
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict
@@ -38,6 +39,7 @@ from deixis.providers import zotero
 from deixis.providers.registry import CONNECTORS, available_providers
 from deixis.storage import db
 from deixis.workflow import bibliography
+from deixis.workflow.equations import EquationService, equation_state, equations_to_check
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.providers.common import normalize_doi
 from deixis.workflow.store import NotASource, NotFound, PdfInUse, RunInProgress, SameFile, Store, title_key
@@ -275,6 +277,7 @@ def create_app(
     start_worker: bool = True,
     extra_hosts: tuple[str, ...] = (),
     trusted_clients: tuple[str, ...] = (),
+    equation_service: Any = None,
 ) -> FastAPI:
     settings = settings or load_settings()
     ports = {settings.port}
@@ -298,9 +301,14 @@ def create_app(
             "deepseek": DeepSeekAdapter(client=http),
         }
         package = skill.load_skill_package()
-        flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf))
+        equations = equation_service if equation_service is not None else EquationService(
+            store, math_reader.MathReader(math_reader.runtime_paths(settings.data_dir)), settings.papers_dir)
+        flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf, equations))
         worker = Worker(store, flow, settings.lock_path)
         owner = start_worker and worker.acquire()
+        app.state.equations = equations
+        if owner:
+            equations.start()  # reads stored PDFs' equations in the background when the reader is installed (D52)
         app.state.store, app.state.worker, app.state.adapters = store, worker, adapter_map
         app.state.package, app.state.owner = package, owner
         app.state.http, app.state.fetch_pdf = http, fetcher or fetch_module.fetch_pdf
@@ -314,6 +322,7 @@ def create_app(
                 await asyncio.sleep(1.0)
             app.state.recovered = worker.recover()
             app.state.owner = True
+            equations.start()
             await worker.run_forever()
 
         task = asyncio.create_task(worker.run_forever() if owner else take_over_when_released()) if start_worker else None
@@ -329,6 +338,7 @@ def create_app(
                 except asyncio.CancelledError:
                     pass
             worker.release()
+            await equations.stop()
             if http_client is None:
                 await http.aclose()
             for adapter in adapter_map.values():
@@ -643,6 +653,33 @@ def create_app(
             return {"job": request.app.state.local_tools.cancel(tool_id)}
         except local_tools.ToolError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
+
+    @app.get("/api/equation-reader")
+    async def equation_reader_status(request: Request) -> dict[str, Any]:
+        """The optional equation reader (Marker, D52): installed or not, its size, its install job and the PDFs it has read."""
+        return await request.app.state.equations.status()
+
+    @app.post("/api/equation-reader/install", status_code=202)
+    async def install_equation_reader(request: Request) -> dict[str, Any]:
+        try:
+            return {"job": request.app.state.equations.install()}
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/equation-reader/cancel")
+    async def cancel_equation_reader_install(request: Request) -> dict[str, Any]:
+        try:
+            return {"job": request.app.state.equations.cancel_install()}
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.delete("/api/equation-reader")
+    async def remove_equation_reader(request: Request) -> dict[str, Any]:
+        try:
+            await request.app.state.equations.remove()
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return await request.app.state.equations.status()
 
     async def semantic_search_view(request: Request, refresh: bool = False) -> dict[str, Any]:
         saved = store_of(request).setting("semantic_search")
@@ -985,9 +1022,12 @@ def create_app(
             raise HTTPException(404, "Asset is not part of this research")
         source = store.source(asset["source_version_id"])
         passages = [p for p in store.passages_for(asset["source_version_id"]) if p["asset_id"] == asset_id]
+        to_check = equations_to_check(store, asset_id, asset["extraction_version"])
         return {
             "asset": {k: asset[k] for k in ("id", "extraction_status", "page_count", "origin", "byte_size", "original_filename")},
-            "passages": [{k: passage[k] for k in ("id", "kind", "text", "physical_page", "printed_label", "extraction_version", "payload_ref")} for passage in passages],
+            "passages": [{k: passage[k] for k in ("id", "kind", "text", "physical_page", "printed_label", "extraction_version", "payload_ref", "text_source")}
+                         | {"equations_to_check": to_check.get(passage["physical_page"], 0) if passage["text_source"] == "marker" else 0}
+                         for passage in passages],
             "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
                                                 "cited_by_count", "cited_by_count_at")},
         }
@@ -1051,7 +1091,7 @@ def create_app(
         """Extract the PDF in use again with the current extractor; it becomes current only if it loses no visible text (D45)."""
         store = store_of(request)
         asset = asset_in_use(store, research_id, source_version_id, asset_id)
-        if asset["extraction_version"] == pdf.EXTRACTION_VERSION:
+        if (asset["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION:  # equations read on it too (D52)
             return {**research_view(store, research_id), "reextraction": {"asset_id": asset_id, "outcome": "unchanged"}}
         root = settings.papers_dir.resolve()
         path = (root / asset["storage_path"]).resolve()
@@ -1060,6 +1100,19 @@ def create_app(
         extraction = await asyncio.to_thread(pdf.extract_pdf, path)
         report = store.reextract_asset(asset_id, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
         return {**research_view(store, research_id), "reextraction": report}
+
+    @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/equations", status_code=202)
+    async def reread_equations(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+        """Read a PDF's equations again in the background after a failed read (D52)."""
+        store = store_of(request)
+        asset_in_use(store, research_id, source_version_id, asset_id)
+        service = request.app.state.equations
+        if not service.available():
+            raise HTTPException(409, "The equation reader is not installed")
+        if equation_state(store, asset_id)["state"] != "failed":
+            raise HTTPException(409, "Only a failed equation reading is read again")
+        service.retry(asset_id)
+        return research_view(store, research_id)
 
     # ---- evidence tables (P5, D37) -------------------------------------------------------------
     def tables_of(request: Request) -> TableStore:

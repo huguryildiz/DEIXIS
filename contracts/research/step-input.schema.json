@@ -249,6 +249,7 @@
           "reading_depth",
           "locator",
           "abstract_origin",
+          "text_source",
           "text"
         ],
         "properties": {
@@ -305,6 +306,19 @@
               "null"
             ],
             "description": "Origin of abstract text (for example provider_openalex_inverted_index, publisher_pdf, user). Null for non-abstract passages."
+          },
+          "text_source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "text_layer",
+              "ocr",
+              "marker",
+              null
+            ],
+            "description": "How a PDF passage's text was obtained: the PDF's own text layer, local OCR of a scanned page, or Marker's reading of a page with mathematics (equations as LaTeX). OCR and Marker text can misread characters and symbols. Null for abstracts."
           },
           "text": {
             "type": "string"

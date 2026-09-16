@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -70,7 +71,8 @@ def reextract(settings: Settings, dry_run: bool) -> int:
     store = Store(conn)
     assets = conn.execute(
         "SELECT a.id, a.storage_path, a.extraction_version, v.title FROM source_assets a JOIN source_versions v ON v.id = a.source_version_id"
-        " WHERE a.removed_at IS NULL AND a.extraction_version IS NOT ? ORDER BY a.retrieved_at", (pdf.EXTRACTION_VERSION,)
+        " WHERE a.removed_at IS NULL AND a.extraction_version IS NOT ? AND IFNULL(a.extraction_version, '') NOT LIKE ? || '+%'"
+        " ORDER BY a.retrieved_at", (pdf.EXTRACTION_VERSION, pdf.EXTRACTION_VERSION)
     ).fetchall()
     outcomes: Counter[str] = Counter()
     for asset in assets:
@@ -90,6 +92,26 @@ def reextract(settings: Settings, dry_run: bool) -> int:
     return 0
 
 
+def equations(settings: Settings, action: str) -> int:
+    """Install, check or remove the optional equation reader (Marker) under the data directory (D52)."""
+    from deixis.documents import math_reader
+
+    paths = math_reader.runtime_paths(settings.data_dir)
+    if action == "install":
+        try:
+            math_reader.install_runtime(paths)
+        except (math_reader.MathReaderUnavailable, OSError, subprocess.CalledProcessError) as exc:
+            print(f"install failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Marker installed in {paths.env}; its models (about 3.3 GB) download into {paths.models} on the first read.")
+    elif action == "remove":
+        math_reader.remove_runtime(paths)
+        print(f"Removed {paths.env} and {paths.models}.")
+    else:
+        print(f"{'installed' if paths.installed() else 'not installed'}: {paths.env}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="deixis")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -103,8 +125,12 @@ def main(argv: list[str] | None = None) -> int:
     load.add_argument("backup", type=Path, help="A backup folder created by `deixis backup`")
     again = sub.add_parser("reextract", help="Extract the text of every PDF in use again with the current extractor")
     again.add_argument("--dry-run", action="store_true", help="Report what would become current or be rejected; write nothing")
+    eq = sub.add_parser("equations", help="Install, check or remove the optional equation reader (Marker, about 4.4 GB)")
+    eq.add_argument("action", choices=("install", "status", "remove"))
     args = parser.parse_args(argv)
     settings = load_settings()
+    if args.command == "equations":
+        return equations(settings, args.action)
     if args.command == "reextract":
         return reextract(settings, args.dry_run)
     if args.command in ("backup", "restore"):

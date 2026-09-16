@@ -55,6 +55,12 @@ Goal: answer every column in `extraction_target.columns` for the one source
    separate spans of one passage support the answer, give each its own item with
    the same `passage_id`; never repeat the same quote. If no exact span supports
    the answer, that passage does not support it and is not cited.
+   A passage's `text_source` says how its text was obtained: `text_layer` is the
+   PDF's own text, `marker` text was read from the page image with equations as
+   LaTeX, and `ocr` text comes from a scanned page. `marker` and `ocr` text can
+   misread a symbol, subscript or digit while still looking correct; copy it as
+   written and, when the value rests on such a passage, say in `note` that it
+   should be checked against the PDF page.
 6. Keep `note` to a short reason, or null. Do not put page, equation, table,
    figure or section numbers in it; the application shows locators from its own
    records.

@@ -57,6 +57,9 @@ export type Asset = {
   id: string; extraction_status: string; extraction_version?: string | null; page_count: number | null; origin: string; byte_size: number; original_filename: string | null
   // Sources only (D45): whether the text comes from the current extractor, and a later extraction that was not taken.
   current_extraction?: boolean; rejected_extraction?: { extraction_version: string; rejection_reason: string; created_at: string } | null
+  // Sources only (D52): whether Marker has read the PDF's pages with mathematics.
+  // A read's `equations_to_check` counts display equations that did not match the PDF's text layer, on pages `to_check`.
+  equations?: { state: 'read' | 'no_math' | 'failed' | 'reading' | 'pending'; reason?: string | null; attempts?: number; pages?: number; started_at?: string; to_check?: number[]; equations_to_check?: number }
 }
 // What became of a cited passage's file since it was stored (D45).
 export type EvidenceStatus = 'current' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded'
@@ -65,7 +68,7 @@ export type AssetImpact = { asset_id: string; researches: { id: string; title: s
 export type Reextraction = { asset_id: string; outcome: 'current' | 'rejected' | 'unchanged'; rejection_reason?: string | null }
 export type AssetText = {
   asset: Asset
-  passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null }[]
+  passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker'; equations_to_check?: number }[]
   source: Passage['source']
 }
 export type PdfCandidate = {
@@ -146,7 +149,7 @@ export type TrashedTemplate = { id: string; name: string; trashed_at: string; co
 export type Trash = { researches: TrashedResearch[]; tables: TrashedTable[]; sources: RemovedSource[]; templates: TrashedTemplate[] }
 export type Passage = {
   id: string; kind: Evidence['kind']; text: string; physical_page: number | null; printed_label: string | null
-  abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; reading_depth: string; asset_id: string | null
+  abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker'; equations_to_check?: number; reading_depth: string; asset_id: string | null
   evidence_status: EvidenceStatus
   removed_from_research: boolean
   source: { id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; landing_url: string | null; version_label: string | null; origin: string; cited_by_count: number | null; cited_by_count_at: string | null }
@@ -174,6 +177,14 @@ export type LocalTool = {
   installed: boolean; version: string | null; path: string | null; role: 'runs_steps' | 'detected' | 'imports'
   running?: boolean; endpoint?: string; models?: LocalToolModel[]; local_api?: boolean; web_configured?: boolean
   install: LocalToolInstall; job: LocalToolJob
+}
+// The optional equation reader (Marker, D52), installed under the data directory.
+export type EquationReader = {
+  installed: boolean; package: string; path: string; size_bytes: number; models_downloaded: boolean; disk_free_gb: number
+  install: { available: boolean; unavailable_reason: string | null; url: string }
+  job: { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; step: number; steps: number; started_at: string; finished_at: string | null; output: string } | null
+  reading: { asset_id: string; pages: number; started_at: string } | null
+  pdfs: Partial<Record<'read' | 'no_math' | 'failed' | 'reading' | 'pending', number>>
 }
 export type LocalTools = { machine: { chip: string | null; memory_gb: number | null; disk_free_gb: number | null }; tools: LocalTool[] }
 export type SemanticSearchProvider = 'gemini' | 'openai' | 'ollama' | 'lm_studio' | 'off'
@@ -379,6 +390,12 @@ export const api = {
   saveCredential: (env: string, value: string) => request<{ key: KeyEntry; test: KeyTest | null }>(`/api/credentials/${env}`, json('PUT', { value })),
   removeCredential: (env: string) => request<{ key: KeyEntry }>(`/api/credentials/${env}`, { method: 'DELETE' }),
   testCredential: (env: string) => request<KeyTest>(`/api/credentials/${env}/test`, { method: 'POST' }),
+  equationReader: () => request<EquationReader>('/api/equation-reader'),
+  installEquationReader: () => request<{ job: EquationReader['job'] }>('/api/equation-reader/install', { method: 'POST' }),
+  cancelEquationReaderInstall: () => request<{ job: EquationReader['job'] }>('/api/equation-reader/cancel', { method: 'POST' }),
+  removeEquationReader: () => request<EquationReader>('/api/equation-reader', { method: 'DELETE' }),
+  rereadEquations: (id: string, sourceId: string, assetId: string) =>
+    request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/equations`, { method: 'POST' }),
   localTools: (refresh = false) => request<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`),
   installLocalTool: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/install`, { method: 'POST' }),
   cancelLocalToolInstall: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/cancel`, { method: 'POST' }),

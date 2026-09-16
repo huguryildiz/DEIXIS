@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpenText, ChevronRight, CircleCheck, CircleDot, CircleX, Copy, Download, FilePlus2, FileText, FileUp, Filter, Hand, Info, ListChecks, ListMinus, ListPlus, LoaderCircle, Replace, RotateCcw, ScanText, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, Search, ShieldCheck, Sparkles, Table2, Trash2, Upload, UserPen, X, type LucideIcon } from 'lucide-react'
+import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpenText, ChevronRight, CircleCheck, CircleDot, CircleX, Copy, Download, FilePlus2, FileText, FileUp, Filter, Hand, Info, ListChecks, ListMinus, ListPlus, LoaderCircle, Replace, RotateCcw, ScanText, Sigma, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, Search, ShieldCheck, Sparkles, Table2, Trash2, Upload, UserPen, X, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -206,6 +206,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (reextraction.outcome === 'rejected') toast('warning', t('The new extraction was not used: {reason}. The earlier text stays in use.', { reason: reextraction.rejection_reason ?? '' }))
     else toast('success', t(reextraction.outcome === 'unchanged' ? 'This text already comes from the current extractor.' : 'Text extracted again. Later answers and cells read the new text; earlier evidence still opens the text it cited.'))
   })
+  const rereadEquations = (source: Source, assetId: string) => act(async () => {
+    await api.rereadEquations(id, source.source_version_id, assetId)
+    toast('success', t('The equations of this PDF are being read again in the background.'))
+  })
   const importZotero = (source: ZoteroSource, key: string) => act(async () => {
     const { items, pdfs_added: pdfs, notes } = (await api.zoteroImport(id, source, key)).zotero_import
     setZoteroOpen(false)
@@ -339,7 +343,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
           onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
           onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} onAttachCandidate={(source, candidateId) => { void attachPdfCandidate(source, candidateId) }} onOpenPdf={(_, assetId) => setPdfTarget({ assetId })}
-          onRemoveAsset={removeSourcePdf} onReplaceAsset={chooseReplacement} onReextract={(source, assetId) => { void reextract(source, assetId) }} pdfFinding={pdfFinding} />
+          onRemoveAsset={removeSourcePdf} onReplaceAsset={chooseReplacement} onReextract={(source, assetId) => { void reextract(source, assetId) }} onRereadEquations={(source, assetId) => { void rereadEquations(source, assetId) }} pdfFinding={pdfFinding} />
         {picked.length > 0 && <SelectionBar researchId={id} count={picked.length} busy={busy} active={active} onStartTable={() => askTableStart(picked)} onAddToTable={table => { void addToTable(table, picked) }}
           onRemove={() => { void askRemoval(picked) }} onClear={() => setPicked([])} />}
         </section>
@@ -680,9 +684,9 @@ const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
   title: (a, b) => a.title.localeCompare(b.title),
 }
 
-type SourceActions = { onRemoveFromResearch: (source: Source) => void; onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; onReplaceAsset: (source: Source, assetId: string) => void; onReextract: (source: Source, assetId: string) => void; pdfFinding: string | null }
+type SourceActions = { onRemoveFromResearch: (source: Source) => void; onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; onReplaceAsset: (source: Source, assetId: string) => void; onReextract: (source: Source, assetId: string) => void; onRereadEquations: (source: Source, assetId: string) => void; pdfFinding: string | null }
 
-function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveFromResearch, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, pdfFinding }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; picked: string[]; onPick: (ids: string[]) => void } & SourceActions) {
+function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveFromResearch, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, pdfFinding }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; picked: string[]; onPick: (ids: string[]) => void } & SourceActions) {
   const [pdfFilter, setPdfFilter] = useState<PdfFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SourceSort>('relevant')
@@ -733,7 +737,7 @@ function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveF
       readsVersion={sources.find(s => s.source_version_id === source.answer_reads_version_id)}
       onSelect={state => onSelect(source, state)} onReason={reason => onReason(source, reason)} onAbstract={() => onAbstract(source)}
       onDiscoverPdf={() => onDiscoverPdf(source)} onAttachPdf={() => onAttachPdf(source)} onAttachCandidate={candidateId => onAttachCandidate(source, candidateId)} onOpenPdf={assetId => onOpenPdf(source, assetId)}
-      onRemoveAsset={assetId => onRemoveAsset(source, assetId)} onReplaceAsset={assetId => onReplaceAsset(source, assetId)} onReextract={assetId => onReextract(source, assetId)} finding={pdfFinding === source.source_version_id} />)}</div>
+      onRemoveAsset={assetId => onRemoveAsset(source, assetId)} onReplaceAsset={assetId => onReplaceAsset(source, assetId)} onReextract={assetId => onReextract(source, assetId)} onRereadEquations={assetId => onRereadEquations(source, assetId)} finding={pdfFinding === source.source_version_id} />)}</div>
     {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { onFilter('all'); setPdfFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
   </>
 }
@@ -767,7 +771,7 @@ function TypedText({ text, className }: { text: string; className?: string }) {
   return <span className={className}><span className="sr-only">{text}</span><span aria-hidden>{text.slice(0, shown)}</span></span>
 }
 
-function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplicates, readsVersion, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, finding }: { source: Source; busy: boolean; picked: boolean; onPick: (on: boolean) => void; onRemoveFromResearch: () => void; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onAttachCandidate: (candidateId: string) => void; onOpenPdf: (assetId: string) => void; onRemoveAsset: (assetId: string) => void; onReplaceAsset: (assetId: string) => void; onReextract: (assetId: string) => void; finding: boolean; duplicates: { basis: Source['suspected_duplicates'][number]['basis']; source?: Source }[]; readsVersion?: Source }) {
+function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplicates, readsVersion, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, finding }: { source: Source; busy: boolean; picked: boolean; onPick: (on: boolean) => void; onRemoveFromResearch: () => void; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onAttachCandidate: (candidateId: string) => void; onOpenPdf: (assetId: string) => void; onRemoveAsset: (assetId: string) => void; onReplaceAsset: (assetId: string) => void; onReextract: (assetId: string) => void; onRereadEquations: (assetId: string) => void; finding: boolean; duplicates: { basis: Source['suspected_duplicates'][number]['basis']; source?: Source }[]; readsVersion?: Source }) {
   const s = source.selection
   const other = source.version_role === 'other_version'
   const authors = source.authors.join(', ')
@@ -815,6 +819,7 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
             <button type="button" className="is-primary" onClick={() => onOpenPdf(asset.id)} title={asset.original_filename ?? undefined}><FileText size={14} aria-hidden />{t('Open PDF')}</button>
             <button disabled={busy} onClick={() => onReplaceAsset(asset.id)} title={t('Use another file for this source version; evidence that cites the current file keeps it')}><Replace size={14} aria-hidden />{t('Replace PDF')}</button>
             {asset.current_extraction === false && <button disabled={busy} onClick={() => onReextract(asset.id)} title={t('Text extracted as {version}. Extract it again with the current extractor.', { version: asset.extraction_version ?? '?' })}><ScanText size={14} aria-hidden />{t('Extract text again')}</button>}
+            {asset.equations?.state === 'failed' && <button disabled={busy} onClick={() => onRereadEquations(asset.id)} title={asset.equations.reason ?? undefined}><Sigma size={14} aria-hidden />{t('Read equations again')}</button>}
             <button className="is-destructive" disabled={busy} onClick={() => onRemoveAsset(asset.id)} title={asset.original_filename ?? undefined}><Trash2 size={14} aria-hidden />{t('Remove PDF')}</button>
           </span>)}
           {source.access.abstract_passage_id && <button className={primaryAction === 'abstract' ? 'is-primary' : undefined} onClick={onAbstract}><BookOpenText size={14} aria-hidden />{t('Read abstract')}</button>}
@@ -940,6 +945,7 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'pdf_discovery_recorded': return brand(String(p.provider), t('{provider} PDF lookup', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} candidates', { count: String(p.result_count) }), tone: 'neutral' }, ...errorChip])
     case 'asset_removed': return lucide(Trash2, t('PDF removed from a source'))
     case 'asset_replaced': return lucide(Replace, t('PDF replaced on a source'))
+    case 'equations_failed': return lucide(Sigma, t('Reading a PDF’s equations failed'), [{ label: t('attempt {n}', { n: String(p.attempts) }), tone: 'warn' }])
     case 'asset_reextracted': return lucide(ScanText, t('PDF text extracted again'), [p.outcome === 'current' ? { label: t('in use'), tone: 'ok' } : { label: t('not used'), tone: 'warn' }, { label: String(p.extraction_version), tone: 'neutral' }])
     case 'selection_changed': return lucide(UserPen, t('You marked a source'), [{ label: t(selectionStates[String(p.state)] ?? String(p.state)), tone: selectionTones[String(p.state)] ?? 'neutral' }])
     case 'answer_saved': return lucide(MessageSquareQuote, t('Answer saved'), [statusChip(p.status)])

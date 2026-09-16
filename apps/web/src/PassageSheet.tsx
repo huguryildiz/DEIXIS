@@ -147,6 +147,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
             ? t('This passage comes from a PDF that was later replaced. It opens the previous file, which is no longer read in new answers or cells.')
             : status === 'pdf_removed' ? t('This passage comes from a PDF that was removed from the source. Its stored text still opens; the PDF view is off.')
             : t('This passage comes from an earlier text extraction ({version}). New answers and cells read the current extraction, which may split or word the page differently.', { version: passage.extraction_version ?? '?' })}</p>}
+          {viewMode === 'text' && passage?.text_source === 'marker' && (passage.equations_to_check
+            ? <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(passage.equations_to_check === 1 ? 'Page read from the page image (Marker). {n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : 'Page read from the page image (Marker). {n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: passage.equations_to_check })}</p>
+            : <p className="source-notice"><Info size={15} aria-hidden />{t('Page read from the page image (Marker). Equations are LaTeX; check them against the PDF page.')}</p>)}
           {viewMode === 'text' ? passage ? <div id="source-text-view" role="tabpanel">
             {abstract && !pdfAssetId && <p className="source-notice"><Info size={15} aria-hidden />{t('No PDF is attached, so only the abstract can be inspected. Claims citing this source rest on the abstract alone.')}</p>}
             <h3 className="source-section">{abstract ? t('Abstract') : t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
@@ -156,6 +159,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
             <h3 className="source-section">{t('Extracted PDF text')}{assetText.passages.some(item => item.text.split(/\n{2,}/).some(p => AUTHOR_NOTE.test(p.trim()))) && <button type="button" className="pdf-text-notes-toggle" onClick={() => setShowNotes(v => !v)}>{t(showNotes ? 'Hide author notes' : 'Show author notes')}</button>}</h3>
             {assetText.passages.length ? pagesOf(assetText.passages).map(page => <section className="pdf-text-page" key={page[0].id}>
               <h4>{page[0].physical_page ? t('PDF p. {page}', { page: page[0].physical_page }) : t('Extracted text')}</h4>
+              {(page[0].equations_to_check ?? 0) > 0 && <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(page[0].equations_to_check === 1 ? '{n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : '{n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: page[0].equations_to_check ?? 0 })}</p>}
               <PdfPageText passages={page} showNotes={showNotes} />
             </section>) : <div className="legacy-boundary">{t('No text was extracted from this PDF.')}</div>}
           </div> : null : pdfAssetId && <div id="source-pdf-view" role="tabpanel" className="source-pdf-view">

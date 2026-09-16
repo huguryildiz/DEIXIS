@@ -1,6 +1,6 @@
 """Page-level PDF text extraction in a bounded subprocess.
 
-PyMuPDF extracts embedded text only: scanned pages yield no text (no OCR), and
+PyMuPDF extracts embedded text only: scanned pages yield no text, and
 equations/tables may still be garbled. Ligatures come out as plain letters. The
 original page stays the reference. Passages extracted earlier with pypdf keep their
 own `extraction_version`; they are not re-extracted.
@@ -17,6 +17,8 @@ around it. Section headings become their own paragraph, and a word hyphenated at
 a numbered reference entry ("[39] …") is one paragraph even when MuPDF splits its lines into several blocks or puts two
 entries in one block. The original page stays the reference; older passages keep their version until the asset is
 re-extracted (D45).
+
+A page left without text is named: an image page (a scan, which `ocr.py` can read on request, D51) or a blank page.
 
 The child process is limited in time, pages, total extracted text and memory. The memory
 limit is a watchdog on the child's peak resident size: it stops the child shortly after the
@@ -62,6 +64,7 @@ class PageText:
     physical_page: int
     printed_label: str | None
     text: str
+    text_source: str = "text_layer"  # text_layer or ocr
 
 
 @dataclass
@@ -70,12 +73,16 @@ class Extraction:
     page_count: int = 0
     pages: list[PageText] = field(default_factory=list)
     error: str | None = None
+    image_pages: list[int] = field(default_factory=list)  # pages without text that hold an image
+    blank_pages: list[int] = field(default_factory=list)  # pages without text or image
+    ocr: dict | None = None
+    extraction_version: str = EXTRACTION_VERSION
 
 
-def _blocks(page: pymupdf.Page) -> list[dict]:
+def _blocks(page: pymupdf.Page, textpage: pymupdf.TextPage | None = None) -> list[dict]:
     """Text blocks with their box, horizontal lines and the character-weighted type size."""
     blocks = []
-    for block in page.get_text("dict", flags=TEXT_FLAGS)["blocks"]:
+    for block in page.get_text("dict", flags=TEXT_FLAGS, textpage=textpage)["blocks"]:
         lines, weighted, count = [], 0.0, 0
         for line in block.get("lines", []):
             if abs(line["dir"][1]) > 0.1:  # rotated or vertical: margin stamps such as arXiv's identifier
@@ -176,7 +183,10 @@ def _extract_in_process(path: str, max_chars: int) -> dict:
             if len(text) > max_chars - chars:
                 text, truncated = text[: max_chars - chars], True
             chars += len(text)
-            pages.append({"physical_page": index + 1, "printed_label": label if label != str(index + 1) else None, "text": text})
+            # A page whose only text is the download notice is still a scan when it holds an image.
+            has_image = not remove_download_notices(text).strip() and bool(doc[index].get_image_info())
+            pages.append({"physical_page": index + 1, "printed_label": label if label != str(index + 1) else None, "text": text,
+                          "has_image": has_image})
     return {"page_count": total, "pages": pages, "failed_pages": failed, "truncated": truncated}
 
 
@@ -212,11 +222,16 @@ def extract_pdf(path: Path, max_chars: int = MAX_TEXT_CHARS, max_memory: int = M
     if completed.returncode != 0:
         return Extraction("failed", error=completed.stderr.decode(errors="replace")[-400:])
     raw = json.loads(completed.stdout)
-    pages = [PageText(p["physical_page"], p["printed_label"], text) for p in raw["pages"] if (text := remove_download_notices(p["text"])).strip()]
+    pages, image_pages, blank_pages = [], [], []
+    for p in raw["pages"]:
+        if (text := remove_download_notices(p["text"])).strip():
+            pages.append(PageText(p["physical_page"], p["printed_label"], text))
+        else:
+            (image_pages if p["has_image"] else blank_pages).append(p["physical_page"])
     if not pages:
-        return Extraction("no_text", page_count=raw["page_count"])
+        return Extraction("no_text", page_count=raw["page_count"], image_pages=image_pages, blank_pages=blank_pages)
     status = "partial" if raw["failed_pages"] or raw["truncated"] or len(pages) < raw["page_count"] else "succeeded"
-    return Extraction(status, page_count=raw["page_count"], pages=pages)
+    return Extraction(status, page_count=raw["page_count"], pages=pages, image_pages=image_pages, blank_pages=blank_pages)
 
 
 def remove_download_notices(text: str) -> str:

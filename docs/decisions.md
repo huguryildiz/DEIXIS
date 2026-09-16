@@ -2,6 +2,25 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D51 — Read scanned PDF pages with local OCR on request, label OCR text, and warn on numbers that rest on it
+
+**Status**: accepted (not implemented)
+**Date**: 2026-09-16
+
+**Context**: A PDF page without a text layer is not read: the file is stored as `no_text` (or `partial`), answers read the source's abstract and a table cell gets "No text". P5 and test T10 call for local OCR whose limits stay visible and which never claims correct mathematics without the page. Read-only counts on the live library: 83 PDFs in use, 82 `succeeded`, 1 `partial` whose 11 textless pages hold no image, 0 `no_text`, so OCR adds text to no page today. Tesseract 5.5.2 is installed with English data only (no `tur`); PyMuPDF 1.28.2 can call it. A synthetic one-page scan read English exactly in 0.12–0.22 s, turned Turkish letters into "?" without the Turkish data and read `x^2` as `x*2`. Design note: `docs/product/p5-slice4-ocr.md`. The owner chose the recommended option on all seven questions.
+
+**Decision**:
+
+- Slice 4 is done now, in its narrowest form. Out of scope: table and figure structure, handwriting, math OCR to LaTeX, retrying D49 file matching after OCR, editing OCR text, online OCR services.
+- OCR runs only when the user asks, as a background run `pdf_ocr` with per-page progress, pause and cancel and no model call. It reads only pages without text that contain an image; pages with a text layer are unchanged and blank pages are counted as blank.
+- OCR uses the local Tesseract through PyMuPDF in a bounded subprocess, with English and Turkish. Without Turkish data it runs English only and says so; without Tesseract the action is off and names the install command. No file leaves the machine and the PDF is not rewritten.
+- The result is a new extraction written under D45's rule (current only if it loses nothing; older passages shadowed, never deleted). Each PDF passage records `text_source` (`text_layer` or `ocr`); the extraction records tool, version, languages and page counts.
+- OCR passages are labelled "OCR text · check against the page" in sources, quotes, cell evidence and the passage sheet. The StepInput passage carries `text_source`, and the method package tells the model to copy numbers and equations from OCR text as written and to state doubt; the schema version is bumped.
+- A claim or cell value with a number, unit or equation that rests only on OCR passages gets a warning (`ocr_numbers_unchecked`); it does not reject the answer.
+- Measurement uses synthetic scanned pages in tests and 2–4 real scanned articles from the owner (English and Turkish, at least one with equations), kept out of the repository; it reports time per page, the share of pages with text and hand-checked character errors, not a quality claim.
+
+**Limits**: Nothing is implemented. Timings come from one clean synthetic page. PyMuPDF's OCR gives no word confidence, so there is no quality threshold beyond "text found". OCR text of equations is expected to be wrong in places; the label and warning say so but do not detect it.
+
 ## D50 — Trash tables, templates and sources removed from a research; undo from a notification; start a table from selected sources
 
 **Status**: accepted (sub-steps 1–7 implemented: removing and restoring a source; the trash of tables, templates and columns; restoring a wrong-file PDF; a table from chosen sources; backup checks; the interface with undo notifications)

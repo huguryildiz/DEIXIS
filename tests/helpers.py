@@ -53,3 +53,20 @@ def make_compressed_page_pdf(content: bytes) -> bytes:
     out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
     out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
     return bytes(out)
+
+
+def make_scanned_pdf(pages: list[tuple[str, str | None]]) -> bytes:
+    """A PDF whose pages are ("text", s): a text layer; ("scan", s): an image of s with no text layer; ("blank", None)."""
+    import pymupdf
+
+    out = pymupdf.open()
+    for kind, text in pages:
+        page = out.new_page(width=612, height=792)
+        if kind == "text":
+            page.insert_textbox(pymupdf.Rect(72, 72, 540, 720), text, fontsize=11)
+        elif kind == "scan":
+            source = pymupdf.open()
+            drawn = source.new_page(width=612, height=792)
+            drawn.insert_textbox(pymupdf.Rect(72, 72, 540, 720), text, fontsize=11)
+            page.insert_image(page.rect, stream=drawn.get_pixmap(dpi=200).tobytes("png"))
+    return out.tobytes()

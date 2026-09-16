@@ -5,11 +5,14 @@ Pages are SYNTHETIC images of typed text. Passing shows which pages are read and
 about OCR accuracy on real scans. Tests that run Tesseract are skipped when it is not installed.
 """
 
+import json
 import shutil
 
 import pytest
 
 from deixis.documents import ocr, pdf
+from deixis.storage import db
+from deixis.workflow.store import Store
 from helpers import make_scanned_pdf
 
 needs_tesseract = pytest.mark.skipif(shutil.which("tesseract") is None, reason="Tesseract is not installed")
@@ -77,3 +80,44 @@ def test_a_page_that_fails_or_finds_nothing_is_recorded_and_changes_no_text(tmp_
     assert merged.ocr["failed_pages"] == [1] and merged.ocr["pages_with_text"] == 0
     with pytest.raises(ValueError):  # a page that is not a scanned page of this file is refused
         ocr.merge(extraction, [ocr.OcrPage(physical_page=3, status="succeeded", text="x")], ["eng"])
+
+
+def library_with_scan(tmp_path):
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    store = Store(conn)
+    rid = store.create_research("SYNTHETIC question?", "academic", "quick", [], "fake", "fake-model", None)
+    svid = store.create_upload_source("SYNTHETIC scanned paper")
+    store.add_to_corpus(rid, svid, "user_upload")
+    path = write(tmp_path, [("text", "SYNTHETIC text layer page."), ("scan", SCANNED), ("blank", None)])
+    base = pdf.extract_pdf(path)
+    aid = store.add_asset_with_pages(svid, "sha-scan", 10, "scan.pdf", "user_upload", None, "scan.pdf", base, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+    return store, rid, svid, aid, base
+
+
+def test_an_ocr_extraction_is_stored_with_its_tool_and_page_counts(tmp_path):
+    store, rid, svid, aid, base = library_with_scan(tmp_path)
+    read = ocr.merge(base, [ocr.OcrPage(2, "succeeded", "SYNTHETIC OCR text of the scanned page.")], ["eng"])
+
+    report = store.reextract_asset(aid, read, read.extraction_version, pdf.chunk_page)
+    assert report["outcome"] == "current" and store.asset(aid)["extraction_version"] == read.extraction_version
+    assert [(p["physical_page"], p["text_source"]) for p in store.passages_for(svid)] == [(1, "text_layer"), (2, "ocr")]
+    row = store.conn.execute("SELECT ocr_json, math_json FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'", (aid,)).fetchone()
+    assert (json.loads(row["ocr_json"]), row["math_json"]) == (read.ocr, None)
+    events = [e for e in store.events_after(rid, 0) if e["type"] in ("asset_ocr_read", "asset_reextracted")]
+    assert [e["type"] for e in events] == ["asset_ocr_read"]
+    assert events[0]["payload"].items() >= {"asset_id": aid, "outcome": "current", "extraction_version": read.extraction_version,
+                                            "pages_read": 1, "pages_with_text": 1, "blank_pages": 1, "failed_pages": [], "languages": ["eng"]}.items()
+    assert store.reextract_asset(aid, read, read.extraction_version, pdf.chunk_page)["outcome"] == "unchanged"
+
+
+def test_an_ocr_extraction_that_found_no_text_is_rejected_and_the_old_text_stays(tmp_path):
+    store, rid, svid, aid, base = library_with_scan(tmp_path)
+    read = ocr.merge(base, [ocr.OcrPage(2, "failed", error="OCR timed out")], ["eng"])
+
+    report = store.reextract_asset(aid, read, read.extraction_version, pdf.chunk_page)
+    assert report["outcome"] == "rejected" and report["rejection_reason"] == "OCR found no text"
+    assert store.asset(aid)["extraction_version"] == pdf.EXTRACTION_VERSION
+    assert [(p["physical_page"], p["text_source"]) for p in store.passages_for(svid)] == [(1, "text_layer")]
+    event = next(e for e in store.events_after(rid, 0) if e["type"] == "asset_ocr_read")
+    assert (event["payload"]["outcome"], event["payload"]["failed_pages"]) == ("rejected", [2])

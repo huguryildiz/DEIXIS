@@ -712,14 +712,13 @@ class Store:
                 passage_ids.append((page.physical_page, self._insert_passage(
                     svid, aid, "pdf_page", page.physical_page, page.printed_label, None, f"chars:{start}-{end}", extraction_version, text,
                     getattr(page, "text_source", "text_layer"))))
-        math = getattr(extraction, "math", None)
+        math, ocr = getattr(extraction, "math", None), getattr(extraction, "ocr", None)
         self.conn.execute(
             "INSERT INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages, passage_count,"
-            " outcome, rejection_reason, created_at" + (", math_json" if math is not None else "") + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
-            + (", ?" if math is not None else "") + ")",
+            " outcome, rejection_reason, created_at, math_json, ocr_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (new_id("ext"), aid, extraction_version, extraction.status, extraction.error, extraction.page_count,
-             len({page for page, _ in passage_ids}), len(set(pid for _, pid in passage_ids)), outcome, rejection_reason, now())
-            + ((dumps(math),) if math is not None else ()),
+             len({page for page, _ in passage_ids}), len(set(pid for _, pid in passage_ids)), outcome, rejection_reason, now(),
+             dumps(math) if math is not None else None, dumps(ocr) if ocr is not None else None),
         )
 
     def reextract_asset(self, asset_id: str, extraction: Any, extraction_version: str, chunker: Any,
@@ -727,7 +726,8 @@ class Store:
         """Write a new text extraction of a PDF in use; it becomes current only if it loses nothing visible (D45).
 
         Current: its status is not worse, its page count is equal and it has text on no fewer pages. Otherwise it is
-        recorded as rejected and the old text stays in use. Old passages are shadowed, never deleted.
+        recorded as rejected and the old text stays in use. Old passages are shadowed, never deleted. An OCR reading (D51)
+        that found text on no page is rejected too, and is reported as `asset_ocr_read` with its page counts.
         """
         asset = self.asset(asset_id)
         if asset["removed_at"] is not None:
@@ -748,6 +748,10 @@ class Store:
                 reason = f"page count {extraction.page_count} differs from {old['page_count']}"
             elif text_pages < old["text_pages"]:
                 reason = f"text on {text_pages} pages, fewer than {old['text_pages']}"
+        # A Marker reading keeps OCR pages it was built on (D52) but is not itself an OCR reading.
+        ocr = getattr(extraction, "ocr", None) if getattr(extraction, "math", None) is None else None
+        if ocr is not None and not reason and not ocr["pages_with_text"]:
+            reason = "OCR found no text"
         report = {"asset_id": asset_id, "source_version_id": asset["source_version_id"], "outcome": "rejected" if reason else "current",
                   "rejection_reason": reason, "old_version": asset["extraction_version"], "text_pages": text_pages,
                   "old_text_pages": old["text_pages"] if old else None}
@@ -772,9 +776,13 @@ class Store:
                 self.conn.execute(
                     "UPDATE source_assets SET extraction_version = ?, extraction_status = ?, extraction_error = ?, page_count = ?"
                     " WHERE id = ?", (extraction_version, extraction.status, extraction.error, extraction.page_count, asset_id))
+            payload = {k: report[k] for k in ("asset_id", "source_version_id", "outcome", "rejection_reason")} | {"extraction_version": extraction_version}
             for research_id in researches:
-                self._event(research_id, "asset_reextracted", {k: report[k] for k in ("asset_id", "source_version_id", "outcome", "rejection_reason")}
-                            | {"extraction_version": extraction_version})
+                if ocr is not None:
+                    self._event(research_id, "asset_ocr_read", payload | {k: ocr[k] for k in (
+                        "languages", "pages_read", "pages_with_text", "blank_pages", "failed_pages")})
+                else:
+                    self._event(research_id, "asset_reextracted", payload)
         return report
 
     def replace_asset(self, asset_id: str, sha256: str, size: int, storage_path: str, origin: str, retrieved_from: str | None,

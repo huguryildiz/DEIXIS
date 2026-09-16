@@ -21,10 +21,11 @@ def envelope(si: dict[str, Any], version: str) -> dict[str, Any]:
 def valid_response(si: dict[str, Any]) -> str:
     task = si["task_type"]
     if task == "search_plan":
-        plan = envelope(si, "deixis.search_plan.v1") | {
+        plan = envelope(si, "deixis.search_plan.v2") | {
             "question_interpretation": "fake interpretation",
-            "concepts": [{"label": "molecular communication", "role": "core", "synonyms": ["diffusion channel"]}],
-            "queries": [{"provider_id": p, "query_text": '"molecular communication" AND optimization', "rationale": "fake"} for p in si["enabled_providers"]][:1],
+            "concepts": [{"label": "molecular communication", "role": "core", "synonyms": ["molecular communication", "diffusion channel"]},
+                         {"label": "optimization", "role": "method", "synonyms": ["optimization"]}],
+            "providers": si["enabled_providers"][:1],
             "scope_boundaries": ["fake"], "search_rationale": "fake",
         }
         return json.dumps({"search_plan": plan, "clarification_request": None})

@@ -100,7 +100,9 @@ class ScriptedCodex:
     def respond(self, si: dict[str, Any], question: str) -> dict[str, Any]:
         output = json.loads(valid_response(si))
         if si["task_type"] == "search_plan":
-            output["search_plan"]["queries"][0]["query_text"] = '"rate limit" AND probe' if "[rate-limit]" in question else '"molecule release" AND schedule'
+            core, family = ("rate limit", "probe") if "[rate-limit]" in question else ("molecule release", "schedule")
+            output["search_plan"]["concepts"] = [{"label": core, "role": "core", "synonyms": [core]},
+                                                 {"label": family, "role": "method", "synonyms": [family]}]
         elif si["task_type"] == "screening":
             for decision, candidate in zip(output["decisions"], si["candidates"]):
                 if "hospital" in candidate["title"]:

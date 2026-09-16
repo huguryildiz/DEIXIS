@@ -1,6 +1,6 @@
 """Execution of discovery and answer runs.
 
-Discovery: search plan (model) → provider searches → screening proposal (model).
+Discovery: search plan (model) → compiled provider queries → provider searches → screening proposal (model).
 Answer: fetch accessible PDFs for included sources → text retrieval → grounded answer (model)
 → claim review (reviewer model, when one is set).
 The literature model runs the search plan and screening; the research model writes the answer.
@@ -31,6 +31,7 @@ from deixis.domain.rules import (MAX_SCHEMA_REPAIRS, MAX_TRANSIENT_NETWORK_RETRI
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.models import prompt
 from deixis.models.adapter import ModelAdapter
+from deixis.providers import query_compiler
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, normalize_doi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, new_id, now
@@ -202,7 +203,15 @@ class ResearchFlow:
             return
         plan = output["result"]
         budget = run["budget"]
-        queries = [q for q in plan["queries"] if q["provider_id"] in scope["providers"]][: budget["max_provider_requests"]]
+        if "queries" in plan:  # a SearchPlan v1 from before D44 carries the queries the model wrote
+            queries = [q for q in plan["queries"] if q["provider_id"] in scope["providers"]][: budget["max_provider_requests"]]
+        elif "queries" in output:
+            queries = output["queries"]
+        else:
+            # Compiled once and stored with the plan, so a resumed run searches the same queries even after a compiler change.
+            queries = query_compiler.compile_queries(plan, scope["providers"], budget["max_provider_requests"])
+            self.store.set_step_output(self.store.step(run_id, "search_plan", "model:search_plan")["id"],
+                                       output | {"queries": queries, "query_compiler": query_compiler.VERSION})
         # Runs created before results_per_query existed split the candidate limit across their queries.
         per_query = budget.get("results_per_query") or max(5, min(25, budget["max_candidates"] // max(1, len(queries))))
         # A failed search is recorded and shown, and the other searches go on (D18). The run pauses on a failure only when

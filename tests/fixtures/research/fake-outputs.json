@@ -8,7 +8,7 @@
       "expect_codes": [],
       "output": {
         "search_plan": {
-          "schema_version": "deixis.search_plan.v1",
+          "schema_version": "deixis.search_plan.v2",
           "step_input_id": "sti_SYNTHA0001",
           "scope_revision": 1,
           "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -17,10 +17,7 @@
             { "label": "molecular communication", "role": "core", "synonyms": ["diffusion-based communication", "nano networks"] },
             { "label": "mathematical programming", "role": "method", "synonyms": ["integer programming", "MILP", "convex optimization"] }
           ],
-          "queries": [
-            { "provider_id": "openalex", "query_text": "\"molecular communication\" AND (\"integer programming\" OR MILP OR \"convex optimization\")", "rationale": "Method vocabulary with the core phenomenon." },
-            { "provider_id": "openalex", "query_text": "\"nano networks\" AND (\"resource allocation\" OR optimization)", "rationale": "Adjacent terminology for allocation formulations." }
-          ],
+          "providers": ["openalex"],
           "scope_boundaries": ["OpenAlex keyword search only; not exhaustive."],
           "search_rationale": "Separate method and phenomenon vocabularies without requiring every desired feature."
         },
@@ -54,23 +51,22 @@
       "output": { "search_plan": null, "clarification_request": null }
     },
     {
-      "name": "search_plan_disabled_provider_and_budget",
+      "name": "search_plan_disabled_provider_and_two_cores",
       "step_input": "A_search_plan",
       "expect_ok": false,
-      "expect_codes": ["provider_not_enabled", "query_budget_exceeded"],
+      "expect_codes": ["core_concept_count", "provider_not_enabled"],
       "output": {
         "search_plan": {
-          "schema_version": "deixis.search_plan.v1",
+          "schema_version": "deixis.search_plan.v2",
           "step_input_id": "sti_SYNTHA0001",
           "scope_revision": 1,
           "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
           "question_interpretation": "x",
-          "concepts": [],
-          "queries": [
-            { "provider_id": "openalex", "query_text": "\"core phrase\" AND a", "rationale": "a" },
-            { "provider_id": "scopus", "query_text": "b", "rationale": "silently widened provider" },
-            { "provider_id": "openalex", "query_text": "\"core phrase\" AND c", "rationale": "over budget" }
+          "concepts": [
+            { "label": "molecular communication", "role": "core", "synonyms": ["molecular communication"] },
+            { "label": "operations research", "role": "core", "synonyms": ["operations research"] }
           ],
+          "providers": ["openalex", "scopus"],
           "scope_boundaries": [],
           "search_rationale": "x"
         },

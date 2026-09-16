@@ -8,7 +8,7 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -23,6 +23,9 @@ CROSSREF_URL = "https://api.crossref.org/works"
 SERPAPI_URL = "https://serpapi.com/search.json"
 UNPAYWALL_URL = "https://api.unpaywall.org/v2"
 OPENALEX_SELECT = "doi,display_name,primary_location,best_oa_location,locations"
+# Crossref's IEEE text-mining links redirect to the paywalled IEEE document page instead of a PDF: all 6 tried on
+# 2026-09-15/16 ended as not_pdf. They are not listed as candidates.
+CROSSREF_SKIPPED_HOSTS = {"xplorestaging.ieee.org"}
 
 
 @dataclass(frozen=True)
@@ -151,6 +154,8 @@ async def crossref_lookup(client: httpx.AsyncClient, doi: str, source_version: s
             url = link.get("URL")
             media = (link.get("content-type") or "").lower()
             if not url or ("pdf" not in media and not url.lower().split("?", 1)[0].endswith(".pdf")):
+                continue
+            if (urlsplit(url).hostname or "").lower() in CROSSREF_SKIPPED_HOSTS:
                 continue
             version = crossref_version(link.get("content-version"))
             candidates.append(Candidate("crossref", url, landing, version, None, identity,

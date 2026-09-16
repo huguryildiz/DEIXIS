@@ -129,6 +129,7 @@ def test_crossref_collects_pdf_links_and_maps_content_version():
                 {"URL": "https://publisher.example/vor", "content-type": "application/pdf", "content-version": "vor"},
                 {"URL": "https://publisher.example/data.xml", "content-type": "application/xml"},
                 {"URL": "https://repo.example/manuscript.pdf", "content-version": "am"},
+                {"URL": "http://xplorestaging.ieee.org/ielx8/1/2/3.pdf?arnumber=3", "content-version": "vor"},
             ],
         }})
 

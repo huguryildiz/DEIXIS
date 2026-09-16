@@ -285,7 +285,7 @@ def test_short_rate_limit_is_retried_and_counted(provider, no_waits):
         return ok_response(provider, request=request)
     outcome, seen = run(provider, handler, key=key_for(provider))
     assert (outcome.status, outcome.retries, len(seen)) == ("completed", 2, 4 if provider == "pubmed" else 3)
-    assert no_waits[-2:] == [3.0, 2.0]
+    assert no_waits[-2:] == [15.0 if provider == "semantic_scholar" else 3.0, 2.0]
 
 
 @pytest.mark.parametrize("provider", ALL)

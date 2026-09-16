@@ -90,10 +90,11 @@ def year_of(value: Any) -> int | None:
 
 async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], headers: dict[str, str], description: str,
                access_mode: str, rate_headers: tuple[str, ...] = (), secrets: tuple[str | None, ...] = (),
-               timeout: float = 30.0, retry_rate_limit: bool = True) -> tuple[httpx.Response | None, SearchOutcome]:
+               timeout: float = 30.0, retry_rate_limit: bool = True, unstated_wait: float = 3.0) -> tuple[httpx.Response | None, SearchOutcome]:
     """One GET with bounded retries on 429. Returns the 200 response, or None with the classified failure outcome.
 
-    A 429 is retried at most MAX_RATE_LIMIT_RETRIES times when the provider's wait is short or unstated; each retry is a
+    A 429 is retried at most MAX_RATE_LIMIT_RETRIES times when the provider's wait is short or unstated (then
+    `unstated_wait` seconds times the retry number); each retry is a
     separate request and is counted by the caller through `outcome.retries`. Another 4xx means the provider rejected the
     request; a 5xx leaves it unknown whether the request was processed.
     """
@@ -111,7 +112,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
         base = dict(request_description=description, access_mode=access_mode, http_status=response.status_code, rate_limit=rate,
                     retries=retries)
         if response.status_code == 429:
-            wait = _retry_wait(response.headers.get("retry-after"), retries)
+            wait = _retry_wait(response.headers.get("retry-after"), retries, unstated_wait)
             if retry_rate_limit and retries < MAX_RATE_LIMIT_RETRIES and wait is not None:
                 retries += 1
                 await asyncio.sleep(wait)
@@ -127,9 +128,9 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
         return response, SearchOutcome("completed", None, **base)
 
 
-def _retry_wait(retry_after: str | None, retries: int) -> float | None:
+def _retry_wait(retry_after: str | None, retries: int, unstated_wait: float) -> float | None:
     if retry_after is None:
-        return 3.0 * (retries + 1)
+        return unstated_wait * (retries + 1)
     try:
         wait = float(retry_after)
     except ValueError:

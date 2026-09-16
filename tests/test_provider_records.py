@@ -2,7 +2,7 @@
 
 import pytest
 
-from deixis.domain import contracts
+from deixis.providers import query_rules
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
 from deixis.workflow.store import Store
@@ -181,15 +181,8 @@ def test_large_attached_pdf_keeps_bounded_passage_selection(page_count, chunk_co
     assert len(selected) == MAX_PASSAGES_PER_SOURCE
 
 
-def plan_issues(queries, enabled=("openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv", "ieee_xplore", "scopus", "core", "serpapi")):
-    report = contracts.ValidationReport()
-    plan = {"queries": [{"provider_id": p, "query_text": q, "rationale": "r"} for p, q in queries]}
-    contracts._check_search_plan({"enabled_providers": list(enabled), "budget": {"max_provider_requests": 12}}, plan, report)
-    return [(i.code, i.path) for i in report.issues]
-
-
 def test_well_formed_queries_for_every_provider_pass():
-    assert plan_issues([
+    assert [(p, query_rules.query_issues(p, q)) for p, q in [
         ("openalex", '"molecular communication" AND ("resource allocation" OR scheduling)'),
         ("biorxiv", '"quorum sensing" AND (optimization OR "optimal control")'),
         ("ieee_xplore", '"molecular communication" AND (scheduling OR "power allocation")'),
@@ -199,34 +192,27 @@ def test_well_formed_queries_for_every_provider_pass():
         ("crossref", "molecular communication scheduling"),
         ("core", '"molecular communication" AND ("resource allocation" OR scheduling)'),
         ("serpapi", '"molecular communication" scheduling OR "resource allocation"'),
-    ]) == []
+    ] if query_rules.query_issues(p, q)] == []
 
 
-@pytest.mark.parametrize("provider,query,code", [
-    ("scopus", '"molecular communication" AND scheduling', "provider_query_syntax"),
-    ("scopus", 'TITLE-ABS-KEY("molecular communication" AND optimization OR scheduling)', "provider_query_syntax"),
-    ("scopus", 'TITLE-ABS-KEY(molecular communication resource allocation)', "provider_query_shape"),
-    ("ieee_xplore", '"molecular communication" AND (scheduling', "provider_query_syntax"),
-    ("ieee_xplore", "molecular communication resource allocation", "provider_query_shape"),
-    ("biorxiv", '"quorum sensing" AND optimization OR control', "provider_query_syntax"),
-    ("arxiv", 'abs:molecular communication', "provider_query_syntax"),
-    ("arxiv", '"molecular communication" AND abs:optimization', "provider_query_syntax"),
-    ("arxiv", 'abs:"molecular communication" NOT abs:survey', "provider_query_syntax"),
-    ("arxiv", 'abs:"molecular communication" (abs:scheduling OR abs:allocation)', "provider_query_syntax"),
-    ("semantic_scholar", '"molecular communication" AND scheduling', "provider_query_syntax"),
-    ("crossref", "molecular communication resource allocation scheduling routing optimization energy delay", "provider_query_syntax"),
-    ("serpapi", '"molecular communication" AND (scheduling OR routing)', "provider_query_syntax"),
-    ("core", '"molecular communication" AND (scheduling', "provider_query_syntax"),
-    ("core", '"molecular communication" OR "nano network"', "provider_query_syntax"),
-    ("core", 'title:"molecular communication" AND scheduling', "provider_query_syntax"),
-    ("core", "molecular communication resource allocation", "provider_query_shape"),
+@pytest.mark.parametrize("provider,query", [
+    ("scopus", '"molecular communication" AND scheduling'),
+    ("scopus", 'TITLE-ABS-KEY("molecular communication" AND optimization OR scheduling)'),
+    ("scopus", 'TITLE-ABS-KEY(molecular communication resource allocation)'),
+    ("ieee_xplore", '"molecular communication" AND (scheduling'),
+    ("ieee_xplore", "molecular communication resource allocation"),
+    ("biorxiv", '"quorum sensing" AND optimization OR control'),
+    ("arxiv", 'abs:molecular communication'),
+    ("arxiv", '"molecular communication" AND abs:optimization'),
+    ("arxiv", 'abs:"molecular communication" NOT abs:survey'),
+    ("arxiv", 'abs:"molecular communication" (abs:scheduling OR abs:allocation)'),
+    ("semantic_scholar", '"molecular communication" AND scheduling'),
+    ("crossref", "molecular communication resource allocation scheduling routing optimization energy delay"),
+    ("serpapi", '"molecular communication" AND (scheduling OR routing)'),
+    ("core", '"molecular communication" AND (scheduling'),
+    ("core", '"molecular communication" OR "nano network"'),
+    ("core", 'title:"molecular communication" AND scheduling'),
+    ("core", "molecular communication resource allocation"),
 ])
-def test_malformed_queries_go_back_for_repair(provider, query, code):
-    assert (code, "/queries/1/query_text") in plan_issues([("openalex", '"molecular communication" AND scheduling'), (provider, query)])
-
-
-def test_serpapi_is_supplementary_only():
-    one = '"molecular communication" scheduling'
-    assert ("supplementary_provider_limit", "/queries") in plan_issues([("serpapi", one)])
-    assert ("supplementary_provider_limit", "/queries") in plan_issues([("crossref", "molecular scheduling"), ("serpapi", one), ("serpapi", one)])
-    assert plan_issues([("crossref", "molecular scheduling"), ("serpapi", one)]) == []
+def test_malformed_queries_are_refused(provider, query):
+    assert query_rules.query_issues(provider, query)

@@ -258,8 +258,10 @@ def test_run_view_reports_the_plan_screening_notes_and_counting_step_outputs(tmp
         plan = run["plan"]
         assert plan["question_interpretation"] == "fake interpretation" and plan["search_rationale"] == "fake"
         assert plan["scope_boundaries"] == ["fake"]
-        assert plan["concepts"][0]["label"] == "molecular communication" and plan["concepts"][0]["synonyms"] == ["diffusion channel"]
-        assert [(q["provider_id"], q["rationale"]) for q in plan["queries"]] == [("openalex", "fake")]
+        assert plan["concepts"][0]["label"] == "molecular communication" and plan["concepts"][0]["synonyms"] == ["molecular communication", "diffusion channel"]
+        assert [(q["provider_id"], q["query_text"], q["rationale"]) for q in plan["queries"]] == [
+            ("openalex", '("molecular communication" OR "diffusion channel") AND optimization',
+             'Core "molecular communication" with the method family "optimization"')]
         assert run["screening_notes"] == "fake screening notes."
         # A model step's output stays out of the view; the counting steps carry theirs.
         assert next(s for s in run["steps"] if s["kind"] == "model:search_plan")["output"] is None

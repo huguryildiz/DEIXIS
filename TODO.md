@@ -72,7 +72,7 @@ The P4 gap was paywalled IEEE papers with no legal open copy.
 - [ ] Independent of the run: give the fetcher an honest identity: a contact email in `User-Agent` (now only
       `DEIXIS/0.1 (local research workspace)`) and `Accept: application/pdf`.
 
-## Search query generation (deferred, 2026-09-16)
+## Search query generation (partly implemented, 2026-09-16)
 
 The `search_plan` model step writes every provider query itself; the code only checks provider syntax
 (`providers/query_rules.py`, `domain/contracts.py::_check_search_plan`) and sends the rest back for repair.
@@ -85,7 +85,7 @@ the question as the vector query, then rerank the top few hundred with an LLM. D
 own index, ~190 GB of vectors and days of embedding for 250M abstracts; OpenAlex and Semantic Scholar offer
 no public vector search). Screening already plays the rerank role.
 
-Decision for now: **do nothing** to the discovery layer. The only measurement (D13 follow-up) put the recall
+Decision for now: **do nothing** to the discovery layer (superseded for query composition by D44; the rest still holds). The only measurement (D13 follow-up) put the recall
 limit at the 48-passage answer input, not at discovery, and no case has shown a relevant paper missing from
 the search results.
 
@@ -96,10 +96,11 @@ that paper ranked in the provider results (`provider_search` payloads):
   run the D30 title+abstract similarity (Gemini `gemini-embedding-2`, D29 provider choice) *before* screening
   and feed screening batches from the similarity order. No new model, index or contract; Scopus records are
   scored on title only. Measure before/after with `scripts/p4_eval` on the three all-provider runs.
-- Not returned at all: the query is the problem. Then move query composition into code: the model keeps
-  producing concept families and synonyms, the code builds each provider's `core AND (synonyms OR …)` query
-  from them (one query per concept family, no duplicate term pairs), and the repair round for syntax goes away.
-  Free-text model queries stay only as an optional extra.
+- Not returned at all: the query is the problem. Then move query composition into code. **Implemented on
+  2026-09-16 (D44)** without waiting for the trigger, after a live plan dropped the core term: the model gives
+  concepts with one core concept and the providers, `providers/query_compiler.py` builds each provider's
+  `core AND family` query and the syntax repair round is gone. No free-text model query extra was kept. No recall
+  measurement stands behind it.
 - Cheap and independent of the trigger: a warning (not a repair) in `_check_search_plan` when two queries'
   term sets largely overlap.
 

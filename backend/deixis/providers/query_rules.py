@@ -1,9 +1,9 @@
-"""Per-provider query syntax rules for search plans.
+"""Per-provider query syntax rules for compiled search queries.
 
-Each rule follows a live probe recorded in the provider adapter's docstring. A query a provider would reject, silently
-misread or answer with zero records goes back to the model for repair instead of being run. The OpenAlex-style checks
-for boolean queries (OR ambiguity, part and operator limits) live in `contracts` and also apply to bioRxiv (searched
-through OpenAlex), IEEE Xplore, CORE and the inside of a Scopus field group.
+Each rule follows a live probe recorded in the provider adapter's docstring. The query compiler builds every query to
+pass them (D44); a query a provider would reject, silently misread or answer with zero records is never sent. The
+OpenAlex-style checks for boolean queries (OR ambiguity, part and operator limits) also apply to bioRxiv (searched through
+OpenAlex), IEEE Xplore, CORE and the inside of a Scopus field group.
 """
 
 from __future__ import annotations
@@ -13,18 +13,6 @@ import re
 NAMES = {"openalex": "OpenAlex", "semantic_scholar": "Semantic Scholar", "crossref": "Crossref", "arxiv": "arXiv",
          "pubmed": "PubMed",
          "biorxiv": "bioRxiv", "ieee_xplore": "IEEE Xplore", "scopus": "Scopus", "core": "CORE", "serpapi": "SerpApi"}
-EXAMPLES = {
-    "openalex": '"molecular communication" AND ("resource allocation" OR scheduling)',
-    "biorxiv": '"quorum sensing" AND (optimization OR "optimal control")',
-    "ieee_xplore": '"molecular communication" AND ("resource allocation" OR scheduling)',
-    "core": '"molecular communication" AND ("resource allocation" OR scheduling)',
-    "scopus": 'TITLE-ABS-KEY("molecular communication" AND ("resource allocation" OR scheduling))',
-    "arxiv": 'abs:"molecular communication" AND (abs:scheduling OR abs:allocation)',
-    "semantic_scholar": "molecular communication resource allocation",
-    "crossref": "molecular communication scheduling",
-    "pubmed": '"molecular communication" AND (optimization OR scheduling)',
-    "serpapi": '"molecular communication" scheduling OR "resource allocation"',
-}
 MAX_PLAIN_WORDS = 8
 MAX_ARXIV_OPERATORS = 5
 SCOPUS_GROUP = re.compile(r"^\s*(TITLE-ABS-KEY|TITLE|ABS|KEY)\((.*)\)\s*$", re.DOTALL)
@@ -105,3 +93,90 @@ def _arxiv_issues(query: str) -> list[str]:
     if operators > MAX_ARXIV_OPERATORS:
         issues.append(f"more than {MAX_ARXIV_OPERATORS} AND/OR/ANDNOT operators")
     return list(dict.fromkeys(issues))
+
+
+def openalex_or_is_ambiguous(query: str) -> bool:
+    """True when OpenAlex would silently mis-read OR in the query.
+
+    Probed live on 2026-09-14: `"molecular communication" optimization OR "operations research"` and
+    `"molecular communication" AND optimization OR scheduling` both returned exactly the 3,392 works of the phrase
+    alone, while `"molecular communication" AND (optimization OR scheduling)` returned 308. Plain adjacency without OR
+    behaves as AND. So OR is accepted only when, at its nesting level, it is the sole operator, and a group containing
+    OR is joined to its neighbours with explicit operators.
+    """
+    tokens = re.findall(r'"[^"]*"|\(|\)|[^\s()"]+', query)
+    levels: list[dict[str, bool]] = [{"or": False, "other": False, "implicit": False}]
+    previous = None  # "operand", "operator" or "open"
+    closed_or = False  # the operand just before is a group containing OR
+    for token in tokens:
+        adjacent = previous == "operand"  # implicit AND with the previous operand
+        if token == "(":
+            if adjacent:
+                if closed_or:
+                    return True
+                levels[-1]["other"] = True
+            levels.append({"or": False, "other": False, "implicit": adjacent})
+            previous, closed_or = "open", False
+        elif token == ")":
+            if len(levels) == 1:
+                return True  # unbalanced
+            inner = levels.pop()
+            if inner["or"] and (inner["other"] or inner["implicit"]):
+                return True
+            previous, closed_or = "operand", inner["or"]
+        elif token in ("AND", "NOT", "OR"):
+            levels[-1]["or" if token == "OR" else "other"] = True
+            previous, closed_or = "operator", False
+        else:
+            if adjacent:
+                if closed_or:
+                    return True
+                levels[-1]["other"] = True
+            previous, closed_or = "operand", False
+    return len(levels) != 1 or (levels[0]["or"] and levels[0]["other"])
+
+
+OPENALEX_MAX_OPERATORS = 5  # OpenAlex throttles queries with more boolean operators
+
+
+def openalex_query_shape_issues(query: str) -> list[str]:
+    """Structural limits for one OpenAlex title-and-abstract query.
+
+    Every unquoted word and every AND-joined part is required, and results are read in relevance order, so a query that
+    requires many parts matches few records (live 2026-09-14: `molecular communication resource allocation scheduling
+    routing optimization` returned 4 works and none of 22 user-known papers).
+    """
+    tokens = re.findall(r'"[^"]*"|\(|\)|[^\s()"]+', query)
+    issues = []
+    if sum(t in ("AND", "OR", "NOT") for t in tokens) > OPENALEX_MAX_OPERATORS:
+        issues.append(f"more than {OPENALEX_MAX_OPERATORS} AND/OR/NOT operators")
+    depth, top_operands, top_or, run, longest = 0, 0, False, 0, 0
+    for token in tokens:
+        if token == "(":
+            top_operands += depth == 0
+            depth, run = depth + 1, 0
+        elif token == ")":
+            depth, run = max(0, depth - 1), 0
+        elif token in ("AND", "OR", "NOT"):
+            top_or = top_or or (depth == 0 and token == "OR")
+            run = 0
+        else:
+            top_operands += depth == 0
+            run = 0 if token.startswith('"') else run + 1
+            longest = max(longest, run)
+    if (1 if top_or else top_operands) > 2:
+        issues.append("more than two required parts; keep the quoted core phrase and one parenthesized group of alternatives")
+    if longest >= 3:
+        issues.append("three or more unquoted words in a row are all required; quote the phrase or put alternatives in an OR group")
+    return issues
+
+
+def query_issues(provider_id: str, query: str) -> list[str]:
+    """Every rule one provider query must pass: its syntax, then the OpenAlex-style boolean checks where they apply."""
+    issues = syntax_issues(provider_id, query)
+    boolean = boolean_part(provider_id, query)
+    if boolean is None or issues:
+        return issues
+    if openalex_or_is_ambiguous(boolean):
+        issues.append("OR alternatives beside other terms without parentheses")
+    return issues + openalex_query_shape_issues(boolean)

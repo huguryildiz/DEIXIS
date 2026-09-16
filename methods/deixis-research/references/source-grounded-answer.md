@@ -7,63 +7,46 @@ validates.
 
 ## Search plan
 
-Goal: vocabulary and a small number of provider queries that could find the
-closest relevant work for the question.
+Goal: the vocabulary and the providers that could find the closest relevant work
+for the question. You do not write query strings: the application builds every
+provider query from your concepts, in each provider's syntax.
 
 1. Interpret the question in one or two sentences. If a genuine ambiguity would
    change what should be searched, request clarification instead; otherwise state
    the interpretation you chose.
-2. Derive separate vocabulary families: the core phenomenon or decision,
-   mechanism, method, outcome, context and adjacent fields where the same idea may
-   use other terms.
-3. Separate essential conditions from desired extensions. Do not build a query by
-   AND-ing every desired feature; that can exclude the strongest comparator.
-4. Write queries only for providers listed in `enabled_providers`, in each
-   provider's syntax below. Stay within the schema's query limit and the StepInput
-   budget. Add date limits only when the question requires them; foundational and
-   recent low-citation work can both matter.
-5. Spread queries over the enabled providers whose coverage fits the field instead
-   of repeating one provider: for example IEEE Xplore for engineering and
-   computing, arXiv for physics, mathematics and computing preprints, bioRxiv for
+2. Derive separate vocabulary families as `concepts`: the core decision or
+   phenomenon, mechanism, method, outcome, context and adjacent fields where the
+   same idea may use other terms. The `label` names the concept for the reader
+   and may be in the question's language; it is never searched. The `synonyms`
+   are the search terms: write them in the language the literature uses
+   (English unless the field publishes otherwise), best search term first. Only
+   a concept's first few synonyms are used, and a concept without synonyms is
+   not searched.
+3. Give exactly one concept the role `core`, with at least one synonym. Every
+   query requires one of its synonyms, so make it the discriminating decision or
+   mechanism, not the broad field name, and give as synonyms only names for that
+   same thing. For a packet-size question the core synonyms are
+   `packet size optimization` and `packet length optimization`, and
+   `wireless sensor network` belongs to a context concept: a core of the field
+   name can bury the relevant papers beyond the first results read.
+4. Each query pairs the core with the alternatives of one other concept, never
+   with every concept at once. So separate essential conditions from desired
+   extensions and put each desired extension in its own concept; adjacent-field
+   concepts are used only when no other concept is given. Semantic Scholar and
+   Crossref read plain words, so they receive only the first core synonym and
+   the first synonym of one other concept.
+5. Choose `providers` from `enabled_providers`, most important first, whose
+   coverage fits the field: for example IEEE Xplore for engineering and computing,
+   arXiv for physics, mathematics and computing preprints, bioRxiv for
    life-science preprints, PubMed for biomedical and life-science literature,
    OpenAlex and Scopus for cross-disciplinary indexes, and CORE for open-access
-   copies held by repositories (theses, reports and author manuscripts). The application merges records that share a DOI across
-   providers. Only each query's first-ranked results are read. Syntax per provider:
-   - **OpenAlex** (titles and abstracts), **bioRxiv** (searched through OpenAlex,
-     limited to bioRxiv preprints), **IEEE Xplore** and **CORE**: every unquoted word
-     and every AND-joined part is required. Quote the core multiword phrase. Join
-     it with AND to one parenthesized group of specific alternatives joined by OR,
-     for example `"molecular communication" AND ("resource allocation" OR scheduling)`.
-     Use at most two AND-joined parts and five AND/OR/NOT operators, and never
-     three unquoted words in a row. Prefer several focused queries, each pairing
-     the core phrase with one family of specific terms (such as formulation terms,
-     or allocation and scheduling terms), over one broad query whose relevant
-     records rank too low to be read. Make the quoted core the discriminating
-     decision or mechanism when the field name is broad. For a packet-size
-     question, prefer `"packet size optimization" AND ("wireless sensor" OR
-     underwater)` and a separate packet-length synonym query over
-     `"wireless sensor network" AND ("packet size" OR "transmission power")`:
-     the latter can bury the relevant papers beyond the first results read.
-     CORE answers a quoted phrase without AND with an error and does not read field
-     prefixes such as `title:`, so always join its phrase with AND and use none.
-   - **Scopus**: the same form inside one field group, for example
-     `TITLE-ABS-KEY("molecular communication" AND ("resource allocation" OR scheduling))`.
-     Scopus records arrive without abstracts, so they are screened on titles.
-   - **arXiv**: every term needs a field prefix (`abs:`, `ti:`, `all:`), a
-     multiword phrase is quoted after its prefix, and terms are joined with AND,
-     OR or ANDNOT, for example
-     `abs:"molecular communication" AND (abs:scheduling OR abs:allocation)`.
-   - **Semantic Scholar** and **Crossref**: plain words only, at most eight.
-     Quotes, parentheses and AND/OR/NOT are ignored and records matching any word
-     are ranked, so use the most distinctive words, for example
-     `molecular communication scheduling`.
-   - **PubMed**: use native Entrez syntax. Quote exact phrases; combine concepts
-     with uppercase AND/OR/NOT and use field tags when they improve precision,
-     for example `"molecular communication" AND (optimization OR scheduling)`
-     or `quorum sensing[Title/Abstract] AND optimization[Title/Abstract]`.
-   - **SerpApi** (Google Scholar): supplementary coverage, at most one query and
-     never the only query. Use quoted phrases, plain words and OR; no
-     parentheses, AND or NOT. Its records have no abstract or DOI.
+   copies held by repositories (theses, reports and author manuscripts). Scopus
+   records arrive without abstracts, so they are screened on titles. SerpApi
+   (Google Scholar) is supplementary: it gets at most one query, is never the only
+   provider, and its records have no abstract or DOI. The application merges
+   records that share a DOI across providers. The StepInput budget limits the
+   number of queries; they alternate over concepts and over providers in your
+   order, and only each query's first-ranked results are read.
 6. State scope boundaries: what the searches do not cover. Do not describe the
    plan as exhaustive or systematic.
 

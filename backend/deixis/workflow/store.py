@@ -371,6 +371,11 @@ class Store:
                 row["run_id"],
             )
 
+    def set_step_output(self, step_id: str, output: Any) -> None:
+        """Add to a finished step's stored output (the compiled queries of a search plan) without a second step event."""
+        with transaction(self.conn):
+            self.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?", (dumps(output), step_id))
+
     def run_steps(self, run_id: str) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT id, operation_key, kind, status, attempt, delivery_class, error_code, error_json, output_json, started_at, finished_at"

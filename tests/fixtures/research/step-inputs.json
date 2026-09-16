@@ -9,7 +9,7 @@
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
     "skill_files": ["SKILL.md", "references/source-grounded-answer.md"],
-    "output_schema_versions": ["deixis.search_plan.v1", "deixis.clarification_request.v1"],
+    "output_schema_versions": ["deixis.search_plan.v2", "deixis.clarification_request.v1"],
     "question": {
       "text": "SYNTHETIC: How is operations research used in molecular communication, and what decision variables, objectives and constraints do published models use?",
       "language_hint": "en"

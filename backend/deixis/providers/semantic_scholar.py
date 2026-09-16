@@ -22,6 +22,9 @@ FIELDS = "paperId,externalIds,title,abstract,year,venue,publicationTypes,authors
 ABSTRACT_ORIGIN = "provider_semantic_scholar"
 RATE_LIMIT_HEADERS = ("x-ratelimit-limit", "x-ratelimit-remaining")
 MAX_RESULTS = 100
+# With a valid key, 3 s and 6 s retries still met three 429s in a row on 2026-09-15/16 (3 of 12 searches). The 429 carries
+# no retry-after, so wait longer: 15 s, then 30 s.
+UNSTATED_RATE_LIMIT_WAIT = 15.0
 
 
 def _record(paper: dict[str, Any]) -> ProviderRecord:
@@ -54,7 +57,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     headers = {"x-api-key": api_key} if api_key else {}
     access_mode = "api_key" if api_key else "keyless"
     description = f"GET {SEARCH_URL} query={query!r} limit={count} access={access_mode}"
-    response, outcome = await send(client, SEARCH_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,))
+    response, outcome = await send(client, SEARCH_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,),
+                                   unstated_wait=UNSTATED_RATE_LIMIT_WAIT)
     if response is None:
         return outcome
     try:

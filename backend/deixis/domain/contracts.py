@@ -21,7 +21,7 @@ from referencing import Registry, Resource
 
 from deixis.domain import phrasebank
 from deixis.paths import CONTRACTS_DIR, SKILL_DIR
-from deixis.providers import query_rules
+from deixis.providers import query_compiler
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, InvalidTableInput, check_value, column_spec
 
 SCHEMA_FILES = {
@@ -36,7 +36,7 @@ SCHEMA_FILES = {
     "StepInput": "step-input.schema.json",
 }
 SCHEMA_VERSIONS = {
-    "SearchPlan": "deixis.search_plan.v1",
+    "SearchPlan": "deixis.search_plan.v2",
     "ScreeningProposal": "deixis.screening_proposal.v1",
     "GroundedAnswerDraft": "deixis.grounded_answer_draft.v3",
     "ClarificationRequest": "deixis.clarification_request.v1",
@@ -404,125 +404,33 @@ def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: V
                                        "use a frame for reporting what one source states"))
 
 
-def openalex_or_is_ambiguous(query: str) -> bool:
-    """True when OpenAlex would silently mis-read OR in the query.
-
-    Probed live on 2026-09-14: `"molecular communication" optimization OR "operations research"` and
-    `"molecular communication" AND optimization OR scheduling` both returned exactly the 3,392 works of the phrase
-    alone, while `"molecular communication" AND (optimization OR scheduling)` returned 308. Plain adjacency without OR
-    behaves as AND. So OR is accepted only when, at its nesting level, it is the sole operator, and a group containing
-    OR is joined to its neighbours with explicit operators.
-    """
-    tokens = re.findall(r'"[^"]*"|\(|\)|[^\s()"]+', query)
-    levels: list[dict[str, bool]] = [{"or": False, "other": False, "implicit": False}]
-    previous = None  # "operand", "operator" or "open"
-    closed_or = False  # the operand just before is a group containing OR
-    for token in tokens:
-        adjacent = previous == "operand"  # implicit AND with the previous operand
-        if token == "(":
-            if adjacent:
-                if closed_or:
-                    return True
-                levels[-1]["other"] = True
-            levels.append({"or": False, "other": False, "implicit": adjacent})
-            previous, closed_or = "open", False
-        elif token == ")":
-            if len(levels) == 1:
-                return True  # unbalanced
-            inner = levels.pop()
-            if inner["or"] and (inner["other"] or inner["implicit"]):
-                return True
-            previous, closed_or = "operand", inner["or"]
-        elif token in ("AND", "NOT", "OR"):
-            levels[-1]["or" if token == "OR" else "other"] = True
-            previous, closed_or = "operator", False
-        else:
-            if adjacent:
-                if closed_or:
-                    return True
-                levels[-1]["other"] = True
-            previous, closed_or = "operand", False
-    return len(levels) != 1 or (levels[0]["or"] and levels[0]["other"])
-
-
-OPENALEX_MAX_OPERATORS = 5  # OpenAlex throttles queries with more boolean operators
-
-
-def openalex_query_shape_issues(query: str) -> list[str]:
-    """Structural limits for one OpenAlex title-and-abstract query.
-
-    Every unquoted word and every AND-joined part is required, and results are read in relevance order, so a query that
-    requires many parts matches few records (live 2026-09-14: `molecular communication resource allocation scheduling
-    routing optimization` returned 4 works and none of 22 user-known papers).
-    """
-    tokens = re.findall(r'"[^"]*"|\(|\)|[^\s()"]+', query)
-    issues = []
-    if sum(t in ("AND", "OR", "NOT") for t in tokens) > OPENALEX_MAX_OPERATORS:
-        issues.append(f"more than {OPENALEX_MAX_OPERATORS} AND/OR/NOT operators")
-    depth, top_operands, top_or, run, longest = 0, 0, False, 0, 0
-    for token in tokens:
-        if token == "(":
-            top_operands += depth == 0
-            depth, run = depth + 1, 0
-        elif token == ")":
-            depth, run = max(0, depth - 1), 0
-        elif token in ("AND", "OR", "NOT"):
-            top_or = top_or or (depth == 0 and token == "OR")
-            run = 0
-        else:
-            top_operands += depth == 0
-            run = 0 if token.startswith('"') else run + 1
-            longest = max(longest, run)
-    if (1 if top_or else top_operands) > 2:
-        issues.append("more than two required parts; keep the quoted core phrase and one parenthesized group of alternatives")
-    if longest >= 3:
-        issues.append("three or more unquoted words in a row are all required; quote the phrase or put alternatives in an OR group")
-    return issues
-
-
 def _check_search_plan(step_input: dict[str, Any], plan: dict[str, Any], report: ValidationReport) -> None:
+    """The model gives vocabulary and providers; the application compiles the queries from them (D44)."""
+    issues: list[Issue] = []
+    cores = sum(c["role"] == "core" for c in plan["concepts"])
+    if cores != 1:
+        issues.append(Issue("core_concept_count", "/concepts",
+                            f"{cores} concepts have role core; give exactly one core concept: the discriminating decision or "
+                            "mechanism phrase that every query requires, not the broad field name"))
+    for i, concept in enumerate(plan["concepts"]):
+        if concept["role"] == "core" and not any(s.strip() for s in concept["synonyms"]):
+            issues.append(Issue("core_without_synonyms", f"/concepts/{i}/synonyms",
+                                "the core concept has no synonyms; synonyms are the search terms, in the literature's language"))
     enabled = set(step_input["enabled_providers"])
-    for i, query in enumerate(plan["queries"]):
-        provider, text, path = query["provider_id"], query["query_text"], f"/queries/{i}/query_text"
+    for i, provider in enumerate(plan["providers"]):
         if provider not in enabled:
-            report.issues.append(
-                Issue("provider_not_enabled", f"/queries/{i}/provider_id", provider)
-            )
-            continue  # never sent, so its syntax does not matter
-        name, example = query_rules.NAMES[provider], query_rules.EXAMPLES[provider]
-        syntax = query_rules.syntax_issues(provider, text)
-        for problem in syntax:
-            report.issues.append(Issue("provider_query_syntax", path, f"{name}: {problem}, e.g. {example}"))
-        boolean = query_rules.boolean_part(provider, text)
-        if boolean is None or syntax:
-            continue
-        # OpenAlex's boolean limits were measured (D8, D11); IEEE Xplore, CORE and a Scopus field group take the same form.
-        if openalex_or_is_ambiguous(boolean):
-            report.issues.append(Issue(
-                "provider_query_syntax", path,
-                'OpenAlex ignores terms beside an unparenthesized OR; put OR alternatives in parentheses joined with AND, '
-                'e.g. "molecular communication" AND (optimization OR scheduling)' if provider == "openalex" else
-                f"{name} may misread an unparenthesized OR; put OR alternatives in parentheses joined with AND, e.g. {example}",
-            ))
-        for problem in openalex_query_shape_issues(boolean):
-            report.issues.append(Issue("provider_query_shape", path, f"{problem}, e.g. {example}"))
-    supplementary = [q for q in plan["queries"] if q["provider_id"] == "serpapi"]
-    if len(supplementary) > 1:
-        report.issues.append(Issue("supplementary_provider_limit", "/queries",
-                                   "SerpApi is supplementary with a small monthly allowance; use at most one SerpApi query"))
-    if supplementary and len(supplementary) == len(plan["queries"]):
-        report.issues.append(Issue("supplementary_provider_limit", "/queries",
-                                   "SerpApi only supplements direct scholarly providers; add a query for one of them"))
-    openalex_queries = [q["query_text"] for q in plan["queries"] if q["provider_id"] == "openalex"]
-    if openalex_queries and not any(re.search(r'"[^"]*\S\s+\S[^"]*"', q) for q in openalex_queries):
-        report.issues.append(Issue(
-            "provider_query_shape", "/queries", 'no OpenAlex query quotes a multiword core phrase, e.g. "molecular communication"',
-        ))
-    limit = step_input["budget"]["max_provider_requests"]
-    if len(plan["queries"]) > limit:
-        report.issues.append(
-            Issue("query_budget_exceeded", "/queries", f"{len(plan['queries'])} queries > limit {limit}")
-        )
+            issues.append(Issue("provider_not_enabled", f"/providers/{i}", provider))
+    if len(set(plan["providers"])) != len(plan["providers"]):
+        issues.append(Issue("duplicate_provider", "/providers", "list each provider once"))
+    if set(plan["providers"]) == {"serpapi"}:
+        issues.append(Issue("supplementary_provider_limit", "/providers",
+                            "SerpApi only supplements direct scholarly providers; choose one of them as well"))
+    if not issues and not query_compiler.compile_queries(plan, step_input["enabled_providers"],
+                                                         step_input["budget"]["max_provider_requests"]):
+        issues.append(Issue("no_compiled_query", "/concepts",
+                            "no provider query can be built from these concepts and providers; give the core concept "
+                            "search-term synonyms and at least one other concept with synonyms, or choose another provider"))
+    report.issues += issues
 
 
 def _check_screening(allow: dict[str, set[str]], proposal: dict[str, Any], report: ValidationReport) -> None:

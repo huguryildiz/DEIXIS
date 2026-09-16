@@ -11,7 +11,7 @@ from deixis.workflow.store import Store
 
 
 # What the transcript reports from a search plan; the rest of the stored output stays out of the view.
-PLAN_FIELDS = ("question_interpretation", "search_rationale", "scope_boundaries", "concepts", "queries")
+PLAN_FIELDS = ("question_interpretation", "search_rationale", "scope_boundaries", "concepts")
 
 
 def _json(value: str | None) -> Any:
@@ -34,8 +34,10 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     for row in conn.execute("SELECT id FROM runs WHERE research_id = ? ORDER BY created_at DESC LIMIT 10", (research_id,)):
         run = store.run(row["id"])
         run["steps"] = store.run_steps(run["id"])
-        plan = next((o["result"] for o in _model_outputs(store, run["id"], "model:search_plan") if o.get("output_type") == "SearchPlan"), None)
-        run["plan"] = {k: plan[k] for k in PLAN_FIELDS} if plan else None
+        output = next((o for o in _model_outputs(store, run["id"], "model:search_plan") if o.get("output_type") == "SearchPlan"), None)
+        # A v1 plan holds the queries the model wrote; a v2 plan's queries were compiled from its concepts and stored beside it (D44).
+        run["plan"] = ({k: output["result"][k] for k in PLAN_FIELDS}
+                       | {"queries": output["result"].get("queries", output.get("queries", []))}) if output else None
         # Screening runs in batches; the notes of the batches read as one paragraph.
         run["screening_notes"] = " ".join(
             note for o in _model_outputs(store, run["id"], "model:screening") if (note := (o.get("result") or {}).get("notes", "").strip())

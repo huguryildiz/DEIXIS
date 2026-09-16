@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://deixis.local/contracts/research/search-plan.schema.json",
   "title": "SearchPlan",
-  "description": "Model proposal for concept vocabulary and provider queries. The backend enforces enabled providers and call limits; this output does not execute a search.",
+  "description": "Model proposal for concept vocabulary and the providers to search. The backend compiles every provider query from the concepts (exactly one core concept), enforces enabled providers and call limits; this output does not execute a search.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,12 +12,12 @@
     "skill_package_hash",
     "question_interpretation",
     "concepts",
-    "queries",
+    "providers",
     "scope_boundaries",
     "search_rationale"
   ],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.search_plan.v1" },
+    "schema_version": { "type": "string", "const": "deixis.search_plan.v2" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
@@ -36,20 +36,11 @@
         }
       }
     },
-    "queries": {
+    "providers": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 12,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["provider_id", "query_text", "rationale"],
-        "properties": {
-          "provider_id": { "$ref": "common.schema.json#/$defs/provider_id" },
-          "query_text": { "type": "string", "maxLength": 300 },
-          "rationale": { "$ref": "common.schema.json#/$defs/short_text" }
-        }
-      }
+      "maxItems": 10,
+      "items": { "$ref": "common.schema.json#/$defs/provider_id" }
     },
     "scope_boundaries": {
       "type": "array",

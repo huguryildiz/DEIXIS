@@ -11,6 +11,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from deixis.domain import contracts
+from deixis.providers import query_rules
 from deixis.domain.rules import (
     RevisionConflict,
     after_invalid_output,
@@ -176,11 +177,7 @@ def test_translated_or_spliced_quote_is_not_located(quote):
     ('"molecular communication" AND (optimization OR scheduling', True),
 ])
 def test_openalex_query_with_ambiguous_or_is_rejected(query, ambiguous):
-    plan = json.loads(json.dumps(next(c for c in CASES if c["name"] == "search_plan_valid")["output"]))
-    result = plan["search_plan"] if "search_plan" in plan else plan
-    result["queries"][0].update(provider_id="openalex", query_text=query)
-    report = contracts.validate_model_output(STEP_INPUTS["A_search_plan"], plan)
-    assert ("provider_query_syntax" in report.codes()) is ambiguous
+    assert query_rules.openalex_or_is_ambiguous(query) is ambiguous
 
 
 def test_answer_steps_show_short_handles_that_map_back_to_records():
@@ -237,19 +234,34 @@ def test_answer_review_must_review_every_claim_once_by_label():
     ('"molecular communication" AND (optimization OR (scheduling AND delay))', False),
 ])
 def test_openalex_query_shape_is_limited(query, rejected):
-    plan = json.loads(json.dumps(next(c for c in CASES if c["name"] == "search_plan_valid")["output"]))
-    result = plan["search_plan"] if "search_plan" in plan else plan
-    result["queries"][0].update(provider_id="openalex", query_text=query)
-    report = contracts.validate_model_output(STEP_INPUTS["A_search_plan"], plan)
-    assert (any(i.code == "provider_query_shape" and i.path == "/queries/0/query_text" for i in report.issues)) is rejected
+    assert bool(query_rules.openalex_query_shape_issues(query)) is rejected
 
 
-def test_openalex_plan_without_a_quoted_core_phrase_is_rejected():
-    plan = json.loads(json.dumps(next(c for c in CASES if c["name"] == "search_plan_valid")["output"]))
-    for query in plan["search_plan"]["queries"]:
-        query["query_text"] = "optimization OR scheduling"
-    report = contracts.validate_model_output(STEP_INPUTS["A_search_plan"], plan)
-    assert any(i.code == "provider_query_shape" and i.path == "/queries" for i in report.issues)
+def search_plan(concepts, providers, step_input=STEP_INPUTS["A_search_plan"]):
+    output = json.loads(json.dumps(next(c for c in CASES if c["name"] == "search_plan_valid")["output"]))
+    output["search_plan"].update(concepts=concepts, providers=providers)
+    return contracts.validate_model_output(step_input, output)
+
+
+def test_search_plan_needs_exactly_one_core_concept():
+    method = {"label": "integer programming", "role": "method", "synonyms": ["integer programming"]}
+    assert "core_concept_count" in search_plan([method], ["openalex"]).codes()
+    core = {"label": "moleküler haberleşme", "role": "core", "synonyms": ["molecular communication"]}
+    assert "core_concept_count" in search_plan([core, dict(core, label="nano networks"), method], ["openalex"]).codes()
+    assert search_plan([core, method], ["openalex"]).ok
+    # Synonyms are the search terms; the label is display text, so a core without synonyms goes back for repair.
+    assert "core_without_synonyms" in search_plan([dict(core, synonyms=[]), method], ["openalex"]).codes()
+
+
+def test_search_plan_from_which_no_query_can_be_built_goes_back_for_repair():
+    step_input = json.loads(json.dumps(STEP_INPUTS["A_search_plan"]))
+    step_input["enabled_providers"] = ["core", "serpapi"]
+    core = {"label": "molecular communication", "role": "core", "synonyms": ["molecular communication"]}
+    # CORE answers a quoted phrase without AND with an error, so a core concept alone gives it no query.
+    assert search_plan([core], ["core"], step_input).codes() == ["no_compiled_query"]
+    assert search_plan([core, {"label": "scheduling", "role": "method", "synonyms": ["scheduling"]}], ["core"], step_input).ok
+    assert search_plan([core], ["serpapi"], step_input).codes() == ["supplementary_provider_limit"]
+    assert "duplicate_provider" in search_plan([core], ["openalex", "openalex"]).codes()
 
 
 @pytest.mark.parametrize("text", [

@@ -46,7 +46,7 @@ Sabit şablon; model bölüm icat etmez, yalnız IV içinde tema alt başlıklar
 | IV | Literature Synthesis | tablo + model | kanıt tablosu hücreleri (alıntılarıyla) ve satırların pasajları; tema alt başlıkları modelin |
 | V | Comparative Findings | model | hücreler, çelişen pasajlar; uzlaşı ve çelişki paydayla (§6) |
 | VI | Candidate Unanswered Aspects | model + kod | tam metinli satırlardaki `not_found_in_inspected_scope` toplamları (kod hesaplar), kaynakların kendi sınırlamaları, çelişkiler; her aday §7'deki kaynakçayla |
-| VII | Future Directions | model | VI'nın adayları ve dayandıkları pasajlar; her yön bir adaya bağlı analist çıkarımı |
+| VII | Future Directions | model | VI'nın adayları ve dayandıkları pasajlar; "önerilen gelecek çalışma" sütununun hücreleri. Bir yön ya bir kaynağın kendi önerisidir (`source_stated`, o hücrenin alıntısıyla) ya da bir adaya bağlı analist çıkarımıdır; ikisi metinde ayrı yazılır |
 | VIII | Limitations and Threats to Validity | kod + model | geri çağırım ölçümü varsa sayısı, açık erişim/yükleme yanlılığı, özet-tam metin oranı, model çıkarımı payı, kill-search yokluğu |
 | IX | Conclusion | model | gövde özetleri; gövdede olmayan genelleme yasak (§8) |
 | — | References | kod | yalnız atıf alan kaynaklar, `bibliography.py` üzerinden; sürüm bilgisi ayrı satırda |
@@ -121,7 +121,7 @@ Seçimi kod yapar ve kaydeder; allowlist yalnız izinli kimlikleri sınırlar, n
 | IV | bütün satırların hücreleri ve alıntıları; satır başına en iyi iki pasaj | tablo sırası |
 | V | eksen sütunlarının hücreleri; aynı sütunda farklı değer taşıyan satırların pasajları | sütun, sonra kaynak |
 | VI | kodun hesapladığı yokluk toplamları (tam metinli satırlar), "sınırlamalar" sütunu hücreleri, V'in çelişki iddiaları | tür, sonra sütun |
-| VII | VI'nın adayları ve dayanak kayıtları | aday sırası |
+| VII | VI'nın adayları ve dayanak kayıtları; "önerilen gelecek çalışma" hücreleri | aday sırası, sonra kaynak |
 
 Her bölümün bir bağlam bütçesi vardır; bütçeye sığmayan kayıtlar **kesilme kaydına** yazılır (hangi kaynak, hangi kayıt türü) ve VIII'de sayı olarak görünür. Bir kaynaktan birkaç pasaj okumak "tam metni kapsamlı inceleme" değildir; okuma derinliği alanı bunu ayrı söyler. Gerekli kanıt yoksa (örneğin III için tanım pasajı olmayan terim) model bölümü doldurmaz; `insufficient_evidence` kaydı üretir ve bu kayıt raporda açık eksiklik olarak yazılır. Önemli bir karşı kanıtın bölüme hiç verilmemesi bu seçimle önlenemez; bilinen sınırdır (§14).
 
@@ -135,7 +135,7 @@ Bölümler arası tutarlılığın tek kaynağı. Model bir kez üretir, kod say
 - `axes`: sınıflandırma eksenleri, her biri bir kanıt tablosu sütununa bağlı; sütunda karşılığı olmayan eksen olmaz.
 - `section_budgets`: bölüm başına kelime aralığı ve iddia üst sınırı. Kelime sayımı düzyazıyı sayar; tablo, kaynakça ve matematik aralıkları sayılmaz. Dahil kaynak sayısı $n < 10$ ise bütçeler $n/10$ ile çarpılır, alt sınır toplam 1200 kelime. Alt bütçeye kanıt yetmiyorsa bölüm kısa kalır; model metni uzatmaya zorlanmaz ve montaj yalnız üst sınırı hata sayar.
 - `corpus`: kod doldurur ve anlık görüntüden gelir. Tanımlar: *bulunan* = başarılı sağlayıcı aramalarının döndürdüğü kayıt toplamı; *tekil* = DOI ve sürüm ailesi birleştirmesinden sonraki eser sayısı; *taranan* = tarama adımına giren aday sayısı; *dahil* = geçerli kapsam revizyonunda dahil edilmiş kaynak sayısı (sahibin düzeltmeleri dahil); *tam metinli* = dahil kaynaklardan PDF metni olanlar, paydası *dahil*. Başarısız aramalar ayrı sayılır. Rapor üretim istatistikleri (çağrı, onarım, istisna, kesilme) `corpus`'a girmez; VIII'de ayrı yazılır.
-- `allowed_support`: bölüm başına izinli iddia türleri (örneğin VI ve VII yalnız `analyst_inference`).
+- `allowed_support`: bölüm başına izinli iddia türleri (VI yalnız `analyst_inference`; VII `analyst_inference` ve, kaynağın kendi önerdiği gelecek çalışma için, `source_stated`).
 
 Plan model çıktısıdır ve şema denetiminden geçer; eksen–sütun bağı ve sözlük pasajları allowlist'ten denetlenir. Plan değişirse (sahip düzenlerse) sonraki bölümler yeniden yazılır, önceki bölümler `stale` işaretlenir (dilim 4).
 
@@ -143,7 +143,7 @@ Plan model çıktısıdır ve şema denetiminden geçer; eksen–sütun bağı v
 
 Tablo P5'teki tablodur; bu not hücre şemasına yeni durum eklemez (dilim 1 karar 5: `not_found_in_inspected_scope` kuralı kalır). Okuma derinliği hücrede zaten ayrıdır ve tartışma adımına verilir.
 
-Sütun önerisi (`table_columns`) rapor için çağrılırken talimata şu tercih eklenir: araştırma amacı, uygulama alanı, problem modeli, yöntem, veri/deney ortamı, karşılaştırıcılar, ölçütler, temel bulgu, yazarların belirttiği sınırlamalar ve sorunun sorduğu X/Y/Z kapsam sütunları. Sütun tanımları doldurmadan önce donar; sonradan sütun eklemek yeni doldurma demektir.
+Sütun önerisi (`table_columns`) rapor için çağrılırken talimata şu tercih eklenir: araştırma amacı, uygulama alanı, problem modeli, yöntem, veri/deney ortamı, karşılaştırıcılar, ölçütler, temel bulgu, yazarların belirttiği sınırlamalar, **yazarların önerdiği gelecek çalışma**, **ölçülmemiş varsayımlar**, **kanıt statüsü** ve sorunun sorduğu X/Y/Z kapsam sütunları. Bu liste sahibin [alan örneğindeki](../methods/domain-example.md) ayrıntı düzeyinden gelir; sütunlar alana uyarlanır, örneğin alanına kilitlenmez. Kanıt statüsü kapalı bir seçimdir: `demonstrated` (deney ya da ölçümle gösterilmiş), `modelled` (analitik model ya da simülasyon), `proposed` (öneri, değerlendirme yok), `inferred` (kaynağın yazmadığı, okuyanın çıkardığı); bir simülasyon gösterim sayılmaz. Hücre kuralı aynıdır: statü, alıntılanan pasajın söylediğine dayanır ve özet satırında çoğu zaman `not_found_in_inspected_scope` kalır. Sütun tanımları doldurmadan önce donar; sonradan sütun eklemek yeni doldurma demektir.
 
 IV ve V adımlarının talimatına giren kurallar (ihlali `report_review` yakalar, montaj denetimi mümkün olanları kodla yakalar):
 
@@ -153,6 +153,7 @@ IV ve V adımlarının talimatına giren kurallar (ihlali `report_review` yakala
 - Her toplulaştırma payda verir: "tam metni incelenen 6 çalışmanın 4'ü"; özet hücreleri ile tam metin hücreleri aynı sayıma katılmaz. Model `count` alanında pay ve paydanın kaynak kimliklerini verir; kod üyelerin o sütunda o değeri ve o okuma derinliğini taşıdığını, tekil kaynak olduklarını ve cümledeki sayıların üye sayılarıyla aynı olduğunu denetler.
 - Çelişki iddiası ancak aynı kavram, koşul ve ölçüt karşılaştırılabilirse kurulur; koşul farkı varsa "farklı koşullarda farklı sonuç" denir (T11).
 - Hücreler arası boşluktan yöntem ya da sonuç çıkarımı yapılmaz.
+- Kanıt statüsü karıştırılmaz: V'teki uzlaşı ve çelişki cümleleri statüyü söyler ("dört çalışma modelledi, biri deneyle gösterdi"); `modelled` bir sonuç `demonstrated` bir sonuçla aynı ağırlıkta çelişki ya da doğrulama sayılmaz.
 - Tema alt başlıkları eksenlerden türetilir; her alt başlık bir `axis_id` taşır, eksende olmayan tema şema hatasıdır.
 - Bu kurallar türetilmiş iddialara taşınır: Abstract, I ve IX'daki bir iddia, `body_refs` ile bağlandığı gövde iddialarının en zayıf okuma derinliğini ve destek türünü miras alır (kod hesaplar); gövdede "özet temelli" ya da "analist çıkarımı" olan bir şey özette kesin bulgu diye yazılamaz.
 
@@ -170,7 +171,7 @@ Her aday bir kayıttır, düzyazı değil. Üç tür. Kod yalnız yapıyı doğr
 
 Etiket türe göre yazılır: `corpus_absence` için "tam metni incelenen N kaynakta bildirilmedi; k kaynak yalnız özetinden okundu ve değerlendirilemedi"; `stated_limitation` için "şu kaynakların kendi belirttiği sınırlama"; `conflicting_evidence` için "şu kaynaklar arasında uyuşmazlık". Üçü de "denetlenmemiş aday; kill-search yapılmadı" ibaresini taşır.
 
-Her adayın kaydı: `gap_id`, tür, metin (analist çıkarımı), dayandığı hücre ve pasaj kimlikleri, en yakın kısmi eşleşme (üç durumdan biri: `found` + kaynak ve hücre, `none_in_corpus`, `not_searched`), ve kod tarafından eklenen kaynakça: arama tarihi, sağlayıcılar, sorgu sürümü, bulunan/dahil sayıları, tam metin oranı, `kill_search_status: not_run`. VII'deki her yön bir `gap_id`'ye bağlıdır; bağsız yön şema hatasıdır.
+Her adayın kaydı: `gap_id`, tür, metin (analist çıkarımı), dayandığı hücre ve pasaj kimlikleri, en yakın kısmi eşleşme (üç durumdan biri: `found` + kaynak ve hücre, `none_in_corpus`, `not_searched`), ve kod tarafından eklenen kaynakça: arama tarihi, sağlayıcılar, sorgu sürümü, bulunan/dahil sayıları, tam metin oranı, `kill_search_status: not_run`. VII'deki her yön ya bir `gap_id`'ye ya da "önerilen gelecek çalışma" sütunundan bir hücreye bağlıdır; ikisine de bağlı olmayan yön şema hatasıdır. Kaynağın kendi önerisi `source_stated` yazılır ve kaynağa atfedilir; rapor onu kendi önerisi gibi sunmaz.
 
 Sözcük kuralı: kill-search yapılmadan "gap", "open problem", "novel", "first" ve eşdeğerleri (iki dilde sabit bir liste) **başlık dahil raporun hiçbir yerinde** kullanılmaz; kod bu listeyi bütün metinde arar. VI ve VII'de "candidate unanswered aspect / cevaplanmamış yön adayı" kullanılır. Bu, `SKILL.md`'deki yasağın rapor için gevşetilmiş biçimidir: yasak yanıt için aynen kalır, rapor bölümleri VI ve VII için bu türlerle ve etiketle açılır.
 
@@ -284,6 +285,10 @@ Beş türlü gap sınıflaması (Sol'un `reporting_absence`, `corpus_absence`, `
 3. **Kill-search ve aday kartı.** Ayrı not; VI'daki adaylara durum verir.
 4. **Düzenleme, bayatlama, kapanış ölçümü.** Bölüm düzenleme (T09), bölüm düzeyinde `stale`, düzenleme sonrası kimlik kararlılığı, tutulmuş soruyla kapanış ölçümü.
 
+Ertelenen, dilim 2'den sonra ayrı madde: **alan tabanı** (alan örneğinin Task 1'i). III'e "kurucu makale, en önemli derleme, en yakın birincil çalışmalar" alt başlığı; her seçim neye dayandığını söyler (atıf sayısı, kurucu etki, derlemelerde anılma sıklığı ya da doğrudan ilgi) ve "en ünlü" nesnel bir olgu gibi yazılmaz. Sağlayıcı kayıtlarındaki atıf sayısının kaynağıyla ve tarihiyle saklanmasını ister; bugün rapor girdisinde yok.
+
+Yöntem dayanağı: dilim 3'ün notu [research-methods.md](../methods/research-methods.md) §4'ten çıkar (aday kartı, iddia–pasaj matrisi, örtüşme/geçerlilik/değer ayrımı, elenen adayın sürümlenmesi); oradaki değerlendirme tablosundan R10'a iki ekilmiş hata daha alınır: aynı sonucun başka terminolojiyle zaten var olması ve atıf var diye gelişim ilişkisi kurulması.
+
 Ayrı iş, bu notun dışında: **PDF edinme** (D55 M3 = 0/7 ve 0/5) için tasarım notu. Raporun kalitesi ona bağlıdır; bu not onu çözmez, yalnız sayıyı görünür kılar.
 
 ## 13. Ölçüm beklentileri (dilim 1'den önce dondurulur)
@@ -301,7 +306,7 @@ P5 dilim 5'teki kural: beklenti koşudan önce yazılır ve commit'lenir; sonuç
 | R7 | Süre ve maliyet | uçtan uca süre; ardışık zincirin süresi; kuyruk ve kota beklemesi; çağrı ve token sayısı (onarım ve başarısız denemeler ayrı) |
 | R8 | Kalıp | özgün cümle kimlikleri üzerinden: ilk denemede uymayan / bütün cümleler; onarımdan sonra uyan; `reverted_exception` ve `unframed_exception` sayıları |
 | R9 | Denklem kapsamı | koşudan önce işaretlenen (kaynak, formülasyon) çiftleri: girdide görüntülenen denklemi olan kaynaklar; her çift için raporda var mı ve pasajın verdiği parçalar (değişken, amaç, kısıt) eksiksiz mi |
-| R10 | İncelemenin yakalama oranı | geçerli bir rapora bilerek ekilen 10–12 hata (anlamı değişmiş onarım, özetten yöntem ayrıntısı, yanlış payda, karşılaştırılamaz koşullardan çelişki, dayanaksız aday, yenilik iması); `report_review`'ın yakaladığı / ekilen; montajın yakaladığı ayrı |
+| R10 | İncelemenin yakalama oranı | geçerli bir rapora bilerek ekilen 12–14 hata (anlamı değişmiş onarım, özetten yöntem ayrıntısı, yanlış payda, karşılaştırılamaz koşullardan çelişki, dayanaksız aday, yenilik iması, simülasyonun gösterim diye yazılması, atıf var diye gelişim ilişkisi kurulması); `report_review`'ın yakaladığı / ekilen; montajın yakaladığı ayrı |
 | R11 | Sessiz eksik kanıt | kesilme kaydındaki kayıt sayısı ve `insufficient_evidence` sayısı; inceleyenin "bölümde olması gerekirdi" dediği, girdiye hiç verilmemiş pasaj sayısı |
 
 Payda sıfırsa metrik "ölçülemedi" diye yazılır, 0 ya da 1 diye değil. Yarıda kalan çalışma R1 ve R7'ye girer, diğerlerine girmez. Davranış vakaları (§4.1) ve R10'un ekilmiş hataları etiketli vaka kümesidir ve dilim 1'de koşulur.

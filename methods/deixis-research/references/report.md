@@ -52,7 +52,7 @@ one-paragraph account of its scope.
 ## Section instructions (`report_section`)
 
 `report_target.section_id` tells you which section you are writing. Its evidence is in `sources`/`passages`
-and, for table-grounded sections, in the selected evidence-table records supplied with the step; write only
+and, for table-grounded sections, in the selected frozen `report_target.cells` records; write only
 that section, in fixed-skeleton order, and do not invent a section this report does not have.
 
 - **III (Background and Taxonomy):** define the plan's glossary terms and axes using only their sourced
@@ -74,7 +74,7 @@ that section, in fixed-skeleton order, and do not invent a section this report d
   `proposed` ones in your wording; a modelled result and a demonstrated result are not equal-weight agreement
   or disagreement.
 - **VI (Candidate Unanswered Aspects):** write the `gaps` array, not ordinary prose claims. For a
-  `corpus_absence` gap given to you (its candidate and basis are already prepared), write only its `text` in
+  `corpus_absence` gap in `report_target.gap_candidates` (its candidate and basis are already prepared), write only its `text` in
   the fixed pattern the application's basis describes, citing the given basis. For a `stated_limitation` gap,
   cite the source's own stated limitation (a "limitations" column cell or a passage) and mint a new `gap_id`.
   For a `conflicting_evidence` gap, cite the V claim_key it comes from. Every gap text ends with the sentence

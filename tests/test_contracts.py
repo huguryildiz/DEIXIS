@@ -55,6 +55,45 @@ def test_report_step_input_requires_report_target_only_for_report_tasks():
     assert "report_target_mismatch" in issues
 
 
+def test_report_target_requires_frozen_cells_and_gap_candidates():
+    si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
+    del si["report_target"]["cells"]
+    assert "step_input_schema_invalid" in {issue.code for issue in contracts.check_step_input(si)}
+
+
+def test_report_cell_must_be_present_in_the_step_input_allowlist_and_records():
+    si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
+    cell = {
+        "cell_id": "cel_SYNTHR0001", "cell_revision_id": "crv_SYNTHR0001", "column_id": "col_SYNTHR0001",
+        "source_version_id": "srv_SYNA1pub01", "state": "value", "value": {"text": "SYNTHETIC value"},
+        "reading_depth": "full_text", "evidence": [{"passage_id": "psg_SYNA1pg003",
+                                                    "quote": "SYNTHETIC. The objective minimizes expected bit error probability"}],
+    }
+    si["report_target"]["cells"] = [cell]
+    si["allowlist"]["cell_ids"] = [cell["cell_id"]]
+    si["allowlist"]["column_ids"] = [cell["column_id"]]
+    assert contracts.check_step_input(si) == []
+    si["allowlist"]["cell_ids"] = []
+    assert "report_cell_not_allowed" in {issue.code for issue in contracts.check_step_input(si)}
+    si["allowlist"]["cell_ids"] = [cell["cell_id"]]
+    si["report_target"]["cells"] = []
+    assert "allowlist_without_record" in {issue.code for issue in contracts.check_step_input(si)}
+
+
+def test_report_gap_candidate_basis_must_be_in_the_frozen_cells():
+    si = json.loads(json.dumps(STEP_INPUTS["C_report_section_VII"]))
+    si["report_target"]["section_id"] = "VI"
+    si["allowlist"]["column_ids"] = ["col_SYNTHR0001"]
+    si["allowlist"]["gap_ids"] = ["gap1"]
+    si["report_target"]["gap_candidates"] = [{
+        "gap_id": "gap1", "kind": "corpus_absence", "column_id": "col_SYNTHR0001",
+        "basis_cell_ids": ["cel_SYNTHR0001", "cel_SYNTHR0002", "cel_SYNTHR0003"],
+        "full_text_applicable_count": 3, "summary_only_count": 0,
+    }]
+    codes = {issue.code for issue in contracts.check_step_input(si)}
+    assert "gap_basis_cell_missing" in codes
+
+
 @pytest.mark.parametrize("task_type", sorted(contracts.TASK_OUTPUTS))
 def test_step_output_schema_is_self_contained_and_strict(task_type):
     schema = contracts.step_output_schema(task_type)

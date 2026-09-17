@@ -235,14 +235,40 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
     report_target = step_input.get("report_target")
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
         issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
-    elif step_input["task_type"] in ("report_section", "report_phrase_repair"):
-        if report_target["plan"] is None:
-            issues.append(Issue("report_plan_missing", "/report_target/plan", step_input["task_type"]))
-        for axis in (report_target["plan"] or {}).get("axes", []):
-            if axis["column_id"] not in allow.get("column_ids", []):
-                issues.append(Issue("axis_column_not_in_allowlist", "/report_target/plan/axes", axis["column_id"]))
-    elif step_input["task_type"] in ("report_plan", "report_review") and report_target["plan"] is not None:
-        issues.append(Issue("report_plan_must_be_null", "/report_target/plan", step_input["task_type"]))
+    elif report_target is not None:
+        cell_ids = {cell["cell_id"] for cell in report_target["cells"]}
+        if len(cell_ids) != len(report_target["cells"]):
+            issues.append(Issue("duplicate_report_cell", "/report_target/cells", "cell_id must be unique"))
+        for missing in sorted(set(allow.get("cell_ids", [])) - cell_ids):
+            issues.append(Issue("allowlist_without_record", "/allowlist/cell_ids", missing))
+        for i, cell in enumerate(report_target["cells"]):
+            if cell["cell_id"] not in allow.get("cell_ids", []):
+                issues.append(Issue("report_cell_not_allowed", f"/report_target/cells/{i}/cell_id", cell["cell_id"]))
+            if cell["source_version_id"] not in allow["source_ids"]:
+                issues.append(Issue("report_cell_source_not_allowed", f"/report_target/cells/{i}/source_version_id",
+                                    cell["source_version_id"]))
+            if cell["column_id"] not in allow.get("column_ids", []):
+                issues.append(Issue("report_cell_column_not_allowed", f"/report_target/cells/{i}/column_id",
+                                    cell["column_id"]))
+        for i, candidate in enumerate(report_target["gap_candidates"]):
+            if candidate["gap_id"] not in allow.get("gap_ids", []):
+                issues.append(Issue("gap_candidate_not_allowed", f"/report_target/gap_candidates/{i}/gap_id",
+                                    candidate["gap_id"]))
+            if candidate["column_id"] not in allow.get("column_ids", []):
+                issues.append(Issue("gap_candidate_column_not_allowed", f"/report_target/gap_candidates/{i}/column_id",
+                                    candidate["column_id"]))
+            for j, cell_id in enumerate(candidate["basis_cell_ids"]):
+                if cell_id not in cell_ids or cell_id not in allow.get("cell_ids", []):
+                    issues.append(Issue("gap_basis_cell_missing", f"/report_target/gap_candidates/{i}/basis_cell_ids/{j}",
+                                        cell_id))
+        if step_input["task_type"] in ("report_section", "report_phrase_repair"):
+            if report_target["plan"] is None:
+                issues.append(Issue("report_plan_missing", "/report_target/plan", step_input["task_type"]))
+            for axis in (report_target["plan"] or {}).get("axes", []):
+                if axis["column_id"] not in allow.get("column_ids", []):
+                    issues.append(Issue("axis_column_not_in_allowlist", "/report_target/plan/axes", axis["column_id"]))
+        elif report_target["plan"] is not None:
+            issues.append(Issue("report_plan_must_be_null", "/report_target/plan", step_input["task_type"]))
     return issues
 
 

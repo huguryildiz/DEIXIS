@@ -505,7 +505,7 @@
     "report_target": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["report_id", "section_id", "plan", "prior_summaries", "repair_request", "review_scope"],
+      "required": ["report_id", "section_id", "plan", "cells", "gap_candidates", "prior_summaries", "repair_request", "review_scope"],
       "properties": {
         "report_id": { "type": "string", "pattern": "^rpt_[0-9A-Za-z]{8,40}$" },
         "section_id": {
@@ -542,6 +542,53 @@
             { "type": "null" }
           ],
           "description": "report_plan (this validates the plan the model just wrote, before code appends corpus/section_budgets/allowed_support): null. report_section and report_phrase_repair: the frozen plan. report_review: null (review reads sections directly, not the plan echo)."
+        },
+        "cells": {
+          "type": "array",
+          "description": "Selected records from the frozen report snapshot. Cell and revision identifiers pin each value and its source-owned evidence quotes; an empty array is valid when a step needs no cells.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cell_id", "cell_revision_id", "column_id", "source_version_id", "state", "value", "reading_depth", "evidence"],
+            "properties": {
+              "cell_id": { "type": "string", "pattern": "^cel_[0-9A-Za-z]{8,40}$" },
+              "cell_revision_id": { "type": "string", "pattern": "^crv_[0-9A-Za-z]{8,40}$" },
+              "column_id": { "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" },
+              "source_version_id": { "$ref": "common.schema.json#/$defs/source_id" },
+              "state": { "type": "string", "enum": ["value", "unknown", "not_reported", "not_verified", "not_applicable", "inaccessible", "not_found_in_inspected_scope"] },
+              "value": { "type": ["object", "null"] },
+              "reading_depth": { "type": ["string", "null"], "enum": ["metadata", "abstract", "selected_sections", "full_text", null] },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["passage_id", "quote"],
+                  "properties": {
+                    "passage_id": { "$ref": "common.schema.json#/$defs/passage_id" },
+                    "quote": { "type": ["string", "null"] }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "gap_candidates": {
+          "type": "array",
+          "description": "Code-generated corpus_absence candidates for VI from the same frozen cells; other steps receive an empty array. The model writes candidate prose but cannot mint this kind's basis.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["gap_id", "kind", "column_id", "basis_cell_ids", "full_text_applicable_count", "summary_only_count"],
+            "properties": {
+              "gap_id": { "type": "string", "pattern": "^gap[0-9]{1,3}$" },
+              "kind": { "type": "string", "const": "corpus_absence" },
+              "column_id": { "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" },
+              "basis_cell_ids": { "type": "array", "minItems": 3, "items": { "type": "string", "pattern": "^cel_[0-9A-Za-z]{8,40}$" } },
+              "full_text_applicable_count": { "type": "integer", "minimum": 3 },
+              "summary_only_count": { "type": "integer", "minimum": 0 }
+            }
+          }
         },
         "prior_summaries": {
           "type": "array",

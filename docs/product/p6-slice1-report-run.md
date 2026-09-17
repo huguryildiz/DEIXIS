@@ -424,7 +424,7 @@ Dört yeni sözleşme `contracts/research/` altına, mevcut dosyaların biçimiy
 "report_target": {
   "type": "object",
   "additionalProperties": false,
-  "required": ["report_id", "section_id", "plan", "prior_summaries", "repair_request", "review_scope"],
+  "required": ["report_id", "section_id", "plan", "cells", "gap_candidates", "prior_summaries", "repair_request", "review_scope"],
   "properties": {
     "report_id": { "type": "string", "pattern": "^rpt_[0-9A-Za-z]{8,40}$" },
     "section_id": {
@@ -461,6 +461,50 @@ Dört yeni sözleşme `contracts/research/` altına, mevcut dosyaların biçimiy
         { "type": "null" }
       ],
       "description": "report_plan (this validates the plan the model just wrote, before code appends corpus/section_budgets/allowed_support): null. report_section and report_phrase_repair: the frozen plan. report_review: null (review reads sections directly, not the plan echo)."
+    },
+    "cells": {
+      "type": "array",
+      "description": "Selected records from the frozen report snapshot. Cell and revision identifiers pin each value and its source-owned evidence quotes; an empty array is valid when a step needs no cells.",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["cell_id", "cell_revision_id", "column_id", "source_version_id", "state", "value", "reading_depth", "evidence"],
+        "properties": {
+          "cell_id": { "type": "string", "pattern": "^cel_[0-9A-Za-z]{8,40}$" },
+          "cell_revision_id": { "type": "string", "pattern": "^crv_[0-9A-Za-z]{8,40}$" },
+          "column_id": { "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" },
+          "source_version_id": { "$ref": "common.schema.json#/$defs/source_id" },
+          "state": { "type": "string", "enum": ["value", "unknown", "not_reported", "not_verified", "not_applicable", "inaccessible", "not_found_in_inspected_scope"] },
+          "value": { "type": ["object", "null"] },
+          "reading_depth": { "type": ["string", "null"], "enum": ["metadata", "abstract", "selected_sections", "full_text", null] },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["passage_id", "quote"],
+              "properties": {
+                "passage_id": { "$ref": "common.schema.json#/$defs/passage_id" },
+                "quote": { "type": ["string", "null"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "gap_candidates": {
+      "type": "array",
+      "description": "Code-generated corpus_absence candidates for VI from the same frozen cells; other steps receive an empty array. The model writes candidate prose but cannot mint this kind's basis.",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["gap_id", "kind", "column_id", "basis_cell_ids", "full_text_applicable_count", "summary_only_count"],
+        "properties": {
+          "gap_id": { "type": "string", "pattern": "^gap[0-9]{1,3}$" },
+          "kind": { "type": "string", "const": "corpus_absence" },
+          "column_id": { "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" },
+          "basis_cell_ids": { "type": "array", "minItems": 3, "items": { "type": "string", "pattern": "^cel_[0-9A-Za-z]{8,40}$" } },
+          "full_text_applicable_count": { "type": "integer", "minimum": 3 },
+          "summary_only_count": { "type": "integer", "minimum": 0 }
+        }
+      }
     },
     "prior_summaries": {
       "type": "array",
@@ -1303,7 +1347,7 @@ Expected: FAIL — `AttributeError`/`ModuleNotFoundError`.
 
 `report_ready`: `TableStore.active_rows(table_id)` ile `target_columns(...)` çarpımının her hücresi için `evidence_cells.current_revision_id IS NOT NULL AND cell_revisions.state IN ('value','unknown','not_applicable','not_found_in_inspected_scope','not_verified')` mi diye SQL JOIN; olmayan her (kaynak, sütun) çifti `missing`'e girer; `continue_with_failed=True` iken teknik olarak başarısız (`inaccessible` + `model_fill` denemesi yapılmış ama sonuç yoksa) satırlar hariç tutulur ve `failed_rows`'a yazılır.
 
-`build_snapshot`: `evidence_tables`/`table_columns`/`column_revisions`/`table_rows`/`evidence_cells`/`cell_revisions`/`cell_evidence_links` üzerinde salt okunur SELECT'lerle bir JSON sözlük kurar: `{"table_revision": ..., "columns": [{"column_id","revision","name","instruction","answer_format"}], "rows": [{"source_version_id","version_label","reading_depth"}], "cells": [{"column_id","source_version_id","state","value","reading_depth","evidence": [{"passage_id","quote"}]}], "corpus": {"found","unique","screened","included","full_text"}}`. `corpus` sayıları `search_runs`/`candidates`/`corpus_memberships`/`passages` üzerinden §5'teki tanımlarla hesaplanır (`found` = başarılı `search_runs.result_count` toplamı; `unique` = `works` sayısı; `screened` = tarama adımına giren aday sayısı; `included` = geçerli kapsam revizyonunda `corpus_memberships.removed_at IS NULL` sayısı; `full_text` = dahil kaynaklardan `passages.kind='pdf_page'` sahibi olanların sayısı).
+`build_snapshot`: `evidence_tables`/`table_columns`/`column_revisions`/`table_rows`/`evidence_cells`/`cell_revisions`/`cell_evidence_links` üzerinde salt okunur SELECT'lerle bir JSON sözlük kurar: `{"table_revision": ..., "columns": [{"column_id","revision","name","instruction","answer_format"}], "rows": [{"source_version_id","version_label","reading_depth"}], "cells": [{"cell_id","cell_revision_id","column_id","source_version_id","state","value","reading_depth","evidence": [{"passage_id","quote"}]}], "corpus": {"found","unique","screened","included","full_text"}}`. `cells` girdileri bölüm için seçildiklerinde `report_target.cells`'e aynı kimlik, revizyon, değer ve alıntılarla kopyalanır; bu seçim donmuş snapshot'tan yapılır, güncel tablodan yeniden okunmaz. `corpus` sayıları `search_runs`/`candidates`/`corpus_memberships`/`passages` üzerinden §5'teki tanımlarla hesaplanır (`found` = başarılı `search_runs.result_count` toplamı; `unique` = `works` sayısı; `screened` = tarama adımına giren aday sayısı; `included` = geçerli kapsam revizyonunda `corpus_memberships.removed_at IS NULL` sayısı; `full_text` = dahil kaynaklardan `passages.kind='pdf_page'` sahibi olanların sayısı).
 
 - [ ] **Step 4: Çalıştır, geçtiğini doğrula**
 
@@ -1494,7 +1538,8 @@ async def run_report(flow, run, scope):
 
     plan_output = await flow._model_step(run, scope, "report_plan", "report_plan",
                                          report_target={"report_id": report_id, "section_id": None, "plan": None,
-                                                        "prior_summaries": [], "repair_request": None, "review_scope": None},
+                                                        "cells": [], "gap_candidates": [], "prior_summaries": [],
+                                                        "repair_request": None, "review_scope": None},
                                          limiter=flow.deps.limiter)
     flow._checkpoint(run_id)
     if plan_output.get("invalid"):
@@ -1535,6 +1580,7 @@ async def _run_section(flow, run, scope, reports, report_id, frozen_plan, snapsh
     evidence = select_evidence(snapshot, section_id, frozen_plan, reports.prior_summaries(report_id))
     reports.record_truncation(report_id, section_id, evidence["truncated"])
     target = {"report_id": report_id, "section_id": section_id, "plan": frozen_plan,
+             "cells": evidence["cells"], "gap_candidates": [],
              "prior_summaries": reports.prior_summaries(report_id), "repair_request": None, "review_scope": None}
     operation_key = f"report_section:{section_id}"
     async def call():
@@ -1935,19 +1981,19 @@ git commit -m "Add the Section VIII numeric core the model writes its limitation
 ```python
 def test_corpus_absence_requires_at_least_three_full_text_applicable_not_found_rows():
     snapshot = {"cells": [
-        {"column_id": "col_x", "source_version_id": f"srv_{i}", "state": "not_found_in_inspected_scope", "reading_depth": "full_text"}
+        {"cell_id": f"cel_{i}", "column_id": "col_x", "source_version_id": f"srv_{i}", "state": "not_found_in_inspected_scope", "reading_depth": "full_text"}
         for i in range(2)
     ], "rows": [{"source_version_id": f"srv_{i}", "reading_depth": "full_text"} for i in range(2)]}
     assert generate_corpus_absence_candidates(snapshot, [{"axis_id": "AX1", "column_id": "col_x"}]) == []
 
-    snapshot["cells"] += [{"column_id": "col_x", "source_version_id": "srv_2", "state": "not_found_in_inspected_scope", "reading_depth": "full_text"}]
+    snapshot["cells"] += [{"cell_id": "cel_2", "column_id": "col_x", "source_version_id": "srv_2", "state": "not_found_in_inspected_scope", "reading_depth": "full_text"}]
     snapshot["rows"] += [{"source_version_id": "srv_2", "reading_depth": "full_text"}]
     candidates = generate_corpus_absence_candidates(snapshot, [{"axis_id": "AX1", "column_id": "col_x"}])
     assert len(candidates) == 1 and candidates[0]["full_text_applicable_count"] == 3
 
 
 def test_not_applicable_cells_never_count_as_absence_evidence():
-    snapshot = {"cells": [{"column_id": "col_x", "source_version_id": f"srv_{i}", "state": "not_applicable", "reading_depth": "full_text"} for i in range(5)],
+    snapshot = {"cells": [{"cell_id": f"cel_{i}", "column_id": "col_x", "source_version_id": f"srv_{i}", "state": "not_applicable", "reading_depth": "full_text"} for i in range(5)],
                 "rows": [{"source_version_id": f"srv_{i}", "reading_depth": "full_text"} for i in range(5)]}
     assert generate_corpus_absence_candidates(snapshot, [{"axis_id": "AX1", "column_id": "col_x"}]) == []
 ```
@@ -1960,6 +2006,8 @@ Expected: FAIL — `ModuleNotFoundError`.
 - [ ] **Step 3: `generate_corpus_absence_candidates`'ı yaz**
 
 Her eksen için `column_id`'nin hücrelerini `reading_depth == "full_text"` VE `state != "not_applicable"` ile filtreler ("uygulanabilir" = `not_applicable` değil); bunların hepsi `state == "not_found_in_inspected_scope"` ise ve sayıları `>= 3` ise bir aday üretir; `summary_only_count`'u aynı sütunda `reading_depth != "full_text"` olan satır sayısı olarak ekler (§6 karar 10'daki "yalnız özeti incelenen k çalışma değerlendirilemedi" cümlesi için).
+
+VI bölümü kurulurken bu çıktıyı `report_target.gap_candidates`'a koy; adayların `basis_cell_ids` kayıtları aynı StepInput'un `report_target.cells` alanında ve `allowlist.cell_ids` içinde, `gap_id`'leri `allowlist.gap_ids` içinde bulunmalıdır. Önceki turların StepInput'ları `gap_candidates: []` kullanır; bu bağlama 1e'de eklenir.
 
 - [ ] **Step 4: Çalıştır, geçtiğini doğrula**
 

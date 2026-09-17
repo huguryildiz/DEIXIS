@@ -342,6 +342,8 @@
       "report_id": "rpt_SYNTHR0001",
       "section_id": null,
       "plan": null,
+      "cells": [],
+      "gap_candidates": [],
       "prior_summaries": [],
       "repair_request": null,
       "review_scope": null
@@ -570,6 +572,8 @@
           ]
         }
       },
+      "cells": [],
+      "gap_candidates": [],
       "prior_summaries": [],
       "repair_request": null,
       "review_scope": null
@@ -796,6 +800,8 @@
           ]
         }
       },
+      "cells": [],
+      "gap_candidates": [],
       "prior_summaries": [],
       "repair_request": {
         "section_id": "IV",
@@ -996,6 +1002,8 @@
       "report_id": "rpt_SYNTHR0001",
       "section_id": null,
       "plan": null,
+      "cells": [],
+      "gap_candidates": [],
       "prior_summaries": [],
       "repair_request": null,
       "review_scope": [
@@ -1235,6 +1243,8 @@
           ]
         }
       },
+      "cells": [],
+      "gap_candidates": [],
       "prior_summaries": [],
       "repair_request": null,
       "review_scope": null

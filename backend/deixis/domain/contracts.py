@@ -250,6 +250,11 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
             if cell["column_id"] not in allow.get("column_ids", []):
                 issues.append(Issue("report_cell_column_not_allowed", f"/report_target/cells/{i}/column_id",
                                     cell["column_id"]))
+            for j, evidence in enumerate(cell["evidence"]):
+                if evidence["passage_id"] not in allow["passage_ids"]:
+                    issues.append(Issue("report_cell_passage_not_allowed",
+                                        f"/report_target/cells/{i}/evidence/{j}/passage_id",
+                                        evidence["passage_id"]))
         for i, candidate in enumerate(report_target["gap_candidates"]):
             if candidate["gap_id"] not in allow.get("gap_ids", []):
                 issues.append(Issue("gap_candidate_not_allowed", f"/report_target/gap_candidates/{i}/gap_id",

@@ -80,6 +80,22 @@ def test_report_cell_must_be_present_in_the_step_input_allowlist_and_records():
     assert "allowlist_without_record" in {issue.code for issue in contracts.check_step_input(si)}
 
 
+def test_report_cell_evidence_passage_must_be_in_the_step_input_allowlist():
+    si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
+    passage = si["passages"][0]
+    si["report_target"]["cells"] = [{
+        "cell_id": "cel_SYNTHR0001", "cell_revision_id": "crv_SYNTHR0001", "column_id": "col_SYNTHR0001",
+        "source_version_id": passage["source_id"], "state": "value", "value": {"text": "SYNTHETIC value"},
+        "reading_depth": "abstract", "evidence": [{"passage_id": "psg_NOTGIVEN001", "quote": "SYNTHETIC quote"}],
+    }]
+    si["allowlist"]["cell_ids"] = ["cel_SYNTHR0001"]
+    si["allowlist"]["column_ids"] = ["col_SYNTHR0001"]
+
+    issues = contracts.check_step_input(si)
+
+    assert "report_cell_passage_not_allowed" in {issue.code for issue in issues}
+
+
 def test_report_gap_candidate_basis_must_be_in_the_frozen_cells():
     si = json.loads(json.dumps(STEP_INPUTS["C_report_section_VII"]))
     si["report_target"]["section_id"] = "VI"

@@ -38,7 +38,7 @@ Yani sorun yalnız yanıt adımında: tablo aynı PDF'leri okuyabiliyor, yanıt 
 
 - **Sayfa seçimi:** Kaynağın kendi pasajları arasında bugünkü FTS + semantik RRF sıralaması, formülasyon skoru eşitlikte öne alır. Yeni model çağrısı yok.
 - **Girmeyen kaynaklar:** Yanıtın `inputs_given` alanı zaten hangi kaynakların verildiğini tutuyor. Sınırlama metni, kaynak adıyla değil sayıyla "N dahil kaynak bu yanıta girmedi" der. D55'te görülen kısa kimlik sızıntısı (`srv_S0000002`) ayrı bir hata olarak düzeltilir (§7, alt adım 1).
-- **Kural koşulu:** Kota yalnız dahil kaynak sayısı bütçeyi aştığında devreye girer; az kaynaklı yanıtın bugünkü davranışı (özetler + formülasyon + sıralı pasajlar) aynen kalır. Bu, D34'teki 25 kaynaklı iyi sonucu bozmamak içindir.
+- **Kural koşulu:** Kota yalnız metni olan kaynak sayısı + PDF'li kaynak başına 2 sayfa bütçeyi aştığında devreye girer (uygulamada netleşti: S1'de metni olan tam 48 kaynak vardı, "bütçeyi aşınca" koşulu hiç tetiklenmiyordu); az kaynaklı yanıtın bugünkü davranışı (özetler + formülasyon + sıralı pasajlar) aynen kalır. Bu, D34'teki 25 kaynaklı iyi sonucu bozmamak içindir.
 
 **Neden D20 denemesinden farklı:** O denemede her kaynağa bir sayfa ayrıldı ama kaynakların çoğunda PDF yoktu, yani sayfa alan 2 kaynak oldu. Burada kota PDF'li kaynakların hepsine birden 2 sayfa verir ve bunun bedelini listenin sonundaki özetler öder. Bunun alıntılanan eser sayısını düşürmesi beklenir; ölçülecek olan budur (§5).
 

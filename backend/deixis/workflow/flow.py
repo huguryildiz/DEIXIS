@@ -686,8 +686,10 @@ class ResearchFlow:
             for p in semantic:
                 semantic_rank.setdefault(p["source_version_id"], len(semantic_rank))
         order = answer_source_order(included, self.store.answer_order_facts(research_id, included), texts, unique_terms, semantic_rank)
-        if len(included) > limit:
-            # One abstract per source would fill the input and leave no PDF page (D55). A source with PDF text gives its
+        with_text = [svid for svid in included if passages_of[svid]]
+        with_pdf = [svid for svid in with_text if any(q["kind"] == "pdf_page" for q in passages_of[svid])]
+        if len(with_text) + PDF_PAGES_PER_SOURCE * len(with_pdf) > limit:
+            # One passage per source would leave too little room for PDF pages (D55). A source with PDF text gives its
             # abstract and its best pages, and the sources at the end of the order are not given.
             position = {p["id"]: i for i, p in enumerate(ranked)}
             for svid in order:
@@ -704,7 +706,6 @@ class ResearchFlow:
                 for q in ([first] if first else []) + pages[:PDF_PAGES_PER_SOURCE]:
                     if len(selected) < limit:
                         selected[q["id"]] = q
-            return list(selected.values())
         # Every included source is given first, in that order, up to the limit: its abstract, else its best-matching
         # passage, else its first passage. Formulation pages then get bounded room before the general FTS matches.
         for svid in order:

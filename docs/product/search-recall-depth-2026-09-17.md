@@ -1,6 +1,6 @@
 # Bilinen eserlerin bulunma oranı: arama derinliği: tasarım notu
 
-**Tarih:** 17 Eylül 2026. **Durum:** Kabul edildi (17 Eylül 2026): sahip önerilen seçenekleri seçti; 6. sorudaki üçüncü soru ve bilinen kümesi ölçümden önce sahipten istenecek. Uygulama yanıt notundan (`answer-pdf-pages-2026-09-17.md`) sonra. Uygulama kodu değişmedi; yalnız OpenAlex'e modelsiz bir yoklama yapıldı (§2).
+**Tarih:** 17 Eylül 2026. **Durum:** Kabul edildi (17 Eylül 2026): sahip önerilen seçenekleri seçti; 6. soruda sahip konuyu Claude'a bıraktı (6b; S3 ve beklentiler §5'te donduruldu). Uygulama yanıt notundan (`answer-pdf-pages-2026-09-17.md`) sonra. Uygulama kodu değişmedi; yalnız OpenAlex'e modelsiz bir yoklama yapıldı (§2).
 
 **Kısaca:** P5 kapanış ölçümünde (D55) tutulmuş S2 sorusunda k-bağlantılılık eserlerinin yalnız 4/15'i bulundu, S1'de (Kurt) 9/17. Yoklama sorunun büyük kısmının sorgu biçiminde değil **derinlikte** olduğunu gösteriyor. Çekirdek terimle tek bir OpenAlex sorgusunun ilk 100 sonucu S1'de 11/17, S2'de 6/15 bilinen eseri içeriyor; DEIXIS ise sekiz sağlayıcıya dağılan sorguların her birinden yalnız ilk 25'i okuyor. OpenAlex tek istekte 200 sonuç verebildiği için derinlik ek sağlayıcı isteği gerektirmez; maliyet tarama tarafındadır: daha çok aday, daha çok tarama çağrısı. Bu not, çekirdek sorgunun OpenAlex'te derin okunmasını ve tarama bütçesinin buna göre ayarlanmasını önerir.
 
@@ -74,6 +74,14 @@ Kurallar D55'teki gibi: kopya kütüphane, commit'lenmiş kod, `gpt-5.6-luna` me
 - S2 k-bağlantılılık bulunan: 4 → 6–8. **Yanlış sayılır:** ≤ 4.
 - Dahil edilenlerin başlık düzeyinde ilgililiği D55'ten en çok 0,10 düşer (S1 0,81, S2 0,94).
 - Keşif süresi en çok 3 dakika uzar; model çağrısı 15'i aşmaz.
+
+**S3 ve dondurulmuş beklentiler (17 Eylül 2026, hiçbir S3 çalışmasından ve S3 yoklamasından önce):** Sahip konuyu bilmediğini söyleyip seçimi Claude'a bıraktı; bu 6b'dir. Sahip ayrıca sayıların popüler konularda yetip yetmediğini sordu, bu yüzden S3 bilerek çok çalışılmış bir konudan seçildi: IRS/RIS destekli haberleşmede yansıtma optimizasyonu ve kanal kestirimi. OpenAlex'te `"intelligent reflecting surface" OR "reconfigurable intelligent surface"` 20.856 eserle eşleşiyor (S1 çekirdeği 261, S2 2.426). Bilinen küme `scripts/p4_eval/sets/irs2021/`: Wu vd. 2021 (IEEE TCOM) öğreticisinin Crossref kaynakçasından 31 eser, iki katman (yansıtma optimizasyonu 19, kanal kestirimi 12), katmanlar başlıktan Claude'ca. DEIXIS kaynakça izlemediği için öğreticinin bulunması kaynakçasını getirmez; öğreticinin kendisi sayılmaz. Bu küme öğreticinin yazıldığı 2018–2020'yi temsil eder; alanın bugünkü 20 bin eserinin çoğu daha yenidir.
+
+- S1 ve S2: yukarıdaki taslak aynen dondurulur.
+- S3 bulunan (31 eserden): A kuralı bugünkü kuraldan en az 3 fazla. **Yanlış sayılır:** A ≤ bugünkü kural.
+- S3 dahil edilenlerin başlık düzeyinde ilgililiği A kuralında bugünkü kuraldan en çok 0,10 düşük.
+- S3 model çağrısı A kuralında 15'i aşmaz; aday sınırı (250) dolarsa bu ayrıca yazılır, çünkü popüler konuda sınırın dolması tam olarak sahibin sorduğu durumdur.
+- Bu beklentiler tahmindir; S3 için önceki bir sayı yoktur.
 
 ## 6. Sahibe sorulanlar
 

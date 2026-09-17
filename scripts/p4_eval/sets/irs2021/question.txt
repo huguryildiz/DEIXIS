@@ -1,0 +1,1 @@
+Akıllı yansıtıcı yüzey (IRS/RIS) destekli kablosuz haberleşmede yansıtma katsayıları (pasif hüzmeleme) nasıl optimize edilmiş; tek ve çok kullanıcılı, ayrık faz kaydırmalı, OFDM ve MIMO sistemlerinde hangi algoritmalar (SDR, alternatif optimizasyon, derin pekiştirmeli öğrenme) kullanılmış ve bu optimizasyonun gerektirdiği kanal kestirimi hangi yöntemlerle yapılmış?

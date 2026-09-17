@@ -1,0 +1,79 @@
+# Held-out known set for the search-depth measurement (docs/product/search-recall-depth-2026-09-17.md §5, S3), frozen before any run.
+# Chosen as a popular topic: OpenAlex search.title_and_abstract for "intelligent reflecting surface" OR "reconfigurable
+# intelligent surface" matched 20,856 works on 2026-09-17 (S1's core query 261, S2's 2,426).
+# Source: Wu, Zhang, Zheng, You, Zhang, "Intelligent Reflecting Surface-Aided Wireless Communications: A Tutorial",
+# IEEE Trans. Commun. 2021 (DOI 10.1109/tcomm.2021.3051897). Entries are its Crossref-deposited references ref55-ref120
+# that have a DOI and an IRS/RIS title; generic references (massive MIMO, optimization textbooks, metasurface physics) and
+# references without a DOI were left out. The owner did not know the field and delegated the topic and set to Claude, so
+# this list is bibliography-derived (option 6b of the note): the tutorial itself is not counted, and DEIXIS does not
+# follow references, so finding it does not bring its reference list. Strata were assigned by Claude from titles.
+# Not given to DEIXIS.
+
+# stratum: self
+10.1109/tcomm.2021.3051897
+
+# stratum: reflection_optimization
+# ref56 | ref55 (conference version)
+10.1109/tcomm.2020.3001125 | 10.1109/icc40277.2020.9148961
+# ref62
+10.1109/twc.2020.2986438
+# ref64
+10.1109/tcomm.2019.2958916
+# ref66
+10.1109/jsac.2020.3000807
+# ref67
+10.1109/lwc.2019.2961656
+# ref68
+10.1109/tcomm.2020.2981458
+# ref69
+10.1109/spawc48557.2020.9154337
+# ref70
+10.1109/lwc.2020.2969167
+# ref71
+10.1109/jsac.2020.3000814
+# ref74
+10.1109/lwc.2020.2968303
+# ref75
+10.1109/twc.2020.3022297
+# ref77
+10.1109/jsac.2020.3000813
+# ref78
+10.1109/tvt.2020.2973073
+# ref79
+10.1109/pacrim47961.2019.8985103
+# ref80
+10.1109/glocomw.2018.8644519
+# ref83
+10.1109/twc.2020.2990766
+# ref87
+10.1109/twc.2019.2922609
+# ref93
+10.1109/lwc.2019.2919685
+# ref95
+10.1109/jsac.2020.3000835
+
+# stratum: channel_estimation
+# ref72
+10.1109/lwc.2019.2961357
+# ref100
+10.1109/twc.2020.3021434
+# ref101
+10.1109/icassp40776.2020.9053976
+# ref106
+10.1109/icassp.2019.8683663
+# ref107
+10.1109/icassp40776.2020.9053695
+# ref109
+10.1109/lsp.2020.2998357
+# ref110
+10.1109/lwc.2019.2948632
+# ref111
+10.1109/sam48682.2020.9104260
+# ref116
+10.1109/jsac.2020.3007057
+# ref117
+10.1109/sam48682.2020.9104305
+# ref118
+10.1109/icc40277.2020.9149146
+# ref120
+10.1109/lwc.2020.2993699

@@ -955,7 +955,8 @@ class ResearchFlow:
     def _step_input(self, run: dict[str, Any], scope: dict[str, Any], step_id: str, task_type: str,
                     candidate_rows: list[dict[str, Any]], source_ids: list[str], passage_rows: list[dict[str, Any]],
                     claims: list[dict[str, Any]], model: tuple[str, str | None, str | None],
-                    extraction_target: dict[str, Any] | None = None) -> dict[str, Any]:
+                    extraction_target: dict[str, Any] | None = None,
+                    report_target: dict[str, Any] | None = None) -> dict[str, Any]:
         candidates = []
         for c in candidate_rows:
             source = self.store.source(c["source_version_id"])
@@ -985,7 +986,21 @@ class ResearchFlow:
         } for p in passage_rows]
         language = scope["language_hint"] if scope["language_hint"] and re.fullmatch(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})*", scope["language_hint"]) else None
         review = {"claims_under_review": claims} if task_type == "answer_review" else {}
-        target = {"extraction_target": extraction_target} if extraction_target is not None else {}
+        target = {}
+        if extraction_target is not None:
+            target["extraction_target"] = extraction_target
+        if report_target is not None:
+            target["report_target"] = report_target
+        allowlist = {"candidate_ids": [c["candidate_id"] for c in candidates], "source_ids": [s["source_id"] for s in sources],
+                     "passage_ids": [p["passage_id"] for p in passages]}
+        if task_type in contracts.REPORT_TASKS:
+            report = report_target or {}
+            cells, gaps = report.get("cells", []), report.get("gap_candidates", [])
+            columns = [cell["column_id"] for cell in cells] + [gap["column_id"] for gap in gaps]
+            columns += [axis["column_id"] for axis in (report.get("plan") or {}).get("axes", [])]
+            allowlist |= {"column_ids": list(dict.fromkeys(columns)),
+                          "cell_ids": [cell["cell_id"] for cell in cells],
+                          "gap_ids": [gap["gap_id"] for gap in gaps]}
         return review | target | {
             "step_input_id": new_id("sti"), "research_id": run["research_id"], "run_id": run["id"], "step_id": step_id,
             "task_type": task_type, "scope_revision": run["scope_revision"],
@@ -995,8 +1010,7 @@ class ResearchFlow:
             "user_steering": [scope["steering"]] if scope.get("steering") else [],
             "capabilities": CAPABILITIES, "enabled_providers": scope["providers"],
             "candidates": candidates, "sources": sources, "passages": passages,
-            "allowlist": {"candidate_ids": [c["candidate_id"] for c in candidates], "source_ids": [s["source_id"] for s in sources],
-                          "passage_ids": [p["passage_id"] for p in passages]},
+            "allowlist": allowlist,
             "human_corrections": [],
             "budget": {"max_model_calls": run["budget"]["max_model_calls"], "max_schema_repairs": MAX_SCHEMA_REPAIRS,
                        "max_provider_requests": run["budget"]["max_provider_requests"]},
@@ -1035,6 +1049,7 @@ class ResearchFlow:
                           passage_rows: list[dict[str, Any]] | None = None, selection_revision: int | None = None,
                           claims: list[dict[str, Any]] | None = None, model: tuple[str, str | None, str | None] | None = None,
                           optional: bool = False, extraction_target: dict[str, Any] | None = None,
+                          report_target: dict[str, Any] | None = None,
                           limiter: ModelCallLimiter | None = None) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run."""
@@ -1064,13 +1079,17 @@ class ResearchFlow:
                 self.store.finish_step(step["id"], "failed", error_code="budget_exhausted")
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
-                                       claims or [], model, extraction_target)
+                                       claims or [], model, extraction_target, report_target)
             if issues := contracts.check_step_input(payload):
                 self.store.finish_step(step["id"], "failed", error_code="step_input_invalid", error=[vars(i) for i in issues])
                 halt("step_input_invalid", fail=True)
             schema = contracts.step_output_schema(task_type)
             base = prompt.BASE_INSTRUCTIONS
-            developer = prompt.developer_instructions(self.deps.package, task_type, phrasebank.frames_language(payload))
+            sections = (phrasebank.REPORT_PHRASEBANK_SECTIONS[report_target["section_id"]]
+                        if task_type in ("report_section", "report_phrase_repair") else None)
+            developer = prompt.developer_instructions(
+                self.deps.package, task_type, phrasebank.frames_language(payload), sections=sections,
+            )
             # Answer, review and cell steps show short handles; the stored StepInput keeps the record IDs they map back to.
             shown = contracts.with_citation_handles(payload) if task_type in ("grounded_answer", "answer_review", "cell_extraction") else payload
             if repair_issues is None:

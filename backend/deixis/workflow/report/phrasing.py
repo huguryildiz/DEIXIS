@@ -15,6 +15,8 @@ def flagged_sentences(section_id: str, claims: list[dict[str, Any]],
                       phrasebank_text: str, language: str) -> list[dict[str, Any]]:
     """Return report sentences that follow no frame assigned to their section."""
     sections = phrasebank.REPORT_PHRASEBANK_SECTIONS[section_id]
+    if not sections:
+        return []
     fields: list[tuple[str, str, str]] = []
     insufficient_index = 0
     for claim in claims:

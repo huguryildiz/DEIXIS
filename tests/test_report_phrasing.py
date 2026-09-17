@@ -1,3 +1,5 @@
+import pytest
+
 from deixis.domain import phrasebank
 from deixis.domain.skill import load_skill_package
 from deixis.workflow.report.phrasing import flagged_sentences
@@ -42,3 +44,18 @@ def test_flagged_sentences_checks_insufficient_evidence_reasons():
     assert flagged[0]["support_type"] == "analyst_inference"
     assert flagged[0]["previous_sentence"] is None
     assert flagged[0]["next_sentence"] is None
+
+
+def test_section_without_assigned_frames_is_not_checked():
+    claims = [{
+        "claim_key": "index_terms.1",
+        "support_type": "source_stated",
+        "text": "Quantum networks. Entanglement routing. Fidelity.",
+    }]
+
+    assert flagged_sentences("index_terms", claims, PHRASEBANK_TEXT, "en") == []
+
+
+def test_unknown_section_is_a_caller_error():
+    with pytest.raises(KeyError):
+        flagged_sentences("unknown", [], PHRASEBANK_TEXT, "en")

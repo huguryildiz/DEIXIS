@@ -1,6 +1,6 @@
 # Yanıt girdisinde PDF sayfalarına yer açmak: tasarım notu
 
-**Tarih:** 17 Eylül 2026. **Durum:** Taslak. §6'daki sorular sahibin yanıtını bekliyor. Kod yazılmadı, model çağrısı yapılmadı.
+**Tarih:** 17 Eylül 2026. **Durum:** Kabul edildi (17 Eylül 2026): sahip §6'daki altı soruda da ilk seçeneği seçti. §5'teki beklentiler bu hâliyle donduruldu; uygulama §7'deki sırayla sürüyor.
 
 **Kısaca:** P5 kapanış ölçümünde (D55) yanıtlar, PDF metni elde olduğu hâlde tek bir PDF sayfası kullanmadı. S1'de 52 kaynak dahil edilmişti, 6'sının PDF metni vardı ve 6'sı da yanıt modeline verildi, ama hepsi yalnız özetleriyle verildi: 20 dayanağın 20'si özetti. Sebep bir sayıdır, model değil: yanıt girdisi 48 pasajlıktır ve kod önce her dahil kaynağın özetini koyar. 48 ya da daha fazla kaynak dahil edilince bütün yer özetlerle dolar, PDF sayfasına sıra gelmez. Bu not, yer dağıtımını değiştirmeyi önerir. Aynı sorun P4'te (D20, D34) görülmüş, bir deneme yapılıp geri alınmıştı (§2).
 
@@ -59,7 +59,7 @@ Kurallar D55'teki gibi: kopya kütüphane, commit'lenmiş kod, `gpt-5.6-luna` me
 2. **Canlı karşılaştırma:** S1'de her kural için 2 yanıt. S2'de PDF neredeyse olmadığı için yalnız "davranış değişmedi" denetimi, 1 yanıt.
 3. **İnceleme:** D55 sayfalarıyla: iddia desteği, yanlış atıf, dayanak türü, alıntılanan bilinen eser, geçerlilik.
 
-**Önceden yazılacak beklentiler (taslak):**
+**Önceden yazılan beklentiler (donduruldu, 17 Eylül 2026):**
 - S1 çevrimdışı: A kuralında verilen PDF sayfası ≥ 12 (6 kaynak × 2). **Yanlış sayılır:** < 6.
 - S1 canlı: PDF sayfasına dayanan en az bir iddia her yanıtta. **Yanlış sayılır:** iki yanıtta da 0.
 - Yanlış atıf 0–1 kalır. **Yanlış sayılır:** ≥ 3.
@@ -68,7 +68,7 @@ Kurallar D55'teki gibi: kopya kütüphane, commit'lenmiş kod, `gpt-5.6-luna` me
 
 ## 6. Sahibe sorulanlar
 
-Her soruda önerim ilk seçenek.
+Her soruda önerim ilk seçenek. **Sahibin yanıtı (17 Eylül 2026): altısında da a.**
 
 1. **Kural.** a. Kaynak başına kota (A). b. Sabit bölme (B). c. Bütçeyi büyütmek (C). d. Önce model okuması (D).
 2. **PDF'li kaynağa kaç sayfa.** a. 2 (özetle 3 pasaj). b. 1. c. 3.

@@ -1,6 +1,6 @@
 # Bilinen eserlerin bulunma oranı: arama derinliği: tasarım notu
 
-**Tarih:** 17 Eylül 2026. **Durum:** Taslak. §6'daki sorular sahibin yanıtını bekliyor. Uygulama kodu değişmedi; yalnız OpenAlex'e modelsiz bir yoklama yapıldı (§2).
+**Tarih:** 17 Eylül 2026. **Durum:** Kabul edildi (17 Eylül 2026): sahip önerilen seçenekleri seçti; 6. sorudaki üçüncü soru ve bilinen kümesi ölçümden önce sahipten istenecek. Uygulama yanıt notundan (`answer-pdf-pages-2026-09-17.md`) sonra. Uygulama kodu değişmedi; yalnız OpenAlex'e modelsiz bir yoklama yapıldı (§2).
 
 **Kısaca:** P5 kapanış ölçümünde (D55) tutulmuş S2 sorusunda k-bağlantılılık eserlerinin yalnız 4/15'i bulundu, S1'de (Kurt) 9/17. Yoklama sorunun büyük kısmının sorgu biçiminde değil **derinlikte** olduğunu gösteriyor. Çekirdek terimle tek bir OpenAlex sorgusunun ilk 100 sonucu S1'de 11/17, S2'de 6/15 bilinen eseri içeriyor; DEIXIS ise sekiz sağlayıcıya dağılan sorguların her birinden yalnız ilk 25'i okuyor. OpenAlex tek istekte 200 sonuç verebildiği için derinlik ek sağlayıcı isteği gerektirmez; maliyet tarama tarafındadır: daha çok aday, daha çok tarama çağrısı. Bu not, çekirdek sorgunun OpenAlex'te derin okunmasını ve tarama bütçesinin buna göre ayarlanmasını önerir.
 
@@ -77,7 +77,7 @@ Kurallar D55'teki gibi: kopya kütüphane, commit'lenmiş kod, `gpt-5.6-luna` me
 
 ## 6. Sahibe sorulanlar
 
-Her soruda önerim ilk seçenek.
+Her soruda önerim ilk seçenek. **Sahibin yanıtı (17 Eylül 2026): önerilenler.**
 
 1. **Yöntem.** a. Derin çekirdek sorgu (A). b. Her sorguda derinlik (B). c. Yerel yeniden sıralama (C). d. Önce alıntı zinciri (D).
 2. **Derinlik.** a. 100. b. 200 (yoklamada S1'de +1, S2'de +1 eser; tarama iki katı). c. 50.

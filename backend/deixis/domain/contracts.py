@@ -745,6 +745,21 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
         return raw
     if not isinstance(data, dict):
         return raw
+    # A handle the model wrote into prose would reach the reader as `srv_S0000002`; the reader gets the source title.
+    titles = {s["source_id"]: s["title"] for s in step_input.get("sources", [])}
+    titles |= {p["passage_id"]: titles[p["source_id"]] for p in step_input.get("passages", []) if p["source_id"] in titles}
+    named = {handle: f"“{titles[identifier]}”" for handle, identifier in real.items() if identifier in titles}
+    if named:
+        pattern = re.compile(r"\b(?:" + "|".join(map(re.escape, named)) + r")\b")
+        prose = lambda text: pattern.sub(lambda m: named[m.group(0)], text) if isinstance(text, str) else text
+        for items in (data.get("claims"), data.get("limitations")):
+            for item in items if isinstance(items, list) else []:
+                if isinstance(item, dict) and "text" in item:
+                    item["text"] = prose(item["text"])
+        if isinstance(data.get("unanswered_aspects"), list):
+            data["unanswered_aspects"] = [prose(text) for text in data["unanswered_aspects"]]
+        if "capability_notice" in data:
+            data["capability_notice"] = prose(data["capability_notice"])
     for items, key in ((data.get("claims"), "passage_ids"), (data.get("limitations"), "source_ids")):
         for item in items if isinstance(items, list) else []:
             if isinstance(item, dict) and isinstance(item.get(key), list):

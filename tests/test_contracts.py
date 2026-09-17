@@ -204,6 +204,23 @@ def test_answer_steps_show_short_handles_that_map_back_to_records():
     assert "unknown_passage_id" in report.codes()
 
 
+def test_handles_written_into_answer_text_are_replaced_by_source_titles():
+    step_input = STEP_INPUTS["A_answer"]
+    shown = contracts.with_citation_handles(step_input)
+    first, source = shown["passages"][0], shown["sources"][0]
+    title = step_input["sources"][0]["title"]
+    passage_title = next(s["title"] for s in step_input["sources"] if s["source_id"] == step_input["passages"][0]["source_id"])
+    answer = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    answer["claims"] = [dict(answer["claims"][0], passage_ids=[first["passage_id"]], text=f"SYNTHETIC claim ({first['passage_id']}).")]
+    answer["limitations"] = [{"kind": "access", "source_ids": [source["source_id"]], "text": f"{source['source_id']} is read from its abstract only."}]
+    answer["unanswered_aspects"] = [f"Nothing in {source['source_id']}, {first['passage_id']}."]
+    resolved = contracts.resolve_citation_handles(step_input, json.dumps(answer))
+    assert resolved["limitations"][0]["text"] == f"“{title}” is read from its abstract only."
+    assert resolved["claims"][0]["text"] == f"SYNTHETIC claim (“{passage_title}”)."
+    assert resolved["unanswered_aspects"] == [f"Nothing in “{title}”, “{passage_title}”."]
+    assert resolved["limitations"][0]["source_ids"] == [step_input["sources"][0]["source_id"]]
+
+
 def test_answer_review_must_review_every_claim_once_by_label():
     step_input = json.loads(json.dumps(STEP_INPUTS["A_answer"]))
     first = step_input["passages"][0]["passage_id"]

@@ -48,7 +48,7 @@ Karşılaştırma için D55'teki çalışma (8 sağlayıcı, sorgu başına 25):
 - **Aday sınırı ve tarama:** Derin sorgu yaklaşık 100 kayıt ekler. `standard` için aday sınırı 150 → 250, model çağrısı 12 → 15 (en çok 7 tarama grubu, plan ve onarımlar). Bu yaklaşık 3 tarama çağrısı ekler; D55'te bütün keşif çalışması 5–6 model çağrısıyla 212 ve 291 s sürmüştü, ek süre ölçülmedi.
 - **Aday sırası:** Sınır aşılırsa kesilecek kayıtlar rastgele değil, sağlayıcı sırasına göre belirlenir: her sorgunun ilk kayıtları önce. Böylece derin sorgunun sondaki kayıtları öbür sorguların en iyilerini dışarıda bırakmaz.
 - **Görünürlük:** Sorgu satırı bugün `dönen / sağlayıcı toplamı` gösteriyor. Derin sorgu "Çekirdek terim, 100 sonuç" gerekçesiyle ayrı görünür.
-- **Kapsam dışı:** Alıntı zinciri (kaynakçadan geri, alıntılayanlardan ileri) bu notta yok. Ayrı dilim olarak önerilir, çünkü bulunamayan 5 eseri ancak o bulur. Ama bugünkü bilinen kümeler bir makalenin kaynakçasından alındığı için ölçümü dairesel olur (hedef makale bulunursa kaynakçası tümüyle gelir). Önce kaynakçadan türetilmemiş bir bilinen küme gerekir.
+- **Kapsam dışı:** Alıntı zinciri (kaynakçadan geri, alıntılayanlardan ileri) bu notta yok. Ayrı dilim olarak önerilir, çünkü çekirdek sorgunun ilk 400'ünde olmayan 7 eserin bir kısmını ancak o bulabilir. Ama bugünkü bilinen kümeler bir makalenin kaynakçasından alındığı için ölçümü dairesel olur (hedef makale bulunursa kaynakçası tümüyle gelir). Önce kaynakçadan türetilmemiş bir bilinen küme gerekir.
 
 **Etkisi yanıt notuyla bağlı:** Daha çok aday, daha çok dahil kaynak demektir. Yanıt girdisindeki PDF sayfası sorunu (`answer-pdf-pages-2026-09-17.md`) dahil kaynak sayısı arttıkça büyür. Sıra önerim: önce yanıt notu, sonra bu not.
 
@@ -65,7 +65,7 @@ Karşılaştırma için D55'teki çalışma (8 sağlayıcı, sorgu başına 25):
 
 Kurallar D55'teki gibi: kopya kütüphane, commit'lenmiş kod, `gpt-5.6-luna` medium, beklentiler önce yazılır.
 
-1. **Sorular:** S1 ve S2 (D55 kümeleri) + sahibin bilmediğim bir alandan seçeceği ya da kaynakçadan türetilmemiş bilinen kümesiyle bir üçüncü soru (S3). S3, S1 ve S2'de ayar yapıldığı için tutulmuş soru sayılır.
+1. **Sorular:** S1 ve S2 (D55 kümeleri) + sahibin seçeceği, bilinen kümesi bir makalenin kaynakçasından türetilmemiş üçüncü bir soru (S3). S3, S1 ve S2'de ayar yapıldığı için tutulmuş soru sayılır.
 2. **Çalışmalar:** Her soruda bugünkü kural ve A kuralıyla birer keşif çalışması. Taramanın rastgeleliği için S1'de kural başına 2 çalışma.
 3. **Sayılar:** Katmana göre bulunan, dahil edilen bilinen eser; tekil kayıt; tarama çağrısı ve süresi; dahil kaynaklarda başlık düzeyinde ilgililik.
 

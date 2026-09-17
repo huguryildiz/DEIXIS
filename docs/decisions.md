@@ -26,12 +26,13 @@ lowered limit before falling back to the ordinary pause. The limit is `Settings.
 
 **Limits:** Verified with FakeAdapter tests only (limit respected, same cells at limit 1 and 3, one source's failure
 does not stop the others, pause/cancel, rate-limit resend); no real-model run and no duration measurement yet, so
-the frozen expectation in docs/product/p6-slice0-fill-expectations.md is untested. **The Codex and Claude Code
-adapters hold an internal lock for a whole `run_step` turn (models/adapter.py, models/claude.py), so on those
-connections, including `gpt-5.6-luna` through Codex, calls are still sent one at a time and this change cannot
-shorten a fill; only the Gemini and DeepSeek HTTP adapters can run calls in parallel today.** The slice plan did not
-account for this; lifting it needs a change to those adapters (one app-server thread per call, and a cancel that
-knows several active turns). No adapter reports a structured rate-limit status; `is_rate_limited` is a best-effort
+the frozen expectation in docs/product/p6-slice0-fill-expectations.md is untested. When D61 was first committed the Codex and Claude Code
+adapters held an internal lock for a whole `run_step` turn, so on those connections, including `gpt-5.6-luna`
+through Codex, calls still went one at a time; the slice plan had not accounted for this. **Follow-up, same day:**
+both adapters now run several calls at once: the Codex RPC client routes notifications to a per-thread queue, the
+Codex lock covers only server start and the health probe, and `cancel()` interrupts every active turn or client.
+This is verified against fakes only; whether the real `codex app-server` runs several threads' turns in parallel is
+unknown until the duration measurement. No adapter reports a structured rate-limit status; `is_rate_limited` is a best-effort
 text classifier, and a miss keeps the ordinary pause-on-failure behavior. Cell recheck is unchanged (no limiter).
 The report run (P6 slice 1) will share this limiter; its plan used placeholder names, to be reconciled there.
 

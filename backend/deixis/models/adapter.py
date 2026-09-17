@@ -91,9 +91,13 @@ class CodexAdapter:
         self._server: CodexAppServer | None = None
         self._lock = asyncio.Lock()
         self._health: tuple[float, dict[str, Any]] | None = None
-        self._active: tuple[str, str] | None = None
+        self._active: set[tuple[str, str]] = set()
 
     async def _ensure_server(self) -> CodexAppServer:
+        async with self._lock:
+            return await self._ensure_server_locked()
+
+    async def _ensure_server_locked(self) -> CodexAppServer:
         if self._server and self._server.proc and self._server.proc.returncode is None:
             return self._server
         self.codex_home.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -116,7 +120,7 @@ class CodexAdapter:
         status["cli_version"] = subprocess.run(["codex", "--version"], capture_output=True, text=True).stdout.strip()
         try:
             async with self._lock:
-                server = await self._ensure_server()
+                server = await self._ensure_server_locked()
                 account = (await server.request("account/read", {})).get("account") or {}
                 status["signed_in"] = bool(account)
                 status["account_type"] = account.get("type")
@@ -153,38 +157,42 @@ class CodexAdapter:
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
-        async with self._lock:
-            try:
-                server = await self._ensure_server()
-                started = await server.request(
-                    "thread/start",
-                    {"cwd": str(self.workspace), "ephemeral": True, "sandbox": "read-only", "approvalPolicy": "never",
-                     "model": requested_model, "baseInstructions": base, "developerInstructions": developer},
-                    timeout=90,
-                )
-            except (RpcError, ConnectionError, TimeoutError, OSError) as exc:
-                return ModelStepResult("unavailable", error=str(exc)[:300], delivery_class="before_send")
-            thread_id = started["thread"]["id"]
-            resolved = started.get("model")
-            if started.get("instructionSources"):
-                return ModelStepResult("isolation_violation", resolved_model=resolved, external_thread_id=thread_id,
-                                       error="instruction files loaded into thread", delivery_class="before_send")
+        try:
+            server = await self._ensure_server()
+            started = await server.request(
+                "thread/start",
+                {"cwd": str(self.workspace), "ephemeral": True, "sandbox": "read-only", "approvalPolicy": "never",
+                 "model": requested_model, "baseInstructions": base, "developerInstructions": developer},
+                timeout=90,
+            )
+        except (RpcError, ConnectionError, TimeoutError, OSError) as exc:
+            return ModelStepResult("unavailable", error=str(exc)[:300], delivery_class="before_send")
+        thread_id = started["thread"]["id"]
+        resolved = started.get("model")
+        if started.get("instructionSources"):
+            return ModelStepResult("isolation_violation", resolved_model=resolved, external_thread_id=thread_id,
+                                   error="instruction files loaded into thread", delivery_class="before_send")
 
-            async def remember(turn_id: str) -> None:
-                self._active = (thread_id, turn_id)
+        active: tuple[str, str] | None = None
 
-            try:
-                turn = await server.run_turn(thread_id, message, output_schema, timeout=self.turn_timeout, on_started=remember,
-                                             effort=reasoning_effort)
-            except (RpcError, ConnectionError, TimeoutError, OSError) as exc:
-                return ModelStepResult("failed", resolved_model=resolved, external_thread_id=thread_id,
-                                       error=str(exc)[:300], delivery_class="after_send_unknown")
-            finally:
-                self._active = None
-            try:
-                await server.request("thread/unsubscribe", {"threadId": thread_id}, timeout=10)
-            except (RpcError, ConnectionError, TimeoutError):
-                pass
+        async def remember(turn_id: str) -> None:
+            nonlocal active
+            active = (thread_id, turn_id)
+            self._active.add(active)
+
+        try:
+            turn = await server.run_turn(thread_id, message, output_schema, timeout=self.turn_timeout, on_started=remember,
+                                         effort=reasoning_effort)
+        except (RpcError, ConnectionError, TimeoutError, OSError) as exc:
+            return ModelStepResult("failed", resolved_model=resolved, external_thread_id=thread_id,
+                                   error=str(exc)[:300], delivery_class="after_send_unknown")
+        finally:
+            if active is not None:
+                self._active.discard(active)
+        try:
+            await server.request("thread/unsubscribe", {"threadId": thread_id}, timeout=10)
+        except (RpcError, ConnectionError, TimeoutError):
+            pass
         status = {"completed": "completed", "interrupted": "interrupted"}.get(turn.status, "failed")
         delivery = None if status == "completed" else "after_send_unknown"
         return ModelStepResult(
@@ -195,14 +203,18 @@ class CodexAdapter:
         )
 
     async def cancel(self) -> bool:
-        if not (self._server and self._active):
+        if not self._server:
             return False
-        thread_id, turn_id = self._active
-        try:
-            await self._server.request("turn/interrupt", {"threadId": thread_id, "turnId": turn_id}, timeout=10)
-            return True
-        except (RpcError, ConnectionError, TimeoutError):
-            return False
+        active = tuple(self._active)
+
+        async def interrupt(thread_id: str, turn_id: str) -> bool:
+            try:
+                await self._server.request("turn/interrupt", {"threadId": thread_id, "turnId": turn_id}, timeout=10)
+                return True
+            except (RpcError, ConnectionError, TimeoutError):
+                return False
+
+        return any(await asyncio.gather(*(interrupt(*pair) for pair in active))) if active else False
 
     async def close(self) -> None:
         if self._server:

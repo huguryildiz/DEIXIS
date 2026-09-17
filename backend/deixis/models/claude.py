@@ -37,7 +37,7 @@ class ClaudeCodeAdapter:
         self.turn_timeout = turn_timeout
         self._health: tuple[float, dict[str, Any]] | None = None
         self._lock = asyncio.Lock()
-        self._active: ClaudeSDKClient | None = None
+        self._active: set[ClaudeSDKClient] = set()
 
     def _options(self, cli: str, **overrides: Any) -> ClaudeAgentOptions:
         self.workspace.mkdir(parents=True, exist_ok=True)
@@ -138,36 +138,36 @@ class ClaudeCodeAdapter:
         actual_model: str | None = None
         session_id: str | None = None
         usage: dict[str, Any] | None = None
+        client: ClaudeSDKClient | None = None
         try:
-            async with self._lock:
-                async with ClaudeSDKClient(options) as client:
-                    self._active = client
-                    await client.query(message)
-                    async with asyncio.timeout(self.turn_timeout):
-                        async for item in client.receive_response():
-                            if isinstance(item, AssistantMessage):
-                                actual_model = item.model or actual_model
-                                usage = item.usage or usage
-                                for block in item.content:
-                                    if isinstance(block, TextBlock):
-                                        text_parts.append(block.text)
-                                    elif isinstance(block, ToolUseBlock):
-                                        tool_types.append(block.name)
-                            elif isinstance(item, ResultMessage):
-                                session_id = item.session_id
-                                usage = item.usage or usage
-                                if item.structured_output is not None:
-                                    structured_output_received = True
-                                    text_parts = [json.dumps(item.structured_output, ensure_ascii=False)]
-                                elif item.result and not text_parts:
-                                    text_parts = [item.result]
-                                if item.is_error:
-                                    return ModelStepResult(
-                                        "failed", raw_text="".join(text_parts) or None, resolved_model=actual_model,
-                                        external_thread_id=session_id, token_usage=usage, tool_item_types=external_tools(),
-                                        error="; ".join(item.errors or []) or item.result or item.subtype,
-                                        delivery_class="after_send_unknown", requested_model_verified=True,
-                                    )
+            async with ClaudeSDKClient(options) as client:
+                self._active.add(client)
+                await client.query(message)
+                async with asyncio.timeout(self.turn_timeout):
+                    async for item in client.receive_response():
+                        if isinstance(item, AssistantMessage):
+                            actual_model = item.model or actual_model
+                            usage = item.usage or usage
+                            for block in item.content:
+                                if isinstance(block, TextBlock):
+                                    text_parts.append(block.text)
+                                elif isinstance(block, ToolUseBlock):
+                                    tool_types.append(block.name)
+                        elif isinstance(item, ResultMessage):
+                            session_id = item.session_id
+                            usage = item.usage or usage
+                            if item.structured_output is not None:
+                                structured_output_received = True
+                                text_parts = [json.dumps(item.structured_output, ensure_ascii=False)]
+                            elif item.result and not text_parts:
+                                text_parts = [item.result]
+                            if item.is_error:
+                                return ModelStepResult(
+                                    "failed", raw_text="".join(text_parts) or None, resolved_model=actual_model,
+                                    external_thread_id=session_id, token_usage=usage, tool_item_types=external_tools(),
+                                    error="; ".join(item.errors or []) or item.result or item.subtype,
+                                    delivery_class="after_send_unknown", requested_model_verified=True,
+                                )
         except TimeoutError:
             return ModelStepResult("failed", resolved_model=actual_model, external_thread_id=session_id,
                                    token_usage=usage, tool_item_types=tool_types, error="Claude Code turn timed out",
@@ -177,7 +177,8 @@ class ClaudeCodeAdapter:
                                    token_usage=usage, tool_item_types=tool_types, error=str(exc)[:300],
                                    delivery_class="after_send_unknown", requested_model_verified=True)
         finally:
-            self._active = None
+            if client is not None:
+                self._active.discard(client)
         return ModelStepResult(
             "completed", raw_text="".join(text_parts), resolved_model=actual_model or requested_model,
             external_thread_id=session_id, token_usage=usage, tool_item_types=external_tools(),
@@ -185,15 +186,18 @@ class ClaudeCodeAdapter:
         )
 
     async def cancel(self) -> bool:
-        if self._active is None:
-            return False
-        try:
-            await self._active.interrupt()
-            return True
-        except ClaudeSDKError:
-            return False
+        async def interrupt(client: ClaudeSDKClient) -> bool:
+            try:
+                await client.interrupt()
+                return True
+            except ClaudeSDKError:
+                return False
+
+        active = tuple(self._active)
+        return any(await asyncio.gather(*(interrupt(client) for client in active))) if active else False
 
     async def close(self) -> None:
-        if self._active is not None:
-            await self._active.disconnect()
-            self._active = None
+        active = tuple(self._active)
+        if active:
+            await asyncio.gather(*(client.disconnect() for client in active), return_exceptions=True)
+            self._active.difference_update(active)

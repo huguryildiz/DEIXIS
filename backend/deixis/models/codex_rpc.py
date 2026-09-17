@@ -70,7 +70,7 @@ class CodexAppServer:
         self.cwd = cwd
         self.env = env
         self.proc: asyncio.subprocess.Process | None = None
-        self.notifications: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._turn_notifications: dict[str, asyncio.Queue[dict[str, Any]]] = {}
         self.server_requests: list[dict[str, Any]] = []
         self.stderr_tail: deque[str] = deque(maxlen=80)
         self._pending: dict[int, asyncio.Future] = {}
@@ -135,7 +135,7 @@ class CodexAppServer:
             if "method" in message and "id" in message:
                 await self._answer_server_request(message)
             elif "method" in message:
-                await self.notifications.put(message)
+                await self._route_notification(message)
             elif "id" in message and message["id"] in self._pending:
                 future = self._pending[message["id"]]
                 if not future.done():
@@ -143,7 +143,16 @@ class CodexAppServer:
         for future in self._pending.values():
             if not future.done():
                 future.set_exception(ConnectionError("codex app-server closed stdout"))
-        await self.notifications.put({"method": "__eof__"})
+        await self._route_notification({"method": "__eof__"})
+
+    async def _route_notification(self, message: dict[str, Any]) -> None:
+        thread_id = (message.get("params") or {}).get("threadId")
+        # Only a waiting turn reads notifications; one for a thread with no turn waiting is dropped.
+        if thread_id is None:
+            for queue in tuple(self._turn_notifications.values()):
+                await queue.put(message)
+        elif thread_id in self._turn_notifications:
+            await self._turn_notifications[thread_id].put(message)
 
     async def _answer_server_request(self, message: dict[str, Any]) -> None:
         result, error = deny_server_request(message["method"])
@@ -168,47 +177,52 @@ class CodexAppServer:
         on_started: Callable[[str], Awaitable[None]] | None = None,
         effort: str | None = None,
     ) -> TurnResult:
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        if thread_id in self._turn_notifications:
+            raise RuntimeError(f"turn already active for thread {thread_id}")
+        self._turn_notifications[thread_id] = queue
         params: dict[str, Any] = {"threadId": thread_id, "input": [{"type": "text", "text": text}]}
         if output_schema is not None:
             params["outputSchema"] = output_schema
         if effort is not None:
             params["effort"] = effort
-        started = await self.request("turn/start", params)
-        turn_id = started["turn"]["id"]
-        result = TurnResult(turn_id=turn_id, status="inProgress")
-        counts: Counter[str] = Counter()
-        if on_started:
-            await on_started(turn_id)
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout
-        while True:
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                result.status = "client_timeout"
-                break
-            try:
-                message = await asyncio.wait_for(self.notifications.get(), remaining)
-            except TimeoutError:
-                result.status = "client_timeout"
-                break
-            method = message["method"]
-            counts[method] += 1
-            if method == "__eof__":
-                result.status = "server_exited"
-                break
-            params = message.get("params") or {}
-            if params.get("threadId") not in (None, thread_id):
-                continue
-            if method == "item/started":
-                result.started_item_types.append(params["item"].get("type", ""))
-            elif method == "item/completed":
-                result.items.append(params["item"])
-            elif method == "thread/tokenUsage/updated":
-                result.token_usage = params.get("tokenUsage")
-            elif method == "turn/completed" and params["turn"]["id"] == turn_id:
-                result.status = params["turn"]["status"]
-                result.error = params["turn"].get("error")
-                break
+        try:
+            started = await self.request("turn/start", params)
+            turn_id = started["turn"]["id"]
+            result = TurnResult(turn_id=turn_id, status="inProgress")
+            counts: Counter[str] = Counter()
+            if on_started:
+                await on_started(turn_id)
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + timeout
+            while True:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    result.status = "client_timeout"
+                    break
+                try:
+                    message = await asyncio.wait_for(queue.get(), remaining)
+                except TimeoutError:
+                    result.status = "client_timeout"
+                    break
+                method = message["method"]
+                counts[method] += 1
+                if method == "__eof__":
+                    result.status = "server_exited"
+                    break
+                event_params = message.get("params") or {}
+                if method == "item/started":
+                    result.started_item_types.append(event_params["item"].get("type", ""))
+                elif method == "item/completed":
+                    result.items.append(event_params["item"])
+                elif method == "thread/tokenUsage/updated":
+                    result.token_usage = event_params.get("tokenUsage")
+                elif method == "turn/completed" and event_params["turn"]["id"] == turn_id:
+                    result.status = event_params["turn"]["status"]
+                    result.error = event_params["turn"].get("error")
+                    break
+        finally:
+            self._turn_notifications.pop(thread_id, None)
         messages = [i for i in result.items if i.get("type") == "agentMessage"]
         finals = [m for m in messages if m.get("phase") == "final_answer"] or messages
         result.final_text = finals[-1]["text"] if finals else None

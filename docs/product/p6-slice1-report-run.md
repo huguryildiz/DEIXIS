@@ -4,7 +4,7 @@
 
 **Goal:** DEIXIS'e yeni bir `report` çalışma (run) türü eklemek: dahil kaynakların kanıt tablosundan (P5) donmuş bir kanıt anlık görüntüsü alan, bölüm başına bir model adımıyla (III–IX, Abstract, Index Terms) IEEE üslubunda sayısal atıflı, tablolu, denklemli bir araştırma raporu yazan; II (Review Methodology) ve VIII (Limitations) sayısal çekirdeğini kodun yazdığı; cevaplanmamış yön adaylarını (VI) yalnız tam metin kanıtından, kaynakçalı üreten; phrasebank'i bölüme göre süzen ve kalıba uymayan cümleleri hedefli onarımla düzelten (anlamı bozan onarımı geri alan); montaj denetimi ve `report_review` modeliyle doğrulanan; okuma biçimli bir rapor görünümü ve Markdown dışa aktarımı sunan uçtan uca dilim.
 
-**Architecture:** Mevcut `ResearchFlow` (backend/deixis/workflow/flow.py) çalışma türü listesine `report` eklenir; yürütme yeni `backend/deixis/workflow/report/` paketine devredilir (snapshot, plan, selection, sections, phrasing, gaps, assembly, review, export, numbering, store). Bölüm adımları bugünkü `_model_step` altyapısını (StepInput zarfı, `operation_key` tekrarsızlığı, tek şema onarımı, `model_mismatch`, D12 kısa tutamaçlar) olduğu gibi kullanır; yeni olan yalnız dört görev türü (`report_plan`, `report_section`, `report_phrase_repair`, `report_review`), bunların şemaları (`domain/contracts.py`) ve bölüme özel kanıt seçimidir. Eş zamanlı turlar (A–D) slice 0'ın (`docs/product/p6-slice0-concurrent-fill.md`, artık yazılı) süreç genelindeki `backend/deixis/workflow/concurrency.py::ModelCallLimiter`'ını kullanır: bir turun bağımsız bölüm adımları `asyncio.gather` ile aynı anda başlatılır, her biri `flow._model_step(..., limiter=flow.deps.limiter)` çağırır; sınırlama `_model_step`'in kendi içindeki `_call_adapter`'ın `limiter.run(operation_key, factory)` sarmalamasıyla olur (rapor tarafında ayrı bir sarmalama yazılmaz, slice 0'ın zaten `_model_step`/`_extraction` imzasına eklediği `limiter` parametresi olduğu gibi kullanılır). Kota hatasında `limiter.reduce()` süreç genelinde tek limiti düşürür (tabloyla paylaşılır). Depolama yeni tablolarla genişler (`reports`, `report_sections`, `report_claims`, `report_claim_refs`, `report_citation_links`, `report_gaps`, `report_snapshot`, `report_phrase_repairs`) ve `ReportStore` sınıfı `TableStore`'un desenini izler (append-only, `operation_key` replay, `Store.conn` paylaşımı). API'ye tablo alt sisteminin izlediği `request_*` deseniyle yeni rotalar eklenir. Frontend'de `apps/web/src/report/` yeni bir alt dizin `ResearchView.tsx`'e ince bir entegrasyonla bağlanır; `PdfReadiness.tsx`'e dördüncü durum eklenir.
+**Architecture:** Mevcut `ResearchFlow` (backend/deixis/workflow/flow.py) çalışma türü listesine `report` eklenir; yürütme yeni `backend/deixis/workflow/report/` paketine devredilir (snapshot, plan, selection, sections, phrasing, gaps, assembly, review, export, numbering, store). Bölüm adımları bugünkü `_model_step` altyapısını (StepInput zarfı, `operation_key` tekrarsızlığı, tek şema onarımı, `model_mismatch`, D12 kısa tutamaçlar) olduğu gibi kullanır; yeni olan yalnız dört görev türü (`report_plan`, `report_section`, `report_phrase_repair`, `report_review`), bunların şemaları (`domain/contracts.py`) ve bölüme özel kanıt seçimidir. Eş zamanlı turlar (A–D) slice 0'ın (`docs/product/p6-slice0-concurrent-fill.md`, artık yazılı) süreç genelindeki `backend/deixis/workflow/concurrency.py::ModelCallLimiter`'ını kullanır: bir turun bağımsız bölüm adımları `asyncio.gather` ile aynı anda başlatılır ve her çağrının sahibi, `_table_fill` gibi, adımı `flow.deps.limiter.run(operation_key, factory)` ile gönderir. Fabrika `_model_step(..., limiter=flow.deps.limiter)` çağırır; bu parametre `_call_adapter`'ın kota hatasında `limiter.reduce()` uygulayıp yeniden göndermesini sağlar, eş zamanlılık tavanını kendi başına uygulamaz. Kota hatasında süreç genelindeki tek limit düşer (tabloyla paylaşılır). Depolama yeni tablolarla genişler (`reports`, `report_sections`, `report_claims`, `report_claim_refs`, `report_citation_links`, `report_gaps`, `report_snapshot`, `report_phrase_repairs`) ve `ReportStore` sınıfı `TableStore`'un desenini izler (append-only, `operation_key` replay, `Store.conn` paylaşımı). API'ye tablo alt sisteminin izlediği `request_*` deseniyle yeni rotalar eklenir. Frontend'de `apps/web/src/report/` yeni bir alt dizin `ResearchView.tsx`'e ince bir entegrasyonla bağlanır; `PdfReadiness.tsx`'e dördüncü durum eklenir.
 
 **Tech Stack:** Python 3.12 (uv, native arm64), FastAPI, SQLite (tek bağlantı, kısa senkron işlemler), JSON Schema (Draft 2020-12) tabanlı model sözleşmeleri, `models/adapter.py` üzerinden model bağlantıları (gerçek koşu: `gpt-5.6-luna`); React 19 + TypeScript + Tailwind 4 + shadcn/base-ui (apps/web), Playwright (apps/web/e2e), pytest (tests/).
 
@@ -1508,7 +1508,10 @@ async def run_report(flow, run, scope):
     for round_ids in ROUNDS:
         flow._checkpoint(run_id)
         results = await asyncio.gather(*(_run_section(flow, run, scope, reports, report_id, frozen, snapshot, sid)
-                                          for sid in round_ids))
+                                          for sid in round_ids), return_exceptions=True)
+        failure = next((result for result in results if isinstance(result, BaseException)), None)
+        if failure is not None:
+            raise failure
         flow._checkpoint(run_id)
         if any(status == "draft" for status in results):
             flow._pause(run_id, "section_must_be_rewritten", {"sections": [s for s, r in zip(round_ids, results) if r == "draft"]})
@@ -1533,8 +1536,12 @@ async def _run_section(flow, run, scope, reports, report_id, frozen_plan, snapsh
     reports.record_truncation(report_id, section_id, evidence["truncated"])
     target = {"report_id": report_id, "section_id": section_id, "plan": frozen_plan,
              "prior_summaries": reports.prior_summaries(report_id), "repair_request": None, "review_scope": None}
-    output = await flow._model_step(run, scope, f"report_section:{section_id}", "report_section",
-                                    passage_rows=evidence["passages"], report_target=target, limiter=flow.deps.limiter)
+    operation_key = f"report_section:{section_id}"
+    async def call():
+        return await flow._model_step(run, scope, operation_key, "report_section",
+                                      passage_rows=evidence["passages"], report_target=target,
+                                      limiter=flow.deps.limiter)
+    output = await flow.deps.limiter.run(operation_key, call)
     if output.get("invalid"):
         reports.save_section_draft(reports.section(report_id, section_id)["id"], output.get("step_id"), "failed", None,
                                    {"ok": False, "issues": output["issues"]}, None)
@@ -1549,7 +1556,7 @@ async def _run_section(flow, run, scope, reports, report_id, frozen_plan, snapsh
     return status
 ```
 
-`asyncio.gather`'a verilen her `_run_section(...)` çağrısının kendisi eş zamanlı çalışır (Python coroutine'leri `await` noktalarında birbirine geçer); asıl üst sınır `_model_step`'in içindeki `_call_adapter`'ın `flow.deps.limiter.run(operation_key, factory)` sarmalamasından gelir — rapor tarafı ayrı bir eş zamanlılık ilkeli yazmaz, slice 0'ın `_model_step`/`_extraction` imzasına eklediği `limiter` parametresini olduğu gibi kullanır.)
+`asyncio.gather`'a verilen her `_run_section(...)` çağrısının kendisi eş zamanlı çalışır (Python coroutine'leri `await` noktalarında birbirine geçer); üst sınır, çağrıyı yapan rapor kodunun `_table_fill` ile aynı biçimde uyguladığı `flow.deps.limiter.run(operation_key, factory)` sarmalamasından gelir. `_model_step` içindeki `_call_adapter` yalnız kota yanıtından sonra `limiter.reduce()` çağırır. Bir tur hata verdiğinde bekleyen görevler tüketilmeden hata yükseltilmez; hiçbir uçuş halindeki çağrı turdan uzun yaşayamaz.
 
 `flow.py`'ye ekle:
 
@@ -1813,7 +1820,7 @@ Expected: FAIL — `ModuleNotFoundError`.
 
 `flagged_sentences`: her `claim["text"]`'i (ve `insufficient_evidence[].reason`'ı) `phrasebank.sentences()` ile cümlelere böler, her cümleyi `phrasebank.unframed(sentence, text, language, sections=REPORT_PHRASEBANK_SECTIONS[section_id])` ile denetler; uymayan her cümle için `sentence_id = f"{claim_key}#{order}"`, `nearest_frames(sentence, text, language, sections=..., k=3)`, `previous_sentence`/`next_sentence` (aynı claim içindeki komşu cümleler, yoksa `None`).
 
-`repair_section`: `flagged` boşsa hiçbir şey yapmadan `(draft, [])` döner. Doluysa `report_phrase_repair` StepInput'unu (`report_target.repair_request`) kurar, `_model_step`'i çağırır, sonucu `sentence_id`'ye göre orijinal cümlelerin yerine koyar (claim metni yeniden birleştirilir), sayıların/atıfların/matematik aralıklarının onarımdan önce ve sonra aynı kaldığını kod tarafında karşılaştırır (bir claim_key için önce/sonra `re.findall(r"\d+(?:\.\d+)?", text)` çoklu kümesi ve `_math_spans` çıktısı eşit mi). Aynı kalmadıysa o cümle onarılmamış sayılır ve `unframed_exception` olarak kaydedilir; aynı kaldıysa `kept` olarak kaydedilir ve draft'a uygulanır. Onarımdan sonra hâlâ `unframed(...)` cümle içeren varsa onlar da `unframed_exception`'dır — hiçbiri bölümü `draft`'a düşürmez.
+`repair_section`: `flagged` boşsa hiçbir şey yapmadan `(draft, [])` döner. Doluysa `report_phrase_repair` StepInput'unu (`report_target.repair_request`) kurar ve bölüm çağrıları içinde eş zamanlı çalışabileceği için `_model_step` fabrikasını `flow.deps.limiter.run(f"report_phrase_repair:{section_id}", factory)` ile gönderir; fabrika yeniden gönderim için aynı limiter'ı `_model_step(..., limiter=flow.deps.limiter)` çağrısına geçirir. Sonucu `sentence_id`'ye göre orijinal cümlelerin yerine koyar (claim metni yeniden birleştirilir), sayıların/atıfların/matematik aralıklarının onarımdan önce ve sonra aynı kaldığını kod tarafında karşılaştırır (bir claim_key için önce/sonra `re.findall(r"\d+(?:\.\d+)?", text)` çoklu kümesi ve `_math_spans` çıktısı eşit mi). Aynı kalmadıysa o cümle onarılmamış sayılır ve `unframed_exception` olarak kaydedilir; aynı kaldıysa `kept` olarak kaydedilir ve draft'a uygulanır. Onarımdan sonra hâlâ `unframed(...)` cümle içeren varsa onlar da `unframed_exception`'dır — hiçbiri bölümü `draft`'a düşürmez.
 
 - [ ] **Step 4: Çalıştır, geçtiğini doğrula**
 
@@ -2681,7 +2688,7 @@ Spec bölüm bölüm, hangi görevin uyguladığı:
 - **§2 karar 4 (yanıt ve rapor ayrı buton):** `POST .../reports` yanıttan bağımsız rota (1g Task 1); `AnswerBlock` değişmeden `ReportView` ayrı bileşen (1i Task 1).
 - **§2 karar 5 (denklemler yanıtla aynı kural):** `equation_origin`/`equation_ref` şeması (1a Task 1), `report.md`'nin denklem talimatı (1a Task 3), montaj kuralı #11 (1e Task 4).
 - **§2 karar 6 (bölüm başına adım, aynı ajan):** `sections.py::run_report`/`_run_section` (1c Task 3); model `step_model`'in genel düşüşünden gelir, ayrı bir "rapor modeli" eklenmedi (Açık noktalar'da not).
-- **§2 karar 7 (eş zamanlı çağrı):** `asyncio.gather` + slice 0'ın `ModelCallLimiter`'ı (1c Task 3).
+- **§2 karar 7 (eş zamanlı çağrı):** `asyncio.gather` + her eş zamanlı adımın çağıran tarafta `ModelCallLimiter.run(operation_key, factory)` ile gönderilmesi (1c Task 3; eş zamanlı phrase repair için 1d Task 3).
 - **§2 karar 8 (kalıp hedefli onarımla sıkı):** `phrasebank.render/unframed` bölüm süzgeci (1d Task 1), `nearest_frames` (1d Task 2), `phrasing.py::repair_section` (1d Task 3).
 - **§2 karar 9 (insan okur biçimi):** `ReportView.tsx` (1i Task 1), `paragraph`/`table_ref`/`equation_ref` alanları (1a Task 1), `numbering.py` (1j Task 1).
 - **§2 karar 10 (yokluk yalnız tam metinden):** `generate_corpus_absence_candidates`'ın üç-satır kuralı (1e Task 3), montaj kuralı #9 (1e Task 4).
@@ -2710,7 +2717,7 @@ Spec bölüm bölüm, hangi görevin uyguladığı:
 
 ## Açık noktalar
 
-- **Eş zamanlılık isimleri artık kesin (slice 0 yazıldı):** `backend/deixis/workflow/concurrency.py::ModelCallLimiter(limit)`, `.limit`, `async def reduce() -> int`, `async def run(key, factory) -> T` (bağlam yöneticisi `slot()` YOKTUR); `Settings.model_concurrency` (`DEIXIS_MODEL_CONCURRENCY`, varsayılan 6); `FlowDeps.limiter` (varsayılan `ModelCallLimiter(1)`); `is_rate_limited` (`models/adapter.py`). Bu plan bunları 1c Task 3 ve 1k'da kullanır. Slice 0'ın `_model_step`/`_extraction` imzasına eklediği `limiter` parametresi bu dilimde AYNEN kullanılır; ayrı bir sarmalama yazılmaz.
+- **Eş zamanlılık isimleri artık kesin (slice 0 yazıldı):** `backend/deixis/workflow/concurrency.py::ModelCallLimiter(limit)`, `.limit`, `async def reduce() -> int`, `async def run(key, factory) -> T` (bağlam yöneticisi `slot()` YOKTUR); `Settings.model_concurrency` (`DEIXIS_MODEL_CONCURRENCY`, varsayılan 6); `FlowDeps.limiter` (varsayılan `ModelCallLimiter(1)`); `is_rate_limited` (`models/adapter.py`). Bu plan bunları 1c Task 3, 1d Task 3 ve 1k'da kullanır. Eş zamanlı her rapor adımını çağıran taraf `limiter.run(operation_key, factory)` ile sarar; `_model_step`/`_extraction`'a geçirilen `limiter` ise `_call_adapter`'ın kota yanıtında limiti düşürüp yeniden göndermesi içindir.
 - **`report_target.plan` yinelenmesi:** `report-plan.schema.json`'daki alanlar `step-input.schema.json`'ın `report_target.plan` alanında satır içi tekrar edilir (`extraction_target.columns`'ın `evidence-cell-draft.schema.json`'ı tekrar etmesiyle aynı desen). İki şema sürüm atlarsa elle senkron tutulmalı; otomatik bir tutarlılık testi (`test_report_target_plan_mirrors_report_plan_schema`) yürütme sırasında eklenmelidir, bu planda yazılmadı.
 - **`future_work_column_id`:** yukarıdaki "Dürüstçe eksikler" madde 2; yürütmede `report_plan`'a açık bir alan eklenip eklenmeyeceği kararı verilmeli.
 - **`report_review`'ın tek çağrı basitleştirmesi:** §8'in bölüm-bölüm dallanması bu dilimde yazılmadı (yukarıdaki madde 3); büyük raporlarda bağlam sığmama riski ölçülmedi.

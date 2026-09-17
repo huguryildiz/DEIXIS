@@ -1,6 +1,6 @@
 # P6 — Toplanan kanıttan bölümlü rapor (survey biçimi): tasarım notu
 
-**Tarih:** 17 Eylül 2026. **Durum:** Taslak; §2'deki kararlar sahiple bu oturumda alındı, §11'deki inceleme `gpt-5.6-sol` (effort high) ile yapıldı. Kod değişmedi. Bu not P6'nın ilk iki dilimini tanımlar; kill-search ve aday kartı (dilim 3) ile düzenleme ve ölçüm (dilim 4) ayrı notlarla gelir.
+**Tarih:** 17 Eylül 2026. **Durum:** Kabul edildi (17 Eylül 2026): §2'deki kararlar ve §15'teki üç soru sahiple bu oturumda kapandı, §11'deki inceleme `gpt-5.6-sol` (effort high) ile yapıldı. Kod değişmedi. Bu not P6'nın ilk iki dilimini tanımlar; kill-search ve aday kartı (dilim 3) ile düzenleme ve ölçüm (dilim 4) ayrı notlarla gelir.
 
 **Kısaca:** Bugünkü kısa yanıtın yanına, aynı kanıttan yazılan bölümlü bir rapor gelir: abstract, index terms, giriş, inceleme metodolojisi, arka plan, kanıt tablolu literatür sentezi, karşılaştırmalı bulgular, cevaplanmamış yön adayları, gelecek yönler, sınırlılıklar, sonuç ve kaynakça. Rapor tek model çağrısıyla değil, bir çalışma içinde bölüm başına bir adımla yazılır; her adım aynı dondurulmuş rapor planını ve kendi bölümüne ait kanıtı alır. Related-work tablosu modelin düzyazısı değil, P5'teki kanıt tablosudur. Gap'ler ilk günden vardır ama her biri "incelenen korpusta bulunmadı, denetlenmemiş aday" etiketini ve kaynakçasını taşır; kill-search gelince durum alır. Denklemler yanıttaki kuralla LaTeX yazılır ve KaTeX ile çizilir.
 
@@ -205,10 +205,10 @@ Sahibin okuma değerlendirmesi ayrı raporlanır; Claude'un okuması "insan dene
 - Tablo doldurma ve rapor birlikte 50 kaynaklı bir araştırmada bir saate yaklaşabilir; süre ölçülmedi.
 - Bir bölüm "structurally valid" olsa da semantik doğrulama değildir; T01'deki kural rapor için de geçerlidir.
 
-## 15. Sahibe kalan sorular
+## 15. Sahibe sorulanlar (17 Eylül 2026'da yanıtlandı)
 
-Her birinde önerilen seçenek ilk sırada; cevap gelmezse ilk seçenekle ilerlenir.
+Sahip üç soruda da ilk seçeneği seçti.
 
-1. **Rapor başlığı.** (a) `research_title` adımı raporun başlığını da yazar, sahip düzenler; (b) sahip başlığı raporu başlatırken girer.
-2. **Bölüm bütçeleri.** (a) Varsayılan toplam 4000–7000 kelime, IV en geniş; (b) sahip raporu başlatırken kısa/orta/uzun seçer.
-3. **Özet temelli satırlar tabloda.** (a) Tabloda kalır, raporda "özet" rozetiyle sayılır ve paydaya ayrı girer; (b) rapor yalnız tam metinli satırları tartışır, özet satırlar yalnız listelenir.
+1. **Rapor başlığı.** `research_title` adımı rapor planındaki kapsam cümlesinden raporun başlığını da yazar; yanıttaki başlık kuralları geçerlidir; sahip görünümde düzenler. (Başlığı sahibin başlatırken girmesi reddedildi.)
+2. **Bölüm bütçeleri.** Sabit varsayılan: toplam 4000–7000 kelime, en geniş pay IV'e, sonra III ve V'e. Rapor planı bütçeyi bölümlere dağıtır; dahil kaynak 10'dan azsa orantılı küçültür; montaj denetimi aşımı yakalar. (Kısa/orta/uzun ön ayarları reddedildi.)
+3. **Özet temelli satırlar.** Tabloda "özet" rozetiyle kalır ve tartışmaya girer; sayımlar ayrı paydayla yazılır ("tam metni incelenen 17 çalışmanın 11'i…, yalnız özeti incelenen 6 çalışmanın 2'si…"). Özet satırından yöntem ayrıntısı, denklem ya da "bildirmedi" çıkarımı yapılmaz (§6). (Yalnız tam metinli kaynakları tartışmak reddedildi: bugünkü PDF edinme oranıyla rapor çok az kaynağa dayanırdı.)

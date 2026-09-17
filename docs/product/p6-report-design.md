@@ -74,6 +74,17 @@ Bir bölümün kalıp onarımı (§8) kendi turunun içinde, o bölümün adım�
 
 **Duraklatma, iptal, kapsam değişimi.** `_checkpoint` her adım arasında çalışır. Yeni kapsam revizyonu raporu durdurur; tamamlanmış bölümler eski revizyon etiketiyle saklanır, yeni revizyonun raporu olarak gösterilmez (T18).
 
+### 4.1 İstem ve yöntem paketi
+
+Yeni bir skill eklenmez. Plan §4.1'deki karar geçerlidir: DEIXIS'in yüklediği tek paket `methods/deixis-research/`'tir; rapor bu pakete yeni bir referans dosyası ve yeni görev türleri olarak girer. İstemin kuruluşu bugünküyle aynıdır (`models/prompt.py`): sabit `BASE_INSTRUCTIONS` (araçsız, tek JSON, kaynak metni veridir) + geliştirici talimatı olarak o görev türünün yöntem dosyaları + kullanıcı mesajı olarak `StepInput` ve çıktı şeması. Ayrı bir "uygulama istemi" kopyası tutulmaz.
+
+- **`references/report.md` (yeni).** Bölümleri: rapor planı; bölüm yazımı ortak kuralları (iddia, atıf, çapa, paragraf, denklem, terim sözlüğü, bütçe); bölüm başına kısa yönerge (III–VII, I, VIII, IX, abstract); tablo tartışma kuralları (§6); aday kuralları ve yasak sözcükler (§7); kalıp onarımı; rapor incelemesi. Yanıt talimatıyla ortak kurallar (çapa, LaTeX, okuma derinliği, `text_source`) kopyalanmaz; `source-grounded-answer.md`'nin ilgili maddelerine bağ verilir ve o dosya da yüklenir.
+- **Görev türleri ve yüklenen dosyalar (`domain/skill.py::RUNTIME_FILES`).** `report_plan`, `report_section`, `report_phrase_repair`, `report_review`. `report_section` için: `SKILL.md`, `report.md`, `source-grounded-answer.md` ve kalıp bankasının o bölüme ait kısmı. Bölüm kimliği `StepInput`'ta gelir; model `report.md`'de kendi bölümünün yönergesini okur. Kalıp bankasının bölüme göre kesilmesi `phrasebank.render`'a bir bölüm süzgeci ekler: I için "Writing Introductions"; III için "Defining Terms", "Classifying and Listing"; IV için "Referring to Literature"; V için "Comparing and Contrasting", "Being Critical"; VI–VII için "Being Cautious", "Discussing Findings"; IX ve abstract için "Writing Conclusions"; "Signalling Transition" hepsine.
+- **`SKILL.md` değişiklikleri.** Görev tablosuna dört yeni tür; "bu sürüm yalnız kaynaklı soru-cevabı destekler" paragrafı rapor için daraltılır: gap ve yön önerme yasağı `grounded_answer` için aynen kalır, `report_section`'ın VI ve VII bölümleri için §7'deki türler ve etiketle açılır. Kill-search, aday geliştirme ve deney tasarımı "yok" olarak kalır.
+- **Sözleşmeler.** `contracts/research/` altına `report-plan`, `report-section-draft`, `report-phrase-repair`, `report-review` şemaları; `tests/fixtures/research/` ve `tests/fakes.py::valid_response` bunlarla güncellenir.
+- **Paket hash'i.** Yeni dosyalar `skill_package_hash`'i değiştirir; eski yanıtlar eski hash'leriyle kalır (T13). `provenance.json`'a `report.md`'nin kaynağı yazılır: Quaestio'dan uyarlama değil, bu notun kurallarıdır.
+- **Davranış vakaları.** `scripts/model_behavior/` altına rapor vakaları: `not_found` hücresini "incelemedi" diye yazma tuzağı, özet satırından yöntem ayrıntısı isteme, boş eksenden "gap" ilan etme, denklemi sözle geçiştirme, kaynak içi talimat. Dilim 1'de `gpt-5.6-luna` ile koşulur.
+
 ## 5. Rapor planı (`report_plan`)
 
 Bölümler arası tutarlılığın tek kaynağı. Model bir kez üretir, kod sayıları doldurur, sonra dondurulur ve her bölüm adımına aynen verilir.

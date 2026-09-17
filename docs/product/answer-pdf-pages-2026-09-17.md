@@ -1,6 +1,6 @@
 # Yanıt girdisinde PDF sayfalarına yer açmak: tasarım notu
 
-**Tarih:** 17 Eylül 2026. **Durum:** Kabul edildi (17 Eylül 2026): sahip §6'daki altı soruda da ilk seçeneği seçti. §5'teki beklentiler bu hâliyle donduruldu; uygulama §7'deki sırayla sürüyor.
+**Tarih:** 17 Eylül 2026. **Durum:** Kabul edildi (17 Eylül 2026): sahip §6'daki altı soruda da ilk seçeneği seçti. §5'teki beklentiler bu hâliyle donduruldu. Alt adım 1–4 yapıldı; sonuç §8'de. Önceden yazılan geri alma koşulu biçimsel olarak tetiklendi, karar sahibe soruldu.
 
 **Kısaca:** P5 kapanış ölçümünde (D55) yanıtlar, PDF metni elde olduğu hâlde tek bir PDF sayfası kullanmadı. S1'de 52 kaynak dahil edilmişti, 6'sının PDF metni vardı ve 6'sı da yanıt modeline verildi, ama hepsi yalnız özetleriyle verildi: 20 dayanağın 20'si özetti. Sebep bir sayıdır, model değil: yanıt girdisi 48 pasajlıktır ve kod önce her dahil kaynağın özetini koyar. 48 ya da daha fazla kaynak dahil edilince bütün yer özetlerle dolar, PDF sayfasına sıra gelmez. Bu not, yer dağıtımını değiştirmeyi önerir. Aynı sorun P4'te (D20, D34) görülmüş, bir deneme yapılıp geri alınmıştı (§2).
 
@@ -84,3 +84,37 @@ Her soruda önerim ilk seçenek. **Sahibin yanıtı (17 Eylül 2026): altısınd
 3. **Kural:** `_retrieve` içinde kota; mevcut testler (D17, D19, D20, D27) korunur, yeni testler önce kırmızı.
 4. **Çevrimdışı tekrar oynatma ve canlı karşılaştırma:** §5.
 5. **Karar kaydı:** D-girdisi (Evidence, Limits); sonuç beklentiyi karşılamazsa değişiklik geri alınır ve bu da yazılır.
+
+## 8. Sonuç (17 Eylül 2026)
+
+Kod: `59759e2` (kısa kimlikler yanıt metninde kaynak başlığına çevrilir), `5826784` ve `f2ce474` (kota). Uygulamada koşul netleşti: kota, metni olan kaynak sayısı + PDF'li kaynak başına 2 sayfa pasaj sınırını aşınca devreye girer (S1'de metni olan tam 48 kaynak vardı). Backend: 520 geçti, 1 kaldı (bu makinede zaten kalan bellek sınırı testi). Çıktılar `.local/answer-pdf-pages-2026-09-17/`.
+
+**Çevrimdışı tekrar oynatma (model yok, semantik sıralama kapalı, D55 kopyası):**
+
+| | Eski kural | Yeni kural |
+|---|---|---|
+| S1 girdideki PDF sayfası | 1 | 12 |
+| S1 PDF'li kaynak / verilen kaynak | 1 / 48 | 6 / 36 |
+| S1 verilen bilinen eser (PDF sayfasıyla) | 6 (0) | 6 (5) |
+| S2 | 47 pasaj, 5 PDF sayfası, 42 kaynak | aynı (kota tetiklenmedi) |
+
+Beklenti (≥ 12 PDF sayfası) karşılandı.
+
+**Canlı (`gpt-5.6-luna` medium, aynı kopya):** Yeni kuralla S1'de 2, S2'de 1 yanıt. Eski kural kolu olarak D55'teki aynı seçimli 3 S1 yanıtı kullanıldı (plan kural başına 2 yeni yanıt diyordu; sapma).
+
+| | Eski kural (D55) | Yeni kural |
+|---|---|---|
+| S1 geçerli yanıt | 1 / 3 | 0 / 2 |
+| S1 model denemeleri (onarımlar dahil) | 6 | 4 |
+| Denemelerde PDF sayfasına giden atıf | 0 | 9, 7, 7, 6 |
+| Denemelerde PDF sayfasına dayanan iddia | 0 | 8, 6, 5, 5 |
+| S1 son denemedeki sorunlar | — | `duplicate_citation_anchor` 3; `missing_citation_anchor` 1 |
+| S2 geçerli yanıt (girdi değişmedi) | 2 / 2 | 0 / 1 (`unknown_passage_id`, `missing_citation_anchor`) |
+
+**Okuma:**
+- Model yeni kuralla PDF sayfalarını kullanıyor: dört denemenin her birinde 5–8 iddia bir PDF sayfasına dayanıyor; eski kuralla altı denemede hiç yok.
+- Ama hiçbir yeni yanıt geçerli olmadı, bu yüzden iddialar incelenemedi. Önceden yazılan "her yanıtta en az bir PDF dayanaklı iddia" ve "geçerli yanıt oranı düşmez" beklentileri geçerli yanıt üzerinden tanımlıydı ve karşılanmadı.
+- Geçersizliğin kurala bağlı olduğu gösterilemiyor: girdisi hiç değişmeyen S2 yanıtı da bu kez geçersiz kaldı (D55'te 2/2 geçerliydi), S1 eski kuralla da 3'te 2 geçersizdi. Sorunların hepsi alıntı biçimi: bir pasajı alıntısız göstermek, aynı pasaj için iki alıntı, fazladan sıfırlı kısa kimlik.
+- Örneklem çok küçük: kural başına 2–3 yanıt.
+
+**Sahibe soru:** §7.5 sonuç beklentiyi karşılamazsa kuralın geri alınmasını söylüyordu. Öneri: kural kalır; yanıt geçerliliği ayrı bir iş olarak ele alınır (ör. aynı iddia ve pasaj için ikinci alıntıyı kabul etmek, D43'te hücreler için yapıldığı gibi; alıntısız atfı tek onarım yerine yalnız o atfı düşürerek çözmek), ardından bu karşılaştırma yeniden koşulur.

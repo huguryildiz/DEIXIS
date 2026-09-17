@@ -2,6 +2,38 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D56 — Keep the answer page quota, and publish a final answer draft after dropping only its unquoted, repeated or stray citations
+
+**Status**: accepted (implemented)
+**Date**: 2026-09-17
+
+**Context**: D55 found that answers on a large selection used no PDF page. The accepted note `docs/product/answer-pdf-pages-2026-09-17.md` added a page quota (`5826784`, `f2ce474`): when one passage per source plus two pages per PDF source would exceed the 48-passage limit, each source with PDF text gets its abstract and its two best pages. Live, drafts under the quota cited PDF pages, but 0 of 3 new answers were valid, so the note's pre-registered revert condition was met. Every failure was a quoting defect after the one repair: two quotes for the same claim and passage, a cited passage without a locatable quote, a handle copied with an extra zero. Re-validating the 9 stored answers' last attempts offline, dropping only those citations would have made 8 valid instead of 3. The owner chose to keep the quota and fix validity first.
+
+**Decision**:
+
+- The quota stays.
+- `contracts.salvage_answer_draft` runs only on a grounded answer whose last allowed attempt is still invalid. It keeps the first locatable quote of a repeated (claim, passage) pair, drops quotes for passages the claim does not cite, and drops a cited passage without a locatable quote only when the claim keeps another quoted citation. It adds nothing and removes no claim. The result is validated again and published only if valid; each removal is stored as a warning (`duplicate_citation_anchor_ignored`, `uncited_anchor_ignored`, `citation_without_quote_removed`). Otherwise the draft stays unverified as before (`c28669a`).
+- `resolve_citation_handles` reads a handle with more or fewer leading zeros as the handle with that number.
+- Handles written into answer prose are replaced by source titles after validation, not before (`4cd5850`). `59759e2` did it before validation, so a limitation listing many sources exceeded the text length limit and turned D55's valid S1 answer invalid; code from `59759e2` to `4cd5850` carried that regression.
+
+**Measurement** (same restored copy as D55, `gpt-5.6-luna` medium, all roles; quota-off arm is `c28669a` with the quota condition disabled in the worktree):
+
+| | S1 with quota | S1 without quota | S2 (quota not triggered) |
+|---|---|---|---|
+| Valid answers | 3 / 3 | 3 / 3 | 2 / 2 |
+| Answers needing salvage | 1 | 2 | 2 |
+| Citations removed by salvage | 1 (plus 2 repeated quotes) | 6 (plus 3 repeated or stray quotes) | 1 (plus 2 repeated quotes) |
+| Citations to a PDF page | 3, 6, 9 | 0, 0, 0 | 0, 0 |
+
+Claude reviewed the 18 PDF-page citations of the quota arm against their quotes and the claim's other evidence: none wrong or unrelated, 12 supported, 6 where the claim says more than its quotes show (one attributes a smart-grid framework to a different paper's page).
+
+**Limits**:
+
+- Three answers per arm on one question; the validity gain is also shown offline on 9 stored answers, not measured as a rate.
+- Salvage makes answers publishable with fewer citations; it does not make the model quote better. A claim can still lose support the reviewer would have wanted, which is why removals are shown as warnings.
+- The claim review was done by Claude, not the owner, and only for PDF-page citations.
+- Search depth (the second D55 problem, `docs/product/search-recall-depth-2026-09-17.md`) is not addressed.
+
 ## D55 — Close P5 on a two-question real-model measurement, reviewed by Claude on the owner's delegation
 
 **Status**: accepted

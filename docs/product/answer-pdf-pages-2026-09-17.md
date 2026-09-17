@@ -1,6 +1,6 @@
 # Yanıt girdisinde PDF sayfalarına yer açmak: tasarım notu
 
-**Tarih:** 17 Eylül 2026. **Durum:** Kabul edildi (17 Eylül 2026): sahip §6'daki altı soruda da ilk seçeneği seçti. §5'teki beklentiler bu hâliyle donduruldu. Alt adım 1–4 yapıldı; sonuç §8'de. Önceden yazılan geri alma koşulu biçimsel olarak tetiklendi, karar sahibe soruldu.
+**Tarih:** 17 Eylül 2026. **Durum:** Kabul edildi (17 Eylül 2026): sahip §6'daki altı soruda da ilk seçeneği seçti. §5'teki beklentiler bu hâliyle donduruldu. Alt adım 1–4 yapıldı; sonuç §8'de. Önceden yazılan geri alma koşulu biçimsel olarak tetiklendi; sahip kuralı tutup önce yanıt geçerliliğini düzeltmeyi seçti. Düzeltme ve yeniden karşılaştırma §9'da (D56).
 
 **Kısaca:** P5 kapanış ölçümünde (D55) yanıtlar, PDF metni elde olduğu hâlde tek bir PDF sayfası kullanmadı. S1'de 52 kaynak dahil edilmişti, 6'sının PDF metni vardı ve 6'sı da yanıt modeline verildi, ama hepsi yalnız özetleriyle verildi: 20 dayanağın 20'si özetti. Sebep bir sayıdır, model değil: yanıt girdisi 48 pasajlıktır ve kod önce her dahil kaynağın özetini koyar. 48 ya da daha fazla kaynak dahil edilince bütün yer özetlerle dolar, PDF sayfasına sıra gelmez. Bu not, yer dağıtımını değiştirmeyi önerir. Aynı sorun P4'te (D20, D34) görülmüş, bir deneme yapılıp geri alınmıştı (§2).
 
@@ -118,3 +118,20 @@ Beklenti (≥ 12 PDF sayfası) karşılandı.
 - Örneklem çok küçük: kural başına 2–3 yanıt.
 
 **Sahibe soru:** §7.5 sonuç beklentiyi karşılamazsa kuralın geri alınmasını söylüyordu. Öneri: kural kalır; yanıt geçerliliği ayrı bir iş olarak ele alınır (ör. aynı iddia ve pasaj için ikinci alıntıyı kabul etmek, D43'te hücreler için yapıldığı gibi; alıntısız atfı tek onarım yerine yalnız o atfı düşürerek çözmek), ardından bu karşılaştırma yeniden koşulur.
+
+## 9. Geçerlilik düzeltmesinden sonra yeniden karşılaştırma (17 Eylül 2026)
+
+**Ne değişti:** Tek onarımdan sonra hâlâ geçersiz kalan yanıt taslağında yalnız sorunlu atıflar atılır: aynı iddia ve pasaj için tekrarlanan alıntıdan bulunabilen ilki kalır, iddianın göstermediği pasaja alıntı atılır, alıntısı bulunamayan atıf iddianın alıntılı başka atfı varsa atılır. Hiçbir şey eklenmez, iddia silinmez; sonuç yeniden doğrulanır, her atılan uyarı olarak saklanır. Fazladan sıfırlı kısa kimlik doğru kimlik olarak okunur (`c28669a`). Saklı 9 yanıtın son denemesinde çevrimdışı: geçerli 3 → 8.
+
+**Canlı** (aynı D55 kopyası, `gpt-5.6-luna` medium; kotasız kol aynı kodda kota koşulu kapatılarak):
+
+| | S1 kotalı | S1 kotasız | S2 (kota tetiklenmez) |
+|---|---|---|---|
+| Geçerli yanıt | 3 / 3 | 3 / 3 | 2 / 2 |
+| Kurtarma gereken yanıt | 1 | 2 | 2 |
+| Atılan atıf | 1 (+2 tekrar alıntı) | 6 (+3 tekrar ya da fazladan alıntı) | 1 (+2 tekrar alıntı) |
+| PDF sayfasına giden atıf | 3, 6, 9 | 0, 0, 0 | 0, 0 |
+
+**İnceleme (Claude):** Kotalı koldaki 18 PDF sayfası atfının hiçbiri yanlış ya da ilgisiz değil; 12'si alıntı ve iddianın öteki dayanaklarıyla destekleniyor, 6'sında iddia alıntıların gösterdiğinden fazlasını söylüyor (biri akıllı şebeke çerçevesini başka bir makalenin sayfasına bağlıyor).
+
+**Okuma:** §5'teki beklentiler karşılandı: kotalı her S1 yanıtında PDF dayanaklı iddia var, geçerli yanıt oranı düşmedi. Örneklem kol başına 3 yanıt; oran ölçülmüş değil. Çıktılar `.local/answer-salvage-2026-09-17/`.

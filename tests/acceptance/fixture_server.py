@@ -151,7 +151,7 @@ def main() -> None:
     if args.write_replacement_pdf:
         args.write_replacement_pdf.write_bytes(make_pdf(["SYNTHETIC replacement scan: release scheduling by bisection, full page."]))
         return
-    settings = Settings(data_dir=args.data_dir, port=args.port)
+    settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1)
     app = create_app(settings, adapters={"codex": ScriptedCodex()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(openalex)), fetcher=fetch)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", timeout_graceful_shutdown=1)

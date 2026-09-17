@@ -57,7 +57,8 @@ async def fake_fetch(url):
 
 
 def app_for(tmp_path, adapter=None, http_status=200):
-    settings = Settings(data_dir=tmp_path / "data", port=8765)
+    # These API tests script pause/cancel inside one call and assume the next source is not yet in flight.
+    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1)
     return create_app(settings, adapters={"fake": adapter or FakeAdapter()}, http_client=openalex_client(http_status),
                       fetcher=fake_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
 

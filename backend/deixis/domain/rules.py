@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 MAX_SCHEMA_REPAIRS = 1
+MAX_RATE_LIMIT_MODEL_RETRIES = 2  # extra resends after a rate-limited response, before the call halts as today
 MAX_ACTIVE_MODEL_CALLS = 1
 MAX_TRANSIENT_NETWORK_RETRIES = 2
 

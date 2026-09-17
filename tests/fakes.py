@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any, Callable
@@ -73,15 +74,22 @@ class FakeAdapter:
     connection = "fake"
 
     def __init__(self, responder: Callable[[dict[str, Any]], str] = valid_response, ready: bool = True,
-                 resolved_model: str | None = None, models: list[str] | None = None, efforts: list[str] | None = None):
+                 resolved_model: str | None = None, models: list[str] | None = None, efforts: list[str] | None = None,
+                 delay: float = 0.0, before: Callable[[dict[str, Any]], None] | None = None,
+                 fail: Callable[[dict[str, Any]], "ModelStepResult | None"] | None = None):
         self.responder = responder
         self.ready = ready
         self.resolved_model = resolved_model  # None: answer with the requested model, as a correct connection does
         self.models = models
         self.efforts = efforts or []
+        self.delay = delay
+        self.before = before
+        self.fail = fail
         self.calls: list[dict[str, Any]] = []
         self.sent_efforts: list[str | None] = []
         self.sent: list[tuple[str, str | None, str | None]] = []  # (task type, requested model, reasoning effort) per call
+        self.current = 0
+        self.max_concurrent = 0
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         status = {"connection": "fake", "ready": self.ready, "reason": None if self.ready else "fake not ready"}
@@ -95,7 +103,18 @@ class FakeAdapter:
         self.calls.append(si)
         self.sent_efforts.append(reasoning_effort)
         self.sent.append((si["task_type"], requested_model, reasoning_effort))
-        return ModelStepResult("completed", raw_text=self.responder(si), resolved_model=self.resolved_model or requested_model)
+        if self.before:
+            self.before(si)
+        self.current += 1
+        self.max_concurrent = max(self.max_concurrent, self.current)
+        try:
+            if self.delay:
+                await asyncio.sleep(self.delay)
+            if self.fail and (result := self.fail(si)) is not None:
+                return result
+            return ModelStepResult("completed", raw_text=self.responder(si), resolved_model=self.resolved_model or requested_model)
+        finally:
+            self.current -= 1
 
     async def cancel(self) -> bool:
         return False

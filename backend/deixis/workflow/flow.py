@@ -17,8 +17,8 @@ import json
 import math
 import re
 from collections import Counter
-from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable, Iterator
 
 import httpx
 
@@ -26,15 +26,16 @@ from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, math_reader, ocr, pdf
 from deixis.domain import contracts, phrasebank
-from deixis.domain.rules import (MAX_SCHEMA_REPAIRS, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH, after_invalid_output,
-                                 effective_reviewer, step_model)
+from deixis.domain.rules import (MAX_RATE_LIMIT_MODEL_RETRIES, MAX_SCHEMA_REPAIRS, MAX_TRANSIENT_NETWORK_RETRIES,
+                                 SCREENING_BATCH, after_invalid_output, effective_reviewer, step_model)
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.models import prompt
-from deixis.models.adapter import ModelAdapter
+from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
 from deixis.providers import query_compiler
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, normalize_doi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, new_id, now
+from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.equations import equation_state
 from deixis.workflow.store import NotFound, RunInProgress, Store
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
@@ -67,6 +68,7 @@ STOPWORDS = set(
     "not but can our its them they than then also between within over under nasıl nedir neler olan için ile gibi veya "
     "ve bir bu şu hangi mı mi mu mü midir var yok daha çok".split()
 )
+RATE_LIMIT_BACKOFF_SECONDS = 1.5  # matches the provider search retry backoff in providers/common.py
 
 
 def formulation_score(text: str) -> int:
@@ -130,6 +132,14 @@ class OptionalStepFailed(Exception):
 
 
 @dataclass
+class _FillJob:
+    key: str
+    svid: str
+    columns: list[dict[str, Any]]
+    cell_versions: dict[str, int]
+
+
+@dataclass
 class FlowDeps:
     settings: Settings
     store: Store
@@ -138,6 +148,7 @@ class FlowDeps:
     http: httpx.AsyncClient
     fetch_pdf: Callable[[str], Awaitable[fetch_module.FetchResult]] = fetch_module.fetch_pdf
     equations: Any = None  # workflow.equations.EquationService when the equation reader is set up (D52)
+    limiter: ModelCallLimiter = field(default_factory=lambda: ModelCallLimiter(1))
 
 
 class ResearchFlow:
@@ -742,39 +753,92 @@ class ResearchFlow:
 
     # ---- evidence tables ----------------------------------------------------------------
     async def _table_fill(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
-        """Fill the cells planned when the run was requested, one source at a time (D37).
+        """Fill planned cells, sending several sources' calls at once (D37, P6 slice 0).
 
         A source's columns are asked together, at most MAX_COLUMNS_PER_CALL per call, and each call reads that source's
-        passages only. A source without stored text gets 'inaccessible' from the system without a model call. A result
-        for a cell that got a value in the meantime waits as a proposal (TableStore.save_model_output).
+        passages only. A source without stored text gets 'inaccessible' from the system without a model call, written
+        before any concurrent submission starts for it. Calls are sent through the run's shared limiter: at most its
+        current limit are in flight, and the same operation key is never sent twice concurrently. A checkpoint still
+        runs before each submission. Once it stops new submissions, calls already in flight finish and record their
+        steps, but their cells are applied only while the run remains active on the revision for which they were sent.
         """
         run_id, target = run["id"], run["target"]
         tables = TableStore(self.store)
         await self._read_equations(run, [planned["source_version_id"] for planned in target["sources"]])
+        limiter = self.deps.limiter
+        job_iter = self._fill_jobs(run, tables, target)
+        pending: dict[asyncio.Task[dict[str, Any] | None], _FillJob] = {}
+        stop: RunStopped | None = None
+        failure: Exception | None = None
+
+        def submit_more() -> None:
+            nonlocal stop
+            while stop is None and failure is None and len(pending) < limiter.limit:
+                try:
+                    self._checkpoint(run_id, run["scope_revision"])
+                    job = next(job_iter, None)
+                except RunStopped as exc:
+                    stop = exc
+                    return
+                if job is None:
+                    return
+
+                async def call(job: _FillJob = job) -> dict[str, Any] | None:
+                    return await self._extraction(run, scope, job.key, job.svid, job.columns, MAX_FILL_PASSAGES, limiter)
+
+                pending[asyncio.ensure_future(limiter.run(job.key, call))] = job
+
+        submit_more()
+        while pending:
+            done, _ = await asyncio.wait(pending.keys(), return_when=asyncio.FIRST_COMPLETED)
+            completed: list[tuple[dict[str, Any] | None, _FillJob]] = []
+            for task in done:
+                job = pending.pop(task)
+                try:
+                    output = task.result()
+                except RunStopped as exc:
+                    stop = stop or exc
+                except Exception as exc:
+                    failure = failure or exc
+                else:
+                    completed.append((output, job))
+            if failure is None:
+                for output, job in completed:
+                    if output is not None and not self._fill_stopped(run_id, run["scope_revision"]):
+                        self._save_cells(run, output, job.cell_versions, recheck=False)
+            submit_more()
+        if failure is not None:
+            raise failure
+        if stop is not None:
+            raise stop
+
+    def _fill_jobs(self, run: dict[str, Any], tables: TableStore, target: dict[str, Any]) -> Iterator[_FillJob]:
+        """Yield pending source and column jobs in table order, writing no-text cells as each source is reached."""
         for planned in target["sources"]:
-            self._checkpoint(run_id)
             svid = planned["source_version_id"]
             columns = [c for c in self._live_columns(run, tables) if c["id"] in planned["column_ids"]]
             if not columns or svid not in tables.active_rows(target["table_id"]):
                 continue  # the column or row was removed after the fill was requested
             if not self.store.passages_for(svid):
-                step = self.store.step(run_id, f"no_text:{svid}", "table_no_text")
+                step = self.store.step(run["id"], f"no_text:{svid}", "table_no_text")
                 if step["status"] != "succeeded":
                     self.store.start_step(step["id"])
                     saved = [tables.save_no_text(run["research_id"], target["table_id"], c["id"], svid, column_revision=c["current_revision"],
-                                                 run_id=run_id, step_id=step["id"], scope_revision=run["scope_revision"]) for c in columns]
+                                                 run_id=run["id"], step_id=step["id"], scope_revision=run["scope_revision"]) for c in columns]
                     self.store.finish_step(step["id"], "succeeded", output={"source_version_id": svid, "cells": sum(s is not None for s in saved)})
                 continue
             # Calls are cut from the planned column list, so a resumed run finds each call's stored step under the same key.
             for index in range(0, len(planned["column_ids"]), MAX_COLUMNS_PER_CALL):
                 chunk = [c for c in columns if c["id"] in planned["column_ids"][index:index + MAX_COLUMNS_PER_CALL]]
-                if not chunk:
-                    continue
-                key = f"cell_extraction:{svid}:{index // MAX_COLUMNS_PER_CALL}"
-                output = await self._extraction(run, scope, key, svid, chunk, MAX_FILL_PASSAGES)
-                self._checkpoint(run_id)
-                if output is not None:
-                    self._save_cells(run, output, planned["cell_versions"], recheck=False)
+                if chunk:
+                    yield _FillJob(f"cell_extraction:{svid}:{index // MAX_COLUMNS_PER_CALL}", svid, chunk, planned["cell_versions"])
+
+    def _fill_stopped(self, run_id: str, scope_revision: int) -> bool:
+        """Whether a returned fill call must defer or permanently skip updating its cells."""
+        run = self.store.run(run_id)
+        if run["status"] in ("pause_requested", "paused", "cancelled", "failed"):
+            return True
+        return self.store.research(run["research_id"])["current_scope_revision"] != scope_revision
 
     async def _cell_recheck(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
         """Ask again for one cell. The model never sees the cell's current value, and the result waits as a proposal (D37)."""
@@ -816,7 +880,7 @@ class ResearchFlow:
             raise
 
     async def _extraction(self, run: dict[str, Any], scope: dict[str, Any], key: str, svid: str, columns: list[dict[str, Any]],
-                          limit: int) -> dict[str, Any] | None:
+                          limit: int, limiter: ModelCallLimiter | None = None) -> dict[str, Any] | None:
         """One cell extraction step for one source; None when the source has no stored text to give."""
         step = self.store.step(run["id"], key, "model:cell_extraction")
         if step["status"] == "succeeded":
@@ -832,7 +896,8 @@ class ResearchFlow:
         target = {"table_id": run["target"]["table_id"], "source_id": svid, "columns": [extraction_column(c) for c in columns],
                   "passage_scope": {"given": len(given), "available": len(available),
                                     "all_pages_given": bool(pages) and pages <= {p["id"] for p in given}}}
-        return await self._model_step(run, scope, key, "cell_extraction", source_ids=[svid], passage_rows=given, extraction_target=target)
+        return await self._model_step(run, scope, key, "cell_extraction", source_ids=[svid], passage_rows=given,
+                                      extraction_target=target, limiter=limiter)
 
     async def _cell_passages(self, run: dict[str, Any], scope: dict[str, Any], key: str, svid: str, columns: list[dict[str, Any]],
                              available: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -929,11 +994,38 @@ class ResearchFlow:
             "created_at": now(),
         }
 
+    async def _call_adapter(self, run_id: str, rid: str, step_id: str, step_input_id: str, connection: str,
+                            requested_model: str | None, adapter: ModelAdapter, base: str, developer: str, message: str,
+                            schema: dict[str, Any], reasoning_effort: str | None,
+                            limiter: ModelCallLimiter | None) -> tuple[str, ModelStepResult]:
+        """Send one model call, resending under a lower ceiling after a rate-limit response.
+
+        Resends reuse the stored StepInput because their model input is identical, and each gets its own model session.
+        Passing no limiter keeps the existing one-attempt behavior for model steps outside table fill.
+        """
+        attempts = 0
+        while True:
+            session = self.store.start_model_session(rid, run_id, step_id, step_input_id, connection, requested_model)
+            result = await adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort)
+            if (limiter is None or result.status == "completed" or attempts >= MAX_RATE_LIMIT_MODEL_RETRIES
+                    or not is_rate_limited(result)):
+                return session, result
+            attempts += 1
+            self.store.finish_model_session(
+                session, status=result.status, resolved_model=result.resolved_model,
+                external_thread_id=result.external_thread_id, raw_output=result.raw_text,
+                token_usage_json=result.token_usage, tool_item_types_json=result.tool_item_types,
+            )
+            await limiter.reduce()
+            self._checkpoint(run_id)
+            await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS * attempts)
+
     async def _model_step(self, run: dict[str, Any], scope: dict[str, Any], operation_key: str, task_type: str,
                           candidate_rows: list[dict[str, Any]] | None = None, source_ids: list[str] | None = None,
                           passage_rows: list[dict[str, Any]] | None = None, selection_revision: int | None = None,
                           claims: list[dict[str, Any]] | None = None, model: tuple[str, str | None, str | None] | None = None,
-                          optional: bool = False, extraction_target: dict[str, Any] | None = None) -> dict[str, Any]:
+                          optional: bool = False, extraction_target: dict[str, Any] | None = None,
+                          limiter: ModelCallLimiter | None = None) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run."""
         run_id, rid = run["id"], run["research_id"]
@@ -976,8 +1068,10 @@ class ResearchFlow:
             else:  # issues name records by ID; the model knows them only by the handles it was shown
                 message = prompt.repair_message(shown, contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues)
             self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema, selection_revision)
-            session = self.store.start_model_session(rid, run_id, step["id"], payload["step_input_id"], connection, requested_model)
-            result = await adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort)
+            session, result = await self._call_adapter(
+                run_id, rid, step["id"], payload["step_input_id"], connection, requested_model, adapter, base, developer,
+                message, schema, reasoning_effort, limiter,
+            )
             recorded: dict[str, Any] = {
                 "status": result.status, "resolved_model": result.resolved_model, "external_thread_id": result.external_thread_id,
                 "raw_output": result.raw_text, "token_usage_json": result.token_usage, "tool_item_types_json": result.tool_item_types,

@@ -2,6 +2,39 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D61 — Send table-fill cell extraction calls concurrently under a shared, adjustable limit
+
+**Status:** Accepted; implemented, duration not yet measured. **Date:** 2026-09-17.
+
+**Context:** `_table_fill` (backend/deixis/workflow/flow.py) read its planned sources one at a time and awaited each
+`cell_extraction` model call; D55 measured 506–576 s for a 50-source fill. The report design note (P6, §2 decision
+7, §4) requires this to become concurrent, independently of the report itself (§12 item 0), with a process-wide
+adjustable limit shared with the future report run.
+
+**Decision:** Add `ModelCallLimiter` (backend/deixis/workflow/concurrency.py): an adjustable, process-wide bound on
+concurrent model calls with per-operation_key single-flight and a `reduce()` that halves the limit (floor 1) on a
+rate-limited response. `_table_fill` submits its (source, column-chunk) jobs through it, with `_checkpoint` (now
+including the scope revision) before every submission; a pause, cancel or newer scope revision stops new
+submissions but lets calls already in flight finish and record their own step. A finished call's cells are applied
+only while the run is still active on its revision: a pause defers them to resume, a cancel or newer revision
+leaves them recorded and unused. For that reason the API's cancel no longer interrupts the adapter during a
+`table_fill` run. No in-flight call outlives `_table_fill`: on an unexpected error the remaining calls finish
+before the error is raised. A rate-limited call is resent up to `MAX_RATE_LIMIT_MODEL_RETRIES = 2` times under the
+lowered limit before falling back to the ordinary pause. The limit is `Settings.model_concurrency` (env
+`DEIXIS_MODEL_CONCURRENCY`, default 6); `FlowDeps.limiter` defaults to 1, and the acceptance fixture and
+`tests/test_api_flow.py::app_for` pin 1, because their scripted pause and cancel cases assume one call at a time.
+
+**Limits:** Verified with FakeAdapter tests only (limit respected, same cells at limit 1 and 3, one source's failure
+does not stop the others, pause/cancel, rate-limit resend); no real-model run and no duration measurement yet, so
+the frozen expectation in docs/product/p6-slice0-fill-expectations.md is untested. **The Codex and Claude Code
+adapters hold an internal lock for a whole `run_step` turn (models/adapter.py, models/claude.py), so on those
+connections, including `gpt-5.6-luna` through Codex, calls are still sent one at a time and this change cannot
+shorten a fill; only the Gemini and DeepSeek HTTP adapters can run calls in parallel today.** The slice plan did not
+account for this; lifting it needs a change to those adapters (one app-server thread per call, and a cancel that
+knows several active turns). No adapter reports a structured rate-limit status; `is_rate_limited` is a best-effort
+text classifier, and a miss keeps the ordinary pause-on-failure behavior. Cell recheck is unchanged (no limiter).
+The report run (P6 slice 1) will share this limiter; its plan used placeholder names, to be reconciled there.
+
 ## D60 — Read OpenAlex's core-only query 100 results deep; on one popular-topic question a narrow core phrase kept it from helping
 
 **Status**: accepted (implemented; acceptance measurement incomplete: included precision not judged, S3 time gate missed)

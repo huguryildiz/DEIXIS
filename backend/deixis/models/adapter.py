@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -50,6 +51,21 @@ class ModelStepResult:
     # True when an adapter used a provider selector/alias exactly as requested
     # and separately reports the concrete model that answered.
     requested_model_verified: bool = False
+
+
+RATE_LIMIT_ERROR_RE = re.compile(
+    r"\b(429|rate.?limit(?:ed|ing|_error)?|too many requests|quota|resource_exhausted|resource has been exhausted)\b",
+    re.IGNORECASE,
+)
+
+
+def is_rate_limited(result: ModelStepResult) -> bool:
+    """Best-effort read of a failed call's free-text error as a provider rate limit or quota response.
+
+    No adapter reports a structured rate-limit status today (unlike providers/common.py's search retries). A miss
+    here only means the ordinary pause-on-failure path runs, which is always a correct (if less helpful) outcome.
+    """
+    return result.status == "failed" and bool(result.error) and bool(RATE_LIMIT_ERROR_RE.search(result.error))
 
 
 class ModelAdapter(Protocol):

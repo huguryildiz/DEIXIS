@@ -41,6 +41,7 @@ from deixis.providers import zotero
 from deixis.providers.registry import CONNECTORS, available_providers
 from deixis.storage import db
 from deixis.workflow import bibliography
+from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.equations import EquationService, equation_state, equations_to_check
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.providers.common import normalize_doi
@@ -311,7 +312,8 @@ def create_app(
         package = skill.load_skill_package()
         equations = equation_service if equation_service is not None else EquationService(
             store, math_reader.MathReader(math_reader.runtime_paths(settings.data_dir)), settings.papers_dir)
-        flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf, equations))
+        flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf, equations,
+                                     limiter=ModelCallLimiter(settings.model_concurrency)))
         worker = Worker(store, flow, settings.lock_path)
         owner = start_worker and worker.acquire()
         app.state.equations = equations
@@ -772,7 +774,7 @@ def create_app(
             worker.wake()
         elif action == "cancel" and status in ("queued", "running", "pause_requested", "paused"):
             run = store.update_run(run_id, event="run_cancelled", status="cancelled", pause_reason="user_cancelled")
-            if worker.current_run_id == run_id:
+            if worker.current_run_id == run_id and run["kind"] != "table_fill":
                 # Roles may use different connections; only the running step's connection has a call to interrupt.
                 for adapter in request.app.state.adapters.values():
                     await adapter.cancel()

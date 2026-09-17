@@ -34,7 +34,7 @@ def test_runtime_text_loads_only_declared_files():
     assert '<method-file path="references/source-grounded-answer.md">' in text
     assert f'<method-file path="{skill.PHRASEBANK}">' in text
     assert "provenance.json" not in text
-    # Only the answer step writes report prose, so only it carries the phrasebank.
+    # The answer and report-section steps carry the phrasebank.
     assert skill.PHRASEBANK not in package.runtime_text("screening")
     assert skill.PHRASEBANK not in package.runtime_text("search_plan")
     review = package.runtime_text("answer_review")
@@ -43,16 +43,24 @@ def test_runtime_text_loads_only_declared_files():
         table = package.runtime_text(task)
         assert '<method-file path="references/evidence-table.md">' in table and skill.PHRASEBANK not in table
     assert '<method-file path="references/evidence-table.md">' not in text
+    assert f'<method-file path="{skill.PHRASEBANK}">' in package.runtime_text("report_section")
     # The raw file's `tr:` lines never reach the model; a Turkish answer gets the rendered Turkish frames.
     assert "\ntr: " not in text
     assert "literal Turkish renderings" in package.runtime_text("grounded_answer", "tr")
 
 
 def test_skill_does_not_advertise_unsupported_modes_as_available():
-    text = (SKILL_DIR / "SKILL.md").read_text()
+    text = " ".join((SKILL_DIR / "SKILL.md").read_text().split())
     assert "not" in text and "available" in text
     for mode in ("kill-search", "candidate research-question development"):
         assert mode in text
+
+
+def test_report_task_types_load_the_report_reference_and_pass_integrity():
+    from deixis.domain.skill import RUNTIME_FILES, integrity_issues
+    for task in ("report_plan", "report_section", "report_phrase_repair", "report_review"):
+        assert "references/report.md" in RUNTIME_FILES[task]
+    assert integrity_issues() == []
 
 
 def test_provenance_records_pinned_upstream_without_runtime_dependency():

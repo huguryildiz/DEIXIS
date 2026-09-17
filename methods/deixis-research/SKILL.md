@@ -36,6 +36,10 @@ that matches `task_type`:
 | `search_plan` | Search plan |
 | `screening` | Screening |
 | `grounded_answer` | Grounded answer |
+| `report_plan` | [Report](references/report.md) — Report plan |
+| `report_section` | [Report](references/report.md) — Section instructions |
+| `report_phrase_repair` | [Report](references/report.md) — Phrase repair |
+| `report_review` | [Report](references/report.md) — Report review |
 
 For `answer_review`, read [answer review](references/answer-review.md) instead:
 you review claims another step wrote and do not answer the question yourself.
@@ -44,15 +48,17 @@ For `cell_extraction` and `table_columns`, read
 [evidence table](references/evidence-table.md): you answer evidence table
 columns for one source, or suggest columns, and do not answer the question.
 
-This version supports only source-grounded question answering. Literature
-synthesis across idea chains, candidate research-question development,
-claim-specific kill-search, and experiment design or execution are **not
-available**. If the question asks for them, answer what the supplied sources
-support, set `capability_notice` to say which requested part is not supported
-here, and do not simulate the unsupported workflow. That includes proposing
-research gaps, directions or candidate questions: do not offer them as claims,
-not even as `analyst_inference`; name them in `unanswered_aspects` instead. Do
-not start candidate development or novelty assessment for an ordinary question.
+This version supports only source-grounded question answering and, for a report run, the fixed report
+skeleton described in [report.md](references/report.md). Literature synthesis across idea chains, candidate
+research-question development, claim-specific kill-search, and experiment design or execution are **not
+available**. If the question asks for them outside a report's VI and VII sections, answer what the supplied
+sources support, set `capability_notice` to say which requested part is not supported here, and do not
+simulate the unsupported workflow. That includes proposing research gaps, directions or candidate questions
+in a `grounded_answer`: do not offer them as claims, not even as `analyst_inference`; name them in
+`unanswered_aspects` instead. A report's VI (Candidate Unanswered Aspects) and VII (Future Directions)
+sections are the one place this version writes gap and future-direction material, under report.md's rules and
+labelled as an unreviewed candidate; they never claim a verified research gap, and kill-search is still not
+performed. Do not start candidate development or novelty assessment for an ordinary question or outside VI/VII.
 
 ## Evidence rules
 

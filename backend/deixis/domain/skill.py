@@ -15,7 +15,7 @@ from pathlib import Path
 from deixis.domain.phrasebank import PHRASEBANK, render
 from deixis.paths import SKILL_DIR
 
-# Only the answer step writes report prose, so only it loads the phrasebank.
+# The answer and report section steps load the phrasebank; other steps do not write report prose.
 RUNTIME_FILES = {
     "search_plan": ("SKILL.md", "references/source-grounded-answer.md"),
     "screening": ("SKILL.md", "references/source-grounded-answer.md"),
@@ -24,6 +24,10 @@ RUNTIME_FILES = {
     "cell_extraction": ("SKILL.md", "references/evidence-table.md"),
     "table_columns": ("SKILL.md", "references/evidence-table.md"),
     "research_title": ("SKILL.md", "references/research-title.md"),
+    "report_plan": ("SKILL.md", "references/report.md"),
+    "report_section": ("SKILL.md", "references/report.md", "references/source-grounded-answer.md", PHRASEBANK),
+    "report_phrase_repair": ("SKILL.md", "references/report.md"),
+    "report_review": ("SKILL.md", "references/report.md"),
 }
 PROVENANCE_REQUIRED = (
     "package",

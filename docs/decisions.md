@@ -2,9 +2,9 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
-## D60 — Read OpenAlex's core-only query 100 results deep; on a popular topic the core phrase, not depth, limits recall
+## D60 — Read OpenAlex's core-only query 100 results deep; on one popular-topic question a narrow core phrase kept it from helping
 
-**Status**: accepted (implemented)
+**Status**: accepted (implemented; acceptance measurement incomplete: included precision not judged, S3 time gate missed)
 **Date**: 2026-09-17
 
 **Context**: The accepted note `docs/product/search-recall-depth-2026-09-17.md` (option A) proposed a core-only OpenAlex query read to 100 results. The owner asked whether the effort limits suit popular topics, did not know a field to pick, and left the third question to Claude; S3 was frozen as a popular topic (IRS/RIS, 20,856 OpenAlex matches) with 31 known works from the Wu et al. 2021 tutorial's references, with expectations, before any run (`8f4c86f`). Code: `83dcfce`.
@@ -21,13 +21,13 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 | S3 IRS/RIS (31) | 0 | 2 | at least +3; wrong if not above before: below expectation, not wrong |
 | unique records S1/S2/S3 | 76, 69 / 139 / 55 | 131, 135 / 185 / 149 | none |
 | model calls, max | 6 | 7 | ≤ 15: met |
-| discovery time | 140–291 s | 271–422 s | at most +3 min: S3 +191 s, over by 11 s |
+| discovery time | 140–291 s | 271–422 s | at most +3 min: S3 +191 s, missed |
 
 Every known work found after the change was included by screening except 2 of 7 in S2 and 1 of 5 terrestrial in S1b. No run reached the 250-candidate limit (most 149).
 
-On S3 depth is not the limit. The model's core terms were narrow phrases ("RIS reflection coefficient optimization", later "RIS beamforming optimization"); the deep query matched 218 works of the field's 20,856, and the question's channel-estimation half was never a core term, so 0 of 12 channel-estimation works were found in either rule. Of 149 unique S3 records, 115 are from 2022 or later; the known set is 2018–2020.
+On S3 the deep query did not reach the field. The model's core terms were narrow phrases ("RIS reflection coefficient optimization", later "RIS beamforming optimization"); the deep query matched 218 works of the field's 20,856, and the question's channel-estimation half was never a core term, so 0 of 12 channel-estimation works were found in either rule. Of 149 unique S3 records, 115 are from 2022 or later; the known set is 2018–2020.
 
-**Limits**: Included precision (a pre-written expectation) was not judged, so whether more candidates added noise is not measured. One run per rule for S2 and S3, one model, one day; parallel runs share OpenAlex's state but not its ranking over time. S3's known set comes from a bibliography and represents the field's early years, not what a reader of the topic would call essential today. Recall on a popular topic needs a different change (a core concept the size of the field, or one core per part of a two-part question); that is not addressed here.
+**Limits**: The before and after runs differ in more than depth: the model wrote a new plan in each run, and S3's core changed between them, so the gain is not attributed to depth alone. S1 and S2 were used to design the change (the model-free probe), so they are development sets, not independent validation. The S3 result does not show that depth is irrelevant on popular topics: within a field-level query of 20,856 works, ranking and depth still matter. Included precision (a pre-written expectation) was not judged, so whether more candidates added noise is not measured. One run per rule for S2 and S3, one model, one day; parallel runs share OpenAlex's state but not its ranking over time. S3's known set comes from a bibliography and represents the field's early years; it is a historical control, not a target for today's reader. A GPT 5.6 Sol (high) review of this entry (`.local/depth-measure-2026-09-17/review-answer.md`) raised these points. Recall on a popular topic needs a different change (a core concept the size of the field, or one core per part of a two-part question); that is not addressed here.
 
 ## D59 — Give every work one short author–year key and show it wherever the work appears; a table row opens its source
 

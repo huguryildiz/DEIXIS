@@ -10,6 +10,12 @@ Measured on one M1 Pro with another process using a CPU core (2026-09-16): 9.2 s
 332 s and 9 pages in 268 s when every page was read. On 50 display equations from 3 papers Marker was exact on 48,
 minor on 1 and wrong on 1 (a subscript X_I read as X_T), so a read equation can be wrong without looking wrong.
 
+Since 2026-09-17 a page with a text layer keeps it and only its lines carrying math are read from the image, each inline
+math segment kept only when its letters match the text layer (`inline_math.py`, `inline_math_marks`); pages without a text
+layer are read as before. On 11 pages of 4 papers: 448 s against 852 s, 69% of 138 hand-transcribed inline expressions
+right against 72%, and no invented inline math seen. The extraction version is unchanged, so PDFs read before stay read;
+`math_json.inline_math` tells the two apart.
+
 `check_equations` compares each display equation's letters and digits with the PDF's text layer inside the box Marker
 found it in; an equation using a letter or digit the text there does not have is marked to check against the page. On
 the same 3 papers (2 pages each, 60 display equations, 2026-09-16) it marked the X_I/X_T error and no other equation,
@@ -51,6 +57,8 @@ MATH_SYMBOL = re.compile(r"[∑∏∫√≤≥∈∉∀∃∂∇±×÷≠≈∞�
 # page where Marker found a display equation scored at least 94 math-font characters or 13 symbols (2026-09-16).
 MATH_FONT_CHARS = 60
 MATH_SYMBOLS = 12
+# Fonts whose characters mark a line for Marker's inline-math pass (`marker_runner.py`); Marker's own spans lose these names.
+INLINE_MATH_FONT = re.compile(r"CMMI|CMSY|CMEX|CMBSY|MSBM|MSAM|TeX-math|Math|Symbol|MTSY|MTMI|Euclid|rtxmi|txsy|txmi|stix|MT.?Extra", re.I)
 # A table caption opening a line: "TABLE 1 | …" (Frontiers), "TABLE I" (IEEE), "Table 2. …" (Elsevier, Springer). A sentence
 # that starts with "Table 1 shows" does not match. Marker writes the table as a Markdown table (D54).
 TABLE_CAPTION = re.compile(r"^(?:TABLE|Table)\s+(?:[IVXL]+|[A-Z]?\d{1,3})\s*(?:$|[.:|—–-])", re.M)
@@ -129,7 +137,8 @@ def merge(extraction, pages: dict[int, str], selected: list[int], unchecked: lis
     math = {"engine": "marker", "version": MARKER_PACKAGE.split("==")[1], "selected_pages": [i + 1 for i in selected],
             "pages_with_text": sorted(i + 1 for i, text in pages.items() if text.strip()),
             # Display equations that do not match the PDF's text layer and should be checked against the page.
-            "equations_to_check": unchecked or []}
+            "equations_to_check": unchecked or [],
+            "inline_math": True}  # text-layer pages read with the checked inline-math pass
     return replace(extraction, status=status, pages=merged, math=math,
                    extraction_version=target_version(extraction.extraction_version))
 
@@ -200,6 +209,28 @@ def table_pages(path: Path) -> list[int]:
         return [index for index, page in enumerate(doc) if TABLE_CAPTION.search(page.get_text())]
 
 
+def inline_math_marks(path: Path, pages: list[int]) -> tuple[dict[str, list[list[float]]], list[int]]:
+    """For Marker's inline-math pass: each page's boxes of characters set in a math font or smaller than their line's
+    largest span (scripts), and the pages without a text layer, which Marker reads with its default settings."""
+    boxes: dict[str, list[list[float]]] = {}
+    image_pages = []
+    with pymupdf.open(path, filetype="pdf") as doc:
+        for index in pages:
+            page = doc[index]
+            if not page.get_text().strip():
+                image_pages.append(index)
+                continue
+            found = []
+            for block in page.get_text("rawdict")["blocks"]:
+                for line in block.get("lines", []):
+                    size = max((span["size"] for span in line["spans"]), default=0)
+                    for span in line["spans"]:
+                        if INLINE_MATH_FONT.search(span["font"]) or span["size"] < 0.8 * size:
+                            found += [[round(v, 1) for v in char["bbox"]] for char in span["chars"] if char["c"].strip()]
+            boxes[str(index)] = found
+    return boxes, image_pages
+
+
 def _table_row(line: str) -> str:
     """A Markdown table row on one line with its cell padding removed; a separator row becomes |---|."""
     cells = [re.sub(r"\s*<br\s*/?>\s*", " ", cell).strip() for cell in line.strip().strip("|").split("|")]
@@ -264,7 +295,8 @@ class MathReader:
             if self.process is None or self.process.returncode is not None:
                 await self._start()
             self._requests += 1
-            request = {"id": self._requests, "path": str(path), "pages": pages}
+            math_boxes, image_pages = await asyncio.to_thread(inline_math_marks, path, pages)
+            request = {"id": self._requests, "path": str(path), "pages": pages, "image_pages": image_pages, "math_boxes": math_boxes}
             self.process.stdin.write((json.dumps(request) + "\n").encode())
             await self.process.stdin.drain()
             try:

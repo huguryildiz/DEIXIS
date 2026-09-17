@@ -11,7 +11,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from deixis.documents import marker_runner, math_reader, pdf
+from deixis.documents import inline_math, marker_runner, math_reader, pdf
 
 FAKE_RUNNER = '''
 import json, os, sys
@@ -23,6 +23,9 @@ for line in sys.stdin:
     request = json.loads(line)
     if request["path"].endswith("broken.pdf"):
         replies.write(json.dumps({"id": request["id"], "error": "ValueError: broken"}) + "\\n")
+        continue
+    if request.get("image_pages") != [0] or sorted(request.get("math_boxes", {})) != [str(p) for p in request["pages"] if p]:
+        replies.write(json.dumps({"id": request["id"], "error": "marks missing"}) + "\\n")
         continue
     pages = {str(p): f"## {p + 1}. Model\\n\\nWe set $x_{{i}}$ and\\n\\n$$E = mc^2 \\\\tag{{{p + 1}}}$$\\n\\n![](_page_0.jpeg)" for p in request["pages"]}
     equations = {str(p): [{"bbox": [72, 90, 300, 110], "latex": "E = mc^2", "page_bbox": [0, 0, 612, 792]}] for p in request["pages"]}
@@ -40,11 +43,22 @@ def fake_runtime(tmp_path, monkeypatch):
     return paths
 
 
+def five_pages(path: Path) -> Path:
+    doc = pymupdf.open()
+    doc.new_page()  # no text layer
+    for i in range(4):
+        doc.new_page().insert_text((72, 100), f"SYNTHETIC page {i + 2}", fontsize=10)
+    doc.save(path)
+    return path
+
+
 def test_reader_serves_requests_from_one_process_and_reports_errors(tmp_path, monkeypatch):
     reader = math_reader.MathReader(fake_runtime(tmp_path, monkeypatch))
+    five_pages(tmp_path / "paper.pdf")
+    five_pages(tmp_path / "broken.pdf")
 
     async def scenario():
-        first = await reader.read(tmp_path / "paper.pdf", [2, 4])
+        first = await reader.read(tmp_path / "paper.pdf", [0, 2, 4])
         process = reader.process
         with pytest.raises(RuntimeError, match="broken"):
             await reader.read(tmp_path / "broken.pdf", [0])
@@ -54,7 +68,7 @@ def test_reader_serves_requests_from_one_process_and_reports_errors(tmp_path, mo
         return first, second, same
 
     first, second, same = asyncio.run(scenario())
-    assert sorted(first.pages) == [2, 4] and first.pages[2] == "3. Model\n\nWe set $x_{i}$ and\n\n$$E = mc^2 \\tag{3}$$"
+    assert sorted(first.pages) == [0, 2, 4] and first.pages[2] == "3. Model\n\nWe set $x_{i}$ and\n\n$$E = mc^2 \\tag{3}$$"
     assert second.pages == {0: "1. Model\n\nWe set $x_{i}$ and\n\n$$E = mc^2 \\tag{1}$$"}
     assert second.equations == {0: [{"bbox": [72, 90, 300, 110], "latex": "E = mc^2", "page_bbox": [0, 0, 612, 792]}]}
     assert same and reader.version == "marker-0.0-fake"
@@ -66,6 +80,46 @@ def test_reader_without_the_runtime_is_unavailable(tmp_path):
     with pytest.raises(math_reader.MathReaderUnavailable):
         asyncio.run(reader.read(tmp_path / "paper.pdf", [0]))
     assert asyncio.run(reader.read(tmp_path / "paper.pdf", [])).pages == {}
+
+
+def test_inline_math_marks_name_math_font_and_script_characters_and_pages_without_text(tmp_path):
+    doc = pymupdf.open()
+    doc.new_page()
+    page = doc.new_page()
+    page.insert_text((72, 100), "SYNTHETIC rate", fontsize=10)
+    page.insert_text((140, 100), "a", fontname="symb", fontsize=10)  # the Symbol font
+    page.insert_text((146, 103), "2", fontsize=6)  # a script, smaller than the Symbol character in its line
+    path = tmp_path / "marks.pdf"
+    doc.save(path)
+    boxes, image_pages = math_reader.inline_math_marks(path, [0, 1])
+    assert image_pages == [0] and list(boxes) == ["1"] and [box[0] for box in boxes["1"]] == [140.0, 146.0]  # not the prose
+
+
+def test_inline_math_keeps_a_segment_only_when_its_letters_match_the_text_layer():
+    spans = [("where x", "Times"), ("i", "CMR7"), ("2", "CMR7"), (" is the rate", "Times")]
+    # stacked scripts: the text layer has i before 2, the reading writes the superscript first
+    assert inline_math.rewrite("where <math>x^{2}_{i}</math> is the rate", [spans]) == (
+        [("text", "where "), ("math", "x^{2}_{i}"), ("text", " is the rate")], 1, 0)
+    # a changed letter keeps the text layer
+    assert inline_math.rewrite("where <math>x_{j}^{2}</math> is the rate", [spans]) == ([("text", "where xi2 is the rate")], 0, 1)
+    # prose that does not match the text layer rejects the line; a reading without math changes nothing
+    assert inline_math.rewrite("when <math>x_{i}^{2}</math> is the rate", [spans]) is None
+    assert inline_math.rewrite("where xi2 is the rate", [spans]) is None
+    # of two orderings of the same spans, the one the reading matches is used
+    other = [spans[0], spans[2], spans[1], spans[3]]
+    assert inline_math.rewrite("where <math>x_{i}^{2}</math> is the rate", [other, spans])[1] == 1
+    # the image reached past the line: the prose beyond it is not used
+    assert inline_math.rewrite("where <math>x_{i}^{2}</math> is the rate of the next line", [spans])[1] == 1
+
+
+def test_inline_math_masks_symbol_font_letters_and_widens_over_brackets():
+    # A symbol font maps its brackets to p and q; they are neither compared nor left behind.
+    spans = [("cost ", None), ("O", "CMMI10"), ("p", "TeX-mathax"), ("|D|", None), ("q", "TeX-mathax"), (" here", None)]
+    assert inline_math.rewrite("cost <math>O(|D|)</math> here", [spans]) == (
+        [("text", "cost "), ("math", "O(|D|)"), ("text", " here")], 1, 0)
+    assert inline_math.rewrite("set <math>\\left(a, b\\right)</math> ok", [[("set (a, b) ok", None)]])[0] == [
+        ("text", "set "), ("math", "\\left(a, b\\right)"), ("text", " ok")]
+    assert inline_math.segment_letters("\\mathbb{E}[\\alpha_{k}]") == {"Eαk"}
 
 
 def test_math_pages_selects_pages_set_in_math_fonts_or_symbols(tmp_path):

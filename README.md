@@ -1,63 +1,96 @@
-# DEIXIS
+<div align="center">
 
-**Every cell points to its source.**
+<img src="apps/web/public/deixis-icon.svg" alt="DEIXIS source mark" width="176">
 
-A research workspace for source-linked literature synthesis, evidence comparison,
-and candidate-question development. Product name: **DEIXIS** (uppercase).
-A first local-web development slice is implemented: question → OpenAlex search or attached PDF →
-source selection → passage inspection → source-linked answer → reopen after restart. It has been
-exercised manually with live OpenAlex and Codex, a backup/restore test is automated, and a browser-level
-A–G acceptance suite runs against synthetic sources and a scripted model. P4 is still open: the
-evaluation on a user-known source set (human citation review, coverage, correction time) has not been done.
-Only OpenAlex and the Codex model connection are implemented; the other providers and model
-connections remain planned.
+<h1>DEIXIS</h1>
 
-## Run the first slice
+<h3>Every cell points to its source.</h3>
 
-Requires Python 3.12 with `uv`, Node.js, and the Codex CLI signed in to the DEIXIS Codex home.
+<p>A local research workspace for scientific literature, evidence tables, and answers traceable to source passages.</p>
+
+<p>
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776ab">
+  <a href="LICENSE"><img alt="License: AGPL-3.0-or-later" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-3b5b9a"></a>
+  <img alt="Status: local development" src="https://img.shields.io/badge/status-local%20development-68737d">
+</p>
+
+<p><a href="#quickstart">Quickstart</a> · <a href="#how-it-works">How it works</a> · <a href="#architecture">Architecture</a> · <a href="#commands">Commands</a> · <a href="#scope-and-limits">Scope and limits</a></p>
+
+</div>
+
+---
+
+## What is it?
+
+DEIXIS starts with a research question. It searches selected scholarly providers or accepts attached PDFs, lets the user screen and include sources, exposes passages for inspection, and produces a source-linked answer. An evidence table can extract values from selected source versions, with quotes and revision history. Research, sources, answers, and tables remain in a local SQLite library that can be reopened and backed up.
+
+This is an **AI-assisted research workspace**, not an autonomous discovery system or a scientific-validity certificate. A structurally valid answer has passed deterministic schema and citation-link checks; those checks do not prove that each quoted passage supports the claim made about it.
+
+## How it works
+
+1. Ask a question and choose the academic sources and model connection for the research.
+2. Inspect retrieved records or add PDFs; keep or exclude sources yourself, even when model screening differs.
+3. Open the underlying passages and PDF pages. Reading depth, source versions, and unavailable text stay visible.
+4. Generate an answer with claim-to-passage links, or fill an evidence table from selected sources. Unresolved citation failures remain unverified drafts.
+5. Reopen the research, revise the selection, and retain earlier answers and cell revisions instead of silently replacing them.
+
+The current checkout includes OpenAlex, Semantic Scholar, Crossref, arXiv, bioRxiv (via OpenAlex), PubMed, IEEE Xplore, Scopus, CORE, and a supplementary SerpApi search connector. Some require keys or access entitlements. Model adapters include Codex, Claude Code, Gemini, and DeepSeek; availability depends on local authentication or configured credentials, not merely on an adapter being present. Zotero collection import, BibTeX/RIS export, PDF extraction, optional OCR/equation reading, and library backup/restore are also implemented. See [provider settings](docs/product/providers.env.example) and [decisions](docs/decisions.md) for conditions and boundaries.
+
+## Quickstart
+
+For development, install Python 3.12, [uv](https://docs.astral.sh/uv/), Node.js/npm, and a model connection you can authenticate. The commands below build and run the local web app; they do not configure a scholarly provider or model account for you.
 
 ```sh
 uv sync
-(cd apps/web && npm ci && npm run build)
-CODEX_HOME="$HOME/Library/Application Support/DEIXIS/codex-home" codex login   # once
-PYTHONPATH=backend uv run python -m deixis serve                                  # opens http://127.0.0.1:8765/
-PYTHONPATH=backend uv run pytest                                                   # deterministic tests
-(cd apps/web && npm run build && DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance)  # A–G in Chrome
-PYTHONPATH=backend uv run python scripts/p4_eval/measure.py snapshot --research res_… --out eval-dir  # P4 measurement
-PYTHONPATH=backend uv run python -m deixis backup ~/DEIXIS-backups                # safe while serving
-DEIXIS_DATA_DIR=/new/empty/dir PYTHONPATH=backend uv run python -m deixis restore ~/DEIXIS-backups/deixis-backup-…
+cd apps/web
+npm ci
+npm run build
+cd ../..
+PYTHONPATH=backend uv run python -m deixis serve
 ```
 
-Backups hold the database snapshot, referenced PDFs and provider payloads with a SHA-256 manifest; the
-DEIXIS Codex home (model sign-in) is never copied. Restore verifies every hash and refuses a data
-directory that already has a library. Press Cmd/Ctrl+K in the UI to find research, source titles or pages.
-The acceptance suite starts its own fixture server (mocked OpenAlex, fixed PDFs, a scripted model) and
-writes screenshots and `results.json` to `DEIXIS_ACCEPTANCE_DIR`; it needs Google Chrome installed. The
-measurement kit checks every citation link, looks up each DOI on Crossref, and writes `review.md` for
-the person who knows the literature; `measure.py reopen` and `measure.py score` complete it. A `--known` list
-may group its entries with `# stratum: name` lines, and `measure.py compare` puts several measured runs side by side.
+Open <http://127.0.0.1:8765/>. DEIXIS listens on loopback by default; if port 8765 already serves a library, open that instance instead of starting another. On macOS the default data directory is `~/Library/Application Support/DEIXIS`; set `DEIXIS_DATA_DIR` to an explicit separate directory for isolated work. The database, PDFs, provider payloads, and model home do not belong in Git. External provider searches and remote model calls are **not** offline operations.
 
-Optional keys go in an untracked `.env` (see [providers.env.example](docs/product/providers.env.example)).
-The Sources tab exports the included sources, and an answer's reference list its cited sources, as BibTeX or RIS.
-A research with attached files can import one Zotero collection read-only, from the Zotero app on this computer (its
-local API turned on) or from zotero.org with `ZOTERO_API_KEY` and `ZOTERO_LIBRARY_ID` (D16).
+Configure keys through the app's Connections settings or an untracked `.env` using [the variable names in the example](docs/product/providers.env.example). Codex requires sign-in to DEIXIS's separate Codex home (by default `<data directory>/codex-home`); the app shows connection availability. An optional equation reader downloads its own models and is not required to start DEIXIS.
 
-## License
+## Architecture
 
-DEIXIS is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE). PDF text is extracted
-with PyMuPDF, which is itself AGPL-3.0 licensed (D25).
+| Layer | In this repository |
+|---|---|
+| Local API, workflow, persistence, provider and model adapters | [`backend/deixis/`](backend/deixis/) |
+| React interface, served by the local backend after build | [`apps/web/`](apps/web/) |
+| Versioned model-step JSON Schemas and method instructions | [`contracts/research/`](contracts/research/) · [`methods/deixis-research/`](methods/deixis-research/) |
+| Deterministic/integration tests and synthetic browser fixtures | [`tests/`](tests/) · [`apps/web/e2e/`](apps/web/e2e/) |
+| Isolated evaluation utilities, not product features | [`scripts/`](scripts/) |
 
-## Start here
+The application checks source identities, reading depth, passage IDs, and exact source-owned citation anchors before publishing a linked answer. It does not infer semantic support from a valid anchor. See [the documentation map](docs/README.md), [repository layout](docs/layout.md), and [durable decisions](docs/decisions.md) for the authority of design records versus implemented code.
 
-- [Working mechanism, skill and implementation plan](docs/product/implementation-plan.md)
-- [Documentation map](docs/README.md) and [repository layout](docs/layout.md)
-- [Product decisions and integration boundary](docs/product/README.md)
-- [Dated handoff and accepted conversation decisions](docs/desktop/README.md)
-- [API and data design draft](docs/product/api-and-data.md)
-- [Research methods](docs/methods/research-methods.md)
-- [Reference index](docs/desktop/reference-index.md)
-- [Historical design prompt](docs/desktop/design-prompt.md)
-- [DEIXIS SVG icon](apps/web/public/deixis-icon.svg)
+## Commands
+
+From the repository root, unless a command changes directory:
+
+```sh
+PYTHONPATH=backend uv run python -m pytest -q
+(cd apps/web && npm run build && npm run lint)
+(cd apps/web && DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance)
+PYTHONPATH=backend uv run python -m deixis backup /path/to/backup-parent
+DEIXIS_DATA_DIR=/path/to/empty-data-dir PYTHONPATH=backend uv run python -m deixis restore /path/to/backup-folder
+```
+
+The browser suite needs Google Chrome. It uses synthetic records, fixed PDFs, and a scripted model; passing it verifies application behavior, not scientific accuracy or live-provider quality. Backups include a consistent database snapshot, referenced PDFs, provider payloads, and a SHA-256 manifest, but not model credentials. Restore checks hashes and refuses a target with an existing library. Do not use the active data directory for a probe or restore.
+
+## Scope and limits
+
+- Search results are bounded by provider access, query choices, and budgets. Found, included, inspected, given-to-model, and cited sources are different counts; a missing result is not evidence of novelty.
+- Abstract-only evidence cannot establish full-text methods, equations, or results. PDF extraction and optional OCR/equation reading have their own failure and uncertainty states.
+- [P4](docs/decisions.md#d34--close-p4-on-the-packet-size-re-run-reviewed-by-claude-on-the-owners-delegation) and [P5](docs/decisions.md#d55--close-p5-on-a-two-question-real-model-measurement-reviewed-by-claude-on-the-owners-delegation) were closed on bounded evaluations. Their reviewer judgments were delegated to a model, not independently checked by a human; known-work recall and PDF-page use remained limitations. Do not read these gates as general performance claims.
+- The [report](docs/product/p6-report-design.md), Chain of Ideas, candidate questions, and claim-specific kill-search appear in design records. Do not treat a design or method proposal as an integrated runtime feature.
+
+DEIXIS is licensed under [AGPL-3.0-or-later](LICENSE). It uses AGPL-licensed PyMuPDF for PDF text extraction. No CI result, published package, or hosted live site is represented by the badges above.
+
+## Historical method and reference record
+
+The material below was transferred from the earlier Quaestio design work. It preserves methodological sources, inspected-system boundaries, and accepted research-method decisions; it is not a feature list or a report of DEIXIS runtime results. For current implementation status, inspect the code and [decisions](docs/decisions.md).
 
 ## Project separation
 

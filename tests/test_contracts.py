@@ -30,6 +30,31 @@ def test_canonical_schemas_are_valid_draft_2020_12():
         Draft202012Validator.check_schema(contracts.load_schema(name))
 
 
+@pytest.mark.parametrize("name", ["ReportPlanDraft", "ReportSectionDraft", "ReportPhraseRepairDraft", "ReportReview"])
+def test_new_report_schemas_are_valid_draft_2020_12_and_registered(name):
+    assert name in contracts.SCHEMA_FILES
+    Draft202012Validator.check_schema(contracts.load_schema(name))
+
+
+def test_report_task_types_are_registered():
+    for task in ("report_plan", "report_section", "report_phrase_repair", "report_review"):
+        assert task in contracts.TASK_OUTPUTS
+    assert contracts.SCHEMA_FILES["ReportPlanDraft"] == "report-plan.schema.json"
+    assert contracts.SCHEMA_FILES["ReportSectionDraft"] == "report-section-draft.schema.json"
+    assert contracts.SCHEMA_FILES["ReportPhraseRepairDraft"] == "report-phrase-repair.schema.json"
+    assert contracts.SCHEMA_FILES["ReportReview"] == "report-review.schema.json"
+
+
+def test_report_step_input_requires_report_target_only_for_report_tasks():
+    si = json.loads(json.dumps(STEP_INPUTS["A_search_plan"]))
+    si["allowlist"]["column_ids"] = []
+    assert contracts.check_step_input(si) == []
+    si["task_type"] = "report_plan"
+    si["output_schema_versions"] = ["deixis.report_plan_draft.v1"]
+    issues = {i.code for i in contracts.check_step_input(si)}
+    assert "report_target_mismatch" in issues
+
+
 @pytest.mark.parametrize("task_type", sorted(contracts.TASK_OUTPUTS))
 def test_step_output_schema_is_self_contained_and_strict(task_type):
     schema = contracts.step_output_schema(task_type)

@@ -34,6 +34,10 @@ SCHEMA_FILES = {
     "TableColumnProposal": "table-column-proposal.schema.json",
     "ResearchTitle": "research-title.schema.json",
     "StepInput": "step-input.schema.json",
+    "ReportPlanDraft": "report-plan.schema.json",
+    "ReportSectionDraft": "report-section-draft.schema.json",
+    "ReportPhraseRepairDraft": "report-phrase-repair.schema.json",
+    "ReportReview": "report-review.schema.json",
 }
 SCHEMA_VERSIONS = {
     "SearchPlan": "deixis.search_plan.v2",
@@ -44,6 +48,10 @@ SCHEMA_VERSIONS = {
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
     "TableColumnProposal": "deixis.table_column_proposal.v1",
     "ResearchTitle": "deixis.research_title.v1",
+    "ReportPlanDraft": "deixis.report_plan_draft.v1",
+    "ReportSectionDraft": "deixis.report_section_draft.v1",
+    "ReportPhraseRepairDraft": "deixis.report_phrase_repair_draft.v1",
+    "ReportReview": "deixis.report_review.v1",
 }
 # Model outputs each task may return. More than one output type is wrapped in an
 # object with one nullable property per type; exactly one must be non-null.
@@ -55,8 +63,14 @@ TASK_OUTPUTS = {
     "cell_extraction": ("EvidenceCellDraft",),
     "table_columns": ("TableColumnProposal",),
     "research_title": ("ResearchTitle",),
+    "report_plan": ("ReportPlanDraft",),
+    "report_section": ("ReportSectionDraft",),
+    "report_phrase_repair": ("ReportPhraseRepairDraft",),
+    "report_review": ("ReportReview",),
 }
 EXTRACTION_TASKS = ("cell_extraction", "table_columns")
+GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
+REPORT_TASKS = ("report_plan", "report_section", "report_phrase_repair", "report_review")
 # The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's (D37).
 MODEL_CELL_STATES = ("value", "unknown", "not_applicable", "not_found_in_inspected_scope")
 WRAPPER_KEYS = {
@@ -218,6 +232,17 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
                 issues.append(Issue("passage_outside_extraction_source", f"/passages/{p['passage_id']}", p["source_id"]))
         if not 1 <= len(target["columns"]) <= MAX_COLUMNS_PER_CALL:
             issues.append(Issue("extraction_column_count", "/extraction_target/columns", str(len(target["columns"]))))
+    report_target = step_input.get("report_target")
+    if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
+        issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
+    elif step_input["task_type"] in ("report_section", "report_phrase_repair"):
+        if report_target["plan"] is None:
+            issues.append(Issue("report_plan_missing", "/report_target/plan", step_input["task_type"]))
+        for axis in (report_target["plan"] or {}).get("axes", []):
+            if axis["column_id"] not in allow.get("column_ids", []):
+                issues.append(Issue("axis_column_not_in_allowlist", "/report_target/plan/axes", axis["column_id"]))
+    elif step_input["task_type"] in ("report_plan", "report_review") and report_target["plan"] is not None:
+        issues.append(Issue("report_plan_must_be_null", "/report_target/plan", step_input["task_type"]))
     return issues
 
 
@@ -278,6 +303,16 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         _check_column_proposal(step_input, result, report)
     elif output_type == "ResearchTitle":
         _check_title(step_input, result, report)
+    elif output_type == "ReportPlanDraft":
+        _check_report_plan(step_input, allow, result, report)
+    elif output_type == "ReportSectionDraft":
+        _check_report_section(step_input, allow, result, report)
+        _check_phrasing(step_input, result, report, fields=_report_phrasing_fields(result))
+        _check_math(step_input, result, report, fields=_report_math_fields(result))
+    elif output_type == "ReportPhraseRepairDraft":
+        _check_report_phrase_repair(step_input, result, report)
+    elif output_type == "ReportReview":
+        _check_report_review(step_input, result, report)
     return report
 
 
@@ -365,12 +400,14 @@ def _rests_only_on_ocr(passages: list[dict[str, Any] | None]) -> bool:
     return bool(passages) and all(p is not None and p.get("text_source") == "ocr" for p in passages)
 
 
-def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
+def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport,
+                fields: list[tuple[str, str]] | None = None) -> None:
     """Warn about damaged LaTeX, equations supported only by abstract-level passages, and numbers or equations supported
     only by OCR text of scanned pages (D51)."""
-    fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
-    fields += [(f"/limitations/{i}/text", lim["text"]) for i, lim in enumerate(draft["limitations"])]
-    fields += [(f"/unanswered_aspects/{i}", text) for i, text in enumerate(draft["unanswered_aspects"])]
+    if fields is None:
+        fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
+        fields += [(f"/limitations/{i}/text", lim["text"]) for i, lim in enumerate(draft["limitations"])]
+        fields += [(f"/unanswered_aspects/{i}", text) for i, text in enumerate(draft["unanswered_aspects"])]
     for path, text in fields:
         dollars = sum(char == "$" and not _is_escaped(text, i) for i, char in enumerate(text))
         spans = _math_spans(text)
@@ -390,21 +427,24 @@ def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: Valid
                                          "the claim states a number or equation read only from OCR text; check it against the PDF page"))
 
 
-def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
+def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport,
+                    fields: list[tuple[str, str]] | None = None) -> None:
     """Check the answer's prose against the Academic Phrasebank frames in the answer language.
 
     Findings are warnings shown with the answer; they never reject it or ask for a repair (D19).
     """
-    language = phrasebank.checked_language(draft["answer_language"])
+    requested_language = draft["answer_language"] if fields is None else phrasebank.frames_language(step_input)
+    language = phrasebank.checked_language(requested_language)
     if language is None or not phrasebank.has_frames(_phrasebank_text(), language):
         report.warnings.append(Issue("phrasing_not_checked", "/answer_language",
-                                     f"no phrasebank frames for {draft['answer_language']!r}"))
+                                     f"no phrasebank frames for {requested_language!r}"))
         return
-    fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
-    fields += [(f"/limitations/{i}/text", lim["text"]) for i, lim in enumerate(draft["limitations"])]
-    fields += [(f"/unanswered_aspects/{i}", text) for i, text in enumerate(draft["unanswered_aspects"])]
-    if draft["capability_notice"]:
-        fields.append(("/capability_notice", draft["capability_notice"]))
+    if fields is None:
+        fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
+        fields += [(f"/limitations/{i}/text", lim["text"]) for i, lim in enumerate(draft["limitations"])]
+        fields += [(f"/unanswered_aspects/{i}", text) for i, text in enumerate(draft["unanswered_aspects"])]
+        if draft["capability_notice"]:
+            fields.append(("/capability_notice", draft["capability_notice"]))
     for path, text in fields:
         for sentence in phrasebank.unframed(_without_math(text), _phrasebank_text(), language):
             report.warnings.append(Issue("sentence_without_phrasebank_frame", path,
@@ -635,6 +675,56 @@ def _check_title(step_input: dict[str, Any], draft: dict[str, Any], report: Vali
         report.issues.append(Issue("title_too_long", "/title", f"expected at most 15 words, got {words}"))
     if title and title == step_input["question"]["text"].strip():
         report.issues.append(Issue("title_copies_question", "/title", "rewrite the title from the question and sources"))
+
+
+def _report_phrasing_fields(draft: dict[str, Any]) -> list[tuple[str, str]]:
+    fields = [(f"/claims/{i}/text", claim["text"]) for i, claim in enumerate(draft["claims"])]
+    fields += [(f"/insufficient_evidence/{i}/reason", entry["reason"])
+               for i, entry in enumerate(draft["insufficient_evidence"])]
+    return fields
+
+
+def _report_math_fields(draft: dict[str, Any]) -> list[tuple[str, str]]:
+    return [(f"/claims/{i}/text", claim["text"]) for i, claim in enumerate(draft["claims"])]
+
+
+def _check_report_plan(step_input: dict[str, Any], allow: dict[str, set[str]],
+                       draft: dict[str, Any], report: ValidationReport) -> None:
+    for i, entry in enumerate(draft["glossary"]):
+        if entry["passage_id"] not in allow["passage_ids"]:
+            report.issues.append(Issue("unknown_passage_id", f"/glossary/{i}/passage_id", entry["passage_id"]))
+    for i, axis in enumerate(draft["axes"]):
+        if axis["column_id"] not in allow.get("column_ids", set()):
+            report.issues.append(Issue("axis_column_not_in_allowlist", f"/axes/{i}/column_id", axis["column_id"]))
+
+
+def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]],
+                          draft: dict[str, Any], report: ValidationReport) -> None:
+    if draft["section_id"] != step_input["report_target"]["section_id"]:
+        report.issues.append(Issue("report_section_mismatch", "/section_id", draft["section_id"]))
+    for i, claim in enumerate(draft["claims"]):
+        for j, passage_id in enumerate(claim["passage_ids"]):
+            if passage_id not in allow["passage_ids"]:
+                report.issues.append(Issue("unknown_passage_id", f"/claims/{i}/passage_ids/{j}", passage_id))
+        for j, cell_id in enumerate(claim["cell_ids"]):
+            if cell_id not in allow.get("cell_ids", set()):
+                report.issues.append(Issue("unknown_cell_id", f"/claims/{i}/cell_ids/{j}", cell_id))
+        for j, gap_id in enumerate(claim["gap_refs"]):
+            if gap_id not in allow.get("gap_ids", set()):
+                report.issues.append(Issue("unknown_gap_ref", f"/claims/{i}/gap_refs/{j}", gap_id))
+
+
+def _check_report_phrase_repair(step_input: dict[str, Any], draft: dict[str, Any],
+                                report: ValidationReport) -> None:
+    requested = {item["sentence_id"] for item in step_input["report_target"]["repair_request"]["sentences"]}
+    for i, repair in enumerate(draft["repairs"]):
+        if repair["sentence_id"] not in requested:
+            report.issues.append(Issue("unknown_repair_sentence", f"/repairs/{i}/sentence_id", repair["sentence_id"]))
+
+
+def _check_report_review(step_input: dict[str, Any], draft: dict[str, Any],
+                         report: ValidationReport) -> None:
+    pass  # Report-level semantic review and support-breaking repair handling arrive in 1f.
 
 
 def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:

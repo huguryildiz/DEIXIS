@@ -227,6 +227,36 @@ def test_handles_written_into_answer_text_are_replaced_by_source_titles():
     assert len(contracts.name_sources_in_prose(step_input, resolved)["limitations"][0]["text"]) > 500
 
 
+def test_salvage_drops_repeated_stray_and_unquoted_citations_but_not_a_claim_left_without_evidence():
+    step_input = STEP_INPUTS["A_answer"]
+    first, second = step_input["passages"][0], step_input["passages"][1]
+    quote = lambda p: " ".join(p["text"].split())[:200]
+    answer = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    answer["claims"] = [dict(answer["claims"][0], claim_label="c1", passage_ids=[first["passage_id"], second["passage_id"]]),
+                        dict(answer["claims"][0], claim_label="c2", passage_ids=[second["passage_id"]])]
+    answer["citation_anchors"] = [{"claim_label": "c1", "passage_id": first["passage_id"], "quote": "SYNTHETIC words that are in no passage"},
+                                  {"claim_label": "c1", "passage_id": first["passage_id"], "quote": quote(first)},
+                                  {"claim_label": "c2", "passage_id": first["passage_id"], "quote": quote(first)}]
+    before = contracts.validate_model_output(step_input, json.loads(json.dumps(answer)))
+    assert {"duplicate_citation_anchor", "missing_citation_anchor", "anchor_passage_not_cited"} <= set(before.codes())
+    salvaged, warnings = contracts.salvage_answer_draft(step_input, json.loads(json.dumps(answer)))
+    assert salvaged["claims"][0]["passage_ids"] == [first["passage_id"]]
+    assert salvaged["citation_anchors"] == [{"claim_label": "c1", "passage_id": first["passage_id"], "quote": quote(first)}]
+    assert {w.code for w in warnings} == {"duplicate_citation_anchor_ignored", "uncited_anchor_ignored", "citation_without_quote_removed"}
+    # c2 has no quoted citation left to keep, so the draft stays invalid.
+    assert contracts.validate_model_output(step_input, salvaged).codes() == ["missing_citation_anchor"]
+
+
+def test_a_handle_with_extra_leading_zeros_resolves_to_its_record():
+    step_input = STEP_INPUTS["A_answer"]
+    answer = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    answer["claims"] = [dict(answer["claims"][0], passage_ids=["psg_P00000001"])]
+    answer["citation_anchors"] = [{"claim_label": "c1", "passage_id": "psg_P000001", "quote": "SYNTHETIC quote"}]
+    resolved = contracts.resolve_citation_handles(step_input, json.dumps(answer))
+    assert resolved["claims"][0]["passage_ids"] == [step_input["passages"][0]["passage_id"]]
+    assert resolved["citation_anchors"][0]["passage_id"] == step_input["passages"][0]["passage_id"]
+
+
 def test_answer_review_must_review_every_claim_once_by_label():
     step_input = json.loads(json.dumps(STEP_INPUTS["A_answer"]))
     first = step_input["passages"][0]["passage_id"]

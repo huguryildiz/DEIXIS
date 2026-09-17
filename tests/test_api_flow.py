@@ -467,6 +467,33 @@ def test_missing_anchor_is_repaired_before_the_answer_is_published(tmp_path):
         assert run["usage"]["model_calls"] == 2
 
 
+def test_a_final_draft_with_only_repeated_quotes_and_unquoted_extra_citations_is_published_without_them(tmp_path):
+    def sloppy(si):
+        draft = json.loads(valid_response(si))
+        if si["task_type"] == "grounded_answer" and len(si["passages"]) > 1:
+            first, second = si["passages"][0], si["passages"][1]
+            draft["claims"][0]["passage_ids"].append(second["passage_id"])  # cited without a quote
+            draft["citation_anchors"].append(dict(draft["citation_anchors"][0]))  # the same quote twice
+            draft["citation_anchors"].append({"claim_label": "c1", "passage_id": "psg_P" + first["passage_id"].removeprefix("psg_P").rjust(8, "0"),
+                                              "quote": draft["citation_anchors"][0]["quote"]})  # a handle with an extra zero
+        return json.dumps(draft)
+
+    adapter = FakeAdapter(sloppy)
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        rid = create(client, source_scope="attached")
+        client.post(f"/api/researches/{rid}/uploads", files={"file": ("a.pdf", make_pdf(["SYNTHETIC molecule text one", "SYNTHETIC molecule text two"]), "application/pdf")})
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        view, run = wait_run(client, rid, run["id"])
+        answer = view["answers"][0]
+        assert [task for task, _, _ in adapter.sent].count("grounded_answer") == 2  # the repair is still asked for first
+        assert answer["status"] == "structurally_valid"
+        assert [len(claim["evidence"]) for claim in answer["claims"]] == [1]
+        assert all(evidence["anchor_text"] for claim in answer["claims"] for evidence in claim["evidence"])
+        warnings = {w["code"] for w in answer["validation"]["warnings"]}
+        assert {"duplicate_citation_anchor_ignored", "citation_without_quote_removed"} <= warnings
+
+
 def test_long_answer_title_is_repaired_and_the_valid_title_replaces_the_question(tmp_path):
     attempts = 0
 

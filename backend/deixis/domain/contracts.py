@@ -760,9 +760,59 @@ def name_sources_in_prose(step_input: dict[str, Any], data: dict[str, Any]) -> d
     return data
 
 
+def salvage_answer_draft(step_input: dict[str, Any], draft: dict[str, Any]) -> tuple[dict[str, Any], list[Issue]]:
+    """Remove the citation defects that need no new text from a final, still invalid answer draft.
+
+    A (claim, passage) pair quoted more than once keeps its first locatable quote (as D43 accepts for cells); an anchor for
+    a passage its claim does not cite is dropped; a citation without a locatable quote is dropped only when the claim keeps
+    another quoted citation. Claims are never removed and nothing is added, so the caller must validate the result again.
+    """
+    warnings: list[Issue] = []
+    claims = [c for c in draft.get("claims", []) if isinstance(c, dict) and isinstance(c.get("passage_ids"), list)]
+    anchors = [a for a in draft.get("citation_anchors", []) if isinstance(a, dict)]
+    if len(claims) != len(draft.get("claims", [])) or len(anchors) != len(draft.get("citation_anchors", [])):
+        return draft, warnings
+    text = {p["passage_id"]: p["text"] for p in step_input["passages"]}
+    located = lambda a: isinstance(a.get("quote"), str) and locate_anchor(a["quote"], text.get(a.get("passage_id"), "")) is not None
+    cited = {(c.get("claim_label"), pid) for c in claims for pid in c["passage_ids"]}
+    chosen: dict[tuple[Any, Any], int] = {}
+    for i, anchor in enumerate(anchors):
+        pair = (anchor.get("claim_label"), anchor.get("passage_id"))
+        if pair not in cited:
+            warnings.append(Issue("uncited_anchor_ignored", f"/citation_anchors/{i}", f"{pair[0]}:{pair[1]}"))
+        elif pair not in chosen:
+            chosen[pair] = i
+        else:
+            warnings.append(Issue("duplicate_citation_anchor_ignored", f"/citation_anchors/{i}", f"{pair[0]}:{pair[1]}"))
+            if not located(anchors[chosen[pair]]) and located(anchor):
+                chosen[pair] = i
+    draft["citation_anchors"] = [anchors[i] for i in sorted(chosen.values())]
+    quoted = {pair for pair, i in chosen.items() if located(anchors[i])}
+    for i, claim in enumerate(claims):
+        keep = [pid for pid in claim["passage_ids"] if (claim.get("claim_label"), pid) in quoted]
+        if keep and len(keep) < len(claim["passage_ids"]):
+            for pid in claim["passage_ids"]:
+                if pid not in keep:
+                    warnings.append(Issue("citation_without_quote_removed", f"/claims/{i}/passage_ids", f"{claim.get('claim_label')}:{pid}"))
+            claim["passage_ids"] = keep
+    kept = {(c.get("claim_label"), pid) for c in claims for pid in c["passage_ids"]}
+    draft["citation_anchors"] = [a for a in draft["citation_anchors"] if (a.get("claim_label"), a.get("passage_id")) in kept]
+    return draft, warnings
+
+
+PADDED_HANDLE = re.compile(r"^(psg_P|srv_S|col_C)0*(\d{1,7})$")
+
+
 def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict[str, Any]:
-    """Map handles in a grounded answer or cell draft back to IDs; anything else is left for validation to report."""
-    real = {handle: identifier for identifier, handle in citation_handles(step_input).items()}
+    """Map handles in a grounded answer or cell draft back to IDs; anything else is left for validation to report.
+
+    A handle copied with more or fewer leading zeros (`psg_P00000017`) is read as the handle with that number.
+    """
+    handles = {handle: identifier for identifier, handle in citation_handles(step_input).items()}
+
+    def real(i: str) -> str:
+        match = PADDED_HANDLE.match(i)
+        return handles.get(f"{match.group(1)}{int(match.group(2)):07d}" if match else i, i)
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -772,20 +822,20 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
     for items, key in ((data.get("claims"), "passage_ids"), (data.get("limitations"), "source_ids")):
         for item in items if isinstance(items, list) else []:
             if isinstance(item, dict) and isinstance(item.get(key), list):
-                item[key] = [real.get(i, i) if isinstance(i, str) else i for i in item[key]]
+                item[key] = [real(i) if isinstance(i, str) else i for i in item[key]]
     for anchor in data.get("citation_anchors", []):
         if isinstance(anchor, dict) and isinstance(anchor.get("passage_id"), str):
-            anchor["passage_id"] = real.get(anchor["passage_id"], anchor["passage_id"])
+            anchor["passage_id"] = real(anchor["passage_id"])
     cells = data.get("cells")
     for cell in cells if isinstance(cells, list) else []:
         if not isinstance(cell, dict):
             continue
         if isinstance(cell.get("column_id"), str):
-            cell["column_id"] = real.get(cell["column_id"], cell["column_id"])
+            cell["column_id"] = real(cell["column_id"])
         evidence = cell.get("evidence")
         for item in evidence if isinstance(evidence, list) else []:
             if isinstance(item, dict) and isinstance(item.get("passage_id"), str):
-                item["passage_id"] = real.get(item["passage_id"], item["passage_id"])
+                item["passage_id"] = real(item["passage_id"])
     return data
 
 

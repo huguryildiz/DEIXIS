@@ -1000,7 +1000,17 @@ class ResearchFlow:
             if task_type in ("grounded_answer", "cell_extraction"):
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             report = contracts.validate_model_output(payload, output_text)
-            warnings = [vars(w) for w in report.warnings]
+            salvage: list[contracts.Issue] = []
+            if (not report.ok and task_type == "grounded_answer" and isinstance(output_text, dict)
+                    and after_invalid_output(attempt) == "store_unverified_draft"):
+                # The repair did not fix the draft: drop only citations that lack a quote before giving up on it.
+                salvaged, salvage = contracts.salvage_answer_draft(payload, json.loads(json.dumps(output_text)))
+                retry = contracts.validate_model_output(payload, salvaged) if salvage else report
+                if retry.ok:
+                    report = retry
+                else:
+                    salvage = []
+            warnings = [vars(w) for w in salvage + report.warnings]
             recorded["validation_json"] = {"ok": report.ok, "issues": [vars(i) for i in report.issues], "warnings": warnings}
             if report.ok:
                 if task_type == "grounded_answer":

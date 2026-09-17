@@ -172,19 +172,21 @@ class ReportStore:
     def save_gaps(self, report_id: str, gaps: list[dict[str, Any]]) -> None:
         with transaction(self.conn):
             self.report(report_id)
-            inserted = False
+            saved = False
             for gap in gaps:
                 basis = gap.get("basis", {key: gap[key] for key in (
                     "basis_claim_keys", "basis_passage_ids", "basis_cell_ids", "nearest_match") if key in gap})
                 cursor = self.conn.execute(
                     "INSERT INTO report_gaps (id, report_id, gap_id, kind, text, basis_json, provenance_json,"
                     " kill_search_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                    " ON CONFLICT(report_id, gap_id) DO NOTHING",
+                    " ON CONFLICT(report_id, gap_id) DO UPDATE SET kind = excluded.kind, text = excluded.text,"
+                    " basis_json = excluded.basis_json, provenance_json = excluded.provenance_json,"
+                    " kill_search_status = excluded.kill_search_status, created_at = excluded.created_at",
                     (new_id("rgp"), report_id, gap["gap_id"], gap["kind"], gap["text"], dumps(basis),
                      dumps(gap["provenance"]), gap.get("kill_search_status", "not_run"), now()),
                 )
-                inserted = cursor.rowcount > 0 or inserted
-            if inserted:
+                saved = cursor.rowcount > 0 or saved
+            if saved:
                 self._event(report_id, "report_gaps_saved")
 
     def save_phrase_repair(self, report_id: str, section_id: str, sentence_id: str, before: str, after: str,

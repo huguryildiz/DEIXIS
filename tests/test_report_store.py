@@ -97,13 +97,15 @@ def test_save_claims_retry_replaces_claims_refs_and_citation_links_atomically(li
     assert [(row["claim_id"], row["passage_id"]) for row in links] == [(claims[0]["id"], passage_id)]
 
 
-def test_save_gaps_second_identical_call_is_a_no_op(lib):
+def test_save_gaps_retry_replaces_changed_text_for_the_same_gap_id(lib):
     store, reports, research_id, run_id = lib
     report_id = reports.create_report(research_id, run_id, 1, "en")
     gaps = [{"gap_id": "gap1", "kind": "corpus_absence", "text": "SYNTHETIC bounded absence",
              "basis_cell_ids": [], "provenance": {"search_date": "2026-09-17"}}]
 
     reports.save_gaps(report_id, gaps)
-    reports.save_gaps(report_id, gaps)
+    reports.save_gaps(report_id, [{**gaps[0], "text": "SYNTHETIC replacement absence"}])
 
     assert store.conn.execute("SELECT COUNT(*) FROM report_gaps WHERE report_id = ?", (report_id,)).fetchone()[0] == 1
+    assert store.conn.execute("SELECT text FROM report_gaps WHERE report_id = ?", (report_id,)).fetchone()[0] == \
+        "SYNTHETIC replacement absence"

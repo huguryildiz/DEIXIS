@@ -8,7 +8,8 @@ from typing import Any
 from deixis.documents import embeddings, pdf
 from deixis.domain.rules import effective_reviewer, result_applicability
 from deixis.workflow.equations import equation_state, equations_to_check
-from deixis.workflow.store import EVIDENCE_STATUS_SQL, Store
+from deixis.workflow.report.store import ReportStore
+from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
 
 
 # What the transcript reports from a search plan; the rest of the stored output stays out of the view.
@@ -39,6 +40,37 @@ def ocr_state(store: Store, asset_id: str) -> dict[str, Any]:
     return {"pages_without_text": max(0, (asset["page_count"] or 0) - len(pages)), "ocr_pages": sum(1 for o in pages.values() if o),
             "last_read": {"outcome": last["outcome"], "rejection_reason": last["rejection_reason"], "created_at": last["created_at"]}
             | json.loads(last["ocr_json"]) if last else None}
+
+
+def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any]:
+    """Return one report only through the research that owns it, with stored claim anchors."""
+    store.research(research_id)
+    reports = ReportStore(store)
+    report = reports.report(report_id)
+    if report["research_id"] != research_id:
+        raise NotFound(report_id)
+
+    sections = []
+    for section in reports.sections(report_id):
+        claims = []
+        for claim in store.conn.execute(
+            "SELECT id, claim_key, text, support_type FROM report_claims"
+            " WHERE report_section_id = ? ORDER BY ordinal", (section["id"],),
+        ):
+            evidence = [
+                {"passage_id": link["passage_id"], "cell_id": link["cell_id"],
+                 "anchor_text": link["anchor_text"]}
+                for link in store.conn.execute(
+                    "SELECT passage_id, cell_id, anchor_text FROM report_citation_links"
+                    " WHERE claim_id = ? ORDER BY rowid", (claim["id"],),
+                )
+            ]
+            claims.append({"claim_key": claim["claim_key"], "text": claim["text"],
+                           "support_type": claim["support_type"], "evidence": evidence})
+        sections.append({key: section[key] for key in (
+            "section_id", "status", "word_count", "draft", "validation",
+        )} | {"claims": claims})
+    return report | {"sections": sections}
 
 
 def research_view(store: Store, research_id: str) -> dict[str, Any]:
@@ -267,8 +299,12 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     }
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
     reviewer = effective_reviewer(scope, store.setting("reviewer"))
+    report_runs = [dict(row) for row in conn.execute(
+        "SELECT id, status, report_version, created_at FROM reports"
+        " WHERE research_id = ? ORDER BY created_at DESC, rowid DESC", (research_id,),
+    )]
     return {"research": research, "scope": scope_view, "runs": runs, "search_runs": search_runs, "sources": sources,
-            "answers": answers, "counts": counts, "last_event_id": last_event,
+            "answers": answers, "reportRuns": report_runs, "counts": counts, "last_event_id": last_event,
             # The reviewer the next answer would get: the research's own setting, else the app-wide default.
             "reviewer": {"mode": scope["review_mode"], "connection": reviewer[0] if reviewer else None, "model": reviewer[1] if reviewer else None,
                          "reasoning_effort": reviewer[2] if reviewer else None}}

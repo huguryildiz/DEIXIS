@@ -45,9 +45,10 @@ from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.equations import EquationService, equation_state, equations_to_check
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.providers.common import normalize_doi
+from deixis.workflow.report.store import ReportStore
 from deixis.workflow.store import NotASource, NotFound, PdfInUse, RunInProgress, SameFile, SeedUnavailable, Store, title_key
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
-from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, research_view
+from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, report_view, research_view
 from deixis.workflow.worker import Worker
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -164,6 +165,10 @@ class CreateTable(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     template_id: str | None = Field(default=None, max_length=40)
     rows: list[str] | None = Field(default=None, max_length=500)  # None: the research's included sources
+
+
+class StartReport(BaseModel):
+    table_id: str
 
 
 class TableTitle(BaseModel):
@@ -1220,6 +1225,9 @@ def create_app(
     def tables_of(request: Request) -> TableStore:
         return TableStore(store_of(request))
 
+    def reports_of(request: Request) -> ReportStore:
+        return ReportStore(store_of(request))
+
     @app.exception_handler(InvalidTableInput)
     async def invalid_table_input(_: Request, exc: InvalidTableInput):
         return JSONResponse({"detail": str(exc)}, status_code=422)
@@ -1306,6 +1314,21 @@ def create_app(
                                               idempotency_key)
         request.app.state.worker.wake()
         return run
+
+    @app.post("/api/researches/{research_id}/reports", status_code=202)
+    async def start_report(research_id: str, body: StartReport, request: Request,
+                           idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        run = reports_of(request).request_report(research_id, body.table_id, idempotency_key)
+        request.app.state.worker.wake()
+        return run
+
+    @app.get("/api/researches/{research_id}/reports/{report_id}")
+    async def get_report(research_id: str, report_id: str, request: Request) -> dict[str, Any]:
+        return report_view(store_of(request), research_id, report_id)
+
+    @app.get("/api/researches/{research_id}/reports")
+    async def list_reports(research_id: str, request: Request) -> list[dict[str, Any]]:
+        return research_view(store_of(request), research_id)["reportRuns"]
 
     @app.patch(table_path + "/columns/{column_id}")
     async def revise_table_column(research_id: str, table_id: str, column_id: str, body: ColumnChange, request: Request) -> dict[str, Any]:

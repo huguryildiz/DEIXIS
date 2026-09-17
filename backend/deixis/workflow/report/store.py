@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.report.snapshot import build_snapshot
 from deixis.workflow.store import NotFound, Store
@@ -18,6 +19,35 @@ class ReportStore:
     def _event(self, report_id: str, type_: str, **payload: Any) -> None:
         report = self.report(report_id)
         self.store._event(report["research_id"], type_, {"report_id": report_id, **payload}, report["run_id"])
+
+    def request_report(self, research_id: str, table_id: str,
+                       idempotency_key: str | None) -> dict[str, Any]:
+        """Queue a report run over one evidence table, refusing a table that is not ready."""
+        from deixis.workflow.tables import report_ready
+
+        key = f"{research_id}:{idempotency_key}" if idempotency_key else None
+        with transaction(self.conn):
+            existing = self.conn.execute(
+                "SELECT id, kind FROM runs WHERE idempotency_key = ?", (key,),
+            ).fetchone() if key else None
+            if existing:
+                if existing["kind"] != "report":
+                    raise RevisionConflict("This idempotency key was used for another request")
+                return self.store.run(existing["id"])
+
+            scope = self.store.scope(research_id)
+            readiness = report_ready(self.store, research_id, table_id)
+            if not self.store.included_sources(research_id) or not readiness["ready"]:
+                raise RevisionConflict("Include sources and fill every active evidence-table column before starting a report")
+
+            budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
+            run = self.store.create_run(research_id, "report", budget, key, {"table_id": table_id})
+            report_id = self.create_report(
+                research_id, run["id"], run["scope_revision"], scope["language_hint"],
+            )
+            return self.store.update_run(
+                run["id"], target_json=dumps({"table_id": table_id, "report_id": report_id}),
+            )
 
     def create_report(self, research_id: str, run_id: str, scope_revision: int, language: str | None) -> str:
         with transaction(self.conn):

@@ -111,3 +111,11 @@ Sonuç D60'ta. GPT 5.6 Sol (high) incelemesinden sonra sahibin onayıyla (`ok`) 
 - S3, yeni metin: çekirdek eşanlamlılarının hepsi teknolojinin adıdır (`intelligent reflecting surface`, `reconfigurable intelligent surface`, `IRS`, `RIS` ve bunların varyantları; görev sözcüğü içermez) en az 4/5; kanal kestirimi ve yansıtma/hüzmeleme optimizasyonu iki ayrı çekirdek dışı kavramdadır en az 4/5.
 - S1 ve S2, yeni metin: çekirdek eski metindeki gibi karar ya da mekanizma kalır (S1 `packet size`/`packet length`, S2 `k-connectivity`/`k-connected`) en az 4/5.
 - Kapı geçmezse yöntem metni commit'lenmez ve uçtan uca ölçüm yapılmaz.
+
+**Sonuçlar (17 Eylül 2026):**
+
+*İlgililik, kör, başlıktan.* Dahil edilen bütün kaynaklar üç soruda birleştirilip karıştırıldı; kuralı bilmeyen Claude alt ajanları (model, kişi değil) her başlığa ilgili, ilgisiz ya da belirsiz dedi. İlgili / (ilgili + ilgisiz), önce → sonra: S1a 0,94 → 0,94; S1b 1,00 → 0,95; S2 0,98 → 0,97; S3 1,00 → 0,97. Kapı (en çok 0,10 düşüş) bu tanımla geçti. Belirsizler ilgisiz sayılırsa S1a 0,91 → 0,83, S1b 0,91 → 0,84, S2 0,86 → 0,81, S3 0,94 → 0,78: S3 kapıyı aşıyor. Değerlendiriciler çok az başlığa ilgisiz dedi (S1 5/76, S2 3/110, S3 3/148); ayırt ediciliği sınırlı.
+
+*Aynı plan, iki derleyici (model yok, yalnız arama).* Sekiz saklı planın her biri derin sorgusuz ve derin sorgulu derlenip arandı; aynı istekler bir kez gönderildi. Bilinen eser, derinsiz → derin: S1 planları 6 → 9, 7 → 11, 6 → 11, 6 → 11; S2 planları 4 → 8, 3 → 9; S3 planları 0 → 0, 2 → 2. Plan sabitken de S1 ve S2'deki kazanç derinlikten geliyor; S3'te dar çekirdekle derinlik hiçbir şey eklemiyor. Bir IEEE isteği zaman aşımına uğradı (S3, eski plan).
+
+*Plan kapısı: geçmedi.* Yeni metinle S3'te çekirdek 5/5 teknolojinin adı, iki görev 5/5 ayrı kavramda (eski metin: 0/5). S1'de çekirdek 5/5 paket boyutu. Ama S2'de çekirdek yalnız 2/5 k-bağlantılılık; 3/5'te `wireless sensor network` / `underwater wireless sensor network` oldu (eski metin 5/5 k-bağlantılılık) ve bir plan geçersizdi. Model S2'deki birden çok yöntemi (yerleşim, topoloji kontrolü, tespit, onarım) "tek teknoloji içinde birden çok görev" diye okudu. Önceden yazılan kurala göre yöntem metni commit'lenmedi, geri alındı (metin `.local/depth-measure-2026-09-17/gate/rejected-method-text.md`) ve uçtan uca ölçüm yapılmadı.

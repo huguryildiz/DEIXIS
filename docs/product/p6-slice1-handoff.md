@@ -10,7 +10,7 @@ denetleyen atar.
 
 ## Nerede duruyoruz
 
-`main` üzerinde, `5d6189b`'den sonraki commit'ler dilim 1'e aittir; son üçü `d645f3a`, `b13546b` ve `7b4dfff`.
+`main` üzerinde, `5d6189b`'den sonraki commit'ler dilim 1'e aittir; son üçü `3d00bff`, `a374189` ve `a7bce6a`.
 Uygulanmış olanlar:
 
 | Plan | Ne geldi | Durum |
@@ -26,9 +26,11 @@ Uygulanmış olanlar:
 | 1e Task 1 | `review_methodology.py` — II. bölüm, model çağrısı yok | Tam |
 | 1e Task 3 | `gaps.py` — `corpus_absence` adayları | Tam |
 | 1e Task 4 (yarım) | `assembly.py`, kural 1, 2, 3, 4, 7, 10 | Tam (P1); kalan sekizi P7 |
+| 1g | `request_report`, üç rapor rotası, `report_view`, `reportRuns` | Tam (P3) |
+| — | **P3.5 plan pasajı düzeltmesi**: özeti olmayan kaynak ilk `pdf_page`'ini veriyor | Tam (plan dışı, zorunluydu) |
 | — | **P2.5 kök neden turu**: plan adımı kanıt tablosunun sütunlarını ve özet pasajları görüyor; plana `limitations_column_id`/`future_work_column_id`; boş bölüm artık `valid` değil | Tam (plan dışı, zorunluydu) |
 
-Tam backend takımı son ölçümde **655 geçti, 1 kaldı**. Kalan test
+Tam backend takımı son ölçümde **664 geçti, 1 kaldı**. Kalan test
 `tests/test_documents.py::test_extraction_is_stopped_when_it_exceeds_the_memory_limit`; `main` üzerinde bu işle
 ilgisiz bir nedenle bozuk ("extraction timed out" diyor) ve bırakılmasına izin verilen tek başarısızlıktır.
 
@@ -97,21 +99,34 @@ montaj yalnız P1'in altı kuralını koşar.
 
 **P2.5 — Kök neden turu.** ✅ `7b4dfff`. Yukarıdaki "P2.5 neden gerekti" bölümüne bak.
 
-**P3 — API ve görünüm modelleri. ⬅ SIRADAKİ.** 1g Task 1 ve 2: `ReportStore.request_report`,
+**P3 — API ve görünüm modelleri.** ✅ `3d00bff`. `ReportStore.request_report`,
 `POST /api/researches/{id}/reports` (202, gövde `{"table_id"}`, `Idempotency-Key`, sonunda `worker.wake()`),
-`GET .../reports/{id}`, `GET .../reports`, ve `views.py`'de `report_view` + `research_view`'a özet
-`reportRuns` listesi. Hazır Codex istemi: `docs/product/p6-slice1-p3-prompt.md`.
+`GET .../reports/{id}`, `GET .../reports`, `views.py`'de `report_view` + `research_view`'a `reportRuns`.
+İstem: `docs/product/p6-slice1-p3-prompt.md`. Planla üç fark: hazır olmayan tablo **409** döndürüyor (plan 422
+diyordu, `RevisionConflict` handler'ı 409 üretiyor); `create_report` var olan bir rapor koşusu istediği için
+sıra "run yarat → rapor yarat → `update_run` ile target'a `report_id` yaz" oldu, üçü tek transaction'da;
+`tests/test_views.py` yok, görünüm testleri `tests/test_report_api.py`'de. `apps/web/src/api.ts` tipi
+bilerek atlandı, arayüz partisine kaldı.
 **Adlandırma tuzağı:** `research_view` bugün *cevaplar* üzerinde `report_version`/`report_title` yayınlıyor ve
 arayüzün Artifacts sekmesi `view.answers`'tan türeyen yerel bir `reports` değişkeni kullanıyor. Bunlar kaynak
-bağlantılı cevaplar, bu dilimin raporu değil. Mevcut cevap tarafı adlandırması **değiştirilmez**; eklenen şey
-ayrı bir `reportRuns` listesidir. Planın `apps/web/src/api.ts`'e tip ekleme adımı arayüz partisine ertelendi.
+bağlantılı cevaplar, bu dilimin raporu değil. Mevcut cevap tarafı adlandırması **değiştirilmedi**; eklenen şey
+ayrı bir `reportRuns` listesidir.
 
-**P4 — Sahte modelle API üzerinden uçtan uca koşu.** Planın
-`tests/test_report_flow.py::test_report_run_completes_with_fake_adapter_and_produces_a_valid_report` testi,
-rotalar üzerinden. Zincirin kendisi P2'de zaten koşuyor; P4'ün eklediği, rotaların ve worker'ın da çalıştığı.
-Ön koşul: P3.
+**P3.5 — Plan adımının pasaj boşluğu (plan dışı, zorunluydu).** ✅ `a374189`. `sections.py` plan adımına yalnız
+`kind='abstract'` pasajları veriyordu; ekli PDF'le kurulan bir araştırmada hiç abstract yok, izin listesi boş
+kalıyordu — P2.5'in kök nedeninin aynısı, başka kılıkta. Yeni kural: kaynak başına bir pasaj, özeti varsa özet,
+yoksa ilk `pdf_page`, liste `budget["max_answer_passages"]` ile sınırlı. İki test bunu saklanan `StepInput`
+üzerinden denetliyor. P3 testindeki sentetik abstract koltuk değneği kaldırıldı; yüklenen PDF tek başına
+raporu tamamlıyor. İstem: `docs/product/p6-slice1-p35-prompt.md`.
 
-**P5 — Gerçek modelle bir koşu.** `gpt-5.6-luna`, küçük bir araştırma, kütüphanenin **kopyası** üzerinde,
+**P4 — Sahte modelle API üzerinden uçtan uca koşu.** ✅ `a7bce6a`. Planın adıyla belirttiği
+`test_report_run_completes_with_fake_adapter_and_produces_a_valid_report`, `tests/test_report_api.py`'de
+(rota yardımcıları orada). Rotalar üzerinden: 202 → worker → `completed` → `GET .../reports/{id}` `valid`,
+`report_version 1`, on bir bölüm, her bölümün taslağı dolu, III–VII atıf taşıyor, II'nin iddiası yok (kod
+yazıyor). **Planın test taslağı eskimiş:** on bölüm ve tur sırası bekliyordu, gerçek çıktı on bir bölüm ve
+ordinal sıra.
+
+**P5 — Gerçek modelle bir koşu. ⬅ SIRADAKİ, sahibin onayı bekliyor.** `gpt-5.6-luna`, küçük bir araştırma, kütüphanenin **kopyası** üzerinde,
 8799 portunda; canlı 8765 servisine asla dokunulmaz. Sahibin onayı gerekir. Aynı koşuda dilim 0'ın hiç
 yapılmamış süre ölçümü (`scripts/p6_eval/measure_fill.py`) de halledilir.
 
@@ -145,9 +160,13 @@ Gerçekçi tahmin, 18 Eylül'de güncellendi: P1, P2 ve plan dışı P2.5 bir ot
    `with_citation_handles`, `citation_handles` ve `resolve_citation_handles` `report_target`, izin listesi ve
    çıktı alanlarını da çevirmeli. Dışarıda bırakmak doğruluğu bozmuyor ama raporu D12'nin kayda geçirdiği
    uzun-kimlik kopyalama hatalarına açık bırakıyor. Karar ölçümden önce mi sonra mı, sahibin.
-2. **Gerçek model koşusu onayı** (P5). Sahip 18 Eylül'de "önce kök nedeni düzeltelim" dedi; düzeltme bitti,
-   onay hâlâ alınmadı.
-3. **Dilim 2, 3, 4'ün tasarımı yok** — sırasıyla 10, 10 ve 9 açık soru. Dilim 2 öne alınmalı, çünkü raporun
+2. **Gerçek model koşusu onayı** (P5). Sahip 18 Eylül'de "önce kök nedeni düzeltelim" dedi; düzeltme bitti
+   (P2.5 ve P3.5), onay hâlâ alınmadı.
+3. **`quick` efor bütçesi bir raporu bitiremiyor.** `TEST_EFFORT_BUDGETS["quick"]` altı model çağrısı veriyor,
+   rapor en az on bir bölüm yazıyor; `quick` bir araştırmada koşu VIII civarında `budget_exhausted` ile duruyor.
+   Seçenekler: rapor koşusuna kendi bütçesini vermek, `quick`'te raporu reddetmek, ya da bütçeyi yükseltmek.
+   Karar verilmedi; P3'te bilerek karıştırılmadı.
+4. **Dilim 2, 3, 4'ün tasarımı yok** — sırasıyla 10, 10 ve 9 açık soru. Dilim 2 öne alınmalı, çünkü raporun
    içeriğini değiştiriyor: VI'ya dördüncü aday türü, III'e alanın gelişimi alt başlığı. Dilim 1 buna yer
    bıraktı (`report_gaps.kind` kapalı liste değil, III alt bölüm kabul ediyor), ama karar ne kadar gecikirse
    dilim 1'in çıktısı o kadar çok yeniden yazılır.

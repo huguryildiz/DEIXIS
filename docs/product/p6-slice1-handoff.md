@@ -105,6 +105,11 @@ sürprizi çıkmazsa biter; üç daha olası.
 - **Kesilme kaydının tablosu yok.** §4.3 bütçeye sığmayan kayıtların saklanmasını ve VIII'de sayı olarak
   görünmesini istiyor; migration 0035'te yeri yok. Nereye yazılacağı P2'de kararlaştırılmalı
   (`report_sections.validation_json` en yakın aday).
+- **Montaj kuralı 7 kırılgan.** II ve VIII'in sayılarının dondurulmuş korpusla aynı olduğunu, bölümün
+  düzyazısında İngilizce/Türkçe etiket sözcüklerini (`found`/`bulunan`, `unique`/`tekil`, …) arayıp yanındaki
+  sayıyı okuyarak denetliyor. Etiket başka türlü ifade edilirse denetim sessizce kaçırır. Sağlam tasarım,
+  bölümün sayılarını yapılandırılmış olarak saklayıp düzyazıyı onlardan üretmektir; P7'de ya da ölçümden sonra
+  karara bağlanmalı.
 - `CAPABILITIES["supported_tasks"]` rapor görevlerini saymıyor.
 - `report_phrase_repair` bölüm kalıplarını alıyor ama çalışma zamanı dosya listesinde `phrases.md` yok, yani
   şimdilik etkisiz.

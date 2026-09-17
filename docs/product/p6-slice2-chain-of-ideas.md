@@ -2,7 +2,7 @@
 
 **Tarih:** 17 Eylül 2026. **Durum:** Taslak; sahibin yanıtı bekleniyor. Bu notta henüz kabul edilmiş bir tasarım yok; §18'deki sorular kapanmadan uygulamaya başlanmaz. Kod değişmedi.
 
-**Kısaca:** Bu dilim, sahibin 14 Eylül 2026'da seçtiği sentez yöntemi olan Chain of Ideas'ın (Li ve ark. 2024) ilk iki adımını DEIXIS'e getirir: bir sorunun alanındaki temel çalışma, önemli derlemeler ve yakın çalışmalardan bir **alan tabanı** kurmak; sonra dahil edilen kaynakları kanıta bağlı **gelişim çizgileriyle** (kim hangi problemi ele aldı, neyi kurdu/değiştirdi, hangi belirsizliği bıraktı) birbirine bağlamak. Alan tabanı tamamen koddan gelir, model çağrısı gerekmez; sinyaller zaten saklı olan atıf sayısı (`cited_by_count`, migration 0005) ile taramanın kendi kararıdır. Çizgi düğümleri, P5'teki kanıt tablosunun üç yeni sütunudur ve `cell_extraction` adımıyla bugünkü gibi alıntılı doldurulur. Çizgi bağları ise yeni bir model adımıdır (`chain_links`): kod önce hangi sonraki çalışmanın hangi önceki çalışmayı metninde andığını bulur (yazar soyadı + yıl eşleştirmesiyle, tam-eşleşme garantisi olmadan), sonra yalnız bu aday çiftler modele verilir ve model her çift için ya bir ilişki türü ve destek yazar ya da "ilişki yok" der. Zincirler bağlı bileşen olarak koddan kurulur; bir zincirin ucunda kalan ve peşine düşülmemiş belirsizlik, P6 rapor tasarımının VI. bölümüne (`docs/product/p6-report-design.md`) dördüncü aday türü olarak koddan üretilir. Bu not, o rapor tasarımının §12'de bıraktığı yeri doldurur.
+**Kısaca:** Bu dilim, sahibin 14 Eylül 2026'da seçtiği sentez yöntemi olan Chain of Ideas'ın (Li ve ark. 2024) ilk iki adımını DEIXIS'e getirir: bir sorunun alanındaki temel çalışma, önemli derlemeler ve yakın çalışmalardan bir **alan tabanı** kurmak; sonra dahil edilen kaynakları kanıta bağlı **gelişim çizgileriyle** (kim hangi problemi ele aldı, neyi kurdu/değiştirdi, hangi belirsizliği bıraktı) birbirine bağlamak. Alan tabanı tamamen koddan gelir, model çağrısı gerekmez; sinyaller zaten saklı olan atıf sayısı (`cited_by_count`, migration 0005) ile taramanın kendi kararıdır. Çizgi düğümleri, P5'teki kanıt tablosunun üç yeni sütunudur ve `cell_extraction` adımıyla bugünkü gibi alıntılı doldurulur. Çizgi bağları ise yeni bir model adımıdır (`chain_links`): kod önce hangi sonraki çalışmanın hangi önceki çalışmayı metninde andığını bulur (yazar soyadı + yıl eşleştirmesiyle, tam-eşleşme garantisi olmadan), sonra yalnız bu aday çiftler modele verilir ve model her çift için ya bir ilişki türü ve destek yazar ya da "ilişki yok" der. Zincirler bağlı bileşen olarak koddan kurulur; bir zincirin ucunda kalan ve peşine düşülmemiş belirsizlik önce yalnız çizgi görünümünde `no_continuation_in_corpus` diye işaretlenir, çünkü bu çoğunlukla arama eksikliğidir (bilinen-eser geri çağırımı D55'te 4/15 ölçüldü), açık soru değil. Bir OpenAlex tabanlı, kullanıcı başlatan **sınırlı atıf genişlemesi** (o düğüme kim atıf yapıyor, kim referans veriyor) sonucu kanıt olarak eklenir ve sahip düğümü açıkça yükseltirse, ancak o zaman P6 rapor tasarımının VI. bölümüne (`docs/product/p6-report-design.md`) dördüncü aday türü olarak girer. Bu not, o rapor tasarımının §12'de bıraktığı yeri doldurur.
 
 ## 0. Chain of Ideas makalesi: ne okundu, hangi derinlikte
 
@@ -15,13 +15,18 @@ Bu, makalenin ham metnini satır satır okumakla aynı değildir: aktarılan al�
 
 Bu notun tasarımı, makalenin bu özetlenmiş okuması ile README/`research-methods.md`'deki daha önce yapılmış (ve zaten kabul edilmiş) kod incelemesine dayanıyor; makalenin ölçüm sonuçları (50 konu, insan değerlendirmesi vb.) hiç okunmadı ve bu notta kullanılmadı. **Devralınmayan** kısımlar zaten README'de karara bağlanmıştı ve bu not onları tekrar açmıyor: sabit zincir uzunluğu/dal sayısı, "kaynak yoksa özgündür" ikili novelty çıktısı, çok ajanlı mimari.
 
+**Hakemli sürüm (bu revizyonda doğrulandı, 17 Eylül 2026):** arXiv sayfasının kendisi bir `journal-ref` alanı taşımıyor ("Comments: 10 pages, 5 figures, conference"). OpenAlex'in `works` aramasıyla ve ardından ACL Anthology sayfasının kendisiyle (`aclanthology.org/2025.findings-emnlp.477/`) çapraz kontrol edildi: makale, aynı başlık ve yazar listesiyle (Long Li ve 13 ortak yazar), **Findings of the Association for Computational Linguistics: EMNLP 2025**'te (Suzhou, Kasım 2025, s. 8971-9004, DOI `10.18653/v1/2025.findings-emnlp.477`) yayımlanmış. Bu, arXiv'deki v1-v5 sürümlerinden ayrı, hakemli bir sürümdür; bu notun tasarımı hâlâ v5'in özetlenmiş okumasına dayanıyor, hakemli sürümün metni ayrıca okunmadı.
+
+**İlgili bir başka README kaynağı:** Si, Yang ve Hashimoto (2024), "Can LLMs Generate Novel Research Ideas?" (README "AI research systems and evaluation references"), algılanan özgünlük ile fizibilitenin birbirinden ayrıldığını ve bunların gerçek araştırma sonucundan farklı olduğunu gösteriyor. Bu, bu dilimde hiçbir adımın (ne `chain_links` ne alan tabanı) modele bir fikri "özgün", "iyi" ya da bir sırada "en güçlü" diye puanlatmamasının bir gerekçesidir: modelin kendi değerlendirmesi bağımsız doğrulama sayılmaz (aynı kaynak `research-methods.md` §3'te de anılıyor).
+
 ## 1. Kodda bugün olan
 
 | Parça | Doğrulanan durum | Bu dilim için anlamı |
 |---|---|---|
 | `workflow/flow.py::_discovery` | `search_plan` model adımı → `query_compiler.compile_queries` derlenmiş sorguları üretir → sağlayıcı aramaları → `screening`. Kavramlar (`concepts`) `core` ve isteğe bağlı ailelerden oluşur; `adjacent_field` yalnız başka aile yokken kullanılır (D44). | Alan tabanı için "temel çalışma" ve "derleme" araması yeni bir model kavramı değil, koddan tetiklenen ek sorgu varyantlarıdır (§4.1). |
 | `providers/query_compiler.py`, `query_rules.py` | Sorgular koddan derleniyor (D44); her sağlayıcının söz dizimi kuralı ayrı dosyada. `openalex_query_shape_issues` OpenAlex'in üç ve üzeri zorunlu terimi reddettiğini gösteriyor. | Sağlayıcıya özgü bir "review filtresi" ya da "atıf sırasına göre sırala" bugün **yok**; eklenmesi gerekiyor (§4.1). |
-| `providers/openalex.py` | `SELECT` listesi `cited_by_count`'u zaten çekiyor (aynı çağrı, ek maliyet yok); `referenced_works` **çekilmiyor**. `ProviderRecord.identifiers` yalnız OpenAlex kaydının kendi `ids` alanından geliyor; başka sağlayıcıdan bulunan bir kaydın OpenAlex kimliği yok. | Atıf kenarı (kim kimi anıyor) eklemek "aynı çağrıya bir alan eklemek" kadar ucuz, ama yalnız her iki uçta da OpenAlex kökenli bir `source_version` varsa çözülebiliyor (§4.1). |
+| `providers/openalex.py` | `SELECT` listesi `cited_by_count`'u zaten çekiyor (aynı çağrı, ek maliyet yok); `referenced_works` **çekilmiyor**. `ProviderRecord.identifiers` yalnız OpenAlex kaydının kendi `ids` alanından geliyor; başka sağlayıcıdan bulunan bir kaydın OpenAlex kimliği yok. `search_works`'ün `works_filter` parametresi zaten var ve bugün yalnız `_record`'un aldığı serbest bir dize; **bu revizyonda canlı doğrulandı** (17 Eylül 2026, `api.openalex.org/works?filter=cites:W2741809807`): `filter=cites:<id>` geçerli bir OpenAlex filtresi, bir işe atıf yapan işleri (ileri atıf) döndürüyor. | Geriye doğru genişleme (`referenced_works`, zaten aynı çağrıda) ve ileriye doğru genişleme (`cites:` filtresi, yeni bir çağrı) ikisi de OpenAlex'in kendi mekanizmasıyla, ek bir sağlayıcı gerekmeden yapılabiliyor (§4.7). |
+| `providers/semantic_scholar.py` | Yalnız `/paper/search` (düz kelime arama) uygulanmış; sağlayıcının kendi genel API'sinde `/paper/{id}/citations` ve `/paper/{id}/references` uçları var ama bu adaptör onları **çağırmıyor**. 429'a karşı zaten kırılgan (15-30 sn bekleme, dosyanın kendi notu). | İleri/geri genişleme bu sağlayıcıdan **yapılmıyor** (§4.7); eklemek ayrı, daha büyük bir iş ve OpenAlex zaten aynı işi ücretsiz yapıyor. |
 | `storage/migrations/0005_cited_by_count.sql` | `source_versions.cited_by_count`, `cited_by_count_at`; sağlayıcının bildirdiği sayı ve tarih, `source_version` başına (work başına değil). | Alan tabanının "atıf sayısı" temeli hazır; hangi tarihte, hangi sürüm için olduğu ayrıca gösterilmeli. |
 | D45, D46, D48 (iş/sürüm aileleri) | Bir çalışmanın (`work`) birden çok `source_version`'ı (ön baskı, yayımlanmış, kullanıcı yüklemesi) olabilir; D48'den sonra yayımlanmış sürüm başı çeker, tarama ve seçim başa bağlı. `works.source_key` (D59) her işe kütüphane genelinde tek, sabit bir kısa anahtar veriyor (`Nakano13` gibi), `workflow/source_keys.py`. | Bir çizgi düğümü **iş** düzeyindedir (D48'in "preprint ve yayımlanmış hâli tek düğüm" kuralıyla örtüşüyor), ama kanıt tablosunun satırı **sürüm** düzeyinde (D37/D38: `(column, source_version)`). Düğüm kimliği pratikte tablo satırının anahtarı olan `source_version_id` üzerinden gider; iki sürümü olan bir iş, tabloda başının sürümüyle tek satırdır (D48), yani zaten tek düğüm olur. |
 | P5 dilim 1 kanıt tablosu (`workflow/tables.py`, migration 0019/0020) | Sütun/hücre/revizyon/kanıt zinciri tamam: `evidence_cells`, `cell_revisions` (append-only, `model_fill`/`model_proposal`/`human_edit`/…), `cell_evidence_links` (yalnız o sürümün pasajı, tetikleyiciyle denetlenir). `cell_extraction` adımı kaynak başına bir çağrı yapar, 8 sütuna kadar birlikte. | Çizgi düğüm hücreleri (problem/kurulan-değişen/bırakılan belirsizlik) bu makineyi aynen kullanır; yeni tablo veya yeni revizyon türü gerekmez. |
@@ -38,7 +43,7 @@ Bu notun tasarımı, makalenin bu özetlenmiş okuması ile README/`research-met
 
 ### S1. Alan tabanı hesaplanır
 
-Kullanıcı bir rapor ya da çizgi görünümü ister (ya da §18 soru 3'ün cevabına göre discovery ile otomatik başlar). Kod, arama planının çekirdek kavramıyla iki ek sorgu varyantı dener (atıf sırasına göre, review filtresiyle; §4.1), sonra dahil edilen ve taranan kayıtlar üzerinden dört yuvaya (`foundational`, `review`, `close_primary`, `close_adjacent`) aday listeler; her adaya en az bir `basis` (atıf sayısı + tarih, korpus içi atıf sıklığı, çekirdek sorgudaki sıra, taramanın kendi include kararı) iliştirir. Model çağrısı yoktur. Sonuç, evidence tablosunun üstünde ayrı bir "Field baseline" bölümü olarak görünür; her satırın yanında hangi temelle seçildiği yazar.
+Kullanıcı bir rapor ya da çizgi görünümü ister (ya da §18 soru 3'ün cevabına göre discovery ile otomatik başlar). Kod, arama planının çekirdek kavramıyla iki ek sorgu varyantı dener (atıf sırasına göre, review filtresiyle; §4.1), sonra dahil edilen ve taranan kayıtlar üzerinden dört yuvaya (`most_cited_in_core_query`, `review_query_match`, `close_primary`, `close_adjacent`) aday listeler; her adaya en az bir `basis` (atıf sayısı + tarih, korpus içi atıf sıklığı, çekirdek sorgudaki sıra, taramanın kendi include kararı) iliştirir. Model çağrısı yoktur. Sonuç, evidence tablosunun üstünde ayrı bir "Field baseline" bölümü olarak görünür; her satırın yanında hangi temelle seçildiği yazar. Yuva adları **sinyalin kendisidir**, bir sonuç iddiası değil (§4.1); "foundational"/"kurucu" sözcüğü yalnız ayrıca kanıtlandığında (bir pasaj öyle diyor ya da iş, kabul edilmiş bağlarla kurulmuş bir zincirin köküdür) ekranda geçer.
 
 ### S2. Düğüm hücreleri doldurulur
 
@@ -48,13 +53,17 @@ Kullanıcı ya da rapor akışı üç yeni sütunu ("problem addressed", "establ
 
 Kullanıcı "Find development links" der (ya da rapor akışı otomatik çağırır). Kod önce her tam metinli, dahil edilmiş sonraki-çalışma için pasajlarını tarar ve önceki çalışmaların yazar soyadı + yıl (veya soyadı yoksa başlık sözcüğü) örüntüsünü arar; eşleşen her çift "aday" olur. `chain_links` adımı, sonraki çalışma başına bir çağrıyla, yalnız o çalışmanın adaylarını alır ve her biri için ya bir ilişki (tür, ne değişti, destek türü, alıntı) ya da "ilişki yok" döner. Kod, alıntının gerçekten sonraki çalışmanın pasajında bulunduğunu, versiyonların tekilleştiğini, yıl sırasının makul olduğunu ve döngü oluşmadığını denetler.
 
-### S4. Zincirler kurulur, uç belirsizlikler bulunur
+### S4. Zincirler kurulur, korpusta devamı bulunamayan düğümler işaretlenir
 
-Kod, kabul edilen bağları bağlı bileşenlere ayırır; dallanma noktaları ve çapraz bağlar korunur, izole kalan işler "yerleştirilemedi" listesinde görünür. Bir düğümün "bırakılan belirsizlik" hücresi varsa ve hiçbir giden bağ `continues_predecessor_uncertainty` işaretini taşımıyorsa (yalnız tam metinli düğümler için), bu bir "zincir ucu belirsizliği" adayı olur.
+Kod, kabul edilen bağları bağlı bileşenlere ayırır; dallanma noktaları ve çapraz bağlar korunur, izole kalan işler "yerleştirilemedi" listesinde görünür. Bir düğümün "bırakılan belirsizlik" hücresi varsa ve hiçbir giden bağ `continues_predecessor_uncertainty` işaretini taşımıyorsa (yalnız tam metinli düğümler için), bu düğüm çizgi görünümünde **`no_continuation_in_corpus`** ("korpusta izlenen devam bulunamadı") diye işaretlenir. D55'in ölçtüğü bilinen-eser geri çağırımının düşüklüğü (4/15) göz önünde tutulduğunda bu çoğunlukla bir arama eksikliğidir, bir açık soru değil; bu yüzden bu işaret **kendi başına** bir rapor adayı değildir (§4.4).
+
+### S4b. Sahip ileri atıf denetimi ister ve aday yükseltir
+
+Kullanıcı, `no_continuation_in_corpus` işaretli bir düğümde "Check citing works" der (§4.7). Kod, OpenAlex'in `cites:` filtresiyle o düğüme atıf yapan işleri arar, kaç tanesinin korpusta olduğunu, kaçının taranıp dışlandığını, kaçının hiç taranmadığını sayar; sonuç düğümde görünür kalır. Kullanıcı bu sonucu görüp "Promote to report candidate" derse, düğüm ancak o zaman VI'nın dördüncü aday türüne yükselir (§4.4, §4.5).
 
 ### S5. Rapor bunları kullanır
 
-Rapor (dilim 1) çalıştığında III bir "alanın gelişimi" alt bölümü yazar (yalnız kabul edilmiş bağlardan), VI zincir ucu belirsizliklerini dördüncü aday türü olarak listeler, VII bu adaylardan yön türetir.
+Rapor (dilim 1) çalıştığında III bir "alanın gelişimi" alt bölümü yazar (yalnız kabul edilmiş bağlardan), VI yalnız **yükseltilmiş** (S4b) düğümleri dördüncü aday türü olarak listeler, VII bu adaylardan yön türetir.
 
 ### S6. İnsan bir bağı düzeltir
 
@@ -70,6 +79,7 @@ Kullanıcı yanlış bir bağı siler, türünü değiştirir ya da alıntısız
 - Okuma derinliği görünür kalır; bir özet, "yöntemde ne değişti" gibi ayrıntılı bir hücreyi destekleyemez.
 - Tek ana ajan; model araçsız çalışır (mevcut mimari kısıtı).
 - Farklı deney koşullarında ters sonuçlar, hizalanmadan çelişki sayılmaz (T11); bu, `corrects_or_contradicts` ilişkisinin `what_changed` alanında koşul farkını açıkça yazmasını gerektirir (§10).
+- Hiçbir adımda model bir fikri, çizgiyi ya da adayı "özgün", "en iyi" ya da bir sırada "en güçlü" diye puanlamaz. Si, Yang ve Hashimoto (2024, README) algılanan özgünlük ve fizibilite değerlendirmesinin gerçek araştırma sonucundan ayrı olduğunu ve model öz-değerlendirmesinin bağımsız doğrulama sayılmadığını gösteriyor; bu yüzden `chain_links` ve alan tabanı yalnız gözlemlenebilir sinyaller ve alıntılı yargılar üretir, bir sıralama ya da puan üretmez.
 
 ## 4. Tasarım kararları
 
@@ -86,16 +96,23 @@ Bu iki varyant `query_rules.py`'ye değil `flow.py::_discovery`'ye eklenir (sorg
 
 **Atıf kenarı bulgusu:** `openalex.py`'nin `SELECT` listesi `referenced_works`'ü çekmiyor; eklemek aynı isteğe bir alan eklemekten ibarettir, **ek bir API çağrısı gerektirmez**. Ama bir kenarı ("A, B'yi anıyor") kütüphanedeki başka bir kayda bağlamak için B'nin OpenAlex kimliğinin bilinmesi gerekir; bu yalnız B de OpenAlex üzerinden bulunmuşsa (`provider_record_id`'si OpenAlex kimliğidir) mümkündür. Başka sağlayıcıdan (Crossref, Semantic Scholar…) bulunan bir kayıt için `identifiers` sözlüğünde OpenAlex kimliği yoktur (`providers/common.py::ProviderRecord`); bu kenarları çözmek ek bir toplu OpenAlex arama gerektirir ki bu ek maliyettir. Öneri: yalnız **her iki ucu da OpenAlex kökenli** olan kenarları hesapla (ek çağrı yok), ötekini "çözülemedi" bırak.
 
-Kod, hiçbir model çağrısı yapmadan dört yuvaya aday atar ve her birine gerekçesini yazar (domain-example.md Task 1'in istediği gibi, atıf sayısı ile "kurucu etki"yi karıştırmadan):
+Kod, hiçbir model çağrısı yapmadan dört yuvaya aday atar ve her birine gerekçesini yazar. **17 Eylül 2026'daki dış incelemenin bulduğu hata:** ilk taslakta yuva adı `foundational` idi ve yalnız `cited_by_count`'la dolduruluyordu; bu, atıf sayısından doğrudan "kurucu etki" sonucu çıkarıyordu, tam olarak domain-example.md'nin yasakladığı şey ("Do not treat 'most famous paper' as an objective fact. Explain whether the selection is based on citation count, foundational influence, review frequency, or direct relevance" — dördü **ayrı** temeldir, biri ötekini kanıtlamaz). Düzeltme: **her yuva sinyalin adını taşır, bir sonucun adını değil.**
 
 | Yuva | Sinyal(ler) | `basis_json` örneği |
 |---|---|---|
-| `foundational` | `cited_by_count` en yüksek olan(lar) (kendi `source_version`'ında, D48'in baş sürümünde) | `{"kind": "citation_count", "count": 812, "provider": "openalex", "at": "2026-09-17"}` |
-| `review` | tür `review` sorgu varyantından gelen ve taramada dahil edilen | `{"kind": "review_query_match"}, {"kind": "citation_count", ...}` |
+| `most_cited_in_core_query` | çekirdek sorgunun `core_by_citation` varyantında en yüksek `cited_by_count` (kendi `source_version`'ında, D48'in baş sürümünde) | `{"kind": "citation_count", "count": 812, "provider": "openalex", "at": "2026-09-17"}` |
+| `review_query_match` | tür `review` sorgu varyantından gelen ve taramada dahil edilen | `{"kind": "review_query_match"}, {"kind": "citation_count", ...}` |
 | `close_primary` / `close_adjacent` | taramanın kendi include kararı + çekirdek sorgudaki sıra (BM25/embedding, D30) | `{"kind": "screening_included"}, {"kind": "core_query_rank", "rank": 2}` |
-| (genel, edinilebiliyorsa) | korpus içi atıf sıklığı: kaç dahil iş bunu `referenced_works`'ünde anıyor | `{"kind": "corpus_citation_frequency", "count": 4, "denominator": 9, "resolved": "openalex_only"}` |
+| (genel, edinilebiliyorsa, dört yuvanın hepsine eklenebilir) | korpus içi atıf sıklığı: kaç dahil iş bunu `referenced_works`'ünde anıyor | `{"kind": "cited_by_included_works", "count": 4, "denominator": 9, "resolved": "openalex_only"}` |
 
-Hiçbir yuva "en ünlü/en önemli" diye tek bir cümleye indirgenmez; ekranda her zaman en az bir `basis` gösterilir. Bu, domain-example.md'nin "Do not treat 'most famous paper' as an objective fact" kuralını koda bağlar.
+Hiçbir yuva "en ünlü/en önemli" diye tek bir cümleye indirgenmez; ekranda her zaman en az bir `basis` gösterilir, hiçbiri "kurucu" diye adlandırılmaz.
+
+**"Kurucu"/"foundational" sözcüğü ne zaman yazılabilir.** Bu sözcük yalnız aşağıdaki iki durumdan biri gerçekten kanıtlandığında, ekranda ya da raporda geçer; aksi hâlde metin yalnız "çekirdek sorgunun en çok atıf alan sonucu (OpenAlex, {tarih})" der:
+
+1. **`source_stated`:** dahil edilen bir derlemenin ya da sonraki bir çalışmanın bir pasajı, işi açıkça böyle anlatıyor ("first proposed by…", "the seminal model of…"). Herhangi bir iddia gibi bir alıntı çapası taşır (`locate_anchor`); kod yalnız alıntının o pasajda bulunduğunu doğrular, "gerçekten kurucu mu" sorusunu değil.
+2. **Yapısal (`chain_root`):** iş, kabul edilmiş `chain_links` bağlarıyla kurulmuş bir zincirin köküdür (hiç gelen bağı yok) **ve** en az **N = 3** kabul edilmiş giden bağı vardır. Bu sayı önerilmiş bir varsayılandır, ölçülmedi; yalnız **bu korpus için** bir gözlemdir, alanın tamamı için bir iddia değildir ve metin bunu açıkça söyler ("bu araştırmada dahil edilen kaynaklar arasında, N çalışmanın geliştiği kök").
+
+Bu kural §5'in `field_baseline_selections.slot` CHECK listesine ve §10'un tablosuna aynen yansır.
 
 ### 4.2 Çizgi düğümleri — benimsendi: sıradan, kullanıcı görünür tablo sütunları
 
@@ -114,9 +131,13 @@ Kod denetimleri: her iki iş de dahil; sürümler tekilleşmiş (D48 başı); `t
 
 **Kim ne yapıyor tablosu için bkz. §10.**
 
-### 4.4 Çizgi montajı — benimsendi
+### 4.4 Çizgi montajı — benimsendi, uç belirsizliği daraltıldı
 
-Kabul edilen bağlar üzerinde bağlı bileşen (union-find) hesaplanır; her bileşen bir zincirdir, dallanma noktaları ve çapraz bağlar (bir düğümün birden çok giden/gelen bağı) korunur. Hiçbir bağı olmayan dahil iş "yerleştirilemedi" listesinde kalır, sessizce düşmez. Zincir ucu belirsizliği: bir düğümün `uncertainty_left` hücresi doludur, düğüm **tam metinlidir** (rapor tasarımının 10. kararındaki `corpus_absence` kuralıyla aynı gerekçeyle: yalnız özeti okunan bir düğümün "kimse peşine düşmedi" demesi okunmamış kısmın yokluğunu iddia etmek olur) ve hiçbir giden bağı `continues_predecessor_uncertainty = true` işaretini taşımıyor. Bu alan modelin yazdığı bir alandır (§4.3); kod yalnız yapıyı sayar, "gerçekten aynı belirsizlik mi" sorusu modele kalır (§10).
+Kabul edilen bağlar üzerinde bağlı bileşen (union-find) hesaplanır; her bileşen bir zincirdir, dallanma noktaları ve çapraz bağlar (bir düğümün birden çok giden/gelen bağı) korunur. Hiçbir bağı olmayan dahil iş "yerleştirilemedi" listesinde kalır, sessizce düşmez.
+
+**Zincir ucu, koddan hesaplanan bir işarettir, kendi başına bir rapor adayı değildir.** Bir düğümün `uncertainty_left` hücresi doludur, düğüm **tam metinlidir** (rapor tasarımının 10. kararındaki `corpus_absence` kuralıyla aynı gerekçeyle: yalnız özeti okunan bir düğümün "kimse peşine düşmedi" demesi okunmamış kısmın yokluğunu iddia etmek olur) ve hiçbir giden bağı `continues_predecessor_uncertainty = true` işaretini taşımıyorsa, kod bu düğümü **`no_continuation_in_corpus`** diye işaretler ve yalnız çizgi görünümünde gösterir. **17 Eylül 2026'daki dış incelemenin bulduğu ikinci hata:** ilk taslak bunu doğrudan VI'nın dördüncü aday türüne çeviriyordu. D55'in ölçtüğü bilinen-eser geri çağırımı (tutulmuş soruda 4/15) gösteriyor ki "korpusta devam yok" çoğunlukla arama/tarama eksikliğidir, gerçek bir açık soru değil; bu farkı ayırt etmenin tek yolu o düğüme **kim atıf yapıyor**a bakmaktır (§4.7'deki ileri atıf denetimi). Bu yüzden `no_continuation_in_corpus`, VI'ya yalnız §4.5'teki iki koşul birlikte sağlandığında girer: (a) düğüm için bir ileri atıf denetimi (§4.7) çalışmış ve sonucu kanıtça eklenmiş, (b) sahip düğümü açıkça yükseltmiş (README adım 4: "Let the user steer the research direction"). Bu iki koşulun sırası ve zorunluluğu §18 soru 9'da sahibe soruluyor; önerim ikisinin de zorunlu olmasıdır.
+
+`continues_predecessor_uncertainty` alanı modelin yazdığı bir alandır (§4.3); kod yalnız yapıyı sayar, "gerçekten aynı belirsizlik mi" sorusu modele kalır (§10).
 
 ### 4.5 Rapora entegrasyon — benimsendi, bağımlılık açık yazıldı
 
@@ -124,7 +145,7 @@ Rapor çalışması (dilim 1) henüz kodda yok; bu bölüm bir **arayüz sözü*
 
 - **Rapor planı:** `chain_ids` alanı (o rapor için hangi zincirler var).
 - **III girdisi:** kabul edilmiş bağların bir özeti (from/to düğüm, ilişki, destek türü); model yalnız bunlardan "alanın gelişimi" alt bölümünü yazar, kronoloji ya da atıftan kendi bağını türetmez.
-- **VI:** `report_gaps.kind = 'chain_end_uncertainty'` (alan zaten genişleyebilir, rapor tasarımı §12 madde 2). Basis: düğümün `uncertainty_left` hücresi ve alıntısı, zincir kimliği.
+- **VI:** `report_gaps.kind = 'chain_end_uncertainty'` (alan zaten genişleyebilir, rapor tasarımı §12 madde 2), **yalnız `chain_end_uncertainties.promoted_at` doluysa ve bir tamamlanmış ileri atıf denetimi (§4.7) varsa** (§4.4). Basis: düğümün `uncertainty_left` hücresi ve alıntısı, zincir kimliği, ileri atıf denetiminin sayıları (kaç yayın atıf yapıyor, kaçı korpusta, kaçı taranıp dışlandı, kaçı hiç taranmadı, tarih, sağlayıcı). Etiket türe göre yazılır, rapor tasarımı §7'nin kalıbıyla: "tam metni incelenen bu çalışmanın bıraktığı belirsizliğin devamı korpusta bulunamadı; çalışmaya atıf yapan N yayından k tanesi tarandı" ve her zaman "denetlenmemiş aday; kill-search yapılmadı" ibaresini taşır (§7'deki yasak sözcük listesi burada da geçerli).
 - **VII:** bu adaylardan türeyen yönler; `gap_refs` ile bağlanır (rapor tasarımının VII kuralı aynen geçerli).
 - **Montaj denetimi:** III'teki her gelişim cümlesi bir `link_id`'ye eşlenir (rapor tasarımı §8'in `claim_key` → kanıt eşlemesiyle aynı örüntü); bir bağ, destek türünden daha güçlü bir dille (`source_stated` iken kesinmiş gibi) yazılamaz.
 - **Ölçüm:** §14'teki R12-R17, rapor tasarımının §13 tablosuna eklenir.
@@ -139,6 +160,29 @@ Rapor çalışması (dilim 1) henüz kodda yok; bu bölüm bir **arayüz sözü*
 - "Yerleştirilemedi" işler ayrı, düz bir liste olarak şeridin altında durur; sessizce gizlenmez.
 - İnsan düzenlemesi (bağ silme, yeniden etiketleme, alıntısız ekleme) hücre düzenlemesiyle aynı önceliği taşır: sonraki `chain_links` çalışması bunları ezmez, yalnız yeni öneri üretir (§18 soru 5, 6).
 - Pil yalnız kısa durum için (`.impeccable.md`); "denetlenmemiş" ya da "insan düzenledi" gibi durumlar düz metinle yazılır, ayrı bir renk sözlüğü icat edilmez.
+
+### 4.7 Kanıta bağlı sınırlı genişleme (chain expansion) — eksik CoI mekaniği, eklendi
+
+Görevin ilk taslağı bunu içermiyordu; dış inceleme haklı bir eksik buldu. CoI-Agent zincirlerini yalnız discovery'nin bulduğu işler arasında kurmuyor: çapa çalışmadan **geriye** (referans listesi) ve **ileriye** (çapa çalışmaya atıf yapanlar) doğru yürüyerek, zincire discovery'nin hiç bulmadığı ara çalışmaları da katıyor (§0). README'nin yöntem tablosu da snowballing'i (Wohlin 2014, R1) ayrı bir satırda anıyor. Bu notun ilk sürümü, çizgileri **yalnız discovery'nin zaten dahil ettiği işler arasında** kuruyordu; bu, zincirlerin discovery'nin geri çağırımını miras almasına ve eksik bir ara çalışmayı hiç bulamamasına yol açar (tam olarak D55'in ölçtüğü sorun).
+
+**Mekanizma, koddan, kullanıcı başlatır, sınırlı:**
+
+1. **Geriye (backward):** düğümün zaten §4.1'de eklenen `openalex_referenced_works_json`'ı (aynı arama çağrısında gelmiş, ek maliyet yok). Düğümün kendi kaydı OpenAlex kökenli değilse (`openalex_work_id` boş), önce tek, ucuz bir DOI/başlık aramasıyla (`works?filter=doi:...`, tek kayıt) OpenAlex kimliği bulunmaya çalışılır; bulunamazsa geriye genişleme o düğüm için yapılamaz.
+2. **İleriye (forward):** OpenAlex'e `filter=cites:<openalex_work_id>` (bu revizyonda canlı doğrulandı, §1). Yalnız OpenAlex kökenli ya da adım 1'deki gibi sonradan eşleşmiş düğümler için mümkündür.
+3. Sonuçlar **sıradan aday**dır: DOI ile tekilleşir, kökeni kaydedilir (`expansion_of` düğüm kimliği, yön, tarih, sağlayıcı, sayfa sınırı), ve **normal tarama adımından geçer**; hiçbiri otomatik dahil edilmez, kullanıcının seçimi model önerisinin üstünde kalır (mevcut kural, D30/screening). Başarısız ya da hız sınırına takılan arama, sıfır sonuçtan ayrı kaydedilir (D18'in "başarısız arama kaydedilir, geri kalan sürer" kuralı).
+
+**Neden Semantic Scholar değil, yalnız OpenAlex (bu dilimde):** Semantic Scholar'ın genel API'si `/paper/{id}/citations` ve `/paper/{id}/references` sunuyor, ama `providers/semantic_scholar.py` bunları hiç çağırmıyor (§1) ve dosyanın kendi notu bu sağlayıcının 429'a zaten kırılgan olduğunu söylüyor. OpenAlex aynı işi (hem geri hem ileri) tek, zaten kullanılan bir sağlayıcıyla ve anahtarsız yapabiliyor; ikinci bir sağlayıcı eklemek şimdilik ölçülmemiş bir fayda için ek karmaşıklık ve kota riski olurdu. **Kaybedilen:** OpenAlex'te hiç kaydı olmayan (yalnız Crossref/arXiv/PubMed'den ya da kullanıcı yüklemesinden bilinen) bir düğüm, DOI eşleşmesi de başarısız olursa hiç genişletilemez; ve OpenAlex'in atıf grafiği Semantic Scholar'ınkinden bazı alanlarda daha dar olabilir, bu ölçülmedi. Semantic Scholar'ın atıf uçlarını eklemek, OpenAlex tabanlı genişletme yetersiz kaldığı **ölçüldüğünde** ayrıca değerlendirilecek bir sonraki adımdır, bu dilimde değil.
+
+**Sınırlar (öneri, ölçülmedi):**
+
+- Düğüm başına, yön başına en fazla 25 sonuç (diğer sağlayıcı sınırlarıyla aynı büyüklük mertebesi).
+- Genişletme **tek bir düğümü** hedefler; "bütün zinciri genişlet" gibi toplu bir eylem bu dilimde yoktur.
+- **Hiçbir zaman kendiliğinden özyinelemeli değildir:** bir genişletmeden gelen yeni bir aday dahil edilip düğüm hâline gelirse, onun kendi geri/ileri genişlemesi ayrı, açık bir kullanıcı eylemi ister. Bu, sınırsız bir atıf grafiği taramasını önler.
+- Aynı düğümün geri ve ileri genişlemesi eş zamanlı gönderilebilir (iki çağrı, ihmal edilebilir yük).
+
+**Çalışma türü:** discovery'nin bir varyantı değil, **yeni bir run türü (`chain_expansion`)** öneriyorum, çünkü discovery bir arama planı/model adımı ve bütün sağlayıcılar üzerinde çalışırken, genişletme metin sorgusu yazmaz, tek bir düğümün OpenAlex kimliğiyle doğrudan bir filtre isteğidir; yalnız discovery'nin arama+tekilleştirme+tarama kuyruğunun "kuyruk" kısmını yeniden kullanır (`table_columns`/`table_fill`/`cell_recheck`'in `discovery`'den ayrı run türleri olmasıyla aynı örüntü, migration 0019'un CHECK listesi).
+
+**§4.4'teki ileri atıf denetimiyle ilişki:** bir `no_continuation_in_corpus` düğümünde "Check citing works" istemek, bu mekanizmanın **ileri yönünün aynısıdır**; sonucu (kaç atıf, kaçı korpusta, kaçı taranıp dışlandı, kaçı hiç taranmadı) hem çizgi görünümünde saklanır hem de yükseltme kararına kanıt olur (§4.5).
 
 ## 5. Veri modeli taslağı
 
@@ -156,14 +200,17 @@ CREATE TABLE citation_edges (
   PRIMARY KEY (citing_source_version_id, cited_source_version_id)
 );
 
--- 00xx — alan tabanı (koddan hesaplanır, model çağrısı yok)
+-- 00xx — alan tabanı (koddan hesaplanır, model çağrısı yok). Yuva adları sinyalin adıdır, bir sonucun adı değil (§4.1):
+-- "foundational"/"kurucu" burada bir slot değeri DEĞİLDİR, yalnız source_stated ya da chain_root kanıtıyla ekranda geçer.
 CREATE TABLE field_baseline_selections (
   id TEXT PRIMARY KEY,                 -- fbs_
   research_id TEXT NOT NULL REFERENCES researches(id),
   scope_revision INTEGER NOT NULL,
   source_version_id TEXT NOT NULL REFERENCES source_versions(id),
-  slot TEXT NOT NULL CHECK (slot IN ('foundational', 'review', 'close_primary', 'close_adjacent')),
-  basis_json TEXT NOT NULL,            -- [{"kind": "citation_count", ...}, {"kind": "corpus_citation_frequency", ...}, ...]
+  slot TEXT NOT NULL CHECK (slot IN ('most_cited_in_core_query', 'review_query_match', 'close_primary', 'close_adjacent')),
+  basis_json TEXT NOT NULL,            -- [{"kind": "citation_count", ...}, {"kind": "cited_by_included_works", ...}, ...]
+  foundational_basis_json TEXT,        -- NULL unless evidence-backed: {"kind": "source_stated", passage_id, quote} or
+                                        -- {"kind": "chain_root", "chain_id": "chn_...", "outgoing_link_count": 4}
   computed_at TEXT NOT NULL,
   UNIQUE (research_id, scope_revision, source_version_id, slot)
 );
@@ -230,14 +277,35 @@ WHEN NEW.passage_id NOT IN (
 BEGIN SELECT RAISE(ABORT, 'chain link evidence must come from the later work'); END;
 -- + chain_link_revisions ve chain_link_evidence'da güncelleme/silme yasağı, purge yetkisi hariç (0010 örüntüsü).
 
--- 00xx — zincir ucu belirsizlikleri (koddan hesaplanır, corpus_absence'ın aynı örüntüsü)
+-- 00xx — sınırlı atıf genişletmesi (kullanıcı başlatır; kod bir arama+tarama kuyruğu çalıştırır)
+CREATE TABLE citation_expansions (
+  id TEXT PRIMARY KEY,                 -- cex_
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),   -- genişletilen düğüm
+  direction TEXT NOT NULL CHECK (direction IN ('backward', 'forward')),
+  provider TEXT NOT NULL DEFAULT 'openalex',
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  status TEXT NOT NULL CHECK (status IN ('completed', 'failed', 'rate_limited', 'zero_results')),
+  citing_or_referenced_count INTEGER,   -- provider_total (forward: kaç yayın atıf yapıyor; backward: referans listesi uzunluğu)
+  in_corpus_count INTEGER,              -- bunlardan kaçı zaten bu araştırmanın bir işi
+  screened_excluded_count INTEGER,      -- korpustaki, taranmış ve dışlanmış
+  never_screened_count INTEGER,         -- korpustaki, hiç taranmamış
+  page_limit INTEGER NOT NULL,
+  requested_at TEXT NOT NULL, completed_at TEXT
+);
+
+-- 00xx — zincir ucu işaretleri (koddan hesaplanır, corpus_absence'ın aynı örüntüsü). Bu tablo tek başına bir rapor
+-- adayı değildir; yalnız forward_check_id dolu VE promoted_at doluysa VI'ya girer (§4.4, §4.5).
 CREATE TABLE chain_end_uncertainties (
   id TEXT PRIMARY KEY,                 -- ceu_
   table_id TEXT NOT NULL REFERENCES evidence_tables(id),
   chain_id TEXT NOT NULL REFERENCES chains(id),
   source_version_id TEXT NOT NULL REFERENCES source_versions(id),
   uncertainty_cell_id TEXT NOT NULL REFERENCES evidence_cells(id),
-  computed_at TEXT NOT NULL
+  computed_at TEXT NOT NULL,
+  forward_check_id TEXT REFERENCES citation_expansions(id),   -- direction='forward', status='completed' olmalı
+  promoted_at TEXT,                     -- yalnız açık sahip eylemiyle dolar
+  promoted_by TEXT CHECK (promoted_by IN ('owner') OR promoted_by IS NULL)
 );
 ```
 
@@ -503,6 +571,7 @@ Ek denetim (`domain/contracts.py`'de yeni `_check_chain_links`, mevcut `_check_c
 - **Üst sınır:** bir `chain_links` çalışması en fazla 25 dahil, tam metinli iş alır (P5 dilim 1'in `MAX_FILL_SOURCES` sabitiyle aynı sayı, aynı gerekçeyle: D34'teki düzeltilmiş çekirdek küme büyüklüğü). Kalan işler ikinci bir çalışmayla işlenir.
 - **Eş zamanlılık:** çağrılar, rapor tasarımının §12 dilim 0'da tanımladığı süreç-geneli üst sınırlı eş zamanlı gönderim mekanizmasını kullanır (aynı sınır, tablo doldurma ve rapor bölümleriyle paylaşılır).
 - **Pasaj bütçesi:** her çağrıya, sonraki-çalışmanın yalnız düğüm hücrelerinin alıntı pasajları + mention'ların bulunduğu pasajlar verilir (bütün pasajları değil); bu, evidence-table'ın 24 pasaj/kaynak sınırının çok altında kalır çünkü mention pasajları tipik olarak birkaç sayfadır.
+- **Genişletme (§4.7) ayrı bütçelidir, model çağrısı yok:** düğüm başına, yön başına en fazla 25 sonuç; tek bir düğümü hedefler, hiçbir zaman kendiliğinden özyinelemeli değildir. Genişletme adaylarının taranması (model adımı) evidence-table'ın kaynak başına çağrı bütçesine girer, ayrı bir sınırı yoktur.
 
 ## 10. Kim ne yapıyor: kod doğrular / model değerlendirir / doğrulanmayan
 
@@ -514,9 +583,12 @@ Ek denetim (`domain/contracts.py`'de yeni `_check_chain_links`, mevcut `_check_c
 | Atıf kenarı eksikliği | model bağı, çözülmüş bir `citation_edges` satırı yoksa `unexpected_no_citation_edge` işareti alır (ret değil) | — | kenar veritabanının eksiksizliği (yalnız OpenAlex-kökenli çiftler çözülüyor) |
 | Yıl sırası | `to`nun yılı `from`dan önce ise uyarı (ön baskı istisnası hariç) | ön baskı sıralamasının makul açıklama olup olmadığı | — |
 | Döngü | bağlı bileşen kurulurken döngü oluşturan bağ reddedilir | — | — |
-| Zincir ucu belirsizliği | tam metinli düğüm, dolu `uncertainty_left`, hiçbir giden bağda `continues_predecessor_uncertainty=true` yok | aynı belirsizliğin gerçekten peşine düşülüp düşülmediği (`continues_predecessor_uncertainty`'yi model yazıyor) | korpus dışında peşine düşülüp düşülmediği (kill-search, dilim 3) |
+| `no_continuation_in_corpus` işareti | tam metinli düğüm, dolu `uncertainty_left`, hiçbir giden bağda `continues_predecessor_uncertainty=true` yok | aynı belirsizliğin gerçekten peşine düşülüp düşülmediği (`continues_predecessor_uncertainty`'yi model yazıyor) | korpus dışında peşine düşülüp düşülmediği (kill-search, dilim 3) |
+| `no_continuation_in_corpus` → VI adayı yükseltmesi | `forward_check_id` dolu ve o `citation_expansions` satırı `direction='forward'`, `status='completed'` | — | ileri atıf denetiminin bulduğu yayınların gerçekten aynı belirsizliğin peşinde olup olmadığı; sahibin yükseltme kararının gerekçesi (kod yalnız iznin verildiğini bilir) |
 | Sürüm tekilliği | `from`/`to` D48'in baş sürümüne indirgenir | — | — |
-| Alan tabanı gerekçesi | `basis_json` yalnız saklı sayılardan dolu | — | "kurucu etki"nin kendisi (yalnız atıf sayısı ve korpus içi sıklıkla yaklaşıklanıyor) |
+| Alan tabanı gerekçesi | `basis_json` yalnız saklı sayılardan dolu; yuva adı sinyalin adı, bir sonuç değil | — | atıf sayısı ve korpus içi sıklığın kendisinin, gerçek kurucu etkiyle örtüştüğü |
+| "Kurucu"/"foundational" sözcüğü | yalnız `source_stated` (alıntı çapası) ya da `chain_root` (≥3 giden bağ) kanıtı varsa yazılır | alıntının gerçekten "kurucu" dediği (`source_stated` için) | alandaki gerçek kurucu etki (yalnız bu korpus için bir gözlem) |
+| Genişletme adayları | DOI ile tekilleşir, kökeni (`expansion_of`, yön) kaydedilir, normal tarama adımından geçer | tarama kararı (dahil/hariç/kararsız), bugünkü gibi | genişletmenin bulduğu yayının gerçekten aynı gelişim çizgisine ait olduğu |
 
 ## 11. Davranış vakaları ve T11
 
@@ -543,6 +615,12 @@ Ek denetim (`domain/contracts.py`'de yeni `_check_chain_links`, mevcut `_check_c
 - `tests/test_field_baseline.py`: `basis_json`'ın yalnız saklı sayılardan (atıf sayısı, korpus içi sıklık, sıra, tarama kararı) doldurulduğu; hiçbir model çağrısı yapılmadığı; korpus içi atıf sıklığının yalnız her iki ucu da OpenAlex kökenliyken hesaplandığı.
 - **T11 yürütülebilir denetim** (`tests/test_chain_links_contract.py::test_citation_edge_alone_never_creates_a_link`): `citation_edges` tablosunda çözülmüş bir kenar olsa bile, model `no_relation_from_source_ids` derse bağın oluşmadığı; bağ yalnız modelin döndürdüğü destekli `links[]` öğesinden kurulur.
 
+**Genişletme ve yükseltme (deterministik iskelet, sahte sağlayıcı yanıtıyla)**
+
+- `tests/test_citation_expansion.py`: sentetik OpenAlex yanıtıyla geri/ileri genişletme; DOI ile tekilleşme; kökeninin (`expansion_of`, yön) kaydedildiği; genişletme adaylarının tarama adımından geçtiği ve hiçbirinin otomatik dahil edilmediği; OpenAlex kökenli olmayan bir düğümün önce DOI aramasıyla eşleştirilmeye çalışıldığı, bulunamazsa genişletmenin yapılamadığı; başarısız/hız sınırlı aramanın sıfır sonuçtan ayrı kaydedildiği (D18).
+- `tests/test_chain_end_promotion.py`: `no_continuation_in_corpus` işaretinin tek başına `chain_end_uncertainties`e girdiği ama `forward_check_id`/`promoted_at` boşken VI'ya hiç girmediği; tamamlanmış bir ileri denetim + açık sahip eylemi olmadan yükseltmenin reddedildiği; ikisi birlikteyken VI kaydının doğru sayılarla (kaç atıf, kaçı korpusta, kaçı taranıp dışlandı, kaçı hiç taranmadı) oluştuğu.
+- `tests/test_field_baseline.py`'ye ek: `foundational_basis_json`'ın yalnız `source_stated` (alıntı çapası bulunur) ya da `chain_root` (≥3 giden bağ) kanıtı varsa dolduğu; hiçbir yuvanın yalnız atıf sayısıyla "kurucu" diye adlandırılmadığı.
+
 **Migration**
 
 - `tests/test_chain_migrations.py`: yeni tabloların foreign key ve tetikleyicileriyle boş bir P6-öncesi kopya üzerinde temiz uygulanması; `chain_link_evidence_same_source` tetikleyicisinin başka sürümün pasajını reddettiği.
@@ -568,8 +646,10 @@ Kural aynı (D55, p6-report-design.md §13): sayısal aralıklar koşudan önce 
 | R13 | Yalnız kronolojiden yanlış bağ | R12'nin aynı örnekleminde, incelemecinin "bu bağın tek dayanağı tarih/atıf sırası, ilişki metinde yok" diye işaretlediği bağ sayısı / örneklem |
 | R14 | Kaçırılan bağ | sahibin önceden bildiği küçük bir zincir (2-4 işlik, soru sorulmadan önce yazılı) ile karşılaştırma: modelin bulduğu / sahibin bildiği bağ sayısı |
 | R15 | Yerleştirilemedi oranı | "yerleştirilemedi" listesindeki dahil, tam metinli iş / toplam dahil, tam metinli iş |
-| R16 | Zincir ucu belirsizliği isabeti | üretilen her zincir ucu adayının, incelemecinin "gerçekten korpustan sonra hiç peşine düşülmemiş" dediği / üretilen aday sayısı |
+| R16 | Yükseltilmiş zincir ucu adayının isabeti | ileri atıf denetimi + sahip onayıyla **yükseltilmiş** her `no_continuation_in_corpus` adayının, incelemecinin "gerçekten korpustan sonra hiç peşine düşülmemiş" dediği / yükseltilmiş aday sayısı; yükseltilmemiş işaretler bu paydaya girmez |
 | R17 | Alan tabanı gerekçe tutarlılığı | her yuvadaki adayın `basis_json`'ının, saklı sayılarla (atıf sayısı, sıra) birebir aynı olduğu; bu yapısal bir denetimdir, model çağrısı olmadığı için "yanlış" değil yalnız "eksik sinyal" olabilir (örn. atıf kenarı çözülemedi) |
+| R18 | Genişletmenin geri çağırıma katkısı | sahibin bildiği küçük kaynak kümesindeki (D55'in tutulmuş sorusuyla aynı türden) geri çağırım, hedef makaleden **bir** genişletmeden **önce** ve **sonra**, arama geri çağırımından ayrı raporlanır (arama recall'una karıştırılmaz, D55'in ayrımı) |
+| R19 | Genişletme adaylarının tarama isabeti | genişletmeyle bulunan adaylardan taranıp dahil edilenlerin oranı; sahibin bildiği kümedeki bir eserin genişletmeyle bulunup bulunmadığı ayrıca sayılır |
 
 Payda sıfırsa metrik "ölçülemedi" yazılır. İncelemeci Claude'dur, sahip etiketlemedikçe; Claude'un okuması insan denetimi sayılmaz (rapor tasarımı §13'ün aynı cümlesi). Bu ölçüm, dilim 1'in R1-R11'ine **ek**tir, onların yerine geçmez.
 
@@ -595,6 +675,9 @@ ChainEndUncertainty:
   uncertainty_evidence   [{passage_id, quote}]  # o hücrenin alıntıları
   chain_members          [{source_version_id, source_key, year}]  # aday kartının "en yakın çalışma" bağlamı için
   field_baseline_context  [{source_version_id, slot, basis_json}]  # kill-search'ün "alandaki en güçlü önceki çalışma" karşılaştırıcısı için
+  forward_check          {citing_or_referenced_count, in_corpus_count, screened_excluded_count,
+                          never_screened_count, provider, requested_at}  # null ise bu aday hiç yükseltilmemiştir
+  promoted_at            null ya da sahibin yükseltme zamanı; slice 3 yalnız promoted_at dolu kayıtları aday kartına açar
   kill_search_status     "not_run" (rapor tasarımı §7'deki corpus_absence kaydıyla aynı alan adı)
 ```
 
@@ -602,7 +685,9 @@ Ayrıca dilim 3, `chain_links.relation` kapalı listesini adayın "oluşma yolu"
 
 ## 17. Varsayımlar
 
-- OpenAlex `type` alanının bir `review` değeri taşıdığı doğrulanmadı; §4.1'deki `core_reviews` varyantı bu doğrulanmadan uygulamaya alınmamalı.
+- OpenAlex `type` alanının bir `review` değeri taşıdığı doğrulanmadı; §4.1'deki `core_reviews` varyantı bu doğrulanmadan uygulamaya alınmamalı. Buna karşılık `filter=cites:<id>` bu revizyonda canlı bir istekle doğrulandı (§1, §4.7); ikisi ayrı iddialardır, biri doğrulanmış diye öteki doğrulanmış sayılmaz.
+- Zincir kökü için önerilen eşik (N ≥ 3 giden bağ, §4.1) ölçülmedi; yalnız bir varsayılan, sahip başka bir sayı isteyebilir.
+- Genişletmenin (§4.7) geri çağırıma gerçek katkısı (R18/R19) ölçülmedi; düğüm başına 25 sonuç sınırı da öyle.
 - Atıf kenarı yalnız her iki ucu da OpenAlex kökenli olduğunda çözülür; bu, korpus içi atıf sıklığı sinyalinin kütüphanenin OpenAlex kapsama oranına bağlı, eksik bir yaklaşıklama olduğu anlamına gelir.
 - Soyadı+yıl eşleştirmesi kesin değildir; ortak soyadları, "et al." biçimleri ve numaralı atıf stilini (yalnız "[12]") kaçırır ya da yanlış eşler. Bu yüzden aday bulma bir öneri katmanıdır, model her adayı okuyup reddedebilir.
 - CoI-Agent'ın sabit parametreleri (zincir uzunluğu 5, dal sayısı 3) §0'da anlatıldığı gibi ikinci elden bir özetten geldi ve doğrulanmadan aktarıldı; bu notun tasarımı zaten bunları devralmıyor, yalnız bu belirsizlik kaydedilsin diye burada tekrar ediliyor.
@@ -656,6 +741,16 @@ Her soruda önerdiğim seçenek ilk sırada, gerekçesiyle. Yanıt gelmezse ilk 
    b. Daha düşük bir sınır (örn. 15), maliyeti kısmak için.
    c. Sınır yok; sahip her seferinde onaylıyor.
 
+9. **`no_continuation_in_corpus` düğümü VI'ya nasıl girer?**
+   a. İki koşul birlikte zorunlu: bir ileri atıf denetimi tamamlanmış **ve** sahip açıkça yükseltmiş (öneri). *Gerekçe:* D55'in ölçtüğü düşük geri çağırım göz önünde tutulduğunda, "korpusta devam yok" demek çoğu zaman "aramadım/bulamadım" demektir; ileri denetim bunu azaltır ama sahibin kendi yönlendirmesi (README adım 4) olmadan bir aday üretmek modelin kendi kendine "burada bir gap var" demesine çok yaklaşır, ki bu SKILL.md'nin yasağıdır.
+   b. Yalnız ileri atıf denetimi tamamlanmış olması yeterli, sahip onayı gerekmez; denetim sonucu "az sayıda ilgisiz atıf" gösteriyorsa otomatik yükselir.
+   c. Yalnız sahip yükseltir; ileri atıf denetimi zorunlu değildir, yalnız önerilir.
+
+10. **Kanıta bağlı sınırlı genişleme (§4.7) bu dilimde mi, ayrı bir dilimde mi, hiç mi?**
+    a. Bu dilimde, §4.7'deki sınırlarla (öneri). *Gerekçe:* bu, CoI'nin D55'in ölçtüğü geri çağırım sorununu doğrudan hedefleyen parçasıdır (§0); onsuz zincirler discovery'nin eksik bulduğu ara çalışmaları hiç göremez ve zincir ucu belirsizlikleri sistematik olarak şişer.
+    b. Ayrı bir dilim (dilim 2b), çünkü yeni bir sağlayıcı çağrı türü (OpenAlex `cites:`), yeni bir run türü ve ek tarama maliyeti getiriyor; bu dilimin kapsamı zaten geniş.
+    c. Hiç yapılmaz bu aşamada; zincirler yalnız discovery'nin bulduklarıyla kurulur, eksik ara çalışma bilinen bir sınır olarak yazılır.
+
 ## 19. Alt adımlar
 
 Satır düzeyinde değil, alt adım düzeyinde; her biri kendi başına test edilebilir. Sıra bağımlılığa göre.
@@ -668,8 +763,9 @@ Satır düzeyinde değil, alt adım düzeyinde; her biri kendi başına test edi
 6. **`chain_links` adımı ve `flow.py`'ye entegrasyon.** `_chain_links` metodu (evidence-table'ın `_extraction`/`_cell_passages` örüntüsüyle), `chain_links` run türü, bütçe (§9), eş zamanlılık (dilim 0'ın paylaşılan sınırı hazırsa onu kullanır, değilse sıralı çalışır ve bu not düşülür). **Test:** sahte adaptörle akış testleri (T09 örüntüsü: insan düzenlemesi varken model çalışması onu ezmiyor). **Çıkış:** `runs`/`run_steps`/`step_inputs` kaydı bugünkü örüntüyle çalışıyor, duraklatma/devam/`outcome_unknown` davranıyor.
 7. **Zincir montajı (modelsiz).** `workflow/chains.py` (yeni): bağlı bileşen, dallanma, çapraz bağ, yerleştirilemeyen işler, zincir ucu belirsizliği hesaplama; `chains`/`chain_members`/`chain_end_uncertainties` migration'ı. **Test:** `tests/test_chain_assembly.py` (§12). **Çıkış:** sentetik bağ kümesiyle beklenen zincirler ve uç belirsizlikleri üretiliyor.
 8. **İnsan düzenlemesi.** `chain_link_revisions`'a `human_add`/`human_edit`/`human_remove`; API uçları (`POST/PUT/DELETE .../chain-links/{id}`, mevcut CSRF ve `expected_version` deseniyle). **Test:** `tests/test_chain_link_edits.py` (§12). **Çıkış:** insan düzenlemesi sonraki model çalışmasınca ezilmiyor (D37 T09 örüntüsü).
-9. **Arayüz: çizgi görünümü.** Evidence sekmesine yeni görünüm (§4.6, §18 soru 7'nin cevabına göre yerleşim); `PassageSheet` ile bağlantı; "yerleştirilemedi" listesi. **Test:** Playwright, fixture sunucusu ve senaryolu model (§13). **Çıkış:** masaüstü ve 390 px, açık/koyu temada; klavye erişimi doğrulanır.
-10. **Davranış vakaları.** `scripts/model_behavior/` altına §11'deki altı vaka; `gpt-5.6-luna` ile bir kez koşulur, sonuç `.local/`'e yazılır. **Çıkış:** her vaka için beklenen/gözlenen davranış kaydı; T11'in yürütülebilir denetimi (adım 5'te yazılan test) ayrıca geçer.
-11. **Rapor entegrasyonu (dilim 1 bittiyse).** `report_gaps.kind = 'chain_end_uncertainty'`, III/VI/VII'nin bu notta tarif edilen girdileri, montaj denetimine `link_id` eşlemesi. **Test:** dilim 1'in montaj denetim test dosyasına yeni vakalar. **Çıkış:** sentetik bir raporda zincir ucu adayı VI'da, ona bağlı yön VII'de görünüyor. **Bu adım dilim 1 tamamlanmadan yapılamaz (§15).**
-12. **Kapanış.** Tam backend suite, `npm run build`/`lint`, acceptance, `git diff --check`; `docs/decisions.md`'ye D-girdisi (Evidence, Limits); §17'deki doğrulanmamış varsayımların (OpenAlex `review` türü, CoI'nin sabit parametreleri) hâlâ doğrulanmadıysa bunun açıkça yazılması. Canlı kütüphaneye yazılmaz; ölçüm (§14) ayrı, isteğe bağlı bir adımdır ve kapanışı beklemez.
+9. **Arayüz: çizgi görünümü.** Evidence sekmesine yeni görünüm (§4.6, §18 soru 7'nin cevabına göre yerleşim); `PassageSheet` ile bağlantı; "yerleştirilemedi" listesi; `no_continuation_in_corpus` işaretli düğümde "Check citing works" eylemi. **Test:** Playwright, fixture sunucusu ve senaryolu model (§13). **Çıkış:** masaüstü ve 390 px, açık/koyu temada; klavye erişimi doğrulanır.
+10. **Kanıta bağlı sınırlı genişleme (§4.7, §18 soru 10'un cevabına bağlı).** `citation_expansions` migration'ı; `chain_expansion` run türü; geri yön (`openalex_referenced_works_json`'dan, ek çağrı yok) ve ileri yön (`filter=cites:<id>`, yeni çağrı); OpenAlex kökenli olmayan düğüm için tek DOI arama adımı; sonuçların normal tarama kuyruğuna girmesi (D18 ayrımıyla). Aynı alt adımda `no_continuation_in_corpus` → `chain_end_uncertainties.forward_check_id`/`promoted_at` yükseltme uçları (§18 soru 9). **Test:** `tests/test_citation_expansion.py`, `tests/test_chain_end_promotion.py` (§12). **Çıkış:** sentetik bir OpenAlex yanıtıyla geri ve ileri genişletme adayları taranıyor, hiçbiri otomatik dahil olmuyor; forward_check + sahip onayı olmadan hiçbir düğüm VI'ya girmiyor. **Bu adım §18 soru 10 "b" ya da "c" seçilirse ayrı bir dilime taşınır ya da tamamen düşer; §4.4/§4.5'in geri kalanı (işaretin kendisi, çizgi görünümünde gösterimi) bu adım olmadan da çalışır.**
+11. **Davranış vakaları.** `scripts/model_behavior/` altına §11'deki altı vaka; `gpt-5.6-luna` ile bir kez koşulur, sonuç `.local/`'e yazılır. **Çıkış:** her vaka için beklenen/gözlenen davranış kaydı; T11'in yürütülebilir denetimi (adım 5'te yazılan test) ayrıca geçer.
+12. **Rapor entegrasyonu (dilim 1 bittiyse).** `report_gaps.kind = 'chain_end_uncertainty'`, III/VI/VII'nin bu notta tarif edilen girdileri (yalnız yükseltilmiş düğümler), montaj denetimine `link_id` eşlemesi. **Test:** dilim 1'in montaj denetim test dosyasına yeni vakalar. **Çıkış:** sentetik bir raporda yükseltilmiş zincir ucu adayı VI'da, ona bağlı yön VII'de görünüyor; yükseltilmemiş `no_continuation_in_corpus` düğümü VI'da hiç görünmüyor. **Bu adım dilim 1 tamamlanmadan yapılamaz (§15).**
+13. **Kapanış.** Tam backend suite, `npm run build`/`lint`, acceptance, `git diff --check`; `docs/decisions.md`'ye D-girdisi (Evidence, Limits); §17'deki doğrulanmamış varsayımların (OpenAlex `review` türü, zincir kökü eşiği, genişletmenin geri çağırım katkısı) hâlâ doğrulanmadıysa bunun açıkça yazılması. Canlı kütüphaneye yazılmaz; ölçüm (§14, R18/R19 dahil) ayrı, isteğe bağlı bir adımdır ve kapanışı beklemez.
 

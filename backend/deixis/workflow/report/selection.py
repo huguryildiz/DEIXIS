@@ -13,6 +13,7 @@ SECTION_BUDGET_TOKENS = {
     "III": 6000, "IV": 10000, "V": 8000, "VI": 6000, "VII": 4000, "VIII": 3000,
     "I": 3000, "IX": 3000, "abstract": 1500, "index_terms": 500,
 }
+MAX_RANKED_PASSAGES = 40
 
 
 def _estimated_tokens(record: dict[str, Any]) -> int:
@@ -28,15 +29,6 @@ def _query(plan: dict[str, Any]) -> str:
     terms = [entry["term"] for entry in plan.get("glossary", [])]
     terms += [axis["label"] for axis in plan.get("axes", [])]
     return " OR ".join(f'"{term.replace(chr(34), "")}"' for term in terms if term.strip())
-
-
-def _matching_columns(snapshot: dict[str, Any], needles: tuple[str, ...]) -> set[str]:
-    matched = set()
-    for column in snapshot.get("columns", []):
-        text = " ".join(str(column.get(key) or "") for key in ("name", "instruction")).casefold()
-        if any(needle in text for needle in needles):
-            matched.add(column["column_id"])
-    return matched
 
 
 def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, plan: dict[str, Any],
@@ -83,7 +75,7 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
         required_ids = list(dict.fromkeys(link["passage_id"] for link in item.get("evidence", [])))
         required = [passage_by_id.get(passage_id) for passage_id in required_ids]
         if any(passage is None for passage in required):
-            omit(item["source_version_id"], "cell")
+            omit(item["source_version_id"], "cell_missing_evidence")
             return False
         new_passages = [passage for passage in required if _passage_id(passage) not in selected_passage_ids]
         cost = _estimated_tokens(item) + sum(_estimated_tokens(passage) for passage in new_passages)
@@ -103,7 +95,8 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
             passage = passage_by_id.get(entry["passage_id"])
             if passage is not None:
                 add_passage(passage)
-        ranked = store.search_passages(source_ids, query, budget) if query else []
+        # One ranked passage per possible claim is enough; the token budget remains the final admission gate.
+        ranked = store.search_passages(source_ids, query, MAX_RANKED_PASSAGES) if query else []
         for passage in ranked:
             add_passage(passage)
         # Preserve at least one passage per source when the lexical query did not return one.
@@ -120,7 +113,10 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
                 add_passage(passage)
     elif section_id == "V":
         axis_columns = {axis["column_id"] for axis in plan.get("axes", [])}
-        axis_cells = [item for item in cells if item["column_id"] in axis_columns]
+        axis_cells = sorted(
+            (item for item in cells if item["column_id"] in axis_columns),
+            key=lambda item: (item["column_id"], item["source_version_id"]),
+        )
         for item in axis_cells:
             add_cell(item)
         varied_columns = {column_id for column_id in axis_columns if len({
@@ -133,14 +129,16 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
             for passage in ranked[:1]:
                 add_passage(passage)
     elif section_id == "VI":
-        limitation_columns = _matching_columns(snapshot, ("limitation", "sınırl", "sinirl"))
+        # Slice 1e gaps.py adds absence totals; V's contradiction claims come from the already-written sections.
+        limitation_column_id = plan.get("limitations_column_id")
         for item in cells:
-            if item["column_id"] in limitation_columns:
+            if limitation_column_id is not None and item["column_id"] == limitation_column_id:
                 add_cell(item)
     elif section_id == "VII":
-        future_columns = _matching_columns(snapshot, ("future work", "future direction", "gelecek çalışma", "gelecek calisma"))
+        # Slice 1e gaps.py supplies VI's candidates and their basis records; this branch supplies future-work cells.
+        future_work_column_id = plan.get("future_work_column_id")
         for item in cells:
-            if item["column_id"] in future_columns:
+            if future_work_column_id is not None and item["column_id"] == future_work_column_id:
                 add_cell(item)
 
     return {"passages": selected_passages, "cells": selected_cells, "truncated": truncated}

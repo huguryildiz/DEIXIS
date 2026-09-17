@@ -1889,6 +1889,14 @@ git commit -m "Add the targeted phrase repair call and its unframed-exception bo
 
 ### 1e — Kod yazımlı II/VIII çekirdeği + adaylar + montaj denetimi
 
+**1c inceleme takibi (bkz. "Dürüstçe eksikler" madde 2):** `report_plan`,
+`limitations_column_id: string|null` ve `future_work_column_id: string|null` alanlarını kazanmalıdır.
+Bu alanlar `step-input.schema.json` içindeki `report_target.plan`'a aynen yansıtılmalı,
+`axes[].column_id` gibi sütun allowlist'ine karşı doğrulanmalı ve
+`methods/deixis-research/references/report.md` içinde modele açıkça talimat verilmelidir.
+`selection.py` VI/VII seçiminde ve 1e'nin `gaps.py` uygulamasında bu sütun rollerine ihtiyaç duyar;
+hiçbiri rolü sütun adından ya da talimatından tahmin etmemelidir.
+
 #### Task 1: II Review Methodology (tümüyle kod)
 
 **Files:**

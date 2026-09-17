@@ -1376,7 +1376,7 @@ git commit -m "Add the report evidence snapshot and the table-ready condition"
 ```python
 SECTION_BUDGET_TOKENS = {"III": 6000, "IV": 10000, "V": 8000, "VI": 6000, "VII": 4000, "VIII": 3000, "I": 3000, "IX": 3000, "abstract": 1500, "index_terms": 500}
 
-def select_evidence(snapshot: dict[str, Any], section_id: str, plan: dict[str, Any],
+def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, plan: dict[str, Any],
                     prior_summaries: list[dict[str, Any]]) -> dict[str, Any]:
     """Returns {"passages": [...], "cells": [...], "truncated": [{"source_version_id", "record_kind"}]}."""
 ```
@@ -1386,7 +1386,7 @@ def select_evidence(snapshot: dict[str, Any], section_id: str, plan: dict[str, A
 ```python
 def test_select_evidence_for_iv_gives_every_rows_cells_and_records_truncation_beyond_budget():
     snapshot = {...}  # 30 satırlı sahte anlık görüntü, her satırda 2 hücre
-    picked = select_evidence(snapshot, "IV", {"axes": []}, [])
+    picked = select_evidence(store, snapshot, "IV", {"axes": []}, [])
     assert len(picked["cells"]) <= SECTION_BUDGET_TOKENS["IV"] // 40  # kaba bir üst sınır varsayımı, gerçek sayı testte sabitlenir
     assert picked["truncated"]  # 30 satır bütçeyi aşacak şekilde kurulmuştur
 ```
@@ -1399,6 +1399,8 @@ Expected: FAIL — `ModuleNotFoundError`.
 - [ ] **Step 3: `select_evidence`'ı §4.3'teki tabloya göre yaz**
 
 Her `section_id` için §4.3'ün "Uygun kayıtlar"/"Sıralama" sütunlarını uygular (III: sözlük terimi tanım pasajları + eksen pasajları, RRF; IV: bütün satırların hücreleri, tablo sırası; V: eksen sütunu hücreleri + farklı değerli satırların pasajları; VI: yokluk toplamları + sınırlama hücreleri + V çelişkileri; VII: VI adayları + "önerilen gelecek çalışma" hücreleri). Bütçeyi aşan kayıtlar `truncated`'a `{"source_version_id", "record_kind"}` olarak eklenir, seçime girmez.
+
+`snapshot` pasaj metnini taşımadığı için işlev `Store.search_passages`/`Store.passages_for` erişimini açık bir `store` parametresiyle alır. Bütçe, tokenizer bağımlılığı eklemeden belgelenmiş bir karakter-sayısı yaklaşımıyla ölçülür. Seçilen bir hücrenin bütün `evidence[].passage_id` kayıtları aynı seçimin `passages` listesine sığmalıdır; sığmıyorsa hücre bütünüyle kesilir.
 
 - [ ] **Step 4: Çalıştır, geçtiğini doğrula**
 
@@ -1481,6 +1483,8 @@ git commit -m "Add report plan freezing: code-computed corpus, section budgets a
 
 #### Task 3: `sections.py` — turlar (A–D) ve `flow.py` bağlaması
 
+**Erteleme notu (1c uygulaması):** Bu görev 1d–1f'teki `repair_section`/`flagged_sentences`, `write_review_methodology_core`/`run_assembly_checks` ve `run_report_review` işlevleri geldikten sonra yazılacaktır. Ayrıca migration 0035'te kesilme kaydı için bir tablo yoktur; `evidence["truncated"]` kaydının nerede saklanacağı Task 3 yazılırken kararlaştırılmalıdır.
+
 **Files:**
 - Create: `backend/deixis/workflow/report/sections.py`
 - Modify: `backend/deixis/workflow/flow.py`
@@ -1529,12 +1533,11 @@ async def run_report(flow, run, scope):
     tables, reports = TableStore(flow.store), ReportStore(flow.store)
     table_id = run["target"]["table_id"]
     flow._checkpoint(run_id)
-    readiness = report_ready_check := tables_module.report_ready(flow.store, rid, table_id)
+    readiness = tables_module.report_ready(flow.store, rid, table_id)
     if not readiness["ready"]:
         flow._fail(run_id, "table_not_ready", readiness)
     report_id = run["target"]["report_id"]
-    snapshot = build_snapshot(flow.store, rid, table_id)
-    reports.save_snapshot(report_id, table_id, snapshot)  # tek kez, adım tekrar çağrılırsa idempotent (upsert)
+    snapshot = reports.save_snapshot(report_id, table_id)  # görüntüyü kendisi kurar; tekrar çağrılırsa saklı görüntüyü döndürür
 
     plan_output = await flow._model_step(run, scope, "report_plan", "report_plan",
                                          report_target={"report_id": report_id, "section_id": None, "plan": None,
@@ -1577,19 +1580,21 @@ async def run_report(flow, run, scope):
 
 ```python
 async def _run_section(flow, run, scope, reports, report_id, frozen_plan, snapshot, section_id):
-    evidence = select_evidence(snapshot, section_id, frozen_plan, reports.prior_summaries(report_id))
-    reports.record_truncation(report_id, section_id, evidence["truncated"])
+    prior_summaries = summarize_valid_sections(reports.sections(report_id))
+    evidence = select_evidence(flow.store, snapshot, section_id, frozen_plan, prior_summaries)
     target = {"report_id": report_id, "section_id": section_id, "plan": frozen_plan,
              "cells": evidence["cells"], "gap_candidates": [],
-             "prior_summaries": reports.prior_summaries(report_id), "repair_request": None, "review_scope": None}
+             "prior_summaries": prior_summaries, "repair_request": None, "review_scope": None}
     operation_key = f"report_section:{section_id}"
     async def call():
         return await flow._model_step(run, scope, operation_key, "report_section",
                                       passage_rows=evidence["passages"], report_target=target,
                                       limiter=flow.deps.limiter)
     output = await flow.deps.limiter.run(operation_key, call)
+    section = reports.section(report_id, section_id)
+    step = flow.store.step(run["id"], operation_key, "model:report_section")
     if output.get("invalid"):
-        reports.save_section_draft(reports.section(report_id, section_id)["id"], output.get("step_id"), "failed", None,
+        reports.save_section_draft(section["id"], step["id"], "failed", None,
                                    {"ok": False, "issues": output["issues"]}, None)
         return "failed"
     draft = output["result"]
@@ -1598,7 +1603,9 @@ async def _run_section(flow, run, scope, reports, report_id, frozen_plan, snapsh
     if flagged:
         draft, repairs = await repair_section(flow, run, scope, report_id, section_id, draft, flagged)
     status = "valid"  # montaj öncesi bölüm-yerel denetimler (çapa, bütçe) burada da tekrarlanabilir; tam denetim task 1e'de rapor genelinde
-    reports.save_claims_and_status(report_id, section_id, draft, status)
+    reports.save_claims(section["id"], draft["claims"], report_citation_links(await_step_input_of(output), draft))
+    reports.save_section_draft(section["id"], step["id"], status, draft, {"ok": True, "issues": []},
+                               report_word_count(draft))
     return status
 ```
 

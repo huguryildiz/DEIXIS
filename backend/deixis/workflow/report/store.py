@@ -133,8 +133,15 @@ class ReportStore:
             section = self.conn.execute("SELECT report_id FROM report_sections WHERE id = ?", (report_section_id,)).fetchone()
             if section is None:
                 raise NotFound(report_section_id)
-            if self.conn.execute("SELECT 1 FROM report_claims WHERE report_section_id = ? LIMIT 1", (report_section_id,)).fetchone():
-                raise ValueError("Claims for this section have already been saved")
+            self.conn.execute(
+                "DELETE FROM report_citation_links WHERE claim_id IN"
+                " (SELECT id FROM report_claims WHERE report_section_id = ?)", (report_section_id,),
+            )
+            self.conn.execute(
+                "DELETE FROM report_claim_refs WHERE claim_id IN"
+                " (SELECT id FROM report_claims WHERE report_section_id = ?)", (report_section_id,),
+            )
+            self.conn.execute("DELETE FROM report_claims WHERE report_section_id = ?", (report_section_id,))
             claim_ids = {}
             for ordinal, claim in enumerate(claims, 1):
                 claim_id = new_id("rcl")
@@ -165,16 +172,20 @@ class ReportStore:
     def save_gaps(self, report_id: str, gaps: list[dict[str, Any]]) -> None:
         with transaction(self.conn):
             self.report(report_id)
+            inserted = False
             for gap in gaps:
                 basis = gap.get("basis", {key: gap[key] for key in (
                     "basis_claim_keys", "basis_passage_ids", "basis_cell_ids", "nearest_match") if key in gap})
-                self.conn.execute(
+                cursor = self.conn.execute(
                     "INSERT INTO report_gaps (id, report_id, gap_id, kind, text, basis_json, provenance_json,"
-                    " kill_search_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " kill_search_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    " ON CONFLICT(report_id, gap_id) DO NOTHING",
                     (new_id("rgp"), report_id, gap["gap_id"], gap["kind"], gap["text"], dumps(basis),
                      dumps(gap["provenance"]), gap.get("kill_search_status", "not_run"), now()),
                 )
-            self._event(report_id, "report_gaps_saved")
+                inserted = cursor.rowcount > 0 or inserted
+            if inserted:
+                self._event(report_id, "report_gaps_saved")
 
     def save_phrase_repair(self, report_id: str, section_id: str, sentence_id: str, before: str, after: str,
                            outcome: str) -> None:

@@ -481,6 +481,77 @@ def test_fill_and_column_suggestion_api(tmp_path):
         assert added.status_code == 201 and [c["origin"] for c in added.json()["columns"]] == ["user", "model_suggestion"]
 
 
+def fill_three_sources(tmp_path, responder):
+    """A research with three uploaded PDFs, a one-column table and its fill run started; the responder sees each call."""
+    holder = {}
+    adapter = FakeAdapter(lambda si: responder(holder, si))
+    holder["app"] = app = app_for(tmp_path, adapter)
+    return app, adapter, holder
+
+
+def start_fill(client):
+    rid = create(client, source_scope="attached")
+    for name, text in (("a.pdf", "SYNTHETIC packets of 128 bytes."), ("b.pdf", "SYNTHETIC packets of 64 bytes."), ("c.pdf", "SYNTHETIC packets of 32 bytes.")):
+        upload(client, rid, name, text)
+    tid = client.post(f"/api/researches/{rid}/tables", json={"title": "Packets"}).json()["table"]["id"]
+    version = client.post(f"{table_url(rid, tid)}/columns", json=PACKET_SIZE | {"expected_version": 1}).json()["table"]["version"]
+    started = client.post(f"{table_url(rid, tid)}/fill", json={"expected_version": version})
+    assert started.status_code == 202, started.text
+    return rid, tid, started.json()["id"]
+
+
+def filled_cells(client, rid, tid):
+    return [c for c in client.get(table_url(rid, tid)).json()["cells"] if c["current"]]
+
+
+def test_cancel_during_a_fill_keeps_written_values_and_drops_the_call_in_progress(tmp_path):
+    # The Evidence tab's cancel confirmation says: values already written stay, the run cannot be resumed, empty cells can be filled again.
+    def responder(holder, si):
+        if si["task_type"] == "cell_extraction":
+            holder["calls"] = holder.get("calls", 0) + 1
+            if holder["calls"] == 2:
+                holder["app"].state.store.update_run(si["run_id"], event="run_cancelled", status="cancelled", pause_reason="user_cancelled")
+        return valid_response(si)
+
+    app, adapter, _ = fill_three_sources(tmp_path, responder)
+    with TestClient(app) as raw:
+        client = session(raw)
+        rid, tid, run_id = start_fill(client)
+        _, run = wait_run(client, rid, run_id)
+        assert (run["status"], run["pause_reason"]) == ("cancelled", "user_cancelled")
+        assert len(adapter.calls) == 2
+        assert [c["current"]["kind"] for c in filled_cells(client, rid, tid)] == ["model_fill"]  # the second call's answer is not written
+        steps = [s for s in run["steps"] if s["kind"] == "model:cell_extraction"]
+        assert [s["status"] for s in steps] == ["succeeded", "succeeded"]  # it stays recorded under the run
+        assert client.post(f"/api/runs/{run_id}/resume").status_code == 409
+
+        view = client.get(table_url(rid, tid)).json()
+        assert view["fill_estimate"]["sources"] == 2
+        again = client.post(f"{table_url(rid, tid)}/fill", json={"expected_version": view["table"]["version"]})
+        _, rerun = wait_run(client, rid, again.json()["id"])
+        assert rerun["status"] == "completed" and len(filled_cells(client, rid, tid)) == 3
+
+
+def test_pause_during_a_fill_writes_the_call_result_only_after_resume(tmp_path):
+    def responder(holder, si):
+        if si["task_type"] == "cell_extraction" and not holder.get("paused"):
+            holder["paused"] = True
+            holder["app"].state.store.update_run(si["run_id"], event="run_pause_requested", status="pause_requested", pause_reason="user_requested")
+        return valid_response(si)
+
+    app, adapter, _ = fill_three_sources(tmp_path, responder)
+    with TestClient(app) as raw:
+        client = session(raw)
+        rid, tid, run_id = start_fill(client)
+        _, run = wait_run(client, rid, run_id)
+        assert (run["status"], run["pause_reason"]) == ("paused", "user_requested")
+        assert filled_cells(client, rid, tid) == [] and len(adapter.calls) == 1
+        assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
+        _, run = wait_run(client, rid, run_id)
+        assert run["status"] == "completed" and len(filled_cells(client, rid, tid)) == 3
+        assert len(adapter.calls) == 3  # the paused call's recorded answer is used; the model is not asked again
+
+
 def test_t09g_j_recheck_requests(tmp_path):
     app = app_for(tmp_path)
     with TestClient(app) as raw:

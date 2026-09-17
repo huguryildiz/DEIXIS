@@ -83,6 +83,8 @@ export type AssetText = {
   passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker'; equations_to_check?: number }[]
   source: Passage['source']
 }
+// A figure found from its caption on a PDF page (D58); its picture is cut from the page by the server.
+export type AssetFigure = { page: number; label: string; width: number; height: number }
 export type PdfCandidate = {
   id: string; provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'web_search'; candidate_url: string; landing_url: string | null
   version_label: string | null; license: string | null; identity_status: 'doi_verified' | 'title_verified' | 'unverified' | 'mismatch'
@@ -95,7 +97,8 @@ export type PdfDiscovery = {
 }
 export type PdfMatch = { filename: string; source_version_id: string | null; basis: 'doi' | 'title' | null }
 export type Source = {
-  source_version_id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null
+  // A short author–year key such as "Nakano13", one per work across the library (D59); null only before it is given.
+  source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
   volume: string | null; issue: string | null; pages: string | null
   doi: string | null; landing_url: string | null; version_label: string | null; publication_type: string | null
   cited_by_count: number | null; cited_by_count_at: string | null
@@ -113,7 +116,7 @@ export type Source = {
   provider_records: string[]; suspected_duplicates: { source_version_id: string; basis: 'same_title' | 'published_doi' }[]
 }
 export type Evidence = {
-  passage_id: string; source_version_id: string; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
+  passage_id: string; source_version_id: string; source_key: string | null; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
   printed_label: string | null; reading_depth: string; title: string; version_label: string | null; anchor_text: string | null
   evidence_status: EvidenceStatus
   text_source: 'text_layer' | 'ocr' | 'marker' | null  // null for abstracts; 'ocr' text was not checked against the page (D51)
@@ -151,6 +154,7 @@ export type ResearchView = {
 }
 export type ResearchSummary = {
   id: string; title: string; question: string; source_scope: SourceScope; effort: Effort; last_run_status: RunStatus | null
+  last_run_kind: RunKind | null
   answer_count: number; created_at: string; updated_at: string
 }
 export type TrashedResearch = { id: string; title: string; trashed_at: string }
@@ -167,7 +171,7 @@ export type Passage = {
   abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker'; equations_to_check?: number; reading_depth: string; asset_id: string | null
   evidence_status: EvidenceStatus
   removed_from_research: boolean
-  source: { id: string; work_id: string; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; landing_url: string | null; version_label: string | null; origin: string; cited_by_count: number | null; cited_by_count_at: string | null }
+  source: { id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; landing_url: string | null; version_label: string | null; origin: string; cited_by_count: number | null; cited_by_count_at: string | null }
 }
 export type ModelOption = {
   id: string; display_name: string; is_default: boolean; description?: string
@@ -198,7 +202,7 @@ export type EquationReader = {
   installed: boolean; package: string; path: string; size_bytes: number; models_downloaded: boolean; disk_free_gb: number
   install: { available: boolean; unavailable_reason: string | null; url: string }
   job: { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; step: number; steps: number; started_at: string; finished_at: string | null; output: string } | null
-  reading: { asset_id: string; pages: number; started_at: string } | null
+  reading: { asset_id: string; title: string | null; pages: number; started_at: string } | null
   pdfs: Partial<Record<'read' | 'no_math' | 'failed' | 'reading' | 'pending', number>>
 }
 export type LocalTools = { machine: { chip: string | null; memory_gb: number | null; disk_free_gb: number | null }; tools: LocalTool[] }
@@ -211,7 +215,7 @@ export type AccessLevel = 'pdf_available' | 'abstract' | 'metadata'
 export type LibraryVersion = { source_version_id: string; version_label: string | null; year: number | null; venue: string | null; access_level: AccessLevel }
 export type LibraryResearch = { id: string; title: string; updated_at: string }
 export type LibraryEntry = {
-  work_id: string; title: string; authors: string[]; year: number | null; venue: string | null
+  work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
   publication_type: string | null; doi: string | null; landing_url: string | null
   cited_by_count: number | null; cited_by_count_at: string | null; access_level: AccessLevel
   versions: LibraryVersion[]; researches: LibraryResearch[]; first_research_id: string | null; newest_source_at: string
@@ -227,7 +231,7 @@ export type LibraryWorkVersion = {
   research_id: string | null
 }
 export type LibraryWork = {
-  work_id: string; title: string; authors: string[]; year: number | null; venue: string | null
+  work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
   doi: string | null; landing_url: string | null; publication_type: string | null; cited_by_count: number | null
   versions: LibraryWorkVersion[]; researches: LibraryResearch[]
 }
@@ -254,7 +258,7 @@ export type TableColumn = {
   name: string; instruction: string; answer_format: AnswerFormat; options: ColumnOption[] | null; allow_multiple: boolean; unit_hint: string | null
 }
 export type TableRow = {
-  source_version_id: string; work_id: string; title: string; authors: string[]; year: number | null; version_label: string | null
+  source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; version_label: string | null
   selection_state: 'included' | 'excluded' | 'pending' | null; added_by: 'included_at_creation' | 'user'; added_at: string; removed_at: string | null
   access_level: 'pdf_available' | 'abstract' | 'metadata'
 }
@@ -398,6 +402,7 @@ export const api = {
     request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion })),
   passage: (id: string, passageId: string) => request<Passage>(`/api/researches/${id}/passages/${passageId}`),
   assetText: (id: string, assetId: string) => request<AssetText>(`/api/researches/${id}/assets/${assetId}/text`),
+  assetFigures: (id: string, assetId: string) => request<{ figures: AssetFigure[] }>(`/api/researches/${id}/assets/${assetId}/figures`),
   events: (id: string, after = 0) => request<ActivityEvent[]>(`/api/researches/${id}/events?after=${after}`),
   connections: (refresh = false) => request<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`),
   modelConnection: (connection: string, refresh = false) => request<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}${refresh ? '?refresh=true' : ''}`),
@@ -438,6 +443,9 @@ export const api = {
     request<TableView>(`/api/researches/${id}/tables/${tableId}/rows/${sourceId}?expected_version=${expectedVersion}`, { method: 'DELETE' }),
   addColumn: (id: string, tableId: string, spec: ColumnSpec & { suggestion_step_id?: string }, expectedVersion: number, idempotencyKey: string) =>
     request<TableView>(`/api/researches/${id}/tables/${tableId}/columns`, json('POST', { ...spec, expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+  // Only a table without columns takes a template's columns.
+  applyTableTemplate: (id: string, tableId: string, templateId: string, expectedVersion: number, idempotencyKey: string) =>
+    request<TableView>(`/api/researches/${id}/tables/${tableId}/template-columns`, json('POST', { template_id: templateId, expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
   reviseColumn: (id: string, tableId: string, columnId: string, spec: ColumnSpec, expectedVersion: number) =>
     request<TableView>(`/api/researches/${id}/tables/${tableId}/columns/${columnId}`, json('PATCH', { ...spec, expected_version: expectedVersion })),
   removeColumn: (id: string, tableId: string, columnId: string, expectedVersion: number) =>
@@ -467,6 +475,9 @@ export const bibliographyUrl = (researchId: string, format: 'bibtex' | 'ris', so
   `/api/researches/${researchId}/bibliography?format=${format}&sources=${sources}`
 
 const textFragment = (text: string) => encodeURIComponent(text.replace(/\s+/g, ' ').trim()).replace(/-/g, '%2D')
+
+export const figureUrl = (researchId: string, assetId: string, label: string) =>
+  `/api/researches/${researchId}/assets/${assetId}/figures/${encodeURIComponent(label)}.png`
 
 export const assetUrl = (researchId: string, assetId: string, page?: number | null, highlightText?: string | null) => {
   const openParams = page ? `page=${page}` : ''

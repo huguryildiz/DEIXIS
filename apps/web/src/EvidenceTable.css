@@ -1,6 +1,12 @@
 /* Evidence tab (EvidenceTable.tsx): the table, its toolbar, and the cell and column sheets. Reuses the workspace tokens.
    Page rules carry .app so they outrank the generic research-view paragraph and table rules loaded after this file. */
 .evidence-panel{min-width:0}
+/* Full screen: the panel covers the app like a report page with only the title, run line and grid; the editing chrome stays in the tab. The grid takes the remaining height and scrolls with its header row pinned. Sheets and dialogs (z-index 50+) stay above it. */
+.app .evidence-panel.is-fullscreen{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;padding:20px 28px 16px;overflow:hidden;background:var(--paper)}
+.evidence-panel.is-fullscreen :is(.evidence-toolbar,.evidence-toolbar-note,.evidence-suggestions,.evidence-inline-form,.evidence-add-rows){display:none}
+.evidence-panel.is-fullscreen .evidence-grid-wrap{flex:1;min-height:0;overflow:auto}
+.evidence-panel.is-fullscreen .evidence-grid thead th{position:sticky;top:0;z-index:2}
+.evidence-panel.is-fullscreen .evidence-grid thead .evidence-corner{z-index:4}
 .app .evidence-panel :where(p){margin:0}
 .app .evidence-panel .workspace-pane-head{align-items:flex-start}
 .app .evidence-panel .workspace-pane-head p{margin:5px 0 0!important}
@@ -25,10 +31,62 @@
 .evidence-templates small{color:var(--muted);font-size:11.5px;line-height:1.45}
 .app .evidence-panel .evidence-templates p{color:var(--muted);font-size:12.5px}
 
-.evidence-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-.evidence-toolbar>[data-slot=button]{height:auto;min-height:32px;padding-block:6px;white-space:normal;text-align:left;line-height:1.35}
+.evidence-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 2px;padding:2px 0}
+.evidence-toolbar [data-slot=button]{height:auto;min-height:32px;padding-block:6px;white-space:normal;text-align:left;line-height:1.35}
+.evidence-toolbar-sep{width:1px;height:20px;margin:0 8px;background:var(--line)}
+.evidence-toolbar-end{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:auto}
 .app .evidence-panel .evidence-toolbar-note{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.55}
-.app .evidence-panel .evidence-live{margin:12px 0 0;font-size:12.5px;line-height:1.5}
+
+/* The live table run: one line with its progress and controls; a hairline runs along its top while work is live. */
+.evidence-run{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:10px;padding:7px 8px 7px 12px;border:1px solid var(--strong-line,var(--line));border-radius:10px;background:var(--raised-surface,var(--paper));box-shadow:0 1px 2px rgb(20 28 45/.04);font-size:12.5px;line-height:1.5;overflow:hidden}
+.evidence-run.is-live::after{content:"";position:absolute;left:0;bottom:0;width:36%;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:evidence-run-sweep 2.2s ease-in-out infinite}
+@keyframes evidence-run-sweep{from{transform:translateX(-100%)}to{transform:translateX(280%)}}
+.evidence-run-signal{position:relative;flex:none;display:grid;place-items:center;width:16px;height:16px;margin-right:-4px}
+.evidence-run-signal i{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.evidence-run.is-live .evidence-run-signal i{background:var(--accent)}
+.evidence-run.is-live .evidence-run-signal::after{content:"";position:absolute;inset:0;border:1.5px solid var(--accent);border-radius:50%;opacity:0;animation:evidence-run-ring 1.8s ease-out infinite}
+@keyframes evidence-run-ring{0%{transform:scale(.45);opacity:.7}100%{transform:scale(1.15);opacity:0}}
+.evidence-run strong{font-size:13px;font-weight:600;color:var(--ink)}
+.evidence-run-detail{color:var(--muted);font-variant-numeric:tabular-nums}
+.evidence-run-model{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:999px;background:color-mix(in srgb,var(--accent),transparent 91%);color:var(--ink);font-size:11.5px;font-weight:500;white-space:nowrap}
+.evidence-run-model .connection-icon{display:inline-flex}
+.evidence-run-model .connection-icon svg,.evidence-run-model .connection-icon img{width:12px;height:12px}
+.evidence-run-time{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.evidence-run-end{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-left:auto}
+.evidence-run-lock{display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:12px;white-space:nowrap}
+.evidence-run-controls{display:inline-flex;align-items:center;overflow:hidden;border:1px solid var(--strong-line,var(--line));border-radius:8px;background:var(--raised-surface,var(--paper))}
+.evidence-run-controls [data-slot=button]{height:28px;padding-inline:10px;border-radius:0;font-size:12px;font-weight:500}
+.evidence-run-controls [data-slot=button]+[data-slot=button]{border-left:1px solid var(--strong-line,var(--line))}
+.evidence-run-controls .evidence-run-cancel{color:var(--destructive)}
+.evidence-run-controls .evidence-run-cancel:hover:not(:disabled){background:color-mix(in srgb,var(--destructive),transparent 92%);color:var(--destructive)}
+
+/* No columns yet: the rows the first column will be asked of, with placeholder columns, above the first-column prompt. */
+.evidence-first{margin-top:12px;overflow:hidden;border:1px solid var(--strong-line,var(--line));border-radius:9px;background:var(--raised-surface,var(--paper))}
+.evidence-ghost{overflow:hidden}
+.evidence-ghost table{width:100%;min-width:0;border-collapse:collapse;table-layout:fixed;font-size:12.5px}
+.app .evidence-ghost th,.app .evidence-ghost td{height:44px;padding:0 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
+.app .evidence-ghost th{height:36px;color:var(--muted);font-size:11.5px;font-weight:500}
+.evidence-ghost th+th,.evidence-ghost td+td{border-left:1px solid var(--line)}
+.evidence-ghost th:first-child{width:40%}
+.evidence-ghost th:not(:first-child){color:color-mix(in srgb,var(--muted),transparent 35%)}
+.evidence-ghost tbody tr:nth-child(3) td{opacity:.55}
+.evidence-ghost tbody tr:nth-child(4) td{opacity:.3}
+.evidence-ghost-title{display:block;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-family:'Newsreader Variable',serif;font-size:14.5px;line-height:1.3}
+.evidence-ghost td small{display:block;color:var(--muted);font-size:11px;line-height:1.3}
+.evidence-ghost-slot{display:block;height:8px;border-radius:5px;background:color-mix(in srgb,var(--ink),transparent 94%)}
+.evidence-first.is-suggesting .evidence-ghost-slot{background:linear-gradient(90deg,color-mix(in srgb,var(--ink),transparent 95%),color-mix(in srgb,var(--accent),transparent 80%),color-mix(in srgb,var(--ink),transparent 95%)) 0 0/200% 100%;animation:evidence-slot-shimmer 1.6s linear infinite}
+@keyframes evidence-slot-shimmer{to{background-position:-200% 0}}
+.evidence-first-prompt{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 24px;padding:20px 22px}
+.evidence-first-prompt>div:first-child{flex:1 1 320px;min-width:0}
+.app .evidence-panel .evidence-first-prompt h3{margin:0;color:var(--ink);font-family:'Newsreader Variable',serif;font-size:20px;font-weight:450;letter-spacing:-.2px;line-height:1.25}
+.app .evidence-panel .evidence-first-prompt p{max-width:58ch;margin:5px 0 0;color:var(--muted);font-size:13px;line-height:1.55}
+.evidence-template-picks{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:12px;color:var(--muted);font-size:12px}
+.evidence-template-pick{max-width:220px;overflow:hidden;padding:3px 10px;border:1px solid var(--line);border-radius:999px;color:var(--ink);font-size:12px;text-overflow:ellipsis;white-space:nowrap;transition:border-color .15s ease,background-color .15s ease}
+.evidence-template-pick:hover:not(:disabled){border-color:var(--strong-line,var(--line));background:var(--hover-surface)}
+.evidence-template-pick:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.evidence-template-pick:disabled{opacity:.55;cursor:not-allowed}
+@media (prefers-reduced-motion:reduce){.evidence-run.is-live::after,.evidence-run.is-live .evidence-run-signal::after,.evidence-first.is-suggesting .evidence-ghost-slot{animation:none}}
+@media (max-width:640px){.evidence-toolbar-sep{display:none}.evidence-toolbar-end{margin-left:0}.evidence-ghost th:nth-child(n+3),.evidence-ghost td:nth-child(n+3){display:none}}
 .evidence-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 
 .evidence-add-rows,.evidence-inline-form,.evidence-suggestions{margin:14px 0 0;padding:14px 16px;border:1px solid var(--strong-line,var(--line));border-radius:9px;background:var(--raised-surface,var(--paper))}
@@ -66,7 +124,7 @@
 .evidence-grid tbody tr:last-child>*{border-bottom:0}
 .evidence-grid tr>:last-child{border-right:0}
 .evidence-grid thead th{background:color-mix(in srgb,var(--raised-surface,var(--paper)),var(--ink) 3%)}
-.evidence-grid .evidence-corner,.evidence-grid .evidence-row-head{position:sticky;left:0;z-index:2;width:236px;min-width:236px;max-width:236px;background:var(--raised-surface,var(--paper));box-shadow:1px 0 0 var(--strong-line,var(--line))}
+.evidence-grid .evidence-corner,.evidence-grid .evidence-row-head{position:sticky;left:0;z-index:2;width:340px;min-width:340px;max-width:340px;background:var(--raised-surface,var(--paper));box-shadow:1px 0 0 var(--strong-line,var(--line))}
 .evidence-grid thead .evidence-corner{z-index:3;padding:10px 12px;background:color-mix(in srgb,var(--raised-surface,var(--paper)),var(--ink) 3%);color:var(--muted);font-size:11px;font-weight:600}
 .evidence-grid .evidence-row-head{padding:9px 6px 9px 12px}
 .evidence-col-head{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;min-width:190px;max-width:270px;padding:9px 12px;color:var(--ink);text-align:left}
@@ -75,8 +133,13 @@
 .evidence-col-head:hover,.evidence-cell:hover{background:var(--hover-surface)}
 .evidence-col-head:focus-visible,.evidence-cell:focus-visible,.evidence-row-menu:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .evidence-row-line{display:flex;align-items:flex-start;gap:7px}
-.evidence-key{flex:none;padding:0 5px;border:1px solid var(--strong-line,var(--line));border-radius:5px;color:var(--muted);font-size:11px;line-height:1.6;font-variant-numeric:tabular-nums}
-.evidence-row-title{display:-webkit-box;flex:1;min-width:0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:var(--ink);font-size:12.5px;font-weight:550;line-height:1.4}
+.evidence-row-line .source-key{margin-top:1px}
+.evidence-row-title{flex:1;min-width:0;color:var(--ink);font-size:12.5px;font-weight:550;line-height:1.4;overflow-wrap:anywhere}
+.evidence-row-reference{font-weight:400}
+.evidence-row-open{text-align:left;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:3px;cursor:pointer;transition:text-decoration-color .15s,color .15s}
+.evidence-row-open:hover{color:var(--accent);text-decoration-color:currentColor}
+.evidence-row-open:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.evidence-row-reference em{font-style:italic}
 .evidence-row-menu{display:grid;flex:none;place-items:center;width:24px;height:24px;margin-top:-2px;border-radius:6px;color:var(--muted)}
 .evidence-row-menu:hover,.evidence-row-menu[data-popup-open]{background:var(--hover-surface);color:var(--ink)}
 .evidence-row-meta{display:block;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.45}
@@ -89,7 +152,9 @@
 .evidence-cell-flags{display:flex;flex-wrap:wrap;gap:4px}
 .evidence-flag{--flag:var(--tone-uncertain,#b06d0f);display:inline-flex;align-items:center;padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--flag),transparent 88%);color:color-mix(in srgb,var(--flag),var(--ink) 30%);font-size:10.5px;line-height:1.55;white-space:nowrap}
 .evidence-flag.is-blocking{--flag:var(--tone-exclude,#b42318)}
-.app .evidence-panel .evidence-footnote{margin:12px 0 0}
+.app .evidence-panel .evidence-footnote{display:flex;align-items:flex-start;gap:8px;margin:14px 0 0}
+.evidence-footnote>svg{flex:none;margin-top:2px;color:var(--muted)}
+.evidence-footnote strong{font-weight:600;color:var(--ink)}
 
 /* Sheets are portaled outside .app, so they carry their own tone tokens. */
 .evidence-sheet{--tone-uncertain:#b06d0f;--tone-exclude:#b42318}

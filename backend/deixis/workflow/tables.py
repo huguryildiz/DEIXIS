@@ -367,6 +367,25 @@ class TableStore:
             self._changed(research_id, table_id)
         return cid
 
+    def apply_template(self, research_id: str, table_id: str, template_id: str, expected_version: int, idempotency_key: str | None) -> None:
+        """Give a table without columns the columns of a saved template (origin 'template'), as a table started from it gets."""
+        key = self._key(research_id, idempotency_key)
+        with transaction(self.conn):
+            if key and self.conn.execute("SELECT 1 FROM column_revisions WHERE idempotency_key = ?", (f"{key}:0",)).fetchone():
+                return
+            check_expected_version(expected_version, self._table(research_id, table_id)["version"])
+            template = self.conn.execute("SELECT * FROM table_templates WHERE id = ? AND trashed_at IS NULL", (template_id,)).fetchone()
+            if template is None:
+                raise NotFound(template_id)
+            if self._columns(table_id):
+                raise InvalidTableInput("A template is applied only to a table without columns")
+            position = self.conn.execute("SELECT COALESCE(MAX(position) + 1, 0) FROM table_columns WHERE table_id = ?", (table_id,)).fetchone()[0]
+            for index, spec in enumerate(json.loads(template["columns_json"])):
+                self._insert_column(table_id, position + index, column_spec(**spec), "template", None, f"{key}:{index}" if key else None)
+            self.conn.execute("UPDATE evidence_tables SET template_id = ? WHERE id = ?", (template_id, table_id))
+            self._touch(table_id, bump=True)
+            self._changed(research_id, table_id)
+
     def revise_column(self, research_id: str, table_id: str, column_id: str, changes: dict[str, Any], position: int | None,
                       expected_version: int) -> None:
         """Changed fields make a new column revision; values made under the earlier revision stay and read as stale."""
@@ -764,6 +783,7 @@ class TableStore:
         rows = []
         for r in self.conn.execute(
             "SELECT t.source_version_id, t.added_by, t.created_at, t.removed_at, v.work_id, v.title, v.authors_json, v.year,"
+            " (SELECT w.source_key FROM works w WHERE w.id = v.work_id) AS source_key,"
             " v.version_label, sel.state AS selection_state,"
             " EXISTS (SELECT 1 FROM passages p JOIN source_assets a ON a.id = p.asset_id"
             "  WHERE p.source_version_id = t.source_version_id AND a.removed_at IS NULL) AS has_pdf_text,"
@@ -772,7 +792,7 @@ class TableStore:
             " LEFT JOIN selections sel ON sel.research_id = ? AND sel.source_version_id = t.source_version_id"
             f" WHERE t.table_id = ? AND {SOURCE_ACTIVE_SQL} ORDER BY t.created_at, v.title", (research_id, table_id)
         ):
-            rows.append({"source_version_id": r["source_version_id"], "work_id": r["work_id"], "title": r["title"],
+            rows.append({"source_version_id": r["source_version_id"], "work_id": r["work_id"], "source_key": r["source_key"], "title": r["title"],
                          "authors": json.loads(r["authors_json"]), "year": r["year"], "version_label": r["version_label"],
                          "selection_state": r["selection_state"], "added_by": r["added_by"], "added_at": r["created_at"],
                          "removed_at": r["removed_at"],

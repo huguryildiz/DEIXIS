@@ -422,6 +422,35 @@ def test_table_api_versions_idempotency_and_scope(tmp_path):
         assert client.get(f"{base}/{tid}").status_code == 404
 
 
+def test_a_template_gives_its_columns_to_a_table_without_columns(tmp_path):
+    with TestClient(app_for(tmp_path)) as raw:
+        client = session(raw)
+        rid = create(client, source_scope="attached")
+        upload(client, rid, "a.pdf", "SYNTHETIC packets of 128 bytes")
+        base = f"/api/researches/{rid}/tables"
+        source = client.post(base, json={"title": "Source"}).json()
+        tid = source["table"]["id"]
+        client.post(f"{base}/{tid}/columns", json=PACKET_SIZE | {"expected_version": source["table"]["version"]})
+        template = client.post("/api/table-templates", json={"name": "Packets", "research_id": rid, "table_id": tid}).json()
+
+        empty = client.post(base, json={"title": "Empty"}).json()
+        eid, version = empty["table"]["id"], empty["table"]["version"]
+        url = f"{base}/{eid}/template-columns"
+        assert client.post(url, json={"template_id": template["id"], "expected_version": version - 1}).status_code == 409
+        assert client.post(url, json={"template_id": "tpl_missing0000000", "expected_version": version}).status_code == 404
+        applied = client.post(url, json={"template_id": template["id"], "expected_version": version}, headers={"Idempotency-Key": "a1"})
+        assert applied.status_code == 201, applied.text
+        view = applied.json()
+        assert [(c["name"], c["origin"]) for c in view["columns"]] == [("Packet size", "template")]
+        assert view["table"]["version"] == version + 1
+        replay = client.post(url, json={"template_id": template["id"], "expected_version": version}, headers={"Idempotency-Key": "a1"})
+        assert replay.status_code == 201 and len(replay.json()["columns"]) == 1
+        # A table that has columns keeps them; the template is not merged in.
+        assert client.post(url, json={"template_id": template["id"], "expected_version": version + 1}).status_code == 422
+        assert client.post(url.replace(rid, create(client, source_scope="attached")),
+                           json={"template_id": template["id"], "expected_version": version + 1}).status_code == 404
+
+
 def table_with_edit(client, rid):
     upload(client, rid, "a.pdf", "SYNTHETIC packets of 128 bytes")
     table = client.post(f"/api/researches/{rid}/tables", json={"title": "Packets"}).json()

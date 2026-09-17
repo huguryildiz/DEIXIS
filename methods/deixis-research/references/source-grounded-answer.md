@@ -29,6 +29,14 @@ provider query from your concepts, in each provider's syntax.
    `packet size optimization` and `packet length optimization`, and
    `wireless sensor network` belongs to a context concept: a core of the field
    name can bury the relevant papers beyond the first results read.
+   When the question names no specific decision or mechanism but asks how a
+   broad method field is used within a domain, the domain is the core and the
+   method terms are separate concepts. For machine learning in power
+   distribution grids the core synonyms are `distribution grid` and
+   `distribution network`, and `neural network` or `load forecasting` belong to
+   method or mechanism concepts: papers of a domain rarely write the method
+   field's name, so a core of `machine learning` misses many of them, and a core
+   that joins both fields into one phrase matches almost none.
 4. Each query pairs the core with the alternatives of one other concept, never
    with every concept at once. So separate essential conditions from desired
    extensions and put each desired extension in its own concept; adjacent-field

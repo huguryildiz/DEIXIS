@@ -2,6 +2,58 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D59 — Give every work one short author–year key and show it wherever the work appears; a table row opens its source
+
+**Status**: accepted (implemented)
+**Date**: 2026-09-17
+
+**Context**: The evidence table and the answer's PDF suggestions showed keys such as "Far16", computed in the browser on each screen from the first author and year. Two works could get the same key (two Nakano 2013 papers were both "Nak13"), a three-letter stem was hard to recognise, and the answer cited sources as "[1]", "[3]". The owner asked for one key per unique publication shown throughout the UI, and for a table row to open the source's details. The owner chose the form after a mockup: the full family name and a two-digit year.
+
+**Decision**:
+
+- A key belongs to a work (`works.source_key`, migration 33), so the preprint and published versions of one paper share it, and it is unique across the library, not per research: a paper keeps its key in every research. It is given when the work is stored and never changed, with one exception: a key taken from the title (no author yet, e.g. an uploaded PDF) is replaced once an enrichment brings an author. Works stored earlier are keyed at startup, oldest first.
+- Form (`workflow/source_keys.py`): the first author's family name ("Family, Given" or the last word of "Given Family"), accents and Turkish letters folded to ASCII, particles (van, der, de…) and suffixes (Jr., III) dropped, hyphenated parts joined, cut at 10 letters; then the year's last two digits, or `nd`. Without a usable author name, the first significant title word. A collision adds `b`, `c`, … to the later work; the first keeps the bare key so no key ever changes when another work arrives (the mockup's `Nakano13a`/`Nakano13b` would have renamed the first). Keys compare case-insensitively.
+- The key is shown in the Sources list before the title, in answer citation chips (a claim citing two passages of one source adds the page, "Farsad16, p. 3"), in the cited-passage list and the copied/downloaded report, in the source details panel, in evidence-table rows, the cell panel, Add rows, the CSV and the PDF suggestions. An answer's stored text is unchanged; only the display moves from numbers to keys, and a source without a key falls back to its number.
+- Clicking a row's reference in the evidence table opens the source details panel: the PDF's extracted text when it has one, else its abstract, else its details alone. Clicking a cell still opens the cell panel.
+
+**Evidence**: `tests/test_source_keys.py` (forms, collision letters, shared key across versions, title key replaced by an author, keying of works stored before the migration). Playwright acceptance run on the SYNTHETIC fixture: the copied report cites keys, the cited-passage list shows them, and a table row's reference opens the panel with the same key (`D59-answer-references.png`, `D59-evidence-row-opens-source.png`, screenshots checked by eye).
+
+**Limits**: Keys were not checked on the stored library's real metadata; names given in one field without a comma (Spanish double surnames, East Asian names in family-first order) take the last word, which can be the wrong part, and names without Latin letters fall back to the title. `nd` glued to the name reads awkwardly ("Hostilend"). The key is a display label: the model still cites passages by its own handles (D12), and the library page and Trash do not show keys yet.
+
+## D58 — Show the plain-text view of a PDF as a document: title, sections, tables, figures cut from the page, biographies and linked in-text references
+
+**Status**: accepted (implemented)
+**Date**: 2026-09-17
+
+**Context**: The plain-text view of a PDF lost its figures, and a reader who met "Fig. 3", "Table II", "Eq. (5)" or "[12]" had to scroll to find them. The owner asked for pictures of figures, section contents, jumps to referenced figures, tables and equations, reference previews and footnotes.
+
+**Decision**:
+
+- `documents/figures.py` finds a figure from its caption ("Fig. 3.", "Figure 3:", "FIGURE 3 |", "Fig. 3 Title"): the images and vector drawings above the caption (else below it) in its column, stopping at another caption or a body paragraph, grown to take in small type around them (axis labels, legends). `GET …/assets/{id}/figures` lists them and `…/figures/{label}.png` renders the region from the page. Nothing is stored: the list is cached in memory by PDF hash, and passage text, chunks and extraction versions are unchanged. The model never sees the pictures.
+- The plain-text view (`PdfTextDocument.tsx`) puts each figure's picture with its caption where the caption was, labelled "picture cut from PDF page n; it can miss part of the figure". A figure without a recognised caption paragraph shows at the end of its page.
+- It lists section headings as contents when there are at least three, and turns "Fig./Figure n", "Table n/II", "Eq./Equation (n)" and numbered citations "[n]", "[n, m]", "[n–m]" into links that scroll to the figure, table caption, equation number or reference entry; a citation also shows its reference entry on hover. Matches inside `$…$` math are left alone.
+- The view is rebuilt from the stored passages each time it opens (`pdfDocument.ts`); nothing it adds is stored or sent to a model. At the top of the first page the title lines are joined into one title, matched against the source's stored title (a journal header run into the first line is split off) or, when that does not match, taken from the first run of two or more short Title Case lines without digits or punctuation; author lines ending in a comma are joined. A numbered heading set in the same text block as the paragraph below it ("II. SYSTEM MODEL\nIn this study …") becomes its own heading when it is in capitals or is two to ten Title Case words, with a capital second line kept with it; a drop capital read into the heading goes back to the paragraph. Unnumbered headings are recognised in title case and capitals, in English and Turkish (References, ACKNOWLEDGEMENT, Kaynakça …). Headings are set in the serif face, sections larger than subsections.
+- Author biographies run into the last reference entry ("Name (email) received …", "Name (M'05–SM'16) is …") are split into paragraphs under a Biographies heading written in the paper's language and in the case of its REFERENCES heading, unless the paper has one.
+- A table whose rows are cut across passages stays one table, and a caption that follows its last row is its own paragraph. Marker's in-document links ("Figure [4a](#page-6-2)") show as their text.
+- Footnote markers are not linked. On the stored library (85 PDFs) a page-end paragraph opening with a number or note symbol occurred 4 times, 3 of them were not footnotes, and for none could the marker be found in the body text, because the text layer drops superscripts.
+
+**Evidence**: `tests/test_figures.py`: a synthetic page where the plot and its axis label form the figure and the caption, the paragraphs and a sentence starting "Figure 2 shows" do not; the API lists and renders a figure and returns 404 for an unknown one. On 10 stored papers 68 figures were found and every crop was checked by eye on a contact sheet: after the stop at captions and paragraphs no crop held body text or another figure's caption; a few lost a plot title at the top edge. In the browser on a copy of the library, one arXiv paper showed 9 figures, 70 in-text links and a working reference preview and jump; an IEEE paper showed 8 figures and 91 links; a Frontiers paper (author–year citations) linked only its figure and table references. `apps/web/e2e/pdf-document.spec.ts` checks the rules on synthetic page text without a browser (title and authors with and without a matching stored title, headings in the same block, capitals, two-line and drop-capital headings, a table cut across passages with its caption, biographies with an e-mail and an IEEE membership in curly quotes, jump targets); writing it found that membership brackets in curly quotes were not recognised, now fixed. On the first page of the 87 stored PDFs, the title was joined and matched the stored title in 82, a title was found from Title Case lines in 3 (two PDFs attached to the wrong source, one stored title with a line break), and none was found in 2 (a journal cover block and a repository cover page). Separating a heading from its block applies at 124 places in the library; in a random sample of 30, 27 were headings, and the rules added after it (at most a two-digit number, no brackets, a capital second line) remove the 3 misses seen. The biographies, the system-model heading, the title and tables were checked in the browser on one IEEE paper. Backend suite: 535 passed, 1 failed (the memory-limit test that fails on this machine). Browser acceptance: 29 passed, 1 failed in D59's evidence-table row titles, which this change does not touch.
+
+**Limits**: The model still reads the passage text as stored: headings run into paragraphs and Marker's link text remain there until an extraction change removes them. The cited-passage view is unchanged. Recall was not measured: figures whose caption is worded differently, split across pages or set beside the graphics are missed, and the 68 were not counted against the papers' real figure count. The text of a figure (axis numbers, legends) still appears as stray paragraphs next to its picture. Author–year citations are not linked. Equation links rely on "(n)" ending a short paragraph or `\tag{n}`, so an equation read into a longer paragraph is not found. Headings come from D47's pattern, which also matches some plot text; a biography without an e-mail or membership bracket is not separated; title detection without a matching stored title fails when a header is run into the title's first line.
+
+## D57 — When a question asks how a method field is used in a domain, make the domain the search plan's core concept
+
+**Status**: accepted
+**Date**: 2026-09-17
+
+**Context**: The live research `res_ZQM2gRxSIqCj6hnTj58q` ("Moleküler haberleşmede yöneylem araştırması…") found 105 unique works, of which screening included 3; its evidence table had 5 rows, 4 of them abstract-only. Its latest search plan made `operations research` / `operational research` the core concept and `molecular communication` a context family. Under D44 every query pairs the core with one family, so molecular communication appeared in one of five OpenAlex queries, and that query returned 0 results (papers of the domain rarely write "operations research"); the other four returned general operations-research literature (read from the stored titles, not a counted relevance judgment). D44's Limits had named this case: a broad field as the core still gets broad queries. Two structural alternatives were rejected: a third required AND group (core AND context AND family) breaks the OpenAlex two-part rule in `query_rules.openalex_query_shape_issues`, which rests on a live query that found none of 22 known papers; anchoring every query on the context with the core folded into an OR group brings back D44's failure, where a query like `"quantum networks" AND (decoherence OR …)` drops the discriminating core.
+
+**Decision**: Step 3 of the search-plan section in `references/source-grounded-answer.md` adds one rule: when the question names no specific decision or mechanism but asks how a broad method field is used within a domain, the domain is the core and the method terms are separate concepts. The example is deliberately from another domain (machine learning in power distribution grids), so this research's question is not written into the method file. The query compiler is unchanged.
+
+**Evidence**: The stored `search_plan` StepInput of that research was re-run with `gpt-5.6-luna`, three single attempts per method text, outside the app (no database write; script and outputs in ignored `.local/search-plan-core-2026-09-17/`). Old text: core was `operations research`-type phrases in 3 of 3 (two joined both fields into one phrase such as `optimization in molecular communication`, whose OpenAlex queries returned 0–5 works). New text with a molecular-communication example: core `molecular communication` in 3 of 3; the query pairing it with optimization terms had 319 OpenAlex results, all 25 read titles containing "molecular". New text with the power-grid example (the committed wording): core `molecular communication` in 3 of 3; many of its OpenAlex requests failed on keyless rate limits in that trial, so result counts from it are incomplete. One attempt per text group returned `envelope_mismatch` (in the app that is repaired). Backend suite: 527 passed, 6 failed (the D43 memory-limit test and migration tests touched by uncommitted work in progress in the same tree), `test_p4_eval.py` not collected (`scripts` import).
+
+**Limits**: One question, three attempts per text, one model: in-sample for this research and not a recall measurement. The rule depends on the model applying it; nothing in `contracts` checks which concept is the core. Whether the rule changes plans for questions with a specific decision (the packet-size and entanglement-routing cases) was not re-run. The research's search is not yet repeated in the app: the running server loads the method package at start.
+
 ## D56 — Keep the answer page quota, and publish a final answer draft after dropping only its unquoted, repeated or stray citations
 
 **Status**: accepted (implemented)
@@ -70,6 +122,24 @@ Side findings: an answer's limitation text showed short handles (`srv_S0000002` 
 - **Not-found cells (S4).** All not-found cells came from abstracts, so they say nothing about the full text; the rule in slice 1 decision 5 stays and cannot be revisited on this data.
 - **Sample.** Two questions, one model, one search per question, two answers and two fills each (plus one extra S1 answer after a failure). The differences between S1 and S2 are not measured effects of topic.
 - **Screening.** The model's inclusions were used without correction, because Claude had seen the known sets; D34's correction step was not repeated.
+
+## D54 — Rebuild tables in PDF text with Marker and show them as tables
+
+**Status**: accepted (implemented)
+**Date**: 2026-09-17
+
+**Context**: The text layer flattens a table into one paragraph per row with its columns run together (Ruiz et al. 2017, Frontiers, Table 1), and PyMuPDF's `find_tables` split the same borderless table into garbled columns. Marker (D52), already installed as an optional component, read that page in 12.5 s as a correct four-column Markdown table.
+
+**Decision**:
+
+- `math_reader.table_pages` selects pages whose text layer has a table caption at a line start ("TABLE 1 |", "TABLE IV", "Table 2."); a sentence starting "Table 1 shows" does not match. They are read by Marker together with math and OCR pages.
+- `clean_markdown` keeps a Markdown table row on one line (`<br>` inside a cell becomes a space, cell padding removed, separator row `| --- |`). `chunk_page` cuts a passage before a table row rather than inside it.
+- The Marker version becomes `math-v2`; PDFs read by v1 are read again in the background (the background reader now skips only PDFs at the current version). Older passages stay resolvable under D45.
+- The plain-text view renders a run of table rows as a table (first row as header when a separator follows); the Marker notice says tables are rebuilt.
+
+**Evidence**: Unit tests for caption selection, table-row cleanup and chunk cuts at every limit in 300–399 (the chunk test fails without the change). Backend suite: 511 passed, 1 failed (the memory-limit test that already fails on this machine); `test_p4_eval.py` does not import (`scripts` module) before and after. On a copy of the library the Ruiz PDF was read in 19 s and its Table 1 was checked in the browser against the page.
+
+**Limits**: Table cells are not checked against the text layer the way equations are, so a misread cell is not flagged. A table without a caption at a line start, or whose caption is on another page, is not read. Merged cells and multi-page tables follow Marker's output unchanged. The cited-passage view shows table rows as text, not as a table.
 
 ## D53 — Replace and remove API keys read from `.env` from Settings
 

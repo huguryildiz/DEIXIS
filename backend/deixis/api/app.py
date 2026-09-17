@@ -26,6 +26,7 @@ from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
 from deixis.documents import embeddings
+from deixis.documents import figures
 from deixis.documents import math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
@@ -214,6 +215,11 @@ class ExpectedVersion(BaseModel):
     expected_version: int
 
 
+class TemplateApply(BaseModel):
+    template_id: str = Field(max_length=40)
+    expected_version: int
+
+
 class TemplateCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     research_id: str = Field(max_length=40)
@@ -294,6 +300,7 @@ def create_app(
         db.migrate(conn)
         store = Store(conn)
         store.link_published_versions()  # preprints flagged beside their published record before D48
+        store.assign_source_keys()  # works stored before D59
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.USER_AGENT})
         adapter_map = adapters if adapters is not None else {
             "codex": CodexAdapter(codex_home=settings.codex_home, workspace=settings.data_dir / "codex-workspace"),
@@ -1035,8 +1042,47 @@ def create_app(
                          | {"equations_to_check": to_check.get(passage["physical_page"], 0) if passage["text_source"] == "marker" else 0}
                          for passage in passages],
             "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
-                                                "cited_by_count", "cited_by_count_at")},
+                                                "cited_by_count", "cited_by_count_at")}
+            | {"source_key": store.source_key(source["work_id"])},
         }
+
+    figure_cache: dict[str, list[dict[str, Any]]] = {}  # by PDF sha256; figures are found again after a restart (D58)
+
+    async def asset_figures(research_id: str, asset_id: str, request: Request) -> tuple[Path, list[dict[str, Any]]]:
+        store = store_of(request)
+        store.research(research_id)
+        asset = store.asset(asset_id)
+        if asset["removed_at"] is not None or not (store.is_active_member(research_id, asset["source_version_id"]) or (
+                store.was_member(research_id, asset["source_version_id"]) and store.research_cites_asset(research_id, asset_id))):
+            raise HTTPException(404, "Asset is not part of this research")
+        root = settings.papers_dir.resolve()
+        path = (root / asset["storage_path"]).resolve()
+        if not path.is_relative_to(root) or not path.exists():
+            raise HTTPException(404, "File missing")
+        if asset["sha256"] not in figure_cache:
+            try:
+                found = await asyncio.to_thread(figures.find_figures, path)
+            except Exception:  # noqa: BLE001 - a PDF MuPDF cannot read has no figures to show
+                found = []
+            if len(figure_cache) >= 64:
+                figure_cache.pop(next(iter(figure_cache)))
+            figure_cache[asset["sha256"]] = found
+        return path, figure_cache[asset["sha256"]]
+
+    @app.get("/api/researches/{research_id}/assets/{asset_id}/figures")
+    async def get_asset_figures(research_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+        _, found = await asset_figures(research_id, asset_id, request)
+        return {"figures": [{"page": f["page"], "label": f["label"], "width": round(f["bbox"][2] - f["bbox"][0]),
+                             "height": round(f["bbox"][3] - f["bbox"][1])} for f in found]}
+
+    @app.get("/api/researches/{research_id}/assets/{asset_id}/figures/{label}.png")
+    async def get_asset_figure(research_id: str, asset_id: str, label: str, request: Request) -> Response:
+        path, found = await asset_figures(research_id, asset_id, request)
+        figure = next((f for f in found if f["label"] == label), None)
+        if figure is None:
+            raise HTTPException(404, "Figure not found")
+        png = await asyncio.to_thread(figures.render_figure, path, figure["page"], figure["bbox"])
+        return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
     @app.delete("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}")
     async def remove_asset(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
@@ -1210,6 +1256,13 @@ def create_app(
         spec = body.model_dump(exclude={"expected_version", "suggestion_step_id"})
         tables.add_column(research_id, table_id, spec, body.expected_version, idempotency_key,
                           origin="model_suggestion" if body.suggestion_step_id else "user", suggestion_step_id=body.suggestion_step_id)
+        return tables.table_view(research_id, table_id)
+
+    @app.post(table_path + "/template-columns", status_code=201)
+    async def apply_table_template(research_id: str, table_id: str, body: TemplateApply, request: Request,
+                                   idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        tables = tables_of(request)
+        tables.apply_template(research_id, table_id, body.template_id, body.expected_version, idempotency_key)
         return tables.table_view(research_id, table_id)
 
     @app.post(table_path + "/column-suggestions", status_code=202)

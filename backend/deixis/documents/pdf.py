@@ -252,6 +252,9 @@ def chunk_page(text: str, limit: int = CHUNK_CHARS) -> list[tuple[int, int, str]
             cut = max(window.rfind("\n\n"), window.rfind(". "), window.rfind("\n"))
             if cut > limit // 3:
                 end = start + cut + 1
+            row = normalized.rfind("\n", start, end - 1) + 1  # a Markdown table row (D54) is cut before it, not inside it
+            if normalized.startswith("|", row) and normalized.find("\n", end - 1) != end - 1 and row - start > limit // 3:
+                end = row
         piece = normalized[start:end].strip()
         if piece:
             chunks.append((start, end, piece))

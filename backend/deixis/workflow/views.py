@@ -79,13 +79,14 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         claims = []
         for c in conn.execute("SELECT * FROM claims WHERE answer_id = ? ORDER BY ordinal", (a["id"],)):
             evidence = [
-                {"passage_id": e["passage_id"], "source_version_id": e["source_version_id"], "kind": e["kind"],
+                {"passage_id": e["passage_id"], "source_version_id": e["source_version_id"], "source_key": e["source_key"], "kind": e["kind"],
                  "physical_page": e["physical_page"], "printed_label": e["printed_label"],
                  "reading_depth": "abstract" if e["kind"] == "abstract" else "selected_sections", "title": e["title"],
                  "version_label": e["version_label"], "anchor_text": e["anchor_text"], "evidence_status": e["evidence_status"],
                  "text_source": e["text_source"], "removed_from_research": e["source_version_id"] in removed}
                 for e in conn.execute(
                     "SELECT l.passage_id, l.source_version_id, l.anchor_text, p.kind, p.physical_page, p.printed_label, p.text_source, s.title, s.version_label,"
+                    " (SELECT w.source_key FROM works w WHERE w.id = s.work_id) AS source_key,"
                     f" {EVIDENCE_STATUS_SQL} AS evidence_status FROM evidence_links l"
                     " JOIN passages p ON p.id = l.passage_id JOIN source_versions s ON s.id = l.source_version_id"
                     " LEFT JOIN source_assets a ON a.id = p.asset_id"
@@ -136,6 +137,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     sources = []
     for row in conn.execute(
         "SELECT m.added_by, m.created_at AS added_at, s.*, sel.state, sel.origin AS selection_origin, sel.version AS selection_version, sel.proposal,"
+        " (SELECT w.source_key FROM works w WHERE w.id = s.work_id) AS source_key,"
         " sel.proposal_reason, sel.proposal_basis, sel.user_reason, c.id AS candidate_id, c.rank, c.scope_revision AS found_in_revision,"
         " (SELECT ss.similarity FROM source_similarities ss WHERE ss.research_id = m.research_id AND ss.source_version_id = m.source_version_id"
         "  AND ss.scope_revision = c.scope_revision AND ss.model = ?) AS similarity"
@@ -180,7 +182,8 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             " ORDER BY discovered_at, rowid", (svid,)
         )]
         sources.append({
-            "source_version_id": svid, "work_id": row["work_id"], "title": row["title"], "authors": json.loads(row["authors_json"]),
+            "source_version_id": svid, "work_id": row["work_id"], "source_key": row["source_key"], "title": row["title"],
+            "authors": json.loads(row["authors_json"]),
             "year": row["year"], "venue": row["venue"], "volume": row["volume"], "issue": row["issue"],
             "pages": row["pages"], "doi": row["doi"], "landing_url": row["landing_url"],
             "version_label": row["version_label"], "publication_type": row["publication_type"], "origin": row["origin"],
@@ -330,7 +333,7 @@ def library_view(store: Store) -> dict[str, Any]:
         representative = max(versions, key=_library_representative_score)
         researches = sorted(work["researches"].values(), key=lambda r: r["updated_at"] or "", reverse=True)
         entries.append({
-            "work_id": work_id,
+            "work_id": work_id, "source_key": store.source_key(work_id),
             "title": representative["title"],
             "authors": representative["authors"],
             "year": representative["year"], "venue": representative["venue"],
@@ -426,7 +429,8 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
     titles = {row["source_version_id"]: row["title"] for row in rows}
     representative = max(versions, key=_library_representative_score)
     return {
-        "work_id": work_id, "title": titles[representative["source_version_id"]], "authors": representative["authors"],
+        "work_id": work_id, "source_key": store.source_key(work_id), "title": titles[representative["source_version_id"]],
+        "authors": representative["authors"],
         "year": representative["year"], "venue": representative["venue"], "doi": representative["doi"],
         "landing_url": representative["landing_url"], "publication_type": representative["publication_type"],
         "cited_by_count": max((v["cited_by_count"] for v in versions if v["cited_by_count"] is not None), default=None),
@@ -466,5 +470,6 @@ def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, A
         "evidence_status": store.evidence_statuses([passage_id])[passage_id],
         "removed_from_research": not store.is_active_member(research_id, passage["source_version_id"]),
         "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
-                                            "cited_by_count", "cited_by_count_at")},
+                                            "cited_by_count", "cited_by_count_at")}
+        | {"source_key": store.source_key(source["work_id"])},
     }

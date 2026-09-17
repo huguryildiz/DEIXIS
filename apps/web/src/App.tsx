@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Ban, CircleCheck, CirclePause, CircleX, ChevronDown, ChevronRight, Ellipsis, FlaskConical, Landmark, Library, LoaderCircle, Menu, MessageCirclePlus, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, ShieldAlert, Sun, Trash2, type LucideIcon } from 'lucide-react'
+import { Ban, CircleCheck, CirclePause, CircleX, ChevronDown, ChevronRight, Ellipsis, FlaskConical, Landmark, Library, LoaderCircle, Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, Settings2, ShieldAlert, Sun, Trash2, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, type InstitutionalAccess, type ResearchSummary, type RunStatus } from './api'
@@ -9,6 +9,7 @@ import { ResearchPage } from './ResearchView'
 import { SettingsPage } from './Settings'
 import { LibraryPage } from './LibraryPage'
 import { QuickFind } from './QuickFind'
+import { BackgroundJobs } from './BackgroundJobs'
 import { useToast } from './Toast'
 import { TrashPage } from './TrashPage'
 import { setUiLanguage, t, uiLanguage, uiLocale, type UiLanguage } from './i18n'
@@ -213,7 +214,7 @@ export default function App() {
         <button className="brand" aria-label={t('DEIXIS home')} onClick={() => go({ view: 'home' })}><span className="brand-mark" aria-hidden="true" /><span className="sidebar-label">DEIXIS</span></button>
         <Button variant="ghost" size="icon" className="sidebar-toggle" onClick={toggleCollapsed} aria-label={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')} title={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}>{collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</Button>
       </div>
-      <Button className="new-button" variant="outline" onClick={() => go({ view: 'home' })} title={t('New research')}><Plus size={16} /><span className="sidebar-label">{t('New research')}</span></Button>
+      <button type="button" className="sidebar-find" onClick={() => setFindOpen(true)} aria-label={t('Quick find')} aria-keyshortcuts="Meta+K Control+K" title={t('Quick find')}><Search size={16} /><span className="sidebar-label sidebar-find-label">{t('Search')}</span><kbd className="sidebar-label">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd></button>
       <nav aria-label={t('Main navigation')}>
         <button className={route.view === 'home' || route.view === 'research' ? 'selected' : ''} onClick={() => go({ view: 'home' })} title={t('Research')}><FlaskConical size={17} /> <span className="sidebar-label">{t('Research')}</span></button>
         <button className={route.view === 'library' ? 'selected' : ''} onClick={() => go({ view: 'library' })} title={t('Library')}><Library size={17} /> <span className="sidebar-label">{t('Library')}</span></button>
@@ -222,8 +223,6 @@ export default function App() {
       </nav>
       <div className="recents-label">
         <button type="button" className="recents-toggle" aria-expanded={recentsOpen} aria-controls="recent-list" onClick={toggleRecents}>{t('Recent research')}<ChevronDown size={15} aria-hidden="true" /></button>
-        <Button variant="ghost" size="icon-sm" className="recents-action" onClick={() => go({ view: 'home' })} aria-label={t('Start new research')} title={t('New research')}><MessageCirclePlus size={17} /></Button>
-        <Button variant="ghost" size="icon-sm" className="recents-action" onClick={() => go({ view: 'trash' })} aria-label={t('Open Trash')} title={t('Trash')}><Trash2 size={17} /></Button>
       </div>
       <div id="recent-list" className="recent-list" hidden={!recentsOpen}>
         {listError && <p>{t('Local service unavailable: {error}', { error: listError })}</p>}
@@ -238,6 +237,7 @@ export default function App() {
       </div>
       {actionMessage && route.view !== 'trash' && <p className="sidebar-action-message" role="status">{actionMessage}</p>}
       <div className="sidebar-divider" aria-hidden="true" />
+      <BackgroundJobs researches={researches} collapsed={collapsed} dark={dark} onOpenResearch={id => go({ view: 'research', id })} />
       <div className="access-status">
         <span className={`access-chip ${institutionalStatus === 'institutional' ? '' : institutionalStatus === 'none' ? 'is-unavailable' : 'is-uncertain'}`} title={t(institutionalStatus === 'institutional' ? 'Scopus recognizes this network as institutional (campus network or university VPN). Updates when the network changes.' : institutionalStatus === 'none' ? 'University VPN or campus network is not detected. Turn it on to access institutional Scopus coverage.' : 'Institutional access status is not available yet. DEIXIS will check again when the network changes.')}>
           {institutionalStatus === 'institutional' ? <Landmark size={13} aria-hidden="true" /> : <ShieldAlert size={13} aria-hidden="true" />}
@@ -250,8 +250,7 @@ export default function App() {
     <div className="main-shell">
       <header>
         <div className="breadcrumb"><Button variant="ghost" size="icon" className="mobile-menu" aria-label={t('Open navigation')} onClick={() => setSidebar(true)}><Menu /></Button><span>{t('Workspace')}</span><ChevronRight size={13} /><strong>{crumb}</strong></div>
-        <div className="header-actions"><Button variant="ghost" size="sm" className="find-button" onClick={() => setFindOpen(true)} aria-label={t('Quick find')} aria-keyshortcuts="Meta+K Control+K"><Search size={16} /><span>{t('Find')}</span><kbd>{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd></Button>
-          <div className="language-switch" role="group" aria-label={t('Interface language')}>
+        <div className="header-actions"><div className="language-switch" role="group" aria-label={t('Interface language')}>
             <button type="button" lang="tr" aria-label="Türkçe" aria-pressed={language === 'tr'} onClick={() => chooseLanguage('tr')}>TR</button>
             <span aria-hidden="true">/</span>
             <button type="button" lang="en" aria-label="English" aria-pressed={language === 'en'} onClick={() => chooseLanguage('en')}>EN</button>

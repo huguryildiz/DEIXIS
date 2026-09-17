@@ -4,12 +4,14 @@ Started by the Playwright acceptance run (apps/web/e2e) for cases A–G. Every r
 application behavior in a browser; it does not measure model quality or live provider access.
 
 Question markers select failure scripts: "[rate-limit]" (OpenAlex 429), "[model-down]" (the first screening call
-fails before sending), "[invent-locator]" (every answer draft asserts a page and an equation).
+fails before sending), "[invent-locator]" (every answer draft asserts a page and an equation), "[slow-cells]" (each cell
+extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs).
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -95,6 +97,8 @@ class ScriptedCodex:
         if "[model-down]" in question and task == "screening" and si["research_id"] not in self.failed_once:
             self.failed_once.add(si["research_id"])
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
+        if "[slow-cells]" in question and task == "cell_extraction":
+            await asyncio.sleep(1.5)
         return ModelStepResult("completed", raw_text=json.dumps(self.respond(si, question)), resolved_model=requested_model)
 
     def respond(self, si: dict[str, Any], question: str) -> dict[str, Any]:

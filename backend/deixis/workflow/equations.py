@@ -32,7 +32,7 @@ RETRY_AFTER = timedelta(minutes=10)
 INSTALL_TIMEOUT_SECONDS = 60 * 60  # the models are about 3.3 GB
 OUTPUT_TAIL_CHARS = 4000
 OCR_SUFFIX = re.compile(r"\+ocr-.+?-v\d+(?=\+marker-|$)")
-# The PDF Marker is reading now, for views: {"asset_id", "pages", "started_at"}. One reader serves the process.
+# The PDF Marker is reading now, for views: {"asset_id", "title", "pages", "started_at"}. One reader serves the process.
 reading: dict[str, Any] | None = None
 
 
@@ -83,14 +83,30 @@ class EquationService:
         self.job: dict[str, Any] | None = None  # the install job shown in Settings
         self._install: asyncio.Task | None = None
         self._install_proc: asyncio.subprocess.Process | None = None
+        self._waiting = 0  # runs and requests waiting for a read; the background reader gives way to them
+        self._background_reading = False
+        self._preempted = False
 
     def available(self) -> bool:
         return self.reader.available()
 
-    async def read_asset(self, asset_id: str, run_id: str | None = None, retry: bool = False) -> dict[str, Any]:
+    async def read_asset(self, asset_id: str, run_id: str | None = None, retry: bool = False, background: bool = False) -> dict[str, Any]:
         """Read one PDF's equations and apply them; returns its state. One PDF is read at a time; a caller waits for the
         PDF being read, then finds its own already read if that was the same one. A failed read is read again when asked
-        (`retry`) or while it has attempts left. RunInProgress and MathReaderUnavailable propagate."""
+        (`retry`) or while it has attempts left. A run or request stops a background read of another PDF, which stays
+        pending and is read later. RunInProgress and MathReaderUnavailable propagate."""
+        if background:
+            return await self._read(asset_id, run_id, retry, background)
+        self._waiting += 1
+        try:
+            if self._background_reading and not (reading and reading["asset_id"] == asset_id):
+                self._preempted = True
+                await self.reader.close()
+            return await self._read(asset_id, run_id, retry, background)
+        finally:
+            self._waiting -= 1
+
+    async def _read(self, asset_id: str, run_id: str | None, retry: bool, background: bool) -> dict[str, Any]:
         global reading
         async with self._lock:
             state = equation_state(self.store, asset_id)
@@ -111,19 +127,23 @@ class EquationService:
                                                   if n not in {p.physical_page for p in base.pages}], key=lambda p: p.physical_page)
                 base.status = "succeeded" if len(base.pages) == base.page_count else "partial"
             base.extraction_version = version.removesuffix("+" + math_reader.MATH_VERSION)
-            selected = sorted(set(await asyncio.to_thread(math_reader.math_pages, path)) | {number - 1 for number in ocr_pages})
+            selected = sorted(set(await asyncio.to_thread(math_reader.math_pages, path)) | set(await asyncio.to_thread(math_reader.table_pages, path))
+                              | {number - 1 for number in ocr_pages})
             self._forget_failure(asset_id, version)
             if not selected:
                 self._record_without_passages(asset, version, NO_MATH, attempts + 1)
                 return equation_state(self.store, asset_id)
-            reading = {"asset_id": asset_id, "pages": len(selected), "started_at": now()}
+            title = self.store.conn.execute("SELECT title FROM source_versions WHERE id = ?", (asset["source_version_id"],)).fetchone()
+            reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": len(selected), "started_at": now()}
+            self._background_reading, self._preempted = background, False
             try:
                 read = await self.reader.read(path, selected)
             except RuntimeError as exc:
                 read = None
-                self._record_without_passages(asset, version, f"equation reading failed: {exc}"[:400], attempts + 1)
+                if not (background and self._preempted):  # a stopped background read is not a failure
+                    self._record_without_passages(asset, version, f"equation reading failed: {exc}"[:400], attempts + 1)
             finally:
-                reading = None
+                reading, self._background_reading, self._preempted = None, False, False
             if read is None:
                 return equation_state(self.store, asset_id)
             # OCR pages have no text layer to check an equation against.
@@ -183,11 +203,11 @@ class EquationService:
         retry_before = (datetime.now(timezone.utc) - RETRY_AFTER).isoformat(timespec="milliseconds")
         for row in self.store.conn.execute(
             "SELECT a.id FROM source_assets a WHERE a.removed_at IS NULL AND a.extraction_status IN ('succeeded', 'partial')"
-            " AND IFNULL(a.extraction_version, '') NOT LIKE '%+marker-%'"
+            " AND IFNULL(a.extraction_version, '') NOT LIKE ?"
             " AND NOT EXISTS (SELECT 1 FROM corpus_memberships m JOIN runs r ON r.research_id = m.research_id"
             "  WHERE m.source_version_id = a.source_version_id AND r.status IN ('queued', 'running', 'pause_requested'))"
             " ORDER BY EXISTS (SELECT 1 FROM selections s WHERE s.source_version_id = a.source_version_id AND s.state = 'included') DESC,"
-            " a.retrieved_at DESC"
+            " a.retrieved_at DESC", ("%+" + math_reader.MATH_VERSION,)
         ):
             state = equation_state(self.store, row[0])
             if state["state"] == "pending" or (state["state"] == "failed" and state["attempts"] < MAX_ATTEMPTS and state["at"] < retry_before):
@@ -196,12 +216,15 @@ class EquationService:
 
     async def run_forever(self) -> None:
         while True:
+            if self._waiting:
+                await asyncio.sleep(1)  # a run or request goes first
+                continue
             asset_id = self.next_asset() if self.available() and not self.installing() else None
             if asset_id is None:
                 await asyncio.sleep(RETRY_SECONDS)
                 continue
             try:
-                await self.read_asset(asset_id)
+                await self.read_asset(asset_id, background=True)
             except RunInProgress:
                 await asyncio.sleep(RETRY_SECONDS)  # applied after the run that uses the source ends
             except math_reader.MathReaderUnavailable as exc:

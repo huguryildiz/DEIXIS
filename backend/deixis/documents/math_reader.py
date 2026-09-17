@@ -3,7 +3,7 @@
 Marker (GPL-3.0 code, modified OpenRAIL-M model weights) lives in its own Python environment under the data directory,
 `tools/marker`, with its models in `tools/marker-models`; DEIXIS never imports it. `install_runtime` creates that
 environment with uv. `MathReader` keeps one long-lived `marker_runner.py` process, sends it one PDF at a time and shuts
-it down when idle. Only pages that look mathematical are read (`math_pages`); their Markdown, with math as `$...$` and
+it down when idle. Only pages that look mathematical (`math_pages`) or carry a table caption (`table_pages`, D54) are read; their Markdown, with math as `$...$` and
 `$$...$$` LaTeX, replaces the text-layer page text, and other pages keep it.
 
 Measured on one M1 Pro with another process using a CPU core (2026-09-16): 9.2 s to load the models, then 10 pages in
@@ -51,9 +51,13 @@ MATH_SYMBOL = re.compile(r"[∑∏∫√≤≥∈∉∀∃∂∇±×÷≠≈∞�
 # page where Marker found a display equation scored at least 94 math-font characters or 13 symbols (2026-09-16).
 MATH_FONT_CHARS = 60
 MATH_SYMBOLS = 12
+# A table caption opening a line: "TABLE 1 | …" (Frontiers), "TABLE I" (IEEE), "Table 2. …" (Elsevier, Springer). A sentence
+# that starts with "Table 1 shows" does not match. Marker writes the table as a Markdown table (D54).
+TABLE_CAPTION = re.compile(r"^(?:TABLE|Table)\s+(?:[IVXL]+|[A-Z]?\d{1,3})\s*(?:$|[.:|—–-])", re.M)
 
-
-MATH_VERSION = f"marker-{MARKER_PACKAGE.split('==')[1]}-math-v1"  # appended to the text layer's extraction version
+# Appended to the text layer's extraction version. v2 also reads pages with a table caption and keeps Marker's tables as
+# one-line Markdown rows (D54).
+MATH_VERSION = f"marker-{MARKER_PACKAGE.split('==')[1]}-math-v2"
 
 
 def target_version(base_version: str) -> str:
@@ -190,12 +194,27 @@ def math_pages(path: Path) -> list[int]:
     return found
 
 
+def table_pages(path: Path) -> list[int]:
+    """0-based indices of pages with a table caption in their text layer."""
+    with pymupdf.open(path, filetype="pdf") as doc:
+        return [index for index, page in enumerate(doc) if TABLE_CAPTION.search(page.get_text())]
+
+
+def _table_row(line: str) -> str:
+    """A Markdown table row on one line with its cell padding removed; a separator row becomes |---|."""
+    cells = [re.sub(r"\s*<br\s*/?>\s*", " ", cell).strip() for cell in line.strip().strip("|").split("|")]
+    if all(re.fullmatch(r":?-+:?", cell) for cell in cells):
+        cells = ["---"] * len(cells)
+    return "| " + " | ".join(cells) + " |"
+
+
 def clean_markdown(markdown: str) -> str:
     """Marker Markdown as passage text: math and paragraphs kept, layout markup removed."""
     text = re.sub(r"<span id=\"[^\"]*\"></span>", "", markdown)
     text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)  # image references; images are not extracted
     text = re.sub(r"<sup>(.*?)</sup>", r"$^{\1}$", text)
     text = re.sub(r"<sub>(.*?)</sub>", r"$_{\1}$", text)
+    text = re.sub(r"^\|.*\|[ \t]*$", lambda m: _table_row(m.group(0)), text, flags=re.M)
     text = re.sub(r"^#{1,6}\s+", "", text, flags=re.M)  # headings become plain paragraphs, as in the text layer
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
     text = re.sub(r"(?<![\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\w*])", r"\1", text)

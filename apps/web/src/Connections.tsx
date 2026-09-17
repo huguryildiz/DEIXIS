@@ -157,6 +157,52 @@ function LocalToolDetails({ tool, dark, onChanged }: { tool: LocalTool; dark: bo
 
 const installSteps = ['Creating its Python environment…', 'Installing Marker…', 'Downloading its models (about 3.3 GB)…']
 
+function elapsedText(since: string, now: number) {
+  const seconds = Math.max(0, Math.round((now - Date.parse(since)) / 1000))
+  const minutes = Math.floor(seconds / 60)
+  return minutes ? t('{m} min {s} s', { m: minutes, s: seconds % 60 }) : t('{s} s', { s: seconds })
+}
+
+// The library's PDFs by reading state and the PDF Marker is reading now. Marker reports no page progress, so only the
+// time since the read started is shown.
+export function ReaderProgress({ reader }: { reader: EquationReader }) {
+  const [now, setNow] = useState(() => Date.now())
+  const reading = reader.reading
+  useEffect(() => {
+    if (!reading) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [reading])
+  const read = reader.pdfs.read ?? 0, none = reader.pdfs.no_math ?? 0, failed = reader.pdfs.failed ?? 0
+  const pending = (reader.pdfs.pending ?? 0) + (reader.pdfs.reading ?? 0)
+  const total = read + none + failed + pending
+  const share = (n: number) => `${total ? (100 * n) / total : 0}%`
+  const done = total ? Math.round((100 * (read + none + failed)) / total) : 0
+  const legend: [string, number, string][] = [['Read', read, 'is-read'], ['Waiting', pending, 'is-pending'], ['No equations or tables', none, 'is-none'], ['Failed', failed, 'is-failed']]
+  return <div className="reader-progress">
+    <section className="reader-progress-card" aria-label={t('PDFs in the library')}>
+      <div className="reader-progress-head"><span>{t('PDFs in the library')}</span><span>{done}%</span></div>
+      <p className="reader-progress-total"><b>{read}</b>{t('/ {total} PDFs read', { total })}</p>
+      <div className="reader-progress-bar" role="img" aria-label={t('{read} read · {pending} waiting · {none} without equations or tables · {failed} failed', { read, pending, none, failed })}>
+        {read > 0 && <span className="is-read" style={{ width: share(read) }} />}
+        {none > 0 && <span className="is-none" style={{ width: share(none) }} />}
+        {failed > 0 && <span className="is-failed" style={{ width: share(failed) }} />}
+        {reading && <span className="is-reading" style={{ width: share(1) }} />}
+      </div>
+      <ul className="reader-progress-legend">{legend.map(([label, n, tone]) => <li key={label} className={tone}><i aria-hidden />{t(label)}<b>{n}</b></li>)}</ul>
+    </section>
+    {reading && <div className="reader-progress-now">
+      <LoaderCircle size={16} className="chat-spin" aria-hidden />
+      <div>
+        <span className="reader-progress-kicker">{t('Reading now')}</span>
+        {reading.title && <p className="reader-progress-title">{reading.title}</p>}
+        <span className="reader-progress-meta">{t('{n} pages · for {time}', { n: reading.pages, time: elapsedText(reading.started_at, now) })}</span>
+      </div>
+    </div>}
+    {pending > 0 && <p className="local-tool-note">{t('Waiting PDFs are read in the background. An answer or table starts once the PDFs it uses are read.')}</p>}
+  </div>
+}
+
 function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationReader; dark: boolean; onChanged: () => Promise<void> }) {
   const [confirm, setConfirm] = useState<'install' | 'remove' | null>(null)
   const [busy, setBusy] = useState(false)
@@ -164,7 +210,6 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
   const job = reader.job
   const running = job?.status === 'running'
   const ready = reader.installed && reader.models_downloaded
-  const counts = reader.pdfs
   function run(action: () => Promise<unknown>) {
     setBusy(true)
     action().then(() => { setConfirm(null); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
@@ -174,12 +219,11 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
     <p className="local-tool-note">{t('Marker reads PDF pages with mathematics from the page image and writes their equations as LaTeX, so answers and table cells read the equations instead of broken PDF text. It runs on this computer; no file leaves it. Answers and cells wait until the equations of the PDFs they read are read.')}</p>
     <p className="local-tool-note">{t('About one Marker equation in fifty was misread in a test on three papers, and a misread equation looks correct. Equations that do not match the PDF’s own text are marked to check against the page.')}</p>
     <dl className="local-tool-facts">
-      <dt>{t('Package')}</dt><dd>{reader.package}</dd>
+      <dt>{t('Package')}</dt><dd><code className="local-tool-code">{reader.package}</code></dd>
       {reader.size_bytes > 0 && <><dt>{t('Size on disk')}</dt><dd>{formatBytes(reader.size_bytes)}</dd></>}
       {!ready && <><dt>{t('Needs')}</dt><dd>{t('About 4.4 GB of disk · {gb} GB free', { gb: reader.disk_free_gb })}</dd></>}
-      {reader.installed && <><dt>{t('PDFs')}</dt><dd>{t('{read} read · {pending} waiting · {none} without equations · {failed} failed', { read: counts.read ?? 0, pending: (counts.pending ?? 0) + (counts.reading ?? 0), none: counts.no_math ?? 0, failed: counts.failed ?? 0 })}</dd></>}
     </dl>
-    {reader.reading && <p className="local-tool-note local-tool-progress-head"><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Reading the equations of a PDF · {n} pages', { n: reader.reading.pages })}</p>}
+    {reader.installed && <ReaderProgress reader={reader} />}
     {!ready && !running && (reader.install.available
       ? <div className="actions"><Button variant="outline" size="sm" onClick={() => setConfirm('install')}>{t('Install')}</Button></div>
       : <p className="local-tool-note">{reader.install.unavailable_reason}<br /><a href={reader.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
@@ -193,7 +237,7 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
       {job.output && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{job.output}</pre></details>}
       {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={() => run(api.cancelEquationReaderInstall)} disabled={busy}>{t('Cancel installation')}</Button></div>}
     </>}
-    {reader.installed && !running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={() => setConfirm('remove')} disabled={busy || !!reader.reading}>{t('Remove')}</Button></div>}
+    {reader.installed && !running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={() => setConfirm('remove')} disabled={busy || !!reader.reading} title={reader.reading ? t('It cannot be removed while a PDF is being read') : undefined}>{t('Remove')}</Button></div>}
     <ConfirmDialog open={confirm === 'install'} dark={dark} title={t('Install the equation reader?')} description={t('This downloads Marker and its models, about 4.4 GB, into the DEIXIS data folder. It can take several minutes. Marker’s code is GPL-3.0 and its models have their own license. Afterwards the stored PDFs are read in the background; that can take hours for a large library.')} context={reader.path} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.installEquationReader)} onOpenChange={open => setConfirm(open ? 'install' : null)} />
     <ConfirmDialog open={confirm === 'remove'} dark={dark} title={t('Remove the equation reader?')} description={t('Marker and its models are deleted. Equations already read stay in the stored text; new PDFs are no longer read.')} confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.removeEquationReader)} onOpenChange={open => setConfirm(open ? 'remove' : null)} />
   </div>

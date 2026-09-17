@@ -11,7 +11,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from deixis.documents import marker_runner, math_reader
+from deixis.documents import marker_runner, math_reader, pdf
 
 FAKE_RUNNER = '''
 import json, os, sys
@@ -106,3 +106,28 @@ def test_an_equation_with_a_letter_the_text_layer_lacks_is_marked_to_check(tmp_p
     marked = math_reader.check_equations(path, equations)
     assert [m["latex"] for m in marked] == [e["latex"] for e in equations[0][1:]] and {m["page"] for m in marked} == {1}
     assert math_reader.latex_letters("\\alpha_{i} + \\operatorname{Var}(\\mu)") == math_reader.latex_letters("α i Var µ")
+
+
+def test_table_pages_select_pages_with_a_table_caption(tmp_path):
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 100), "SYNTHETIC prose.\nTable 1 shows the results in words.", fontsize=10)
+    doc.new_page().insert_text((72, 100), "SYNTHETIC page\nTABLE 1 | Strains and outcomes.", fontsize=10)
+    doc.new_page().insert_text((72, 100), "TABLE IV\nSYNTHETIC SIMULATION PARAMETERS", fontsize=10)
+    path = tmp_path / "tables.pdf"
+    doc.save(path)
+    assert math_reader.table_pages(path) == [1, 2]
+
+
+def test_markdown_tables_keep_one_line_per_row():
+    markdown = ("TABLE 1 | SYNTHETIC outcomes.\n\n| Strain<br>tested | Observations    |\n|--------------|:---------------:|\n"
+                "| B. **lactis** X1 | Lower TNF-α<br>secretion |")
+    assert math_reader.clean_markdown(markdown) == (
+        "TABLE 1 | SYNTHETIC outcomes.\n\n| Strain tested | Observations |\n| --- | --- |\n| B. lactis X1 | Lower TNF-α secretion |")
+
+
+def test_page_chunks_do_not_cut_a_table_row():
+    rows = "\n".join(f"| SYNTHETIC strain {i} | Observation number {i} with some words. More words here | Ref {i} |" for i in range(40))
+    for limit in range(300, 400, 7):  # wherever the length limit falls within a row
+        chunks = pdf.chunk_page("TABLE 1 | Caption.\n\n" + rows, limit=limit)
+        lines = [line for _, _, piece in chunks for line in piece.split("\n") if line]
+        assert len(chunks) > 1 and lines[0] == "TABLE 1 | Caption." and all(line.startswith("| ") and line.endswith(" |") for line in lines[1:])

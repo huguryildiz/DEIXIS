@@ -16,6 +16,7 @@ from typing import Any
 
 from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
+from deixis.workflow.source_keys import key_stem, suffixes
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
 # What became of a passage's file since the passage was stored (D45), over `passages p LEFT JOIN source_assets a`.
@@ -275,6 +276,7 @@ class Store:
         rows = self.conn.execute(
             "SELECT r.*, s.question, s.source_scope, s.effort,"
             " (SELECT status FROM runs WHERE research_id = r.id ORDER BY created_at DESC LIMIT 1) AS last_run_status,"
+            " (SELECT kind FROM runs WHERE research_id = r.id ORDER BY created_at DESC LIMIT 1) AS last_run_kind,"
             " (SELECT COUNT(*) FROM answers WHERE research_id = r.id AND status = 'structurally_valid') AS answer_count"
             " FROM researches r JOIN scope_revisions s ON s.research_id = r.id AND s.revision = r.current_scope_revision"
             " WHERE r.trashed_at IS NULL"
@@ -605,6 +607,8 @@ class Store:
         self._insert_mappings(svid, provider, record, ts)
         if record.abstract:
             self._insert_passage(svid, None, "abstract", None, None, record.abstract_origin, payload_path, None, record.abstract)
+        if not same_preprint:
+            self._assign_source_key(wid)
         return svid, wid
 
     def enrich_source(self, provider: str, svid: str, record: Any) -> None:
@@ -625,6 +629,8 @@ class Store:
                 " VALUES (?, ?, ?, ?, ?)",
                 (svid, provider, record.provider_record_id, provider, ts),
             )
+            # A key taken from the title gives way to the author an enrichment brings; an author key is never changed (D59).
+            self._assign_source_key(self.source(svid)["work_id"], replace_title_key=True)
 
     def _insert_mappings(self, svid: str, provider: str, record: Any, ts: str) -> None:
         mappings = [(provider, record.provider_record_id)]
@@ -646,7 +652,38 @@ class Store:
                 "INSERT INTO source_versions (id, work_id, title, origin, version_label, created_at) VALUES (?, ?, ?, 'user_upload', 'uploaded file', ?)",
                 (svid, wid, title, ts),
             )
+            self._assign_source_key(wid)
         return svid
+
+    def _assign_source_key(self, work_id: str, replace_title_key: bool = False) -> None:
+        """Give a work its short author–year key (D59): from its published record's authors when it has one, else from
+        another version's authors, else from the title. A key is kept once given; only a title key may be replaced."""
+        if not any(col[1] == "source_key" for col in self.conn.execute("PRAGMA table_info(works)")):
+            return  # a library opened at a schema before migration 33, as the migration tests do
+        work = self.conn.execute("SELECT source_key, source_key_basis FROM works WHERE id = ?", (work_id,)).fetchone()
+        if work is None or (work["source_key"] and not (replace_title_key and work["source_key_basis"] == "title")):
+            return
+        versions = [self.source(r[0]) for r in self.conn.execute(
+            "SELECT id FROM source_versions WHERE work_id = ? ORDER BY created_at, id", (work_id,))]
+        if not versions:
+            return
+        best = min(versions, key=lambda v: (not v["authors"], not is_published(v), v["year"] is None))
+        stem, basis = key_stem(best["authors"], best["title"], best["year"] or next((v["year"] for v in versions if v["year"]), None))
+        if work["source_key"] and basis == "title":
+            return
+        for suffix in suffixes():
+            key = f"{stem}{suffix}"
+            if not self.conn.execute("SELECT 1 FROM works WHERE source_key = ? COLLATE NOCASE AND id != ?", (key, work_id)).fetchone():
+                self.conn.execute("UPDATE works SET source_key = ?, source_key_basis = ? WHERE id = ?", (key, basis, work_id))
+                return
+
+    def assign_source_keys(self) -> int:
+        """Key every work stored without one, oldest first; returns how many were keyed."""
+        with transaction(self.conn):
+            missing = [r[0] for r in self.conn.execute("SELECT id FROM works WHERE source_key IS NULL ORDER BY created_at, id")]
+            for work_id in missing:
+                self._assign_source_key(work_id)
+        return len(missing)
 
     def _insert_passage(self, svid: str, asset_id: str | None, kind: str, page: int | None, label: str | None,
                         abstract_origin: str | None, payload_ref: str | None, extraction_version: str | None, text: str,
@@ -908,6 +945,10 @@ class Store:
             self.conn.execute(f"UPDATE researches SET updated_at = ?{', selection_revision = selection_revision + 1' if included else ''}"
                               " WHERE id = ?", (ts, research_id))
             self._event(research_id, "asset_restored", {"source_version_id": svid, "asset_id": asset_id})
+
+    def source_key(self, work_id: str) -> str | None:
+        row = self.conn.execute("SELECT source_key FROM works WHERE id = ?", (work_id,)).fetchone()
+        return row[0] if row else None
 
     def source(self, svid: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT * FROM source_versions WHERE id = ?", (svid,)).fetchone()

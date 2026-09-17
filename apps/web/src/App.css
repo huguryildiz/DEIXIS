@@ -212,7 +212,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
   .app.sidebar-collapsed .brand{padding:0}
   .app.sidebar-collapsed .sidebar-toggle{margin-left:0}
   .app.sidebar-collapsed .sidebar-label,.app.sidebar-collapsed .recents-label,.app.sidebar-collapsed .recent-list{display:none}
-  .app.sidebar-collapsed .new-button{justify-content:center;padding:0;margin-top:22px}
+  .app.sidebar-collapsed .sidebar-find{justify-content:center;padding:0}
   .app.sidebar-collapsed .sidebar nav button{justify-content:center;padding:10px 0}
   /* Drag-resizable width; the drawer on phones keeps its fixed width. */
   .app.sidebar-resized:not(.sidebar-collapsed) .sidebar{width:var(--sidebar-width)}
@@ -227,7 +227,6 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 
 /* shadcn buttons hover to bg-muted, but .app redefines --muted as a text grey; use the surface token. */
 .app [data-slot=button][class~="hover:bg-muted"]:hover,.app [data-slot=button][class~="hover:bg-muted"][aria-expanded=true]{background:var(--hover-surface);color:var(--ink)}
-.app .find-button:hover kbd{color:var(--ink);border-color:var(--strong-line)}
 
 /* Keep the first workspace view aligned directly below the shared header. */
 .main-shell main > :first-child{margin-top:0}

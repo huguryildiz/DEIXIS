@@ -9,40 +9,9 @@ import { PassageMathText } from './PassageMathText'
 import { ConnectionIcon } from './connectionIcons'
 import { PdfViewer } from './PdfViewer'
 import { OCR_LABEL } from './ocr'
-
-function readablePassageText(kind: Passage['kind'], text: string) {
-  // Keep paragraph breaks, but undo the single line breaks introduced by PDF layout extraction.
-  return kind === 'pdf_page' ? text.replace(/(?<!\n)\n(?!\n)/g, ' ') : text
-}
-
-// Reading aids for extracted PDF text (D47): section headings stand out and author affiliation notes are folded away.
-const SECTION_HEADING = /^(?:(?:[IVXL]+|\d+(?:\.\d+)*|[A-H])\.?\s+[A-Z][^.]{1,76}|Abstract|References|Acknowledge?ments?|Appendix)$/
-const AUTHOR_NOTE = /\b(?:is|are) with the\b|\be-?mail:|^Corresponding author|^Manuscript received|^This work was (?:supported|funded)/i
-
-function pagesOf(passages: AssetText['passages']) {
-  const pages: AssetText['passages'][] = []
-  for (const item of passages) {
-    const last = pages[pages.length - 1]
-    if (last && last[0].physical_page === item.physical_page) last.push(item)
-    else pages.push([item])
-  }
-  return pages
-}
-
-function PdfPageText({ passages, showNotes }: { passages: AssetText['passages']; showNotes: boolean }) {
-  // Passages are cut at a fixed length; a cut that did not end a sentence, or one inside a reference entry, continues the paragraph.
-  const text = passages.map(item => readablePassageText(item.kind, item.text)).reduce((all, next) => {
-    const last = all.slice(all.lastIndexOf('\n\n') + 1).trim()
-    const continues = !/[.:?!)]$/.test(last) || (/^\[\d{1,4}\]\s/.test(last) && !/^\[\d{1,4}\]\s/.test(next))
-    return !all ? next : continues ? `${all} ${next}` : `${all}\n\n${next}`
-  }, '')
-  const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
-  return <>{paragraphs.map((paragraph, index) => SECTION_HEADING.test(paragraph)
-    ? <h5 key={index} className="pdf-text-heading">{paragraph}</h5>
-    : AUTHOR_NOTE.test(paragraph)
-      ? showNotes && <p key={index} className="passage-text pdf-text-note"><PassageMathText text={paragraph} /></p>
-      : <p key={index} className="passage-text"><PassageMathText text={paragraph} /></p>)}</>
-}
+import { SourceKey } from './SourceKey'
+import { PdfTextDocument } from './PdfTextDocument'
+import { AUTHOR_NOTE, readablePassageText } from './pdfText'
 
 // Marks every located anchor; overlapping anchors are merged into one mark, and the first mark is scrolled into view.
 function HighlightedPassageText({ passage, highlightTexts }: { passage: Passage; highlightTexts: string[] }) {
@@ -78,7 +47,8 @@ function HighlightedPassageText({ passage, highlightTexts }: { passage: Passage;
 // A passage also reports this itself (evidence_status, D45), as it does a replaced file or an earlier text extraction.
 // sources: the research's source rows; the one matching the opened source adds its screening state, similarity and citation.
 // onRestoreSource: offered when the passage's source was removed from this research (D50).
-export function PassageSheet({ researchId, passageId, assetId = null, initialView = 'text', highlightText, highlightTexts, expectHighlight = false, pdfRemoved = false, sources, dark, onClose, onRestoreSource }: { researchId: string; passageId: string | null; assetId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void }) {
+// sourceVersionId: open a source rather than a passage (one of `sources`): its PDF text, else its abstract, else its details alone.
+export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', highlightText, highlightTexts, expectHighlight = false, pdfRemoved = false, sources, dark, onClose, onRestoreSource }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [assetText, setAssetText] = useState<AssetText | null>(null)
   const [error, setError] = useState('')
@@ -86,23 +56,27 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
   const [allAuthors, setAllAuthors] = useState(false)
   const [showNotes, setShowNotes] = useState(false)
   const [viewMode, setViewMode] = useState<'text' | 'pdf'>(initialView)
+  const opened = sourceVersionId ? sources?.find(s => s.source_version_id === sourceVersionId) : undefined
+  const openAssetId = assetId ?? ((!passageId && opened?.access.assets[0]?.id) || null)
+  const openPassageId = passageId ?? ((!openAssetId && opened?.access.abstract_passage_id) || null)
+  const detailsOnly = Boolean(opened && !openPassageId && !openAssetId)
 
   useEffect(() => {
-    if (!passageId && !assetId) return
-    let cancelled = false
     setPassage(null)
     setAssetText(null)
     setError('')
     setAllAuthors(false)
     setViewMode(initialView)
-    const request = passageId
-      ? api.passage(researchId, passageId).then(p => { if (!cancelled) setPassage(p) })
-      : api.assetText(researchId, assetId!).then(value => { if (!cancelled) setAssetText(value) })
+    if (!openPassageId && !openAssetId) return
+    let cancelled = false
+    const request = openPassageId
+      ? api.passage(researchId, openPassageId).then(p => { if (!cancelled) setPassage(p) })
+      : api.assetText(researchId, openAssetId!).then(value => { if (!cancelled) setAssetText(value) })
     request.catch((e: Error) => { if (!cancelled) setError(e.message) })
     return () => { cancelled = true }
-  }, [researchId, passageId, assetId, initialView])
+  }, [researchId, openPassageId, openAssetId, initialView])
 
-  const source = passage?.source ?? assetText?.source
+  const source = passage?.source ?? assetText?.source ?? (detailsOnly && opened ? { ...opened, id: opened.source_version_id } : undefined)
   const abstract = passage?.kind === 'abstract'
   const highlights = highlightTexts ?? (highlightText ? [highlightText] : [])
   const highlightAvailable = Boolean(passage && highlights.length && highlights.every(text => passage.text.includes(text)))
@@ -111,22 +85,22 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
   const pdfAssetId = removed ? null : passage?.asset_id ?? assetText?.asset.id ?? null
   const row = source ? sources?.find(s => s.source_version_id === source.id) : undefined
   const selectionText = { included: 'Included', excluded: 'Excluded', pending: 'Undecided' } as const
-  return <Sheet open={passageId !== null || assetId !== null} onOpenChange={open => { if (!open) onClose() }}>
+  return <Sheet open={openPassageId !== null || openAssetId !== null || detailsOnly} onOpenChange={open => { if (!open) onClose() }}>
     <SheetContent className={`detail-sheet source-sheet ${full ? 'is-full' : ''} ${dark ? 'dark' : ''}`}>
       <SheetHeader><SheetTitle>{t('Source details')}</SheetTitle>
-        <Button variant="ghost" size="icon-sm" className="sheet-expand" aria-label={t(full ? 'Collapse panel' : 'Expand to full page')} title={t(full ? 'Collapse panel' : 'Expand to full page')} onClick={() => setFull(v => !v)}>{full ? <Minimize2 /> : <Maximize2 />}</Button><SheetDescription className="sr-only">{passage ? t('Cited passage: {locator}', { locator: locatorText(passage) }) : assetText ? t('PDF source') : t(error ? 'Unavailable' : 'Loading passage…')}</SheetDescription></SheetHeader>
+        <Button variant="ghost" size="icon-sm" className="sheet-expand" aria-label={t(full ? 'Collapse panel' : 'Expand to full page')} title={t(full ? 'Collapse panel' : 'Expand to full page')} onClick={() => setFull(v => !v)}>{full ? <Minimize2 /> : <Maximize2 />}</Button><SheetDescription className="sr-only">{passage ? t('Cited passage: {locator}', { locator: locatorText(passage) }) : assetText ? t('PDF source') : detailsOnly ? t('Source') : t(error ? 'Unavailable' : 'Loading passage…')}</SheetDescription></SheetHeader>
       <div className="sheet-body">
         {error && <div className="legacy-boundary">{error}</div>}
-        {!passage && !assetText && !error && <p>{t(assetId ? 'Loading PDF text…' : 'Loading passage…')}</p>}
-        {(passage || assetText) && source && <>
-          {(source.venue || source.year) && <p className="source-venue">{source.venue && <i>{source.venue}</i>}{source.venue && source.year && <span aria-hidden className="source-dot" />}{source.year}</p>}
+        {!passage && !assetText && !detailsOnly && !error && <p>{t(openAssetId ? 'Loading PDF text…' : 'Loading passage…')}</p>}
+        {(passage || assetText || detailsOnly) && source && <>
+          {(source.source_key || source.venue || source.year) && <p className="source-venue"><SourceKey value={source.source_key} />{source.venue && <i>{source.venue}</i>}{source.venue && source.year && <span aria-hidden className="source-dot" />}{source.year}</p>}
           <h2 className="source-title">{source.title}</h2>
           {source.authors.length > 0 && <p className="source-byline">{source.authors.length > 3 && !allAuthors
             ? <>{source.authors.slice(0, 2).join(', ')}, <button className="author-more" onClick={() => setAllAuthors(true)}>{t('and {n} more', { n: source.authors.length - 2 })}</button></>
             : source.authors.join(', ')}</p>}
           <div className="source-chips">
             <span className={`ref-pill is-${versionTones[source.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{source.version_label ? versionText(source.version_label) : t('version not stated by the provider')}</span>
-            {assetText ? <span className="ref-pill is-text"><FileText size={12} aria-hidden />{t(assetText.passages.length ? 'PDF with extracted text' : 'PDF without extracted text')}</span>
+            {detailsOnly ? <span className="ref-pill">{t('Metadata only')}</span> : assetText ? <span className="ref-pill is-text"><FileText size={12} aria-hidden />{t(assetText.passages.length ? 'PDF with extracted text' : 'PDF without extracted text')}</span>
               : abstract ? <span className="ref-pill is-abstract"><BookOpenText size={12} aria-hidden />{t('Abstract only')}</span>
               : <span className="ref-pill is-text"><FileText size={12} aria-hidden />{t('PDF text passage')}</span>}
             {passage?.text_source === 'ocr' && <span className="ref-pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}
@@ -151,7 +125,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
             : t('This passage comes from an earlier text extraction ({version}). New answers and cells read the current extraction, which may split or word the page differently.', { version: passage.extraction_version ?? '?' })}</p>}
           {viewMode === 'text' && passage?.text_source === 'marker' && (passage.equations_to_check
             ? <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(passage.equations_to_check === 1 ? 'Page read from the page image (Marker). {n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : 'Page read from the page image (Marker). {n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: passage.equations_to_check })}</p>
-            : <p className="source-notice"><Info size={15} aria-hidden />{t('Page read from the page image (Marker). Equations are LaTeX; check them against the PDF page.')}</p>)}
+            : <p className="source-notice"><Info size={15} aria-hidden />{t('Page read from the page image (Marker). Equations are LaTeX and tables are rebuilt as tables; check them against the PDF page.')}</p>)}
           {/* OCR text (D51) is read from the page image and never checked against it; the PDF view opens on the same page. */}
           {viewMode === 'text' && passage?.text_source === 'ocr' && <p className="source-notice"><TriangleAlert size={15} aria-hidden /><span>{t('This page was read from its scanned image with OCR (Tesseract) on this computer. Letters, numbers and equations may be misread; check them against the PDF page.')}
             {pdfAssetId && <> <button type="button" className="source-notice-action" onClick={() => setViewMode('pdf')}><FileText size={13} aria-hidden />{t('Show this page in the PDF')}</button></>}</span></p>}
@@ -162,17 +136,13 @@ export function PassageSheet({ researchId, passageId, assetId = null, initialVie
             <p className="passage-text"><HighlightedPassageText passage={passage} highlightTexts={highlights} /></p>
           </div> : assetText ? <div id="source-text-view" role="tabpanel" className="asset-text-view">
             <h3 className="source-section">{t('Extracted PDF text')}{assetText.passages.some(item => item.text.split(/\n{2,}/).some(p => AUTHOR_NOTE.test(p.trim()))) && <button type="button" className="pdf-text-notes-toggle" onClick={() => setShowNotes(v => !v)}>{t(showNotes ? 'Hide author notes' : 'Show author notes')}</button>}</h3>
-            {assetText.passages.length ? pagesOf(assetText.passages).map(page => <section className="pdf-text-page" key={page[0].id}>
-              <h4>{page[0].physical_page ? t('PDF p. {page}', { page: page[0].physical_page }) : t('Extracted text')}{page[0].text_source === 'ocr' && <span className="ref-pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}</h4>
-              {(page[0].equations_to_check ?? 0) > 0 && <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(page[0].equations_to_check === 1 ? '{n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : '{n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: page[0].equations_to_check ?? 0 })}</p>}
-              <PdfPageText passages={page} showNotes={showNotes} />
-            </section>) : <div className="legacy-boundary">{t('No text was extracted from this PDF.')}</div>}
-          </div> : null : pdfAssetId && <div id="source-pdf-view" role="tabpanel" className="source-pdf-view">
+            {assetText.passages.length ? <PdfTextDocument researchId={researchId} assetId={assetText.asset.id} passages={assetText.passages} showNotes={showNotes} sourceTitle={assetText.source.title} /> : <div className="legacy-boundary">{t('No text was extracted from this PDF.')}</div>}
+          </div> : <p className="source-notice"><Info size={15} aria-hidden />{t('No abstract or PDF text is stored for this source.')}</p> : pdfAssetId && <div id="source-pdf-view" role="tabpanel" className="source-pdf-view">
             <PdfViewer url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? 1} title={source.title} />
           </div>}
         </>}
       </div>
-      {row && (passage || assetText) && <footer className="source-sheet-foot">
+      {row && (passage || assetText || detailsOnly) && <footer className="source-sheet-foot">
         {row.provider_records.length > 0 && <span>{t('Found via')} {row.provider_records.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<b>{providerName(id)}</b></Fragment>)}</span>}
         {row.added_at && <span>{t(row.origin === 'user_upload' ? 'Uploaded {date}' : 'Added {date}', { date: new Date(row.added_at).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short', year: 'numeric' }) })}</span>}
       </footer>}

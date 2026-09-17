@@ -255,3 +255,45 @@ def test_the_equation_reader_is_installed_from_settings_and_a_failed_read_is_rea
         assert state == "read"
 
         assert client.delete("/api/equation-reader").json()["installed"] is False
+
+
+class SlowReader(FakeReader):
+    """A read that lasts until the reader is closed, as when a run stops the Marker process."""
+
+    def __init__(self):
+        super().__init__()
+        self.closed = None
+
+    async def read(self, path, pages):
+        if not self.calls:
+            self.calls.append((path.name, pages))
+            self.closed = asyncio.Event()
+            await self.closed.wait()
+            raise RuntimeError("the equation reader stopped")
+        return await super().read(path, pages)
+
+    async def close(self):
+        if self.closed:
+            self.closed.set()
+
+
+def test_a_run_stops_a_background_read_which_stays_pending(tmp_path, monkeypatch):
+    store, _, background_aid, papers = stored_pdf(tmp_path, ["SYNTHETIC formula page."])
+    svid = store.create_upload_source("SYNTHETIC second paper")
+    (papers / "second.pdf").write_bytes(make_pdf(["SYNTHETIC second formula page."]))
+    run_aid = store.add_asset_with_pages(svid, "sha-second", 10, "second.pdf", "user_upload", None, "second.pdf",
+                                         pdf.extract_pdf(papers / "second.pdf"), pdf.EXTRACTION_VERSION, pdf.chunk_page)
+    monkeypatch.setattr(math_reader, "math_pages", lambda path: [0])
+    reader = SlowReader()
+    service = equations.EquationService(store, reader, papers)
+
+    async def scenario():
+        background = asyncio.create_task(service.read_asset(background_aid, background=True))
+        while not reader.calls:
+            await asyncio.sleep(0)
+        first = await service.read_asset(run_aid)
+        return first, await background
+
+    first, stopped = asyncio.run(scenario())
+    assert first["state"] == "read" and stopped["state"] == "pending"
+    assert equations.equation_state(store, background_aid)["state"] == "pending" and service.next_asset() == background_aid

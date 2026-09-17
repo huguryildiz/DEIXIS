@@ -1,21 +1,27 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { ArchiveRestore, BookOpenText, Ellipsis, FileText, LayoutTemplate, ListPlus, PencilLine, Plus, RotateCw, Save, Sparkles, Trash2, TriangleAlert } from 'lucide-react'
+import { ArchiveRestore, BookOpenText, Download, Ellipsis, FileText, LayoutTemplate, ListPlus, Lock, Maximize2, Minimize2, Pause, PencilLine, Play, Plus, RotateCw, Save, ShieldAlert, Sparkles, Trash2, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, ApiError, type AnswerFormat, type CellEdit, type CellEvidence, type CellRevision, type CellState, type CellSummary, type CellValue, type CellView, type ColumnSpec, type ColumnSuggestion, type ResearchView, type Run, type Source, type TableColumn, type TableRow, type TableSummary, type TableTemplate, type TableView } from './api'
 import { ConfirmDialog } from './ConfirmDialog'
 import { PassageSheet } from './PassageSheet'
-import { locatorText, versionText } from './labels'
+import { ConnectionIcon } from './connectionIcons'
+import { connectionName, locatorText, runStatusLabels, versionText } from './labels'
 import { OCR_LABEL } from './ocr'
+import { citationStyles, formatReference, formatReferenceText, type CitationStyle } from './citations'
 import { useToast, type ToastAction } from './Toast'
 import { t, uiLocale } from './i18n'
+import { SourceKey } from './SourceKey'
 import './EvidenceTable.css'
 
 // The Evidence tab (P5 slice 1, D37/D38): a table whose rows are source versions and whose cells are append-only
 // revisions. The screen renders the recorded cell state; only the user's edit or decision changes a cell's value.
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
+// Table runs are controlled where their work shows: the run line above the table (the research tab bar only links here).
+export const TABLE_RUN_KINDS = new Set(['table_fill', 'cell_recheck', 'table_columns'])
+const tableRunLabels: Record<string, string> = { table_fill: 'Filling empty cells', cell_recheck: 'Rechecking a cell', table_columns: 'Suggesting columns' }
 const MAX_WHOLE_PASSAGES = 48  // a source within this many passages (and 60,000 characters) is read whole
 const MAX_RECHECK_PASSAGES = 16
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -40,14 +46,6 @@ const accessLabels: Record<TableRow['access_level'], string> = { pdf_available: 
 const selectionLabels: Record<string, string> = { included: 'Included in Sources', pending: 'Undecided in Sources', excluded: 'Excluded in Sources' }
 const selectionOrder: Record<string, number> = { included: 0, pending: 1, excluded: 2 }
 
-// A short author–year key such as "Gur23", as in the answer's PDF suggestions.
-function sourceKey(authors: string[], title: string, year: number | null) {
-  const author = authors[0]?.trim()
-  const name = author ? (author.includes(',') ? author.split(',')[0] : author.split(/\s+/).pop() ?? '') : title
-  const stem = name.replace(/ı/g, 'i').normalize('NFD').replace(/[^A-Za-z]/g, '').slice(0, 3)
-  return stem ? `${stem.charAt(0).toUpperCase()}${stem.slice(1).toLowerCase()}${year ? String(year).slice(-2) : ''}` : ''
-}
-
 function formatText(column: Pick<ColumnSpec, 'answer_format' | 'unit_hint' | 'allow_multiple'> & { options: unknown[] | null }) {
   const parts = [t(formatLabels[column.answer_format])]
   if (column.answer_format === 'number_unit' && column.unit_hint) parts.push(column.unit_hint)
@@ -63,6 +61,10 @@ function valueText(column: TableColumn, value: CellValue | null) {
   if (value.answer) return t(value.answer === 'yes' ? 'Yes' : 'No')
   return value.text ?? ''
 }
+// The row head writes the source's full reference in the citation style chosen on the report.
+function savedStyle(): CitationStyle {
+  try { const saved = localStorage.getItem('deixis-citation-style'); return saved && saved in citationStyles ? saved as CitationStyle : 'apa' } catch { return 'apa' }
+}
 const hasValue = (rev: CellRevision) => rev.state === 'value' || rev.state === 'not_verified'
 const revisionText = (column: TableColumn, rev: CellRevision) => (hasValue(rev) ? valueText(column, rev.value) : rev.state ? t(stateLabels[rev.state]) : '')
 const dateText = (value: string) => new Date(value).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' })
@@ -74,8 +76,67 @@ function revisionMeta(rev: CellRevision) {
     rev.run_id && t('run {id}', { id: rev.run_id })].filter(Boolean).join(' · ')
 }
 
+// The table as CSV: one value column and one evidence column (quote and locator) per table column. Current values only;
+// proposals waiting for a decision are left out. The BOM lets spreadsheet apps read the file as UTF-8.
+function tableCsv(table: TableView, sources: Source[]) {
+  const byId = new Map(sources.map(s => [s.source_version_id, s]))
+  const style = savedStyle()
+  const cells = new Map(table.cells.map(c => [`${c.column_id}:${c.source_version_id}`, c]))
+  const quote = (v: string | number | null | undefined) => {
+    const text = v == null ? '' : String(v)
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+  }
+  const head = [t('Key'), t('Reference'), t('Title'), t('Authors'), t('Year'), t('Version'), t('Access'), ...table.columns.flatMap(c => [c.name, t('{name} — evidence', { name: c.name })])]
+  const lines = table.rows.map(row => { const source = byId.get(row.source_version_id); return [row.source_key ?? '', source ? formatReferenceText(style, source) : '', row.title, row.authors.join('; '), row.year, versionText(row.version_label), t(accessLabels[row.access_level]),
+    ...table.columns.flatMap(col => {
+      const current = cells.get(`${col.id}:${row.source_version_id}`)?.current
+      if (!current) return ['', '']
+      return [revisionText(col, current), current.evidence.map(e => [e.anchor_text && `“${e.anchor_text}”`, locatorText(e)].filter(Boolean).join(' — ')).join(' | ')]
+    })] })
+  return `\uFEFF${[head, ...lines].map(line => line.map(quote).join(',')).join('\r\n')}\r\n`
+}
+
+function downloadTableCsv(table: TableView, sources: Source[]) {
+  const base = table.table.title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 80)
+  const url = URL.createObjectURL(new Blob([tableCsv(table, sources)], { type: 'text/csv;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${base || 'evidence-table'}-v${table.table.version}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 type EditorTarget = { mode: 'add' } | { mode: 'edit'; column: TableColumn } | { mode: 'suggestion'; suggestion: ColumnSuggestion; stepId: string }
 type ModelText = (model: string | null, effort: string | null) => string
+
+// The live table run with its controls; a paused run offers Resume. Cancel asks first, since a cancelled run cannot be resumed.
+function TableRunLine({ run, detail, model, connection, busy, onControl }: { run: Run; detail: string; model: string; connection: string; busy: boolean; onControl: (action: 'pause' | 'resume' | 'cancel') => void }) {
+  const live = ACTIVE.has(run.status)
+  return <div className={`evidence-run${live ? ' is-live' : ''}`} role="status">
+    <span className="evidence-run-signal" aria-hidden><i /></span>
+    <strong>{t(tableRunLabels[run.kind])}</strong>
+    {(run.status !== 'running' || detail) && <span className="evidence-run-detail">{[run.status !== 'running' && t(runStatusLabels[run.status]), detail].filter(Boolean).join(' · ')}</span>}
+    <span className="evidence-run-model"><ConnectionIcon id={connection} /><span className="sr-only">{connectionName(connection)} · </span>{model}</span>
+    {live && <Elapsed since={run.created_at} />}
+    <span className="evidence-run-end">
+      {live && <span className="evidence-run-lock" title={t('Model actions are off until it finishes.')}><Lock size={12} aria-hidden />{t('Model actions locked')}</span>}
+      <span className="evidence-run-controls">
+        {live && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" disabled={busy} onClick={() => onControl('pause')}><Pause size={13} aria-hidden />{t('Pause')}</Button>}
+        {run.status === 'paused' && <Button variant="ghost" size="sm" disabled={busy} onClick={() => onControl('resume')}><Play size={13} aria-hidden />{t('Resume')}</Button>}
+        <Button variant="ghost" size="sm" className="evidence-run-cancel" disabled={busy} onClick={() => onControl('cancel')}><X size={13} aria-hidden />{t('Cancel')}</Button>
+      </span>
+    </span>
+  </div>
+}
+
+// Time since the run was created, ticking each second.
+export function Elapsed({ since }: { since: string }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id) }, [])
+  const secs = Math.max(0, Math.floor((now - new Date(since).getTime()) / 1000))
+  const text = secs >= 3600 ? `${Math.floor(secs / 3600)}:${String(Math.floor(secs / 60) % 60).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}` : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
+  return <span className="evidence-run-time" aria-hidden>{text}</span>
+}
 
 // initialTableId: the table to show first, e.g. one just started from chosen sources.
 export function EvidenceTab({ researchId, view, dark, initialTableId = null, modelText, onRunStarted }: { researchId: string; view: ResearchView; dark: boolean; initialTableId?: string | null; modelText: ModelText; onRunStarted: () => void }) {
@@ -91,12 +152,25 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
   const [editor, setEditor] = useState<EditorTarget | null>(null)
   const [removing, setRemoving] = useState<TableColumn | null>(null)
   const [cellTarget, setCellTarget] = useState<{ columnId: string; sourceId: string } | null>(null)
+  const [sourceTarget, setSourceTarget] = useState<string | null>(null)
   const [addRowsOpen, setAddRowsOpen] = useState(false)
   const [templateName, setTemplateName] = useState<string | null>(null)
   const [discarded, setDiscarded] = useState<string[]>([])
   const [hint, setHint] = useState<string | null>(null)
   const [focus, setFocus] = useState<[number, number]>([0, 0])
+  const [cancelling, setCancelling] = useState<Run | null>(null)
   const grid = useRef<HTMLTableElement>(null)
+  const [fullscreen, setFullscreen] = useState(false)
+  // Full screen covers the app with the table; Escape leaves it unless a panel or dialog on top takes the key first.
+  const overlayOpen = Boolean(cellTarget || editor || removing || cancelling)
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape' && !overlayOpen) setFullscreen(false) }
+    document.addEventListener('keydown', onKey)
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = overflow }
+  }, [fullscreen, overlayOpen])
 
   const fetchTable = useCallback(async () => {
     const list = await api.tables(researchId)
@@ -120,6 +194,15 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
     return () => { live = false }
   }, [noTables, researchId, view.last_event_id])
 
+  // A table without columns offers the saved templates as a start.
+  const needsColumns = table ? table.columns.length === 0 : false
+  useEffect(() => {
+    if (!needsColumns) return
+    let live = true
+    api.tableTemplates().then(list => { if (live) setTemplates(list) }, () => { /* the template picks are left out */ })
+    return () => { live = false }
+  }, [needsColumns, view.last_event_id])
+
   async function act(action: () => Promise<unknown>, success?: string, undo?: ToastAction) {
     setBusy(true)
     try { await action(); if (success) toast('success', success, undo); await load() }
@@ -133,6 +216,15 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
   const run = view.runs[0] as Run | undefined
   const activeRun = run && ACTIVE.has(run.status) ? run : null
   const model = modelText(view.scope.requested_model, view.scope.reasoning_effort)
+  const tableRun = run && TABLE_RUN_KINDS.has(run.kind) && (activeRun || run.status === 'paused') ? run : null
+  const control = (target: Run, action: 'pause' | 'resume' | 'cancel') => act(() => api.controlRun(target.id, action))
+  const cancelDialog = <ConfirmDialog open={Boolean(cancelling)} dark={dark} title={t('Cancel this run?')}
+    description={t('The run stops. Values already written stay in the table; the answer of a model call still in progress is not written. A cancelled run cannot be resumed; empty cells can be filled again later.')}
+    confirmLabel={t('Cancel run')} cancelLabel={t('Keep running')} busy={busy}
+    onConfirm={() => { const target = cancelling; setCancelling(null); if (target) void control(target, 'cancel') }}
+    onOpenChange={open => { if (!open) setCancelling(null) }} />
+  const runLine = (detail: string[]) => tableRun && <TableRunLine run={tableRun} detail={detail.join(' · ')} model={model} connection={view.scope.model_connection} busy={busy}
+    onControl={action => (action === 'cancel' ? setCancelling(tableRun) : void control(tableRun, action))} />
   const createTable = (templateId?: string) => api.createTable(researchId, { title: t('Evidence table'), ...(templateId ? { template_id: templateId } : {}) }, newKey())
   const openTemplates = () => {
     setTemplatesOpen(open => !open)
@@ -145,6 +237,8 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
   const intro = t('Rows are source versions of this research; each cell links to passages of its own row’s version. A model fills only empty cells; anything else it returns waits for your decision.')
   if (!table) return <section className="evidence-panel" aria-labelledby="evidence-heading">
     <div className="workspace-pane-head"><div><h2 id="evidence-heading">{t('Evidence table')}</h2><p>{intro}</p></div></div>
+    {runLine([])}
+    {cancelDialog}
     <div className="evidence-empty">
       <p>{t('No table yet.')} {t(view.counts.included === 1 ? 'It starts with the {n} included source; you can add or remove rows.' : 'It starts with the {n} included sources; you can add or remove rows.', { n: view.counts.included })}</p>
       <div className="evidence-empty-actions">
@@ -177,6 +271,11 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
   if (activeRun?.kind === 'table_fill' && activeRun.target?.table_id === tableId) activeRun.target.sources?.forEach(s => s.column_ids.forEach(cid => filling.add(`${cid}:${s.source_version_id}`)))
   const rechecking = activeRun?.kind === 'cell_recheck' && activeRun.target?.table_id === tableId ? `${activeRun.target.column_id}:${activeRun.target.source_version_id}` : null
   const suggesting = activeRun?.kind === 'table_columns' && activeRun.target?.table_id === tableId
+  const fillable = !activeRun && estimate.sources > 0 && columns.length > 0
+  // A planned source counts as done once every cell it was to fill has a value.
+  const planned = activeRun?.kind === 'table_fill' && activeRun.target?.table_id === tableId ? activeRun.target.sources ?? [] : null
+  const fillProgress = planned?.length ? { done: planned.filter(s => s.column_ids.every(cid => cells.get(`${cid}:${s.source_version_id}`)?.current)).length, n: planned.length } : null
+  const suggestColumns = () => act(async () => { await api.suggestColumns(researchId, tableId, newKey()); onRunStarted() })
   const names = new Set(columns.map(c => c.name.trim().toLocaleLowerCase()))
   const suggestionRun = table.column_suggestions
   const suggestions = (suggestionRun?.columns ?? []).map((s, i) => ({ s, key: `${suggestionRun?.step_id}:${i}` }))
@@ -185,6 +284,8 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
   const hintColumn = columns.find(c => c.id === hint)
   const cellColumn = cellTarget && columns.find(c => c.id === cellTarget.columnId)
   const cellRow = cellTarget && rows.find(r => r.source_version_id === cellTarget.sourceId)
+  const sourceById = new Map(view.sources.map(s => [s.source_version_id, s]))
+  const style = savedStyle()
 
   const moveFocus = (e: KeyboardEvent<HTMLTableElement>) => {
     if (!(e.target as HTMLElement).dataset.cell) return
@@ -203,12 +304,15 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
   }, t(target.mode === 'edit' ? 'Column saved.' : 'Column added.'))
   const suggestionSpec = (s: ColumnSuggestion): ColumnSpec => ({ name: s.name, instruction: s.instruction, answer_format: s.answer_format, options: s.options, allow_multiple: s.allow_multiple, unit_hint: s.unit_hint })
 
-  return <section className="evidence-panel" aria-labelledby="evidence-heading">
+  return <section className={`evidence-panel${fullscreen ? ' is-fullscreen' : ''}`} aria-labelledby="evidence-heading">
     <div className="workspace-pane-head"><div>
       <h2 id="evidence-heading">{table.table.title}</h2>
       <p>{t('{rows} rows · {columns} columns · {filled} cells with a value · {empty} empty · {pending} proposals waiting', { rows: table.counts.rows, columns: table.counts.columns, filled: table.counts.with_value, empty: table.counts.empty, pending: table.counts.pending_proposals })}{table.removed_rows.length ? ` · ${t('{n} removed rows keep their cells', { n: table.removed_rows.length })}` : ''}</p>
     </div>
       <div className="evidence-table-head-actions">
+        {columns.length > 0 && rows.length > 0 && <Button variant="ghost" size="sm" aria-pressed={fullscreen} title={t(fullscreen ? 'Exit full screen (Esc)' : 'Full screen')} onClick={() => setFullscreen(on => !on)}>
+          {fullscreen ? <Minimize2 size={15} aria-hidden /> : <Maximize2 size={15} aria-hidden />}{t(fullscreen ? 'Exit full screen' : 'Full screen')}
+        </Button>}
         {tables.length > 1 && <select className="evidence-table-choice" aria-label={t('Table')} value={tableId} onChange={e => setChosen(e.target.value)}>{tables.map(x => <option key={x.id} value={x.id}>{x.title}</option>)}</select>}
         <DropdownMenu>
           <DropdownMenuTrigger className="evidence-table-menu" disabled={busy} aria-label={t('Actions for table {title}', { title: table.table.title })}><Ellipsis size={16} /></DropdownMenuTrigger>
@@ -223,18 +327,25 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
       </div>
     </div>
 
+    {/* Structure, then the model's suggestion, then what the table produces. Without columns the first-column prompt below carries Add column and Suggest columns. */}
     <div className="evidence-toolbar">
-      <Button className="evidence-fill" disabled={busy || Boolean(activeRun) || !estimate.sources || !columns.length}
-        onClick={() => act(async () => { await api.fillTable(researchId, tableId, table.table.version, newKey()); onRunStarted() })}>
-        <Sparkles size={15} aria-hidden />{!estimate.sources ? t('No empty cells to fill') : t(estimate.sources === 1 ? 'Fill empty cells · {n} source · up to {calls} calls · {model}' : 'Fill empty cells · {n} sources · up to {calls} calls · {model}', { n: estimate.sources, calls: estimate.max_model_calls, model })}
-      </Button>
-      <Button variant="outline" disabled={busy} onClick={() => setEditor({ mode: 'add' })}><Plus size={15} aria-hidden />{t('Add column')}</Button>
-      <Button variant="outline" disabled={busy || Boolean(activeRun)} onClick={() => act(async () => { await api.suggestColumns(researchId, tableId, newKey()); onRunStarted() })} title={t('{model} · 1–2 calls', { model })}><Sparkles size={15} aria-hidden />{t('Suggest columns')}</Button>
-      <Button variant="outline" disabled={busy} aria-expanded={addRowsOpen} onClick={() => setAddRowsOpen(open => !open)}><ListPlus size={15} aria-hidden />{t('Add rows')}</Button>
-      <Button variant="outline" disabled={busy || !columns.length} aria-expanded={templateName !== null} onClick={() => setTemplateName(name => (name === null ? table.table.title : null))}><Save size={15} aria-hidden />{t('Save as template')}</Button>
+      {columns.length > 0 && <Button variant="ghost" disabled={busy} onClick={() => setEditor({ mode: 'add' })}><Plus size={15} aria-hidden />{t('Add column')}</Button>}
+      <Button variant="ghost" disabled={busy} aria-expanded={addRowsOpen} onClick={() => setAddRowsOpen(open => !open)}><ListPlus size={15} aria-hidden />{t('Add rows')}</Button>
+      {columns.length > 0 && <><span className="evidence-toolbar-sep" aria-hidden />
+        <Button variant="ghost" disabled={busy || Boolean(activeRun)} onClick={suggestColumns} title={t('{model} · 1–2 calls', { model })}><Sparkles size={15} aria-hidden />{t('Suggest columns')}</Button></>}
+      <span className="evidence-toolbar-end">
+        <Button variant="ghost" disabled={!columns.length || !rows.length} title={t('Current values and their quotes as a CSV file; proposals waiting for a decision are left out.')} onClick={() => downloadTableCsv(table, view.sources)}><Download size={15} aria-hidden />{t('Export CSV')}</Button>
+        <Button variant="ghost" disabled={busy || !columns.length} aria-expanded={templateName !== null} onClick={() => setTemplateName(name => (name === null ? table.table.title : null))}><Save size={15} aria-hidden />{t('Save as template')}</Button>
+        <Button className="evidence-fill" variant={fillable ? 'default' : 'outline'} disabled={busy || !fillable}
+          onClick={() => act(async () => { await api.fillTable(researchId, tableId, table.table.version, newKey()); onRunStarted() })}>
+          <Sparkles size={15} aria-hidden />{!estimate.sources ? t('No empty cells to fill') : t(estimate.sources === 1 ? 'Fill empty cells · {n} source · up to {calls} calls · {model}' : 'Fill empty cells · {n} sources · up to {calls} calls · {model}', { n: estimate.sources, calls: estimate.max_model_calls, model })}
+        </Button>
+      </span>
     </div>
-    {(activeRun || estimate.sources_without_text > 0 || estimate.sources_beyond_limit > 0) && <p className="evidence-toolbar-note">
-      {[activeRun && t('Model actions are off while a run is active.'),
+    {runLine(fillProgress ? [t('{done} / {n} sources', fillProgress)] : suggesting ? [t('From the question and the rows’ abstracts')] : [])}
+    {cancelDialog}
+    {((activeRun && !tableRun) || estimate.sources_without_text > 0 || estimate.sources_beyond_limit > 0) && <p className="evidence-toolbar-note">
+      {[activeRun && !tableRun && t('Model actions are off while a run is active.'),
         estimate.sources_without_text > 0 && t('{n} of the sources to fill have no stored text; they get “No text” without a model call.', { n: estimate.sources_without_text }),
         estimate.sources_beyond_limit > 0 && t('{n} more sources wait for another fill (at most 25 per run).', { n: estimate.sources_beyond_limit })].filter(Boolean).join(' ')}
     </p>}
@@ -248,7 +359,6 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
     {addRowsOpen && <AddRows sources={view.sources} table={table} busy={busy} onClose={() => setAddRowsOpen(false)}
       onAdd={ids => act(async () => { await api.addTableRows(researchId, tableId, ids, table.table.version); setAddRowsOpen(false) }, t('Rows added.'))} />}
 
-    {suggesting && <p className="evidence-live" role="status"><span className="shimmer-text">{t('Suggesting columns from the question and the rows’ abstracts…')}</span></p>}
     {suggestionRun && suggestions.length > 0 && <section className="evidence-suggestions" aria-labelledby="evidence-suggestions-title">
       <h3 id="evidence-suggestions-title">{t('Suggested columns')}<small>{t('Model suggestions; none joins the table until you add it.')}</small></h3>
       <ul>{suggestions.map(({ s, key }) => <li key={key}>
@@ -262,7 +372,29 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
       {suggestionRun.notes && <p className="legacy-mini-note">{suggestionRun.notes}</p>}
     </section>}
 
-    {!columns.length ? <p className="empty-inline">{t('Add a column to start the table.')}</p>
+    {!columns.length ? <div className={`evidence-first${suggesting ? ' is-suggesting' : ''}`}>
+        {/* A preview of the rows the first column will be asked of; the empty columns are placeholders, not cells. */}
+        {rows.length > 0 && <div className="evidence-ghost" aria-hidden><table>
+          <thead><tr><th>{t('Source')}</th>{[1, 2, 3].map(n => <th key={n}>{t('Column {n}', { n })}</th>)}</tr></thead>
+          <tbody>{rows.slice(0, 4).map((row, r) => <tr key={row.source_version_id}>
+            <td><span className="evidence-ghost-title">{row.title}</span><small>{[row.year, t(accessLabels[row.access_level])].filter(Boolean).join(' · ')}</small></td>
+            {[0, 1, 2].map(c => <td key={c}><span className="evidence-ghost-slot" style={{ width: `${38 + ((r * 17 + c * 23) % 34)}%` }} /></td>)}
+          </tr>)}</tbody>
+        </table></div>}
+        <div className="evidence-first-prompt">
+          {suggesting ? <div><h3>{t('Preparing columns for your question')}</h3><p>{t('Suggestions appear above when they arrive; none joins the table until you add it.')}</p></div>
+            : <div><h3>{t('Add the first column')}</h3><p>{t('Each column is one question asked of every source in this table. Write one yourself, or let the model suggest columns from the question.')}</p>
+              {templates && templates.length > 0 && <div className="evidence-template-picks"><span>{t('Start from a template:')}</span>
+                {templates.slice(0, 4).map(tpl => <button key={tpl.id} type="button" className="evidence-template-pick" disabled={busy} title={tpl.columns.map(c => c.name).join(' · ')}
+                  onClick={() => act(() => api.applyTableTemplate(researchId, tableId, tpl.id, table.table.version, newKey()), t('Columns added from “{name}”.', { name: tpl.name }))}>{tpl.name}</button>)}
+              </div>}
+            </div>}
+          {!suggesting && <div className="evidence-actions">
+            <Button variant="outline" disabled={busy} onClick={() => setEditor({ mode: 'add' })}><Plus size={15} aria-hidden />{t('Add column')}</Button>
+            <Button disabled={busy || Boolean(activeRun)} onClick={suggestColumns} title={t('{model} · 1–2 calls', { model })}><Sparkles size={15} aria-hidden />{t('Suggest columns')}</Button>
+          </div>}
+        </div>
+      </div>
       : !rows.length ? <p className="empty-inline">{t('The table has no rows. Add sources of this research as rows.')}</p>
       : <>
         <p className="evidence-hint" aria-hidden>{hintColumn ? <><strong>{hintColumn.name}</strong> — {hintColumn.instruction}</> : t('Point to or focus a column heading to read its instruction. Arrow keys move between cells; Enter opens one.')}</p>
@@ -279,12 +411,13 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
               </th>)}
             </tr></thead>
             <tbody>{rows.map((row, r) => {
-              const key = sourceKey(row.authors, row.title, row.year)
               return <tr key={row.source_version_id}>
                 <th scope="row" className="evidence-row-head">
                   <div className="evidence-row-line">
-                    {key && <span className="evidence-key">{key}</span>}
-                    <span className="evidence-row-title" title={row.title}>{row.title}</span>
+                    <SourceKey value={row.source_key} />
+                    {(() => { const source = sourceById.get(row.source_version_id); return source
+                      ? <button type="button" className="evidence-row-title evidence-row-reference evidence-row-open" title={t('Open source details')} onClick={() => setSourceTarget(row.source_version_id)}>{formatReference(style, source)}</button>
+                      : <span className="evidence-row-title">{row.title}</span> })()}
                     <DropdownMenu>
                       <DropdownMenuTrigger className="evidence-row-menu" disabled={busy} aria-label={t('Row actions for {title}', { title: row.title })}><Ellipsis size={15} /></DropdownMenuTrigger>
                       <DropdownMenuContent align="start" className="w-auto">
@@ -308,7 +441,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
           </table>
         </div>
       </>}
-    <p className="legacy-mini-note evidence-footnote">{t('Semantic support not checked. Each quote was located in a passage of its row’s source version; whether that passage supports the value has not been checked.')}</p>
+    <p className="legacy-mini-note evidence-footnote"><ShieldAlert size={14} aria-hidden /><span><strong>{t('Semantic support not checked.')}</strong> {t('Each quote was located in a passage of its row’s source version; whether that passage supports the value has not been checked.')}</span></p>
 
     {editor && <ColumnEditor key={editor.mode === 'edit' ? editor.column.id : editor.mode} target={editor} busy={busy} dark={dark}
       onSave={spec => saveColumn(editor, spec)} onClose={() => setEditor(null)} onRemove={column => { setEditor(null); setRemoving(column) }} />}
@@ -318,6 +451,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
       onConfirm={() => { const column = removing; setRemoving(null); if (column) void act(() => api.removeColumn(researchId, tableId, column.id, column.version), t('Column removed.'),
         { label: t('Undo'), run: () => { void act(() => api.restoreColumn(researchId, tableId, column.id, column.version + 1), t('Column restored with its cells.')) } }) }}
       onOpenChange={open => { if (!open) setRemoving(null) }} />
+    {sourceTarget && <PassageSheet researchId={researchId} passageId={null} sourceVersionId={sourceTarget} sources={view.sources} dark={dark} onClose={() => setSourceTarget(null)} />}
     {cellTarget && cellColumn && cellRow && <CellPanel researchId={researchId} tableId={tableId} column={cellColumn} row={cellRow} refresh={view.last_event_id}
       source={view.sources.find(s => s.source_version_id === cellRow.source_version_id)} activeRun={activeRun} rechecking={rechecking === `${cellColumn.id}:${cellRow.source_version_id}`}
       model={model} dark={dark} onChanged={() => { void load() }} onRunStarted={onRunStarted} onClose={() => setCellTarget(null)} />}
@@ -360,7 +494,7 @@ function AddRows({ sources, table, busy, onAdd, onClose }: { sources: Source[]; 
     <p>{t('A row is one source version of this research. Another version of the same work is a separate row, and evidence never moves between versions.')}</p>
     {candidates.length ? <ul>{candidates.map(s => <li key={s.source_version_id}><label>
       <input type="checkbox" checked={chosen.includes(s.source_version_id)} onChange={e => setChosen(e.target.checked ? [...chosen, s.source_version_id] : chosen.filter(id => id !== s.source_version_id))} />
-      <span><strong>{s.title}</strong><small>{[sourceKey(s.authors, s.title, s.year), versionText(s.version_label), t(selectionLabels[s.selection.state])].filter(Boolean).join(' · ')}</small></span>
+      <span><strong>{s.title}</strong><small>{[s.source_key, versionText(s.version_label), t(selectionLabels[s.selection.state])].filter(Boolean).join(' · ')}</small></span>
     </label></li>)}</ul> : <p className="empty-inline">{t('Every source of this research is already a row.')}</p>}
     <div className="evidence-actions">
       <Button disabled={busy || !chosen.length} onClick={() => onAdd(chosen)}>{t(chosen.length === 1 ? 'Add {n} row' : 'Add {n} rows', { n: chosen.length })}</Button>
@@ -483,7 +617,6 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
     } finally { setBusy(false) }
   }
 
-  const key = sourceKey(row.authors, row.title, row.year)
   // An upper bound: a short source is read whole, a longer one gives at most 16 passages (D38). One passage per extracted page.
   const available = source ? (source.access.abstract_passage_id ? 1 : 0) + source.access.assets.reduce((n, a) => n + (a.page_count ?? 0), 0) : 0
   const recheckPassages = available <= MAX_WHOLE_PASSAGES ? available : MAX_RECHECK_PASSAGES
@@ -503,7 +636,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
     <SheetContent className={`detail-sheet evidence-sheet evidence-cell-sheet ${dark ? 'dark' : ''}`}>
       <SheetHeader><SheetTitle>{column.name}</SheetTitle><SheetDescription>{row.title}</SheetDescription></SheetHeader>
       <div className="sheet-body evidence-cell-body">
-        <p className="evidence-cell-source">{[key, row.year, versionText(row.version_label), t(accessLabels[row.access_level])].filter(Boolean).join(' · ')}</p>
+        <p className="evidence-cell-source">{[row.source_key, row.year, versionText(row.version_label), t(accessLabels[row.access_level])].filter(Boolean).join(' · ')}</p>
         {error && <div className="legacy-boundary">{error}</div>}
         {!cell && !error && <p>{t('Loading cell…')}</p>}
         {cell && <>
@@ -550,7 +683,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
             </div>}
             {!draft && <p className="evidence-sub">{!available ? t('This source has no stored text, so a recheck has nothing to read.')
               : activeRun ? t('Another run is active; a recheck can start when it finishes.')
-              : t(recheckPassages === 1 ? 'Only {source} · up to {n} passage · {model} · 1–2 calls. The result waits as a proposal; the model does not see the current value.' : 'Only {source} · up to {n} passages · {model} · 1–2 calls. The result waits as a proposal; the model does not see the current value.', { source: key || row.title, n: recheckPassages, model })}</p>}
+              : t(recheckPassages === 1 ? 'Only {source} · up to {n} passage · {model} · 1–2 calls. The result waits as a proposal; the model does not see the current value.' : 'Only {source} · up to {n} passages · {model} · 1–2 calls. The result waits as a proposal; the model does not see the current value.', { source: row.source_key || row.title, n: recheckPassages, model })}</p>}
             {draft && <form className="evidence-form" aria-labelledby="evidence-edit-title" onSubmit={e => { e.preventDefault(); save() }}>
               <h3 id="evidence-edit-title">{t('Edit value')}</h3>
               <label className="evidence-field"><span>{t('State')}</span>

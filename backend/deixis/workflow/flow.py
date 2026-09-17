@@ -211,7 +211,12 @@ class ResearchFlow:
         if scope["source_scope"] == "attached":
             return
         self._checkpoint(run_id, revision)
-        output = await self._model_step(run, scope, "search_plan", "search_plan")
+        seed = scope["seed_snapshot"]
+        if scope["seed_mode"] == "uploaded_seed" and self.store.seed_status(rid, scope) != "ready":
+            self._pause(run_id, "seed_unavailable")
+        output = await self._model_step(run, scope, "search_plan", "search_plan",
+                                        source_ids=[seed["source_version_id"]] if seed else None,
+                                        passage_rows=seed["passages"] if seed else None)
         self._checkpoint(run_id, revision)
         if output.get("invalid"):
             self._fail(run_id, "invalid_model_output", {"step": "search_plan", "issues": output["issues"]})
@@ -228,9 +233,11 @@ class ResearchFlow:
         else:
             # Compiled once and stored with the plan, so a resumed run searches the same queries even after a compiler change.
             queries = query_compiler.compile_queries(plan, scope["providers"], budget["max_provider_requests"],
-                                                   budget.get("core_depth", 0))
+                                                   budget.get("core_depth", 0), self.deps.settings.query_strategy)
             self.store.set_step_output(self.store.step(run_id, "search_plan", "model:search_plan")["id"],
-                                       output | {"queries": queries, "query_compiler": query_compiler.VERSION})
+                                       output | {"queries": queries, "query_compiler": (
+                                           query_compiler.COMPACT_VERSION if self.deps.settings.query_strategy == "compact_openalex_v1"
+                                           else query_compiler.VERSION)})
         # Runs created before results_per_query existed split the candidate limit across their queries.
         per_query = budget.get("results_per_query") or max(5, min(25, budget["max_candidates"] // max(1, len(queries))))
         # A failed search is recorded and shown, and the other searches go on (D18). The run pauses on a failure only when
@@ -962,6 +969,9 @@ class ResearchFlow:
         sources = []
         for svid in source_ids:
             source = self.store.source(svid)
+            seed = scope.get("seed_snapshot") if task_type == "search_plan" else None
+            if seed and seed["source_version_id"] == svid:
+                source = source | {field: seed[field] for field in ("title", "year", "version_label")}
             kinds = {p["kind"] for p in self.store.passages_for(svid)}
             access = "pdf_available" if "pdf_page" in kinds else "abstract" if "abstract" in kinds else "metadata"
             sources.append({"source_id": svid, "work_id": source["work_id"], "title": source["title"], "year": source["year"],

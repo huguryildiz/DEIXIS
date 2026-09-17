@@ -1,11 +1,12 @@
-"""Provider queries compiled from a search plan's concept vocabulary (D44).
+"""Provider queries compiled from a search plan's concept vocabulary (D44, D64).
 
-The model names the concepts and the providers; this module writes every query string. Each query requires one term of
-the core concept AND one term of one other concept family, so no query can drop the discriminating core term. Every
+The model names the concepts and the providers; this module writes every query string. In the legacy strategy each
+paired query requires one full core synonym AND one term of another concept family. Every
 query passes `query_rules.query_issues` and the 300-character limit before it is returned; terms are trimmed from the
 end of a group until it does. With a core depth, OpenAlex first gets the core group alone, read deeper than the other
 queries: a model-free probe found most known works beyond a query's first 25 results (docs/product/search-recall-depth-2026-09-17.md).
-No recall measurement stands behind these rules: they are a structural guard only.
+The opt-in compact OpenAlex strategy keeps the deep core query but replaces each paired OpenAlex query with a short
+core-phrase plus family-word probe. It was measured on reused controls only; the legacy strategy remains default.
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from typing import Any
 from deixis.providers import query_rules
 
 VERSION = "deixis.query_compiler.v2"
+COMPACT_VERSION = "deixis.query_compiler.v3.compact_openalex_v1"
+STRATEGIES = ("legacy", "compact_openalex_v1")
 MAX_QUERY_CHARS = 300
 # At most six terms in all keep a two-group query within OpenAlex's five operators; the core keeps up to two of them
 # when its family has more alternatives than fit.
@@ -23,6 +26,7 @@ MAX_TERMS = 1 + query_rules.OPENALEX_MAX_OPERATORS
 CORE_TERMS = 2
 PLAIN_PROVIDERS = ("semantic_scholar", "crossref")
 BOOLEAN_OPERATORS = ("AND", "OR", "NOT", "ANDNOT")
+COMPACT_STOPWORDS = {"a", "an", "and", "are", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the", "to", "with"}
 ROLE_NAMES = {"mechanism": "mechanism", "method": "method", "outcome": "outcome", "context": "context",
               "adjacent_field": "adjacent field"}
 
@@ -79,6 +83,21 @@ def _fit(provider: str, core: list[str], family: list[str]) -> str | None:
             return None
 
 
+def _compact_openalex(core_term: str, family_term: str) -> str | None:
+    """Two required parts: a short core phrase and one family word, within the checked OpenAlex shape."""
+    def words(term: str) -> list[str]:
+        return [word for word in re.findall(r"\w+", term) if word.lower() not in COMPACT_STOPWORDS]
+
+    anchor = words(core_term)[-2:]
+    family = next((word for word in reversed(words(family_term)) if word.casefold() not in
+                   {part.casefold() for part in anchor}), None)
+    if not anchor or not family:
+        return None
+    head = _quoted(" ".join(anchor))
+    query = f"{head} {family}"
+    return query if len(query) <= MAX_QUERY_CHARS and not query_rules.query_issues("openalex", query) else None
+
+
 def _round_robin(families: int, providers: int) -> list[tuple[int, int]]:
     """Every (family, provider) pair once: each next query takes the next family and the next provider it has not had."""
     order: list[tuple[int, int]] = []
@@ -93,7 +112,8 @@ def _round_robin(families: int, providers: int) -> list[tuple[int, int]]:
     return order
 
 
-def compile_queries(plan: dict[str, Any], enabled_providers: list[str], limit: int, core_depth: int = 0) -> list[dict[str, Any]]:
+def compile_queries(plan: dict[str, Any], enabled_providers: list[str], limit: int, core_depth: int = 0,
+                    strategy: str = "legacy") -> list[dict[str, Any]]:
     """Queries for a SearchPlan v2 with exactly one core concept, in search order, at most `limit`.
 
     Families are the non-core concepts with at least one synonym; `adjacent_field` concepts are used only when there is no other family, because
@@ -101,7 +121,10 @@ def compile_queries(plan: dict[str, Any], enabled_providers: list[str], limit: i
     a core term are dropped; with no family left, each query is the core group alone. SerpApi gets at most one query.
     A `core_depth` puts an OpenAlex query for the core group alone first, marked to read that many results; it counts
     against `limit` like any other query.
+    `compact_openalex_v1` changes only paired OpenAlex queries and is opt-in; it does not widen provider scope.
     """
+    if strategy not in STRATEGIES:
+        raise ValueError(f"Unknown query compiler strategy: {strategy}")
     core = next(c for c in plan["concepts"] if c["role"] == "core")
     core_terms = _terms(core)
     if not core_terms:
@@ -124,11 +147,16 @@ def compile_queries(plan: dict[str, Any], enabled_providers: list[str], limit: i
         (concept, terms), provider = families[f], providers[p]
         if provider == "serpapi" and any(q["provider_id"] == "serpapi" for q in queries):
             continue
-        text = _fit(provider, core_terms, terms)
+        text = (_compact_openalex(core_terms[f % len(core_terms)], terms[0])
+                if strategy == "compact_openalex_v1" and provider == "openalex" and terms else None)
+        if text is None:
+            text = _fit(provider, core_terms, terms)
         if text is None or (provider, text) in seen:
             continue
         seen.add((provider, text))
         rationale = (f'Core "{core["label"]}" with the {ROLE_NAMES[concept["role"]]} family "{concept["label"]}"' if concept
                      else f'Core "{core["label"]}" alone')
+        if strategy == "compact_openalex_v1" and provider == "openalex" and terms and text != _fit(provider, core_terms, terms):
+            rationale += "; compact title-and-abstract probe"
         queries.append({"provider_id": provider, "query_text": text, "rationale": rationale})
     return queries

@@ -30,6 +30,8 @@ ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint wi
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
 STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge")
 STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")
+MAX_SEED_PASSAGES = 4
+MAX_SEED_CHARS = 5600
 
 
 def title_key(title: str | None) -> str:
@@ -83,6 +85,10 @@ class NotASource(Exception):
     """A source version that was never a source of the research (D50); the API answers 422."""
 
 
+class SeedUnavailable(Exception):
+    """The selected seed is not a readable, current PDF in this research."""
+
+
 class Store:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
@@ -120,6 +126,7 @@ class Store:
         review_reasoning_effort: str | None = None,
         literature_connection: str | None = None,
         review_connection: str | None = None,
+        seed_mode: str = "question_only",
     ) -> str:
         rid, ts = new_id("res"), now()
         title = question.strip().splitlines()[0][:160]
@@ -127,14 +134,26 @@ class Store:
             self.conn.execute(
                 "INSERT INTO researches (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)", (rid, title, ts, ts)
             )
+            columns = {
+                "research_id": rid, "revision": 1, "question": question.strip(), "language_hint": language_hint,
+                "source_scope": source_scope, "providers_json": dumps(providers), "effort": effort,
+                "model_connection": model_connection, "requested_model": requested_model,
+                "reasoning_effort": reasoning_effort, "literature_model": literature_model,
+                "literature_reasoning_effort": literature_reasoning_effort, "review_mode": review_mode,
+                "review_model": review_model, "review_reasoning_effort": review_reasoning_effort,
+                "literature_connection": literature_connection, "review_connection": review_connection,
+                "created_at": ts,
+            }
+            # Historical migration tests create a Store before migration 0034 exists.
+            has_seed_mode = any(row[1] == "seed_mode" for row in self.conn.execute("PRAGMA table_info(scope_revisions)"))
+            if has_seed_mode:
+                columns["seed_mode"] = seed_mode
+            elif seed_mode != "question_only":
+                raise SeedUnavailable("Seed-guided search requires the current database schema")
+            names = ", ".join(columns)
+            placeholders = ", ".join("?" for _ in columns)
             self.conn.execute(
-                "INSERT INTO scope_revisions (research_id, revision, question, language_hint, source_scope, providers_json,"
-                " effort, model_connection, requested_model, reasoning_effort, literature_model, literature_reasoning_effort,"
-                " review_mode, review_model, review_reasoning_effort, literature_connection, review_connection, created_at)"
-                " VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (rid, question.strip(), language_hint, source_scope, dumps(providers), effort, model_connection, requested_model,
-                 reasoning_effort, literature_model, literature_reasoning_effort, review_mode, review_model, review_reasoning_effort,
-                 literature_connection, review_connection, ts),
+                f"INSERT INTO scope_revisions ({names}) VALUES ({placeholders})", tuple(columns.values())
             )
             self._event(rid, "research_created", {"scope_revision": 1})
         return rid
@@ -309,24 +328,27 @@ class Store:
             raise NotFound(f"{research_id} revision {revision}")
         scope = dict(row)
         scope["providers"] = json.loads(scope.pop("providers_json"))
+        snapshot = scope.pop("seed_snapshot_json", None)
+        scope.setdefault("seed_mode", "question_only")
+        scope["seed_snapshot"] = json.loads(snapshot) if snapshot else None
         return scope
 
     def revise_scope(self, research_id: str, expected_version: int, question: str, steering: str | None) -> int:
         with transaction(self.conn):
             research = self.research(research_id)
             check_expected_version(expected_version, research["version"])
-            current = self.scope(research_id)
+            current = dict(self.conn.execute(
+                "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?",
+                (research_id, research["current_scope_revision"]),
+            ).fetchone())
             revision = research["current_scope_revision"] + 1
+            current.update(revision=revision, question=question.strip(), steering=steering, created_at=now())
+            if current.get("seed_mode") == "uploaded_seed":
+                current["seed_snapshot_json"] = None
+            names = ", ".join(current)
+            placeholders = ", ".join("?" for _ in current)
             self.conn.execute(
-                "INSERT INTO scope_revisions (research_id, revision, question, language_hint, source_scope, providers_json,"
-                " effort, model_connection, requested_model, reasoning_effort, literature_model, literature_reasoning_effort,"
-                " review_mode, review_model, review_reasoning_effort, literature_connection, review_connection, steering, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (research_id, revision, question.strip(), current["language_hint"], current["source_scope"],
-                 dumps(current["providers"]), current["effort"], current["model_connection"], current["requested_model"],
-                 current["reasoning_effort"], current["literature_model"], current["literature_reasoning_effort"],
-                 current["review_mode"], current["review_model"], current["review_reasoning_effort"],
-                 current["literature_connection"], current["review_connection"], steering, now()),
+                f"INSERT INTO scope_revisions ({names}) VALUES ({placeholders})", tuple(current.values())
             )
             self.conn.execute(
                 "UPDATE researches SET current_scope_revision = ?, version = version + 1, title = ?, updated_at = ? WHERE id = ?",
@@ -334,6 +356,98 @@ class Store:
             )
             self._event(research_id, "scope_revised", {"scope_revision": revision})
         return revision
+
+    def seed_status(self, research_id: str, scope: dict[str, Any] | None = None) -> str:
+        scope = scope or self.scope(research_id)
+        snapshot = scope["seed_snapshot"]
+        if snapshot is None:
+            return "missing" if scope["seed_mode"] == "uploaded_seed" else "question_only"
+        svid, asset_id = snapshot["source_version_id"], snapshot["asset_id"]
+        if not self.is_active_member(research_id, svid):
+            return "stale"
+        asset = self.conn.execute(
+            "SELECT sha256, extraction_version FROM source_assets WHERE id = ? AND source_version_id = ? AND removed_at IS NULL",
+            (asset_id, svid),
+        ).fetchone()
+        if not asset or (asset["sha256"], asset["extraction_version"]) != (
+            snapshot["asset_sha256"], snapshot["extraction_version"]
+        ):
+            return "stale"
+        passage_ids = [p["id"] for p in snapshot["passages"]]
+        marks = ", ".join("?" for _ in passage_ids)
+        current = {row[0] for row in self.conn.execute(
+            f"SELECT id FROM passages WHERE asset_id = ? AND extraction_version IS ? AND id IN ({marks})",
+            (asset_id, asset["extraction_version"], *passage_ids),
+        )}
+        return "ready" if len(current) == len(passage_ids) else "stale"
+
+    def set_seed(self, research_id: str, expected_version: int, source_version_id: str) -> int:
+        """Freeze a bounded reading of one uploaded PDF in a new scope revision."""
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            scope = self.scope(research_id)
+            if scope["source_scope"] != "attached_and_academic":
+                raise SeedUnavailable("A PDF seed requires Files + academic search")
+            if not self.is_active_member(research_id, source_version_id):
+                raise NotASource(source_version_id)
+            source = self.source(source_version_id)
+            added = self.conn.execute(
+                "SELECT added_by FROM corpus_memberships WHERE research_id = ? AND source_version_id = ? AND removed_at IS NULL",
+                (research_id, source_version_id),
+            ).fetchone()
+            if source["origin"] != "user_upload" and (not added or added["added_by"] not in ("zotero_import", "library")):
+                raise SeedUnavailable("Choose a PDF you added to this research")
+            asset = self.conn.execute(
+                "SELECT * FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL ORDER BY retrieved_at DESC LIMIT 1",
+                (source_version_id,),
+            ).fetchone()
+            if asset is None:
+                raise SeedUnavailable("The selected source has no PDF")
+            passages = [p for p in self.passages_for(source_version_id)
+                        if p["asset_id"] == asset["id"] and p["kind"] == "pdf_page" and p["text"].strip()]
+            if not passages:
+                raise SeedUnavailable("The selected PDF has no readable text; read its scanned pages with OCR first")
+            terms = set(re.findall(r"\w{3,}", scope["question"].casefold()))
+            first = passages[:2]
+            rest = sorted(passages[2:], key=lambda p: -len(terms & set(re.findall(r"\w{3,}", p["text"].casefold()))))
+            selected = first + rest[:MAX_SEED_PASSAGES - len(first)]
+            per_passage = MAX_SEED_CHARS // len(selected)
+            given = []
+            for passage in selected:
+                excerpt = passage["text"][:per_passage]
+                if not excerpt:
+                    continue
+                given.append({"id": passage["id"], "source_version_id": source_version_id,
+                              "kind": "pdf_page", "physical_page": passage["physical_page"],
+                              "printed_label": passage["printed_label"], "abstract_origin": None,
+                              "text_source": passage["text_source"], "text": excerpt,
+                              "text_sha256": hashlib.sha256(excerpt.encode()).hexdigest()})
+            snapshot = {"source_version_id": source_version_id, "asset_id": asset["id"],
+                        "asset_sha256": asset["sha256"], "extraction_version": asset["extraction_version"],
+                        "title": source["title"], "year": source["year"], "version_label": source["version_label"],
+                        "title_basis": "filename" if source["origin"] == "user_upload" else "record",
+                        "page_count": asset["page_count"],
+                        "text_pages": len({p["physical_page"] for p in passages}), "passages": given}
+            if scope["seed_mode"] == "uploaded_seed" and scope["seed_snapshot"] == snapshot:
+                return scope["revision"]
+            revision = scope["revision"] + 1
+            row = dict(self.conn.execute(
+                "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?", (research_id, scope["revision"])
+            ).fetchone())
+            row.update(revision=revision, seed_mode="uploaded_seed", seed_snapshot_json=dumps(snapshot), created_at=now())
+            columns = list(row)
+            self.conn.execute(
+                f"INSERT INTO scope_revisions ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                tuple(row.values()),
+            )
+            self.conn.execute(
+                "UPDATE researches SET current_scope_revision = ?, version = version + 1, updated_at = ? WHERE id = ?",
+                (revision, now(), research_id),
+            )
+            self._event(research_id, "seed_selected", {"scope_revision": revision,
+                                                       "source_version_id": source_version_id, "asset_id": asset["id"]})
+            return revision
 
     # ---- runs -------------------------------------------------------------------------
     def create_run(self, research_id: str, kind: str, budget: dict[str, Any], idempotency_key: str | None,

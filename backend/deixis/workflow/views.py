@@ -45,6 +45,12 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     conn = store.conn
     research = store.research(research_id)
     scope = store.scope(research_id)
+    seed = scope["seed_snapshot"]
+    scope_view = {key: value for key, value in scope.items() if key != "seed_snapshot"}
+    scope_view["seed"] = ({key: seed[key] for key in ("source_version_id", "asset_id", "asset_sha256",
+                                                      "extraction_version", "title", "title_basis", "page_count", "text_pages")}
+                          | {"passage_count": len(seed["passages"])} if seed else None)
+    scope_view["seed_status"] = store.seed_status(research_id, scope)
 
     runs = []
     for row in conn.execute("SELECT id FROM runs WHERE research_id = ? ORDER BY created_at DESC LIMIT 10", (research_id,)):
@@ -261,7 +267,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     }
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
     reviewer = effective_reviewer(scope, store.setting("reviewer"))
-    return {"research": research, "scope": scope, "runs": runs, "search_runs": search_runs, "sources": sources,
+    return {"research": research, "scope": scope_view, "runs": runs, "search_runs": search_runs, "sources": sources,
             "answers": answers, "counts": counts, "last_event_id": last_event,
             # The reviewer the next answer would get: the research's own setting, else the app-wide default.
             "reviewer": {"mode": scope["review_mode"], "connection": reviewer[0] if reviewer else None, "model": reviewer[1] if reviewer else None,

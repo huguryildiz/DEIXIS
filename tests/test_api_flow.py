@@ -566,6 +566,83 @@ def test_attached_only_scope_never_searches(tmp_path):
         assert view["search_runs"] == [] and view["scope"]["providers"] == []
 
 
+def test_selected_pdf_seed_is_frozen_for_the_search_plan_and_revisions(tmp_path):
+    adapter = FakeAdapter()
+    app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid = create(client, source_scope="attached_and_academic", seed_mode="uploaded_seed")
+        assert client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).status_code == 422
+        first = client.post(f"/api/researches/{rid}/uploads", files={"file": (
+            "seed-notes.pdf", make_pdf(["SYNTHETIC molecule release model and scheduling objective.",
+                                        "SYNTHETIC channel parameters and constrained optimization."]), "application/pdf"
+        )})
+        assert first.status_code == 201, first.text
+        first_view = first.json()
+        seed_id = first_view["uploaded_source_version_id"]
+        selection_revision = first_view["research"]["selection_revision"]
+        selected = client.post(f"/api/researches/{rid}/seed", json={
+            "source_version_id": seed_id, "expected_version": first_view["research"]["version"]
+        })
+        assert selected.status_code == 200, selected.text
+        view = selected.json()
+        assert view["scope"]["revision"] == 2 and view["scope"]["seed_status"] == "ready"
+        assert view["scope"]["seed"]["source_version_id"] == seed_id
+        assert "passages" not in view["scope"]["seed"]
+        assert view["research"]["selection_revision"] == selection_revision
+        same = client.post(f"/api/researches/{rid}/seed", json={
+            "source_version_id": seed_id, "expected_version": view["research"]["version"]
+        }).json()
+        assert same["scope"]["revision"] == 2
+
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        _, result = wait_run(client, rid, run["id"])
+        assert result["status"] == "completed", result
+        payload_row = app.state.store.conn.execute(
+            "SELECT payload_json FROM step_inputs WHERE run_id = ? AND task_type = 'search_plan' ORDER BY rowid LIMIT 1",
+            (run["id"],),
+        ).fetchone()
+        payload = json.loads(payload_row["payload_json"])
+        assert [source["source_id"] for source in payload["sources"]] == [seed_id]
+        assert payload["passages"] and all(p["source_id"] == seed_id for p in payload["passages"])
+        assert "SYNTHETIC molecule release" in payload["passages"][0]["text"]
+        assert app.state.store.scope(rid)["seed_snapshot"]["asset_sha256"] == view["scope"]["seed"]["asset_sha256"]
+
+        asset_id = view["scope"]["seed"]["asset_id"]
+        removed = client.delete(f"/api/researches/{rid}/sources/{seed_id}/assets/{asset_id}")
+        assert removed.status_code == 200, removed.text
+        stale = client.get(f"/api/researches/{rid}").json()
+        assert stale["scope"]["seed_status"] == "stale"
+        assert client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).status_code == 409
+        revised = client.post(f"/api/researches/{rid}/scope", json={
+            "question": "SYNTHETIC revised scheduling question", "expected_version": stale["research"]["version"]
+        })
+        assert revised.status_code == 200, revised.text
+        assert revised.json()["scope"]["seed_status"] == "missing"
+        assert app.state.store.scope(rid, 2)["seed_snapshot"]["asset_id"] == asset_id
+        assert client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).status_code == 422
+
+
+def test_seed_requires_readable_uploaded_pdf_and_rejects_other_scopes(tmp_path):
+    with TestClient(app_for(tmp_path)) as client:
+        session(client)
+        rejected = client.post("/api/researches", json={
+            "question": "SYNTHETIC seed question", "source_scope": "academic", "seed_mode": "uploaded_seed",
+            "model_connection": "fake", "requested_model": "fake-model"
+        })
+        assert rejected.status_code == 422
+        rid = create(client, source_scope="attached_and_academic", seed_mode="uploaded_seed")
+        uploaded = client.post(f"/api/researches/{rid}/uploads", files={"file": (
+            "scan.pdf", make_pdf([""]), "application/pdf"
+        )}).json()
+        response = client.post(f"/api/researches/{rid}/seed", json={
+            "source_version_id": uploaded["uploaded_source_version_id"],
+            "expected_version": uploaded["research"]["version"]
+        })
+        assert response.status_code == 422
+        assert client.get(f"/api/researches/{rid}").json()["scope"]["seed_status"] == "missing"
+
+
 def test_provider_rate_limit_pauses_without_fallback(tmp_path):
     with TestClient(app_for(tmp_path, http_status=429)) as client:
         session(client)

@@ -117,3 +117,29 @@ def test_a_deep_openalex_query_searches_the_core_group_alone_before_the_paired_q
     assert query_compiler.compile_queries(plan(concepts, ["ieee_xplore"]), ALL_PROVIDERS, 4, core_depth=100) == \
         query_compiler.compile_queries(plan(concepts, ["ieee_xplore"]), ALL_PROVIDERS, 4)
     assert [(q["query_text"], q.get("results")) for q in query_compiler.compile_queries(plan([CORE], ["openalex"]), ALL_PROVIDERS, 8, core_depth=100)] == [(core, 100)]
+
+
+def test_opt_in_compact_openalex_keeps_the_deep_query_and_provider_budget():
+    selected = plan([CORE, ROUTING[2], ROUTING[4], ROUTING[5]], ["openalex"])
+    legacy = query_compiler.compile_queries(selected, ALL_PROVIDERS, 4, core_depth=100)
+    compact = query_compiler.compile_queries(selected, ALL_PROVIDERS, 4, core_depth=100,
+                                             strategy="compact_openalex_v1")
+    assert compact[0] == legacy[0]
+    assert [q["query_text"] for q in compact[1:]] == [
+        '"entanglement routing" programming', '"entanglement distribution" decoherence',
+        '"quantum routing" dependent',
+    ]
+    assert all(q.get("results", 25) <= 100 and not query_rules.query_issues("openalex", q["query_text"])
+               for q in compact)
+    assert len(compact) == len(legacy) == 4
+    assert query_compiler.compile_queries(selected, ALL_PROVIDERS, 4, core_depth=100) == legacy
+
+
+def test_compact_strategy_falls_back_when_a_short_query_is_invalid_and_rejects_unknown_strategy():
+    concepts = [CORE, {"label": "acronym", "role": "method", "synonyms": ["in"]}]
+    legacy = query_compiler.compile_queries(plan(concepts, ["openalex"]), ALL_PROVIDERS, 4)
+    compact = query_compiler.compile_queries(plan(concepts, ["openalex"]), ALL_PROVIDERS, 4,
+                                             strategy="compact_openalex_v1")
+    assert compact == legacy
+    with pytest.raises(ValueError, match="Unknown query compiler strategy"):
+        query_compiler.compile_queries(plan(), ALL_PROVIDERS, 4, strategy="unregistered")

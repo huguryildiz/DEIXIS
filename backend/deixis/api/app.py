@@ -45,7 +45,7 @@ from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.equations import EquationService, equation_state, equations_to_check
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.providers.common import normalize_doi
-from deixis.workflow.store import NotASource, NotFound, PdfInUse, RunInProgress, SameFile, Store, title_key
+from deixis.workflow.store import NotASource, NotFound, PdfInUse, RunInProgress, SameFile, SeedUnavailable, Store, title_key
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, research_view
 from deixis.workflow.worker import Worker
@@ -62,6 +62,7 @@ INSTITUTIONAL_ACCESS_RETRY_SECONDS = 30
 class CreateResearch(BaseModel):
     question: str = Field(min_length=3, max_length=4000)
     source_scope: Literal["academic", "attached", "attached_and_academic"] = "academic"
+    seed_mode: Literal["question_only", "uploaded_seed"] = "question_only"
     effort: Literal["quick", "standard", "detailed"] = "standard"
     model_connection: str = "codex"
     requested_model: str = Field(min_length=1, max_length=120)  # explicit: the connection never picks a model itself
@@ -126,6 +127,11 @@ class SelectionChange(BaseModel):
 class ScopeRevision(BaseModel):
     question: str = Field(min_length=3, max_length=4000)
     steering: str | None = Field(default=None, max_length=2000)
+    expected_version: int
+
+
+class SeedSelection(BaseModel):
+    source_version_id: str = Field(pattern=r"^srv_[0-9A-Za-z]{8,40}$")
     expected_version: int
 
 
@@ -402,6 +408,10 @@ def create_app(
     async def not_a_source(_: Request, exc: NotASource):
         return JSONResponse({"detail": f"Not a source of this research: {exc}"}, status_code=422)
 
+    @app.exception_handler(SeedUnavailable)
+    async def seed_unavailable(_: Request, exc: SeedUnavailable):
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+
     @app.exception_handler(SameFile)
     async def same_file(_: Request, exc: SameFile):
         return JSONResponse({"detail": "This file is already the PDF in use"}, status_code=422)
@@ -543,6 +553,8 @@ def create_app(
 
     @app.post("/api/researches", status_code=201)
     async def create_research(body: CreateResearch, request: Request) -> dict[str, Any]:
+        if body.seed_mode == "uploaded_seed" and body.source_scope != "attached_and_academic":
+            raise HTTPException(422, "A PDF seed requires Files + academic search")
         listed: dict[str, list[dict[str, Any]] | None] = {}
 
         async def check_role(connection: str, model: str, effort: str | None) -> None:
@@ -575,7 +587,8 @@ def create_app(
                                     body.model_connection, body.requested_model, body.language_hint, body.reasoning_effort,
                                     body.literature_model, body.literature_reasoning_effort,
                                     body.review_mode, body.review_model, body.review_reasoning_effort,
-                                    literature_connection=literature_connection, review_connection=review_connection)
+                                    literature_connection=literature_connection, review_connection=review_connection,
+                                    seed_mode=body.seed_mode)
         return research_view(store, rid)
 
     @app.get("/api/settings")
@@ -738,6 +751,12 @@ def create_app(
         store.revise_scope(research_id, body.expected_version, body.question, body.steering)
         return research_view(store, research_id)
 
+    @app.post("/api/researches/{research_id}/seed")
+    async def select_seed(research_id: str, body: SeedSelection, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.set_seed(research_id, body.expected_version, body.source_version_id)
+        return research_view(store, research_id)
+
     @app.post("/api/researches/{research_id}/runs", status_code=202)
     async def start_run(research_id: str, body: StartRun, request: Request,
                         idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
@@ -745,6 +764,12 @@ def create_app(
         scope = store.scope(research_id)
         if body.kind == "discovery" and scope["source_scope"] == "attached":
             raise HTTPException(422, "Academic search is not part of this research's source scope")
+        if body.kind == "discovery" and scope["seed_mode"] == "uploaded_seed":
+            seed_status = store.seed_status(research_id, scope)
+            if seed_status != "ready":
+                raise HTTPException(422 if seed_status == "missing" else 409,
+                                    "Choose a readable PDF seed before searching" if seed_status == "missing"
+                                    else "The selected PDF changed; select it again before searching")
         if body.kind in ("answer", "pdf_collection") and not store.included_works(research_id):
             raise HTTPException(422, "Include at least one source before generating an answer")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
@@ -824,7 +849,7 @@ def create_app(
             store.add_asset_with_pages(svid, sha, size, path.name, "user_upload", None, filename,
                                        extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
         store.add_to_corpus(research_id, svid, "user_upload", selection_state="included", selection_origin="user")
-        return research_view(store, research_id)
+        return research_view(store, research_id) | {"uploaded_source_version_id": svid}
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/uploads", status_code=201)
     async def upload_to_source(research_id: str, source_version_id: str, request: Request,

@@ -11,6 +11,15 @@ Goal: the vocabulary and the providers that could find the closest relevant work
 for the question. You do not write query strings: the application builds every
 provider query from your concepts, in each provider's syntax.
 
+When the StepInput supplies a source and PDF passages, they are excerpts from the
+user-selected starting paper. Use them to refine vocabulary that bears on the
+question, while keeping the question's requested scope decisive. The stored title
+of an uploaded PDF may come from its filename, so do not treat it as verified
+bibliographic metadata. The supplied passages are a bounded selection, not a
+reading of the whole paper; do not infer its DOI, references, results or claims
+from text you were not given. Name in `search_rationale` how the starting paper
+affected the concepts, or state that it did not provide useful search terms.
+
 1. Interpret the question in one or two sentences. If a genuine ambiguity would
    change what should be searched, request clarification instead; otherwise state
    the interpretation you chose.
@@ -22,10 +31,10 @@ provider query from your concepts, in each provider's syntax.
    (English unless the field publishes otherwise), best search term first. Only
    a concept's first few synonyms are used, and a concept without synonyms is
    not searched.
-3. Give exactly one concept the role `core`, with at least one synonym. Every
-   query requires one of its synonyms, so make it the discriminating decision or
-   mechanism, not the broad field name, and give as synonyms only names for that
-   same thing. For a packet-size question the core synonyms are
+3. Give exactly one concept the role `core`, with at least one synonym. The
+   default query strategy requires one of its synonyms, so make it the
+   discriminating decision or mechanism, not the broad field name, and give
+   as synonyms only names for that same thing. For a packet-size question the core synonyms are
    `packet size optimization` and `packet length optimization`, and
    `wireless sensor network` belongs to a context concept: a core of the field
    name can bury the relevant papers beyond the first results read.
@@ -43,6 +52,10 @@ provider query from your concepts, in each provider's syntax.
    concepts are used only when no other concept is given. Semantic Scholar and
    Crossref read plain words, so they receive only the first core synonym and
    the first synonym of one other concept.
+   An optional compact OpenAlex strategy uses a short part of a core synonym and
+   one word from a family for each paired OpenAlex query within the same request
+   budget. It can bring in more records but has not passed an independent
+   relevance evaluation; the default still uses the full synonyms.
 5. Choose `providers` from `enabled_providers`, most important first, whose
    coverage fits the field: for example IEEE Xplore for engineering and computing,
    arXiv for physics, mathematics and computing preprints, bioRxiv for

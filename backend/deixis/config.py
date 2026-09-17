@@ -24,6 +24,7 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8765
     model_concurrency: int = 6
+    query_strategy: str = "legacy"
 
     @property
     def db_path(self) -> Path:
@@ -80,9 +81,13 @@ def load_settings() -> Settings:
 
     credentials.mark_dotenv(load_dotenv(REPO_ROOT / ".env"), REPO_ROOT / ".env")
     credentials.load_into_environment()
+    query_strategy = os.environ.get("DEIXIS_QUERY_STRATEGY", "legacy")
+    if query_strategy not in ("legacy", "compact_openalex_v1"):
+        raise ValueError("DEIXIS_QUERY_STRATEGY must be legacy or compact_openalex_v1")
     return Settings(
         data_dir=default_data_dir(),
         host=os.environ.get("DEIXIS_HOST", "127.0.0.1"),
         port=int(os.environ.get("DEIXIS_PORT", "8765")),
         model_concurrency=max(1, int(os.environ.get("DEIXIS_MODEL_CONCURRENCY", "6") or "6")),
+        query_strategy=query_strategy,
     )

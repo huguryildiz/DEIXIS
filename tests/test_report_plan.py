@@ -1,6 +1,6 @@
 """Pure tests for code-owned fields of the frozen report plan."""
 
-from deixis.workflow.report.plan import ALLOWED_SUPPORT, freeze_plan, section_budgets
+from deixis.workflow.report.plan import ALLOWED_SUPPORT, INDEX_TERMS_MAX_WORDS, freeze_plan, section_budgets
 
 
 def test_section_budgets_scale_the_total_and_floor_the_scaled_total_at_1200_words():
@@ -19,8 +19,19 @@ def test_section_budgets_lock_section_priority_and_the_forty_claim_ceiling():
     assert budgets["IV"]["max_words"] > budgets["III"]["max_words"]
     assert budgets["III"]["max_words"] == budgets["V"]["max_words"] > budgets["VI"]["max_words"]
     assert budgets["VI"]["max_words"] > budgets["VIII"]["max_words"]
-    assert all(item["min_words"] == int(0.6 * item["max_words"]) for item in budgets.values())
+    assert all(item["min_words"] == int(0.6 * item["max_words"])
+               for section_id, item in budgets.items() if section_id != "index_terms")
     assert all(item["max_claims"] == 40 for item in budgets.values())
+
+
+def test_index_terms_has_a_fixed_keyword_list_budget_and_no_prose_minimum():
+    full = section_budgets(5500, 20)
+    scaled = section_budgets(5500, 4)
+
+    assert full["index_terms"] == {"min_words": 0, "max_words": INDEX_TERMS_MAX_WORDS, "max_claims": 40}
+    assert scaled["index_terms"] == full["index_terms"]
+    assert sum(item["max_words"] for item in full.values()) == 5500
+    assert sum(item["max_words"] for item in scaled.values()) == 2200
 
 
 def test_freeze_plan_overrides_all_model_supplied_code_owned_fields_without_mutating_the_draft():

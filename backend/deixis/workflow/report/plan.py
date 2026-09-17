@@ -23,8 +23,9 @@ ALLOWED_SUPPORT = {
 DEFAULT_REPORT_WORDS = 5500
 _SECTION_WEIGHTS = {
     "I": 7, "III": 14, "IV": 18, "V": 14, "VI": 12,
-    "VII": 7, "VIII": 7, "IX": 7, "abstract": 7, "index_terms": 7,
+    "VII": 7, "VIII": 7, "IX": 7, "abstract": 7,
 }
+INDEX_TERMS_MAX_WORDS = 50
 
 
 def section_budgets(total_words: int, included_count: int) -> dict[str, dict[str, int]]:
@@ -33,13 +34,18 @@ def section_budgets(total_words: int, included_count: int) -> dict[str, dict[str
     if included_count < 10:
         scaled_total = max(1200, int(total_words * included_count / 10))
 
-    exact = {section_id: scaled_total * weight / 100 for section_id, weight in _SECTION_WEIGHTS.items()}
+    # Index terms are a short keyword list, so their ceiling is fixed rather than proportional to prose length.
+    prose_total = scaled_total - INDEX_TERMS_MAX_WORDS
+    total_weight = sum(_SECTION_WEIGHTS.values())
+    exact = {section_id: prose_total * weight / total_weight for section_id, weight in _SECTION_WEIGHTS.items()}
     maxima = {section_id: math.floor(words) for section_id, words in exact.items()}
-    remainder = scaled_total - sum(maxima.values())
+    remainder = prose_total - sum(maxima.values())
     for section_id in sorted(exact, key=lambda key: (exact[key] - maxima[key], _SECTION_WEIGHTS[key]), reverse=True)[:remainder]:
         maxima[section_id] += 1
-    return {section_id: {"min_words": int(0.6 * maximum), "max_words": maximum, "max_claims": 40}
-            for section_id, maximum in maxima.items()}
+    budgets = {section_id: {"min_words": int(0.6 * maximum), "max_words": maximum, "max_claims": 40}
+               for section_id, maximum in maxima.items()}
+    budgets["index_terms"] = {"min_words": 0, "max_words": INDEX_TERMS_MAX_WORDS, "max_claims": 40}
+    return budgets
 
 
 def freeze_plan(model_plan: dict[str, Any], snapshot: dict[str, Any], included_count: int) -> dict[str, Any]:

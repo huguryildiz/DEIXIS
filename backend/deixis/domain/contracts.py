@@ -736,16 +736,13 @@ def issues_with_handles(step_input: dict[str, Any], issues: list[dict[str, Any]]
             for issue in issues]
 
 
-def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict[str, Any]:
-    """Map handles in a grounded answer or cell draft back to IDs; anything else is left for validation to report."""
+def name_sources_in_prose(step_input: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+    """Replace citation handles the model wrote into an answer's prose with source titles, after validation.
+
+    A handle would reach the reader as `srv_S0000002`. Validation (including text length limits) applies to what the model
+    wrote, so a long list of titles cannot turn a valid answer invalid.
+    """
     real = {handle: identifier for identifier, handle in citation_handles(step_input).items()}
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
-    if not isinstance(data, dict):
-        return raw
-    # A handle the model wrote into prose would reach the reader as `srv_S0000002`; the reader gets the source title.
     titles = {s["source_id"]: s["title"] for s in step_input.get("sources", [])}
     titles |= {p["passage_id"]: titles[p["source_id"]] for p in step_input.get("passages", []) if p["source_id"] in titles}
     named = {handle: f"“{titles[identifier]}”" for handle, identifier in real.items() if identifier in titles}
@@ -760,6 +757,18 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
             data["unanswered_aspects"] = [prose(text) for text in data["unanswered_aspects"]]
         if "capability_notice" in data:
             data["capability_notice"] = prose(data["capability_notice"])
+    return data
+
+
+def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict[str, Any]:
+    """Map handles in a grounded answer or cell draft back to IDs; anything else is left for validation to report."""
+    real = {handle: identifier for identifier, handle in citation_handles(step_input).items()}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    if not isinstance(data, dict):
+        return raw
     for items, key in ((data.get("claims"), "passage_ids"), (data.get("limitations"), "source_ids")):
         for item in items if isinstance(items, list) else []:
             if isinstance(item, dict) and isinstance(item.get(key), list):

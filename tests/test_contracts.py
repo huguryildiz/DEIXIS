@@ -214,11 +214,17 @@ def test_handles_written_into_answer_text_are_replaced_by_source_titles():
     answer["claims"] = [dict(answer["claims"][0], passage_ids=[first["passage_id"]], text=f"SYNTHETIC claim ({first['passage_id']}).")]
     answer["limitations"] = [{"kind": "access", "source_ids": [source["source_id"]], "text": f"{source['source_id']} is read from its abstract only."}]
     answer["unanswered_aspects"] = [f"Nothing in {source['source_id']}, {first['passage_id']}."]
-    resolved = contracts.resolve_citation_handles(step_input, json.dumps(answer))
+    resolved = contracts.name_sources_in_prose(step_input, contracts.resolve_citation_handles(step_input, json.dumps(answer)))
     assert resolved["limitations"][0]["text"] == f"“{title}” is read from its abstract only."
     assert resolved["claims"][0]["text"] == f"SYNTHETIC claim (“{passage_title}”)."
     assert resolved["unanswered_aspects"] == [f"Nothing in “{title}”, “{passage_title}”."]
     assert resolved["limitations"][0]["source_ids"] == [step_input["sources"][0]["source_id"]]
+
+    # Titles are put in after validation: a limitation listing many handles stays within the text length limit.
+    answer["limitations"][0]["text"] = ", ".join([source["source_id"]] * 30) + " are read from abstracts only."
+    resolved = contracts.resolve_citation_handles(step_input, json.dumps(answer))
+    assert "schema_invalid" not in contracts.validate_model_output(step_input, resolved).codes()
+    assert len(contracts.name_sources_in_prose(step_input, resolved)["limitations"][0]["text"]) > 500
 
 
 def test_answer_review_must_review_every_claim_once_by_label():

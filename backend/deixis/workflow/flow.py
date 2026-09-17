@@ -1003,6 +1003,8 @@ class ResearchFlow:
             warnings = [vars(w) for w in report.warnings]
             recorded["validation_json"] = {"ok": report.ok, "issues": [vars(i) for i in report.issues], "warnings": warnings}
             if report.ok:
+                if task_type == "grounded_answer":
+                    report.result = contracts.name_sources_in_prose(payload, report.result)
                 output = {"output_type": report.output_type, "result": report.result,
                           "step_input_id": payload["step_input_id"], "resolved_model": result.resolved_model, "warnings": warnings}
                 self.store.complete_model_step(session, recorded, step["id"], "succeeded", output=output)

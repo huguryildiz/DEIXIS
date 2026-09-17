@@ -2,6 +2,33 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D60 — Read OpenAlex's core-only query 100 results deep; on a popular topic the core phrase, not depth, limits recall
+
+**Status**: accepted (implemented)
+**Date**: 2026-09-17
+
+**Context**: The accepted note `docs/product/search-recall-depth-2026-09-17.md` (option A) proposed a core-only OpenAlex query read to 100 results. The owner asked whether the effort limits suit popular topics, did not know a field to pick, and left the third question to Claude; S3 was frozen as a popular topic (IRS/RIS, 20,856 OpenAlex matches) with 31 known works from the Wu et al. 2021 tutorial's references, with expectations, before any run (`8f4c86f`). Code: `83dcfce`.
+
+**Decision**: `query_compiler` v2 puts an OpenAlex query for the core group alone first, marked to read `core_depth` results; it takes one of the same provider requests. `standard` and `detailed` read 100; `standard` allows 250 candidates and 15 model calls, `detailed` 300 and 20 (detailed was not in the note; Claude chose it so detailed stays above standard). Queries stored by v1 resume unchanged.
+
+**Evidence** (outputs in ignored `.local/depth-measure-2026-09-17/`): two `git worktree`s at `8f4c86f` (before) and `83dcfce` (after), each on an empty data directory, `gpt-5.6-luna` medium, reviewer off, run in parallel. Known works found, the target paper not counted:
+
+| | before | after | frozen expectation |
+|---|---|---|---|
+| S1 Kurt (17), two runs | 6, 8 | 11, 11 | 11–13; wrong if ≤ 9: met |
+| S2 k-connectivity (15) | 4 | 7 | 6–8; wrong if ≤ 4: met |
+| S2 underwater context (7) | 0 | 1 | none |
+| S3 IRS/RIS (31) | 0 | 2 | at least +3; wrong if not above before: below expectation, not wrong |
+| unique records S1/S2/S3 | 76, 69 / 139 / 55 | 131, 135 / 185 / 149 | none |
+| model calls, max | 6 | 7 | ≤ 15: met |
+| discovery time | 140–291 s | 271–422 s | at most +3 min: S3 +191 s, over by 11 s |
+
+Every known work found after the change was included by screening except 2 of 7 in S2 and 1 of 5 terrestrial in S1b. No run reached the 250-candidate limit (most 149).
+
+On S3 depth is not the limit. The model's core terms were narrow phrases ("RIS reflection coefficient optimization", later "RIS beamforming optimization"); the deep query matched 218 works of the field's 20,856, and the question's channel-estimation half was never a core term, so 0 of 12 channel-estimation works were found in either rule. Of 149 unique S3 records, 115 are from 2022 or later; the known set is 2018–2020.
+
+**Limits**: Included precision (a pre-written expectation) was not judged, so whether more candidates added noise is not measured. One run per rule for S2 and S3, one model, one day; parallel runs share OpenAlex's state but not its ranking over time. S3's known set comes from a bibliography and represents the field's early years, not what a reader of the topic would call essential today. Recall on a popular topic needs a different change (a core concept the size of the field, or one core per part of a two-part question); that is not addressed here.
+
 ## D59 — Give every work one short author–year key and show it wherever the work appears; a table row opens its source
 
 **Status**: accepted (implemented)

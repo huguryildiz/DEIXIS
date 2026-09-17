@@ -99,6 +99,53 @@ def test_start_report_returns_an_idempotent_run_with_both_target_ids(tmp_path):
         }]
 
 
+def test_report_run_completes_with_fake_adapter_and_produces_a_valid_report(tmp_path):
+    with TestClient(app_for(tmp_path, ReportAdapter())) as raw:
+        client = session(raw)
+        research_id = create(client, source_scope="attached", effort="standard")
+        upload_and_include(client, research_id)
+        table = create_table(client, research_id, with_columns=True)
+        fill_table(client, research_id, table)
+        url = f"/api/researches/{research_id}/reports"
+
+        started = client.post(
+            url,
+            json={"table_id": table["table"]["id"]},
+            headers={"Idempotency-Key": "report-end-to-end"},
+        )
+
+        assert started.status_code == 202, started.text
+        _, report_run = wait_run(client, research_id, started.json()["id"])
+        assert report_run["status"] == "completed"
+
+        report_id = started.json()["target"]["report_id"]
+        response = client.get(f"{url}/{report_id}")
+        assert response.status_code == 200, response.text
+        report = response.json()
+        assert report["status"] == "valid"
+        assert report["report_version"] == 1
+        assert [section["section_id"] for section in report["sections"]] == [
+            "abstract", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "index_terms",
+        ]
+        assert all(section["draft"] for section in report["sections"])
+
+        citation_links = [
+            link
+            for section in report["sections"]
+            for claim in section["claims"]
+            for link in claim["evidence"]
+        ]
+        assert citation_links
+        assert all(link["anchor_text"] for link in citation_links)
+        assert all(bool(link["passage_id"]) != bool(link["cell_id"]) for link in citation_links)
+
+        research = client.get(f"/api/researches/{research_id}")
+        assert research.status_code == 200, research.text
+        summary = next(item for item in research.json()["reportRuns"] if item["id"] == report_id)
+        assert summary["status"] == "valid"
+        assert summary["report_version"] == 1
+
+
 def test_report_routes_reject_unknown_and_cross_research_ids(tmp_path):
     with TestClient(app_for(tmp_path, ReportAdapter())) as raw:
         client = session(raw)

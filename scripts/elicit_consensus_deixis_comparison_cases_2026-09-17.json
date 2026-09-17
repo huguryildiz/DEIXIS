@@ -1,0 +1,12 @@
+{
+  "question": "Which algae-specific signalling or molecular-communication research gap can be translated into a defensible LP/MIP problem, considering quorum sensing, VOC, electrical, optical signalling, channel modelling, controllability, biological constraints, and resource allocation?",
+  "controls": [
+    {"doi": "10.1109/TMBMC.2025.3615926", "title": "Algae Communication: Nature's Oldest Networks for Sustainability and Biotechnology"},
+    {"doi": "10.1109/TMBMC.2026.3711050", "title": "The Internet of Algae: End-to-End Communication-Theoretic Models for Photosynthetic Molecular Networks"},
+    {"doi": "10.3390/microorganisms9071391", "title": "How Do Quorum-Sensing Signals Mediate Algae-Bacteria Interactions?"},
+    {"doi": "10.1016/j.cej.2023.144985", "title": "Ion-driven communication and acclimation strategies in microalgae"},
+    {"doi": "10.1111/brv.12887", "title": "Algal volatiles – the overlooked chemical language of aquatic primary producers"},
+    {"doi": "10.1109/JIOT.2021.3051391", "title": "Resource Allocation for Multiuser Molecular Communication Systems Oriented to the Internet of Medical Things"},
+    {"doi": "10.1109/JIOT.2024.3353329", "title": "Energy Allocation for Multiuser Cooperative Molecular Communication Systems in Internet of Bio-Nano Things"}
+  ]
+}

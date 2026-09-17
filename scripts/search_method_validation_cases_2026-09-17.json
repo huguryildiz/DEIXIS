@@ -1,0 +1,50 @@
+[
+  {
+    "litsearch_index": 3,
+    "query": "Are there any tools or studies that have focused on building a morphological analyzer specifically for handling multiple Arabic dialects?",
+    "gold": [
+      {"corpus_id": 10961392, "doi": "10.18653/v1/K17-1043", "title": "Learning from Relatives: Unified Dialectal Arabic Segmentation"},
+      {"corpus_id": 12160022, "doi": "10.18653/v1/W17-1306", "title": "A Neural Architecture for Dialectal Arabic Segmentation"}
+    ]
+  },
+  {
+    "litsearch_index": 26,
+    "query": "Can you suggest some recent datasets that have been used for studying stance detection in tweets, particularly those targeting specific individuals and events since 2020?",
+    "gold": [
+      {"corpus_id": 236477909, "doi": "10.18653/v1/2021.findings-acl.208", "title": "P-Stance: A Large Dataset for Stance Detection in Political Domain"},
+      {"corpus_id": 236460157, "doi": "10.18653/v1/2021.acl-long.127", "title": "Stance Detection in COVID-19 Tweets"}
+    ]
+  },
+  {
+    "litsearch_index": 42,
+    "query": "I'm conducting research on computational humor and looking at various approaches to detect it within texts. What are some articles that explore features like repetition or use language models like GPT-2 for humor recognition?",
+    "gold": [
+      {"corpus_id": 11128248, "doi": "10.18653/v1/D15-1284", "title": "Humor Recognition and Humor Anchor Extraction"},
+      {"corpus_id": 229349316, "doi": "10.18653/v1/2021.acl-short.6", "title": "Uncertainty and Surprisal Jointly Deliver the Punchline: Exploiting Incongruity-Based Features for Humor Recognition"}
+    ]
+  },
+  {
+    "litsearch_index": 53,
+    "query": "I'm researching on the efficacy of recurrent networks in language modeling and CCG supertagging. Could you point me to studies that explore LSTM architectures and model comparisons in these tasks?",
+    "gold": [
+      {"corpus_id": 4460159, "doi": "10.18653/v1/N18-1108", "title": "Colorless Green Recurrent Networks Dream Hierarchically"},
+      {"corpus_id": 11771220, "doi": "10.18653/v1/N16-1027", "title": "Supertagging With LSTMs"}
+    ]
+  },
+  {
+    "litsearch_index": 63,
+    "query": "What approaches have been used to address the limitations of the beam search method in neural machine translation systems in terms of considering the full target context?",
+    "gold": [
+      {"corpus_id": 236460293, "doi": "10.18653/v1/2021.acl-long.563", "title": "Discriminative Reranking for Neural Machine Translation"},
+      {"corpus_id": 201058550, "doi": "10.18653/v1/D19-1571", "title": "Simple and Effective Noisy Channel Modeling for Neural Machine Translation"}
+    ]
+  },
+  {
+    "litsearch_index": 102,
+    "query": "Are there any studies investigating example-based approaches to predict user intent in few-shot learning contexts?",
+    "gold": [
+      {"corpus_id": 224725731, "doi": "10.18653/v1/2021.NAACL-MAIN.237", "title": "Example-Driven Intent Prediction with Observers"},
+      {"corpus_id": 237581476, "doi": "10.18653/v1/2021.emnlp-main.88", "title": "ConvFiT: Conversational Fine-Tuning of Pretrained Language Models"}
+    ]
+  }
+]

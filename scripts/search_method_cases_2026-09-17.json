@@ -1,0 +1,55 @@
+[
+  {
+    "litsearch_index": 12,
+    "query": "Can you point me to studies that explore the impact of different data augmentation strategies, such as feature/token/span cutoff or dropout, in the context of contrastive learning for sentence representations?",
+    "gold": [
+      {"corpus_id": 235187266, "doi": "10.18653/v1/2021.acl-long.393", "title": "ConSERT: A Contrastive Framework for Self-Supervised Sentence Representation Transfer"},
+      {"corpus_id": 233296292, "doi": "10.18653/v1/2021.emnlp-main.552", "title": "SimCSE: Simple Contrastive Learning of Sentence Embeddings"}
+    ]
+  },
+  {
+    "litsearch_index": 18,
+    "query": "Can you recommend some literature that focuses on dependency-based models for relation extraction, especially those that utilize dependency parsing to capture non-local syntactic relations?",
+    "gold": [
+      {"corpus_id": 5403702, "doi": "10.18653/v1/D15-1206", "title": "Classifying Relations via Long Short Term Memory Networks along Shortest Dependency Paths"},
+      {"corpus_id": 1774259, "doi": "10.18653/v1/P16-1072", "title": "Bidirectional Recurrent Convolutional Neural Network for Relation Classification"},
+      {"corpus_id": 2476229, "doi": "10.18653/v1/P16-1105", "title": "End-to-End Relation Extraction using LSTMs on Sequences and Tree Structures"},
+      {"corpus_id": 52115592, "doi": "10.18653/v1/D18-1246", "title": "N-ary Relation Extraction using Graph-State LSTM"}
+    ]
+  },
+  {
+    "litsearch_index": 65,
+    "query": "What are some good datasets for conversational question answering?",
+    "gold": [
+      {"corpus_id": 52057510, "doi": "10.18653/v1/D18-1241", "title": "QuAC: Question Answering in Context"},
+      {"corpus_id": 52055325, "doi": "10.1162/tacl_a_00266", "title": "CoQA: A Conversational Question Answering Challenge"}
+    ]
+  },
+  {
+    "litsearch_index": 96,
+    "query": "Which studies should I look into that have explored the task of factuality in abstractive summarization and proposed ways to detect hallucinated content in generated text?",
+    "gold": [
+      {"corpus_id": 218487034, "doi": "10.18653/v1/2020.acl-main.173", "title": "On Faithfulness and Factuality in Abstractive Summarization"},
+      {"corpus_id": 226254579, "doi": "10.18653/v1/2021.findings-acl.120", "title": "Detecting Hallucinated Content in Conditional Neural Sequence Generation"},
+      {"corpus_id": 196183567, "doi": "10.18653/v1/P19-1256", "title": "A Simple Recipe towards Reducing Hallucination in Neural Surface Realisation"},
+      {"corpus_id": 233407441, "doi": "10.18653/v1/2021.NAACL-MAIN.383", "title": "Understanding Factuality in Abstractive Summarization with FRANK: A Benchmark for Factuality Metrics"},
+      {"corpus_id": 204976362, "doi": "10.18653/v1/2020.emnlp-main.750", "title": "Evaluating the Factual Consistency of Abstractive Text Summarization"}
+    ]
+  },
+  {
+    "litsearch_index": 156,
+    "query": "Could you recommend research that examines how an annotator's individual attributes, like their gender, ethnicity, and political views, influence their judgment of content deemed offensive?",
+    "gold": [
+      {"corpus_id": 238634705, "doi": "10.18653/v1/2021.law-1.14", "title": "On Releasing Annotator-Level Labels and Information in Datasets"},
+      {"corpus_id": 244117167, "doi": "10.18653/v1/2022.naacl-main.431", "title": "Annotators with Attitudes: How Annotator Beliefs And Identities Bias Toxic Language Detection"}
+    ]
+  },
+  {
+    "litsearch_index": 335,
+    "query": "What techniques have been investigated to enhance multimodal sentiment analysis by fusing different modalities?",
+    "gold": [
+      {"corpus_id": 237372185, "doi": "10.18653/v1/2021.emnlp-main.723", "title": "Improving Multimodal Fusion with Hierarchical Mutual Information Maximization for Multimodal Sentiment Analysis"},
+      {"corpus_id": 236460184, "doi": "10.18653/v1/2021.acl-long.28", "title": "Multimodal Sentiment Detection Based on Multi-channel Graph Neural Networks"}
+    ]
+  }
+]

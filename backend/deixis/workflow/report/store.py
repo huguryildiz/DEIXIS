@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from deixis.storage.db import dumps, new_id, now, transaction
+from deixis.workflow.report.snapshot import build_snapshot
 from deixis.workflow.store import NotFound, Store
 
 
@@ -49,6 +50,31 @@ class ReportStore:
             self.report(report_id)
             self.conn.execute("UPDATE reports SET plan_json = ?, updated_at = ? WHERE id = ?", (dumps(plan), now(), report_id))
             self._event(report_id, "report_plan_saved")
+
+    def save_snapshot(self, report_id: str, table_id: str) -> dict[str, Any]:
+        """Read and insert once in one transaction; later table edits cannot change this report's evidence."""
+        with transaction(self.conn):
+            report = self.report(report_id)
+            existing = self.conn.execute("SELECT table_id, snapshot_json FROM report_snapshot WHERE report_id = ?", (report_id,)).fetchone()
+            if existing:
+                if existing["table_id"] != table_id:
+                    raise ValueError("This report already has a snapshot of another table")
+                return json.loads(existing["snapshot_json"])
+            snapshot = build_snapshot(self.store, report["research_id"], table_id)
+            self.conn.execute(
+                "INSERT INTO report_snapshot (report_id, table_id, table_revision, snapshot_json, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (report_id, table_id, snapshot["table_revision"], dumps(snapshot), now()),
+            )
+            self._event(report_id, "report_snapshot_saved", table_id=table_id)
+        return snapshot
+
+    def snapshot(self, report_id: str) -> dict[str, Any]:
+        self.report(report_id)
+        row = self.conn.execute("SELECT snapshot_json FROM report_snapshot WHERE report_id = ?", (report_id,)).fetchone()
+        if row is None:
+            raise NotFound(f"snapshot for {report_id}")
+        return json.loads(row["snapshot_json"])
 
     def create_section(self, report_id: str, section_id: str, ordinal: int) -> str:
         with transaction(self.conn):

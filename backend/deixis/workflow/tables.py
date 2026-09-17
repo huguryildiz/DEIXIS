@@ -846,6 +846,50 @@ class TableStore:
         return self._cell_summary(cell, column) | {"revisions": revisions}
 
 
+def report_ready(store: Store, research_id: str, table_id: str, continue_with_failed: bool = False) -> dict[str, Any]:
+    """Check every included source and active column; failed rows require an explicit continue choice."""
+    tables = TableStore(store)
+    columns = tables.target_columns(research_id, table_id)
+    column_ids = [column["id"] for column in columns]
+    included = store.included_sources(research_id)
+    active_rows = set(tables.active_rows(table_id))
+    states = {(row["source_version_id"], row["column_id"]): row["state"] for row in store.conn.execute(
+        "SELECT c.source_version_id, c.column_id, r.state FROM evidence_cells c"
+        " JOIN cell_revisions r ON r.id = c.current_revision_id WHERE c.table_id = ?", (table_id,)
+    )}
+    terminal = {"value", "unknown", "not_applicable", "not_found_in_inspected_scope", "not_verified"}
+    missing = [{"source_version_id": source_id, "column_id": column_id}
+               for source_id in included for column_id in column_ids
+               if source_id not in active_rows or states.get((source_id, column_id)) not in terminal]
+
+    failed_pairs = {pair for pair, state in states.items() if state == "inaccessible"}
+    scope_revision = store.research(research_id)["current_scope_revision"]
+    for row in store.conn.execute(
+        "SELECT r.target_json, s.operation_key FROM runs r JOIN run_steps s ON s.run_id = r.id"
+        " WHERE r.research_id = ? AND r.kind = 'table_fill' AND json_extract(r.target_json, '$.table_id') = ?"
+        " AND r.scope_revision = ? AND s.kind = 'model:cell_extraction' AND s.status IN ('failed', 'outcome_unknown')",
+        (research_id, table_id, scope_revision),
+    ):
+        target = json.loads(row["target_json"])
+        for source in target.get("sources", []):
+            prefix = f"cell_extraction:{source['source_version_id']}:"
+            if not row["operation_key"].startswith(prefix):
+                continue
+            batch = row["operation_key"][len(prefix):]
+            if not batch.isdigit():
+                continue
+            for column_id in source["column_ids"][int(batch) * MAX_COLUMNS_PER_CALL:(int(batch) + 1) * MAX_COLUMNS_PER_CALL]:
+                failed_pairs.add((source["source_version_id"], column_id))
+    missing_pairs = {(item["source_version_id"], item["column_id"]) for item in missing}
+    failed_rows = [source_id for source_id in included if source_id in active_rows
+                   and any((source_id, column_id) in missing_pairs for column_id in column_ids)
+                   and all((source_id, column_id) in failed_pairs for column_id in column_ids
+                           if (source_id, column_id) in missing_pairs)]
+    return {"ready": bool(included and columns) and (not missing or
+            (continue_with_failed and all(item["source_version_id"] in failed_rows for item in missing))),
+            "missing": missing, "failed_rows": failed_rows}
+
+
 def purge_tables(conn: Any, research_id: str) -> None:
     """Delete a research's tables during permanent deletion; the caller holds the purge authorization."""
     _delete_tables(conn, "SELECT id FROM evidence_tables WHERE research_id = ?", (research_id,))

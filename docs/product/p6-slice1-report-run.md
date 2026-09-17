@@ -1830,6 +1830,9 @@ git commit -m "Add nearest_frames for the targeted report phrase repair prompt"
 
 #### Task 3: `phrasing.py` — hedefli onarım orkestrasyonu ve istisnalar
 
+**Erteleme notu (1d uygulaması):** `flagged_sentences` yazılmıştır. `repair_section`, hiçbir dilimin henüz
+yazmadığı `flow._step_input`/`_model_step` içindeki `report_target` aktarımını beklemektedir.
+
 **Files:**
 - Create: `backend/deixis/workflow/report/phrasing.py`
 - Test: `tests/test_report_phrasing.py`

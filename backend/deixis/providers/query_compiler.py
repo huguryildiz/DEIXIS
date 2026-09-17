@@ -3,7 +3,9 @@
 The model names the concepts and the providers; this module writes every query string. Each query requires one term of
 the core concept AND one term of one other concept family, so no query can drop the discriminating core term. Every
 query passes `query_rules.query_issues` and the 300-character limit before it is returned; terms are trimmed from the
-end of a group until it does. No recall measurement stands behind these rules: they are a structural guard only.
+end of a group until it does. With a core depth, OpenAlex first gets the core group alone, read deeper than the other
+queries: a model-free probe found most known works beyond a query's first 25 results (docs/product/search-recall-depth-2026-09-17.md).
+No recall measurement stands behind these rules: they are a structural guard only.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from typing import Any
 
 from deixis.providers import query_rules
 
-VERSION = "deixis.query_compiler.v1"
+VERSION = "deixis.query_compiler.v2"
 MAX_QUERY_CHARS = 300
 # At most six terms in all keep a two-group query within OpenAlex's five operators; the core keeps up to two of them
 # when its family has more alternatives than fit.
@@ -91,12 +93,14 @@ def _round_robin(families: int, providers: int) -> list[tuple[int, int]]:
     return order
 
 
-def compile_queries(plan: dict[str, Any], enabled_providers: list[str], limit: int) -> list[dict[str, Any]]:
+def compile_queries(plan: dict[str, Any], enabled_providers: list[str], limit: int, core_depth: int = 0) -> list[dict[str, Any]]:
     """Queries for a SearchPlan v2 with exactly one core concept, in search order, at most `limit`.
 
     Families are the non-core concepts with at least one synonym; `adjacent_field` concepts are used only when there is no other family, because
     they name another field's words for the idea rather than a condition to pair with the core. Family terms that repeat
     a core term are dropped; with no family left, each query is the core group alone. SerpApi gets at most one query.
+    A `core_depth` puts an OpenAlex query for the core group alone first, marked to read that many results; it counts
+    against `limit` like any other query.
     """
     core = next(c for c in plan["concepts"] if c["role"] == "core")
     core_terms = _terms(core)
@@ -110,6 +114,10 @@ def compile_queries(plan: dict[str, Any], enabled_providers: list[str], limit: i
     providers = [p for p in dict.fromkeys(plan["providers"]) if p in enabled_providers]
     queries: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    if core_depth and limit > 0 and "openalex" in providers and (text := _fit("openalex", core_terms, [])):
+        seen.add(("openalex", text))
+        queries.append({"provider_id": "openalex", "query_text": text, "results": core_depth,
+                        "rationale": f'Core "{core["label"]}" alone, read to {core_depth} results'})
     for f, p in _round_robin(len(families), len(providers)):
         if len(queries) >= limit:
             break

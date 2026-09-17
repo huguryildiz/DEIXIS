@@ -216,7 +216,8 @@ class ResearchFlow:
             queries = output["queries"]
         else:
             # Compiled once and stored with the plan, so a resumed run searches the same queries even after a compiler change.
-            queries = query_compiler.compile_queries(plan, scope["providers"], budget["max_provider_requests"])
+            queries = query_compiler.compile_queries(plan, scope["providers"], budget["max_provider_requests"],
+                                                   budget.get("core_depth", 0))
             self.store.set_step_output(self.store.step(run_id, "search_plan", "model:search_plan")["id"],
                                        output | {"queries": queries, "query_compiler": query_compiler.VERSION})
         # Runs created before results_per_query existed split the candidate limit across their queries.
@@ -323,7 +324,7 @@ class ResearchFlow:
             self._pause(run_id, "budget_exhausted", {"limit": "provider_requests"})
         self.store.start_step(step["id"])
         settings = self.deps.settings
-        limit = min(per_query, connector.max_results)
+        limit = min(query.get("results") or per_query, connector.max_results)  # a deep core query carries its own depth
         attempts = 0
         while True:
             self.store.add_usage(run_id, "provider_requests")

@@ -20,6 +20,7 @@ class EffortBudget:
     max_candidates: int
     max_answer_passages: int
     results_per_query: int
+    core_depth: int = 0
 
 
 # Screening proposals are requested for at most this many candidates per model call.
@@ -27,11 +28,15 @@ SCREENING_BATCH = 40
 
 # Effort presets bound work; they are not paper-count or accuracy guarantees. Model calls cover the search plan, one
 # screening call per SCREENING_BATCH candidates and the answer, each with its one schema repair. Provider requests are
-# the plan's query limit; with several providers enabled, one query per relevant provider needs room.
+# the plan's query limit; with several providers enabled, one query per relevant provider needs room. `core_depth` is
+# how many results OpenAlex's core-only query reads (0: no such query); standard's 250 candidates and 15 model calls were
+# chosen for it in docs/product/search-recall-depth-2026-09-17.md, detailed keeps more room than standard.
 TEST_EFFORT_BUDGETS = {
     "quick": EffortBudget(max_model_calls=6, max_provider_requests=3, max_candidates=20, max_answer_passages=16, results_per_query=10),
-    "standard": EffortBudget(max_model_calls=12, max_provider_requests=8, max_candidates=150, max_answer_passages=48, results_per_query=25),
-    "detailed": EffortBudget(max_model_calls=14, max_provider_requests=12, max_candidates=200, max_answer_passages=80, results_per_query=25),
+    "standard": EffortBudget(max_model_calls=15, max_provider_requests=8, max_candidates=250, max_answer_passages=48, results_per_query=25,
+                             core_depth=100),
+    "detailed": EffortBudget(max_model_calls=20, max_provider_requests=12, max_candidates=300, max_answer_passages=80, results_per_query=25,
+                             core_depth=100),
 }
 
 

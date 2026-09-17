@@ -109,7 +109,7 @@ def test_compiled_queries_are_stored_with_the_plan_and_a_resumed_run_searches_th
     def edit_stored_query(store, run_id):
         # Stands in for a compiler change between pause and resume: the stored queries, not a new compilation, are searched.
         step = store.step(run_id, "search_plan", "model:search_plan")
-        assert step["output"]["query_compiler"] == "deixis.query_compiler.v1"
+        assert step["output"]["query_compiler"] == "deixis.query_compiler.v2"
         assert [q["query_text"] for q in step["output"]["queries"]] == ['"diffusion channel" AND scheduling', "diffusion channel scheduling"]
         step["output"]["queries"] = step["output"]["queries"][:1]
         store.set_step_output(step["id"], step["output"])

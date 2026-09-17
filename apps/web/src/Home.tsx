@@ -22,8 +22,8 @@ export const scopeOptions: Record<SourceScope, { icon: LucideIcon; detail: strin
 }
 export const effortOptions: Record<Effort, { icon: LucideIcon; detail: string }> = {
   quick: { icon: Zap, detail: 'Up to 3 searches of 10 results, 20 candidates, 16 passages' },
-  standard: { icon: Gauge, detail: 'Up to 8 searches of 25 results, 150 candidates, 48 passages' },
-  detailed: { icon: Telescope, detail: 'Up to 12 searches of 25 results, 200 candidates, 80 passages' },
+  standard: { icon: Gauge, detail: 'Up to 8 searches (the core search 100 results, the others 25), 250 candidates, 48 passages' },
+  detailed: { icon: Telescope, detail: 'Up to 12 searches (the core search 100 results, the others 25), 300 candidates, 80 passages' },
 }
 
 export function Option({ icon: Icon, title, detail }: { icon: LucideIcon; title: string; detail?: ReactNode }) {

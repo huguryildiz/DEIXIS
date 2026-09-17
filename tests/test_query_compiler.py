@@ -103,3 +103,17 @@ def test_long_terms_are_trimmed_to_the_query_length_and_syntax_characters_remove
     assert query["query_text"].startswith('("entanglement routing" OR "quantum routing") AND (MILP OR "entanglement aware')
     # CORE refuses a quoted phrase without AND, so a core-only plan gives it no query at all.
     assert query_compiler.compile_queries(plan([CORE], ["core"]), ALL_PROVIDERS, 8) == []
+
+
+def test_a_deep_openalex_query_searches_the_core_group_alone_before_the_paired_queries():
+    concepts = [CORE, ROUTING[2], ROUTING[4]]
+    core = '("entanglement routing" OR "entanglement distribution" OR "quantum routing")'
+    deep = query_compiler.compile_queries(plan(concepts, ["ieee_xplore", "openalex"]), ALL_PROVIDERS, 4, core_depth=100)
+    shallow = query_compiler.compile_queries(plan(concepts, ["ieee_xplore", "openalex"]), ALL_PROVIDERS, 3)
+    assert deep[0] == {"provider_id": "openalex", "query_text": core, "results": 100,
+                       "rationale": 'Core "dolanıklık yönlendirmesi" alone, read to 100 results'}
+    assert deep[1:] == shallow  # the deep query takes one request of the same limit
+    # Without OpenAlex nothing changes; a plan without families gets the core query once, read deep.
+    assert query_compiler.compile_queries(plan(concepts, ["ieee_xplore"]), ALL_PROVIDERS, 4, core_depth=100) == \
+        query_compiler.compile_queries(plan(concepts, ["ieee_xplore"]), ALL_PROVIDERS, 4)
+    assert [(q["query_text"], q.get("results")) for q in query_compiler.compile_queries(plan([CORE], ["openalex"]), ALL_PROVIDERS, 8, core_depth=100)] == [(core, 100)]

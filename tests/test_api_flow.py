@@ -902,7 +902,8 @@ def test_standard_depth_reads_more_results_screens_in_batches_and_gives_every_in
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
         view, run = wait_run(client, rid, run["id"])
         assert run["status"] == "completed", run
-        assert seen == ["25"] and view["search_runs"][0]["provider_total"] == 300
+        # OpenAlex reads the core group alone to 100 results first, then the paired query to 25 (search-recall-depth note).
+        assert seen == ["100", "25"] and view["search_runs"][0]["provider_total"] == 300
         assert [len(c["candidates"]) for c in adapter.calls if c["task_type"] == "screening"] == [SCREENING_BATCH, 45 - SCREENING_BATCH]
         assert view["counts"]["included"] == 45
         first = next(s for s in view["sources"] if s["title"].endswith("study 0"))
@@ -1772,7 +1773,8 @@ def test_standard_depth_reads_more_results_screens_in_batches_and_gives_every_in
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
         view, run = wait_run(client, rid, run["id"])
         assert run["status"] == "completed", run
-        assert seen == ["25"] and view["search_runs"][0]["provider_total"] == 300
+        # OpenAlex reads the core group alone to 100 results first, then the paired query to 25 (search-recall-depth note).
+        assert seen == ["100", "25"] and view["search_runs"][0]["provider_total"] == 300
         assert [len(c["candidates"]) for c in adapter.calls if c["task_type"] == "screening"] == [SCREENING_BATCH, 45 - SCREENING_BATCH]
         assert view["counts"]["included"] == 45
         first = next(s for s in view["sources"] if s["title"].endswith("study 0"))

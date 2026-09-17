@@ -46,6 +46,7 @@ CAPABILITIES = {
 MAX_DOWNLOADS_PER_RUN = 8
 MAX_ABSTRACT_CHARS = 2500
 MAX_PASSAGES_PER_SOURCE = 6  # passages one included source may contribute to an answer step
+PDF_PAGES_PER_SOURCE = 2  # PDF passages a source adds to its abstract when the included sources outnumber the passage limit
 MAX_SMALL_PDF_CHARS = 60_000  # bounded full extracted text for a single attached PDF
 MAX_SMALL_PDF_PAGES = 12
 # Passages of its one source a cell extraction call reads. A source within MAX_CELL_PASSAGES and MAX_SMALL_PDF_CHARS is
@@ -685,6 +686,25 @@ class ResearchFlow:
             for p in semantic:
                 semantic_rank.setdefault(p["source_version_id"], len(semantic_rank))
         order = answer_source_order(included, self.store.answer_order_facts(research_id, included), texts, unique_terms, semantic_rank)
+        if len(included) > limit:
+            # One abstract per source would fill the input and leave no PDF page (D55). A source with PDF text gives its
+            # abstract and its best pages, and the sources at the end of the order are not given.
+            position = {p["id"]: i for i, p in enumerate(ranked)}
+            for svid in order:
+                room = limit - len(selected)
+                if room <= 0:
+                    break
+                passages = passages_of[svid]
+                first = next((q for q in passages if q["kind"] == "abstract"), None) or best.get(svid) or next(iter(passages), None)
+                pages = [q for q in passages if q["kind"] == "pdf_page" and q is not first]
+                if pages:
+                    matched = {q["id"]: i for i, q in enumerate(self.store.search_passages([svid], fts, MAX_PASSAGES_PER_SOURCE * 2))}
+                    pages.sort(key=lambda q: (0, position[q["id"]]) if q["id"] in position else (1, matched[q["id"]]) if q["id"] in matched
+                               else (2, -formulation_score(q["text"]), q["physical_page"] if q["physical_page"] is not None else math.inf))
+                for q in ([first] if first else []) + pages[:PDF_PAGES_PER_SOURCE]:
+                    if len(selected) < limit:
+                        selected[q["id"]] = q
+            return list(selected.values())
         # Every included source is given first, in that order, up to the limit: its abstract, else its best-matching
         # passage, else its first passage. Formulation pages then get bounded room before the general FTS matches.
         for svid in order:

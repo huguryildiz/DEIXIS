@@ -234,6 +234,36 @@ def test_answer_retrieval_places_a_formulation_page_before_a_better_fts_match():
     assert [p["id"] for p in passages] == ["abstract", "formulation", "fts"]
 
 
+def _many_sources_store(pages_of_s2):
+    abstracts = {f"s{n}": {"id": f"abstract-{n}", "source_version_id": f"s{n}", "kind": "abstract", "physical_page": None,
+                           "text": f"SYNTHETIC abstract {n} about scheduling."} for n in range(1, 6)}
+
+    class RetrievalStore:
+        def latest_step_output(self, *_): return None
+        def search_passages(self, svids, *_):
+            return [p for p in pages_of_s2 if p["id"] == "fts" and p["source_version_id"] in svids]
+        def passages_for(self, svid): return [abstracts[svid], *(pages_of_s2 if svid == "s2" else [])]
+        def source(self, svid): return {"title": f"SYNTHETIC source {svid}"}
+        def answer_order_facts(self, *_): return {f"s{n}": (True, 6 - n) for n in range(1, 6)}
+
+    return RetrievalStore()
+
+
+def test_answer_retrieval_gives_a_pdf_source_its_best_pages_when_sources_outnumber_the_passage_limit():
+    from deixis.workflow.flow import ResearchFlow
+
+    page = lambda pid, n, text: {"id": pid, "source_version_id": "s2", "asset_id": "asset", "kind": "pdf_page", "physical_page": n, "text": text}
+    pages = [page("plain", 1, "SYNTHETIC introduction."), page("fts", 2, "SYNTHETIC scheduling scheduling results."),
+             page("formulation", 3, "SYNTHETIC. Minimize delay subject to x ∈ {0,1} and x ≤ 1.")]
+    flow = object.__new__(ResearchFlow)
+    flow.store = _many_sources_store(pages)
+    scope = {"question": "How is scheduling optimized?", "revision": 1}
+    sources = [f"s{n}" for n in range(1, 6)]
+    assert [p["id"] for p in flow._retrieve("research", scope, sources, 4)] == ["abstract-1", "abstract-2", "fts", "formulation"]
+    # With room for every source, the selection is unchanged: every abstract first, then pages.
+    assert [p["id"] for p in flow._retrieve("research", scope, sources, 8)][:5] == [f"abstract-{n}" for n in range(1, 6)]
+
+
 def test_short_attached_pdf_supplies_later_pages_without_the_multi_source_cap():
     from deixis.workflow.flow import ResearchFlow
 

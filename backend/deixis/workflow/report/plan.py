@@ -51,6 +51,9 @@ def section_budgets(total_words: int, included_count: int) -> dict[str, dict[str
 def freeze_plan(model_plan: dict[str, Any], snapshot: dict[str, Any], included_count: int) -> dict[str, Any]:
     """Replace code-owned plan fields with the frozen corpus, budgets and support rules."""
     frozen = copy.deepcopy(model_plan)
+    # Model-response envelope metadata is not part of the code-owned plan stored and reused by section calls.
+    for key in ("schema_version", "step_input_id", "scope_revision", "skill_package_hash"):
+        frozen.pop(key, None)
     frozen.update({
         "corpus": copy.deepcopy(snapshot["corpus"]),
         "section_budgets": section_budgets(DEFAULT_REPORT_WORDS, included_count),

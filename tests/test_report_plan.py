@@ -49,3 +49,21 @@ def test_freeze_plan_overrides_all_model_supplied_code_owned_fields_without_muta
     assert frozen["section_budgets"] == section_budgets(5500, 8)
     assert model_plan["corpus"] == {"included": 999}
     assert ALLOWED_SUPPORT["VI"] == ("analyst_inference",)
+
+
+def test_freeze_plan_removes_model_envelope_fields():
+    model_plan = {
+        "schema_version": "deixis.report_plan_draft.v1",
+        "step_input_id": "sti_SYNTH0001",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:synthetic",
+        "scope_statement": "SYNTHETIC scope",
+        "research_questions": [],
+        "glossary": [],
+        "axes": [],
+    }
+    snapshot = {"corpus": {"found": 1, "unique": 1, "screened": 1, "included": 1, "full_text": 0}}
+
+    frozen = freeze_plan(model_plan, snapshot, included_count=1)
+
+    assert not {"schema_version", "step_input_id", "scope_revision", "skill_package_hash"} & frozen.keys()

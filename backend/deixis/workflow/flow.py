@@ -174,6 +174,8 @@ class ResearchFlow:
                 await self._cell_recheck(run, scope)
             elif run["kind"] == "research_title":
                 await self._research_title(run, scope)
+            elif run["kind"] == "report":
+                await self._report(run, scope)
             else:
                 await self._table_columns(run, scope)
         except RunStopped:
@@ -297,6 +299,11 @@ class ResearchFlow:
             self.store.set_research_title(rid, revision, output["result"]["title"])
         elif not optional:
             self._fail(run_id, "invalid_model_output", {"step": "research_title", "issues": output["issues"]})
+
+    async def _report(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+        from deixis.workflow.report.sections import run_report
+
+        await run_report(self, run, scope)
 
     async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]]) -> None:
         """Score screened sources by the similarity of their title and abstract to the question (D30).

@@ -53,7 +53,11 @@
         "answer_review",
         "cell_extraction",
         "table_columns",
-        "research_title"
+        "research_title",
+        "report_plan",
+        "report_section",
+        "report_phrase_repair",
+        "report_review"
       ]
     },
     "scope_revision": {
@@ -498,6 +502,88 @@
         }
       }
     },
+    "report_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["report_id", "section_id", "plan", "prior_summaries", "repair_request", "review_scope"],
+      "properties": {
+        "report_id": { "type": "string", "pattern": "^rpt_[0-9A-Za-z]{8,40}$" },
+        "section_id": {
+          "anyOf": [{ "type": "string", "enum": ["I", "III", "IV", "V", "VI", "VII", "VIII", "IX", "abstract", "index_terms"] }, { "type": "null" }]
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["scope_statement", "research_questions", "glossary", "axes", "corpus", "section_budgets", "allowed_support"],
+              "properties": {
+                "scope_statement": { "type": "string" },
+                "research_questions": { "type": "array", "items": { "type": "object" } },
+                "glossary": { "type": "array", "items": { "type": "object" } },
+                "axes": { "type": "array", "items": { "type": "object" } },
+                "corpus": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["found", "unique", "screened", "included", "full_text"],
+                  "properties": {
+                    "found": { "type": "integer" }, "unique": { "type": "integer" }, "screened": { "type": "integer" },
+                    "included": { "type": "integer" }, "full_text": { "type": "integer" }
+                  }
+                },
+                "section_budgets": {
+                  "type": "object", "additionalProperties": { "type": "object", "required": ["min_words", "max_words", "max_claims"],
+                    "additionalProperties": false, "properties": { "min_words": { "type": "integer" }, "max_words": { "type": "integer" }, "max_claims": { "type": "integer" } } }
+                },
+                "allowed_support": {
+                  "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string", "enum": ["source_stated", "analyst_inference"] } }
+                }
+              }
+            },
+            { "type": "null" }
+          ],
+          "description": "report_plan (this validates the plan the model just wrote, before code appends corpus/section_budgets/allowed_support): null. report_section and report_phrase_repair: the frozen plan. report_review: null (review reads sections directly, not the plan echo)."
+        },
+        "prior_summaries": {
+          "type": "array",
+          "description": "report_section only: code-written one-line summaries of already-valid sections this call may build on (§4: 'özetleri kod üretir').",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["section_id", "claim_key", "first_sentence", "support_type", "reading_depth"],
+            "properties": {
+              "section_id": { "type": "string" }, "claim_key": { "type": "string" }, "first_sentence": { "type": "string" },
+              "support_type": { "type": "string", "enum": ["source_stated", "analyst_inference"] },
+              "reading_depth": { "type": "string", "enum": ["metadata", "abstract", "selected_sections", "full_text"] }
+            }
+          }
+        },
+        "repair_request": {
+          "anyOf": [
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["section_id", "sentences"],
+              "properties": {
+                "section_id": { "type": "string" },
+                "sentences": {
+                  "type": "array",
+                  "items": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["sentence_id", "text", "support_type", "nearest_frames", "previous_sentence", "next_sentence"],
+                    "properties": {
+                      "sentence_id": { "type": "string" }, "text": { "type": "string" },
+                      "support_type": { "type": "string", "enum": ["source_stated", "analyst_inference"] },
+                      "nearest_frames": { "type": "array", "maxItems": 3, "items": { "type": "string" } },
+                      "previous_sentence": { "type": ["string", "null"] }, "next_sentence": { "type": ["string", "null"] }
+                    }
+                  }
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "review_scope": { "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }] }
+      }
+    },
     "allowlist": {
       "type": "object",
       "additionalProperties": false,
@@ -519,6 +605,9 @@
             "$ref": "common.schema.json#/$defs/source_id"
           }
         },
+        "column_ids": { "type": "array", "items": { "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" } },
+        "cell_ids": { "type": "array", "items": { "type": "string", "pattern": "^cel_[0-9A-Za-z]{8,40}$" } },
+        "gap_ids": { "type": "array", "items": { "type": "string", "pattern": "^gap[0-9]{1,3}$" } },
         "passage_ids": {
           "type": "array",
           "items": {

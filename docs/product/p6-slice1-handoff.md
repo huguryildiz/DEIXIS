@@ -143,10 +143,22 @@ III, IV ve V **üçü de `draft`** kaldı, çünkü `flagged_sentences` sırası
 alabilmenin ön koşulu.** Sahte modelle hiç görünmemesinin nedeni, `FakeAdapter` metninin kalıplara zaten
 uymasıydı.
 
-**Kalıp bankasının Türkçesi zayıf.** Bayrak kaldıran cümlelerin `nearest_frames`'i arasında "Kadınlar, ...",
-"bulmuştur.", "Bu tezde, X ve Y terimleri ..." gibi alakasız çerçeveler var. Yani iyi yazılmış bir cümle de
-bayraklanıyor. P8'de onarımı yazmadan önce Türkçe kalıp kümesine bakılmalı, yoksa onarım turu gürültüyü
-kovalar.
+**Kalıp denetimi neden patladı (18 Eylül'de ölçüldü).** İlk teşhis ("Türkçe kalıp bankası zayıf") **yanlıştı**:
+1618 kalıbın 1618'inin Türkçe karşılığı var ve çeviriler düzgün. Gerçek tablo şu: bayraklanan 11 cümlenin hiçbiri
+kıl payı kaçırmıyor — en iyi puanları −0.40 ile −0.70, en yakın kalıpla paylaştıkları sabit sözcük sayısı 0 ya
+da 1. Yani model kalıpları kullanmadı, doğal Türkçe yazdı; `report.md` "kalıpları yeniden kullan" diyor ama
+zorunlu tutmuyor.
+
+Bunun iki sonucu var. Birincisi, **`nearest_frames` tam da gerektiği anda işe yaramıyor:** hiçbir kalıp
+tutmayınca sıralama, kalıp bankasının kendi örnek cümlelerinden rastgele parçalar döndürüyor ("Kadınlar, ...",
+"ve b) ...", "Bunlar: ..."). P8'in onarım çağrısı bu üç kalıbı modele verecekse, düzgün bir cümleyi anlamsız bir
+kalıba sokmasını istemiş oluruz. İkincisi, küçük ama gerçek bir hata: `phrasebank._SLOT` yalnız `x/y/z/xs/ys/zs`
+biçimlerini yer tutucu sayıyor, `Xi`/`Xii`/`Xiii` biçimlerini **sabit sözcük** sanıyor; bu yüzden 2058 desenin
+8'i (7'si "Classifying and Listing" içinde, o kümenin %11'i) hiçbir cümleyle eşleşemiyor — İngilizce tarafta da
+aynı.
+
+**Asimetri:** cevap yolunda kalıp uyumu yalnız uyarı üretir; rapor yolunda `_run_section` bayraklı cümlesi olan
+bölümü `valid` saymıyor, yani fail-closed. Bu ayrım plana yazılmadı, koda düştü.
 
 **Çalıştığı doğrulanan taraf:** plan adımı gerçek içerik üretti — kapsam cümlesi, pasaja bağlı sözlük, kanıt
 tablosunun gerçek sütunlarına bağlı beş eksen, kod hesaplı korpus (`found` 128, `unique`/`screened` 105,

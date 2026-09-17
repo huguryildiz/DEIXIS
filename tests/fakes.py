@@ -59,6 +59,36 @@ def valid_response(si: dict[str, Any]) -> str:
         })
     if task == "research_title":
         return json.dumps(envelope(si, "deixis.research_title.v1") | {"title": "Synthetic short research title"})
+    if task == "report_plan":
+        return json.dumps(envelope(si, "deixis.report_plan_draft.v1") | {
+            "scope_statement": "SYNTHETIC scope covering release scheduling formulations in molecular communication.",
+            "research_questions": [
+                {"rq_id": "RQ1", "text": "SYNTHETIC: what decision variables are used?"},
+                {"rq_id": "RQ2", "text": "SYNTHETIC: what constraints are reported?"},
+            ],
+            "glossary": [{"term": "release scheduling", "definition": "SYNTHETIC definition.",
+                          "passage_id": si["passages"][0]["passage_id"]}],
+            "axes": [],
+        })
+    if task == "report_section":
+        first = si["passages"][0]
+        return json.dumps(envelope(si, "deixis.report_section_draft.v1") | {
+            "section_id": si["report_target"]["section_id"],
+            "claims": [{"claim_key": f"{si['report_target']['section_id']}.1", "text": "It has been reported that the fake claim holds.",
+                        "support_type": "source_stated", "passage_ids": [first["passage_id"]], "cell_ids": [], "paragraph": 1,
+                        "table_ref": None, "equation_ref": None, "body_refs": [], "axis_id": None, "count": None,
+                        "equation_origin": None, "gap_refs": []}],
+            "citation_anchors": [{"claim_key": f"{si['report_target']['section_id']}.1", "passage_id": first["passage_id"],
+                                  "cell_id": None, "quote": " ".join(first["text"].split())[:600]}],
+            "subsections": [], "gaps": [], "insufficient_evidence": [],
+        })
+    if task == "report_phrase_repair":
+        return json.dumps(envelope(si, "deixis.report_phrase_repair_draft.v1") | {
+            "repairs": [{"sentence_id": r["sentence_id"], "text": "It has been reported that the rewritten sentence holds."}
+                        for r in si["report_target"]["repair_request"]["sentences"]],
+        })
+    if task == "report_review":
+        return json.dumps(envelope(si, "deixis.report_review.v1") | {"findings": [], "notes": ""})
     first = si["passages"][0]
     return json.dumps(envelope(si, "deixis.grounded_answer_draft.v3") | {
         "title": "Synthetic evidence for release scheduling and optimization in constrained molecular communication networks",

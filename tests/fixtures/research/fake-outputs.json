@@ -270,6 +270,159 @@
       "expect_ok": false,
       "expect_codes": ["invalid_json"],
       "output_raw": "Here is my answer: the sources say..."
+    },
+    {
+      "name": "report_plan_valid",
+      "step_input": "C_report_plan",
+      "expect_ok": true,
+      "expect_codes": [],
+      "output": {
+        "schema_version": "deixis.report_plan_draft.v1",
+        "step_input_id": "sti_SYNTHR0001",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "scope_statement": "SYNTHETIC scope covering release scheduling formulations in molecular communication.",
+        "research_questions": [
+          {
+            "rq_id": "RQ1",
+            "text": "SYNTHETIC: what decision variables are used?"
+          },
+          {
+            "rq_id": "RQ2",
+            "text": "SYNTHETIC: what constraints are reported?"
+          }
+        ],
+        "glossary": [
+          {
+            "term": "release scheduling",
+            "definition": "SYNTHETIC definition.",
+            "passage_id": "psg_SYNA1abs01"
+          }
+        ],
+        "axes": []
+      }
+    },
+    {
+      "name": "report_section_valid",
+      "step_input": "C_report_section_IV",
+      "expect_ok": true,
+      "expect_codes": [],
+      "output": {
+        "schema_version": "deixis.report_section_draft.v1",
+        "step_input_id": "sti_SYNTHR0002",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "section_id": "IV",
+        "claims": [
+          {
+            "claim_key": "IV.1",
+            "text": "It has been reported that the fake claim holds.",
+            "support_type": "source_stated",
+            "passage_ids": [
+              "psg_SYNA1abs01"
+            ],
+            "cell_ids": [],
+            "paragraph": 1,
+            "table_ref": null,
+            "equation_ref": null,
+            "body_refs": [],
+            "axis_id": null,
+            "count": null,
+            "equation_origin": null,
+            "gap_refs": []
+          }
+        ],
+        "citation_anchors": [
+          {
+            "claim_key": "IV.1",
+            "passage_id": "psg_SYNA1abs01",
+            "cell_id": null,
+            "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+          }
+        ],
+        "subsections": [],
+        "gaps": [],
+        "insufficient_evidence": []
+      }
+    },
+    {
+      "name": "report_phrase_repair_valid",
+      "step_input": "C_report_phrase_repair",
+      "expect_ok": true,
+      "expect_codes": [],
+      "output": {
+        "schema_version": "deixis.report_phrase_repair_draft.v1",
+        "step_input_id": "sti_SYNTHR0003",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "repairs": [
+          {
+            "sentence_id": "IV.1#1",
+            "text": "It has been reported that the rewritten sentence holds."
+          }
+        ]
+      }
+    },
+    {
+      "name": "report_review_valid",
+      "step_input": "C_report_review",
+      "expect_ok": true,
+      "expect_codes": [],
+      "output": {
+        "schema_version": "deixis.report_review.v1",
+        "step_input_id": "sti_SYNTHR0004",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "findings": [],
+        "notes": ""
+      }
+    },
+    {
+      "name": "report_section_unknown_gap_ref",
+      "step_input": "C_report_section_VII",
+      "expect_ok": false,
+      "expect_codes": [
+        "unknown_gap_ref"
+      ],
+      "output": {
+        "schema_version": "deixis.report_section_draft.v1",
+        "step_input_id": "sti_SYNTHR0005",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "section_id": "VII",
+        "claims": [
+          {
+            "claim_key": "VII.1",
+            "text": "It has been reported that the fake claim holds.",
+            "support_type": "source_stated",
+            "passage_ids": [
+              "psg_SYNA1abs01"
+            ],
+            "cell_ids": [],
+            "paragraph": 1,
+            "table_ref": null,
+            "equation_ref": null,
+            "body_refs": [],
+            "axis_id": null,
+            "count": null,
+            "equation_origin": null,
+            "gap_refs": [
+              "gap999"
+            ]
+          }
+        ],
+        "citation_anchors": [
+          {
+            "claim_key": "VII.1",
+            "passage_id": "psg_SYNA1abs01",
+            "cell_id": null,
+            "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+          }
+        ],
+        "subsections": [],
+        "gaps": [],
+        "insufficient_evidence": []
+      }
     }
   ]
 }

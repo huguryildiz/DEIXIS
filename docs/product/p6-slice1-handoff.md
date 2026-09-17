@@ -126,9 +126,36 @@ raporu tamamlıyor. İstem: `docs/product/p6-slice1-p35-prompt.md`.
 yazıyor). **Planın test taslağı eskimiş:** on bölüm ve tur sırası bekliyordu, gerçek çıktı on bir bölüm ve
 ordinal sıra.
 
-**P5 — Gerçek modelle bir koşu. ⬅ SIRADAKİ, sahibin onayı bekliyor.** `gpt-5.6-luna`, küçük bir araştırma, kütüphanenin **kopyası** üzerinde,
+**P5 planı (koşulmadan önce yazılmıştı).** `gpt-5.6-luna`, küçük bir araştırma, kütüphanenin **kopyası** üzerinde,
 8799 portunda; canlı 8765 servisine asla dokunulmaz. Sahibin onayı gerekir. Aynı koşuda dilim 0'ın hiç
 yapılmamış süre ölçümü (`scripts/p6_eval/measure_fill.py`) de halledilir.
+
+**P5 — Gerçek modelle ilk koşu. ✅ koşuldu, ❌ tamamlanmadı.** 18 Eylül, kütüphanenin `sqlite3 .backup`
+kopyası üzerinde, 8799 portunda; canlı 8765 servisine dokunulmadı. Araştırma: "Moleküler Haberleşmede Yöneylem
+Araştırması", 3 dahil kaynak, 7 sütunlu hazır tablo, `codex` + `gpt-5.6-luna`, efor `standard`.
+Koşu `run_embUJviBM9urKW1UbZL9`, rapor `rpt_rT4aAdRIknsa7MUMbrIK`.
+
+**Sonuç: A turundan sonra `section_must_be_rewritten` ile duraklıyor.** 88 saniyede 4 model çağrısı (plan 22 s;
+III/IV/V eş zamanlı, 39/53/59 s — eş zamanlılık çalışıyor). II kod tarafından yazıldı, `valid`, 203 kelime.
+III, IV ve V **üçü de `draft`** kaldı, çünkü `flagged_sentences` sırasıyla 4, 2 ve 5 cümleyi kalıp dışı buldu;
+`_run_section` kalıp dışı cümle bulunca bölümü `valid` saymıyor ve tur bitince koşu duraklıyor. Onaracak kod
+(`repair_section`, **P8**) henüz yok. **Yani P8 isteğe bağlı bir sonraki parti değil, gerçek modelle rapor
+alabilmenin ön koşulu.** Sahte modelle hiç görünmemesinin nedeni, `FakeAdapter` metninin kalıplara zaten
+uymasıydı.
+
+**Kalıp bankasının Türkçesi zayıf.** Bayrak kaldıran cümlelerin `nearest_frames`'i arasında "Kadınlar, ...",
+"bulmuştur.", "Bu tezde, X ve Y terimleri ..." gibi alakasız çerçeveler var. Yani iyi yazılmış bir cümle de
+bayraklanıyor. P8'de onarımı yazmadan önce Türkçe kalıp kümesine bakılmalı, yoksa onarım turu gürültüyü
+kovalar.
+
+**Çalıştığı doğrulanan taraf:** plan adımı gerçek içerik üretti — kapsam cümlesi, pasaja bağlı sözlük, kanıt
+tablosunun gerçek sütunlarına bağlı beş eksen, kod hesaplı korpus (`found` 128, `unique`/`screened` 105,
+`included` 3, `full_text` 2). Atıf zinciri gerçek modelde de tutuyor: Türkçe iddia metni, İngilizce kaynak
+çapasıyla saklı pasajda bulunuyor. IV ve V'te altışar kayıt `cell_missing_evidence` diye kesildi (kanıt bağı
+olmayan hücreler bölüm girdisine alınmıyor).
+
+**Ölçüm yapılmadı:** dilim 0'ın `scripts/p6_eval/measure_fill.py` süre ölçümü bu koşuda halledilmedi; ayrı
+gerçek-model maliyeti olduğu için sahibin ayrı onayını bekliyor.
 
 **Buradan sonrası P5'in çıktısına bakılarak sıralanır.** Bugünkü tahmini sıra:
 
@@ -137,7 +164,7 @@ VIII. bölümün sayılarını kodun üretmesi. `selection.py`'nin VIII için hi
 modelin yazdığıyla doluyor.
 
 **P7** — kalan sekiz montaj kuralı (5, 6, 8, 9, 11, 12, 13, 14). Kural 12 için yukarıdaki karar 1'e bak.
-**P8** — 1d Task 3: `repair_section` ve istisna kayıtları.
+**P8 — 1d Task 3: `repair_section` ve istisna kayıtları. ⬅ SIRADAKİ, P5 bunu zorunlu kıldı.**
 **P9** — 1f: `report_review` ve destek-bozan onarımın geri alınması.
 **P10** — 1h: hazırlık panelinin dördüncü durumu.
 **P11** — 1i: okuma biçimli rapor görünümü, değişiklik bandı, zaman çizelgesi satırları.

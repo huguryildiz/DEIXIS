@@ -21,7 +21,7 @@
 - Bu dilim migration **gerektirmez**: `runs.kind` listesinde `table_fill` zaten var, yeni tablo yok. En son migration bu not yazılırken `0033_work_source_keys.sql`'dir; bu dilim onu değiştirmez ve yeni bir numaralı dosya eklemez.
 - Testler model bağımsızdır: `tests/fakes.py::FakeAdapter`, `create_app`'e enjekte edilen sahte bağlantılar. Gerçek model koşusu ölçüm görevinde `gpt-5.6-luna`'yı açıkça geçirir, kütüphanenin bir KOPYASI ve kendi `DEIXIS_DATA_DIR`'i ile, port 8799'da; canlı 8765 servisine dokunulmaz.
 - Commit'ler doğrudan `main`'e gider: açıklayıcı İngilizce cümle, AI ilişkilendirmesi/ortak yazarlık yok, yalnız o görevin dosyaları `git commit -- <paths>` ile stage edilir (başka oturumlar aynı ağacı düzenliyor), sonra `git push origin main`.
-- Bu dilimde alınan kalıcı karar `docs/decisions.md`'ye yürütme anındaki ilk boş D numarasıyla eklenir; bu not yazılırken en yüksek numara D59'dur, ama D57 iki kez talep edilmiş durumda — yürütmeden hemen önce `grep -n '^## D' docs/decisions.md | head -3` ile teyit edilmeli.
+- Bu dilimde alınan kalıcı karar `docs/decisions.md`'ye yürütme anındaki ilk boş D numarasıyla eklenir; bu not yazılırken en yüksek numara D59'dur ve bildirilen D57 çakışması kapanmıştır; yürütmeden hemen önce `grep -n '^## D' docs/decisions.md | head -3` ile yeniden bakın.
 
 ## Dosya yapısı
 
@@ -1041,7 +1041,7 @@ Immediately before editing, confirm the next free number:
 grep -n '^## D' docs/decisions.md | head -3
 ```
 
-Add a new entry at the very top of the decisions list (newest first), using the next free number (D60 as of this plan's writing, but re-check — D57 is currently claimed twice in the working tree per an earlier session, so do not assume D60 is still free):
+Add a new entry at the very top of the decisions list (newest first), using the next free number (D60 as of this plan's writing; re-check right before writing, other sessions add decisions):
 
 ```markdown
 ## D<NN> — Send table-fill cell extraction calls concurrently under a shared, adjustable limit

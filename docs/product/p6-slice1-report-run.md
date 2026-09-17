@@ -32,7 +32,7 @@
 - Sınırlar: bölüm başına 40 iddia; toplam rapor 4000–7000 kelime, dahil kaynak sayısı $n < 10$ ise $n/10$ ile ölçeklenir, alt sınır toplam 1200 kelime; bir `corpus_absence` adayı için en az üç tam-metinli-ve-uygulanabilir satır şart; bölüm başına en fazla bir kalıp onarımı; eş zamanlılık üst sınırı başlangıçta 6; hız sınırında en fazla iki yeniden gönderim.
 - Yasak sözcük listesi (gap/open problem/novel/first ve eşdeğerleri, iki dilde) rapor genelinde, başlık dahil, kill-search'ten önce her yerde denetlenir.
 - Commit'ler doğrudan `main`'e gider (kullanıcının global git kuralı): açıklayıcı İngilizce cümle, AI ilişkilendirmesi/ortak yazarlık yok, yalnız o görevin dosyaları `git commit -- <paths>` ile stage edilir, sonra `git push origin main`.
-- Bu dilimde alınan kalıcı bir karar `docs/decisions.md`'ye yürütme anındaki ilk boş D numarasıyla eklenir (bu not yazılırken D57 iki kez talep edilmiş durumda; yürütmeden önce en yüksek numara tekrar kontrol edilmeli).
+- Bu dilimde alınan kalıcı bir karar `docs/decisions.md`'ye yürütme anındaki ilk boş D numarasıyla eklenir (bu not commit'lenirken en yüksek numara D59'dur ve D57 çakışması kapanmıştır; yürütmeden hemen önce `grep -n '^## D' docs/decisions.md | head -3` ile yeniden bakın).
 
 ## Dosya yapısı
 
@@ -2645,7 +2645,7 @@ git commit -m "Add the report measurement kit and record the first real-model re
 **Files:**
 - Modify: `docs/decisions.md`, `docs/product/p6-report-design.md`
 
-- [ ] **Step 1: `docs/decisions.md`'ye yeni karar ekle** (yürütme anındaki ilk boş D numarasıyla — bu not yazılırken D57 iki kez kullanılmış, en yüksek numara yürütmeden hemen önce tekrar kontrol edilir):
+- [ ] **Step 1: `docs/decisions.md`'ye yeni karar ekle** (yürütme anındaki ilk boş D numarasıyla; bu not commit'lenirken en yüksek numara D59'dur, yürütmeden hemen önce yeniden bakın):
 
 ```markdown
 ## D<NN> — Report run kind: section-by-section report from the frozen evidence snapshot
@@ -2718,6 +2718,6 @@ Spec bölüm bölüm, hangi görevin uyguladığı:
 - **`tests/test_api_flow.py`'nin yinelenmiş fonksiyon tanımları:** Araştırma ajanlarından biri bu dosyada ~35 test fonksiyonunun iki kez (muhtemelen kötü bir birleştirmeden) tanımlandığını, pytest'in yalnız ikincisini topladığını bildirdi. Bu dilimin konusu değil ama ayrı bir temizlik görevi olarak sahibe bildirilmeli; bu plan dosyaya dokunmaz.
 - **`stage` sütunu:** Migration'da `runs.stage` CHECK listesi değişmedi (`report` çalışması mevcut `'synthesis'` ya da `'extraction'` değerlerinden birini kullanacak şekilde `Store.create_run`'ın stage eşlemesine `{"report": "synthesis"}` eklenmesi gerekir — bu küçük ekleme 1c Task 3'e dahil edilmeli, ayrı yazılmadı).
 - **`evidence_cells.id` öneki (`cel_`) ve `cell_revisions.id` öneki (`crv`)** doğrudan koddan (`new_id("cel")`, `tables.py:163`) doğrulandı; şemalardaki `^cel_[0-9A-Za-z]{8,40}$` deseni buna dayanır.
-- **D57 çakışması:** `docs/decisions.md`'de D57 numarasının bu not yazılırken iki kez kullanıldığı bildirildi (araştırma ajanı raporu); bu dilimin yeni kararı için yürütme anında en yüksek D numarası yeniden sayılmalı, D57'nin kendisi bu planın konusu değil.
+- **Karar numarası:** Not yazılırken bildirilen D57 çakışması 17 Eylül 2026'da kapandı (D57 arama çekirdeği, D58 düz metin belge görünümü, D59 kaynak anahtarları). Bu dilimin kararı yürütme anındaki ilk boş numarayı alır.
 - **`docs/product/p6-report-design.md`'nin slice numaralandırması güncellendi** (koordinatör notu): dilim 2 artık "Chain of Ideas" (gelişim zincirleri + alan tabanı), kill-search dilim 3, düzenleme/bayatlama/kapanış dilim 4, LaTeX dışa aktarımı dilim 5. Bu plan buna göre "Out of scope" ve §12 referanslarını günceller; ancak `p6-report-design.md`'nin kendi §12 metni (bu ajanın ilk okuduğu sürüm) hâlâ eski numaralandırmayı taşıyor olabilir — yürütmeden önce o dosyanın §12'si de bu yeni numaralandırmayla teyit edilmeli.
 - **`report_gaps.kind`'ın kod tarafı doğrulaması** (`domain.contracts.GAP_KINDS`) bu planda yalnız sabit bir tuple olarak tanımlandı; slice 2 (Chain of Ideas) dördüncü türü eklediğinde bu tuple'ı genişletmesi ve `report-section-draft.schema.json`'ın yeni bir sürümünü (`v2`) açması gerekecek — bu planın kendisi bunu yapmaz, yalnız genişlemeye izin verecek şekilde tasarlar.

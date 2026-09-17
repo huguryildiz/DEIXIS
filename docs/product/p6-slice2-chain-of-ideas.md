@@ -695,7 +695,7 @@ Ayrıca dilim 3, `chain_links.relation` kapalı listesini adayın "oluşma yolu"
 - Rapor tasarımının kabul edilmiş §12 madde 2'sindeki dört öğe (alan tabanı, çizgiler, VI'ya dördüncü tür, çizgi görünümü) bu notta karşılanıyor; kill-search ve aday somutlaştırma kapsam dışı bırakıldı (dilim 3).
 - Bütçe sayıları (25 iş, 8 aday/çağrı) P5 dilim 1'in sayılarından ödünç alındı, bu dilim için ayrıca ölçülmedi.
 
-- **Bağımlılık:** `backend/deixis/workflow/source_keys.py` (yazar–yıl anahtarları, `family_name`) bu not yazılırken depoda commit'lenmemişti; başka bir oturumun süren işiydi. Alt adım 4 o dosyanın `main`'e girmesine bağlıdır. Girmezse soyadı normalleştirmesi `chain_mentions.py` içinde yazılır ve sonra birleştirilir.
+- **Bağımlılık:** `backend/deixis/workflow/source_keys.py` (yazar–yıl anahtarları, `family_name`) bu notun ilk taslağı yazılırken commit'lenmemişti; 17 Eylül 2026'da D59 ile `main`'e girdi (migration `0033_work_source_keys.sql`). Alt adım 4 artık ona doğrudan dayanabilir.
 
 ## 18. Sahibe sorulanlar
 

@@ -290,6 +290,19 @@ Yöntem dayanağı: dilim 2 ve 3'ün notları README'deki altı adımlı Chain o
 
 Ayrı iş, bu notun dışında: **PDF edinme** (D55 M3 = 0/7 ve 0/5) için tasarım notu. Raporun kalitesi ona bağlıdır; bu not onu çözmez, yalnız sayıyı görünür kılar.
 
+**Dilim belgeleri** (17 Eylül 2026). Dilim 0, 1 ve 5 kabul edilmiş tasarıma dayanan satır düzeyinde uygulama planlarıdır; dilim 2, 3 ve 4'ün kabul edilmiş tasarımı yoktur, sahibe sorularıyla taslak dilim notlarıdır ve sorular kapanınca satır düzeyinde plana çevrilir.
+
+| Dilim | Belge | Tür |
+|---|---|---|
+| 0 | [p6-slice0-concurrent-fill.md](p6-slice0-concurrent-fill.md) | uygulama planı, 7 görev |
+| 1 | [p6-slice1-report-run.md](p6-slice1-report-run.md) | uygulama planı, 14 alt dilim |
+| 2 | [p6-slice2-chain-of-ideas.md](p6-slice2-chain-of-ideas.md) | taslak not, 10 soru |
+| 3 | [p6-slice3-kill-search.md](p6-slice3-kill-search.md) | taslak not, 10 soru |
+| 4 | [p6-slice4-editing-stale-measurement.md](p6-slice4-editing-stale-measurement.md) | taslak not, 9 soru |
+| 5 | [p6-slice5-latex-export.md](p6-slice5-latex-export.md) | uygulama planı |
+
+Uygulama sırası: 0 → 1 → 2 → 3 → 4; dilim 5, dilim 1'den sonra herhangi bir anda. Dilim 2'nin rapora entegrasyonu dışındaki alt adımları dilim 1'i beklemez.
+
 ## 13. Ölçüm beklentileri (dilim 1'den önce dondurulur)
 
 P5 dilim 5'teki kural: beklenti koşudan önce yazılır ve commit'lenir; sonuç sonradan yorumlanıp beklentiye uydurulmaz. Sayısal aralıklar bu notta değil, koşudan önce ayrı bir dosyada donar. Ölçülecekler:

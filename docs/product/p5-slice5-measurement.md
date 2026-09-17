@@ -1,6 +1,6 @@
 # P5 dilim 5 — Bilinen kaynak kümesiyle ölçüm: arama, PDF, pasaj, tablo hücresi ve yanıt: tasarım notu
 
-**Tarih:** 17 Eylül 2026. **Durum:** Kabul edildi (17 Eylül 2026): sahip §8'deki yedi soruda da ilk seçeneği seçti. Alt adım 1 sahibin girdisini bekliyor (§10). Kod yazılmadı, model ya da sağlayıcı çağrısı yapılmadı.
+**Tarih:** 17 Eylül 2026. **Durum:** Tamamlandı (17 Eylül 2026). Ölçüm §11'deki dondurulmuş girdilerle yapıldı; sonuçlar ve sınırları [D55](../decisions.md)'te. P5 bu ölçümle kapandı.
 
 **Kısaca:** P5'in son dilimi yeni bir özellik değil, bir ölçümdür. Soru şu: DEIXIS gerçek bir soruda, gerçek modelle, kullanıcının bildiği kaynaklardan kaçını bulur, kaçının PDF'ini alır, modele doğru pasajı verir, tablo hücresine doğru değeri yazar ve yanıttaki iddiayı gerçekten destekleyen pasaja bağlar? Bu beş aşama ayrı ölçülür ve tek bir "doğruluk" sayısında birleştirilmez (plan §9 "P5 PDF edinme önerisi", §10). Bugüne kadarki bütün içerik denetimleri Claude'un okumasıdır, bir insanın değil. Ayrıca D43'ten sonra arama (D44), PDF çıkarımı (D47), PDF toplama (D49), denklem okuma (D52) ve OCR (D51) değişti; bunların hiçbiri gerçek modelle uçtan uca yeniden ölçülmedi.
 
@@ -167,3 +167,11 @@ Sahip sütunları onayladı, ikinci soruyu Claude'un hazırlamasını ve ölçü
 | M7 | denklem/sayı hücrelerinin ≥ %80'i sayfayla uyuşur | aynı | < %60 |
 | M8 | hücre adımlarının ≥ %80'i geçerli | aynı | < %60 |
 | S3 | iki yanıt arasında alıntılanan bilinen eser sayısı en çok 2 fark eder | — | 4 ve üstü fark |
+
+## 12. Sonuç (kısa)
+
+Ayrıntı ve sınırlar D55'te; çıktılar ve işaretlenmiş inceleme sayfaları `.local/p5-measure-2026-09-17/` altında. Bütün değerlendirmeler Claude'un.
+
+- **İyi giden:** yanlış atıf yok (S1 17 iddia, S2 16 iddia); rastgele 40 tablo değerinde yanlış yok; PDF sayfasıyla karşılaştırılan 9 sayı/denklem hücresi karakter karakter uyuşuyor; hücre adımlarının 85/86'sı geçerli.
+- **Kötü giden:** 52 kaynak dahil edilince yanıtlar hiç PDF sayfası kullanmadı (D34'teki sorun sürüyor); tutulmuş S2'de k-bağlantılılık eserlerinin yalnız 4/15'i, su altı bağlam eserlerinin 0/7'si bulundu; S1'de üç yanıttan ikisi alıntısı eksik atıf yüzünden geçersiz kaldı.
+- **Sonraki iki tasarım notu önerisi:** (1) büyük seçimde yanıt girdisine PDF sayfası ayırma; (2) tutulmuş soruda bilinen eser geri çağırması (arama planı ve sorgu derleme).

@@ -2,6 +2,43 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D55 — Close P5 on a two-question real-model measurement, reviewed by Claude on the owner's delegation
+
+**Status**: accepted
+**Date**: 2026-09-17
+
+**Context**: P5 slice 5 (`docs/product/p5-slice5-measurement.md`) measures, stage by stage, what DEIXIS does on real questions with a real model after search (D44), PDF text (D47), PDF collection (D49), equation reading (D52) and OCR (D51) changed. The owner accepted the design's recommendations, approved the table columns, asked Claude to prepare the second question and run the measurement on its own, and then asked for P5 to close. Inputs were committed before any run (`095a01e`): S1 is the D34 question on Kurt et al. 2017 with the paper's references [12]–[28] in the paper's own strata; S2 is a held-out question on k-connectivity and lifetime in underwater sensor networks, with a known set taken from the Crossref references of Yildiz et al. 2022 (IEEE IoT J) and strata assigned by Claude from titles. All roles ran `gpt-5.6-luna` medium, the reviewer included. Runs used a restored backup of the live library on port 8799 and a `git worktree` at `095a01e`, so uncommitted work in the main checkout did not enter. Marker was not installed in the copy; stored readings were used.
+
+**Decision**: P5 is closed. The two largest problems found are carried forward as separate design notes and are not fixed in this slice: answers on a large selection use no PDF page, and known-work recall on the held-out question is low.
+
+**Evidence** (Claude's review, not a person's; outputs and ticked sheets in `.local/p5-measure-2026-09-17/`; kit `scripts/p4_eval/measure.py` `snapshot`, `score`, `cells`, `cells-score`):
+
+| | S1 Kurt 2017 | S2 k-connectivity (held out) |
+|---|---|---|
+| M1 known works found | 9 of 17 (terrestrial 4/9, underwater 2/4, underground 1/1, body area 1/3); target found | 4 of 15 k-connectivity works, 0 of 7 underwater context works; target found |
+| M2 included by the model | 6 of the 9 found; 52 included of 103 unique; title-level precision 42/52 (0.81), three duplicate pairs among them | 4 of 4; 52 included of 127; precision 49/52 (0.94) |
+| M3 PDF text for included known works | 0 of 7 through DEIXIS paths; 6 of 7 through PDFs the owner had uploaded for P4 | 0 of 5 |
+| M4 reading depth (reduced, see Limits) | 7 known works given to the answer, 6 with PDF text: all were given as abstracts; 0 PDF pages among 20 evidence links | 0 PDF pages among 24 and 32 evidence links |
+| M5 table cells, 20 random valid values | 19 correct, 1 partly (details outside the quoted anchors), 0 wrong | 20 correct, 0 wrong |
+| M5 `not_found_in_inspected_scope` | 38 cells, all read from abstracts; 37 absent from the abstract, 1 missed | 33 cells, all abstracts; 33 absent |
+| M6 answer claims | 17 claims: 12 supported, 5 partly (four make one study plural or add a detail the passage lacks), 0 wrong citations; links 60/60, DOI titles 15/15 | 16 claims: 14 supported, 2 partly, 0 wrong citations; links 72/72, DOI titles 16/16 |
+| M7 number and equation cells vs the PDF page | 6 of 6 match the page character by character (fill 1); the 2 new values in fill 2 also match | 1 of 1 matches, but it answers a different question (the method's lifetime gain, not the cost of k); counted partly correct |
+| M8 operation | cell steps 22/23 and 23/23 valid; answers 1 of 3 valid (two ended as unverified drafts with `missing_citation_anchor`, both citing the Kurt 2017 abstract without a quote); 2–3 model calls, 142–202 s per answer; fills 506–576 s | cell steps 20/20 and 20/20; answers 2 of 2 valid; discovery 291 s |
+| S3 repeat | answers not comparable (one valid); cell outcome agreed in 129/150 cells, number and equation values identical where both fills were valid | both answers cited the same 4 known works; cell outcome agreed in 137/150 |
+
+Against the ranges written before the runs: M1 S1 in range, S2 below range (4, the lowest count that does not mark the assumption wrong); M2 S1 67% (below the expected 70%, above 50%); M3, M5, M7 and M8 cell steps in range; M6 wrong citations in range, S1 partly supported claims above the expected 1–3.
+
+Side findings: an answer's limitation text showed short handles (`srv_S0000002` …) instead of source names (D12 handles are resolved in the fields, not in this free text); a table fill takes at most 25 of 52 rows by design, so each fill covered about half of the included sources; library records reuse PDFs attached in earlier researches, which is why S1's known works had PDF text.
+
+**Limits**:
+
+- **Reviewer.** Every judgment is Claude's; no person checked a claim, cell or relevance mark, and no human–agent agreement was measured. Relevance was judged from titles.
+- **Answer pages (M4).** Answer pages were not labelled before the runs, so M4 was reduced to reading depth; whether a given passage answered the question was not measured.
+- **S2 known set.** Strata come from reference titles, not the paper's text or the owner; the article is closed access and its PDF was not read.
+- **Not-found cells (S4).** All not-found cells came from abstracts, so they say nothing about the full text; the rule in slice 1 decision 5 stays and cannot be revisited on this data.
+- **Sample.** Two questions, one model, one search per question, two answers and two fills each (plus one extra S1 answer after a failure). The differences between S1 and S2 are not measured effects of topic.
+- **Screening.** The model's inclusions were used without correction, because Claude had seen the known sets; D34's correction step was not repeated.
+
 ## D53 — Replace and remove API keys read from `.env` from Settings
 
 **Status**: accepted

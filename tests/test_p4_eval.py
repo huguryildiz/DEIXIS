@@ -49,7 +49,7 @@ def _table():
     rows = [{"source_version_id": s, "title": f"SYNTHETIC {s}"} for s in ("srv_1", "srv_2")]
     cells = [_cell("c1", "srv_1", "value", "selected_sections"), _cell("c2", "srv_1", "not_found_in_inspected_scope", "selected_sections"),
              _cell("c1", "srv_2", "value", "abstract", "abstract"), _cell("c2", "srv_2", "value", "abstract", "abstract", valid=False)]
-    run = {"steps": [{"kind": "model:table_fill", "status": "succeeded"}, {"kind": "model:table_fill", "status": "failed"}]}
+    run = {"steps": [{"kind": "model:cell_extraction", "status": "succeeded"}, {"kind": "model:cell_extraction", "status": "failed"}]}
     return {"table": {"id": "tbl_1"}, "columns": columns, "rows": rows, "cells": cells}, run
 
 

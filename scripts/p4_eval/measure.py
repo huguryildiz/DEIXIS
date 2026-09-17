@@ -283,7 +283,7 @@ def is_exact_column(column: dict[str, Any]) -> bool:
 
 
 def cell_summary(table: dict[str, Any], runs: list[dict[str, Any]]) -> dict[str, Any]:
-    steps = [s for r in runs for s in r["steps"] if s["kind"] == "model:table_fill"]
+    steps = [s for r in runs for s in r["steps"] if s["kind"] == "model:cell_extraction"]
     valid = [c["current"] for c in table["cells"] if c["current"] and c["current"]["output_status"] == "structurally_valid"]
     count = lambda items: {k: sum(i == k for i in items) for k in dict.fromkeys(items)}
     return {"rows": len(table["rows"]), "columns": len(table["columns"]),
@@ -348,7 +348,7 @@ def cells(args: argparse.Namespace) -> None:
     with httpx.Client(base_url=args.base, timeout=60) as api:
         table = api.get(f"/api/researches/{args.research}/tables/{args.table}").json()
         view = api.get(f"/api/researches/{args.research}").json()
-    runs = [r for r in view["runs"] if r["kind"] == "table_fill" and (r.get("target") or {}).get("table_id", args.table) == args.table]
+    runs = [r for r in view["runs"] if r["kind"] == "table_fill" and (r.get("target") or {}).get("table_id") == args.table]
     summary = cell_summary(table, runs)
     (out / "table.json").write_text(json.dumps(table, ensure_ascii=False, indent=2), encoding="utf-8")
     (out / "cells-automated.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -383,6 +383,8 @@ T05 ayrıca gönderim öncesi hata, gönderim sonrası belirsiz timeout ve kesin
 
 P4 için en az bir gerçek erişilebilir kaynağın kimliği, incelenen sürümü ve pasajı insan tarafından kontrol edilir; bu yalnız bağlantı doğrulamasıdır. Ardından kullanıcının bildiği küçük bir kaynak kümesiyle yanlış atıf, kaçırılan kanıt, yanlış okuma düzeyi, düzeltme süresi ve yeniden açma başarısı ölçülür. Eldeki [OR/moleküler haberleşme sorusu](first-slice-plan.md) aday senaryodur; ürün kapsamını veya zorunlu kullanıcı seçimini belirlemez.
 
+P5 kapanış ölçümü ([D55](../decisions.md), 17 Eylül 2026) iki soruda (Kurt 2017 ve tutulmuş k-bağlantılılık sorusu) aşama aşama yapıldı; değerlendirmeler Claude'undur. Yanlış atıf ve yanlış tablo değeri görülmedi, PDF sayfasıyla karşılaştırılan sayı/denklem hücreleri uyuştu. Büyük seçimde yanıtların hiç PDF sayfası kullanmaması ve tutulmuş soruda bilinen eserlerin düşük bulunması açık kaldı; ikisi ayrı tasarım notuna bırakıldı.
+
 Bilimsel fayda iddiası için aynı model, soru, kaynak erişimi ve bütçede karşılaştırma gerekir. Quaestio'nun geçmiş geliştirme vakaları yeni DEIXIS skill'inin etkinliği değildir. No-skill karşılaştırması ve tutulmuş örnekler mümkün olduğunda raporlanır; örnek sayısından genel doğruluk/yenilik garantisi çıkarılmaz. Performans hedefleri ölçüm sonrası konur; henüz saniye/ölçek taahhüdü verilmez.
 
 ## 11. Riskler, açık kararlar ve uygulamayı durduracak durumlar

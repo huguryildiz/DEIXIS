@@ -102,3 +102,12 @@ Her soruda önerim ilk seçenek. **Sahibin yanıtı (17 Eylül 2026): önerilenl
 4. **Görünürlük:** Sorgu gerekçesi ve sonuç sayısı; masaüstü ve dar ekranda tarayıcı denetimi.
 5. **Ölçüm:** §5.
 6. **Karar kaydı:** D-girdisi; beklenti karşılanmazsa değişiklik geri alınır ve bu yazılır.
+
+## 8. Ölçüm sonrası: GPT 5.6 Sol incelemesi ve plan kapısı (17 Eylül 2026)
+
+Sonuç D60'ta. GPT 5.6 Sol (high) incelemesinden sonra sahibin onayıyla (`ok`) dört adım: D60'ın ifadesinin daraltılması, dahil kaynakların ilgililiğinin kör değerlendirilmesi, aynı saklı planın iki derleyiciyle aranması ve popüler, çok parçalı sorular için yöntem metnine bir çekirdek kuralı. Kural: soru tek bir adlandırılmış teknoloji içinde iki ya da daha çok ayrı görev soruyorsa teknoloji çekirdektir, her görev ayrı kavramdır; tek bir karar ya da mekanizma sorulduğunda uygulanmaz. Örnek IRS'ten değil, lityum-iyon bataryadan.
+
+**Plan kapısı (yöntem metni commit'lenmeden ve deneme çalışmadan önce yazıldı):** S1, S2 ve S3'ün saklı `search_plan` girdisi eski ve yeni metinle 5'er kez `gpt-5.6-luna` ile yeniden çalıştırılır, uygulama dışında, arama yapılmadan.
+- S3, yeni metin: çekirdek eşanlamlılarının hepsi teknolojinin adıdır (`intelligent reflecting surface`, `reconfigurable intelligent surface`, `IRS`, `RIS` ve bunların varyantları; görev sözcüğü içermez) en az 4/5; kanal kestirimi ve yansıtma/hüzmeleme optimizasyonu iki ayrı çekirdek dışı kavramdadır en az 4/5.
+- S1 ve S2, yeni metin: çekirdek eski metindeki gibi karar ya da mekanizma kalır (S1 `packet size`/`packet length`, S2 `k-connectivity`/`k-connected`) en az 4/5.
+- Kapı geçmezse yöntem metni commit'lenmez ve uçtan uca ölçüm yapılmaz.

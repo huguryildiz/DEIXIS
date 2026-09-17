@@ -5,6 +5,7 @@ import { connectionModels, defaultEffort, ModelPicker, modelKey, modelRoles, not
 import { ConnectionsTab } from './Connections'
 import { useToast } from './Toast'
 import { t, uiLocale } from './i18n'
+import { Notice } from './Notice'
 
 const NO_DEFAULT = '__none'
 
@@ -29,15 +30,15 @@ export function SettingsPage({ dark, tab, onTab }: { dark: boolean; tab: 'defaul
     }).catch((e: Error) => toast('error', t('Could not save the default: {message}', { message: e.message })))
   }
 
-  return <section className="collection legacy-connections settings-page">
-    <div className="section-label">{t('SETTINGS')}</div>
+  return <section className="collection legacy-connections">
+    <div className="section-label">{t('Settings')}</div>
     <h1>{t('Settings')}</h1>
     <p>{t('Defaults apply to new researches. Each research keeps the models it was created with, and you can change them for one research from the composer.')}</p>
-    {error && <div className="legacy-boundary">{error}</div>}
+    {error && <Notice tone="error">{error}</Notice>}
 
-    <div className="settings-tabs" role="tablist" aria-label={t('Settings sections')}>
-      <button type="button" role="tab" id="tab-defaults" aria-selected={tab === 'defaults'} aria-controls="panel-defaults" className={tab === 'defaults' ? 'is-active' : ''} onClick={() => onTab('defaults')}>{t('Default models')}</button>
-      <button type="button" role="tab" id="tab-connections" aria-selected={tab === 'connections'} aria-controls="panel-connections" className={tab === 'connections' ? 'is-active' : ''} onClick={() => onTab('connections')}>{t('Connections')}</button>
+    <div className="tab-strip settings-tabs" role="tablist" aria-label={t('Settings sections')}>
+      <button type="button" role="tab" id="tab-defaults" aria-selected={tab === 'defaults'} aria-controls="panel-defaults" onClick={() => onTab('defaults')}>{t('Default models')}</button>
+      <button type="button" role="tab" id="tab-connections" aria-selected={tab === 'connections'} aria-controls="panel-connections" onClick={() => onTab('connections')}>{t('Connections')}</button>
     </div>
 
     {tab === 'defaults' && <div id="panel-defaults" role="tabpanel" aria-labelledby="tab-defaults">

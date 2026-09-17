@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildDocument, type Passages } from '../src/pdfDocument'
+import { buildDocument, locateAnchors, type Passages } from '../src/pdfDocument'
 
 // The plain-text view's reading rules (D58) on SYNTHETIC page text; no browser or server is started.
 
@@ -77,4 +77,18 @@ test('figures, tables, equations and reference entries become jump targets', () 
   expect(doc.targets.get('ref:1')).toBe(doc.pages[1].blocks[3].id)
   // A figure found on the page without a recognised caption still shows, at the end of its page.
   expect(blocks(doc, 1).at(-1)).toEqual(['figure', ''])
+})
+
+test('a citation anchor is found across line breaks, hyphenation and paragraph joins, and only on its own page', () => {
+  const doc = buildDocument(pages(
+    ['SYNTHETIC relays forward packets.\n\nIncreasing transmission power will re-\nduce the error rate on some links,', 'however, it raises interference on others.'],
+    ['Increasing transmission power will reduce the error rate on some links.'],
+  ), [], null)
+  const marks = locateAnchors(doc, 1, ['Increasing transmission power will reduce the error rate on some links, however, it raises', 'not in this page'])
+  expect(marks.located).toBe(1)
+  const [id, ranges] = [...marks.blocks.entries()][0]
+  expect(marks.first).toBe(id)
+  const block = doc.pages[0].blocks.find(b => b.id === id)!
+  expect(block.text.slice(ranges[0][0], ranges[0][1])).toBe('Increasing transmission power will re- duce the error rate on some links, however, it raises')
+  expect(locateAnchors(doc, 2, ['however, it raises interference']).located).toBe(0)
 })

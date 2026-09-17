@@ -11,6 +11,7 @@ import { connectionName, isPlannedModel, reasoningLabel, runStatusLabels, scopeL
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroPanel } from './ZoteroPanel'
 import { ConnectionIcon } from './connectionIcons'
+import { Notice } from './Notice'
 
 export const effortLabels: Record<Effort, string> = { quick: 'Quick', standard: 'Standard', detailed: 'Detailed' }
 
@@ -18,7 +19,7 @@ export const effortLabels: Record<Effort, string> = { quick: 'Quick', standard: 
 export const scopeOptions: Record<SourceScope, { icon: LucideIcon; detail: string }> = {
   academic: { icon: Globe, detail: 'Searches the connected scholarly providers' },
   attached: { icon: Paperclip, detail: 'Only the PDFs you add; no search runs' },
-  attached_and_academic: { icon: Layers, detail: 'Your PDFs plus a scholarly provider search' },
+  attached_and_academic: { icon: Layers, detail: 'Search scholarly providers using a selected PDF and your question' },
 }
 export const effortOptions: Record<Effort, { icon: LucideIcon; detail: string }> = {
   quick: { icon: Zap, detail: 'Up to 3 searches of 10 results, 20 candidates, 16 passages' },
@@ -133,7 +134,7 @@ export function ModelPicker({ role, icon: Icon, hint, models, value, onChange, e
         <Popover.Positioner className="model-palette-positioner" side="bottom" align="start" sideOffset={8} collisionPadding={14}>
           <Popover.Popup className="model-palette" initialFocus={searchRef}>
             <div className="model-palette-header">
-              <Popover.Title className="model-palette-title">{t('{role} MODEL', { role: role.toLocaleUpperCase(uiLocale()) })}</Popover.Title>
+              <Popover.Title className="model-palette-title">{t('{role} model', { role })}</Popover.Title>
               <Popover.Description className="model-palette-description">{hint}</Popover.Description>
               <label className="model-palette-search">
                 <Search size={16} aria-hidden /><span className="sr-only">{t('Search models or providers')}</span>
@@ -167,7 +168,7 @@ export function ModelPicker({ role, icon: Icon, hint, models, value, onChange, e
       <Select value={effort ?? '__provider_default'} onValueChange={v => { if (v) onEffort(v === '__provider_default' ? null : v) }}>
         <SelectTrigger aria-label={t('{role} reasoning effort', { role })} title={t('How long the {role} model thinks', { role: role.toLocaleLowerCase(uiLocale()) })}><SelectValue>{(v: string) => <><Brain size={15} />{reasoningLabel(v)}</>}</SelectValue></SelectTrigger>
         <SelectContent className="intake-select-content has-details" align="start" alignItemWithTrigger={false}>
-          <div className="intake-select-heading" aria-hidden="true">{t('{role} REASONING EFFORT', { role: role.toLocaleUpperCase(uiLocale()) })}</div>
+          <div className="intake-select-heading" aria-hidden="true">{t('{role} reasoning effort', { role })}</div>
           <p className="intake-select-description" aria-hidden="true">{t('How long the {role} model reasons before it replies. Higher settings take longer.', { role: role.toLocaleLowerCase(uiLocale()) })}</p>
           <SelectItem value="__provider_default"><Option icon={Brain} title={t('Provider default')} detail={t('Let the current model choose its default effort')} /></SelectItem>
           {efforts.map(e => <SelectItem key={e.id} value={e.id}><Option icon={Brain} title={reasoningLabel(e.id)} detail={[e.description, e.id === chosen?.default_reasoning_effort ? t('Model default') : ''].filter(Boolean).join(' · ') || undefined} /></SelectItem>)}
@@ -190,6 +191,7 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
   const [defaults, setDefaults] = useState<Record<ModelRole, RoleModelSetting> | null>(null)
   const [modelsOpen, setModelsOpen] = useState(false)
   const [files, setFiles] = useState<File[]>([])
+  const [seedFilename, setSeedFilename] = useState<string | null>(null)
   // A Zotero collection chosen before the research exists; it is imported right after the research is created.
   const [zotero, setZotero] = useState<{ source: ZoteroSource; key: string; name: string } | null>(null)
   const [zoteroOpen, setZoteroOpen] = useState(false)
@@ -222,6 +224,8 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
   const chosen = models.find(m => m.id === model)
   const efforts = chosen?.reasoning_efforts ?? []
   const needsFiles = scope === 'attached'
+  const needsSource = scope !== 'academic'
+  const chosenSeed = files.length === 1 ? files[0].name : seedFilename && files.some(file => file.name === seedFilename) ? seedFilename : null
 
   function chooseModel(id: string, list = models) {
     const next = list.find(m => m.id === id)
@@ -246,6 +250,8 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
   async function submit() {
     if (!question.trim() || busy) return
     if (needsFiles && !files.length && !zotero) { setError(t('Attach at least one PDF to use “Attached files”.')); return }
+    if (scope === 'attached_and_academic' && !files.length && !zotero) { setError(t('Add a PDF or Zotero collection to guide the search.')); return }
+    if (scope === 'attached_and_academic' && files.length > 1 && !chosenSeed) { setError(t('Choose which PDF guides the search.')); return }
     const literatureChoice = models.find(m => m.id === literature)
     if (!chosen || !literatureChoice) { setError(t('Choose the answer and literature models first. DEIXIS does not pick them for you.')); return }
     setBusy(true)
@@ -255,7 +261,8 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
     const customReviewer = reviewer !== DEFAULT_REVIEWER && reviewer !== NO_REVIEW
     const reviewerChoice = customReviewer ? models.find(m => m.id === reviewer) : undefined
     try {
-      const view = await api.create({ question: question.trim(), source_scope: scope, effort, model_connection: chosen.connection, requested_model: chosen.model,
+      const view = await api.create({ question: question.trim(), source_scope: scope,
+        seed_mode: scope === 'attached_and_academic' ? 'uploaded_seed' : 'question_only', effort, model_connection: chosen.connection, requested_model: chosen.model,
         reasoning_effort: efforts.some(e => e.id === reasoning) ? reasoning : null,
         literature_connection: literatureChoice.connection, literature_model: literatureChoice.model,
         literature_reasoning_effort: listedEffort(models, literature, literatureReasoning),
@@ -263,15 +270,28 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
         review_connection: reviewerChoice?.connection ?? null, review_model: reviewerChoice?.model ?? null,
         review_reasoning_effort: customReviewer ? listedEffort(models, reviewer, reviewerReasoning) : null })
       id = view.research.id
+      let latestView = view
+      const uploaded = new Map<string, string>()
       step = 'Research saved, but DEIXIS could not attach the PDFs: {message}. You can retry from the research page.'
-      for (const file of files) await api.upload(id, file)
+      for (const file of files) {
+        const added = await api.upload(id, file)
+        uploaded.set(file.name, added.uploaded_source_version_id)
+        latestView = added
+      }
       step = 'Research saved, but DEIXIS could not import the Zotero collection: {message}. You can retry from the research page.'
       if (zotero) {
-        const { notes } = (await api.zoteroImport(id, zotero.source, zotero.key)).zotero_import
+        const imported = await api.zoteroImport(id, zotero.source, zotero.key)
+        latestView = imported
+        const { notes } = imported.zotero_import
         if (notes.length) toast('warning', notes.map(n => `${n.title}: ${n.note}.`).join(' '))
       }
+      if (scope === 'attached_and_academic' && chosenSeed) {
+        step = 'Research saved, but the selected PDF could not guide the search: {message}. Choose a readable PDF on the research page.'
+        latestView = await api.setSeed(id, uploaded.get(chosenSeed)!, latestView.research.version)
+      }
       step = 'Research saved, but DEIXIS could not start the search: {message}. You can retry from the research page.'
-      if (scope !== 'attached') await api.startRun(id, 'discovery', crypto.randomUUID())
+      if (scope === 'academic' || (scope === 'attached_and_academic' && latestView.scope.seed_status === 'ready'))
+        await api.startRun(id, 'discovery', crypto.randomUUID())
       onCreated(id)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
@@ -286,7 +306,7 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
   const caption = t(needsFiles
     ? 'Only attached PDFs are used; no academic search runs.'
     : scope === 'attached_and_academic'
-      ? 'Connected scholarly providers are searched in addition to your PDFs; the literature model chooses which of them to query.'
+      ? 'The selected PDF and your question guide the scholarly search. Only included sources are used in the answer.'
       : 'Connected scholarly providers are searched; the literature model chooses which of them to query.')
   const modelName = (id: string) => models.find(m => m.id === id)?.display_name ?? id.slice(id.indexOf(':') + 1)
   const defaultName = defaults?.reviewer.model ? modelName(modelKey(defaults.reviewer.model_connection, defaults.reviewer.model)) : null
@@ -296,6 +316,10 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
     { value: NO_REVIEW, title: t('Off'), detail: t('Answers of this research are not reviewed') },
   ]
   const reviewerSummary = reviewer === NO_REVIEW ? t('Off') : reviewer === DEFAULT_REVIEWER ? defaultName ?? t('no reviewer') : modelName(reviewer)
+  const connectionOf = (id: string) => id.includes(':') ? id.slice(0, id.indexOf(':')) : null
+  const reviewerConnection = reviewer === NO_REVIEW ? null : reviewer === DEFAULT_REVIEWER ? (defaultName && defaults?.reviewer.model_connection) || null : connectionOf(reviewer)
+  // A chosen model as the summary names it: its connection's icon, then its display name.
+  const summaryName = (connection: string | null, name: string) => <span className="models-summary-name">{connection && <ConnectionIcon id={connection} />}{name}</span>
 
   return <section className="welcome">
     <h1>{uiLanguage() === 'tr' ? <><em>Sorunuz</em> sizi nereye götürüyor?</> : <>Where does your <em>question</em>{' '}lead?</>}</h1>
@@ -308,13 +332,20 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
         onImport={(source, key, name) => { setZotero({ source, key, name }); setZoteroOpen(false); if (scope === 'academic') setScope('attached_and_academic') }} />}
       {(files.length > 0 || zotero) && <div className="attachments" aria-label={t('PDFs to attach')}>
         {zotero && <div className="attachment-chip"><button type="button" title={zotero.name}><ConnectionIcon id="zotero" /><span>{zotero.name}</span><small>Zotero</small></button><button type="button" aria-label={t('Remove {name}', { name: zotero.name })} onClick={() => setZotero(null)}><X size={13} /></button></div>}{files.map(file => <div className="attachment-chip" key={file.name}><button type="button" title={file.name}><FileText size={13} /><span>{file.name}</span><small>PDF</small></button><button type="button" aria-label={t('Remove {name}', { name: file.name })} onClick={() => setFiles(old => old.filter(f => f.name !== file.name))}><X size={13} /></button></div>)}</div>}
+      {scope === 'attached_and_academic' && files.length > 1 && <fieldset className="seed-file-choice">
+        <legend>{t('PDF guiding the search')}</legend>
+        {files.map(file => <label key={file.name}><input type="radio" name="seed-file" checked={seedFilename === file.name}
+          onChange={() => setSeedFilename(file.name)} /><span>{file.name}</span></label>)}
+      </fieldset>}
+      {scope === 'attached_and_academic' && files.length === 0 && zotero &&
+        <p className="composer-hint">{t('After import, choose a readable PDF on the research page before searching.')}</p>}
       <div className="composer-controls">
         <div className="composer-options">
           <DropdownMenu>
             <DropdownMenuTrigger type="button" className="composer-add" aria-label={t('Add sources')} title={t('Add sources (optional)')}><FileUp size={17} /></DropdownMenuTrigger>
             <DropdownMenuContent className="intake-menu" align="start">
               <DropdownMenuGroup>
-                <DropdownMenuLabel>{t('ADD SOURCES')}</DropdownMenuLabel>
+                <DropdownMenuLabel>{t('Add sources')}</DropdownMenuLabel>
                 <DropdownMenuItem className="intake-menu-item" onClick={() => fileInput.current?.click()}><FileUp size={17} /><span><strong>{t('Upload PDF')}</strong><small>{t('From this computer, up to 50 MB each. You can also drop files here.')}</small></span></DropdownMenuItem>
                 <DropdownMenuItem className="intake-menu-item" onClick={() => setZoteroOpen(true)}><ConnectionIcon id="zotero" /><span><strong>{t('Zotero collection')}</strong><small>{t('Read-only, from Zotero on this computer or zotero.org. Imported when the research starts.')}</small></span></DropdownMenuItem>
                 <DropdownMenuItem className="intake-menu-item" disabled><BookMarked size={17} /><span><strong>{t('Import BibTeX or RIS')}</strong><small>{t('Not available yet: reference import is not implemented')}</small></span></DropdownMenuItem>
@@ -326,28 +357,28 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
           <Select value={scope} onValueChange={value => { if (value) setScope(value as SourceScope) }}>
             <SelectTrigger aria-label={t('Source scope')} title={t('Where DEIXIS looks for sources')}><SelectValue>{(value: string) => { const Icon = scopeOptions[value as SourceScope].icon; return <><Icon size={15} />{t(scopeLabels[value as SourceScope])}</> }}</SelectValue></SelectTrigger>
             <SelectContent className="intake-select-content has-details" align="start" alignItemWithTrigger={false}>
-              <div className="intake-select-heading" aria-hidden="true">{t('SOURCES')}</div>
+              <div className="intake-select-heading" aria-hidden="true">{t('Sources')}</div>
                 {(Object.keys(scopeLabels) as SourceScope[]).map(s => <SelectItem key={s} value={s}><Option icon={scopeOptions[s].icon} title={t(scopeLabels[s])} detail={t(scopeOptions[s].detail)} /></SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={effort} onValueChange={value => { if (value) setEffort(value as Effort) }}>
             <SelectTrigger aria-label={t('Research depth')} title={t('How much searching and reading a run may do')}><SelectValue>{(value: string) => { const Icon = effortOptions[value as Effort].icon; return <><Icon size={15} />{t(effortLabels[value as Effort])}</> }}</SelectValue></SelectTrigger>
             <SelectContent className="intake-select-content has-details" align="start" alignItemWithTrigger={false}>
-              <div className="intake-select-heading" aria-hidden="true">{t('RESEARCH DEPTH')}</div>
+              <div className="intake-select-heading" aria-hidden="true">{t('Research depth')}</div>
                 {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d}><Option icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={t(effortOptions[d].detail)} /></SelectItem>)}
             </SelectContent>
           </Select>
           {models.length > 0
             ? <button type="button" className="models-summary" aria-expanded={modelsOpen} title={t('Models for this research: answer, literature and reviewer')} onClick={() => setModelsOpen(open => !open)}>
                 <span className="models-summary-label">{t('Models')}<span className="sr-only">: </span></span>
-                <PenLine size={14} aria-hidden /><span className="models-summary-name">{modelName(model)}</span>
-                <ScanSearch size={14} aria-hidden /><span className="models-summary-name">{modelName(literature)}</span>
-                <ShieldCheck size={14} aria-hidden /><span className="models-summary-name">{reviewerSummary}</span>
+                <PenLine size={14} aria-hidden />{summaryName(connectionOf(model), modelName(model))}
+                <ScanSearch size={14} aria-hidden />{summaryName(connectionOf(literature), modelName(literature))}
+                <ShieldCheck size={14} aria-hidden />{summaryName(reviewerConnection, reviewerSummary)}
                 <ChevronDown size={14} aria-hidden className="models-summary-chevron" />
               </button>
             : <span className="composer-model" title={connections ? notReadyReasons(connections) : ''}>{t('Models: {state}', { state: t(connections ? 'no connection ready' : 'checking…') })}</span>}
         </div>
-        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsFiles && !files.length && !zotero)} aria-label={t('Start research')}><ArrowUpRight size={20} /></Button>
+        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsSource && !files.length && !zotero) || (scope === 'attached_and_academic' && files.length > 1 && !chosenSeed)} aria-label={t('Start research')}><ArrowUpRight size={20} /></Button>
       </div>
       {modelsOpen && models.length > 0 && <div className="composer-options composer-models">
         <ModelPicker role={t(modelRoles.answer.label)} icon={modelRoles.answer.icon} hint={t(modelRoles.answer.hint)} models={models} value={model}
@@ -362,10 +393,10 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
     </form>
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void addFiles(e.target.files); e.target.value = '' }} />
     <div className="composer-caption"><span>{busy ? t('Saving research…') : caption}</span><span>⌘ / Ctrl + Enter</span></div>
-    {connections && !models.length && <div className="legacy-boundary">{t('No model connection is ready: {reason}. A research needs a model that a connection lists; model steps pause until the chosen connection is ready, and no other model is used instead.', { reason: notReadyReasons(connections) })}</div>}
-    {error && <div className="legacy-boundary" role="alert">{error}</div>}
+    {connections && !models.length && <Notice tone="attention">{t('No model connection is ready: {reason}. A research needs a model that a connection lists; model steps pause until the chosen connection is ready, and no other model is used instead.', { reason: notReadyReasons(connections) })}</Notice>}
+    {error && <Notice tone="error">{error}</Notice>}
     <div className="resume-section">
-      <div className="resume-heading"><h2>{t('Pick up where you left off')}</h2><span>{t('SAVED ON THIS COMPUTER')}</span></div>
+      <div className="resume-heading"><h2>{t('Pick up where you left off')}</h2><span>{t('Saved on this computer')}</span></div>
       <div className="resume-list">
         {researches.slice(0, 5).map(r => <button key={r.id} onClick={() => onCreated(r.id)}><History size={18} /><span><strong>{r.question}</strong><small>{t(scopeLabels[r.source_scope])} · {t(r.last_run_status ? runStatusLabels[r.last_run_status] : 'No run yet')} · {t(r.answer_count === 1 ? '{n} answer' : '{n} answers', { n: r.answer_count })}</small></span><ArrowUpRight size={16} /></button>)}
         {!researches.length && <p className="empty-inline">{t('No saved research yet.')}</p>}

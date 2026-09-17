@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { api, type ZoteroCollection, type ZoteroSource } from './api'
 import { ConnectionIcon } from './connectionIcons'
 import { t } from './i18n'
+import { Notice } from './Notice'
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -37,7 +38,7 @@ export function ZoteroPanel({ busy, action, onImport, onClose }: {
     </div>
     <p>{t('Read-only: nothing is written to Zotero. The collection’s own items (not its subcollections) and each item’s first PDF are added as sources you included.')}</p>
     {!collections && !error && <p>{t('Reading collections…')}</p>}
-    {error && <div className="legacy-boundary">{error}</div>}
+    {error && <Notice tone="error">{error}</Notice>}
     {collections && !collections.length && <div className="zotero-empty">
       <span className="zotero-empty-icon"><ConnectionIcon id="zotero" /></span>
       <div>

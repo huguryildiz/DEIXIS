@@ -9,6 +9,7 @@ import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t } from './i18n'
 import { connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames, reasoningLabel } from './labels'
+import { Notice } from './Notice'
 
 const providerNames: Record<string, string> = {
   semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', pubmed: 'PubMed', openalex: 'OpenAlex', scopus: 'Scopus', ieee_xplore: 'IEEE Xplore', core: 'CORE', serpapi: 'SerpApi',
@@ -43,7 +44,7 @@ function KeyPanel({ env, entry, keychain, dark, onSaved }: { env: string; entry:
   const id = `key-${env}`
 
   const inDotenv = entry.source === 'dotenv'
-  if (entry.source === 'environment') return <p className="key-note">{t('This key is set in the shell that started DEIXIS; change or remove it there.')}</p>
+  if (entry.source === 'environment') return <p>{t('This key is set in the shell that started DEIXIS; change or remove it there.')}</p>
 
   function test() {
     setTesting(true)
@@ -74,12 +75,12 @@ function KeyPanel({ env, entry, keychain, dark, onSaved }: { env: string; entry:
   </form>
 
   if (!entry.configured) {
-    if (!keychain.available) return <p className="key-note">{t('No system keychain is available; set the key in .env.')}</p>
+    if (!keychain.available) return <p>{t('No system keychain is available; set the key in .env.')}</p>
     return <div className="actions"><Button variant="outline" size="sm" onClick={() => setEditing(true)}>{t('Add key')}</Button></div>
   }
 
   return <div className="key-panel">
-    <p className="key-note">{t(inDotenv ? 'Stored in .env' : 'Stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })}</p>
+    <p>{t(inDotenv ? 'Stored in .env' : 'Stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })}</p>
     <div className="actions">
       {entry.testable && <Button variant="outline" size="sm" onClick={test} disabled={testing}>{t(testing ? 'Testing…' : 'Test')}</Button>}
       <Button variant="outline" size="sm" onClick={() => setEditing(true)}>{t('Replace key')}</Button>
@@ -405,7 +406,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
   }
 
   return <div className="connections-tab">
-    {error && <div className="legacy-boundary">{error}</div>}
+    {error && <Notice tone="error">{error}</Notice>}
 
     <section className="connections-group">
       <h2 className="with-icon"><Cloud size={20} aria-hidden />{t('Cloud models')}</h2>
@@ -428,7 +429,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
         {machine?.memory_gb != null && <span>{t('Memory: {gb} GB', { gb: machine.memory_gb })}</span>}
         {machine?.disk_free_gb != null && <span>{t('Free disk: {gb} GB', { gb: machine.disk_free_gb })}</span>}
       </p>}
-      {toolsError && <div className="legacy-boundary">{toolsError}</div>}
+      {toolsError && <Notice tone="error">{toolsError}</Notice>}
       <h3 className="connections-subhead with-icon"><SquareTerminal size={15} aria-hidden />{t('Command-line tools')}</h3>
       <div className="connection-grid">{cliTools.map(toolCard)}</div>
       <h3 className="connections-subhead with-icon"><Server size={15} aria-hidden />{t('Local model servers')}</h3>
@@ -452,7 +453,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
     <section className="connections-group">
       <h2 className="with-icon"><Sparkles size={20} aria-hidden />{t('Semantic search')}</h2>
       <p className="legacy-mini-note">{t('The question and passages are matched by meaning even when the words differ, and the result is fused with keyword search. Changing the provider embeds passages again; earlier vectors are kept. Similarity only ranks passages; it does not show that a passage supports a claim.')}</p>
-      {semError && <div className="legacy-boundary">{semError}</div>}
+      {semError && <Notice tone="error">{semError}</Notice>}
       {semantic && <>
         <div className="semantic-choices" role="radiogroup" aria-label={t('Semantic search provider')}>
           {semantic.options.map(opt => {

@@ -6,6 +6,9 @@ export type Effort = 'quick' | 'standard' | 'detailed'
 
 export type Scope = {
   research_id: string; revision: number; question: string; language_hint: string | null; source_scope: SourceScope
+  seed_mode: 'question_only' | 'uploaded_seed'; seed_status: 'question_only' | 'missing' | 'ready' | 'stale'
+  seed: { source_version_id: string; asset_id: string; asset_sha256: string; extraction_version: string
+    title: string; title_basis: string; page_count: number | null; text_pages: number; passage_count: number } | null
   providers: string[]; effort: Effort; model_connection: string; requested_model: string | null; reasoning_effort: string | null
   // null literature model: the research model runs the search steps (researches created before model roles).
   literature_model: string | null; literature_reasoning_effort: string | null
@@ -341,7 +344,7 @@ export const api = {
     request<LibraryAddition>(`/api/researches/${researchId}/library-sources`, json('POST', { work_id: workId })),
   research: (id: string) => request<ResearchView>(`/api/researches/${id}`),
   create: (body: {
-    question: string; source_scope: SourceScope; effort: Effort; model_connection: string; requested_model: string; reasoning_effort: string | null
+    question: string; source_scope: SourceScope; seed_mode?: 'question_only' | 'uploaded_seed'; effort: Effort; model_connection: string; requested_model: string; reasoning_effort: string | null
     literature_connection: string; literature_model: string; literature_reasoning_effort: string | null
     review_mode: ReviewMode; review_connection: string | null; review_model: string | null; review_reasoning_effort: string | null
   }) => request<ResearchView>('/api/researches', json('POST', body)),
@@ -354,8 +357,10 @@ export const api = {
   upload: (id: string, file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return request<ResearchView>(`/api/researches/${id}/uploads`, { method: 'POST', body: form })
+    return request<ResearchView & { uploaded_source_version_id: string }>(`/api/researches/${id}/uploads`, { method: 'POST', body: form })
   },
+  setSeed: (id: string, sourceVersionId: string, expectedVersion: number) =>
+    request<ResearchView>(`/api/researches/${id}/seed`, json('POST', { source_version_id: sourceVersionId, expected_version: expectedVersion })),
   uploadToSource: (id: string, sourceId: string, file: File) => {
     const form = new FormData()
     form.append('file', file)

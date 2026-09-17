@@ -5,7 +5,10 @@ import type { ResearchView, Run, Verdict } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { connectionName, fetchReasonText, pauseReasonText, providerName, runStatusLabels, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
+import { ModelName } from './ModelName'
+import type { ModelText } from './modelText'
 import { t, uiLocale } from './i18n'
+import { scrollBehavior } from './motion'
 
 // The research as a record of work: one node per run on a thin rail, each run one line per phase, details a disclosure deeper.
 // The page's event stream refreshes the view; a one-second clock keeps running durations moving between events.
@@ -74,7 +77,6 @@ function totalTokens(usage: unknown): number | null {
   return typeof total === 'number' ? total : null
 }
 
-type ModelText = (model: string | null, effort: string | null) => string
 type Control = (run: Run, action: 'pause' | 'resume' | 'cancel') => void
 
 export function Transcript({ view, emptyText, latestAnswer, modelText, busy, onControl }: { view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText; busy: boolean; onControl: Control }) {
@@ -104,7 +106,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, busy, onC
     </RunTurn>)}
     {!runs.length && <p className="chat-say">{emptyText}</p>}
     <div ref={end} className="chat-end" />
-    {active && !atEnd && <button type="button" className="chat-jump" onClick={() => end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })}><ArrowDown size={15} aria-hidden />{t('Jump to latest')}</button>}
+    {active && !atEnd && <button type="button" className="chat-jump" onClick={() => end.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'end' })}><ArrowDown size={15} aria-hidden />{t('Jump to latest')}</button>}
   </div>
   </>
 }
@@ -347,7 +349,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
   // Which model ran each model phase of this run, listed once here rather than on every step line.
   const models = order.filter((key, i) => agents[key]?.model && stateOf(i) !== 'skipped').map(key => agents[key]!)
     .filter((agent, i, all) => all.findIndex(a => a.role === agent.role) === i)  // the literature model plans and screens; name it once
-    .map(agent => <span key={agent.role} className="chat-run-model"><ConnectionIcon id={agent.connection} /><span className="sr-only">{connectionName(agent.connection)} · </span>{[t(agent.role), modelText(agent.model, agent.effort)].filter(Boolean).join(' · ')}</span>)
+    .map(agent => <span key={agent.role} className="chat-run-model">{agent.role && <>{t(agent.role)} · </>}<ModelName connection={agent.connection} text={modelText(agent.model, agent.effort)} /></span>)
   return <section className={`chat-turn${active ? ' is-active' : ''}`}>
     <div className="chat-group">
       <button type="button" className="chat-toggle" aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
@@ -429,7 +431,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
       {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
       {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
     </div>}
-    {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className="chat-note is-warning"><p>{pauseReasonText(run.pause_reason)}</p></div>}
+    {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note ${run.status === 'failed' ? 'is-error' : 'is-neutral'}`}><p>{pauseReasonText(run.pause_reason)}</p></div>}
     {children}
     {!children && answer && run.kind === 'answer' && <div className="answer-history-note"><span className="answer-history-icon" aria-hidden="true"><TriangleAlert size={14} /></span><span>{t('An earlier answer: {status}.', { status: t(answer.status.replaceAll('_', ' ')) })}</span></div>}
   </section>

@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { ArchiveRestore, BookOpenText, Download, Ellipsis, FileText, LayoutTemplate, ListPlus, Lock, Maximize2, Minimize2, Pause, PencilLine, Play, Plus, RotateCw, Save, ShieldAlert, Sparkles, Trash2, TriangleAlert, X } from 'lucide-react'
+import { ArchiveRestore, ArrowUpRight, BadgeCheck, BookOpenText, ChevronRight, Download, Ellipsis, FileText, Info, LayoutTemplate, ListPlus, Lock, Maximize2, Minimize2, Pause, PencilLine, Play, Plus, RotateCw, Save, ShieldAlert, Sparkles, Trash2, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, ApiError, type AnswerFormat, type CellEdit, type CellEvidence, type CellRevision, type CellState, type CellSummary, type CellValue, type CellView, type ColumnSpec, type ColumnSuggestion, type ResearchView, type Run, type Source, type TableColumn, type TableRow, type TableSummary, type TableTemplate, type TableView } from './api'
 import { ConfirmDialog } from './ConfirmDialog'
 import { PassageSheet } from './PassageSheet'
-import { ConnectionIcon } from './connectionIcons'
-import { connectionName, locatorText, runStatusLabels, versionText } from './labels'
+import { ModelName } from './ModelName'
+import { useModelText, type ModelText } from './modelText'
+import { locatorText, runStatusLabels, versionText, versionTones } from './labels'
 import { OCR_LABEL } from './ocr'
 import { citationStyles, formatReference, formatReferenceText, type CitationStyle } from './citations'
 import { useToast, type ToastAction } from './Toast'
 import { t, uiLocale } from './i18n'
 import { SourceKey } from './SourceKey'
 import './EvidenceTable.css'
+import { Notice } from './Notice'
 
 // The Evidence tab (P5 slice 1, D37/D38): a table whose rows are source versions and whose cells are append-only
 // revisions. The screen renders the recorded cell state; only the user's edit or decision changes a cell's value.
@@ -69,11 +71,15 @@ const hasValue = (rev: CellRevision) => rev.state === 'value' || rev.state === '
 const revisionText = (column: TableColumn, rev: CellRevision) => (hasValue(rev) ? valueText(column, rev.value) : rev.state ? t(stateLabels[rev.state]) : '')
 const dateText = (value: string) => new Date(value).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' })
 
-function revisionMeta(rev: CellRevision) {
-  const model = rev.model ? rev.model.resolved_model ?? rev.model.connection : null
-  return [model ? `${t(authorLabels[rev.author])} · ${model}` : t(authorLabels[rev.author]), dateText(rev.created_at),
-    t('column definition {n}', { n: rev.column_revision }), rev.reading_depth && t('read from: {depth}', { depth: t(depthLabels[rev.reading_depth]) }),
-    rev.run_id && t('run {id}', { id: rev.run_id })].filter(Boolean).join(' · ')
+// Who wrote a revision, with which model, and when: the first reading line under a value.
+function revisionByline(rev: CellRevision, modelText: ModelText) {
+  return <>{t(authorLabels[rev.author])}{rev.model?.connection && rev.model.resolved_model && <> · <ModelName connection={rev.model.connection} text={modelText(rev.model.resolved_model)} /></>} · {dateText(rev.created_at)}</>
+}
+
+function revisionMeta(rev: CellRevision, modelText: ModelText) {
+  const rest = [dateText(rev.created_at), t('column definition {n}', { n: rev.column_revision }),
+    rev.reading_depth && t('read from: {depth}', { depth: t(depthLabels[rev.reading_depth]) }), rev.run_id && t('run {id}', { id: rev.run_id })].filter(Boolean).join(' · ')
+  return <>{t(authorLabels[rev.author])}{rev.model?.connection && rev.model.resolved_model && <> · <ModelName connection={rev.model.connection} text={modelText(rev.model.resolved_model)} /></>} · {rest}</>
 }
 
 // The table as CSV: one value column and one evidence column (quote and locator) per table column. Current values only;
@@ -107,7 +113,6 @@ function downloadTableCsv(table: TableView, sources: Source[]) {
 }
 
 type EditorTarget = { mode: 'add' } | { mode: 'edit'; column: TableColumn } | { mode: 'suggestion'; suggestion: ColumnSuggestion; stepId: string }
-type ModelText = (model: string | null, effort: string | null) => string
 
 // The live table run with its controls; a paused run offers Resume. Cancel asks first, since a cancelled run cannot be resumed.
 function TableRunLine({ run, detail, model, connection, busy, onControl }: { run: Run; detail: string; model: string; connection: string; busy: boolean; onControl: (action: 'pause' | 'resume' | 'cancel') => void }) {
@@ -116,7 +121,7 @@ function TableRunLine({ run, detail, model, connection, busy, onControl }: { run
     <span className="evidence-run-signal" aria-hidden><i /></span>
     <strong>{t(tableRunLabels[run.kind])}</strong>
     {(run.status !== 'running' || detail) && <span className="evidence-run-detail">{[run.status !== 'running' && t(runStatusLabels[run.status]), detail].filter(Boolean).join(' · ')}</span>}
-    <span className="evidence-run-model"><ConnectionIcon id={connection} /><span className="sr-only">{connectionName(connection)} · </span>{model}</span>
+    <span className="evidence-run-model"><ModelName connection={connection} text={model} /></span>
     {live && <Elapsed since={run.created_at} />}
     <span className="evidence-run-end">
       {live && <span className="evidence-run-lock" title={t('Model actions are off until it finishes.')}><Lock size={12} aria-hidden />{t('Model actions locked')}</span>}
@@ -231,7 +236,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
     api.tableTemplates().then(setTemplates).catch(e => toast('error', errorText(e)))
   }
 
-  if (error && !tables) return <div className="legacy-boundary">{t('Could not load the evidence table: {error}', { error })}</div>
+  if (error && !tables) return <Notice tone="error">{t('Could not load the evidence table: {error}', { error })}</Notice>
   if (!tables) return <p className="empty-inline">{t('Loading the evidence table…')}</p>
 
   const intro = t('Rows are source versions of this research; each cell links to passages of its own row’s version. A model fills only empty cells; anything else it returns waits for your decision.')
@@ -336,7 +341,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
       <span className="evidence-toolbar-end">
         <Button variant="ghost" disabled={!columns.length || !rows.length} title={t('Current values and their quotes as a CSV file; proposals waiting for a decision are left out.')} onClick={() => downloadTableCsv(table, view.sources)}><Download size={15} aria-hidden />{t('Export CSV')}</Button>
         <Button variant="ghost" disabled={busy || !columns.length} aria-expanded={templateName !== null} onClick={() => setTemplateName(name => (name === null ? table.table.title : null))}><Save size={15} aria-hidden />{t('Save as template')}</Button>
-        <Button className="evidence-fill" variant={fillable ? 'default' : 'outline'} disabled={busy || !fillable}
+        <Button variant={fillable ? 'default' : 'outline'} disabled={busy || !fillable}
           onClick={() => act(async () => { await api.fillTable(researchId, tableId, table.table.version, newKey()); onRunStarted() })}>
           <Sparkles size={15} aria-hidden />{!estimate.sources ? t('No empty cells to fill') : t(estimate.sources === 1 ? 'Fill empty cells · {n} source · up to {calls} calls · {model}' : 'Fill empty cells · {n} sources · up to {calls} calls · {model}', { n: estimate.sources, calls: estimate.max_model_calls, model })}
         </Button>
@@ -543,8 +548,8 @@ function ColumnEditor({ target, busy, dark, onSave, onRemove, onClose }: { targe
         </fieldset>}
         {format === 'number_unit' && <label className="evidence-field"><span>{t('Expected unit (optional)')}</span><small>{t('Nothing is converted; a value keeps the unit its source states.')}</small>
           <input value={unit} maxLength={40} onChange={e => setUnit(e.target.value)} /></label>}
-        {target.mode === 'edit' && <p className="evidence-flag-note is-attention">{t('A changed definition becomes a new column revision. Values made under the earlier definition stay and are marked “Column changed”.')}</p>}
-        {problem && <p className="evidence-flag-note is-blocking" role="alert">{problem}</p>}
+        {target.mode === 'edit' && <p className="evidence-flag-note"><TriangleAlert size={14} aria-hidden /><span>{t('A changed definition becomes a new column revision. Values made under the earlier definition stay and are marked “Column changed”.')}</span></p>}
+        {problem && <p className="evidence-flag-note is-blocking" role="alert"><TriangleAlert size={14} aria-hidden /><span>{problem}</span></p>}
         <div className="evidence-actions">
           <Button type="submit" disabled={busy}>{t(target.mode === 'edit' ? 'Save column' : 'Add column')}</Button>
           <Button type="button" variant="outline" onClick={onClose}>{t('Cancel')}</Button>
@@ -592,12 +597,14 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
   model: string; dark: boolean; onChanged: () => void; onRunStarted: () => void; onClose: () => void
 }) {
   const toast = useToast()
+  const modelText = useModelText()
   const [cell, setCell] = useState<CellView | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [problem, setProblem] = useState('')
   const [evidence, setEvidence] = useState<CellEvidence[] | null>(null)
+  const [details, setDetails] = useState(false)
   const sv = row.source_version_id
 
   const load = useCallback(() => api.cell(researchId, tableId, column.id, sv).then(c => { setCell(c); setError('') }, e => setError(errorText(e))), [researchId, tableId, column.id, sv])
@@ -632,59 +639,79 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
     void mutate(() => api.editCell(researchId, tableId, column.id, sv, body, newKey()), t('Value saved.'), () => setDraft(null))
   }
 
+  const quoteCount = (items: CellEvidence[]) => items.filter(item => item.anchor_text).length
+  const limited = current?.reading_depth === 'abstract' || current?.reading_depth === 'metadata'
+  const flag = (text: string, blocking = false) => <p className={`evidence-flag-note${blocking ? ' is-blocking' : ''}`}><TriangleAlert size={14} aria-hidden /><span>{text}</span></p>
+  const accessTone = row.access_level === 'abstract' ? 'is-abstract' : row.access_level === 'pdf_available' ? 'is-text' : ''
   return <Sheet open onOpenChange={open => { if (!open) onClose() }}>
-    <SheetContent className={`detail-sheet evidence-sheet evidence-cell-sheet ${dark ? 'dark' : ''}`}>
-      <SheetHeader><SheetTitle>{column.name}</SheetTitle><SheetDescription>{row.title}</SheetDescription></SheetHeader>
-      <div className="sheet-body evidence-cell-body">
-        <p className="evidence-cell-source">{[row.source_key, row.year, versionText(row.version_label), t(accessLabels[row.access_level])].filter(Boolean).join(' · ')}</p>
-        {error && <div className="legacy-boundary">{error}</div>}
-        {!cell && !error && <p>{t('Loading cell…')}</p>}
+    <SheetContent className={`detail-sheet evidence-sheet cell-sheet ${dark ? 'dark' : ''}`}>
+      <SheetHeader><SheetTitle>{column.name}</SheetTitle>
+        <SheetDescription className="cell-source"><SourceKey value={row.source_key} /><i>{row.title}</i>{row.year && <span>{row.year}</span>}</SheetDescription>
+        <div className="cell-pills">
+          <span className={`ref-pill is-${versionTones[row.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(row.version_label)}</span>
+          <span className={`ref-pill ${accessTone}`}>{row.access_level === 'abstract' ? <BookOpenText size={12} aria-hidden /> : <FileText size={12} aria-hidden />}{t(accessLabels[row.access_level])}</span>
+        </div>
+      </SheetHeader>
+      <div className="sheet-body cell-body">
+        {error && <p className="evidence-flag-note is-blocking" role="alert"><TriangleAlert size={14} aria-hidden /><span>{error}</span></p>}
+        {!cell && !error && <p role="status">{t('Loading cell…')}</p>}
         {cell && <>
           <section className="evidence-block" aria-labelledby="evidence-current-title">
             <h3 id="evidence-current-title">{t('Current value')}</h3>
             {current ? <>
               <p className={`evidence-current${hasValue(current) ? '' : ' is-state'}`}>{revisionText(column, current)}</p>
               {current.value?.as_stated && <p className="evidence-sub">{t('As written in the source: {text}', { text: current.value.as_stated })}</p>}
-              <p className="evidence-sub">{revisionMeta(current)}</p>
+              <p className="cell-provenance">{revisionByline(current, modelText)}
+                <button type="button" className="cell-details-toggle" aria-expanded={details} aria-controls="cell-details" onClick={() => setDetails(v => !v)}>{t('Details')}<ChevronRight size={12} aria-hidden /></button></p>
+              {details && <dl className="cell-details" id="cell-details">
+                {current.model?.resolved_model && <><dt>{t('Model')}</dt><dd><code>{current.model.resolved_model}</code></dd></>}
+                <dt>{t('Column definition')}</dt><dd>{t('revision {n}', { n: current.column_revision })}</dd>
+                {current.reading_depth && <><dt>{t('Read from')}</dt><dd>{t(depthLabels[current.reading_depth])}</dd></>}
+                {current.run_id && <><dt>{t('Run')}</dt><dd><code>{current.run_id}</code></dd></>}
+              </dl>}
+              {limited && hasValue(current) && <p className="cell-limit"><TriangleAlert size={14} aria-hidden /><span><strong>{t(current.reading_depth === 'abstract' ? 'Read from the abstract only.' : 'Read from the metadata only.')}</strong> {t('The full text of this source was not read.')}</span></p>}
               {current.note && <p className="evidence-note"><span>{t(current.author === 'human' ? 'Your note' : 'Model note')}</span>{current.note}</p>}
             </> : <p className="evidence-current is-state">{t('Empty: no value recorded yet.')}</p>}
-            {rechecking && <p className="evidence-live" role="status"><span className="shimmer-text">{t('Rechecking this cell…')}</span></p>}
-            {flags.includes('stale_column') && current && <p className="evidence-flag-note is-attention">{t('Made under an earlier definition of this column (revision {old}). It stays until you edit it or use a newer proposal.', { old: current.column_revision })}</p>}
-            {flags.includes('pdf_removed') && <p className="evidence-flag-note is-attention">{t('A PDF this value cites was removed from the source. The cited passages still open as text; the PDF view is off.')}</p>}
-            {flags.includes('pdf_replaced') && <p className="evidence-flag-note is-attention">{t('This value cites a PDF that was later replaced. Its evidence still opens the previous file; a recheck reads the current file.')}</p>}
-            {flags.includes('ocr_numbers_unchecked') && current && <p className="evidence-flag-note is-attention">{t('This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.')}</p>}
-            {flags.includes('text_superseded') && <p className="evidence-flag-note is-attention">{t('This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction.')}</p>}
-            {current && hasValue(current) && (current.evidence.length ? <EvidenceList items={current.evidence} onShow={showEvidence} />
-              : <p className="evidence-sub">{t('No linked evidence: this value was recorded without a passage.')}</p>)}
+            {rechecking && <p className="cell-live" role="status"><span className="cell-pulse" aria-hidden />{t('Rechecking this cell…')}</p>}
+            {flags.includes('stale_column') && current && flag(t('Made under an earlier definition of this column (revision {old}). It stays until you edit it or use a newer proposal.', { old: current.column_revision }))}
+            {flags.includes('pdf_removed') && flag(t('A PDF this value cites was removed from the source. The cited passages still open as text; the PDF view is off.'))}
+            {flags.includes('pdf_replaced') && flag(t('This value cites a PDF that was later replaced. Its evidence still opens the previous file; a recheck reads the current file.'))}
+            {flags.includes('ocr_numbers_unchecked') && current && flag(t('This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.'))}
+            {flags.includes('text_superseded') && flag(t('This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction.'))}
           </section>
+
+          {current && hasValue(current) && <section className="evidence-block" aria-labelledby="evidence-quotes-title">
+            <h3 id="evidence-quotes-title">{t('Evidence')}{current.evidence.length > 0 && <small>{t(quoteCount(current.evidence) === 1 ? '{n} quote' : '{n} quotes', { n: quoteCount(current.evidence) })}</small>}</h3>
+            {current.evidence.length ? <EvidenceList items={current.evidence} onShow={showEvidence} />
+              : <p className="evidence-sub">{t('No linked evidence: this value was recorded without a passage.')}</p>}
+          </section>}
+
+          {rechecking && !pending && <section className="evidence-block" aria-labelledby="evidence-slot-title">
+            <h3 id="evidence-slot-title">{t('Pending proposal')}</h3>
+            <div className="cell-slot" aria-hidden><i /><i /><i /></div>
+            <p className="evidence-sub">{t('The result will appear here as a proposal; the current value does not change.')}</p>
+          </section>}
 
           {pending && <section className={`evidence-block evidence-proposal${flags.includes('proposal_invalid') ? ' is-invalid' : ''}`} aria-labelledby="evidence-proposal-title">
             <h3 id="evidence-proposal-title">{t('Pending proposal')}</h3>
             <div className="evidence-compare">
               <div><span>{t('Current')}</span><strong>{current ? revisionText(column, current) : t('Empty')}</strong><small>{current ? t(authorLabels[current.author]) : ''}</small></div>
-              <div><span>{t('Proposal')}</span><strong>{revisionText(column, pending)}</strong><small>{revisionMeta(pending)}</small></div>
+              <div><span>{t('Proposal')}</span><strong>{revisionText(column, pending)}</strong><small>{revisionByline(pending, modelText)}</small></div>
             </div>
-            {flags.includes('proposal_before_edit') && <p className="evidence-flag-note is-attention">{t('Requested before the cell last changed. Compare it with the current value before using it.')}</p>}
-            {flags.includes('ocr_numbers_unchecked') && !current && <p className="evidence-flag-note is-attention">{t('This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.')}</p>}
-            {flags.includes('proposal_invalid') && <p className="evidence-flag-note is-blocking">{t('This proposal failed validation after one repair. It is kept for the record and cannot be used.')}</p>}
+            {flags.includes('proposal_before_edit') && flag(t('Requested before the cell last changed. Compare it with the current value before using it.'))}
+            {flags.includes('ocr_numbers_unchecked') && !current && flag(t('This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.'))}
+            {flags.includes('proposal_invalid') && flag(t('This proposal failed validation after one repair. It is kept for the record and cannot be used.'), true)}
             {pending.note && <p className="evidence-note"><span>{t('Model note')}</span>{pending.note}</p>}
             {pending.evidence.length > 0 && <EvidenceList items={pending.evidence} onShow={showEvidence} />}
             <div className="evidence-actions">
               <Button disabled={busy || flags.includes('proposal_invalid')} onClick={() => mutate(() => api.decideProposal(researchId, tableId, column.id, sv, pending.id, 'accept', cell.version, newKey()), t('The proposal’s value and evidence are now the cell’s value, recorded as your decision.'))}>{t('Use this value')}</Button>
               <Button variant="outline" disabled={busy} onClick={() => mutate(() => api.decideProposal(researchId, tableId, column.id, sv, pending.id, 'dismiss', cell.version, newKey()), t('Current value kept; the proposal stays in the history.'))}>{t('Keep current')}</Button>
             </div>
-            <p className="legacy-mini-note">{t('Using a proposal records its value as your decision. It does not mean its support was checked.')}</p>
+            <p className="evidence-sub">{t('Using a proposal records its value as your decision. It does not mean its support was checked.')}</p>
           </section>}
 
-          <section className="evidence-block" aria-label={t('Change this cell')}>
-            {!draft && <div className="evidence-actions">
-              <Button variant="outline" disabled={busy} onClick={() => { setProblem(''); setDraft(draftFrom(column, current)) }}><PencilLine size={14} aria-hidden />{t('Edit value')}</Button>
-              <Button variant="outline" disabled={busy || Boolean(activeRun) || !available} onClick={() => mutate(() => api.recheckCell(researchId, tableId, column.id, sv, cell.version, newKey()), t('Recheck started. Its result will wait as a proposal.'), onRunStarted)}><RotateCw size={14} aria-hidden />{t('Recheck this cell')}</Button>
-            </div>}
-            {!draft && <p className="evidence-sub">{!available ? t('This source has no stored text, so a recheck has nothing to read.')
-              : activeRun ? t('Another run is active; a recheck can start when it finishes.')
-              : t(recheckPassages === 1 ? 'Only {source} · up to {n} passage · {model} · 1–2 calls. The result waits as a proposal; the model does not see the current value.' : 'Only {source} · up to {n} passages · {model} · 1–2 calls. The result waits as a proposal; the model does not see the current value.', { source: row.source_key || row.title, n: recheckPassages, model })}</p>}
-            {draft && <form className="evidence-form" aria-labelledby="evidence-edit-title" onSubmit={e => { e.preventDefault(); save() }}>
+          {draft && <section className="evidence-block" aria-labelledby="evidence-edit-title">
+            <form className="evidence-form" aria-labelledby="evidence-edit-title" onSubmit={e => { e.preventDefault(); save() }}>
               <h3 id="evidence-edit-title">{t('Edit value')}</h3>
               <label className="evidence-field"><span>{t('State')}</span>
                 <select value={draft.state} onChange={e => setDraft({ ...draft, state: e.target.value as Draft['state'] })}>{editableStates.map(s => <option key={s} value={s}>{t(stateLabels[s])}</option>)}</select>
@@ -695,33 +722,44 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
                 <span>{t('Keep the evidence of the current value')}<small>{t('For a corrected unit or spelling. Without it the value is saved without linked evidence.')}</small></span>
               </label>}
               <label className="evidence-field"><span>{t('Note (optional)')}</span><textarea value={draft.note} maxLength={2000} rows={2} onChange={e => setDraft({ ...draft, note: e.target.value })} /></label>
-              {problem && <p className="evidence-flag-note is-blocking" role="alert">{problem}</p>}
+              {problem && <p className="evidence-flag-note is-blocking" role="alert"><TriangleAlert size={14} aria-hidden /><span>{problem}</span></p>}
               <div className="evidence-actions">
                 <Button type="submit" disabled={busy}>{t('Save value')}</Button>
                 <Button type="button" variant="outline" disabled={busy} onClick={() => setDraft(null)}>{t('Cancel')}</Button>
               </div>
-            </form>}
-          </section>
+            </form>
+          </section>}
 
           {cell.revisions.length > 0 && <details className="evidence-history">
-            <summary>{t(cell.revisions.length === 1 ? 'History · {n} revision' : 'History · {n} revisions', { n: cell.revisions.length })}</summary>
+            <summary><ChevronRight size={13} aria-hidden />{t(cell.revisions.length === 1 ? 'History · {n} revision' : 'History · {n} revisions', { n: cell.revisions.length })}</summary>
             <ol>{cell.revisions.slice().reverse().map(rev => <li key={rev.id}>
               <strong>{t(kindLabels[rev.kind])}{rev.decision ? ` · ${t(decisionLabels[rev.decision])}` : ''}{rev.output_status === 'unverified_draft' ? ` · ${t('failed validation')}` : ''}</strong>
               {rev.state && <span className="evidence-history-value">{revisionText(column, rev)}</span>}
-              <small>{revisionMeta(rev)}</small>
+              <small>{revisionMeta(rev, modelText)}</small>
               {rev.note && <small>{rev.note}</small>}
               {rev.evidence.length > 0 && <EvidenceList items={rev.evidence} onShow={showEvidence} />}
             </li>)}</ol>
           </details>}
-          <p className="panel-note">{t('Semantic support not checked. DEIXIS located each quote in a passage of this source version; it did not check that the passage supports the value.')}</p>
         </>}
       </div>
+      {cell && <footer className="cell-foot">
+        {!draft && <div className="evidence-actions">
+          <Button variant="outline" disabled={busy} onClick={() => { setProblem(''); setDraft(draftFrom(column, current)) }}><PencilLine size={14} aria-hidden />{t('Edit value')}</Button>
+          <Button variant="outline" disabled={busy || Boolean(activeRun) || !available} onClick={() => mutate(() => api.recheckCell(researchId, tableId, column.id, sv, cell.version, newKey()), t('Recheck started. Its result will wait as a proposal.'), onRunStarted)}><RotateCw size={14} aria-hidden />{t('Recheck this cell')}</Button>
+        </div>}
+        {!draft && <p className="cell-scope">{!available ? t('This source has no stored text, so a recheck has nothing to read.')
+          : rechecking ? t('This cell is being rechecked. Its result will wait as a proposal.')
+          : activeRun ? t('Another run is active; a recheck can start when it finishes.')
+          : t(recheckPassages === 1 ? 'Only {source} · up to {n} passage · {model} · 1–2 calls. The result waits as a proposal; the model does not see the current value.' : 'Only {source} · up to {n} passages · {model} · 1–2 calls. The result waits as a proposal; the model does not see the current value.', { source: row.source_key || row.title, n: recheckPassages, model })}</p>}
+        <p className="cell-support"><Info size={13} aria-hidden />{t('Semantic support not checked. DEIXIS located each quote in a passage of this source version; it did not check that the passage supports the value.')}</p>
+      </footer>}
       {evidence && <PassageSheet researchId={researchId} passageId={evidence[0].passage_id} highlightTexts={evidence.flatMap(e => e.anchor_text ? [e.anchor_text] : [])} expectHighlight pdfRemoved={evidence[0].evidence_status === 'pdf_removed'} sources={source ? [source] : undefined} dark={dark} onClose={() => setEvidence(null)} />}
     </SheetContent>
   </Sheet>
 }
 
 // One entry per passage: a revision can quote several spans of the same passage (D43), and the passage opens with all of them marked.
+// Quotes read as quotations; the locator and a quiet link to the source sit under them.
 function EvidenceList({ items, onShow }: { items: CellEvidence[]; onShow: (items: CellEvidence[]) => void }) {
   const groups: CellEvidence[][] = []
   for (const item of items) {
@@ -733,10 +771,10 @@ function EvidenceList({ items, onShow }: { items: CellEvidence[]; onShow: (items
     const first = group[0]
     const quotes = group.flatMap(item => item.anchor_text ? [item.anchor_text] : [])
     return <li key={first.passage_id}>
-      <span className="evidence-locator">{first.kind === 'abstract' ? <BookOpenText size={13} aria-hidden /> : <FileText size={13} aria-hidden />}{locatorText(first)}{first.evidence_status !== 'current' && <><TriangleAlert size={12} aria-hidden />{t(evidenceStatusLabels[first.evidence_status])}</>}{first.text_source === 'ocr' && <span className="evidence-ocr">{t(OCR_LABEL)}</span>}</span>
-      {quotes.length ? <div className="evidence-quotes">{quotes.map((quote, i) => <q key={i} className="evidence-quote"><mark>{quote}</mark></q>)}</div>
+      {quotes.length ? <blockquote className="evidence-quotes">{quotes.map((quote, i) => <p key={i} className="evidence-quote"><mark>{quote}</mark></p>)}</blockquote>
         : <span className="evidence-sub">{t('No located quote for this passage.')}</span>}
-      <Button variant="outline" size="sm" onClick={() => onShow(group)}>{t('Show evidence')}</Button>
+      <span className="evidence-locator">{first.kind === 'abstract' ? <BookOpenText size={13} aria-hidden /> : <FileText size={13} aria-hidden />}{locatorText(first)}{first.evidence_status !== 'current' && <><TriangleAlert size={12} aria-hidden />{t(evidenceStatusLabels[first.evidence_status])}</>}{first.text_source === 'ocr' && <span className="evidence-ocr">{t(OCR_LABEL)}</span>}
+        <button type="button" className="evidence-open" onClick={() => onShow(group)}>{t('Open in source')}<ArrowUpRight size={13} aria-hidden /></button></span>
     </li>
   })}</ul>
 }

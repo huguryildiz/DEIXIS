@@ -86,7 +86,7 @@ export function QuickFind({ open, onOpenChange, recent, dark }: {
             if (!entries.length) return null
             const Icon = ICONS[group]
             return <div role="group" aria-labelledby={`qf-group-${group}`} key={group}>
-              <div id={`qf-group-${group}`} className="quick-find-group">{t(group === 'Research' && !text ? 'RECENT RESEARCH' : GROUP_HEADINGS[group])}</div>
+              <div id={`qf-group-${group}`} className="quick-find-group">{t(group === 'Research' && !text ? 'Recent research' : GROUP_HEADINGS[group])}</div>
               {entries.map(({ item, index }) => <div key={item.key} id={`qf-${item.key}`} role="option" aria-selected={index === current}
                 className="quick-find-option" onMouseMove={() => setActive(index)} onClick={() => choose(item)}>
                 {item.key === 'page-new' ? <Plus size={15} aria-hidden="true" /> : <Icon size={15} aria-hidden="true" />}

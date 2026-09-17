@@ -17,6 +17,7 @@ import { versionText } from './labels'
 import { t, uiLocale } from './i18n'
 import { useToast } from './Toast'
 import './LibraryPage.css'
+import { Notice } from './Notice'
 
 type SortKey = 'title' | 'year' | 'citations' | 'added'
 type SortDir = 'asc' | 'desc'
@@ -261,7 +262,7 @@ export function LibraryPage({ onOpenResearch }: { onOpenResearch: (id: string) =
   </section>
 
   return <section className="collection library-page">
-    <div className="section-label">{t('LIBRARY')}</div>
+    <div className="section-label">{t('Library')}</div>
     <h1>{t('Library')}</h1>
     <p>{t('Every work saved across your research, with its versions and the projects that use it. Citation counts come from OpenAlex and are metadata, not a quality judgment.')}</p>
 
@@ -307,7 +308,7 @@ export function LibraryPage({ onOpenResearch }: { onOpenResearch: (id: string) =
       </p>}
     </div>
 
-    {error && <div className="legacy-boundary" role="alert">{t('Could not load the Library: {message}', { message: error })} <Button variant="outline" onClick={() => { setError(''); load() }}>{t('Retry')}</Button></div>}
+    {error && <Notice tone="error">{t('Could not load the Library: {message}', { message: error })} <Button variant="outline" onClick={() => { setError(''); load() }}>{t('Retry')}</Button></Notice>}
     {!error && entries === null && <p className="library-status" role="status">{t('Loading Library…')}</p>}
     {!error && entries !== null && !filtered.length && <p className="library-status">{query || access !== 'all' ? t('No work matches the current search and filter.') : t('No works yet. Sources you save in a research will appear here.')}</p>}
 
@@ -398,7 +399,7 @@ function WorkPanel({ work, error, onClose, onOpenResearch, onOpenPdf, researches
       <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label={t('Close work details')}><X size={16} /></Button>
     </div>
     <div className="library-panel-body">
-      {error && <div className="legacy-boundary" role="alert">{t('Could not load this work: {message}', { message: error })}</div>}
+      {error && <Notice tone="error">{t('Could not load this work: {message}', { message: error })}</Notice>}
       {!error && !work && <p className="library-status" role="status">{t('Loading work…')}</p>}
       {work && <>
         <h2>{work.title}</h2>

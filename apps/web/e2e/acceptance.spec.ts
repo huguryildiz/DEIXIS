@@ -135,8 +135,28 @@ test('recent research moves to Trash, restores, then can be permanently deleted'
     await page.getByRole('menuitem', { name: 'Move to Trash' }).click()
     await page.getByRole('button', { name: 'Trash', exact: true }).click()
     await page.getByRole('button', { name: 'Delete permanently' }).click()
-    await page.getByRole('alertdialog', { name: 'Delete permanently?' }).getByRole('button', { name: 'Delete permanently' }).click()
+    await page.getByRole('dialog', { name: 'Delete permanently?' }).getByRole('button', { name: 'Delete permanently' }).click()
     await expect(page.getByText('Trash is empty.')).toBeVisible()
+  } finally { await page.close(); await server.stop() }
+})
+
+test('mixed search asks which PDF guides it when several are attached', async ({ browser }) => {
+  const server = new FixtureServer(8793)
+  await server.start()
+  const page = await browser.newPage()
+  try {
+    await page.goto(server.url())
+    await page.getByLabel('Research question').fill('SYNTHETIC comparison of molecular release schedules')
+    await page.getByLabel('Source scope').click()
+    await page.getByRole('option', { name: 'Files + academic search' }).click()
+    await page.locator('input[type=file]').first().setInputFiles([server.replacementPdf(), server.hostilePdf()])
+    await expect(page.getByRole('group', { name: 'PDF guiding the search' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Start research' })).toBeDisabled()
+    await page.getByRole('radio', { name: `replacement-${server.port}.pdf` }).check()
+    await expect(page.getByRole('button', { name: 'Start research' })).toBeEnabled()
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.getByRole('group', { name: 'PDF guiding the search' }).scrollIntoViewIfNeeded()
+    await shot(page, '00-seed-choice-mobile-light')
   } finally { await page.close(); await server.stop() }
 })
 
@@ -146,6 +166,10 @@ async function startResearch(page: Page, server: FixtureServer, question: string
   if (scope) {
     await page.getByLabel('Source scope').click()
     await page.getByRole('option', { name: scope }).click()
+  }
+  if (scope === 'Files + academic search') {
+    await page.locator('input[type=file]').first().setInputFiles(server.replacementPdf())
+    await expect(page.getByLabel('PDFs to attach')).toContainText('replacement-')
   }
   await expect(page.locator('.models-summary')).toContainText('fixture-model')  // listed models, shown before starting
   await page.getByRole('button', { name: 'Start research' }).click()
@@ -168,9 +192,19 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   test('setup: a question starts search and screening through the composer', async () => {
     await startResearch(page, server, 'SYNTHETIC: How is molecule release scheduling optimized?', 'Files + academic search')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
+    await expect(page.locator('.research-seed')).toContainText('PDF passages were given to the search planner')
     for (const fact of ['Files + academic search', 'Standard depth']) await expect(page.locator('.research-facts')).toContainText(fact)
     for (const model of ['Codex', 'fixture-model']) await expect(page.locator('.chat-run-models').first()).toContainText(model)
     await shot(page, '00-search-completed')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(page.locator('.research-seed')).toBeVisible()
+    await page.locator('.research-seed').scrollIntoViewIfNeeded()
+    await shot(page, '00-seed-mobile-light')
+    await page.getByRole('button', { name: 'Use dark theme' }).click()
+    await page.locator('.research-seed').scrollIntoViewIfNeeded()
+    await shot(page, '00-seed-mobile-dark')
+    await page.getByRole('button', { name: 'Use light theme' }).click()
+    await page.setViewportSize({ width: 1280, height: 900 })
   })
 
   test('D: a keyword false positive can be excluded with a reason that is kept', async () => {
@@ -189,8 +223,8 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   test('C: the submitted manuscript is a separate version of the same work and follows the record’s selection', async () => {
     const manuscript = row(page, 'SYNTHETIC molecule schedule letter', true)
     await expect(manuscript.getByText('Another version of the record above: submitted manuscript. It follows the record’s selection')).toBeVisible()
-    await expect(row(page, 'SYNTHETIC molecule schedule letter').locator('.source-pills')).toContainText('different version (submitted manuscript) · not used for this version')
-    await expect(page.locator('.research-facts')).toContainText('5Unique works')  // six version rows, five works
+    await expect(row(page, 'SYNTHETIC molecule schedule letter').locator('.source-status')).toContainText('different version (submitted manuscript) · not used for this version')
+    await expect(page.locator('.research-facts')).toContainText('6Unique works')  // five searched works and the uploaded seed
     await expect(manuscript.getByRole('button', { name: 'Include' })).toHaveCount(0)  // D48: only the work's head has a selection
     await expect(row(page, 'SYNTHETIC molecule schedule letter').getByRole('button', { name: 'Include' })).toBeDisabled()
     await shot(page, 'C-other-version-follows-record')
@@ -479,7 +513,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     const panel = page.getByRole('dialog', { name: 'Sample size' })
     await expect(panel.locator('.evidence-current')).toHaveText('128 byte')
     await expect(panel).toContainText('Semantic support not checked.')
-    await panel.locator('.evidence-block').first().getByRole('button', { name: 'Show evidence' }).click()
+    await panel.getByRole('button', { name: 'Open in source' }).first().click()
     const sheet = page.getByRole('dialog', { name: 'Source details' })
     await expect(sheet.locator('.source-title')).toHaveText('SYNTHETIC molecule release scheduling with bisection')
     await expect(sheet.locator('mark.citation-highlight')).toBeVisible()
@@ -498,7 +532,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await panel.getByRole('button', { name: 'Save value' }).click()
     await expect(panel.locator('.evidence-current')).toHaveText('130 byte')
     await expect(panel.locator('.evidence-block').first()).toContainText('You ·')
-    await expect(panel.locator('.evidence-block').first().getByRole('button', { name: 'Show evidence' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Open in source' }).first()).toBeVisible()
 
     await expect(panel).toContainText('Only Synthetic21 · up to 1 passage · fixture-model · 1–2 calls.')
     await panel.getByRole('button', { name: 'Recheck this cell' }).click()
@@ -673,7 +707,7 @@ test.describe.serial('Replacing a source PDF (P5 slice 2, D45)', () => {
     await page.getByRole('button', { name: 'Generate answer now' }).click()
     await expect(page.getByText('Ran answer generation')).toBeVisible()
     await page.getByRole('button', { name: /Open report:/ }).click()
-    await expect(page.locator('.report-sheet .legacy-boundary', { hasText: 'A PDF this answer read' })).toHaveCount(0)
+    await expect(page.locator('.report-sheet .notice', { hasText: 'A PDF this answer read' })).toHaveCount(0)
     await page.locator('.report-sheet').getByRole('button', { name: 'Close' }).click()
 
     await openTab(page, /Sources/)
@@ -692,7 +726,7 @@ test.describe.serial('Replacing a source PDF (P5 slice 2, D45)', () => {
 
     await openTab(page, /Answer/)
     await page.getByRole('button', { name: /Open report:/ }).click()
-    await expect(page.locator('.report-sheet .legacy-boundary', { hasText: 'A PDF this answer read was replaced' })).toBeVisible()
+    await expect(page.locator('.report-sheet .notice', { hasText: 'A PDF this answer read was replaced' })).toBeVisible()
     await shot(page, 'D45-report-source-text-changed')
     await page.locator('.report-sheet .reference-list li', { hasText: title }).getByRole('button').click()
     const sheet = page.getByRole('dialog', { name: 'Source details' })
@@ -747,7 +781,7 @@ test.describe.serial('Trash, removal from a research and undo (P5 slice 3, D50)'
     await editor.getByLabel('Short name').fill('Sample size')
     await editor.getByLabel('Instruction').fill('The number of nodes in the evaluated network, as the source states it.')
     await editor.getByRole('button', { name: 'Add column' }).click()
-    await expect(page.locator('.evidence-row-title')).toHaveText([hostile, relay])  // the Sources order, not the order chosen
+    await expect(page.locator('.evidence-row-title')).toHaveText([new RegExp(hostile), new RegExp(relay)])  // the Sources order, not the order chosen; the row head is the full reference (D59)
     await page.getByRole('button', { name: /^Fill empty cells/ }).click()
     await expect(page.locator('[data-cell="0:0"]')).toContainText('Model', { timeout: 30000 })
     await expect(page.locator('[data-cell="1:0"]')).toContainText('Model', { timeout: 30000 })

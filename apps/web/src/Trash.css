@@ -22,8 +22,7 @@
 .toast .toast-action:hover{background:color-mix(in srgb,currentColor,transparent 88%)}
 
 /* Neutral confirmation: an action that can be undone */
-.confirm-dialog.is-neutral .confirm-dialog-mark{background:color-mix(in srgb,var(--accent,#3b5b9a),transparent 88%);color:var(--accent,#3b5b9a)}
-.confirm-dialog.dark.is-neutral .confirm-dialog-mark{--accent:#93acdf}
+.confirm-dialog.is-neutral .confirm-dialog-mark{background:color-mix(in srgb,var(--accent),transparent 88%);color:var(--accent)}
 
 /* Choosing sources */
 .app .source-row.has-pick{position:relative;padding-left:32px}
@@ -34,7 +33,7 @@
 .app .source-pick-all{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 8px 0 6px;color:var(--muted);font-size:12px;cursor:pointer}
 .app .source-pick-all input{width:15px;height:15px;margin:0;accent-color:var(--accent)}
 .app .source-list.has-selection-bar{padding-bottom:12px}
-.app .selection-bar{position:sticky;bottom:16px;z-index:5;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin-top:14px;padding:10px 12px 10px 16px;border:1px solid var(--strong-line,var(--line));border-radius:10px;background:var(--raised-surface,var(--paper));box-shadow:0 10px 30px -12px rgb(24 31 45/.28)}
+.app .selection-bar{position:sticky;bottom:16px;z-index:5;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin-top:14px;padding:10px 12px 10px 16px;border:1px solid var(--strong-line);border-radius:10px;background:var(--raised-surface);box-shadow:0 10px 30px -12px rgb(24 31 45/.28)}
 .app .selection-bar>strong{font-size:13px;font-weight:600}
 .app .selection-bar-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .app .selection-bar-actions [data-slot=button]{gap:6px}
@@ -44,13 +43,13 @@
 .app .removed-summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0 0 14px;color:var(--muted);font-size:12.5px;line-height:1.5}
 .app .removed-summary>svg{flex:none}
 .app .removed-summary a,.app .evidence-trash-link a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
-.ref-pill.is-removed{--pill:var(--tone-uncertain,#b06d0f)}
+.ref-pill.is-removed{--pill:var(--tone-uncertain)}
 .source-notice.is-removed svg{color:var(--muted)}
 .source-notice .source-notice-action{display:inline-flex;align-items:center;gap:5px;margin-top:4px;padding:0;border:0;background:none;color:var(--accent);font:inherit;font-weight:600;cursor:pointer}
 .source-notice .source-notice-action:hover{text-decoration:underline}
 
 /* Evidence tab: the table menu and the Trash link of an empty tab */
 .app .evidence-table-head-actions{display:flex;flex:none;align-items:center;gap:6px}
-.app .evidence-table-menu{display:inline-grid;place-items:center;width:32px;height:32px;border:1px solid var(--strong-line,var(--line));border-radius:7px;background:var(--field-surface,transparent);color:var(--muted)}
+.app .evidence-table-menu{display:inline-grid;place-items:center;width:32px;height:32px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,transparent);color:var(--muted)}
 .app .evidence-table-menu:hover{color:var(--ink)}
 .app .evidence-panel .evidence-trash-link{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:14px 0 0;color:var(--muted);font-size:12.5px}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RotateCcw, Trash2 } from 'lucide-react'
-import { AlertDialog } from '@base-ui/react/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from './ConfirmDialog'
 import { api, type RemovedSource, type Trash, type TrashedResearch, type TrashedTable, type TrashedTemplate } from './api'
 import { versionText } from './labels'
 import { t, uiLocale } from './i18n'
@@ -122,19 +122,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
           </div>)}
         </section>}
       </>}
-    <AlertDialog.Root open={pending !== null} onOpenChange={open => { if (!open) setPending(null) }}>
-      <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="confirm-backdrop" />
-        <AlertDialog.Popup className={`confirm-dialog ${dark ? 'dark' : ''}`}>
-          <AlertDialog.Title className="confirm-title">{t('Delete permanently?')}</AlertDialog.Title>
-          <p className="confirm-subject">{pendingTitle}</p>
-          <AlertDialog.Description className="confirm-description">{pendingText}</AlertDialog.Description>
-          <div className="confirm-actions">
-            <AlertDialog.Close render={<Button variant="outline" />}>{t('Cancel')}</AlertDialog.Close>
-            <Button variant="destructive" className="trash-delete" onClick={() => pending && deletePermanently(pending)}><Trash2 size={15} />{t('Delete permanently')}</Button>
-          </div>
-        </AlertDialog.Popup>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+    <ConfirmDialog open={pending !== null} dark={dark} title={t('Delete permanently?')} description={pendingText} context={pendingTitle}
+      confirmLabel={t('Delete permanently')} cancelLabel={t('Cancel')} onConfirm={() => pending && deletePermanently(pending)} onOpenChange={open => { if (!open) setPending(null) }} />
   </section>
 }

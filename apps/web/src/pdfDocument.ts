@@ -189,3 +189,37 @@ export function buildDocument(passages: Passages, figures: AssetFigure[], source
   })
   return { pages, targets, references, headings }
 }
+
+// Where citation anchors fall in the document built from a page (the plain-text view opened from a citation). Letters and
+// digits are compared case-folded with spaces and punctuation ignored, as the server locates anchors (contracts.locate_anchor),
+// so line breaks, hyphenation and the paragraph joins made above do not stop a match; a match may run across blocks.
+export type AnchorMarks = { blocks: Map<string, [number, number][]>; first: string | null; located: number }
+
+export function locateAnchors(doc: Doc, page: number | null, texts: string[]): AnchorMarks {
+  const marks: AnchorMarks = { blocks: new Map(), first: null, located: 0 }
+  const blocks = doc.pages.find(p => p.head.physical_page === page)?.blocks.filter(b => b.text) ?? []
+  let compact = ''
+  const spans: { block: number; start: number; end: number }[] = []
+  blocks.forEach((block, i) => {
+    for (const m of block.text.matchAll(/[\p{L}\p{N}]+/gu)) {
+      const word = m[0].normalize('NFKC').toLocaleLowerCase()
+      compact += word
+      for (let k = 0; k < word.length; k++) spans.push({ block: i, start: m.index!, end: m.index! + m[0].length })
+    }
+  })
+  for (const text of texts) {
+    const quote = [...text.matchAll(/[\p{L}\p{N}]+/gu)].map(m => m[0].normalize('NFKC').toLocaleLowerCase()).join('')
+    const at = quote ? compact.indexOf(quote) : -1
+    if (at < 0) continue
+    marks.located++
+    const from = spans[at], to = spans[at + quote.length - 1]
+    for (let b = from.block; b <= to.block; b++) {
+      const block = blocks[b]
+      const ranges = marks.blocks.get(block.id) ?? []
+      ranges.push([b === from.block ? from.start : 0, b === to.block ? to.end : block.text.length])
+      marks.blocks.set(block.id, ranges)
+    }
+  }
+  marks.first = doc.pages.flatMap(p => p.blocks).find(b => marks.blocks.has(b.id))?.id ?? null
+  return marks
+}

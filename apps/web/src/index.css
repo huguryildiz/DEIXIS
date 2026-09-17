@@ -1,13 +1,12 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
+    --font-sans: 'DM Sans Variable', sans-serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -26,9 +25,9 @@
     --color-border: var(--border);
     --color-destructive: var(--destructive);
     --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
+    --color-accent: var(--ui-accent);
     --color-muted-foreground: var(--muted-foreground);
-    --color-muted: var(--muted);
+    --color-muted: var(--ui-muted);
     --color-secondary-foreground: var(--secondary-foreground);
     --color-secondary: var(--secondary);
     --color-primary-foreground: var(--primary-foreground);
@@ -59,9 +58,9 @@
     --primary-foreground: #ffffff;
     --secondary: #f1f3f5;
     --secondary-foreground: #262a30;
-    --muted: #f1f3f5;
+    --ui-muted: #f1f3f5;
     --muted-foreground: #5b6475;
-    --accent: #eceff3;
+    --ui-accent: #eceff3;
     --accent-foreground: #262a30;
     --destructive: #b42318;
     --border: #e3e6ea;
@@ -84,6 +83,44 @@
     --scrollbar-track: #f1f3f6;
     --scrollbar-thumb: #c7ced8;
     --scrollbar-thumb-hover: #3b5b9a;
+
+    /* DEIXIS editorial tokens, used by all product CSS. They are defined once here so portaled sheets, dialogs, popovers and
+       toasts get the same values as the app. shadcn's own muted and accent surfaces are --ui-muted and --ui-accent. */
+    --paper: #f8f9fb;
+    --ink: #262a30;
+    --muted: #5b6475;
+    --line: #e6e8eb;
+    --accent: #3b5b9a;
+    --sidebar-surface: #f1f3f6;
+    --raised-surface: #ffffff;
+    --field-surface: #ffffff;
+    --selected-surface: #dadfe6;
+    --selected-ink: #262a30;
+    --hover-surface: #e2e6eb;
+    --strong-line: #dde1e6;
+    --tone-include: #2e8b4f;
+    --tone-uncertain: #b06d0f;
+    --tone-exclude: #b42318;
+
+    /* Source attributes (pills and fact dots) and status surfaces (chips, toasts, inline errors). */
+    --attr-abstract: #a8489a;
+    --attr-text: #2f6fdb;
+    --attr-accepted: #7c5cc4;
+    --attr-submitted: #c27a12;
+    --attr-similarity: #39759b;
+    --ok-ink: #2f6b45;
+    --ok-surface: #e4f1e7;
+    --ok-line: #b9d8c2;
+    --warn-ink: #8a5a0b;
+    --warn-surface: #fbf0dc;
+    --warn-line: #ecd3a2;
+    --error-ink: #a3342b;
+    --error-surface: #fbe7e5;
+    --error-line: #efbdb8;
+    /* A PDF page and the figures cut from it stay paper-coloured in both themes. */
+    --page-surface: #ffffff;
+    --page-ink: #3d434c;
+    --page-muted: #6b7280;
 }
 
 .dark {
@@ -97,9 +134,9 @@
     --primary-foreground: #15171b;
     --secondary: #2a2f37;
     --secondary-foreground: #e6e8eb;
-    --muted: #2a2f37;
+    --ui-muted: #2a2f37;
     --muted-foreground: #9aa2ad;
-    --accent: #2c323b;
+    --ui-accent: #2c323b;
     --accent-foreground: #e6e8eb;
     --destructive: #e0786b;
     --border: #353b45;
@@ -121,6 +158,40 @@
     --scrollbar-track: #1b1e23;
     --scrollbar-thumb: #46505e;
     --scrollbar-thumb-hover: #93acdf;
+
+    --paper: #15171b;
+    --ink: #e6e8eb;
+    --muted: #9aa2ad;
+    --line: #2b3038;
+    --accent: #93acdf;
+    --sidebar-surface: #1b1e23;
+    --raised-surface: #1f2329;
+    --field-surface: #242931;
+    --selected-surface: #333a45;
+    --selected-ink: #e6e8eb;
+    --hover-surface: #2b313a;
+    --strong-line: #353b45;
+    --tone-include: #5fbf82;
+    --tone-uncertain: #e0a64a;
+    --tone-exclude: #e0786b;
+
+    --attr-abstract: #d98ccc;
+    --attr-text: #7aa7f0;
+    --attr-accepted: #a58ee0;
+    --attr-submitted: #e0a64a;
+    --attr-similarity: #7fb2d6;
+    --ok-ink: #8fd0a4;
+    --ok-surface: #1f3327;
+    --ok-line: #325a40;
+    --warn-ink: #e7c27a;
+    --warn-surface: #342a17;
+    --warn-line: #5a4722;
+    --error-ink: #f0a39b;
+    --error-surface: #3a1f1d;
+    --error-line: #6a3530;
+    --page-surface: #f4f5f7;
+    --page-ink: #3d434c;
+    --page-muted: #6b7280;
 }
 
 html {
@@ -160,5 +231,15 @@ html {
     }
   html {
     @apply font-sans;
+    }
+}
+
+/* Reduced motion: transitions and animations finish at once and scrolling jumps. Live states keep their text. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
     }
 }

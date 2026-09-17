@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronRight, Download, Minus, Plus } from 'lucide-react'
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { t } from './i18n'
+import { scrollBehavior } from './motion'
+import { Notice } from './Notice'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -74,7 +76,7 @@ export function PdfViewer({ url, initialPage = 1, title }: { url: string; initia
   const changePage = (next: number) => {
     if (!document) return
     setPage(Math.min(Math.max(next, 1), document.numPages))
-    viewportRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    viewportRef.current?.scrollTo({ top: 0, behavior: scrollBehavior() })
   }
 
   return <section className="pdf-viewer" aria-label={title}>
@@ -93,7 +95,7 @@ export function PdfViewer({ url, initialPage = 1, title }: { url: string; initia
       <a className="pdf-download" href={url.split('#')[0]} download aria-label={t('Download PDF')} title={t('Download PDF')}><Download /></a>
     </div>
     <div className="pdf-document" ref={viewportRef}>
-      {error ? <div className="legacy-boundary">{t('Could not display PDF: {message}', { message: error })}</div> : !document && <p>{t('Loading PDF…')}</p>}
+      {error ? <Notice tone="error">{t('Could not display PDF: {message}', { message: error })}</Notice> : !document && <p>{t('Loading PDF…')}</p>}
       <canvas ref={canvasRef} aria-label={t('PDF page {n}', { n: page })} />
     </div>
   </section>

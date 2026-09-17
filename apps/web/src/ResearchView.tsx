@@ -6,7 +6,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Evidence, type Limitation, type ModelOption, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
+import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Evidence, type Limitation, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
 import { accessParts, citedText, fetchReasonText, locatorText, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { Elapsed, EvidenceTab, TABLE_RUN_KINDS } from './EvidenceTable'
@@ -16,6 +16,8 @@ import { PdfReadiness } from './PdfReadiness'
 import { ZoteroPanel } from './ZoteroPanel'
 import { useToast, type ToastAction } from './Toast'
 import { ConnectionIcon } from './connectionIcons'
+import { ModelName } from './ModelName'
+import { useModelText } from './modelText'
 import { ConfirmDialog } from './ConfirmDialog'
 import { effortLabels, effortOptions, Option, scopeOptions } from './Home'
 import { citationStyles, formatReference, formatReferenceText, type CitationStyle } from './citations'
@@ -23,6 +25,8 @@ import { OCR_LABEL, ocrLanguagesText, ocrOffer } from './ocr'
 import { OcrButton, OcrNote } from './OcrNote'
 import { t, uiLocale } from './i18n'
 import { SourceKey } from './SourceKey'
+import { scrollBehavior } from './motion'
+import { Notice } from './Notice'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -101,8 +105,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     return () => { live = false }
   }, [id, lastEventId])
   // Codex lists each model's default effort; a research created without an effort runs at that default.
-  const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
-  useEffect(() => { api.connections().then(c => setModelOptions(Object.values(c.models).flatMap(h => h.models ?? []))).catch(() => { /* efforts stay unlabelled */ }) }, [])
+  const modelText = useModelText()
 
   const loaded = view !== null
   useEffect(() => {
@@ -171,17 +174,26 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     } finally { setBusy(false) }
   }
 
-  if (error && !view) return <section className="research-view"><div className="legacy-boundary">{t('Could not open this research: {error}', { error })}</div></section>
+  if (error && !view) return <section className="research-view"><Notice tone="error">{t('Could not open this research: {error}', { error })}</Notice></section>
   if (!view) return <section className="research-view"><p className="session-meta">{t('Loading research…')}</p></section>
 
   const run = view.runs[0] as Run | undefined
   const active = run ? ACTIVE.has(run.status) : false
   const answer = view.answers[0] as Answer | undefined
   const hasAcademic = view.scope.source_scope !== 'attached'
+  const needsSeed = view.scope.source_scope === 'attached_and_academic' && view.scope.seed_mode === 'uploaded_seed'
+  const seedSearchReady = !needsSeed || view.scope.seed_status === 'ready'
+  const seedCandidates = view.sources.filter(source =>
+    (source.origin === 'user_upload' || source.added_by === 'zotero_import' || source.added_by === 'library')
+    && source.has_pdf_text && source.access.assets.length > 0)
   const included = view.counts.included
 
   const startAnswer = () => act(() => api.startRun(id, 'answer', crypto.randomUUID()))
-  const startDiscovery = () => act(() => api.startRun(id, 'discovery', crypto.randomUUID()))
+  const startDiscovery = () => {
+    if (!seedSearchReady) { toast('error', t('Choose a readable PDF to guide the search.')); return }
+    return act(() => api.startRun(id, 'discovery', crypto.randomUUID()))
+  }
+  const selectSeed = (sourceId: string) => act(() => api.setSeed(id, sourceId, view.research.version), t('PDF selected for the next search.'))
   const startTitle = () => act(() => api.startRun(id, 'research_title', crypto.randomUUID()))
   const upload = (list: FileList | null) => list && act(async () => { for (const file of Array.from(list)) await api.upload(id, file) }, t('PDF added and included. Its text was extracted page by page (no OCR).'))
   const uploadToSource = (list: FileList | null) => list && attachTarget && act(async () => {
@@ -283,16 +295,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
   const ScopeIcon = scopeOptions[view.scope.source_scope].icon
   const EffortIcon = effortOptions[view.scope.effort].icon
-  const modelText = (model: string | null, effort: string | null) => {
-    if (!model) return t('no model chosen')
-    const eff = effort || modelOptions.find(m => m.id === model)?.default_reasoning_effort
-    return eff ? `${model}-${eff}` : model
-  }
   // The stored title is the question cut to 160 characters until a valid answer names the research (D36); until then show it whole.
   const heading = view.scope.question.startsWith(view.research.title) ? view.scope.question : view.research.title
   // Each count is the way into the evidence it describes; the selection filter lives here so a count can set it.
   const showSources = (filter: StateFilter) => { setSourceFilter(filter); setTab('sources'); tabsRef.current?.scrollIntoView({ block: 'start' }) }
-  const showAnswer = () => { setTab('answer'); requestAnimationFrame(() => document.getElementById('research-answer')?.scrollIntoView({ behavior: 'smooth', block: 'center' })) }
+  const showAnswer = () => { setTab('answer'); requestAnimationFrame(() => document.getElementById('research-answer')?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })) }
   // Reports are the research's artifacts: every answer that passed validation, newest first, with the number and title saved with it.
   const reports = view.answers.filter(a => a.status === 'structurally_valid').map(a => ({ answer: a, version: a.report_version ?? 0, title: a.report_title ?? heading }))
   // The latest report's sheet lives in its card on the Answer tab; from any other tab, or for an older version, it opens here.
@@ -302,7 +309,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const tableCards = tables && tables.length > 0 && <div className="table-artifacts">{tables.map(table => <TableCard key={table.id} table={table} onOpen={() => openTable(table.id)} />)}</div>
   const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
   return <section className="research-view legacy-research">
-    <div className="section-label">{t('RESEARCH')} <span> {t('/ REVISION {n}', { n: view.research.current_scope_revision })}</span></div>
+    <div className="section-label">{t('Research')} <span>· {t('revision {n}', { n: view.research.current_scope_revision })}</span></div>
     <TypewriterTitle text={heading} />
     {heading === view.scope.question && !active && run?.status !== 'paused' && <Button variant="ghost" size="sm" className="research-title-suggest" disabled={busy} onClick={startTitle}
       title={t('The model names the research from its question and included sources, in at most 15 words.')}><Sparkles size={14} aria-hidden />{t('Suggest a short title')}</Button>}
@@ -337,15 +344,37 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
           latestAnswer={answer ? <><AnswerBlock researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
         {!answer && tableCards}
+        {view.scope.source_scope === 'attached_and_academic' && <div className="research-seed">
+          <div><strong>{t('PDF guiding the search')}</strong><p>{view.scope.seed_status === 'ready'
+            ? t('{n} PDF passages were given to the search planner from {title}.', { n: view.scope.seed?.passage_count ?? 0, title: view.scope.seed?.title ?? '' })
+            : view.scope.seed_status === 'question_only'
+              ? t('This earlier research searches from the question. Choose a PDF to guide a later search.')
+              : t('Choose a readable PDF before searching scholarly providers.')}</p></div>
+          <Select value={view.scope.seed?.source_version_id ?? ''} onValueChange={value => { if (value) void selectSeed(value) }}>
+            <SelectTrigger aria-label={t('PDF guiding the search')} disabled={busy || active || !seedCandidates.length}>
+              <SelectValue placeholder={t('Choose PDF')}>{(value: string) =>
+                seedCandidates.find(source => source.source_version_id === value)?.title ?? view.scope.seed?.title ?? t('Choose PDF')
+              }</SelectValue>
+            </SelectTrigger>
+            <SelectContent align="end">{seedCandidates.map(source =>
+              <SelectItem key={source.source_version_id} value={source.source_version_id}>{source.title}</SelectItem>)}</SelectContent>
+          </Select>
+          {view.scope.seed_status === 'stale' && view.scope.seed && seedCandidates.some(source => source.source_version_id === view.scope.seed?.source_version_id) &&
+            <Button variant="outline" size="sm" disabled={busy || active} onClick={() => void selectSeed(view.scope.seed!.source_version_id)}>{t('Use current PDF text')}</Button>}
+          {view.scope.seed_status === 'stale' && <Notice tone="attention">{t('The selected PDF changed or was removed. Select a current PDF again before searching.')}</Notice>}
+          {view.scope.seed_status === 'ready' && view.scope.seed?.page_count != null && view.scope.seed.text_pages < view.scope.seed.page_count &&
+            <Notice tone="attention">{t('Some PDF pages have no extracted text; the search uses only the readable passages.')}</Notice>}
+          {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
+        </div>}
         {/* Before the first answer, the next step is getting the included sources' PDFs (D49); the panel carries the answer button. */}
-        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic} act={act} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} /> :
+        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady} act={act} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} /> :
         /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads. */
         <div className="answer-actions">
           <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !included} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
           {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
           {hasAcademic && (view.search_runs.length
-            ? <Button className="quiet-action" variant="ghost" disabled={busy || active} onClick={startDiscovery}>{t('Search again')}</Button>
-            : <Button variant="outline" disabled={busy || active} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
+            ? <Button className="quiet-action" variant="ghost" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}>{t('Search again')}</Button>
+            : <Button variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
         </div>}
       </TabsContent>
 
@@ -362,7 +391,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
             </>}
           </div></div>
         {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
-        {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}</span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {t(s.status.replace('_', ' '))} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
+        {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {t(s.status.replace('_', ' '))} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
         {view.counts.removed > 0 && <p className="removed-summary"><ListMinus size={14} aria-hidden /><span>{t(view.counts.removed === 1 ? 'You removed {n} source from this research.' : 'You removed {n} sources from this research.', { n: view.counts.removed })}
           {view.counts.removed_found_again > 0 && ` ${t(view.counts.removed_found_again === 1 ? '{n} of them was found again by a later search and is not listed.' : '{n} of them were found again by a later search and are not listed.', { n: view.counts.removed_found_again })}`}</span>
           <a href="#/trash">{t('Show in Trash')}</a></p>}
@@ -462,18 +491,19 @@ async function writeClipboard(text: string) {
 }
 
 function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void }) {
+  const modelText = useModelText()
   const [style, setStyle] = useState<CitationStyle>(() => { try { const saved = localStorage.getItem('deixis-citation-style'); return saved && Object.keys(citationStyles).includes(saved) ? saved as CitationStyle : 'apa' } catch { return 'apa' } })
   const [copied, setCopied] = useState(false)
   const toast = useToast()
   const chooseStyle = (next: CitationStyle) => { setStyle(next); try { localStorage.setItem('deixis-citation-style', next) } catch { /* the choice still applies for this tab */ } }
   if (answer.status === 'clarification' && answer.clarification) {
-    return <div className="legacy-answer"><div className="section-label">{t('CLARIFICATION NEEDED')}</div><h2>{answer.clarification.question}</h2><p>{answer.clarification.why_it_matters}</p>{answer.clarification.options.length > 0 && <ul className="plain-list">{answer.clarification.options.map(o => <li key={o}>{o}</li>)}</ul>}<p className="legacy-mini-note">{t('Revise the question below to continue.')}</p></div>
+    return <div className="legacy-answer"><div className="section-label">{t('Clarification needed')}</div><h2>{answer.clarification.question}</h2><p>{answer.clarification.why_it_matters}</p>{answer.clarification.options.length > 0 && <ul className="plain-list">{answer.clarification.options.map(o => <li key={o}>{o}</li>)}</ul>}<p className="legacy-mini-note">{t('Revise the question below to continue.')}</p></div>
   }
   if (answer.status === 'no_evidence') {
-    return <div className="legacy-boundary">{t('No text passages were available for the included sources (no abstract, no retrievable PDF text). No answer was generated.')}</div>
+    return <Notice tone="attention">{t('No text passages were available for the included sources (no abstract, no retrievable PDF text). No answer was generated.')}</Notice>
   }
   if (answer.status === 'unverified_draft') {
-    return <div className="legacy-answer"><div className="legacy-boundary">{t('The model output failed validation after one repair attempt, so it is not shown as a cited answer.')}<ul className="plain-list">{answer.validation.issues?.map(i => <li key={`${i.code}${i.path}`}>{t('{code} at {path}', { code: i.code, path: i.path })}</li>)}</ul></div>
+    return <div className="legacy-answer"><Notice tone="error">{t('The model output failed validation after one repair attempt, so it is not shown as a cited answer.')}<ul className="plain-list">{answer.validation.issues?.map(i => <li key={`${i.code}${i.path}`}>{t('{code} at {path}', { code: i.code, path: i.path })}</li>)}</ul></Notice>
       {answer.unverified_draft?.claims?.map(c => <p className="claim is-unverified" key={c.claim_label}><MathText text={c.text} /></p>)}</div>
   }
   const refs = new Map<string, { n: number; e: Answer['claims'][number]['evidence'][number] }>()
@@ -532,11 +562,11 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
   }
   const preview = answer.claims.slice(0, 2).map(claim => claim.text).join(' ')
   const report = <div className="legacy-answer report-content">
-    <div className="section-label">{t('SOURCE-LINKED ANSWER')}{answer.applicability === 'stale_scope' ? ` ${t('· EARLIER QUESTION REVISION')}` : answer.applicability === 'stale_selection' ? ` ${t('· EARLIER SOURCE SELECTION')}` : ''}</div>
-    {answer.applicability === 'stale_scope' && <div className="legacy-boundary">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</div>}
-    {answer.applicability === 'stale_selection' && <div className="legacy-boundary">{t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}</div>}
-    {answer.source_text_changed && <div className="legacy-boundary">{t('A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.')}</div>}
-    {answer.capability_notice && <div className="legacy-boundary">{answer.capability_notice}</div>}
+    <div className="section-label">{t('Source-linked answer')}{answer.applicability === 'stale_scope' ? ` · ${t('earlier question revision')}` : answer.applicability === 'stale_selection' ? ` · ${t('earlier source selection')}` : ''}</div>
+    {answer.applicability === 'stale_scope' && <Notice tone="attention">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</Notice>}
+    {answer.applicability === 'stale_selection' && <Notice tone="attention">{t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}</Notice>}
+    {answer.source_text_changed && <Notice tone="attention">{t('A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.')}</Notice>}
+    {answer.capability_notice && <Notice tone="info">{answer.capability_notice}</Notice>}
     {sections.map(({ heading, claims }, index) => <section className="answer-section" key={index}>
       {heading && <h3>{heading}</h3>}
       {claims.map(claim => <p className="claim" key={claim.id}>
@@ -555,7 +585,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
         <Select value={style} onValueChange={value => { if (value) chooseStyle(value as CitationStyle) }}>
           <SelectTrigger aria-label={t('Citation style')} title={t('How the cited sources are written')}><SelectValue>{(value: string) => <><Quote size={14} />{t(citationStyles[value as CitationStyle].label)}</>}</SelectValue></SelectTrigger>
           <SelectContent className="intake-select-content has-details" align="end" alignItemWithTrigger={false}>
-            <div className="intake-select-heading" aria-hidden="true">{t('CITATION STYLE')}</div>
+            <div className="intake-select-heading" aria-hidden="true">{t('Citation style')}</div>
             {(Object.keys(citationStyles) as CitationStyle[]).map(k => <SelectItem key={k} value={k}><Option icon={Quote} title={t(citationStyles[k].label)} detail={t(citationStyles[k].detail)} /></SelectItem>)}
           </SelectContent>
         </Select></div>
@@ -577,7 +607,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
         </button></li>
       })}</ol>
     </>}
-    <p className="legacy-mini-note">{t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.')} {answer.model ? t('Model: {connection} · {model}.', { connection: answer.model.connection, model: answer.model.resolved_model ?? answer.model.requested_model ?? t('unknown') }) : ''} {answer.inputs_given ? t('{passages} passages from {sources} sources were provided.', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }) : ''}</p>
+    <p className="legacy-mini-note">{t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.')} {answer.model && <>{t('Model')}: <ModelName connection={answer.model.connection} text={modelText(answer.model.resolved_model ?? answer.model.requested_model ?? t('unknown'))} />.</>} {answer.inputs_given ? t('{passages} passages from {sources} sources were provided.', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }) : ''}</p>
     <ReviewNote review={answer.review} />
     <ChecksNote warnings={answer.validation.warnings} />
     {suggestion && <PdfSuggestions notes={suggestion.notes} sources={suggestion.sources} busy={busy} onAttachPdf={onAttachPdf} />}
@@ -679,13 +709,14 @@ function ChecksNote({ warnings }: { warnings?: ValidationIssue[] }) {
 
 
 function ReviewNote({ review }: { review: Answer['review'] }) {
+  const modelText = useModelText()
   if (!review) return null
-  const model = review.model ? review.model.resolved_model ?? review.model.requested_model : null
+  const model = review.model ? <> · <ModelName connection={review.model.connection} text={modelText(review.model.resolved_model ?? review.model.requested_model)} /></> : null
   if (review.status === 'failed') {
-    return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden />{model ? t('The reviewer ({model}) did not produce a usable review.', { model }) : t('The reviewer did not produce a usable review.')} {pauseReasonText(review.failure_reason)} {t('The answer is unchanged.')}</p>
+    return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span>{model && <strong>{t('Reviewer')}{model}:</strong>} {t('The reviewer did not produce a usable review.')} {pauseReasonText(review.failure_reason)} {t('The answer is unchanged.')}</span></p>
   }
   const counts = (Object.keys(verdictLabels) as Verdict[]).map(v => [v, review.reviews.filter(r => r.verdict === v).length] as const).filter(([, n]) => n > 0)
-  return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span><strong>{t('Reviewer')}{model ? ` · ${model}` : ''}:</strong> {counts.map(([v, n]) => `${n} ${t(verdictLabels[v])}`).join(' · ')}. {review.notes && `${review.notes} `}{t('This is an additional model’s reading of each claim against its cited passages. It does not change the answer and is not independent verification.')}</span></p>
+  return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span><strong>{t('Reviewer')}{model}:</strong> {counts.map(([v, n]) => `${n} ${t(verdictLabels[v])}`).join(' · ')}. {review.notes && `${review.notes} `}{t('This is an additional model’s reading of each claim against its cited passages. It does not change the answer and is not independent verification.')}</span></p>
 }
 
 // Bibliography files for reference managers, downloaded from the local API.
@@ -767,7 +798,7 @@ function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveF
       <label className="source-search"><Search size={14} aria-hidden /><input type="search" aria-label={t('Filter sources')} placeholder={t('Title, author, venue or DOI')} value={query} onChange={e => setQuery(e.target.value)} /></label>
       <Select value={pdfFilter} onValueChange={value => { if (value) setPdfFilter(value as PdfFilter) }}>
         <SelectTrigger className="source-pdf-filter" aria-label={t('Filter sources by PDF availability')}><SelectValue>{(value: string) => <><Filter size={14} />{t(pdfFilterLabels[value as PdfFilter])}</>}</SelectValue></SelectTrigger>
-        <SelectContent className="intake-select-content source-pdf-menu" align="end" alignItemWithTrigger={false}>
+        <SelectContent className="intake-select-content" align="end" alignItemWithTrigger={false}>
           {(Object.keys(pdfFilterLabels) as PdfFilter[]).map(k => <SelectItem key={k} value={k}><span className="source-filter-option"><span>{t(pdfFilterLabels[k])}</span><small>{pdfCounts[k]}</small></span></SelectItem>)}
         </SelectContent>
       </Select>
@@ -846,7 +877,7 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
         {byline && <span>{byline}</span>}
         {(source.venue || venueLine.length > 0) && <span>{source.venue && <em>{source.venue}</em>}{source.venue && venueLine.length > 0 && ' · '}{venueLine.join(' · ')}</span>}
       </div> : <div className="source-byline"><span>{t(source.origin === 'user_upload' ? 'Uploaded PDF' : 'No bibliographic details from the provider')}</span></div>}
-      <div className="source-pills source-status">
+      <div className="source-status">
         {source.version_label && <span className={`source-fact is-${versionTones[source.version_label] ?? 'unstated'}`}>{versionText(source.version_label)}</span>}
         {accessParts(source).map(part => <span key={part.text} className={`source-fact is-${part.tone}`}>{part.text}</span>)}
         {readsVersion && <Tooltip content={t('This record has no PDF text, so answers read the PDF of {version} below. Passages cited from it are labelled with that version; the two are not counted as separate sources.', { version: versionText(readsVersion.version_label) })}><span className="source-fact is-plain" tabIndex={0}>{t('answers read {version}', { version: versionText(readsVersion.version_label) })}</span></Tooltip>}

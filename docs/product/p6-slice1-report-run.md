@@ -51,7 +51,7 @@ Yeni dosyalar:
 - `backend/deixis/workflow/report/numbering.py` — atıf/tablo/denklem numaralandırma (ilk geçiş sırası; `bibliography.py`'nin sağlamadığı işlev, §9).
 - `backend/deixis/workflow/report/export.py` — Markdown dışa aktarma (§9, dilim 1 kapsamı; LaTeX slice 5'te).
 - `contracts/research/report-plan.schema.json`, `report-section-draft.schema.json`, `report-phrase-repair.schema.json`, `report-review.schema.json`.
-- `backend/deixis/storage/migrations/0034_report_run_kind.sql` (numara yürütme anında teyit edilir).
+- `backend/deixis/storage/migrations/0035_report_run_kind.sql` (numara yürütme anında teyit edilir).
 - `methods/deixis-research/references/report.md`.
 - `tests/model_behavior/report_cases.json` — rapor davranış vakaları (§4.1, R10 ekilmiş hatalar için ayrı, mevcut `tests/model_behavior/cases.json`'a karışmadan).
 - `scripts/p6_eval/measure_report.py` — gerçek model koşusunu §13 beklentileriyle karşılaştıran ölçüm betiği (yapısı `scripts/p4_eval/measure.py`'yi izler).
@@ -551,7 +551,7 @@ Dört yeni sözleşme `contracts/research/` altına, mevcut dosyaların biçimiy
 
 `check_step_input` (task 1a) `EXTRACTION_TASKS`'a paralel bir `REPORT_TASKS = ("report_plan", "report_section", "report_phrase_repair", "report_review")` sabitiyle: `(target is not None) != (task_type in REPORT_TASKS)` denetimini `report_target` için tekrarlar; `report_section`/`report_phrase_repair` için `target["plan"] is not None`, `report_plan`/`report_review` için `target["plan"] is None` denetlenir.
 
-## Migration: `backend/deixis/storage/migrations/0034_report_run_kind.sql`
+## Migration: `backend/deixis/storage/migrations/0035_report_run_kind.sql`
 
 0032'nin izlediği desen (SQLite CHECK genişletilemediği için tablo kopyalanır); `report_gaps.kind` bilerek düz `TEXT`'tir ve SQL `CHECK` almaz, çünkü slice 2 (Chain of Ideas) dördüncü bir tür ekleyecek ve o zaman migration değil yalnız `domain/contracts.py::GAP_KINDS` listesi genişleyecektir.
 
@@ -1196,7 +1196,7 @@ git commit -m "Add fake responses and fixtures for the four report task types"
 #### Task 1: Migration 0034
 
 **Files:**
-- Create: `backend/deixis/storage/migrations/0034_report_run_kind.sql` (yukarıdaki "Migration" bölümünde tam verildi).
+- Create: `backend/deixis/storage/migrations/0035_report_run_kind.sql` (yukarıdaki "Migration" bölümünde tam verildi).
 - Test: `tests/test_migrations.py` (yoksa `rg "def test.*migrat" tests/` ile bulunan dosyaya eklenir; genelde `storage/db.py::migrate()`'i boş bir SQLite dosyasına uygulayan bir test vardır).
 
 **Interfaces:**
@@ -1232,7 +1232,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/deixis/storage/migrations/0034_report_run_kind.sql tests/test_migrations.py
+git add backend/deixis/storage/migrations/0035_report_run_kind.sql tests/test_migrations.py
 git commit -m "Add the report run kind and its storage tables (migration 0034)"
 ```
 

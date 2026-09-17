@@ -24,8 +24,10 @@
 2. **Dil sorunun dili.** Yanıtla aynı kural; phrasebank iki dilde hazır. Bölüm düzeni dile bağlı değildir.
 3. **Related-work tablosu = kanıt tablosu.** Model raporun içinde tablo yazmaz. Rapor tabloyu şart koşar; yoksa PDF hazırlığı paneli dördüncü duruma geçer: sütun önerisi → sahip onaylar/değiştirir → doldurma bütün dahil kaynaklar bitene kadar 25'lik partilerle sürer → rapor butonu etkinleşir. Sonradan PDF yüklenen kaynağın satırı yalnız `cell_recheck` ile güncellenir.
 4. **Yanıt ve rapor ayrı butonlar.** Yanıt tablo istemez ve bugünkü gibi çalışır; rapor tabloyu ister. (Raporun yanıtın yerini alması reddedildi.)
-5. **Denklemler.** Rapor bölümleri denklem kuralında yanıttan farklı olamaz: LaTeX, iyi biçim denetimi, Marker/OCR kaynaklı ifadelerde "sayfayla denetlenmeli" uyarısı, KaTeX çizimi.
+5. **Denklemler.** Rapor bölümleri denklem kuralında yanıttan farklı olamaz: LaTeX, iyi biçim denetimi, Marker/OCR kaynaklı ifadelerde "sayfayla denetlenmeli" uyarısı, KaTeX çizimi. Soru ya da rapor planı formülasyon istiyorsa (karar değişkenleri, amaç, kısıtlar, kanal/enerji modelleri), rapor literatürdeki denklemleri **içerir**: III'te temel modeller, IV'te kaynak başına formülasyon, yanıt talimatının 7. maddesindeki düzenle (önce değişkenler ve anlamları, sonra amaç, sonra kısıtlar) ve yalnız alıntılanan pasajın yazdığı biçimde. Denklemi olan bir kaynağı denklemsiz anlatmak, tam metni varken, `report_review`'ın bulgusudur. Soru formülasyon istemiyorsa denklemler yalnız anlam için gerektiğinde girer.
 6. **Yürütme bölüm başına adım.** Tek çağrı değil, farklı ajan da değil: aynı araştırma ajanı bölüm başına bir adımda çağrılır (§4).
+7. **Eş zamanlı model çağrısı.** Bugün tablo doldurma kaynakları tek tek dolaşıp her çağrıyı bekler (`flow.py::_table_fill`); D55'teki 506–576 saniye bundan. Tablo doldurma ve birbirine bağlı olmayan rapor bölümleri aynı anda gönderilir; açık istek sayısı ayarlanabilir bir üst sınırla (başlangıç 6) tutulur, kota hatasında sınır düşer ve kalanlar bekler. Her adım yine kendi `operation_key`'ini, kaydını ve denetimini taşır. Tablo doldurmanın eş zamanlı hâli rapordan bağımsız bir değişikliktir ve dilim 1'den önce yapılır (§12).
+8. **Phrasebank hedefli onarımla sıkı.** Bugün kalıp denetimi uyarıdır (D19). Rapor bölümlerinde kalıba uymayan cümleler bir hedefli onarım çağrısına gider (yalnız o cümleler ve her biri için en yakın üç kalıp; bölüm yeniden yazılmaz); onarımdan sonra da uymayan cümle kalırsa bölüm taslağa düşer ve cümleler listelenir (§8). Bölüm adımına kalıp bankasının yalnız o bölüme ait kısmı yüklenir. Denetim biçimseldir: kalıbın anlama uygunluğunu kod değil `report_review` okur. (Onarımsız sıkı ret ve bugünkü uyarı düzeyi reddedildi.)
 
 ## 3. Rapor iskeleti
 
@@ -49,23 +51,25 @@ Sabit şablon; model bölüm icat etmez, yalnız IV içinde tema alt başlıklar
 
 ## 4. Yürütme: `report` çalışması ve adımları
 
-Yeni çalışma türü `report`. Ön koşul: en az bir dahil kaynak ve dahil kaynakların tamamını kapsayan bir kanıt tablosu (§9). Adımlar sırayla; her adımın kendi `operation_key`'i vardır ve başarılı adım tekrar çağrılmaz.
+Yeni çalışma türü `report`. Ön koşul: en az bir dahil kaynak ve dahil kaynakların tamamını kapsayan bir kanıt tablosu (§9). Her adımın kendi `operation_key`'i vardır ve başarılı adım tekrar çağrılmaz. Adımlar bağımlılık sırasına göre turlarda yürür; bir turun adımları aynı anda gönderilir (§2 karar 7), bir tur bitmeden sonraki başlamaz.
 
 1. `report_plan` (model, §5).
 2. II Review Methodology (kod).
-3. III, IV, V, VI, VII (model, bu sırayla; her biri önceki bölümlerin iddia özetlerini alır).
-4. I Introduction (model).
-5. VIII Limitations (kod çekirdek + model cümleleri).
-6. IX Conclusion (model).
-7. Abstract ve Index Terms (model).
+3. **Tur A:** III, IV, V birlikte (model; yalnız plana ve kendi kanıtlarına bağlı).
+4. **Tur B:** VI (model; V'in çelişkilerini ve IV'ün toplamlarını alır).
+5. **Tur C:** VII (model; VI'nın adaylarını alır).
+6. VIII Limitations (kod çekirdek + model cümleleri; VI'ya bağlı).
+7. **Tur D:** I Introduction, IX Conclusion, Abstract ve Index Terms birlikte (model; gövde bölümlerinin iddia özetlerini alır).
 8. Montaj ve denetim (kod, §8).
 9. `report_review` (model; `answer_review`'ın rapor düzeyi karşılığı, §8).
+
+Bir bölümün kalıp onarımı (§8) kendi turunun içinde, o bölümün adımı olarak yapılır; tur, onarımlar bitince kapanır.
 
 **Her model adımının girdisi:** `StepInput` zarfı (`step_input_id`, `scope_revision`, `skill_package_hash`), dondurulmuş rapor planı, o bölüme kod tarafından seçilmiş kanıt kayıtları (pasajlar ve/veya hücreler, allowlist), önceki bölümlerin özetleri (iddia kimliği + bir satır; tam metin değil), phrasebank'in o bölüme ait kısmı ve bölüm şeması. Kanıt seçimi bölüme göre yapılır; 48 pasajlık yanıt girdisi her bölüme kopyalanmaz.
 
 **Bölüm şeması** yanıt şemasının bölüm sürümüdür: `section_id` sabit; iddialar `claim_key` (kararlı, `IV.3` gibi), `text`, `support_type`, `passage_ids` ve/veya `cell_ids`, `citation_anchors`; ayrıca `terms_used` (sözlükten), `gap_refs` (VI ve VII için), `subsections` (yalnız IV). Sınırlar bölüm başına 40 iddia ve bütçe kelime sayısı (planda). Aynı çapa kuralı: çapası pasajda bulunmayan iddia bölümü taslağa düşürür, D56'daki nihai kurtarma bölüm düzeyinde uygulanır.
 
-**Model.** Bütün adımlar araştırmanın seçili modeliyle çalışır; bir bölümde model değişmez, uyuşmazlık `model_mismatch` olarak kaydedilir ve kullanılmaz. Beklenen maliyet: 9 model çağrısı + inceleme; D55'teki yanıt sürelerine göre çağrı başına 2–3 dakika, tablo hariç 20–30 dakika. Bu tahmin ölçülmedi.
+**Model.** Bütün adımlar araştırmanın seçili modeliyle çalışır; bir bölümde model değişmez, uyuşmazlık `model_mismatch` olarak kaydedilir ve kullanılmaz. Beklenen maliyet: 9 model çağrısı + inceleme + onarımlar; D55'teki yanıt sürelerine göre çağrı başına 2–3 dakika. Sırayla 20–30 dakika olacak iş dört turla 8–12 dakikaya iner; tablo doldurma eş zamanlı hâliyle 50 kaynakta birkaç dakika. Bu tahminler ölçülmedi (§13 R7).
 
 **Duraklatma, iptal, kapsam değişimi.** `_checkpoint` her adım arasında çalışır. Yeni kapsam revizyonu raporu durdurur; tamamlanmış bölümler eski revizyon etiketiyle saklanır, yeni revizyonun raporu olarak gösterilmez (T18).
 
@@ -125,6 +129,8 @@ Montaj kod işidir ve model çağırmaz. Hata bulursa rapor `unverified_draft` o
 - Toplam ve bölüm kelime sayısı plandaki bütçede.
 - Matematik aralıkları iyi biçimli; Marker/OCR kaynaklı ifadeler uyarı taşır.
 
+**Kalıp denetimi (bölüm düzeyinde, montajdan önce).** Bölümün her cümlesi bugünkü biçimsel denetimden geçer (`phrasebank.unframed`: bir kalıbın sabit sözcüklerinin en az %70'i sırayla). Uymayan cümle varsa bölümün adımı bir **hedefli onarım** çağrısı yapar: girdi yalnız uymayan cümleler, her biri için kod tarafından seçilmiş en yakın üç kalıp ve cümlenin iddia kimliği; çıktı aynı iddia kimlikleriyle yeniden yazılmış cümleler. Onarım bölümün geri kalanına dokunmaz, atıf ve çapalar değişmez; değişen cümlenin çapası yeniden denetlenir. Onarım en fazla bir kez. Sonrasında da uymayan cümle kalırsa bölüm `unverified_draft` olur ve cümleler `sentence_without_phrasebank_frame` ile listelenir. `own_work_phrase_in_claim` ve `plural_sources_for_one_source` aynı yolu izler. Yanıt adımındaki uyarı düzeyi (D19) değişmez; bu kural yalnız rapor bölümleri içindir.
+
 `report_review` bir model adımıdır: bölümlerin iddialarını alıntılanan pasaj ve hücrelere karşı okur, §6 kurallarını ve abstract–gövde tutarlılığını denetler, `answer_review` gibi bulgu listesi verir ve ana metne yazmaz.
 
 ## 9. Arayüz ve dışa aktarma
@@ -165,6 +171,7 @@ Beş türlü gap sınıflaması (Sol'un `reporting_absence`, `corpus_absence`, `
 
 ## 12. Dilimler
 
+0. **Eş zamanlı tablo doldurma (dilim 1'den önce, rapordan bağımsız).** `_table_fill` kaynak çağrılarını üst sınırlı eş zamanlı gönderir; kota hatasında sınır düşer; her kaynak adımı bugünkü gibi kendi kaydını yazar. Test: sahte adaptörle 12 kaynaklı doldurmada aynı anda açık çağrı sayısı sınırı aşmaz, bir kaynağın hatası diğerlerini durdurmaz, çıktı sıralı hâlle aynı. Ölçüm: D55'teki doldurma ile aynı kopyada süre karşılaştırması (506–576 s başlangıç).
 1. **Rapor çalışması.** `report` türü, `report_plan`, bölüm adımları ve şemaları, phrasebank bölüm yükleme, montaj denetimi, `report_review`, hazırlık panelinde tablo doldurma durumu, rapor görünümü, Markdown dışa aktarma. Sentetik testler: fixture'lara bölüm girdileri ve sahte çıktılar; montaj denetiminin her kuralı için bir test. Gerçek modelle bir rapor `gpt-5.6-luna` ile yazılır ve §13'teki beklentilerle karşılaştırılır.
 2. **Modelsiz bölümler ve LaTeX.** II ve VIII'in kod çekirdeği, gap kaynakçası, IEEEtran dışa aktarımı, `source_key` tabanlı `\cite`.
 3. **Kill-search ve aday kartı.** Ayrı not; VI'daki adaylara durum verir.
@@ -184,7 +191,9 @@ P5 dilim 5'teki kural: beklenti koşudan önce yazılır ve commit'lenir; sonuç
 | R4 | Abstract/I/IX'daki bağsız iddia (montaj yakalamalı) | o bölümlerin iddiaları |
 | R5 | Terim tutarsızlığı | sözlük terimleri |
 | R6 | Denklem aktarımı: PDF sayfasıyla karakter karakter | denklem içeren iddialar |
-| R7 | Süre, çağrı, token | çalışma |
+| R7 | Süre, çağrı, token; tur başına süre | çalışma |
+| R8 | Kalıba uymayan cümle oranı: ilk denemede, onarımdan sonra; taslağa düşen bölüm sayısı | bölümlerin cümleleri |
+| R9 | Formülasyon isteyen soruda denklemi olan tam metinli kaynakların kaçı raporda denklemiyle yer aldı | tam metinli, denklemli kaynaklar |
 
 Sahibin okuma değerlendirmesi ayrı raporlanır; Claude'un okuması "insan denetimi" sayılmaz.
 

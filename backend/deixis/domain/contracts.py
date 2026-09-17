@@ -48,7 +48,7 @@ SCHEMA_VERSIONS = {
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
     "TableColumnProposal": "deixis.table_column_proposal.v1",
     "ResearchTitle": "deixis.research_title.v1",
-    "ReportPlanDraft": "deixis.report_plan_draft.v1",
+    "ReportPlanDraft": "deixis.report_plan_draft.v2",
     "ReportSectionDraft": "deixis.report_section_draft.v1",
     "ReportPhraseRepairDraft": "deixis.report_phrase_repair_draft.v1",
     "ReportReview": "deixis.report_review.v1",
@@ -236,6 +236,9 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
         issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
     elif report_target is not None:
+        report_column_ids = [column["column_id"] for column in report_target["columns"]]
+        if len(set(report_column_ids)) != len(report_column_ids):
+            issues.append(Issue("duplicate_report_column", "/report_target/columns", "column_id must be unique"))
         cell_ids = {cell["cell_id"] for cell in report_target["cells"]}
         if len(cell_ids) != len(report_target["cells"]):
             issues.append(Issue("duplicate_report_cell", "/report_target/cells", "cell_id must be unique"))
@@ -272,6 +275,11 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
             for axis in (report_target["plan"] or {}).get("axes", []):
                 if axis["column_id"] not in allow.get("column_ids", []):
                     issues.append(Issue("axis_column_not_in_allowlist", "/report_target/plan/axes", axis["column_id"]))
+            for field, code in (("limitations_column_id", "limitations_column_not_in_allowlist"),
+                                ("future_work_column_id", "future_work_column_not_in_allowlist")):
+                column_id = (report_target["plan"] or {}).get(field)
+                if column_id is not None and column_id not in allow.get("column_ids", []):
+                    issues.append(Issue(code, f"/report_target/plan/{field}", column_id))
         elif report_target["plan"] is not None:
             issues.append(Issue("report_plan_must_be_null", "/report_target/plan", step_input["task_type"]))
     return issues
@@ -727,6 +735,11 @@ def _check_report_plan(step_input: dict[str, Any], allow: dict[str, set[str]],
     for i, axis in enumerate(draft["axes"]):
         if axis["column_id"] not in allow.get("column_ids", set()):
             report.issues.append(Issue("axis_column_not_in_allowlist", f"/axes/{i}/column_id", axis["column_id"]))
+    for field, code in (("limitations_column_id", "limitations_column_not_in_allowlist"),
+                        ("future_work_column_id", "future_work_column_not_in_allowlist")):
+        column_id = draft[field]
+        if column_id is not None and column_id not in allow.get("column_ids", set()):
+            report.issues.append(Issue(code, f"/{field}", column_id))
 
 
 def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]],

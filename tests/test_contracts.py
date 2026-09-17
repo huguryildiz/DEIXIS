@@ -50,7 +50,7 @@ def test_report_step_input_requires_report_target_only_for_report_tasks():
     si["allowlist"]["column_ids"] = []
     assert contracts.check_step_input(si) == []
     si["task_type"] = "report_plan"
-    si["output_schema_versions"] = ["deixis.report_plan_draft.v1"]
+    si["output_schema_versions"] = ["deixis.report_plan_draft.v2"]
     issues = {i.code for i in contracts.check_step_input(si)}
     assert "report_target_mismatch" in issues
 
@@ -59,6 +59,22 @@ def test_report_target_requires_frozen_cells_and_gap_candidates():
     si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
     del si["report_target"]["cells"]
     assert "step_input_schema_invalid" in {issue.code for issue in contracts.check_step_input(si)}
+
+
+def test_report_target_column_ids_are_unique():
+    si = json.loads(json.dumps(STEP_INPUTS["C_report_plan"]))
+    si["report_target"]["columns"].append(dict(si["report_target"]["columns"][0]))
+
+    assert "duplicate_report_column" in {issue.code for issue in contracts.check_step_input(si)}
+
+
+def test_report_plan_column_roles_must_come_from_the_step_allowlist():
+    si = STEP_INPUTS["C_report_plan"]
+    draft = json.loads(json.dumps(next(case for case in CASES if case["name"] == "report_plan_valid")["output"]))
+    assert contracts.validate_model_output(si, draft).ok
+
+    draft["limitations_column_id"] = "col_NOTGIVEN01"
+    assert contracts.validate_model_output(si, draft).codes() == ["limitations_column_not_in_allowlist"]
 
 
 def test_report_cell_must_be_present_in_the_step_input_allowlist_and_records():

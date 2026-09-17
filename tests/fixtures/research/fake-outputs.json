@@ -277,7 +277,7 @@
       "expect_ok": true,
       "expect_codes": [],
       "output": {
-        "schema_version": "deixis.report_plan_draft.v1",
+        "schema_version": "deixis.report_plan_draft.v2",
         "step_input_id": "sti_SYNTHR0001",
         "scope_revision": 1,
         "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -299,7 +299,15 @@
             "passage_id": "psg_SYNA1abs01"
           }
         ],
-        "axes": []
+        "axes": [
+          {
+            "axis_id": "AX1",
+            "label": "SYNTHETIC method",
+            "column_id": "col_SYNTHR0001"
+          }
+        ],
+        "limitations_column_id": "col_SYNTHR0001",
+        "future_work_column_id": "col_SYNTHR0001"
       }
     },
     {

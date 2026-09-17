@@ -53,7 +53,7 @@ def test_freeze_plan_overrides_all_model_supplied_code_owned_fields_without_muta
 
 def test_freeze_plan_removes_model_envelope_fields():
     model_plan = {
-        "schema_version": "deixis.report_plan_draft.v1",
+        "schema_version": "deixis.report_plan_draft.v2",
         "step_input_id": "sti_SYNTH0001",
         "scope_revision": 1,
         "skill_package_hash": "sha256:synthetic",
@@ -67,3 +67,16 @@ def test_freeze_plan_removes_model_envelope_fields():
     frozen = freeze_plan(model_plan, snapshot, included_count=1)
 
     assert not {"schema_version", "step_input_id", "scope_revision", "skill_package_hash"} & frozen.keys()
+
+
+def test_freeze_plan_preserves_model_chosen_limitation_and_future_work_columns():
+    model_plan = {
+        "scope_statement": "SYNTHETIC scope", "research_questions": [], "glossary": [], "axes": [],
+        "limitations_column_id": "col_SYNLIMIT01", "future_work_column_id": "col_SYNFUTUR01",
+    }
+    snapshot = {"corpus": {"found": 1, "unique": 1, "screened": 1, "included": 1, "full_text": 0}}
+
+    frozen = freeze_plan(model_plan, snapshot, included_count=1)
+
+    assert frozen["limitations_column_id"] == "col_SYNLIMIT01"
+    assert frozen["future_work_column_id"] == "col_SYNFUTUR01"

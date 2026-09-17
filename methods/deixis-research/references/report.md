@@ -44,7 +44,10 @@ Write `scope_statement` (one paragraph, in the question's language, describing w
 why), `research_questions` (2 to 5, each a short `RQ`-numbered question the report's sections answer),
 `glossary` (terms the report will define, each with a definition and the one passage_id it comes from — do not
 invent a term without a defining passage in the allowlist) and `axes` (classification dimensions, each tied to
-one evidence-table column_id from the allowlist; an axis without a matching column is rejected). Do not write
+one evidence-table column_id from the allowlist; an axis without a matching column is rejected). Set
+`limitations_column_id` and `future_work_column_id` to the allowlisted evidence-table columns that record each
+source's stated limitations and stated future work, respectively, or to `null` when no such column exists. The
+allowlist carries the evidence table's columns for these choices. Do not write
 `corpus`, `section_budgets` or `allowed_support`: the application fills those from the evidence table and a
 fixed policy after your plan is accepted. Do not repeat the whole question as `scope_statement`; write your own
 one-paragraph account of its scope.

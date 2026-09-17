@@ -60,17 +60,29 @@ def valid_response(si: dict[str, Any]) -> str:
     if task == "research_title":
         return json.dumps(envelope(si, "deixis.research_title.v1") | {"title": "Synthetic short research title"})
     if task == "report_plan":
-        return json.dumps(envelope(si, "deixis.report_plan_draft.v1") | {
+        passage_ids = si["allowlist"]["passage_ids"]
+        column_ids = si["allowlist"]["column_ids"]
+        return json.dumps(envelope(si, "deixis.report_plan_draft.v2") | {
             "scope_statement": "SYNTHETIC scope covering release scheduling formulations in molecular communication.",
             "research_questions": [
                 {"rq_id": "RQ1", "text": "SYNTHETIC: what decision variables are used?"},
                 {"rq_id": "RQ2", "text": "SYNTHETIC: what constraints are reported?"},
             ],
-            "glossary": [{"term": "release scheduling", "definition": "SYNTHETIC definition.",
-                          "passage_id": si["passages"][0]["passage_id"]}],
-            "axes": [],
+            "glossary": ([{"term": "release scheduling", "definition": "SYNTHETIC definition.",
+                           "passage_id": passage_ids[0]}] if passage_ids else []),
+            "axes": ([{"axis_id": "AX1", "label": si["report_target"]["columns"][0]["name"],
+                       "column_id": column_ids[0]}] if column_ids else []),
+            "limitations_column_id": column_ids[0] if column_ids else None,
+            "future_work_column_id": column_ids[0] if column_ids else None,
         })
     if task == "report_section":
+        if not si["passages"]:
+            return json.dumps(envelope(si, "deixis.report_section_draft.v1") | {
+                "section_id": si["report_target"]["section_id"], "claims": [], "citation_anchors": [],
+                "subsections": [], "gaps": [],
+                "insufficient_evidence": [{"context": si["report_target"]["section_id"],
+                                           "reason": "It is beyond the scope of this synthetic fixture to add a claim."}],
+            })
         first = si["passages"][0]
         return json.dumps(envelope(si, "deixis.report_section_draft.v1") | {
             "section_id": si["report_target"]["section_id"],

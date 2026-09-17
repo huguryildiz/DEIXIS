@@ -1003,7 +1003,8 @@ class ResearchFlow:
         if task_type in contracts.REPORT_TASKS:
             report = report_target or {}
             cells, gaps = report.get("cells", []), report.get("gap_candidates", [])
-            columns = [cell["column_id"] for cell in cells] + [gap["column_id"] for gap in gaps]
+            columns = [column["column_id"] for column in report.get("columns", [])]
+            columns += [cell["column_id"] for cell in cells] + [gap["column_id"] for gap in gaps]
             columns += [axis["column_id"] for axis in (report.get("plan") or {}).get("axes", [])]
             allowlist |= {"column_ids": list(dict.fromkeys(columns)),
                           "cell_ids": [cell["cell_id"] for cell in cells],

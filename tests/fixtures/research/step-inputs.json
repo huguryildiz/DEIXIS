@@ -174,7 +174,7 @@
       "references/report.md"
     ],
     "output_schema_versions": [
-      "deixis.report_plan_draft.v1"
+      "deixis.report_plan_draft.v2"
     ],
     "question": {
       "text": "SYNTHETIC: How is operations research used in molecular communication, and what decision variables, objectives and constraints do published models use?",
@@ -323,7 +323,7 @@
         "psg_SYNA3pg002",
         "psg_SYNA5abs01"
       ],
-      "column_ids": [],
+      "column_ids": ["col_SYNTHR0001"],
       "cell_ids": [],
       "gap_ids": []
     },
@@ -341,6 +341,10 @@
     "report_target": {
       "report_id": "rpt_SYNTHR0001",
       "section_id": null,
+      "columns": [{
+        "column_id": "col_SYNTHR0001", "revision": 1, "name": "SYNTHETIC method",
+        "instruction": "Record the SYNTHETIC method.", "answer_format": "text"
+      }],
       "plan": null,
       "cells": [],
       "gap_candidates": [],
@@ -513,7 +517,7 @@
         "psg_SYNA3pg002",
         "psg_SYNA5abs01"
       ],
-      "column_ids": [],
+      "column_ids": ["col_SYNTHR0001"],
       "cell_ids": [],
       "gap_ids": []
     },
@@ -531,6 +535,10 @@
     "report_target": {
       "report_id": "rpt_SYNTHR0001",
       "section_id": "IV",
+      "columns": [{
+        "column_id": "col_SYNTHR0001", "revision": 1, "name": "SYNTHETIC method",
+        "instruction": "Record the SYNTHETIC method.", "answer_format": "text"
+      }],
       "plan": {
         "scope_statement": "SYNTHETIC scope covering release scheduling formulations in molecular communication.",
         "research_questions": [
@@ -551,6 +559,8 @@
           }
         ],
         "axes": [],
+        "limitations_column_id": "col_SYNTHR0001",
+        "future_work_column_id": "col_SYNTHR0001",
         "corpus": {
           "found": 5,
           "unique": 5,
@@ -741,7 +751,7 @@
         "psg_SYNA3pg002",
         "psg_SYNA5abs01"
       ],
-      "column_ids": [],
+      "column_ids": ["col_SYNTHR0001"],
       "cell_ids": [],
       "gap_ids": []
     },
@@ -759,6 +769,10 @@
     "report_target": {
       "report_id": "rpt_SYNTHR0001",
       "section_id": "IV",
+      "columns": [{
+        "column_id": "col_SYNTHR0001", "revision": 1, "name": "SYNTHETIC method",
+        "instruction": "Record the SYNTHETIC method.", "answer_format": "text"
+      }],
       "plan": {
         "scope_statement": "SYNTHETIC scope covering release scheduling formulations in molecular communication.",
         "research_questions": [
@@ -779,6 +793,8 @@
           }
         ],
         "axes": [],
+        "limitations_column_id": "col_SYNTHR0001",
+        "future_work_column_id": "col_SYNTHR0001",
         "corpus": {
           "found": 5,
           "unique": 5,
@@ -983,7 +999,7 @@
         "psg_SYNA3pg002",
         "psg_SYNA5abs01"
       ],
-      "column_ids": [],
+      "column_ids": ["col_SYNTHR0001"],
       "cell_ids": [],
       "gap_ids": []
     },
@@ -1001,6 +1017,10 @@
     "report_target": {
       "report_id": "rpt_SYNTHR0001",
       "section_id": null,
+      "columns": [{
+        "column_id": "col_SYNTHR0001", "revision": 1, "name": "SYNTHETIC method",
+        "instruction": "Record the SYNTHETIC method.", "answer_format": "text"
+      }],
       "plan": null,
       "cells": [],
       "gap_candidates": [],
@@ -1175,7 +1195,7 @@
         "psg_SYNA3pg002",
         "psg_SYNA5abs01"
       ],
-      "column_ids": [],
+      "column_ids": ["col_SYNTHR0001"],
       "cell_ids": [],
       "gap_ids": []
     },
@@ -1193,6 +1213,10 @@
     "report_target": {
       "report_id": "rpt_SYNTHR0001",
       "section_id": "VII",
+      "columns": [{
+        "column_id": "col_SYNTHR0001", "revision": 1, "name": "SYNTHETIC method",
+        "instruction": "Record the SYNTHETIC method.", "answer_format": "text"
+      }],
       "plan": {
         "scope_statement": "SYNTHETIC scope covering release scheduling formulations in molecular communication.",
         "research_questions": [
@@ -1213,6 +1237,8 @@
           }
         ],
         "axes": [],
+        "limitations_column_id": "col_SYNTHR0001",
+        "future_work_column_id": "col_SYNTHR0001",
         "corpus": {
           "found": 5,
           "unique": 5,

@@ -108,6 +108,7 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
     target = {
         "report_id": report_id,
         "section_id": section_id,
+        "columns": snapshot["columns"],
         "plan": frozen_plan,
         "cells": evidence["cells"],
         "gap_candidates": gap_candidates,
@@ -150,16 +151,19 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
 
     draft = output["result"]
     payload = flow.store.step_input_payload(output["step_input_id"])
+    empty = not draft["claims"] and not draft["insufficient_evidence"]
     language = phrasebank.frames_language(payload)
     flagged = flagged_sentences(
         section_id, draft["claims"], flow.deps.package.files[phrasebank.PHRASEBANK], language,
     )
     # Targeted repair is added by 1d Task 3; this batch records the local validation result only.
-    status = "draft" if flagged else "valid"
+    issues = ([{"code": "empty_section", "detail": "section has no claims or insufficient-evidence entries"}]
+              if empty else flagged)
+    status = "draft" if issues else "valid"
     reports.save_claims(section_key, draft["claims"], _citation_links(payload, draft))
     reports.save_section_draft(
         section_key, step["id"], status, draft,
-        {"ok": not flagged, "issues": flagged, "truncated": evidence["truncated"]}, _word_count(draft),
+        {"ok": not issues, "issues": issues, "truncated": evidence["truncated"]}, _word_count(draft),
     )
     if section_id == "VI":
         candidate_ids = {candidate["gap_id"] for candidate in gap_candidates}
@@ -183,12 +187,18 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     if not readiness["ready"]:
         flow._fail(run_id, "table_not_ready", readiness)
     snapshot = reports.save_snapshot(report_id, table_id)
-    target = {"report_id": report_id, "section_id": None, "plan": None, "cells": [],
+    target = {"report_id": report_id, "section_id": None, "columns": snapshot["columns"], "plan": None, "cells": [],
               "gap_candidates": [], "prior_summaries": [], "repair_request": None, "review_scope": None}
 
+    source_ids = [row["source_version_id"] for row in snapshot["rows"]]
+    abstract_passages = [passage for source_id in source_ids for passage in flow.store.passages_for(source_id)
+                         if passage["kind"] == "abstract"]
+
     async def plan_call() -> dict[str, Any]:
-        return await flow._model_step(run, scope, "report_plan", "report_plan", report_target=target,
-                                      limiter=flow.deps.limiter)
+        return await flow._model_step(
+            run, scope, "report_plan", "report_plan", source_ids=source_ids, passage_rows=abstract_passages,
+            report_target=target, limiter=flow.deps.limiter,
+        )
 
     output = await flow.deps.limiter.run("report_plan", plan_call)
     flow._checkpoint(run_id, run["scope_revision"])

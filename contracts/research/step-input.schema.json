@@ -505,23 +505,41 @@
     "report_target": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["report_id", "section_id", "plan", "cells", "gap_candidates", "prior_summaries", "repair_request", "review_scope"],
+      "required": ["report_id", "section_id", "columns", "plan", "cells", "gap_candidates", "prior_summaries", "repair_request", "review_scope"],
       "properties": {
         "report_id": { "type": "string", "pattern": "^rpt_[0-9A-Za-z]{8,40}$" },
         "section_id": {
           "anyOf": [{ "type": "string", "enum": ["I", "III", "IV", "V", "VI", "VII", "VIII", "IX", "abstract", "index_terms"] }, { "type": "null" }]
+        },
+        "columns": {
+          "type": "array",
+          "description": "The evidence table's columns, so the plan step can tie an axis to a real column and a section step can name one.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["column_id", "revision", "name", "instruction", "answer_format"],
+            "properties": {
+              "column_id": { "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" },
+              "revision": { "type": "integer", "minimum": 1 },
+              "name": { "type": "string" },
+              "instruction": { "type": "string" },
+              "answer_format": { "type": "string" }
+            }
+          }
         },
         "plan": {
           "anyOf": [
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["scope_statement", "research_questions", "glossary", "axes", "corpus", "section_budgets", "allowed_support"],
+              "required": ["scope_statement", "research_questions", "glossary", "axes", "limitations_column_id", "future_work_column_id", "corpus", "section_budgets", "allowed_support"],
               "properties": {
                 "scope_statement": { "type": "string" },
                 "research_questions": { "type": "array", "items": { "type": "object" } },
                 "glossary": { "type": "array", "items": { "type": "object" } },
                 "axes": { "type": "array", "items": { "type": "object" } },
+                "limitations_column_id": { "anyOf": [{ "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" }, { "type": "null" }] },
+                "future_work_column_id": { "anyOf": [{ "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" }, { "type": "null" }] },
                 "corpus": {
                   "type": "object", "additionalProperties": false,
                   "required": ["found", "unique", "screened", "included", "full_text"],

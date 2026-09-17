@@ -59,11 +59,19 @@ def report_target(source_id, passage_id):
     return {
         "report_id": "rpt_SYNTH0001",
         "section_id": "IV",
+        "columns": [
+            {"column_id": column_id, "revision": 1, "name": "SYNTHETIC method",
+             "instruction": "Record the SYNTHETIC method.", "answer_format": "text"},
+            {"column_id": "col_SYNTH0002", "revision": 2, "name": "SYNTHETIC limitations",
+             "instruction": "Record stated limitations.", "answer_format": "text"},
+        ],
         "plan": {
             "scope_statement": "SYNTHETIC scope.",
             "research_questions": [],
             "glossary": [],
             "axes": [{"column_id": "col_SYNTH0002"}],
+            "limitations_column_id": "col_SYNTH0002",
+            "future_work_column_id": None,
             "corpus": {"found": 1, "unique": 1, "screened": 1, "included": 1, "full_text": 0},
             "section_budgets": {"IV": {"min_words": 1, "max_words": 500, "max_claims": 10}},
             "allowed_support": {"IV": ["source_stated", "analyst_inference"]},
@@ -99,6 +107,20 @@ def test_report_section_builds_a_valid_step_input_with_report_allowlists(tmp_pat
     assert step_input["allowlist"]["column_ids"] == ["col_SYNTH0001", "col_SYNTH0002"]
     assert step_input["allowlist"]["cell_ids"] == [f"cel_SYNTH000{i}" for i in range(1, 4)]
     assert step_input["allowlist"]["gap_ids"] == ["gap1"]
+
+
+def test_report_plan_column_roles_must_name_a_column_in_the_allowlist(tmp_path):
+    flow, store, adapter, run, scope, source_id, passage_id = report_flow(tmp_path)
+    target = report_target(source_id, passage_id)
+
+    run_report_section(flow, store, run, scope, source_id, passage_id, target)
+    step_input = adapter.calls[0]
+    assert contracts.check_step_input(step_input) == []
+
+    step_input["report_target"]["plan"]["limitations_column_id"] = "col_NOTGIVEN01"
+    assert "limitations_column_not_in_allowlist" in {
+        issue.code for issue in contracts.check_step_input(step_input)
+    }
 
 
 def test_report_target_with_a_cell_that_was_not_given_fails_before_the_model_call(tmp_path):

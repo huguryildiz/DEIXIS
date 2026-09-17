@@ -27,26 +27,45 @@ COLUMN = {
     "allow_multiple": False,
     "unit_hint": None,
 }
+LIMITATIONS_COLUMN = COLUMN | {
+    "name": "SYNTHETIC stated limitations",
+    "instruction": "Record the source's stated limitations.",
+}
+FUTURE_WORK_COLUMN = COLUMN | {
+    "name": "SYNTHETIC stated future work",
+    "instruction": "Record the source's stated future work.",
+}
 PASSAGE = "SYNTHETIC evidence states that molecule release scheduling uses a bounded formulation."
 CELL_QUOTE = "SYNTHETIC evidence states that molecule release scheduling"
 
 
 class ReportAdapter(FakeAdapter):
-    def __init__(self, broken_section=None):
+    def __init__(self, broken_section=None, empty_section=None):
         super().__init__(responder=self._response)
         self.broken_section = broken_section
+        self.empty_section = empty_section
 
     def _response(self, step_input):
         task = step_input["task_type"]
         if task == "report_plan":
-            return json.dumps(envelope(step_input, "deixis.report_plan_draft.v1") | {
+            passage_id = step_input["allowlist"]["passage_ids"][0]
+            columns = step_input["report_target"]["columns"]
+            column_id = columns[0]["column_id"]
+            limitations_column_id = next(column["column_id"] for column in columns
+                                         if "limitations" in column["name"])
+            future_work_column_id = next(column["column_id"] for column in columns
+                                         if "future work" in column["name"])
+            return json.dumps(envelope(step_input, "deixis.report_plan_draft.v2") | {
                 "scope_statement": "SYNTHETIC scope for bounded release scheduling formulations.",
                 "research_questions": [
                     {"rq_id": "RQ1", "text": "SYNTHETIC: which formulation is reported?"},
                     {"rq_id": "RQ2", "text": "SYNTHETIC: which evidence supports it?"},
                 ],
-                "glossary": [],
-                "axes": [],
+                "glossary": [{"term": "release scheduling", "definition": "SYNTHETIC definition.",
+                              "passage_id": passage_id}],
+                "axes": [{"axis_id": "AX1", "label": "SYNTHETIC method", "column_id": column_id}],
+                "limitations_column_id": limitations_column_id,
+                "future_work_column_id": future_work_column_id,
             })
         if task != "report_section":
             from fakes import valid_response
@@ -55,7 +74,10 @@ class ReportAdapter(FakeAdapter):
         if section_id == self.broken_section:
             return json.dumps({"SYNTHETIC_broken": True})
         claims, anchors = [], []
-        if step_input["report_target"]["cells"]:
+        insufficient_evidence = []
+        if section_id == self.empty_section:
+            pass
+        elif step_input["report_target"]["cells"]:
             cell = step_input["report_target"]["cells"][0]
             claims = [_claim(section_id, cell_ids=[cell["cell_id"]])]
             anchors = [{"claim_key": f"{section_id}.1", "passage_id": None,
@@ -65,6 +87,12 @@ class ReportAdapter(FakeAdapter):
             claims = [_claim(section_id, passage_ids=[passage["passage_id"]])]
             anchors = [{"claim_key": f"{section_id}.1", "passage_id": passage["passage_id"],
                         "cell_id": None, "quote": CELL_QUOTE}]
+        elif step_input["report_target"]["prior_summaries"]:
+            summary = step_input["report_target"]["prior_summaries"][0]
+            claims = [_claim(section_id, body_refs=[summary["claim_key"]])]
+        else:
+            insufficient_evidence = [{"context": section_id,
+                                      "reason": "It is beyond the scope of this synthetic fixture to add a claim."}]
         gaps = [{
             "gap_id": "gap9",
             "kind": "stated_limitation",
@@ -80,22 +108,27 @@ class ReportAdapter(FakeAdapter):
             "citation_anchors": anchors,
             "subsections": [],
             "gaps": gaps,
-            "insufficient_evidence": [],
+            "insufficient_evidence": insufficient_evidence,
         })
 
 
-def _claim(section_id, passage_ids=None, cell_ids=None):
+def _claim(section_id, passage_ids=None, cell_ids=None, body_refs=None):
+    text = {
+        "III": "It encompasses the SYNTHETIC bounded formulation.",
+        "V": "The SYNTHETIC formulation is different from its alternative in a number of respects.",
+        "IX": "This report has shown that the SYNTHETIC formulation is bounded.",
+        "abstract": "This report has shown that the SYNTHETIC formulation is bounded.",
+    }.get(section_id, "It has been reported that the SYNTHETIC formulation is bounded.")
     return {
         "claim_key": f"{section_id}.1",
-        "text": ("It encompasses the SYNTHETIC bounded formulation." if section_id == "III"
-                 else "It has been reported that the SYNTHETIC formulation is bounded."),
+        "text": text,
         "support_type": "source_stated",
         "passage_ids": passage_ids or [],
         "cell_ids": cell_ids or [],
         "paragraph": 1,
         "table_ref": "TABLE_I" if section_id == "IV" else None,
         "equation_ref": None,
-        "body_refs": [],
+        "body_refs": body_refs or [],
         "axis_id": None,
         "count": None,
         "equation_origin": None,
@@ -103,7 +136,7 @@ def _claim(section_id, passage_ids=None, cell_ids=None):
     }
 
 
-def report_flow(tmp_path, *, fill=True, broken_section=None):
+def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     store = Store(conn)
@@ -118,7 +151,10 @@ def report_flow(tmp_path, *, fill=True, broken_section=None):
     store.add_to_corpus(research_id, source_id, "user_upload", selection_state="included", selection_origin="user")
     tables = TableStore(store)
     table_id = tables.create_table(research_id, "SYNTHETIC evidence", None, None, None)
-    column_id = tables.add_column(research_id, table_id, COLUMN, 1, None)
+    column_ids = [
+        tables.add_column(research_id, table_id, column, version, None)
+        for version, column in enumerate((COLUMN, LIMITATIONS_COLUMN, FUTURE_WORK_COLUMN), 1)
+    ]
     if fill:
         fill_run = store.create_run(research_id, "answer", {}, None)
         step = store.step(fill_run["id"], "synthetic:cell", "model:cell_extraction")
@@ -129,16 +165,17 @@ def report_flow(tmp_path, *, fill=True, broken_section=None):
              "skill_package_hash": "sha256:synthetic"},
             "base", "developer", "message", {},
         )
-        tables.save_model_output(
-            research_id, table_id, column_id, source_id, column_revision=1, state="value",
-            value={"text": "SYNTHETIC bounded formulation"}, note=None, reading_depth="abstract",
-            output_status="structurally_valid",
-            links=[{"passage_id": passage_id, "source_version_id": source_id,
-                    "anchor_text": CELL_QUOTE, "anchor_match": "exact"}],
-            run_id=fill_run["id"], step_id=step["id"], step_input_id=step_input_id,
-            model_connection="fake", resolved_model="fake-model", scope_revision=1,
-            cell_version_at_request=0, recheck=False,
-        )
+        for column_id in column_ids:
+            tables.save_model_output(
+                research_id, table_id, column_id, source_id, column_revision=1, state="value",
+                value={"text": "SYNTHETIC bounded formulation"}, note=None, reading_depth="abstract",
+                output_status="structurally_valid",
+                links=[{"passage_id": passage_id, "source_version_id": source_id,
+                        "anchor_text": CELL_QUOTE, "anchor_match": "exact"}],
+                run_id=fill_run["id"], step_id=step["id"], step_input_id=step_input_id,
+                model_connection="fake", resolved_model="fake-model", scope_revision=1,
+                cell_version_at_request=0, recheck=False,
+            )
         store.update_run(fill_run["id"], status="completed")
     run = store.create_run(
         research_id, "report", {"max_model_calls": 100, "max_provider_requests": 0}, None,
@@ -149,7 +186,7 @@ def report_flow(tmp_path, *, fill=True, broken_section=None):
     store.update_run(
         run["id"], status="running", target_json=dumps({"table_id": table_id, "report_id": report_id}),
     )
-    adapter = ReportAdapter(broken_section)
+    adapter = ReportAdapter(broken_section, empty_section)
     flow = ResearchFlow(FlowDeps(
         Settings(data_dir=tmp_path / "data", port=8765), store, {"fake": adapter},
         skill.load_skill_package(), None, limiter=ModelCallLimiter(3),
@@ -158,7 +195,7 @@ def report_flow(tmp_path, *, fill=True, broken_section=None):
 
 
 def test_report_run_writes_every_section_and_finalizes_a_valid_report(tmp_path):
-    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path)
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
 
     asyncio.run(run_report(flow, run, scope))
 
@@ -169,6 +206,20 @@ def test_report_run_writes_every_section_and_finalizes_a_valid_report(tmp_path):
     assert all(section["status"] == "valid" for section in sections)
     assert reports.report(report_id)["status"] == "valid"
     assert reports.report(report_id)["report_version"] == 1
+    for section_id in ("III", "IV", "V"):
+        claim_count = store.conn.execute(
+            "SELECT COUNT(*) FROM report_claims WHERE report_section_id = ?",
+            (reports.section(report_id, section_id)["id"],),
+        ).fetchone()[0]
+        assert claim_count >= 1
+    section_inputs = {call["report_target"]["section_id"]: call for call in adapter.calls
+                      if call["task_type"] == "report_section"}
+    assert [cell["column_id"] for cell in section_inputs["VI"]["report_target"]["cells"]] == [
+        section_inputs["VI"]["report_target"]["plan"]["limitations_column_id"]
+    ]
+    assert [cell["column_id"] for cell in section_inputs["VII"]["report_target"]["cells"]] == [
+        section_inputs["VII"]["report_target"]["plan"]["future_work_column_id"]
+    ]
     link = store.conn.execute(
         "SELECT cell_id, anchor_text, anchor_match FROM report_citation_links WHERE cell_id IS NOT NULL"
     ).fetchone()
@@ -202,6 +253,21 @@ def test_a_failed_section_pauses_the_run_after_its_round(tmp_path):
     assert store.run(run["id"])["pause_reason"] == "section_failed"
     assert {section["section_id"] for section in reports.sections(report_id)} == {"II", "III", "IV", "V"}
     assert reports.section(report_id, "IV")["status"] == "failed"
+
+
+def test_an_empty_section_without_insufficient_evidence_pauses_the_run(tmp_path):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, empty_section="IV")
+
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+
+    assert store.run(run["id"])["status"] == "paused"
+    assert store.run(run["id"])["pause_reason"] == "section_must_be_rewritten"
+    section = reports.section(report_id, "IV")
+    assert section["status"] == "draft"
+    validation = section["validation"]
+    assert validation["issues"] == [{"code": "empty_section",
+                                     "detail": "section has no claims or insufficient-evidence entries"}]
 
 
 def test_a_resumed_report_run_does_not_call_the_model_again_for_a_succeeded_section(tmp_path):

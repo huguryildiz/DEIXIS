@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://deixis.local/contracts/research/report-plan.schema.json",
   "title": "ReportPlanDraft",
-  "description": "The single cross-section consistency plan for a report run, written once and frozen. The model supplies only scope_statement, research_questions, glossary and axes; code fills corpus, section_budgets and allowed_support onto this draft after validation succeeds (report/plan.py), the same way search_plan's queries are compiled and stored after the model's output. Passing structural checks is not semantic verification.",
+  "description": "The single cross-section consistency plan for a report run, written once and frozen. The model supplies scope_statement, research_questions, glossary, axes and the limitation/future-work column roles; code fills corpus, section_budgets and allowed_support onto this draft after validation succeeds (report/plan.py), the same way search_plan's queries are compiled and stored after the model's output. Passing structural checks is not semantic verification.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "step_input_id", "scope_revision", "skill_package_hash", "scope_statement", "research_questions", "glossary", "axes"],
+  "required": ["schema_version", "step_input_id", "scope_revision", "skill_package_hash", "scope_statement", "research_questions", "glossary", "axes", "limitations_column_id", "future_work_column_id"],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.report_plan_draft.v1" },
+    "schema_version": { "type": "string", "const": "deixis.report_plan_draft.v2" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
@@ -60,6 +60,14 @@
           "column_id": { "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" }
         }
       }
+    },
+    "limitations_column_id": {
+      "anyOf": [{ "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" }, { "type": "null" }],
+      "description": "The evidence-table column that records each source's stated limitations, chosen from the allowlist, or null when the table has no such column."
+    },
+    "future_work_column_id": {
+      "anyOf": [{ "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" }, { "type": "null" }],
+      "description": "The evidence-table column that records each source's stated future work, chosen from the allowlist, or null when the table has no such column."
     }
   }
 }

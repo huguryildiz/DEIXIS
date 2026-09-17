@@ -9,7 +9,7 @@ from deixis.workflow.report.store import ReportStore
 from deixis.workflow.views import report_view, research_view
 from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
-from test_report_flow import COLUMN, FUTURE_WORK_COLUMN, LIMITATIONS_COLUMN, PASSAGE, ReportAdapter, report_flow
+from test_report_flow import COLUMN, FUTURE_WORK_COLUMN, LIMITATIONS_COLUMN, ReportAdapter, report_flow
 
 
 def upload_and_include(client, research_id):
@@ -67,10 +67,7 @@ def test_start_report_returns_an_idempotent_run_with_both_target_ids(tmp_path):
     with TestClient(app_for(tmp_path, ReportAdapter())) as raw:
         client = session(raw)
         research_id = create(client, source_scope="attached", effort="standard")
-        source_id = upload_and_include(client, research_id)
-        raw.app.state.store._insert_passage(
-            source_id, None, "abstract", None, None, "synthetic_fixture", None, None, PASSAGE,
-        )
+        upload_and_include(client, research_id)
         table = create_table(client, research_id, with_columns=True)
         fill_table(client, research_id, table)
         url = f"/api/researches/{research_id}/reports"

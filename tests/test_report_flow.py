@@ -3,6 +3,7 @@
 import asyncio
 import json
 from collections import Counter
+from types import SimpleNamespace
 
 import pytest
 
@@ -37,6 +38,18 @@ FUTURE_WORK_COLUMN = COLUMN | {
 }
 PASSAGE = "SYNTHETIC evidence states that molecule release scheduling uses a bounded formulation."
 CELL_QUOTE = "SYNTHETIC evidence states that molecule release scheduling"
+
+
+def _add_pdf(store, source_id, pages):
+    extraction = SimpleNamespace(
+        status="succeeded", error=None, page_count=len(pages),
+        pages=[SimpleNamespace(physical_page=number, printed_label=None, text=text)
+               for number, text in enumerate(pages, 1)],
+    )
+    return store.add_asset_with_pages(
+        source_id, "synthetic-report-pdf", 10, "synthetic-report.pdf", "user_upload", None,
+        "synthetic-report.pdf", extraction, "synthetic-v1", lambda text: [(0, len(text), text)],
+    )
 
 
 class ReportAdapter(FakeAdapter):
@@ -136,7 +149,8 @@ def _claim(section_id, passage_ids=None, cell_ids=None, body_refs=None):
     }
 
 
-def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None):
+def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None,
+                passage_kind="abstract"):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     store = Store(conn)
@@ -145,9 +159,16 @@ def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None)
         "attached", "quick", [], "fake", "fake-model", "en",
     )
     source_id = store.create_upload_source("SYNTHETIC molecular communication study")
-    passage_id = store._insert_passage(
-        source_id, None, "abstract", None, None, "synthetic_fixture", None, None, PASSAGE,
-    )
+    if passage_kind == "pdf_page":
+        _add_pdf(store, source_id, [
+            PASSAGE,
+            "SYNTHETIC second page that must not widen the report plan allowlist.",
+        ])
+        passage_id = store.passages_for(source_id)[0]["id"]
+    else:
+        passage_id = store._insert_passage(
+            source_id, None, "abstract", None, None, "synthetic_fixture", None, None, PASSAGE,
+        )
     store.add_to_corpus(research_id, source_id, "user_upload", selection_state="included", selection_origin="user")
     tables = TableStore(store)
     table_id = tables.create_table(research_id, "SYNTHETIC evidence", None, None, None)
@@ -192,6 +213,39 @@ def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None)
         skill.load_skill_package(), None, limiter=ModelCallLimiter(3),
     ))
     return flow, store, reports, adapter, store.run(run["id"]), store.scope(research_id), report_id
+
+
+def test_report_plan_uses_the_first_pdf_page_when_no_source_has_an_abstract(tmp_path):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, passage_kind="pdf_page")
+    source_id = store.conn.execute("SELECT source_version_id FROM corpus_memberships").fetchone()[0]
+
+    asyncio.run(run_report(flow, run, scope))
+
+    step = store.step(run["id"], "report_plan", "model:report_plan")
+    payload = store.step_input_payload(step["output"]["step_input_id"])
+    expected = [passage for passage in store.passages_for(source_id) if passage["kind"] == "pdf_page"]
+    assert [(passage["passage_id"], passage["locator"]["kind"]) for passage in payload["passages"]] == [
+        (expected[0]["id"], "pdf_page")
+    ]
+    assert payload["allowlist"]["passage_ids"] == [expected[0]["id"]]
+    assert reports.report(report_id)["status"] == "valid"
+
+
+def test_report_plan_keeps_an_abstract_without_adding_its_pdf_page(tmp_path):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path)
+    source_id = store.conn.execute("SELECT source_version_id FROM corpus_memberships").fetchone()[0]
+    abstract_id = next(passage["id"] for passage in store.passages_for(source_id)
+                       if passage["kind"] == "abstract")
+    _add_pdf(store, source_id, ["SYNTHETIC PDF page that must not widen the report plan allowlist."])
+
+    asyncio.run(run_report(flow, run, scope))
+
+    step = store.step(run["id"], "report_plan", "model:report_plan")
+    payload = store.step_input_payload(step["output"]["step_input_id"])
+    assert [(passage["passage_id"], passage["locator"]["kind"]) for passage in payload["passages"]] == [
+        (abstract_id, "abstract")
+    ]
+    assert payload["allowlist"]["passage_ids"] == [abstract_id]
 
 
 def test_report_run_writes_every_section_and_finalizes_a_valid_report(tmp_path):

@@ -191,12 +191,23 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
               "gap_candidates": [], "prior_summaries": [], "repair_request": None, "review_scope": None}
 
     source_ids = [row["source_version_id"] for row in snapshot["rows"]]
-    abstract_passages = [passage for source_id in source_ids for passage in flow.store.passages_for(source_id)
-                         if passage["kind"] == "abstract"]
+    # One passage per source for the plan's vocabulary: the abstract, or the first PDF page when a source has
+    # none (an attached-PDF research has no abstract at all, and an empty allowlist leaves the plan unwritable).
+    plan_passages = []
+    for source_id in source_ids:
+        source_passages = flow.store.passages_for(source_id)
+        passage = next((row for row in source_passages if row["kind"] == "abstract"), None)
+        if passage is None:
+            passage = next((row for row in source_passages if row["kind"] == "pdf_page"), None)
+        if passage is not None:
+            plan_passages.append(passage)
+    max_passages = run["budget"].get("max_answer_passages")
+    if max_passages is not None:
+        plan_passages = plan_passages[:max_passages]
 
     async def plan_call() -> dict[str, Any]:
         return await flow._model_step(
-            run, scope, "report_plan", "report_plan", source_ids=source_ids, passage_rows=abstract_passages,
+            run, scope, "report_plan", "report_plan", source_ids=source_ids, passage_rows=plan_passages,
             report_target=target, limiter=flow.deps.limiter,
         )
 

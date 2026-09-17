@@ -11,6 +11,7 @@ import pytest
 
 from deixis.domain import contracts, phrasebank
 from deixis.domain.skill import load_skill_package
+from deixis.models import prompt
 
 FIXTURES = Path(__file__).parent / "fixtures" / "research"
 STEP_INPUTS = json.loads((FIXTURES / "step-inputs.json").read_text())
@@ -44,6 +45,73 @@ def test_render_gives_english_frames_or_turkish_renderings_with_english_fallback
     assert "X'i değerlendirmek mümkün olmamıştır" in turkish and "It was not possible" not in turkish
     assert "An issue that was not addressed in this study was whether …" in turkish  # no rendering yet
     assert turkish.index("# Writing Conclusions") < turkish.index("## Limitations")
+
+
+def _legacy_render(text, language):
+    header, frames = phrasebank.parse(text)
+    out = [line for line in header if not line.startswith("tr:")]
+    if language == "tr":
+        out.append("The frames below are literal Turkish renderings of the English originals.")
+    heading = ("", "")
+    for frame in frames:
+        if frame.section != heading[0]:
+            out += ["", f"# {frame.section}"]
+        if (frame.section, frame.subsection) != heading and frame.subsection:
+            out += ["", f"## {frame.subsection}"]
+        heading = (frame.section, frame.subsection)
+        out.append(frame.text.get(language) or frame.text["en"])
+    return "\n".join(out) + "\n"
+
+
+@pytest.mark.parametrize("language", ["en", "tr"])
+def test_unfiltered_render_is_byte_identical_to_the_legacy_render(language):
+    assert phrasebank.render(TEXT, language) == _legacy_render(TEXT, language)
+    assert phrasebank.render(TEXT, language, sections=None) == _legacy_render(TEXT, language)
+
+
+def test_render_with_sections_filter_keeps_only_named_top_level_sections():
+    filtered = phrasebank.render(TEXT, "en", sections=("Defining Terms",))
+    assert "# Defining Terms" in filtered
+    assert "# Reporting Results" not in filtered
+
+
+def test_report_section_mapping_names_real_top_level_phrasebank_sections():
+    top_level_sections = {frame.section for frame in phrasebank.parse(TEXT)[1]}
+    report_sections = {section for sections in phrasebank.REPORT_PHRASEBANK_SECTIONS.values() for section in sections}
+    assert report_sections <= top_level_sections
+
+
+def test_unframed_with_sections_filter_does_not_credit_an_excluded_frame():
+    sentence = "Further analysis showed that molecule budgets matter."
+    assert sentence in phrasebank.unframed(sentence, TEXT, "en", sections=("Defining Terms",))
+    assert sentence not in phrasebank.unframed(sentence, TEXT, "en", sections=("Reporting Results",))
+
+
+def test_section_filter_is_threaded_through_skill_and_prompt_rendering():
+    package = load_skill_package()
+    direct = package.runtime_text("report_section", sections=("Defining Terms",))
+    prompted = prompt.developer_instructions(package, "report_section", sections=("Defining Terms",))
+    assert prompted == direct
+    assert "# Defining Terms" in direct and "# Reporting Results" not in direct
+
+
+def test_nearest_frames_ranks_the_closest_matching_frame_first():
+    text = """# Reporting Results
+Further analysis showed that ...
+No increase in X was detected.
+The mean score for X was ...
+"""
+    frames = phrasebank.nearest_frames(
+        "Further analysis showed that molecule budgets matter.",
+        text,
+        "en",
+        sections=("Reporting Results",),
+        k=3,
+    )
+    assert len(frames) == 3
+    assert len(set(frames)) == 3
+    assert all(isinstance(frame, str) and frame for frame in frames)
+    assert frames[0] == "Further analysis showed that ..."
 
 
 @pytest.mark.parametrize("hint, text, expected", [

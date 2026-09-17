@@ -11,6 +11,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 from deixis.domain.phrasebank import PHRASEBANK, render
 from deixis.paths import SKILL_DIR
@@ -47,10 +48,11 @@ class SkillPackage:
     package_hash: str
     files: dict[str, str]
 
-    def runtime_text(self, task_type: str, language: str = "en") -> str:
+    def runtime_text(self, task_type: str, language: str = "en",
+                     sections: Sequence[str] | None = None) -> str:
         """Method files for one step; the phrasebank is rendered in the language whose frames the answer uses."""
         def body(name: str) -> str:
-            return render(self.files[name], language) if name == PHRASEBANK else self.files[name]
+            return render(self.files[name], language, sections) if name == PHRASEBANK else self.files[name]
 
         return "\n\n".join(f"<method-file path=\"{name}\">\n{body(name)}\n</method-file>" for name in RUNTIME_FILES[task_type])
 

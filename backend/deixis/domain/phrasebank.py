@@ -11,11 +11,25 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from functools import lru_cache
+from typing import Sequence
 
 PHRASEBANK = "references/phrases.md"
 LANGUAGES = ("en", "tr")
 MIN_MATCHED = 3
 MIN_COVERAGE = 0.7
+
+REPORT_PHRASEBANK_SECTIONS = {
+    "I": ("Writing Introductions", "Signalling Transition"),
+    "III": ("Defining Terms", "Classifying and Listing", "Signalling Transition"),
+    "IV": ("Referring to Literature", "Signalling Transition"),
+    "V": ("Comparing and Contrasting", "Being Critical", "Signalling Transition"),
+    "VI": ("Being Cautious", "Discussing Findings", "Signalling Transition"),
+    "VII": ("Being Cautious", "Discussing Findings", "Signalling Transition"),
+    "VIII": ("Being Cautious", "Discussing Findings", "Signalling Transition"),
+    "IX": ("Writing Conclusions", "Signalling Transition"),
+    "abstract": ("Writing Conclusions", "Signalling Transition"),
+    "index_terms": (),
+}
 
 _WORD = re.compile(r"[^\W\d_]+(?:['’][^\W\d_]+)?")
 _SLOT = re.compile(r"^(?:x|y|z|xs|ys|zs)(?:'.*)?$")
@@ -77,9 +91,11 @@ def parse(text: str) -> tuple[list[str], list[Frame]]:
     return header, frames
 
 
-def render(text: str, language: str) -> str:
+def render(text: str, language: str, sections: Sequence[str] | None = None) -> str:
     """The phrasebank as the model receives it: English frames, or their Turkish renderings for Turkish answers."""
     header, frames = parse(text)
+    if sections is not None:
+        frames = [frame for frame in frames if frame.section in sections]
     out = [line for line in header if not line.startswith("tr:")]
     if language == "tr":
         out.append("The frames below are literal Turkish renderings of the English originals.")
@@ -131,9 +147,10 @@ def has_frames(phrasebank_text: str, language: str) -> bool:
     return bool(_patterns(phrasebank_text, language))
 
 
-def unframed(text: str, phrasebank_text: str, language: str) -> list[str]:
+def unframed(text: str, phrasebank_text: str, language: str,
+             sections: Sequence[str] | None = None) -> list[str]:
     """Sentences of `text` that follow no frame of `language`."""
-    patterns = _patterns(phrasebank_text, language)
+    patterns = _patterns(phrasebank_text, language, tuple(sections) if sections is not None else None)
     return [s for s in sentences(text) if not _follows(s, patterns, language)]
 
 
@@ -148,9 +165,12 @@ def _words(text: str, language: str) -> list[str]:
     return words
 
 
-@lru_cache(maxsize=4)
-def _patterns(phrasebank_text: str, language: str) -> tuple[_Pattern, ...]:
+@lru_cache(maxsize=32)
+def _patterns(phrasebank_text: str, language: str,
+              sections: tuple[str, ...] | None = None) -> tuple[_Pattern, ...]:
     _, frames = parse(phrasebank_text)
+    if sections is not None:
+        frames = [frame for frame in frames if frame.section in sections]
     names = {n.lower() for n in _EXAMPLE_NAME.findall(phrasebank_text)} | {"et", "al"}
     patterns = []
     for frame in frames:
@@ -162,6 +182,41 @@ def _patterns(phrasebank_text: str, language: str) -> tuple[_Pattern, ...]:
             if pattern := _compile(piece, language, names):
                 patterns.append(pattern)
     return tuple(patterns)
+
+
+@lru_cache(maxsize=32)
+def _patterns_with_text(phrasebank_text: str, language: str,
+                        sections: tuple[str, ...] | None = None) -> tuple[tuple[_Pattern, str], ...]:
+    _, frames = parse(phrasebank_text)
+    if sections is not None:
+        frames = [frame for frame in frames if frame.section in sections]
+    names = {name.lower() for name in _EXAMPLE_NAME.findall(phrasebank_text)} | {"et", "al"}
+    pairs = []
+    for frame in frames:
+        if language not in frame.text:
+            continue
+        text = frame.text[language]
+        for piece in ([text] if "{" in text else sentences(text)):
+            if pattern := _compile(piece, language, names):
+                pairs.append((pattern, piece))
+    return tuple(pairs)
+
+
+def nearest_frames(sentence: str, phrasebank_text: str, language: str,
+                   sections: Sequence[str] | None = None, k: int = 3) -> list[str]:
+    """The k phrasebank frames whose fixed words best match `sentence`, best first. Used only to prompt a targeted
+    phrase repair; a returned frame is not guaranteed to fit the sentence's meaning (that is for the model to judge)."""
+    words = _words(sentence, language)
+    pairs = _patterns_with_text(phrasebank_text, language, tuple(sections) if sections is not None else None)
+    ranked = sorted(pairs, key=lambda pair: -_score(pair[0], words))
+    seen, out = set(), []
+    for _, text in ranked:
+        if text not in seen:
+            seen.add(text)
+            out.append(text)
+        if len(out) == k:
+            break
+    return out
 
 
 def _compile(frame: str, language: str, names: set[str]) -> _Pattern | None:

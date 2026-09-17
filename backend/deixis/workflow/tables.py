@@ -857,7 +857,7 @@ def report_ready(store: Store, research_id: str, table_id: str, continue_with_fa
         "SELECT c.source_version_id, c.column_id, r.state FROM evidence_cells c"
         " JOIN cell_revisions r ON r.id = c.current_revision_id WHERE c.table_id = ?", (table_id,)
     )}
-    terminal = {"value", "unknown", "not_applicable", "not_found_in_inspected_scope", "not_verified"}
+    terminal = {"value", "unknown", "not_reported", "not_applicable", "not_found_in_inspected_scope", "not_verified"}
     missing = [{"source_version_id": source_id, "column_id": column_id}
                for source_id in included for column_id in column_ids
                if source_id not in active_rows or states.get((source_id, column_id)) not in terminal]

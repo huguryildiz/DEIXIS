@@ -64,6 +64,15 @@ def test_report_ready_requires_every_included_source_and_column_to_have_a_termin
     assert report_ready(store, research_id, table_id)["missing"] == [{"source_version_id": second, "column_id": column_id}]
 
 
+def test_report_ready_accepts_human_not_reported_decision(lib):
+    store, _, tables, research_id, source_id, _, table_id, column_id = lib
+    tables.edit_cell(research_id, table_id, column_id, source_id, "not_reported", None,
+                     "Checked the available source.", None, 0, None)
+    expected = {"ready": True, "missing": [], "failed_rows": []}
+    assert report_ready(store, research_id, table_id) == expected
+    assert report_ready(store, research_id, table_id, continue_with_failed=True) == expected
+
+
 def test_report_ready_requires_explicit_choice_to_continue_with_failed_row(lib):
     store, _, _, research_id, source_id, _, table_id, column_id = lib
     run = store.create_run(research_id, "table_fill", {}, None,

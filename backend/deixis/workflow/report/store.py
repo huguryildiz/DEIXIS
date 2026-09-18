@@ -10,6 +10,9 @@ from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.report.snapshot import build_snapshot
 from deixis.workflow.store import NotFound, Store
 
+# The smallest model-call ceiling a report run may get, whatever the derived worst case is (owner, 2026-09-18).
+REPORT_CALL_FLOOR = 50
+
 
 class ReportStore:
     def __init__(self, store: Store):
@@ -44,7 +47,8 @@ class ReportStore:
             section_count = sum(map(len, ROUNDS))
             # (Plan + model-written sections + optional research title + one optional phrase repair per section)
             # times (initial call + bounded schema repairs per model step).
-            max_model_calls = (1 + section_count + 1 + section_count) * (1 + MAX_SCHEMA_REPAIRS)
+            # The owner set a floor of 50 on 2026-09-18 so an unforeseen extra call cannot truncate a report.
+            max_model_calls = max(REPORT_CALL_FLOOR, (1 + section_count + 1 + section_count) * (1 + MAX_SCHEMA_REPAIRS))
             budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__ | {
                 "max_model_calls": max_model_calls,
                 "max_provider_requests": 0,

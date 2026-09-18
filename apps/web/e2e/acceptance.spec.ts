@@ -829,6 +829,25 @@ test.describe.serial('Trash, removal from a research and undo (P5 slice 3, D50)'
     const removed = page.locator('.trash-group', { hasText: 'Sources removed from a research' })
     await expect(removed.locator('.trash-row', { hasText: relay })).toBeVisible()
     await shot(page, 'D50-trash-grouped-desktop')
+    // The evidence of a removed source still opens (D50), so the row opens it in the source sheet.
+    await removed.locator('.trash-row', { hasText: relay }).getByRole('button', { name: relay, exact: true }).click()
+    const details = page.getByRole('dialog', { name: 'Source details' })
+    await expect(details).toContainText(relay)
+    await expect(details).toHaveCSS('opacity', '1')  // after the sheet's enter transition
+    await shot(page, 'D50-trash-source-details')
+    await page.keyboard.press('Escape')
+    await expect(details).toHaveCount(0)
+    // The Library opens the same sheet for a work, not a second details surface.
+    await page.getByRole('button', { name: 'Library', exact: true }).click()
+    await page.locator('.library-title').first().click()
+    const workSheet = page.getByRole('dialog', { name: 'Source details' })
+    await expect(workSheet).toContainText('SYNTHETIC')
+    await expect(workSheet).toHaveCSS('opacity', '1')  // after the sheet's enter transition
+    await shot(page, 'library-source-details')
+    await page.keyboard.press('Escape')
+    await expect(workSheet).toHaveCount(0)
+    await page.getByRole('button', { name: 'Trash', exact: true }).click()
+    await expect(removed.locator('.trash-row', { hasText: relay })).toBeVisible()
     await page.setViewportSize({ width: 390, height: 844 })
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)  // after the sidebar's width transition
     await shot(page, 'D50-trash-grouped-mobile')

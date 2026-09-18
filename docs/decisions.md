@@ -22,6 +22,16 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 **Evidence and limits:** `tests/test_providers.py` covers the arXiv 15/30 backoff and shared `Retry-After` handling. `tests/test_provider_flow.py` covers continuation after a provider failure, retrying the failed search, and not repeating the search-plan model call. Web build and lint were run after implementation; live arXiv behavior was not re-probed in this change. Numeric `Retry-After` dates are not parsed, and repeated provider failure still remains visible as an incomplete search rather than being hidden.
 
+## D65 — Let a removed source be deleted permanently from the Trash, but only while nothing cites it
+
+**Status:** accepted. **Date:** 2026-09-17.
+
+**Context:** D50 put sources removed from a research in the Trash with restore as the only action; a workspace with 225 removed sources had no way to clear them, and their PDFs stayed on disk. The reason for the restriction was evidence: an answer quote, an evidence table cell or a report claim must keep opening what it cites, and the source record is shared across researches.
+
+**Decision:** The Trash offers "Delete permanently" per removed source and per research group (`POST /api/researches/{id}/sources/purge`). It deletes this research's record of the source — the membership, its screening rows, selection history, duplicate and similarity rows, and its PDF lookups. The library record, passages, embeddings, PDF asset and file go too, but only when no other research still holds the source; a shared source keeps everything. The action is refused with 409 when `evidence_links`, `table_rows`, `evidence_cells` or `report_citation_links` anywhere cite the source, and the Trash row carries a `cited` flag so the button is disabled with that reason instead of failing on click. Deleting the research remains the way to remove a cited source (D50). Only a source already removed from the research can be purged; an active member is skipped.
+
+**Limits:** Covered by two deterministic tests in `tests/test_corpus_removal.py` (shared source keeps its file and record; a quoted source is refused and its quote still opens). Not covered: concurrent purges during an active run are refused by the existing corpus-change guard but not separately tested, and the disk-side failure path returns `files_not_removed` without a retry.
+
 ## D64 — Add an opt-in compact OpenAlex query strategy; retain the measured deep core search
 
 **Status:** accepted as an opt-in diagnostic, not the default. **Date:** 2026-09-17.

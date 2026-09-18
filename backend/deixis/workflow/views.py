@@ -439,7 +439,7 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
     for row in rows:
         svid = row["source_version_id"]
         abstract = conn.execute(
-            "SELECT text, abstract_origin FROM passages WHERE source_version_id = ? AND kind = 'abstract'"
+            "SELECT id, text, abstract_origin FROM passages WHERE source_version_id = ? AND kind = 'abstract'"
             " ORDER BY created_at DESC LIMIT 1", (svid,)
         ).fetchone()
         asset = conn.execute(
@@ -465,7 +465,13 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
             "asset": {"id": asset["id"], "page_count": asset["page_count"],
                       "original_filename": asset["original_filename"],
                       "extraction_status": asset["extraction_status"]} if asset else None,
+            "abstract_passage_id": abstract["id"] if abstract else None,
             "research_id": members[0]["id"] if members else None,
+            # No research holds this version now, but the one it was removed from still opens its stored text (D50).
+            "removed_research_id": None if members else (removed["id"] if (removed := conn.execute(
+                "SELECT r.id FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
+                " WHERE m.source_version_id = ? AND m.removed_at IS NOT NULL AND r.trashed_at IS NULL"
+                " ORDER BY m.removed_at DESC LIMIT 1", (svid,)).fetchone()) else None),
         })
 
     titles = {row["source_version_id"]: row["title"] for row in rows}

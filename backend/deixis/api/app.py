@@ -533,9 +533,8 @@ def create_app(
         store_of(request).restore_research(research_id)
         return {"restored": True}
 
-    @app.delete("/api/trash/{research_id}")
-    async def purge_research(research_id: str, request: Request) -> dict[str, Any]:
-        files, payloads = store_of(request).purge_research(research_id)
+    def unlink_orphans(files: list[str], payloads: list[str]) -> list[str]:
+        """Delete the files a purge orphaned; returns the ones that could not be removed from disk."""
         failures = []
         for root, paths in ((settings.papers_dir, files), (settings.payloads_dir, payloads)):
             safe_root = root.resolve()
@@ -548,7 +547,12 @@ def create_app(
                     path.unlink(missing_ok=True)
                 except OSError:
                     failures.append(relative)
-        return {"deleted": True, "files_not_removed": failures}
+        return failures
+
+    @app.delete("/api/trash/{research_id}")
+    async def purge_research(research_id: str, request: Request) -> dict[str, Any]:
+        files, payloads = store_of(request).purge_research(research_id)
+        return {"deleted": True, "files_not_removed": unlink_orphans(files, payloads)}
 
     @app.get("/api/search")
     async def quick_search(request: Request, q: str = Query(max_length=200)) -> dict[str, Any]:
@@ -833,6 +837,13 @@ def create_app(
         store = store_of(request)
         restored = store.restore_sources(research_id, body.source_version_ids)
         return {**research_view(store, research_id), "changed_source_version_ids": restored}
+
+    @app.post("/api/researches/{research_id}/sources/purge")
+    async def purge_sources(research_id: str, body: SourceRestore, request: Request) -> dict[str, Any]:
+        """Delete removed sources for good; refused while an answer, table or report still cites one (D65)."""
+        store = store_of(request)
+        purged, files, payloads = store.purge_sources(research_id, body.source_version_ids)
+        return {"deleted": purged, "files_not_removed": unlink_orphans(files, payloads)}
 
     @app.post("/api/researches/{research_id}/uploads", status_code=201)
     async def upload(research_id: str, request: Request, file: UploadFile = File(...)) -> dict[str, Any]:

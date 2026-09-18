@@ -166,6 +166,10 @@ export type TrashedTable = { id: string; title: string; research_id: string; res
 export type RemovedSource = {
   source_version_id: string; work_id: string; title: string; version_label: string | null; year: number | null; research_id: string; research_title: string
   removed_at: string; removal_note: string | null; found_again_at: string | null; quotes: number; cells: number
+  // What the source sheet opens for this row. A former member's PDF opens only where this research cites it (D50), so the
+  // abstract is what the Trash can inspect; null when no abstract is stored.
+  abstract_passage_id: string | null
+  cited: number  // 1 when an answer quote, a table or a report still cites the source anywhere; it cannot be deleted then (D65)
 }
 export type TrashedTemplate = { id: string; name: string; trashed_at: string; columns: number }
 export type Trash = { researches: TrashedResearch[]; tables: TrashedTable[]; sources: RemovedSource[]; templates: TrashedTemplate[] }
@@ -229,9 +233,10 @@ export type LibraryWorkVersion = {
   source_version_id: string; version_label: string | null; year: number | null; venue: string | null
   doi: string | null; landing_url: string | null; publication_type: string | null; authors: string[]
   cited_by_count: number | null; added_at: string; access_level: AccessLevel
-  abstract: string | null; abstract_origin: string | null
+  abstract: string | null; abstract_origin: string | null; abstract_passage_id: string | null
   asset: { id: string; page_count: number | null; original_filename: string | null; extraction_status: string } | null
-  research_id: string | null
+  // A research that holds this version now, and — when none does — the one it was removed from, which still opens its text (D50).
+  research_id: string | null; removed_research_id: string | null
 }
 export type LibraryWork = {
   work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
@@ -380,6 +385,9 @@ export const api = {
     request<ResearchView & { changed_source_version_ids: string[] }>(`/api/researches/${id}/sources`, json('DELETE', { source_version_ids: sourceIds, note })),
   restoreSources: (id: string, sourceIds: string[]) =>
     request<ResearchView & { changed_source_version_ids: string[] }>(`/api/researches/${id}/sources/restore`, json('POST', { source_version_ids: sourceIds })),
+  // Deletes removed sources for good; 409 while an answer, table or report still cites one (D65).
+  purgeSources: (id: string, sourceIds: string[]) =>
+    request<{ deleted: string[]; files_not_removed: string[] }>(`/api/researches/${id}/sources/purge`, json('POST', { source_version_ids: sourceIds })),
   // Puts a PDF removed as the wrong file back in use; 409 when another PDF is in use for the source.
   restoreAsset: (id: string, sourceId: string, assetId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/restore`, { method: 'POST' }),

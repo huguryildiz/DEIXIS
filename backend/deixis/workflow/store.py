@@ -197,10 +197,15 @@ class Store:
         sources = [dict(r) for r in self.conn.execute(
             "SELECT m.source_version_id, v.work_id, v.title, v.version_label, v.year, m.research_id, r.title AS research_title,"
             " m.removed_at, m.removal_note, m.found_again_at,"
+            " (SELECT id FROM passages WHERE source_version_id = m.source_version_id AND kind = 'abstract' LIMIT 1) AS abstract_passage_id,"
             " (SELECT COUNT(*) FROM evidence_links l JOIN claims c ON c.id = l.claim_id JOIN answers a ON a.id = c.answer_id"
             "  WHERE a.research_id = m.research_id AND l.source_version_id = m.source_version_id) AS quotes,"
             " (SELECT COUNT(*) FROM evidence_cells c JOIN evidence_tables t ON t.id = c.table_id"
-            "  WHERE t.research_id = m.research_id AND c.source_version_id = m.source_version_id AND c.current_revision_id IS NOT NULL) AS cells"
+            "  WHERE t.research_id = m.research_id AND c.source_version_id = m.source_version_id AND c.current_revision_id IS NOT NULL) AS cells,"
+            " EXISTS (SELECT 1 FROM evidence_links WHERE source_version_id = m.source_version_id"
+            "  UNION SELECT 1 FROM table_rows WHERE source_version_id = m.source_version_id"
+            "  UNION SELECT 1 FROM evidence_cells WHERE source_version_id = m.source_version_id"
+            "  UNION SELECT 1 FROM report_citation_links WHERE source_version_id = m.source_version_id) AS cited"
             " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id JOIN researches r ON r.id = m.research_id"
             " WHERE m.removed_at IS NOT NULL AND r.trashed_at IS NULL ORDER BY m.removed_at DESC, v.title"
         )]
@@ -503,6 +508,35 @@ class Store:
             self.conn.execute(f"UPDATE runs SET {assignments}, version = version + 1 WHERE id = ?", (*columns.values(), run_id))
             if event:
                 self._event(run["research_id"], event, {k: v for k, v in fields.items() if k != "usage_json"}, run_id)
+        return self.run(run_id)
+
+    def queue_failed_search_retry(self, run_id: str) -> dict[str, Any]:
+        """Queue only the failed provider searches of a completed or paused discovery run."""
+        with transaction(self.conn):
+            run = self.run(run_id)
+            if run["kind"] != "discovery" or run["status"] not in ("completed", "paused"):
+                raise RevisionConflict("Only a completed or paused discovery run can retry failed searches")
+            active = self.conn.execute(
+                f"SELECT 1 FROM runs WHERE research_id = ? AND id != ? AND status IN ({','.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1",
+                (run["research_id"], run_id, *ACTIVE_RUN_STATUSES),
+            ).fetchone()
+            if active:
+                raise RunInProgress(run["research_id"])
+            failed = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM run_steps WHERE run_id = ? AND kind LIKE 'provider_search:%'"
+                " AND status IN ('failed', 'outcome_unknown')", (run_id,)
+            ).fetchone()["n"]
+            if not failed:
+                raise RevisionConflict("This discovery run has no failed provider searches")
+            budget = run["budget"]
+            budget["retry_failed_searches_only"] = True
+            budget["retry_provider_requests"] = budget.get("retry_provider_requests", 0) + int(failed)
+            self.conn.execute(
+                "UPDATE runs SET status = 'queued', stage = 'discovery', pause_reason = NULL, error_json = NULL,"
+                " budget_json = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+                (dumps(budget), now(), run_id),
+            )
+            self._event(run["research_id"], "run_retry_failed_searches", {"failed_searches": int(failed)}, run_id)
         return self.run(run_id)
 
     def add_usage(self, run_id: str, key: str, amount: int = 1) -> dict[str, Any]:
@@ -1451,6 +1485,82 @@ class Store:
             )
             self._corpus_changed(research_id, "source_restored", chosen, now())
         return chosen
+
+    def cited_source_versions(self, svids: list[str]) -> set[str]:
+        """Of these source versions, the ones an answer quote, an evidence table or a report still cites (D65).
+
+        The scope is the whole workspace, not one research: evidence stays openable wherever it was written, so a
+        cited source is never deleted on its own. Deleting its research is still the way out (D50).
+        """
+        if not svids:
+            return set()
+        marks = ", ".join("?" * len(svids))
+        rows = self.conn.execute(
+            f"SELECT source_version_id FROM evidence_links WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM table_rows WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM evidence_cells WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM report_citation_links WHERE source_version_id IN ({marks})",
+            (*svids, *svids, *svids, *svids),
+        ).fetchall()
+        return {row[0] for row in rows}
+
+    def purge_sources(self, research_id: str, svids: list[str]) -> tuple[list[str], list[str], list[str]]:
+        """Delete removed sources from this research for good; returns (purged, orphan files, orphan payloads) (D65).
+
+        Only a source already removed from the research can be purged, and only while nothing cites it. What goes is
+        this research's record of it: the membership, its screening rows and its PDF lookups. The library record, its
+        passages and its file go too, but only when no other research holds the source any more.
+        """
+        with transaction(self.conn):
+            self._check_corpus_change(research_id, svids)
+            chosen = [svid for svid in dict.fromkeys(svids)
+                      if self.conn.execute(
+                          "SELECT 1 FROM corpus_memberships WHERE research_id = ? AND source_version_id = ?"
+                          " AND removed_at IS NOT NULL", (research_id, svid)).fetchone()]
+            if not chosen:
+                return [], [], []
+            if cited := self.cited_source_versions(chosen):
+                raise RevisionConflict(f"Evidence still cites {len(cited)} of these sources; delete their research instead")
+            ts = now()
+            self._corpus_changed(research_id, "source_purged", chosen, ts)
+            marks = ", ".join("?" * len(chosen))
+            scoped = (research_id, *chosen)
+            payloads: list[str] = []
+            self.conn.execute(
+                f"DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs"
+                f" WHERE research_id = ? AND source_version_id IN ({marks}))", scoped)
+            for table in ("pdf_discovery_runs", "source_similarities", "suspected_duplicates", "selection_history",
+                          "selections", "candidates", "corpus_memberships"):
+                self.conn.execute(f"DELETE FROM {table} WHERE research_id = ? AND source_version_id IN ({marks})", scoped)
+            orphan_files: list[str] = []
+            for svid in chosen:
+                # The source may still belong to another research; its record, passages and file stay in that case.
+                if self.conn.execute(
+                    "SELECT 1 FROM corpus_memberships WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM candidates WHERE source_version_id = ? LIMIT 1", (svid, svid),
+                ).fetchone():
+                    continue
+                source = self.conn.execute("SELECT work_id, provider_payload_path FROM source_versions WHERE id = ?", (svid,)).fetchone()
+                if source is None:
+                    continue
+                if source["provider_payload_path"]:
+                    payloads.append(source["provider_payload_path"])
+                orphan_files.extend(r[0] for r in self.conn.execute("SELECT storage_path FROM source_assets WHERE source_version_id = ?", (svid,)))
+                self.conn.execute("DELETE FROM identifier_mappings WHERE source_version_id = ?", (svid,))
+                self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (svid,))
+                self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (svid,))
+                self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (svid,))
+                self.conn.execute("DELETE FROM asset_extractions WHERE asset_id IN (SELECT id FROM source_assets WHERE source_version_id = ?)", (svid,))
+                self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (svid,))
+                self.conn.execute("DELETE FROM source_versions WHERE id = ?", (svid,))
+                self.conn.execute("DELETE FROM works WHERE id = ? AND NOT EXISTS (SELECT 1 FROM source_versions WHERE work_id = ?)",
+                                  (source["work_id"], source["work_id"]))
+            # Files are content-addressed and may be referenced by another asset or search run.
+            orphan_files = [p for p in set(orphan_files) if not self.conn.execute("SELECT 1 FROM source_assets WHERE storage_path = ?", (p,)).fetchone()]
+            payloads = [p for p in set(payloads) if not self.conn.execute(
+                "SELECT 1 FROM search_runs WHERE raw_payload_path = ? UNION SELECT 1 FROM source_versions WHERE provider_payload_path = ?", (p, p)
+            ).fetchone()]
+        return chosen, orphan_files, payloads
 
     def _check_corpus_change(self, research_id: str, svids: list[str]) -> None:
         self.research(research_id)

@@ -293,3 +293,54 @@ def test_adding_one_removed_source_on_purpose_restores_it(tmp_path):
         assert response.json()["source_version_id"] == published and response.json()["restored"] is True
         assert removed(store, rid) == set()
         assert client.post(f"/api/researches/{rid}/library-sources", json={"work_id": work_id}).status_code == 409
+
+
+# ---- deleting a removed source permanently (D65) ---------------------------------------------
+def test_purging_a_removed_source_clears_this_research_and_frees_the_file_once_no_one_else_holds_it(tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app) as raw:
+        client = session(raw)
+        store = app.state.store
+        a = create(client, source_scope="attached")
+        source = upload(client, a, "shared.pdf", "SYNTHETIC uploaded molecule schedule notes.")
+        svid, asset = source["source_version_id"], source["access"]["assets"][0]["id"]
+        b = create(client, question="SYNTHETIC research B", source_scope="attached")
+        assert upload(client, b, "shared.pdf", "SYNTHETIC uploaded molecule schedule notes.")["source_version_id"] == svid
+        path = tmp_path / "data" / "papers" / store.asset(asset)["storage_path"]
+
+        purge_a = f"/api/researches/{a}/sources/purge"
+        assert raw.post(purge_a, json={"source_version_ids": [svid]}, headers={"x-deixis-csrf": "wrong"}).status_code == 403
+        assert client.post(purge_a, json={"source_version_ids": [svid]}).json()["deleted"] == []  # an active source is not purged
+
+        assert client.request("DELETE", f"/api/researches/{a}/sources", json={"source_version_ids": [svid]}).status_code == 200
+        response = client.post(purge_a, json={"source_version_ids": [svid]})
+        assert response.status_code == 200 and response.json() == {"deleted": [svid], "files_not_removed": []}
+        assert not store.was_member(a, svid) and client.get("/api/trash").json()["sources"] == []
+        assert path.exists() and store.passages_for(svid)  # research B still holds the source, so its record and file stay
+        assert [s["source_version_id"] for s in client.get(f"/api/researches/{b}").json()["sources"]] == [svid]
+        assert {r["id"] for r in client.get("/api/library").json()["entries"][0]["researches"]} == {b}
+
+        assert client.request("DELETE", f"/api/researches/{b}/sources", json={"source_version_ids": [svid]}).status_code == 200
+        assert client.post(f"/api/researches/{b}/sources/purge", json={"source_version_ids": [svid]}).json() == {"deleted": [svid], "files_not_removed": []}
+        assert not path.exists() and store.passages_for(svid) == []
+        assert client.get("/api/library").json()["entries"] == [] and client.get("/api/trash").json()["sources"] == []
+        assert store.conn.execute("SELECT 1 FROM source_versions WHERE id = ?", (svid,)).fetchone() is None
+
+
+def test_a_removed_source_an_answer_quotes_is_kept_and_the_trash_row_says_it_is_cited(tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app) as raw:
+        client = session(raw)
+        rid = create(client, source_scope="attached")
+        cited = upload(client, rid, "cited.pdf", "SYNTHETIC uploaded molecule schedule notes.")
+        svid = cited["source_version_id"]
+        _, run = wait_run(client, rid, client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()["id"])
+        assert run["status"] == "completed", run
+        assert client.request("DELETE", f"/api/researches/{rid}/sources", json={"source_version_ids": [svid]}).status_code == 200
+
+        row = next(s for s in client.get("/api/trash").json()["sources"] if s["source_version_id"] == svid)
+        assert row["quotes"] > 0 and row["cited"] == 1
+        response = client.post(f"/api/researches/{rid}/sources/purge", json={"source_version_ids": [svid]})
+        assert response.status_code == 409, response.text
+        assert client.get(f"/api/researches/{rid}").json()["answers"][0]["claims"][0]["evidence"][0]["source_version_id"] == svid
+        assert client.get(f"/api/researches/{rid}/assets/{cited['access']['assets'][0]['id']}").status_code == 200

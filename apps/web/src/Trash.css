@@ -11,11 +11,77 @@
 .app .trash-item small{color:var(--muted);font-size:12px;line-height:1.5}
 .app .trash-item .trash-note{font-style:italic}
 .app .trash-research{margin:0 0 6px}
-.app .trash-research-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0 6px;border-top:1px solid var(--line)}
-.app .trash-research-head h3{min-width:0;margin:0;overflow:hidden;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.3px;text-overflow:ellipsis;white-space:nowrap}
-.app .trash-research-head button{gap:6px;flex:none}
-.app .trash-research .trash-row{padding-left:14px;border-top-style:dashed}
-@media(max-width:600px){.app .trash-row>.trash-item{width:100%}.app .trash-research .trash-row{padding-left:0}}
+
+/* Removed sources: hundreds of rows, so they are filtered, folded per research and picked in bulk. */
+.app .trash-tools{position:sticky;top:0;z-index:6;display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 6px;padding:10px 0;background:var(--paper)}
+.app .trash-select{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px}
+.app .trash-scope+.trash-select{margin-left:auto}
+.app .trash-select [data-slot=select-trigger]{height:28px;max-width:230px;padding:0 9px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);box-shadow:none;color:var(--ink);font-size:12.5px}
+.app .trash-select [data-slot=select-value]{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app .trash-search{flex:0 1 300px;min-width:200px;display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--muted)}
+.app .trash-search:focus-within{border-color:var(--accent)}
+.app .trash-search svg{flex:none}
+.app .trash-search input{flex:1;min-width:0;height:100%;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;outline:none}
+.app .trash-search input::placeholder{color:var(--muted)}
+.app .trash-scope{display:flex;flex-wrap:wrap;gap:6px}
+.app .trash-scope button{height:28px;padding:0 12px;border:1px solid var(--strong-line);border-radius:999px;background:transparent;color:var(--muted);font-size:12.5px;font-weight:500}
+.app .trash-scope button:hover{background:var(--hover-surface);color:var(--ink)}
+.app .trash-scope button[aria-pressed=true]{border-color:transparent;background:color-mix(in srgb,var(--accent),transparent 88%);color:color-mix(in srgb,var(--accent),var(--ink) 25%);font-weight:600}
+/* A research is the container of the rows under it, so its head is a band with the research mark, set in the interface
+   sans; the rows keep the serif. Without that, a research question and an article title read as the same thing. */
+.app .trash-research-head{position:sticky;top:54px;z-index:5;display:flex;align-items:flex-start;gap:9px;margin:14px 0 0;padding:10px 12px 10px 5px;border:1px solid var(--strong-line);border-radius:9px;background:var(--sidebar-surface)}
+.app .trash-research-mark{display:grid;flex:none;place-items:center;width:24px;height:24px;margin-top:1px;border-radius:6px;background:color-mix(in srgb,var(--accent),transparent 88%);color:var(--accent)}
+.app .trash-research-title{flex:1;min-width:0}
+.app .trash-research-head h3{display:-webkit-box;margin:0;overflow:hidden;color:var(--ink);font-size:14.5px;font-weight:600;line-height:20px;letter-spacing:-.005em;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.app .trash-research-count{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.app .trash-research-head>button,.app .trash-research-head [data-slot=dropdown-menu-trigger]{flex:none;gap:6px}
+.app .trash-fold,.app .trash-research-more{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:6px;color:var(--muted)}
+.app .trash-fold:hover,.app .trash-research-more:hover{background:var(--hover-surface);color:var(--ink)}
+/* Hundreds of rows read as a ledger: one grid, so title, version, date and actions line up down the whole research. */
+.app .trash-ledger{display:grid;grid-template-columns:26px minmax(0,1fr) 232px 104px 72px}
+.app .trash-ledger-head,.app .trash-ledger .trash-row{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:center}
+.app .trash-ledger-head{padding:0 6px 6px 0;border-bottom:1px solid var(--line);color:var(--muted);font-size:11.5px}
+.app .trash-ledger-head>span:nth-child(3){padding-right:16px;text-align:right}
+.app .trash-ledger-head>span:nth-child(4){text-align:right}
+.app .trash-ledger .trash-row{min-height:42px;gap:0;padding:5px 6px 5px 0;border-top:0;border-bottom:1px solid var(--line)}
+.app .trash-ledger .trash-row:hover{background:var(--hover-surface)}
+.app .trash-ledger .trash-row.is-picked{background:color-mix(in srgb,var(--accent),transparent 92%)}
+.app .trash-ledger .trash-row>.trash-item{min-width:0;padding-right:18px}
+.app .trash-pick{flex:none;width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer}
+.app .trash-ledger .trash-item strong{font-family:'Newsreader Variable',serif;font-size:16px;font-weight:450;line-height:21px}
+.app .trash-title{display:-webkit-box;max-width:100%;overflow:hidden;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;-webkit-box-orient:vertical;-webkit-line-clamp:2;cursor:pointer}
+.app .trash-title:hover{text-decoration:underline;text-underline-offset:3px}
+.app .trash-facts{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px 7px;padding-right:16px;color:var(--muted);font-size:12px;text-align:right}
+.app .trash-facts .ref-pill{font-size:11.5px}
+/* The dot keeps the canonical tone; the text beside it stays muted, because the common version repeats on every row. */
+.app .trash-facts .source-fact{color:var(--muted)}
+.app .trash-year{font-variant-numeric:tabular-nums}
+.app .trash-date{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.app .trash-row-actions{display:flex;flex:none;justify-content:flex-end;gap:2px;opacity:0;transition:opacity .12s ease-out}
+@media(hover:none){.app .trash-row-actions{opacity:1}}
+.app .trash-ledger .trash-row:hover .trash-row-actions,.app .trash-ledger .trash-row:focus-within .trash-row-actions,.app .trash-ledger .trash-row.is-picked .trash-row-actions{opacity:1}
+.app .trash-row-actions .trash-icon{width:32px;height:32px;color:var(--muted)}
+.app .trash-row-actions .trash-icon:hover{background:color-mix(in srgb,var(--accent),transparent 88%);color:color-mix(in srgb,var(--accent),var(--ink) 25%)}
+.app .trash-row-actions .trash-icon.is-delete:hover{background:var(--error-surface);color:var(--error-ink)}
+.app .trash-row-actions .trash-icon:disabled{opacity:.4}
+.app .trash-more{display:inline-flex;align-items:center;gap:6px;margin:9px 0 0;padding:0 0 0 6px;border:0;background:none;color:var(--accent);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.app .trash-more:hover{text-decoration:underline}
+.app .trash-group .selection-bar{bottom:20px}
+@media(max-width:760px){
+  .app .trash-tools{position:static;padding:0 0 4px}
+  .app .trash-scope+.trash-select{margin-left:0}
+  .app .trash-research-head{position:static;flex-wrap:wrap;padding-right:6px}
+  .app .trash-ledger{grid-template-columns:24px minmax(0,1fr) 36px}
+  .app .trash-ledger-head{display:none}
+  .app .trash-ledger .trash-row{align-items:start;row-gap:4px;padding:10px 0 11px}
+  .app .trash-ledger .trash-row>.trash-pick{margin-top:4px}
+  .app .trash-ledger .trash-row>.trash-item{grid-column:2;padding-right:8px}
+  .app .trash-facts{grid-area:2/2;justify-content:flex-start;padding:0;text-align:left}
+  .app .trash-date{grid-area:3/2;text-align:left}
+  .app .trash-date::before{content:attr(data-label) ' '}
+  .app .trash-row-actions{grid-area:1/3/4/4;align-self:center;flex-direction:column;opacity:1}
+}
+@media(max-width:600px){.app .trash-row>.trash-item{width:100%}}
 
 /* Undo in a notification */
 .toast .toast-action{flex:none;padding:3px 10px;border:1px solid currentColor;border-radius:6px;font-size:12.5px;font-weight:600;line-height:1.4}

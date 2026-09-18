@@ -77,6 +77,25 @@ def test_report_plan_column_roles_must_come_from_the_step_allowlist():
     assert contracts.validate_model_output(si, draft).codes() == ["limitations_column_not_in_allowlist"]
 
 
+@pytest.mark.parametrize(("passage_id", "cell_id", "expect_ok"), [
+    ("psg_SYNA1abs01", None, True),
+    ("psg_SYNA1abs01", "cel_SYNTHR0001", False),
+    (None, None, False),
+])
+def test_report_citation_anchor_names_exactly_one_target(passage_id, cell_id, expect_ok):
+    si = STEP_INPUTS["C_report_section_IV"]
+    draft = json.loads(json.dumps(next(case for case in CASES if case["name"] == "report_section_valid")["output"]))
+    draft["citation_anchors"][0]["passage_id"] = passage_id
+    draft["citation_anchors"][0]["cell_id"] = cell_id
+
+    report = contracts.validate_model_output(si, draft)
+
+    assert report.ok is expect_ok
+    if not expect_ok:
+        assert report.codes() == ["citation_anchor_target_count"]
+        assert report.issues[0].path == "/citation_anchors/0"
+
+
 def test_report_cell_must_be_present_in_the_step_input_allowlist_and_records():
     si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
     cell = {

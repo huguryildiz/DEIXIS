@@ -53,11 +53,13 @@ def _add_pdf(store, source_id, pages):
 
 
 class ReportAdapter(FakeAdapter):
-    def __init__(self, broken_section=None, empty_section=None, unframed_section=None):
+    def __init__(self, broken_section=None, empty_section=None, unframed_section=None,
+                 ambiguous_anchor_section=None):
         super().__init__(responder=self._response)
         self.broken_section = broken_section
         self.empty_section = empty_section
         self.unframed_section = unframed_section
+        self.ambiguous_anchor_section = ambiguous_anchor_section
 
     def _response(self, step_input):
         task = step_input["task_type"]
@@ -109,6 +111,8 @@ class ReportAdapter(FakeAdapter):
                                       "reason": "It is beyond the scope of this synthetic fixture to add a claim."}]
         if section_id == self.unframed_section and claims:
             claims[0]["text"] = "Fig weiro randomtext not a frame sentence at all zzq."
+        if section_id == self.ambiguous_anchor_section and anchors:
+            anchors[0]["passage_id"] = step_input["passages"][0]["passage_id"]
         gaps = [{
             "gap_id": "gap9",
             "kind": "stated_limitation",
@@ -153,7 +157,7 @@ def _claim(section_id, passage_ids=None, cell_ids=None, body_refs=None):
 
 
 def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None, unframed_section=None,
-                passage_kind="abstract"):
+                ambiguous_anchor_section=None, passage_kind="abstract"):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     store = Store(conn)
@@ -210,7 +214,7 @@ def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None,
     store.update_run(
         run["id"], status="running", target_json=dumps({"table_id": table_id, "report_id": report_id}),
     )
-    adapter = ReportAdapter(broken_section, empty_section, unframed_section)
+    adapter = ReportAdapter(broken_section, empty_section, unframed_section, ambiguous_anchor_section)
     flow = ResearchFlow(FlowDeps(
         Settings(data_dir=tmp_path / "data", port=8765), store, {"fake": adapter},
         skill.load_skill_package(), None, limiter=ModelCallLimiter(3),
@@ -310,6 +314,33 @@ def test_a_failed_section_pauses_the_run_after_its_round(tmp_path):
     assert store.run(run["id"])["pause_reason"] == "section_failed"
     assert {section["section_id"] for section in reports.sections(report_id)} == {"II", "III", "IV", "V"}
     assert reports.section(report_id, "IV")["status"] == "failed"
+
+
+def test_an_ambiguous_citation_anchor_repairs_then_pauses_as_invalid_model_output(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(
+        tmp_path, ambiguous_anchor_section="IV",
+    )
+
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+
+    stopped = store.run(run["id"])
+    assert stopped["status"] == "paused"
+    assert stopped["pause_reason"] == "section_failed"
+    assert stopped["error"] == {"sections": ["IV"]}
+    step = store.step(run["id"], "report_section:IV", "model:report_section")
+    assert step["status"] == "failed"
+    assert step["error_code"] == "invalid_model_output"
+    assert {issue["code"] for issue in json.loads(step["error_json"])} == {
+        "citation_anchor_target_count"
+    }
+    assert [call["report_target"]["section_id"] for call in adapter.calls
+            if call["task_type"] == "report_section"].count("IV") == 2
+    section = reports.section(report_id, "IV")
+    assert section["status"] == "failed"
+    assert {issue["code"] for issue in section["validation"]["issues"]} == {
+        "citation_anchor_target_count"
+    }
 
 
 def test_an_empty_section_without_insufficient_evidence_pauses_the_run(tmp_path):

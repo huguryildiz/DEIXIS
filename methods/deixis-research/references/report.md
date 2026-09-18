@@ -21,6 +21,8 @@ given to you as rows and cited cells, and you discuss it — you do not restate 
   `IV.3`). Reuse the section identifier as the prefix.
 - Cite only passage_ids and cell_ids from the allowlist. For a cell_id, anchor to one of that cell's stored
   evidence quotes; for a passage_id, apply [the shared citation rule](source-grounded-answer.md#grounded-answer).
+- Each citation anchor names either a passage or an evidence-table cell, never both and never neither. If both
+  support a claim, write one anchor for the passage and one for the cell.
 - Apply [the shared mathematics and `text_source` rule](source-grounded-answer.md#grounded-answer) to equations.
 - `paragraph` groups claims that belong in one flowing paragraph of the finished report; number them in the
   order they should read, starting at 1.

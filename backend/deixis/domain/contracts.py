@@ -746,6 +746,12 @@ def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]]
                           draft: dict[str, Any], report: ValidationReport) -> None:
     if draft["section_id"] != step_input["report_target"]["section_id"]:
         report.issues.append(Issue("report_section_mismatch", "/section_id", draft["section_id"]))
+    for i, anchor in enumerate(draft["citation_anchors"]):
+        if (anchor["passage_id"] is None) == (anchor["cell_id"] is None):
+            report.issues.append(Issue(
+                "citation_anchor_target_count", f"/citation_anchors/{i}",
+                "expected exactly one of passage_id/cell_id to be non-null",
+            ))
     for i, claim in enumerate(draft["claims"]):
         for j, passage_id in enumerate(claim["passage_ids"]):
             if passage_id not in allow["passage_ids"]:

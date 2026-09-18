@@ -166,6 +166,33 @@ tablosunun gerçek sütunlarına bağlı beş eksen, kod hesaplı korpus (`found
 çapasıyla saklı pasajda bulunuyor. IV ve V'te altışar kayıt `cell_missing_evidence` diye kesildi (kanıt bağı
 olmayan hücreler bölüm girdisine alınmıyor).
 
+**P5.5 — yöntem paketi sıkılaştırıldı ve ölçüldü.** ✅ `758f304`. `report.md`'nin bölüm talimatı artık kalıp
+kullanımını zorunlu kılıyor (kanıt kuralı açıkça üstte: kalıba uydurmak için iddia değiştirilemez, dürüst kalıp
+yoksa cümle sade kalır). `provenance.json`'ın eskimiş "yalnız grounded_answer" cümlesi düzeltildi.
+İstem: `docs/product/p6-slice1-p55-prompt.md`.
+
+**Aynı araştırma aynı kopyada yeniden koşuldu** (`run_Bqa3k0BVwwidaZ1aU4CI`, rapor `rpt_ztCV5o1NaqHqP5fc24V3`,
+18 Eylül 03:44). Tek değişken talimattı.
+
+| bölüm | önce | sonra |
+|---|---|---|
+| II (kod) | valid, 203 kelime, 0 bayrak | valid, 203, 0 |
+| III | draft, 142, **4 bayrak** | **valid**, 143, **0** |
+| IV | draft, 130, 2 | draft, 135, **1** |
+| V | draft, 161, 5 | draft, 105, **1** |
+
+**Bayrak sayısı 11 → 2.** Daha önemlisi, kalan iki bayrak artık kıl payı: cümleler kalıp diliyle yazılmış,
+yalnız kalıbın bir sabit sözcüğü eksik ("… ele almaktadır" vs. kalıptaki "sorusunu ele almaktadır"), ve
+`nearest_frames` bu sefer **işe yarar** kalıplar döndürüyor. Yani P8'in onarım çağrısı artık anlamlı ve küçük
+bir iş. Koşu yine de duruyor: tek bayraklı cümle bölümü `valid` olmaktan çıkarıyor.
+
+**Kalan açık konu — uzunluk.** Yazılan bölümler bütçenin alt sınırının çok altında: III 143 (en az 244),
+IV 135 (313), V 105 (244). `plan.section_budgets` varsayılanı 5500 kelime ve on kaynaktan az dahil edildiyse
+kaynak sayısıyla oranlanıyor; bu araştırmada 3 kaynak var, bütçe 1650'ye iniyor. Sahibin 18 Eylül'deki
+beklentisi **10–15 referans için en fazla 15–20 sayfa**, yani tek sütunlu düzende 8–11 bin, iki sütunluda
+13–17 bin kelime — bugünkü 5500 hedefinin 2–3 katı. Ayrıca sahip raporun **öğretici** olmasını istiyor; bugünkü
+III talimatı kasten yalnız tanım odaklı. İkisi de ayrı tur, ikisi de karar bekliyor.
+
 **Ölçüm yapılmadı:** dilim 0'ın `scripts/p6_eval/measure_fill.py` süre ölçümü bu koşuda halledilmedi; ayrı
 gerçek-model maliyeti olduğu için sahibin ayrı onayını bekliyor.
 

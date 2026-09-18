@@ -1,191 +1,216 @@
-/* The Library is a working list, not a document: it keeps the shared page gutter and heading rhythm
-   of the other workspace views (.collection) and then runs the table across the full width. */
+/* The Library is a working list, not a document: it keeps the shared page gutter, heading rhythm and narrow
+   gutters of the other workspace views (.collection) and then uses the full width. One row per work, under the
+   project that holds it. Every value shown is a stored record: reading depth is what DEIXIS holds, never a claim
+   about the work, and a citation count is provider metadata read on a date. */
 .main-shell .library-page{max-width:none;margin-bottom:64px}
-.library-page>p{max-width:78ch;margin-bottom:12px}
-/* The masthead says what the collection holds; the toolbar under it is controls only. */
-.library-page>p.library-facts{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 9px;max-width:none;margin:0 0 24px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
-.library-facts strong{color:var(--ink);font-weight:600}
-.library-facts span[aria-hidden]{color:color-mix(in srgb,var(--muted),transparent 55%)}
 
-.library-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 0 14px;border-bottom:1px solid var(--line)}
-.library-search{flex:1 1 260px;min-width:220px;display:flex;align-items:center;gap:9px;height:36px;padding:0 12px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,var(--raised-surface));color:var(--muted)}
-.library-search:focus-within{border-color:var(--accent);outline:1px solid var(--accent)}
-.library-search svg{flex:none}
-.library-search input{flex:1;min-width:0;height:100%;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;outline:none}
-.library-search input::placeholder{color:var(--muted)}
+/* ── Masthead: the name, one sentence about what the list holds, then the counts as a rail ─────────────── */
+.library-page .library-mast{max-width:64ch}
+.library-page .library-mast h1{margin:0;font-size:42px;font-weight:450;letter-spacing:-.025em;line-height:1.1;text-wrap:balance}
+.library-page .library-lede{margin:14px 0 0;max-width:62ch;color:var(--muted);font-family:'Newsreader Variable',serif;font-size:16px;line-height:1.6;text-wrap:balance}
+.library-page .library-rail{display:flex;flex-wrap:wrap;align-items:center;margin:26px 0 0;padding:0;list-style:none}
+.library-page .library-rail li{display:flex;align-items:baseline;gap:7px;padding:0 20px;border-left:1px solid var(--line);color:var(--muted);font-size:13px}
+.library-page .library-rail li:first-child{padding-left:0;border-left:0}
+.library-page .library-num{color:var(--ink);font-size:14.5px;font-weight:500;font-variant-numeric:tabular-nums}
 
-.library-page .library-tool{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 12px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,var(--raised-surface));color:var(--ink);font-size:12.5px;white-space:nowrap}
-.library-page .library-tool:hover{background:var(--hover-surface)}
-.library-tool-value{color:var(--accent);font-weight:600}
-.library-menu-label{padding:5px 6px 4px;color:var(--muted-foreground);font-size:12px;font-weight:600}
-.library-menu-note{max-width:26ch;margin:0;padding:4px 6px 5px;color:var(--muted-foreground);font-size:11px;line-height:1.5}
+/* Reading depth across the whole collection: three segments, then the same three named with their counts. */
+.library-page .library-cover{max-width:520px;margin:16px 0 0}
+.library-page .library-cover-bar{display:flex;gap:2px;height:4px}
+.library-page .library-cover-bar>span{height:100%;border-radius:999px}
+.library-page .library-c-text{background:var(--attr-text)}
+.library-page .library-c-abstract{background:var(--attr-abstract)}
+.library-page .library-c-meta{background:color-mix(in srgb,var(--muted),transparent 45%)}
+.library-page .library-cover-legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:9px 0 0;padding:0;list-style:none}
+.library-page .library-cover-legend li{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}
+.library-page .library-cover-legend i{width:6px;height:6px;border-radius:50%}
+.library-page .library-cover-note{margin:11px 0 0;max-width:62ch;color:var(--muted);font-size:11.5px;line-height:1.55}
 
-.library-density{display:inline-flex;border:1px solid var(--strong-line);border-radius:7px;overflow:hidden}
-/* Reading the list and grouping it are view choices, so they sit apart from search and filtering. */
-.library-view-controls{margin-left:auto}
-.library-density button{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;background:var(--field-surface,transparent);color:var(--muted);font-size:12.5px}
-.library-density button+button{border-left:1px solid var(--strong-line)}
-.library-density button[aria-pressed=true]{background:var(--hover-surface);color:var(--ink)}
+/* ── Command strip: search, then the two pickers and the two view switches ─────────────────────────────── */
+.library-page .library-commands{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:30px 0 0;padding-top:22px;border-top:1px solid var(--line)}
+.library-page .library-search{position:relative;display:flex;flex:1 1 300px;min-width:220px;max-width:440px;align-items:center}
+.library-search>svg{position:absolute;left:13px;color:var(--muted);pointer-events:none}
+.library-page .library-search input{width:100%;height:44px;padding:0 58px 0 38px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface);color:var(--ink);font:inherit;font-size:14px;appearance:none}
+.library-page .library-search input::placeholder{color:var(--muted)}
+.library-page .library-search input::-webkit-search-decoration,.library-page .library-search input::-webkit-search-cancel-button{appearance:none}
+.library-page .library-search input:focus{outline:none}
+.library-page .library-search:focus-within{border-color:color-mix(in srgb,var(--accent),transparent 40%);outline:2px solid var(--accent);outline-offset:2px}
+.library-page .library-search:focus-within input{border-color:color-mix(in srgb,var(--accent),transparent 40%)}
+.library-page .library-search .library-slash{position:absolute;right:11px;display:flex;align-items:center;gap:5px;color:var(--muted);font-size:11px}
 
-.library-status{margin-top:22px;color:var(--muted);font-size:13px}
+/* A picker is a button that names its field in muted type and its value in the ink. */
+.library-page .library-picker{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 12px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--ink);font-size:13px;font-weight:500;white-space:nowrap}
+.library-page .library-picker:hover{background:var(--hover-surface)}
+.library-page .library-picker .library-lead{color:var(--muted);font-weight:400}
+.library-page .library-picker svg{flex:none;color:var(--muted)}
+
+.library-page .library-seg{display:inline-flex;padding:2px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface)}
+.library-page .library-seg button{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 12px;border-radius:5px;color:var(--muted);font-size:13px;font-weight:500;white-space:nowrap}
+.library-page .library-seg button:hover{color:var(--ink)}
+.library-page .library-seg button[aria-pressed=true]{background:var(--selected-surface);color:var(--ink)}
+
+/* Menus render in a portal, so the root class carries the whole recipe; `w-auto` lets each menu size to its own
+   widest row instead of the anchor. */
+.library-menu.library-menu{width:auto;min-width:238px;padding:5px;border-radius:8px}
+.library-menu.library-menu [data-slot=dropdown-menu-label]{padding:6px 9px 4px;color:var(--muted);font-size:11.5px;font-weight:500}
+.library-menu.library-menu [data-slot=dropdown-menu-item]{gap:10px;padding:7px 9px;border-radius:6px;font-size:13px}
+.library-menu.library-menu .library-tx{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-menu.library-menu .library-menu-hint{margin-left:auto;color:var(--muted);font-size:11.5px;white-space:nowrap}
+.library-menu.library-menu .library-menu-gap{width:15px}
+.library-menu.library-menu .library-menu-note{max-width:26ch;margin:0;padding:2px 9px 6px;color:var(--muted);font-size:11.5px;line-height:1.5}
+
+/* ── Active filters: each one removable, with the count left of the clear-all ─────────────────────────── */
+.library-page .library-chiprow{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:16px 0 0}
+.library-page .library-chip{display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 6px 0 11px;border:1px solid var(--strong-line);border-radius:999px;background:var(--raised-surface);font-size:12.5px}
+.library-page .library-chip-x{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;color:var(--muted)}
+.library-page .library-chip-x:hover{background:var(--hover-surface);color:var(--ink)}
+.library-page .library-chip-count{color:var(--muted);font-size:12.5px}
+.library-page .library-clear{color:var(--accent);font-size:12.5px;font-weight:500}
+
+/* ── Project bands: the head stays in view while its rows scroll under it ─────────────────────────────── */
+.library-page .library-bands{margin:22px 0 0;padding:0;list-style:none}
+.library-page .library-band+.library-band{margin-top:14px}
+.library-page .library-band-head{position:sticky;top:0;z-index:10;display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 0 9px;border-bottom:1px solid var(--line);background:var(--paper)}
+.library-page .library-band-pick{flex:none;width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer}
+.library-page .library-fold{display:flex;align-items:center;gap:10px;min-width:0;padding:3px 6px 3px 0;border-radius:7px;color:var(--ink)}
+.library-page .library-fold:hover{background:var(--hover-surface)}
+.library-page .library-fold:disabled{cursor:default}
+.library-page .library-fold:disabled:hover{background:transparent}
+.library-page .library-fold .library-caret{display:grid;place-items:center;flex:none;color:var(--muted)}
+.library-page .library-band-title{min-width:0;overflow:hidden;font-size:14px;font-weight:600;letter-spacing:-.01em;text-overflow:ellipsis;white-space:nowrap}
+.library-page .library-band-facts{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin-left:auto;color:var(--muted);font-size:12px;white-space:nowrap}
+.library-page .library-band-actions{display:flex;flex:none;align-items:center;gap:4px}
+.library-page .library-open{height:28px;padding:0 11px;border:1px solid var(--strong-line);border-radius:7px;color:var(--muted);font-size:12.5px;font-weight:500;white-space:nowrap}
+.library-page .library-open:hover{background:var(--hover-surface);color:var(--ink)}
+.library-page .library-more{display:grid;place-items:center;width:28px;height:28px;border-radius:6px;color:var(--muted)}
+.library-page .library-more:hover{background:var(--raised-surface);color:var(--ink)}
+/* The drop state lives on the band element, so the note a drag reveals can be styled from there. */
+.library-page .library-dropnote{display:none;align-items:center;gap:7px;padding:2px 10px;border-radius:999px;background:color-mix(in srgb,var(--accent),transparent 86%);color:var(--accent);font-size:11.5px;font-weight:500}
+.library-page .library-band[data-drop=ready] .library-dropnote,.library-page .library-band[data-drop=over] .library-dropnote{display:inline-flex}
+.library-page .library-band[data-drop=present] .library-band-head{opacity:.5}
+.library-page .library-band[data-drop=present] .library-dropnote-has{display:inline-flex;background:color-mix(in srgb,var(--muted),transparent 88%);color:var(--muted)}
+.library-page .library-band[data-drop=ready] .library-band-head{border-bottom-color:color-mix(in srgb,var(--accent),transparent 55%)}
+.library-page .library-band[data-drop=ready] .library-fold{background:color-mix(in srgb,var(--accent),transparent 94%);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent),transparent 62%)}
+.library-page .library-band[data-drop=over] .library-band-head{border-bottom-color:var(--accent)}
+.library-page .library-band[data-drop=over] .library-fold{background:color-mix(in srgb,var(--accent),transparent 88%);box-shadow:inset 0 0 0 1px var(--accent)}
+
+/* ── Record rows: check, grip, the work, then what the provider recorded ─────────────────────────────── */
+.library-page .library-records{margin:0;padding:0;list-style:none}
+.library-page .library-record{position:relative;display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;align-items:start;gap:0 10px;padding:13px 12px 13px 10px;border-bottom:1px solid var(--line)}
+.library-page .library-record:hover{background:var(--hover-surface)}
+.library-page .library-record.is-picked{background:var(--selected-surface)}
+.library-page .library-record.is-dragging{opacity:.45}
+.library-page .library-record:has(.library-title:focus-visible){outline:2px solid var(--accent);outline-offset:-2px}
+.library-page .library-check{width:15px;height:15px;margin:5px 0 0;accent-color:var(--accent);cursor:pointer}
+.library-page .library-check:disabled{cursor:default}
+.library-page .library-grip{display:grid;place-items:center;width:22px;height:22px;margin-top:1px;border-radius:5px;color:var(--muted);opacity:.4;cursor:grab}
+.library-page .library-record:hover .library-grip{opacity:1}
+.library-page .library-record.is-dragging .library-grip{cursor:grabbing}
+.library-page .library-body{min-width:0;padding-top:1px}
+.library-page .library-title-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+.library-page .library-source-key{padding:2px 6px;border:1px solid var(--strong-line);border-radius:5px;background:var(--field-surface);color:var(--muted);font-size:11.5px;font-weight:500;line-height:1.35;white-space:nowrap;font-variant-numeric:tabular-nums}
+.library-page .library-title{flex:0 1 auto;min-width:0;padding:0;border:0;background:none;color:var(--ink);font-family:'Newsreader Variable',serif;font-size:18px;font-weight:500;letter-spacing:-.02em;line-height:1.3;text-align:left;overflow-wrap:anywhere;text-wrap:balance;font-optical-sizing:auto}
+.library-page .library-byline{display:block;max-width:74ch;margin:5px 0 0;overflow:hidden;color:var(--muted);font-size:14px;line-height:1.45;text-overflow:ellipsis;white-space:nowrap}
+.library-page .library-byline em{font-style:italic;color:color-mix(in srgb,var(--ink),var(--muted) 34%)}
+.library-page .library-row-facts{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin:9px 0 0;font-size:12px}
+/* workspace.css sets the shared pill and fact sizes for denser surfaces; the Library reads at 12px. */
+.library-page .ref-pill{font-size:12px}
+.library-page .source-fact{font-size:12px}
+.library-page .library-tail{position:relative;display:flex;flex:none;align-items:flex-start;gap:10px;padding-top:2px}
+.library-page .library-cites{display:grid;justify-items:end;min-width:74px}
+.library-page .library-cites-n{color:var(--ink);font-size:13.5px;font-weight:500;font-variant-numeric:tabular-nums}
+.library-page .library-cites-u{color:var(--muted);font-size:11px}
+
+.library-page .library-bandmore{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:0;padding:11px 12px 3px;color:var(--muted);font-size:12.5px;line-height:1.5}
+
+/* Compact density: one title line per work, with the depth of what is stored and no version pills. */
+.library-page[data-density=compact] .library-record{align-items:center;padding:9px 12px 9px 10px}
+.library-page[data-density=compact] .library-check,.library-page[data-density=compact] .library-grip{margin-top:0}
+.library-page[data-density=compact] .library-body{padding-top:0}
+.library-page[data-density=compact] .library-title-row{display:block;overflow:hidden}
+.library-page[data-density=compact] .library-title{display:inline;font-size:17px;white-space:nowrap}
+.library-page[data-density=compact] .library-title-row .library-source-key{margin-right:8px;vertical-align:2px}
+.library-page[data-density=compact] .library-byline{margin-top:2px;font-size:13px}
+.library-page[data-density=compact] .library-row-facts{margin-top:5px}
+.library-page[data-density=compact] .library-row-facts .ref-pill:not(.library-depth),.library-page[data-density=compact] .library-row-facts .source-fact{display:none}
+.library-page[data-density=compact] .library-tail{padding-top:0}
+.library-page[data-density=compact] .library-cites{grid-auto-flow:column;align-items:baseline;gap:5px}
+
+/* ── Status, empty state, error ──────────────────────────────────────────────────────────────────────── */
+.library-page .library-status{margin:34px 0;color:var(--muted);font-size:14px}
+.library-page .library-empty{margin:34px 0;max-width:58ch}
+.library-page .library-empty p{margin:0 0 16px;color:var(--muted);font-family:'Newsreader Variable',serif;font-size:16px;line-height:1.65}
 .library-page .notice{margin-top:18px}
 
-.library-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:26px;align-items:start;margin-top:2px}
+/* ── Pager: only the flat list pages, and the page size is a choice ───────────────────────────────────── */
+.library-page .library-pager{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:18px 0 0;padding-top:16px;border-top:1px solid var(--line)}
+.library-page .library-range{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
+.library-page .library-pages{display:flex;align-items:center;gap:2px;margin-left:auto}
+.library-page .library-pages button{display:grid;place-items:center;min-width:30px;height:30px;padding:0 8px;border-radius:6px;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
+.library-page .library-pages button:hover{background:var(--hover-surface);color:var(--ink)}
+.library-page .library-pages button[aria-current=page]{background:var(--selected-surface);color:var(--ink);font-weight:500}
+.library-page .library-pages button:disabled{color:color-mix(in srgb,var(--muted),transparent 55%)}
+.library-page .library-pages button:disabled:hover{background:transparent}
+.library-page .library-page-gap{padding:0 3px;color:var(--muted);font-size:12px}
+.library-page .library-pages .library-more{width:auto;min-width:0;padding:0 10px;font-size:12px}
 
-/* Table: dense, aligned columns with one reading line per work. */
-.library-table-wrap{min-width:0;overflow-x:auto}
-.library-table{width:100%;min-width:820px;border-collapse:collapse;table-layout:fixed;font-size:13px}
-.library-table th{padding:0;border-bottom:1px solid var(--strong-line);text-align:left;vertical-align:bottom;overflow:hidden;color:var(--muted);font-size:11.5px;font-weight:550;letter-spacing:.02em;white-space:nowrap}
-.library-table thead th{position:sticky;top:0;z-index:2;background:var(--paper);padding:16px 12px 10px}
-.library-table thead th:has(button){padding:0}
-.library-table th button{display:inline-flex;align-items:center;gap:6px;width:100%;padding:16px 12px 10px;border:0;background:transparent;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit}
-.library-table th button:hover{color:var(--ink)}
-/* The column the list is ordered by keeps its accent arrow; the others show theirs on hover or focus. */
-.library-table thead th svg{flex:none;opacity:0;transition:opacity .15s}
-.library-table thead th[aria-sort]:not([aria-sort=none]){color:var(--ink)}
-.library-table thead th[aria-sort]:not([aria-sort=none]) svg{opacity:1;color:var(--accent)}
-.library-table thead th:is(:hover,:focus-within) svg{opacity:1}
+/* ── Floating layers: the only two places that carry a shadow ─────────────────────────────────────────── */
+.library-page .library-picked{position:sticky;bottom:16px;z-index:25;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;width:max-content;max-width:100%;margin:22px auto 0;padding:9px 11px 9px 16px;border:1px solid color-mix(in srgb,var(--accent),var(--strong-line) 55%);border-radius:10px;background:var(--raised-surface);box-shadow:0 12px 32px color-mix(in srgb,#000,transparent 70%)}
+.library-page .library-picked-count{flex:none;color:var(--ink);font-size:13px;font-weight:500;font-variant-numeric:tabular-nums}
+.library-page .library-picked-add{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--ink);font-size:12.5px;font-weight:500;white-space:nowrap}
+.library-page .library-picked-add:hover{background:var(--hover-surface)}
+.library-page .library-picked-add svg{flex:none;color:var(--muted)}
+.library-page .library-key{margin-left:6px;padding:1px 5px;border:1px solid var(--strong-line);border-radius:4px;color:var(--muted);font-size:10.5px;line-height:1.5}
+.library-page .library-picked-scope{display:inline-flex;align-items:center;gap:6px;max-width:420px;padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--muted),transparent 88%);color:var(--ink);font-size:12px}
+.library-page .library-picked-scope svg{flex:none;color:var(--muted)}
+.library-page .library-picked-scope span:not(.sr-only){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-page .library-picked-note{flex:1 1 100%;margin:0;color:var(--muted);font-size:11.5px;line-height:1.5}
 
-.library-table td{padding:12px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.library-table tbody tr{cursor:pointer}
-.library-table tbody tr:hover{background:var(--hover-surface)}
-.library-table tbody tr.is-selected{background:color-mix(in srgb,var(--accent),transparent 92%)}
-.library-table tbody tr.is-selected td{border-bottom-color:color-mix(in srgb,var(--accent),transparent 65%)}
+.library-page .library-dock{position:sticky;bottom:16px;z-index:25;display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;width:max-content;max-width:100%;margin:22px auto 0;padding:10px 14px;border:1px solid color-mix(in srgb,var(--accent),transparent 55%);border-radius:10px;background:var(--raised-surface);box-shadow:0 12px 32px color-mix(in srgb,#000,transparent 70%)}
+.library-page .library-dock-grip{flex:none;color:var(--muted)}
+.library-page .library-dock-label{display:grid;min-width:0}
+.library-page .library-dock-label b{overflow:hidden;font-size:12.5px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}
+.library-page .library-dock-label span{color:var(--muted);font-size:11.5px}
+.library-page .library-dock-targets{display:flex;flex-wrap:wrap;gap:6px}
+.library-page .library-dock-target{display:inline-flex;align-items:center;max-width:220px;padding:3px 10px;border:1px solid color-mix(in srgb,var(--accent),transparent 62%);border-radius:999px;background:color-mix(in srgb,var(--accent),transparent 94%);color:var(--accent);font-size:11.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:copy}
+.library-page .library-dock-target[data-drop=over]{border-color:var(--accent);background:color-mix(in srgb,var(--accent),transparent 84%)}
+.library-page .library-drop-hint{display:inline-flex;align-items:center;gap:7px;padding:3px 10px;border-radius:999px;background:color-mix(in srgb,var(--accent),transparent 88%);color:var(--accent);font-size:11.5px;font-weight:500}
 
-.library-col-paper{width:44%}
-.library-col-access{width:124px}
-.library-col-year{width:82px;font-variant-numeric:tabular-nums}
-.library-col-citations{width:104px;text-align:right;font-variant-numeric:tabular-nums}
-.library-table th.library-col-citations button{justify-content:flex-end;flex-direction:row-reverse}
-.library-col-projects{width:14%}
-.library-table td.library-col-projects{font-size:12.5px}
-.library-col-added{width:118px;font-variant-numeric:tabular-nums}
-.library-table td.library-col-added{font-size:12.5px}
+/* The key strip names the moves the list answers to; it sits after the list it describes. */
+.library-page .library-keystrip{display:flex;flex-wrap:wrap;gap:6px 20px;margin:22px 0 0;padding:14px 0 0;border-top:1px solid var(--line);color:var(--muted);font-size:12px;list-style:none}
+.library-page .library-keystrip li{display:inline-flex;align-items:center;gap:7px}
+.library-page .library-keystrip kbd{padding:1px 5px;border:1px solid var(--strong-line);border-radius:4px;background:var(--field-surface);color:var(--ink);font:inherit;font-size:11px;font-variant-numeric:tabular-nums}
 
-/* With the details panel open the list keeps only the columns that identify a work;
-   venue, citations, projects and the save date are all repeated inside the panel. */
-.library-table-wrap[data-grouping=project] .library-col-projects{display:none}
+/* A key strip is for keyboards; a touch pointer has nothing to press. */
+@media (hover: none){
+  .library-page .library-keystrip{display:none}
+}
 
-/* The record reads as a source, not as a spreadsheet line: key, serif title, byline, then one fact per version. */
-.library-table td.library-col-paper{white-space:normal}
-.library-title{display:block;width:100%;padding:0;border:0;background:transparent;color:var(--ink);font-family:'Newsreader Variable',serif;font-size:17px;font-weight:500;line-height:1.3;letter-spacing:-.01em;text-align:left}
-.library-title>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.library-title .source-key{float:left;margin:3px 8px 0 0}
-.library-title:hover,.library-table tbody tr.is-selected .library-title{color:var(--accent)}
-.library-title:hover .source-key,.library-table tbody tr.is-selected .library-title .source-key{color:var(--muted)}
-.library-byline{margin-top:4px;line-height:1.45}
-.library-byline span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.library-row-facts{margin-top:7px;gap:3px 15px;font-size:11.5px}
-
-/* Comfortable rows let a long title use a second line; compact keeps every work on one. */
-.library-table-wrap[data-density=comfortable] .library-table td{padding-block:13px}
-.library-table-wrap[data-density=compact] .library-table td{padding-block:9px;font-size:12.5px}
-.library-table-wrap[data-density=compact] .library-title{font-size:14.5px}
-.library-table-wrap[data-density=compact] .library-title>span{-webkit-line-clamp:1}
-.library-table-wrap[data-density=compact] .library-title .source-key{margin-top:1px}
-.library-table-wrap[data-density=compact] .library-byline{display:block;margin-top:3px;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.library-table-wrap[data-density=compact] .library-byline span+span::before{content:' · '}
-.library-table-wrap[data-density=compact] .library-row-facts{display:none}
-
+/* ── Narrow viewport: the whole page fits the phone gutter with no side scroll ────────────────────────── */
 @media(max-width:760px){
-  .library-view-controls{margin-left:0}
-  .library-table{min-width:0}
-  .library-table :is(.library-col-year,.library-col-citations,.library-col-projects,.library-col-added){display:none}
-  .library-col-paper{width:44%}
-  .library-col-access{width:114px}
-  .library-row-facts{flex-direction:column;align-items:flex-start;gap:3px}
-  .library-group-title{max-width:none}
-  .library-title .source-key{display:none}
+  .library-page .library-mast h1{font-size:34px}
+  .library-page .library-lede{font-size:15px}
+  .library-page .library-rail{gap:8px 0;margin-top:20px}
+  .library-page .library-rail li{padding:0 14px;font-size:12px}
+  .library-page .library-commands{gap:8px;margin-top:24px;padding-top:18px}
+  /* A thumb needs 44px: the search, both pickers and every row action reach it. */
+  .library-page .library-search{flex:1 1 100%;max-width:none}
+  .library-page .library-picker,.library-page .library-seg button{height:44px}
+  .library-page .library-open,.library-page .library-fold,.library-page .library-dock-target{min-height:44px}
+  .library-page .library-fold{padding:8px 6px 8px 0}
+  .library-page .library-more{width:44px;height:44px;margin-right:-8px}
+  .library-page .library-band-facts{order:3;flex-basis:100%;margin-left:0}
+  .library-page .library-band-actions .library-open{display:none}
+  .library-page .library-record{grid-template-columns:auto minmax(0,1fr);gap:0 10px;padding:13px 12px 13px 11px}
+  .library-page .library-grip{display:none}
+  .library-page .library-check{order:1;width:22px;height:22px;margin:3px 0 0}
+  .library-page .library-body{order:2}
+  .library-page .library-tail{grid-column:2;order:3;align-items:center;padding-top:6px}
+  .library-page .library-title{font-size:17px}
+  .library-page .library-byline{display:-webkit-box;max-width:none;overflow:hidden;white-space:normal;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+  .library-page .library-cites{grid-auto-flow:column;justify-items:start;align-items:baseline;gap:5px}
+  .library-page .library-cites-u{font-size:11.5px}
+  /* The bars run the full gutter-to-gutter width of the narrow page. */
+  .library-page .library-picked,.library-page .library-dock{width:auto;margin:20px -23px 0;border-radius:0;border-left:0;border-right:0}
+  .library-page .library-picked-scope{max-width:100%}
+  .library-page .library-pager .library-pages{flex-wrap:wrap;width:100%;margin-left:0}
 }
-@media(max-width:720px){
-  .library-table-wrap{margin-inline:-4px}
-}
-
-/* Grouping by project and pagination. */
-.library-page .library-group-choice{width:auto;padding:0 11px;font-size:12px;white-space:nowrap}
-.library-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:10px 12px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
-.library-pager span:first-child{margin-right:auto}
-.library-pager button{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid var(--strong-line);border-radius:6px;background:var(--field-surface,transparent);color:var(--ink)}
-.library-pager button:hover:not(:disabled){background:var(--hover-surface)}
-.library-pager button:disabled{opacity:.4;cursor:default}
-.library-group-pager td{padding:0 !important;cursor:default}
-.library-table tbody tr.library-group-pager:hover{background:transparent}
-
-.library-table .library-group-row th{padding:0;border-bottom:1px solid var(--strong-line);background:var(--paper);color:var(--ink);font-size:13px;font-weight:600;letter-spacing:0;text-transform:none;white-space:normal}
-.library-table tbody.library-group+tbody.library-group .library-group-row th{border-top:22px solid var(--paper)}
-.library-table tbody tr.library-group-row{cursor:default}
-.library-table tbody tr.library-group-row:hover{background:transparent}
-.library-group-head{display:flex;align-items:center;gap:10px;padding:9px 12px 9px 6px;min-width:0}
-.library-table .library-group-row .library-group-toggle{display:inline-flex;align-items:center;gap:7px;flex:0 1 auto;width:auto;min-width:0;padding:2px 4px;letter-spacing:0;text-transform:none;border:0;border-radius:5px;background:transparent;color:inherit;font:inherit;text-align:left}
-.library-group-toggle svg{flex:none;color:var(--muted)}
-.library-group-title{min-width:0;max-width:62ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.library-group-count{flex:none;padding:0 7px;border-radius:999px;background:color-mix(in srgb,var(--muted),transparent 90%);color:var(--muted);font-size:11px;font-weight:550;line-height:1.75;font-variant-numeric:tabular-nums}
-.library-table .library-group-row .library-group-open{display:inline-flex;align-items:center;gap:4px;margin-left:auto;flex:none;width:auto;padding:2px 4px;letter-spacing:0;text-transform:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:500}
-.library-table .library-group-row .library-group-open:hover{color:var(--accent)}
-/* A project's own actions stay out of the reading rhythm until the row is pointed at or reached by keyboard. */
-.library-table .library-group-row :is(.library-group-open,.library-group-more){opacity:0;transition:opacity .15s}
-.library-table .library-group-row:is(:hover,:focus-within) :is(.library-group-open,.library-group-more),
-.library-table .library-group-row :is(.library-group-open,.library-group-more):focus-visible,
-.library-table .library-group-row .library-group-more[data-popup-open]{opacity:1}
-.library-drop-hint{flex:none;color:var(--muted);font-size:11.5px;font-weight:500}
-.library-table tbody tr.library-group-empty{cursor:default}
-.library-table tbody tr.library-group-empty:hover{background:transparent}
-.library-group-empty td{padding:10px 12px 14px 34px;font-size:12.5px;white-space:normal}
-.library-group-empty span{display:block;padding:12px 14px;border:1px dashed var(--strong-line);border-radius:8px;color:var(--muted)}
-
-/* Dragging a row onto a project: the target outlines itself; a project that already holds the work stays inert. */
-.library-table tbody tr[draggable=true]{cursor:grab}
-.library-table tbody tr.is-dragging{opacity:.5}
-.library-col-paper{position:relative}
-.library-grip{position:absolute;left:0;top:50%;translate:0 -50%;color:var(--muted);opacity:0;transition:opacity .15s}
-.library-table tbody tr:hover .library-grip{opacity:.7}
-.library-table tbody.library-group[data-drop=ready] .library-group-row th{background:color-mix(in srgb,var(--accent),var(--paper) 94%)}
-.library-table tbody.library-group[data-drop=over]{outline:2px solid var(--accent);outline-offset:-2px}
-.library-table tbody.library-group[data-drop=over] .library-group-row th{background:color-mix(in srgb,var(--accent),var(--paper) 86%)}
-.library-table tbody.library-group[data-drop=over] .library-drop-hint{color:var(--accent)}
-.library-table tbody.library-group[data-drop=present]{opacity:.55}
-
-.library-dock{position:fixed;left:50%;bottom:20px;z-index:40;translate:-50% 0;display:grid;gap:8px;width:min(920px,calc(100vw - 32px));max-height:min(42svh,340px);padding:12px 14px;border:1px solid var(--strong-line);border-radius:12px;background:var(--raised-surface);box-shadow:0 12px 32px color-mix(in srgb,#000,transparent 70%);overflow:auto}
-.library-dock-label{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.library-dock-targets{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px}
-.library-dock-target{min-width:0;padding:7px 10px;border:1px dashed var(--strong-line);border-radius:7px;color:var(--ink);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.library-dock-target[data-drop=over]{border-style:solid;border-color:var(--accent);background:color-mix(in srgb,var(--accent),transparent 90%);color:var(--accent)}
-.library-dock-target[data-drop=present]{opacity:.45}
-
-/* Picking works to remove: a box per row, a box per project group, and the row action that removes one work.
-   Removal takes the work out of a project's sources; the record and its files stay, so the bar reads as a list
-   action rather than a destructive one. */
-.library-col-pick{width:34px}
-.library-col-actions{width:44px}
-.library-table td.library-col-pick,.library-table td.library-col-actions{cursor:default;overflow:visible}
-.library-table :is(.library-col-pick,.library-col-actions){padding-inline:6px}
-.library-table input[type=checkbox]{width:14px;height:14px;margin:1px 0 0;accent-color:var(--accent);cursor:pointer}
-.library-table input[type=checkbox]:disabled{opacity:.35;cursor:default}
-.library-group-pick{flex:none;margin-left:6px}
-.library-table tbody tr.is-picked{background:color-mix(in srgb,var(--accent),transparent 90%)}
-
-.library-remove{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:0;border-radius:6px;background:transparent;color:var(--muted);opacity:0;transition:opacity .15s,color .15s}
-.library-table tbody tr:hover .library-remove,.library-table tbody tr.is-picked .library-remove,.library-remove:focus-visible{opacity:1}
-.library-remove:hover{background:color-mix(in srgb,var(--tone-exclude),transparent 88%);color:var(--tone-exclude)}
-
-/* The selection bar sticks to the bottom of the viewport while the table scrolls and comes to rest after it, so it
-   stays in reach without covering a row or the pager, and it sits over the table rather than over the whole window.
-   Its second line says what the count covers: a project's header box picks every work in the project while only one
-   page of rows is on screen, and removal takes works out of a project without touching the record or its files. */
-.library-picked{position:sticky;bottom:20px;z-index:40;display:grid;grid-template-columns:minmax(0,1fr);gap:7px;width:min(980px,100%);margin:14px auto 0;padding:11px 12px 10px 14px;border:1px solid color-mix(in srgb,var(--accent),var(--strong-line) 55%);border-radius:12px;background:var(--raised-surface);box-shadow:0 12px 32px color-mix(in srgb,#000,transparent 70%);font-size:12.5px}
-.library-picked-main{display:flex;flex-wrap:wrap;align-items:center;gap:7px 10px}
-.library-picked-count{flex:none;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
-.library-picked-scope{flex:1;min-width:0;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* Only the project name gives way when the bar runs out of room; the count and both actions keep their size. */
-.library-picked-project{flex:0 1 auto;min-width:0;max-width:420px;margin-right:auto;display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--muted),transparent 88%);color:var(--ink);font-size:12px}
-.library-picked-project svg{flex:none;color:var(--muted)}
-.library-picked-project span:not(.sr-only){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.library-picked-divider{flex:none;width:1px;height:22px;background:var(--line)}
-.library-page .library-picked-key{margin-left:6px;padding:1px 5px;border:1px solid var(--strong-line);border-radius:4px;color:var(--muted);font-size:10.5px;line-height:1.5}
-.library-picked-note{display:flex;align-items:flex-start;gap:7px;min-width:0;margin:0;color:var(--muted);font-size:11.5px;line-height:1.5}
-.library-picked-note svg{flex:none;margin-top:1px}
-@media(max-width:760px){.library-picked{bottom:12px}.library-picked-divider{display:none}.library-picked-project{max-width:100%}}
-.library-table .library-group-row .library-group-more{display:inline-flex;align-items:center;justify-content:center;flex:none;width:26px;height:26px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--muted)}
-.library-table .library-group-row .library-group-more:is(:hover,:focus-visible,[data-popup-open]){background:color-mix(in srgb,var(--ink),transparent 92%);color:var(--ink)}
-
-@media(prefers-reduced-motion:reduce){.library-grip,.library-remove{transition:none}}

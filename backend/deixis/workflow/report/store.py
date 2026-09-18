@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict
+from deixis.domain.rules import MAX_SCHEMA_REPAIRS, TEST_EFFORT_BUDGETS, RevisionConflict
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.report.snapshot import build_snapshot
 from deixis.workflow.store import NotFound, Store
@@ -42,8 +42,9 @@ class ReportStore:
                 raise RevisionConflict("Include sources and fill every active evidence-table column before starting a report")
 
             section_count = sum(map(len, ROUNDS))
-            # Plan + model-written sections + one phrase repair per section + optional research title.
-            max_model_calls = 1 + section_count + section_count + 1
+            # (Plan + model-written sections + optional research title + one optional phrase repair per section)
+            # times (initial call + bounded schema repairs per model step).
+            max_model_calls = (1 + section_count + 1 + section_count) * (1 + MAX_SCHEMA_REPAIRS)
             budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__ | {
                 "max_model_calls": max_model_calls,
                 "max_provider_requests": 0,

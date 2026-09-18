@@ -27,7 +27,7 @@ RUNTIME_FILES = {
     "research_title": ("SKILL.md", "references/research-title.md"),
     "report_plan": ("SKILL.md", "references/report.md"),
     "report_section": ("SKILL.md", "references/report.md", "references/source-grounded-answer.md", PHRASEBANK),
-    "report_phrase_repair": ("SKILL.md", "references/report.md"),
+    "report_phrase_repair": ("SKILL.md", "references/report.md", PHRASEBANK),
     "report_review": ("SKILL.md", "references/report.md"),
 }
 PROVENANCE_REQUIRED = (

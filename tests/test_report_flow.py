@@ -53,10 +53,11 @@ def _add_pdf(store, source_id, pages):
 
 
 class ReportAdapter(FakeAdapter):
-    def __init__(self, broken_section=None, empty_section=None):
+    def __init__(self, broken_section=None, empty_section=None, unframed_section=None):
         super().__init__(responder=self._response)
         self.broken_section = broken_section
         self.empty_section = empty_section
+        self.unframed_section = unframed_section
 
     def _response(self, step_input):
         task = step_input["task_type"]
@@ -106,6 +107,8 @@ class ReportAdapter(FakeAdapter):
         else:
             insufficient_evidence = [{"context": section_id,
                                       "reason": "It is beyond the scope of this synthetic fixture to add a claim."}]
+        if section_id == self.unframed_section and claims:
+            claims[0]["text"] = "Fig weiro randomtext not a frame sentence at all zzq."
         gaps = [{
             "gap_id": "gap9",
             "kind": "stated_limitation",
@@ -149,7 +152,7 @@ def _claim(section_id, passage_ids=None, cell_ids=None, body_refs=None):
     }
 
 
-def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None,
+def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None, unframed_section=None,
                 passage_kind="abstract"):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
@@ -207,7 +210,7 @@ def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None,
     store.update_run(
         run["id"], status="running", target_json=dumps({"table_id": table_id, "report_id": report_id}),
     )
-    adapter = ReportAdapter(broken_section, empty_section)
+    adapter = ReportAdapter(broken_section, empty_section, unframed_section)
     flow = ResearchFlow(FlowDeps(
         Settings(data_dir=tmp_path / "data", port=8765), store, {"fake": adapter},
         skill.load_skill_package(), None, limiter=ModelCallLimiter(3),
@@ -322,6 +325,22 @@ def test_an_empty_section_without_insufficient_evidence_pauses_the_run(tmp_path)
     validation = section["validation"]
     assert validation["issues"] == [{"code": "empty_section",
                                      "detail": "section has no claims or insufficient-evidence entries"}]
+
+
+def test_an_unframed_section_is_repaired_and_the_report_completes(tmp_path):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, unframed_section="IV")
+
+    asyncio.run(run_report(flow, run, scope))
+
+    assert reports.report(report_id)["status"] == "valid"
+    section = reports.section(report_id, "IV")
+    assert section["status"] == "valid"
+    assert section["validation"]["issues"] == []
+    repair = store.conn.execute(
+        "SELECT section_id, sentence_id, outcome FROM report_phrase_repairs WHERE report_id = ?",
+        (report_id,),
+    ).fetchone()
+    assert dict(repair) == {"section_id": "IV", "sentence_id": "IV.1#1", "outcome": "kept"}
 
 
 def test_a_resumed_report_run_does_not_call_the_model_again_for_a_succeeded_section(tmp_path):

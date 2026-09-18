@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from deixis.domain import contracts, phrasebank
 from deixis.workflow.flow import OptionalStepFailed
 from deixis.workflow.report import assembly, gaps, review_methodology, selection
-from deixis.workflow.report.phrasing import flagged_sentences
+from deixis.workflow.report.phrasing import flagged_sentences, repair_section
 from deixis.workflow.report.plan import freeze_plan
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.tables import TableStore, report_ready
@@ -154,16 +154,18 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
     empty = not draft["claims"] and not draft["insufficient_evidence"]
     language = phrasebank.frames_language(payload)
     flagged = flagged_sentences(
-        section_id, draft["claims"], flow.deps.package.files[phrasebank.PHRASEBANK], language,
+        section_id, [*draft["claims"], *draft["insufficient_evidence"]],
+        flow.deps.package.files[phrasebank.PHRASEBANK], language,
     )
-    # Targeted repair is added by 1d Task 3; this batch records the local validation result only.
+    draft, exceptions = await repair_section(flow, run, scope, report_id, section_id, draft, flagged)
     issues = ([{"code": "empty_section", "detail": "section has no claims or insufficient-evidence entries"}]
-              if empty else flagged)
-    status = "draft" if issues else "valid"
+              if empty else exceptions)
+    # A recorded phrase exception is an accepted evidence-first outcome; only an empty section remains a draft here.
+    status = "draft" if empty else "valid"
     reports.save_claims(section_key, draft["claims"], _citation_links(payload, draft))
     reports.save_section_draft(
         section_key, step["id"], status, draft,
-        {"ok": not issues, "issues": issues, "truncated": evidence["truncated"]}, _word_count(draft),
+        {"ok": not empty, "issues": issues, "truncated": evidence["truncated"]}, _word_count(draft),
     )
     if section_id == "VI":
         candidate_ids = {candidate["gap_id"] for candidate in gap_candidates}

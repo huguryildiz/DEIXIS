@@ -9,7 +9,7 @@ The [plan review and finding disposition](product/plan-review-2026-09-14.md) pre
 | Location | Authority and purpose |
 |---|---|
 | [Product](product/README.md) | Current concise map of accepted product constraints, proposed contracts, and unresolved choices. The [first-slice plan](product/first-slice-plan.md) and [API and data design](product/api-and-data.md) are drafts, not implemented features. |
-| [Methods](methods/research-methods.md) | Research-method comparison and proposed workflow; [domain example](methods/domain-example.md) is illustrative, not the product's fixed scope. |
+| [Methods](methods/research-methods.md) | Research-method comparison and proposed workflow; [domain example](methods/domain-example.md) is illustrative, not the product's fixed scope. The [isolated quantum 500/1000 protocol](methods/quantum-hybrid-500-1000-protocol-2026-09-18.md) is an opt-in development experiment, not the product default. |
 | [Dated handoff](desktop/README.md) | Detailed record of the 14 September 2026 conversation and accepted user decisions. Historical names and unimplemented proposals are preserved. |
 | [Reference index](desktop/reference-index.md) | Provenance and limits of the private transfer package, screenshots, and inspected design references. |
 | [Design prompt](desktop/design-prompt.md) | Historical continuation prompt, not an instruction to execute automatically or the canonical implementation plan. |

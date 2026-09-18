@@ -47,7 +47,7 @@
     {
       "deixis_file": "references/report.md",
       "derived_from": [],
-      "change": "Written for DEIXIS on 2026-09-17 (P6 slice 1), not adapted from upstream text. Applies SKILL.md's evidence rules to the fixed report skeleton: report_plan, per-section instructions for III-IX/abstract/index_terms, VI/VII's narrowed gap/future-direction exception to the candidate-development ban, phrase repair, and report review. Loaded into report_plan, report_section, report_phrase_repair and report_review steps only."
+      "change": "Written for DEIXIS on 2026-09-17 (P6 slice 1), not adapted from upstream text. Applies SKILL.md's evidence rules to the fixed report skeleton: report_plan, per-section instructions for III-IX/abstract/index_terms, VI/VII's narrowed gap/future-direction exception to the candidate-development ban, phrase repair, and report review. Loaded into report_plan, report_section, report_phrase_repair and report_review steps only. 2026-09-18: made the supplied per-section frames mandatory for every claims[].text and insufficient_evidence[].reason sentence because the first real-model report run produced sentences that followed no frame; evidence support explicitly outranks frame fit."
     }
   ],
   "phrasebank": {
@@ -55,7 +55,7 @@
     "source": "Academic Phrasebank, 2015 enhanced edition (John Morley, The University of Manchester), phrase sections of printed pages 7-91. Copyright remains with The University of Manchester.",
     "form": "converted once on 2026-09-14: one frame per list item under # section and ## subsection headings, table rows written with {a | b} alternatives; nine frames split or joined by the conversion were repaired by hand",
     "turkish": "each frame is followed by a `tr:` line, a literal Turkish rendering written on 2026-09-14 by Claude Sonnet subagents; checked by script for equal alternative groups and slots, spot-read by the implementing agent, not reviewed by a human translator",
-    "use": "versioned at the user's decision (2026-09-14); loaded into grounded_answer steps only, English frames or their Turkish renderings by question language; every answer sentence is checked against the frames of the answer language (contracts._check_phrasing); its hash is part of skill_package_hash"
+    "use": "versioned at the user's decision (2026-09-14); loaded into grounded_answer and report_section steps, English frames or their Turkish renderings by question language; grounded-answer sentences and report-section prose sentences are checked against the frames of the answer language; its hash is part of skill_package_hash"
   },
   "upstream_update_policy": "Quaestio changes are not imported automatically. A change is compared by diff, recorded here with the new revision and hashes, and re-tested with the behavior cases before the package version changes.",
   "distribution_review": "not_done; required before public distribution of adapted text",

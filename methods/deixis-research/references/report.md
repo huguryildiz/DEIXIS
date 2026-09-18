@@ -33,10 +33,14 @@ given to you as rows and cited cells, and you discuss it — you do not restate 
 - If a plan glossary term, axis or budget's required evidence was not given to you (for example no definition
   passage for a term this section needed), do not force a claim. Write an `insufficient_evidence` entry
   instead, naming the missing context and why.
-- The phrasebank frames you receive are limited to this section's own categories. A sentence in `claims[].text`
-  or `insufficient_evidence[].reason` that keeps none of one frame's fixed words in order goes to a targeted
-  repair call; write plainly and re-use frames rather than inventing new phrasing, since a sentence you cannot
-  fit to a frame becomes an exception that is recorded and measured.
+- The phrasebank frames you receive are limited to this section's own categories. Every sentence in
+  `claims[].text` and `insufficient_evidence[].reason` must follow one supplied frame: keep that frame's fixed
+  words in their order and put your own content in its slots. The frames are supplied in the answer's language;
+  for a Turkish section, use the Turkish rendering. Choosing a frame is a phrasing decision, never an evidence
+  decision. The evidence rules outrank this requirement: never choose a frame that says more than the cited
+  passage supports, and never change what a claim asserts to make a frame fit. If no supplied frame can carry
+  the sentence honestly, keep the sentence plain and expect it to be recorded as an exception rather than
+  distorting the claim. An unframed sentence means the section is not marked valid and the run stops for repair.
 
 ## Report plan (`report_plan`)
 

@@ -243,6 +243,39 @@ III'te 5 cümleyi `kept` yaptı, 9 cümle `unframed_exception` kaldı.
 **Çıktılar:** `.local/p6-p5-2026-09-18/` — `rapor.md` (1. koşu), `rapor-2-...md` (2. koşu),
 `rapor-4-dokuz-bolum.md` (bu koşu).
 
+**P9 / P9.5 — rapor koşusunun kendi bütçesi.** ✅ `e09005a`, `d47a928`, `28f78a9`. Rapor koşusu artık
+`TEST_EFFORT_BUDGETS`'ten gelen çağrı tavanını kullanmıyor; tavanı kendi yapısından hesaplıyor
+(`1 plan + bölüm + bölüm başına bir kalıp onarımı + başlık`, hepsi `1 + MAX_SCHEMA_REPAIRS` ile çarpılı),
+ve sahibin 18 Eylül'de koyduğu **50 tabanı** ile: `max(50, hesaplanan)`. Bölüm sayısı `ROUNDS`'tan türetiliyor,
+kopyalanmıyor. `max_provider_requests` 0 (rapor koşusu hiçbir sağlayıcıya gitmiyor, `run_report`'ta doğrulandı).
+Efor ayarları değiştirilmedi.
+
+Gerekçe ölçümle geldi: 4. koşu 15'te kesildi (9 bölüm), 5. koşu 22'de kesildi (10 bölüm) — 17 adımlık bir koşu
+22 çağrı harcamıştı, aradaki 5 çağrı şema onarımlarıydı ve ilk formül bunu saymıyordu.
+
+**6. koşu (`run_xwKx9SRPEL9aaWice1yc`) başka bir nedenle düştü, kayda geçsin:** IV. bölüm
+`invalid_model_output`, sebebi `envelope_mismatch` — model 64 karakterlik `skill_package_hash`'i geri yazarken
+iki karakteri yer değiştirdi (`...918c3fee...` yerine `...9183cfee...`). Şema onarımı aynı hatayı tekrarladı.
+Bu, D12'nin kayda geçirdiği **uzun kimlik kopyalama hatası** sınıfının aynısı, bu kez zarf alanında. Alan bir
+kanıt değil, uygulama değeri zaten biliyor; modelden geri yazmasını istemek yalnız hata yüzeyi açıyor.
+Kaldırmak sözleşme değişikliği ve bir karar kaydı ister — `docs/decisions.md` başka oturumun altında olduğu
+için burada duruyor.
+
+## İLK TAM RAPOR (7. koşu, 18 Eylül 05:40)
+
+`run_7VisN9hwiE5uI6T5Zu80`, rapor `rpt_PFJ9dkcKJl0j3rhKgErn`, `gpt-5.6-luna`, kopya kütüphane, 8799.
+**Koşu `completed`, rapor `valid`, `report_version` 1, 11 bölümün 11'i yazıldı, montaj denetimleri geçti.**
+24 model çağrısı (tavan 50). Çıktı: `.local/p6-p5-2026-09-18/rapor-7-TAM.md`.
+
+Bölüm kelime sayıları: abstract 66, I 61, II 203 (kod), III 99, IV 86, V 87, VI 13, VII 12, VIII 16, IX 79,
+index_terms 15 — **toplam 737 kelime**. Plandaki alt sınırların çok altında (III için 244, IV için 313).
+Sebebi 4. koşudaki ile aynı ve dürüst: üç kaynaklı korpusta yedi eksenin çoğu boş, model iddia yerine
+`insufficient_evidence` yazıyor (III'te 5, IV'te 5, V'te 3 kayıt). Uzunluk hedefi ancak dolu bir korpusla
+sınanabilir — kütüphanede 26 dahil kaynaklı kuantum araştırması var, tablosunda henüz sütun yok.
+
+Kalıp onarımı: 6 cümle `kept`, 14 cümle `unframed_exception`. Yani kalıp uyumu hâlâ düşük; `valid` bunu
+kapsamıyor (P8 kararı). Talimat sıkılaştırmasının etkisi tek başına hâlâ ölçülmedi.
+
 **Ölçüm yapılmadı:** dilim 0'ın `scripts/p6_eval/measure_fill.py` süre ölçümü bu koşuda halledilmedi; ayrı
 gerçek-model maliyeti olduğu için sahibin ayrı onayını bekliyor.
 

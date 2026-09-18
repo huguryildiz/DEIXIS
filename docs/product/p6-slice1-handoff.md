@@ -202,6 +202,47 @@ beklentisi **10–15 referans için en fazla 15–20 sayfa**, yani tek sütunlu 
 13–17 bin kelime — bugünkü 5500 hedefinin 2–3 katı. Ayrıca sahip raporun **öğretici** olmasını istiyor; bugünkü
 III talimatı kasten yalnız tanım odaklı. İkisi de ayrı tur, ikisi de karar bekliyor.
 
+**P8 — cümle onarımı.** ✅ `dd9b7f8`. `repair_section`: bayraklı cümleler için tek bir `report_phrase_repair`
+çağrısı, `sentence_id`'ye göre yerine koyma, ve kod tarafında **sayı çoklu kümesi + matematik aralıkları**
+karşılaştırması — değişmişse onarım uygulanmaz ve `unframed_exception` yazılır. Onarılamayan cümle artık bölümü
+`draft`'a düşürmüyor (§8 karar 12), yalnız boş bölüm düşürüyor. `RUNTIME_FILES["report_phrase_repair"]`'e
+kalıp bankası eklendi (eskiden `flow.py`'deki bölüm süzgeci boşa çalışıyordu).
+**Yan bulgu:** `skill_package_hash` paketin bütün dosyalarının birleşimi üzerinden hesaplanıyor, hangi görevin
+hangi dosyayı aldığı hash'e girmiyor — yani bir görevin gördüğü talimat değişse de hash aynı kalabiliyor.
+Provenans zayıflığı, bu partinin dışında.
+
+**P8.5 — atıf hedefi denetimi.** ✅ `bf25743`. Üçüncü gerçek koşu IV'te **çöktü**: model üç atıfın üçünde de hem
+`passage_id` hem `cell_id` verdi, `report_citation_links`'in `CHECK ((passage_id IS NOT NULL) <> (cell_id IS
+NOT NULL))` kuralı `IntegrityError` fırlattı, koşu yedi model çağrısı harcamışken `internal_error` ile öldü.
+Kural şemanın açıklamasında "checked in code" diye yazıyordu ama kodda yoktu. Eklenen:
+`contracts._check_report_section` içinde `citation_anchor_target_count` (ikisi de dolu ya da ikisi de boş →
+issue), ve `report.md`'de modele iki cümlelik kural. Artık çöküş değil, sınırlı onarım → `invalid_model_output`.
+
+**Dördüncü gerçek koşu (18 Eylül 04:58, `run_oA0X3eCpjIhkYLqZ9SxU`, rapor `rpt_vUjWiXOMSL5UlMOHwk6D`).**
+Sunucu yeniden başlatıldı, koşunun saklı paket hash'i repodakiyle aynı (`1f519582…`) — bu sefer talimat, onarım
+ve denetim gerçekten devredeydi.
+
+**11 bölümün 9'u `valid`:** II, III, IV, V, VI, VII, VIII, I, IX. Çöküş yok. **Ama rapor yine tamamlanmadı:**
+`abstract` ve `index_terms` hiç koşmadı, çünkü **bütçe bitti** — `standard` eforun `max_model_calls` değeri 15,
+koşu 15 çağrının hepsini kullandı (1 plan + 9 bölüm + onarımlar). `report_phrase_repair:I` de aynı nedenle
+başarısız. Yani bütçe sorunu `quick`'e özgü değil: **`standard` da bir raporu bitiremiyor.** Rapor koşusu ya
+kendi bütçesini almalı ya efor bütçeleri rapor için yükseltilmeli.
+
+**Uzunluk çöktü, ama dürüst bir nedenle.** Bölüm kelime sayıları: III 153, IV 71, V 88, VI 17, VII 17, VIII 13,
+IX 35, I 67 (alt sınırlar sırasıyla 244, 313, 244…). Sebebi sansasyonel değil: model iddia yerine
+**`insufficient_evidence`** yazmış — III'te 7, IV'te 4, V'te 2 kayıt, gerekçeleri de doğru ("Sağlanan
+pasajlarda karar değişkenlerinin ne olduğu ele alınmamıştır"). Üç kaynaklı, iki tam metinli bir korpusta yedi
+eksenin çoğu gerçekten boş. Yani kısalık bir hata değil, **kanıtın gerçek sınırı**; DEIXIS uydurmak yerine
+"yok" demiş. Uzunluk hedefi ancak dolu bir korpusla sınanabilir.
+
+**Anlam kayması, kayda geçsin:** P8'den sonra bir bölüm kalıp dışı cümle taşısa da `valid` olabiliyor.
+`valid` artık "her cümle bir kalıba uyuyor" demek değil; "boş değil ve sözleşme denetimlerinden geçti" demek.
+Kalıp durumu `report_phrase_repairs.outcome` ve `validation_json.issues` içinde duruyor. Bu koşuda onarım
+III'te 5 cümleyi `kept` yaptı, 9 cümle `unframed_exception` kaldı.
+
+**Çıktılar:** `.local/p6-p5-2026-09-18/` — `rapor.md` (1. koşu), `rapor-2-...md` (2. koşu),
+`rapor-4-dokuz-bolum.md` (bu koşu).
+
 **Ölçüm yapılmadı:** dilim 0'ın `scripts/p6_eval/measure_fill.py` süre ölçümü bu koşuda halledilmedi; ayrı
 gerçek-model maliyeti olduğu için sahibin ayrı onayını bekliyor.
 

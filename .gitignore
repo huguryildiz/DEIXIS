@@ -15,3 +15,10 @@ apps/web/playwright-report/
 # Private design evidence; do not publish.
 /local-reference/
 /docs/desktop/screenshots/
+
+# Local instruction and planning files.
+/.claude/
+/TODO.md
+/AGENTS.md
+/.impeccable.md
+/CLAUDE.md

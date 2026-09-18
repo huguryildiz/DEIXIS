@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, Check, ChevronDown, ChevronRight, LoaderCircle, Minus, Pause, Sparkles, TriangleAlert } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { ArrowDown, Check, ChevronDown, ChevronRight, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert } from 'lucide-react'
 import type { ResearchView, Run, Verdict } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { connectionName, fetchReasonText, pauseReasonText, providerName, runStatusLabels, stepLabel, verdictLabels } from './labels'
@@ -9,10 +8,11 @@ import { ModelName } from './ModelName'
 import type { ModelText } from './modelText'
 import { t, uiLocale } from './i18n'
 import { scrollBehavior } from './motion'
+import { Button } from '@/components/ui/button'
 
 // The research as a record of work: one node per run on a thin rail, each run one line per phase, details a disclosure deeper.
 // The page's event stream refreshes the view; a one-second clock keeps running durations moving between events.
-// The live run carries a quiet Pause; cancel and resume also sit next to the tabs, so they are reachable from every tab.
+// Pause, resume and cancel sit next to the tabs, so one set of controls serves every tab.
 
 type PhaseKey = 'plan' | 'search' | 'screen' | 'pdf' | 'ocr' | 'semantic' | 'answer' | 'review'
 type PhaseState = 'done' | 'running' | 'attention' | 'waiting' | 'skipped'
@@ -30,6 +30,10 @@ const titles: Record<PhaseKey, [string, string, string]> = {
   answer: ['Writing the answer', 'Wrote the answer', 'Source-linked answer'],
   review: ['Reviewing the claims', 'Reviewed the claims', 'Claim review'],
 }
+// Attached PDFs are already on this computer: the same phase reads them rather than downloading anything.
+const attachedTitles = (n: number): [string, string, string] => n === 1
+  ? ['Reading the attached PDF', 'Read the attached PDF', 'Attached PDF']
+  : ['Reading the attached PDFs', 'Read the attached PDFs', 'Attached PDFs']
 const discoveryHeadings: Record<string, string> = { active: 'Searching and screening', completed: 'Ran search & screening', paused: 'Search & screening paused', failed: 'Search & screening failed', cancelled: 'Search & screening cancelled' }
 const collectionHeadings: Record<string, string> = { active: 'Collecting open-access PDFs', completed: 'Collected open-access PDFs', paused: 'PDF collection paused', failed: 'PDF collection failed', cancelled: 'PDF collection cancelled' }
 const ocrHeadings: Record<string, string> = { active: 'Reading a PDF with OCR', completed: 'Read a PDF with OCR', paused: 'OCR reading paused', failed: 'OCR reading failed', cancelled: 'OCR reading cancelled' }
@@ -77,9 +81,10 @@ function totalTokens(usage: unknown): number | null {
   return typeof total === 'number' ? total : null
 }
 
-type Control = (run: Run, action: 'pause' | 'resume' | 'cancel') => void
-
-export function Transcript({ view, emptyText, latestAnswer, modelText, busy, onControl }: { view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText; busy: boolean; onControl: Control }) {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches }: {
+  view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
+  onRetryFailedSearches?: (run: Run) => Promise<void>
+}) {
   const runs = [...view.runs].reverse()  // the view lists the newest run first
   const active = runs.some(r => ACTIVE.has(r.status))
   const end = useRef<HTMLDivElement>(null)
@@ -100,22 +105,27 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, busy, onC
   // The current question opens the timeline as the user's turn.
   return <>
   <div className="chat-question"><p dir="auto">{view.scope.question}</p></div>
-  <div className="chat">
-    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} busy={busy} onControl={onControl}>
+  <div className={`chat${runs.length ? '' : ' is-empty'}`}>
+    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} onRetryFailedSearches={onRetryFailedSearches}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
-    {!runs.length && <p className="chat-say">{emptyText}</p>}
+    {!runs.length && <div className="chat-say"><Sparkles size={18} strokeWidth={1.6} aria-hidden /><p>{emptyText}</p></div>}
     <div ref={end} className="chat-end" />
     {active && !atEnd && <button type="button" className="chat-jump" onClick={() => end.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'end' })}><ArrowDown size={15} aria-hidden />{t('Jump to latest')}</button>}
   </div>
   </>
 }
 
-function RunTurn({ run, view, now, latest, modelText, busy, onControl, children }: { run: Run; view: ResearchView; now: number; latest: boolean; modelText: ModelText; busy: boolean; onControl: Control; children: ReactNode }) {
+function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, children }: {
+  run: Run; view: ResearchView; now: number; latest: boolean; modelText: ModelText
+  onRetryFailedSearches?: (run: Run) => Promise<void>; children: ReactNode
+}) {
   const active = ACTIVE.has(run.status)
   const [open, setOpen] = useState<boolean | null>(null)
   // Each phase reads as one line; what it found (plan text, concepts, queries, counts) opens under it on request.
   const [openPhases, setOpenPhases] = useState<Partial<Record<PhaseKey, boolean>>>({})
+  // While the run works, the phases it has not reached collapse into one "Next:" line; the full ladder stays one click away.
+  const [allSteps, setAllSteps] = useState(false)
   // A finished run folds away once something follows it; the latest search stays open so its queries can be read.
   const expanded = open ?? (run.status !== 'completed' || (latest && run.kind === 'discovery'))
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
@@ -133,6 +143,8 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
   // complete. Why it failed stays on its query row in the phase details, where the other provider results are.
   const failedProviders = [...new Map(steps.filter(s => s.kind.startsWith('provider_search') && troubled(s))
     .map(s => [s.kind.split(':')[1] ?? '', providerName(s.kind.split(':')[1] ?? '')])).entries()]
+  const retrying = run.kind === 'discovery' && !active && (run.status === 'completed' || run.status === 'paused')
+    && steps.some(s => s.kind.startsWith('provider_search') && troubled(s))
   const runningSearch = groups[order.indexOf('search')]?.find(s => s.status === 'running')
   const plan = run.plan
   // The screening the run itself proposed on, and the sources the answer run reads.
@@ -155,13 +167,16 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
     return active || run.status === 'paused' ? 'waiting' : 'skipped'
   }
 
+  // A research of attached files alone reads PDFs it already has; nothing is downloaded, so the PDF phase says so.
+  const attachedOnly = view.scope.source_scope === 'attached'
+
   const title = (key: PhaseKey, state: PhaseState, group: Step[]) => {
     const finished = searches.filter(s => s.status === 'completed' || s.status === 'zero_results').length
     if ((state === 'done' || state === 'attention') && key === 'search' && finished) return plural(finished, 'Conducted {n} search', 'Conducted {n} searches')
-    if (state === 'done' && key === 'pdf') return plural(group.filter(s => s.status === 'succeeded').length, 'Downloaded {n} open-access PDF', 'Downloaded {n} open-access PDFs')
+    if (state === 'done' && key === 'pdf') return plural(group.filter(s => s.status === 'succeeded').length, attachedOnly ? 'Read {n} attached PDF' : 'Downloaded {n} open-access PDF', attachedOnly ? 'Read {n} attached PDFs' : 'Downloaded {n} open-access PDFs')
     if (state === 'done' && key === 'ocr' && ocrPages) return plural(ocrPages.length, 'Read {n} scanned page with OCR', 'Read {n} scanned pages with OCR')
     if (state === 'done' && key === 'review' && answer?.review?.status === 'completed') return plural(answer.review.reviews.length, 'Reviewed {n} claim', 'Reviewed {n} claims')
-    const [running, done, idle] = titles[key]
+    const [running, done, idle] = key === 'pdf' && attachedOnly ? attachedTitles(included.length) : titles[key]
     return t(state === 'running' ? running : state === 'done' ? done : idle)
   }
 
@@ -169,7 +184,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
     const attempt = Math.max(0, ...group.map(s => s.attempt))
     const attemptText = attempt > 1 && state === 'running' ? t('attempt {n}', { n: attempt }) : ''
     if (state === 'waiting') return t('Waiting')
-    if (state === 'skipped') return t(key === 'pdf' && run.status === 'completed' ? 'No open-access PDF to download' : key === 'semantic' && run.status === 'completed' ? 'Not used' : run.status === 'completed' ? 'Not needed' : 'Not run')
+    if (state === 'skipped') return t(key === 'pdf' && run.status === 'completed' ? (attachedOnly ? 'No attached PDF to read' : 'No open-access PDF to download') : key === 'semantic' && run.status === 'completed' ? 'Not used' : run.status === 'completed' ? 'Not needed' : 'Not run')
     switch (key) {
       case 'plan': {
         if (state !== 'done' || !plan) return attemptText
@@ -196,7 +211,7 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
         const failed = reasons.reduce((sum, [, n]) => sum + n, 0)
         const ok = group.filter(s => s.status === 'succeeded')
         const pages = ok.reduce((sum, s) => sum + (s.output?.page_count ?? 0), 0)
-        const parts = [state === 'running' && group.length ? plural(ok.length, '{n} downloaded', '{n} downloaded') : '',
+        const parts = [state === 'running' && group.length ? plural(ok.length, attachedOnly ? '{n} read' : '{n} downloaded', attachedOnly ? '{n} read' : '{n} downloaded') : '',
           state === 'done' && pages ? t('{pages} pages · {passages} passages', { pages, passages: ok.reduce((sum, s) => sum + (s.output?.passage_count ?? 0), 0) }) : '',
           failed ? t('{n} not downloaded ({reasons})', { n: failed, reasons: reasons.map(([reason, n]) => `${n} ${reason}`).join(', ') }) : '']
         return parts.filter(Boolean).join(' · ')
@@ -350,6 +365,11 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
   const models = order.filter((key, i) => agents[key]?.model && stateOf(i) !== 'skipped').map(key => agents[key]!)
     .filter((agent, i, all) => all.findIndex(a => a.role === agent.role) === i)  // the literature model plans and screens; name it once
     .map(agent => <span key={agent.role} className="chat-run-model">{agent.role && <>{t(agent.role)} · </>}<ModelName connection={agent.connection} text={modelText(agent.model, agent.effort)} /></span>)
+  // Live runs read as one line of work: what the run has not reached, and what it skips, stay out until it is done.
+  const phaseStates = order.map((_, i) => stateOf(i))
+  const idle = (state: PhaseState) => state === 'waiting' || state === 'skipped'
+  const collapsed = active && !allSteps && phaseStates.some(idle)
+  const waitingNext = collapsed ? order.filter((_, i) => phaseStates[i] === 'waiting').map(key => t((key === 'pdf' && attachedOnly ? attachedTitles(included.length) : titles[key])[2]).toLocaleLowerCase(uiLocale())) : []
   return <section className={`chat-turn${active ? ' is-active' : ''}`}>
     <div className="chat-group">
       <button type="button" className="chat-toggle" aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
@@ -360,12 +380,13 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
         <time>{durationText(secondsBetween(started, clock))}</time>
       </button>
       {expanded && <>
-        {latest && active && <div className="chat-run-plan" role="note">
+        {latest && active && !collapsed && <div className="chat-run-plan" role="note">
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />
-          <div><p className="chat-run-plan-title">{run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t('Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
+          <div><p className="chat-run-plan-title">{run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
         </div>}
         <ol className="chat-steps">{order.map((key, i) => {
         const state = stateOf(i)
+        if (collapsed && idle(state)) return null
         const group = groups[i]
         const seconds = phaseSeconds(group, state)
         const text = detail(key, state, group)
@@ -391,6 +412,10 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
             </span>
             <time>{seconds === null ? '' : durationText(seconds)}</time>
           </div>
+          {collapsed && state === 'running' && <div className="chat-step-progress">
+            <span className="chat-step-progress-bar"><span style={{ width: `${Math.round(((i + 0.5) / order.length) * 100)}%` }} /></span>
+            <small>{t('step {n} of {total}', { n: i + 1, total: order.length })}</small>
+          </div>}
           {note && detailsOpen && <div className="chat-step-note">{note}</div>}
           {hasConcepts && detailsOpen && <ul className="chat-list">
             {plan?.concepts.map(c => <li key={c.label}>
@@ -413,15 +438,21 @@ function RunTurn({ run, view, now, latest, modelText, busy, onControl, children 
             </li>}
           </ul>}
         </li>
-        })}</ol>
+        })}
+        {waitingNext.length > 0 && <li className="chat-step is-next">
+          <div className="chat-step-line"><span className="chat-step-icon" aria-hidden /><span className="chat-step-main"><small>{t('Next: {list}', { list: waitingNext.join(', ') })}</small></span></div>
+        </li>}</ol>
         <div className="chat-run-foot">
           {/* What ran this run and what it spent: one quiet line under the phases, not a disclosure. */}
           {run.status !== 'queued' && run.kind !== 'pdf_collection' && run.kind !== 'pdf_ocr' && <p className="chat-run-meta">
             {models.length > 0 && <span className="chat-run-models">{models}</span>}
             <span>{spend}</span>
           </p>}
-          {/* The live run's own quiet control; resume and cancel stay with the tabs, where every tab reaches them. */}
-          {active && run.status !== 'pause_requested' && <Button className="chat-run-pause" variant="ghost" size="sm" disabled={busy} onClick={() => onControl(run, 'pause')}><Pause size={13} />{t('Pause')}</Button>}
+          {/* Pause, resume and cancel ride with the tabs, where every tab reaches them; the foot only opens the full ladder. */}
+          {active && order.length > 1 && <button type="button" className="chat-steps-toggle" onClick={() => setAllSteps(!allSteps)}>{t(allSteps ? 'Show fewer steps' : 'Show every step')}</button>}
+          {retrying && onRetryFailedSearches && <Button variant="outline" size="sm" onClick={() => void onRetryFailedSearches(run)}>
+            <RotateCw size={13} />{t('Retry failed searches')}
+          </Button>}
         </div>
       </>}
     </div>

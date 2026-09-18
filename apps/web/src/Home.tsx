@@ -1,13 +1,13 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Popover } from '@base-ui/react/popover'
-import { ArrowUpRight, BookMarked, Brain, Check, ChevronDown, FileText, FileUp, Gauge, Globe, History, Layers, Library, Paperclip, PenLine, ScanSearch, Search, ShieldCheck, Telescope, X, Zap, type LucideIcon } from 'lucide-react'
+import { ArrowUpRight, BookMarked, Brain, Check, ChevronDown, FileText, FileUp, Gauge, Globe, Layers, Library, Paperclip, PenLine, ScanSearch, Search, ShieldCheck, Telescope, X, Zap, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from './Toast'
-import { api, type Connections, type Effort, type ModelOption, type ModelRole, type ResearchSummary, type RoleModelSetting, type SourceScope, type ZoteroSource } from './api'
-import { connectionName, isPlannedModel, reasoningLabel, runStatusLabels, scopeLabels } from './labels'
+import { api, type Connections, type Effort, type ModelOption, type ModelRole, type RoleModelSetting, type SourceScope, type ZoteroSource } from './api'
+import { connectionName, isPlannedModel, reasoningLabel, scopeLabels } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroPanel } from './ZoteroPanel'
 import { ConnectionIcon } from './connectionIcons'
@@ -177,7 +177,7 @@ export function ModelPicker({ role, icon: Icon, hint, models, value, onChange, e
   </div>
 }
 
-export function Home({ researches, onCreated }: { researches: ResearchSummary[]; onCreated: (id: string) => void }) {
+export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const [question, setQuestion] = useState('')
   const [scope, setScope] = useState<SourceScope>('academic')
   const [effort, setEffort] = useState<Effort>('standard')
@@ -321,6 +321,32 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
   // A chosen model as the summary names it: its connection's icon, then its display name.
   const summaryName = (connection: string | null, name: string) => <span className="models-summary-name">{connection && <ConnectionIcon id={connection} />}{name}</span>
 
+  // Bytes as the file manager shows them, so a large attachment is recognisable before it is uploaded.
+  const fileSize = (bytes: number) => bytes >= 1_000_000 ? t('{n} MB', { n: (bytes / 1_000_000).toFixed(1) }) : t('{n} KB', { n: Math.max(1, Math.round(bytes / 1000)) })
+  // A mixed search reads one PDF into its plan (D63); with several attached, the chips themselves choose it.
+  const seedChoice = scope === 'attached_and_academic' && files.length > 1
+  const chips = <div className="attachments" aria-label={t('PDFs to attach')}>
+    {zotero && <div className="attachment-chip">
+      <span className="attachment-chip-main"><span className="attachment-icon" aria-hidden><ConnectionIcon id="zotero" /></span><span className="attachment-name" title={zotero.name}>{zotero.name}</span><small>Zotero</small></span>
+      <button type="button" className="attachment-remove" aria-label={t('Remove {name}', { name: zotero.name })} onClick={() => setZotero(null)}><X size={13} /></button>
+    </div>}
+    {files.map(file => {
+      const guiding = seedFilename === file.name
+      return <div key={file.name} className={`attachment-chip${seedChoice && guiding ? ' is-seed' : ''}`}>
+        {seedChoice
+          ? <label className="attachment-chip-main">
+              <input type="radio" name="seed-file" aria-label={file.name} checked={guiding} onChange={() => setSeedFilename(file.name)} />
+              <span className="attachment-name" title={file.name}>{file.name}</span><small>{guiding ? t('guides the search') : fileSize(file.size)}</small>
+            </label>
+          : <span className="attachment-chip-main">
+              <span className="attachment-icon" aria-hidden><FileText size={13} /></span>
+              <span className="attachment-name" title={file.name}>{file.name}</span><small>{fileSize(file.size)}</small>
+            </span>}
+        <button type="button" className="attachment-remove" aria-label={t('Remove {name}', { name: file.name })} onClick={() => setFiles(old => old.filter(f => f.name !== file.name))}><X size={13} /></button>
+      </div>
+    })}
+  </div>
+
   return <section className="welcome">
     <h1>{uiLanguage() === 'tr' ? <><em>Sorunuz</em> sizi nereye götürüyor?</> : <>Where does your <em>question</em>{' '}lead?</>}</h1>
     <p className="intro">{t('Ask a question. DEIXIS finds publications, lets you choose the sources, and links each claim to a passage you can open.')}</p>
@@ -330,13 +356,11 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
         onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit() } }} />
       {zoteroOpen && <ZoteroPanel busy={busy} action={t('Use this collection')} onClose={() => setZoteroOpen(false)}
         onImport={(source, key, name) => { setZotero({ source, key, name }); setZoteroOpen(false); if (scope === 'academic') setScope('attached_and_academic') }} />}
-      {(files.length > 0 || zotero) && <div className="attachments" aria-label={t('PDFs to attach')}>
-        {zotero && <div className="attachment-chip"><button type="button" title={zotero.name}><ConnectionIcon id="zotero" /><span>{zotero.name}</span><small>Zotero</small></button><button type="button" aria-label={t('Remove {name}', { name: zotero.name })} onClick={() => setZotero(null)}><X size={13} /></button></div>}{files.map(file => <div className="attachment-chip" key={file.name}><button type="button" title={file.name}><FileText size={13} /><span>{file.name}</span><small>PDF</small></button><button type="button" aria-label={t('Remove {name}', { name: file.name })} onClick={() => setFiles(old => old.filter(f => f.name !== file.name))}><X size={13} /></button></div>)}</div>}
-      {scope === 'attached_and_academic' && files.length > 1 && <fieldset className="seed-file-choice">
-        <legend>{t('PDF guiding the search')}</legend>
-        {files.map(file => <label key={file.name}><input type="radio" name="seed-file" checked={seedFilename === file.name}
-          onChange={() => setSeedFilename(file.name)} /><span>{file.name}</span></label>)}
-      </fieldset>}
+      {/* One chip per attachment: the file icon, its name, and its size. When a mixed search needs a guiding PDF, the same
+          chips carry the choice, so the files are not listed a second time under them. */}
+      {(files.length > 0 || zotero) && (seedChoice
+        ? <fieldset className="attachments-choice"><legend>{t('PDF guiding the search')}</legend>{chips}</fieldset>
+        : chips)}
       {scope === 'attached_and_academic' && files.length === 0 && zotero &&
         <p className="composer-hint">{t('After import, choose a readable PDF on the research page before searching.')}</p>}
       <div className="composer-controls">
@@ -395,12 +419,5 @@ export function Home({ researches, onCreated }: { researches: ResearchSummary[];
     <div className="composer-caption"><span>{busy ? t('Saving research…') : caption}</span><span>⌘ / Ctrl + Enter</span></div>
     {connections && !models.length && <Notice tone="attention">{t('No model connection is ready: {reason}. A research needs a model that a connection lists; model steps pause until the chosen connection is ready, and no other model is used instead.', { reason: notReadyReasons(connections) })}</Notice>}
     {error && <Notice tone="error">{error}</Notice>}
-    <div className="resume-section">
-      <div className="resume-heading"><h2>{t('Pick up where you left off')}</h2><span>{t('Saved on this computer')}</span></div>
-      <div className="resume-list">
-        {researches.slice(0, 5).map(r => <button key={r.id} onClick={() => onCreated(r.id)}><History size={18} /><span><strong>{r.question}</strong><small>{t(scopeLabels[r.source_scope])} · {t(r.last_run_status ? runStatusLabels[r.last_run_status] : 'No run yet')} · {t(r.answer_count === 1 ? '{n} answer' : '{n} answers', { n: r.answer_count })}</small></span><ArrowUpRight size={16} /></button>)}
-        {!researches.length && <p className="empty-inline">{t('No saved research yet.')}</p>}
-      </div>
-    </div>
   </section>
 }

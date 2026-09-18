@@ -90,6 +90,8 @@ export default function App() {
   const [language, setLanguage] = useState<UiLanguage>(uiLanguage)
   const toast = useToast()
   const dark = theme === 'dark' || (theme === 'system' && systemDark)
+  // Which researches exist right now; views with their own data (the Library) reload when this changes.
+  const researchKey = researches.map(r => r.id).join(',')
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -258,9 +260,9 @@ export default function App() {
           <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label={t(dark ? 'Use light theme' : 'Use dark theme')}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button></div>
       </header>
       <main>
-        {route.view === 'home' && <Home researches={researches} onCreated={id => { refreshList(); go({ view: 'research', id }) }} />}
+        {route.view === 'home' && <Home onCreated={id => { refreshList(); go({ view: 'research', id }) }} />}
         {route.view === 'research' && <ResearchPage key={`${route.id}/${route.tab ?? ''}`} id={route.id} initialTab={route.tab} dark={dark} onChanged={refreshList} />}
-        {route.view === 'library' && <LibraryPage onOpenResearch={id => go({ view: 'research', id })} />}
+        {route.view === 'library' && <LibraryPage dark={dark} researchKey={researchKey} onChanged={refreshList} onOpenResearch={id => go({ view: 'research', id })} />}
         {route.view === 'settings' && <SettingsPage key={route.tab ?? 'defaults'} dark={dark} tab={route.tab ?? 'defaults'} onTab={tab => go({ view: 'settings', tab: tab === 'connections' ? 'connections' : undefined })} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
       </main>

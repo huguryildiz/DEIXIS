@@ -181,10 +181,19 @@ yoksa cümle sade kalır). `provenance.json`'ın eskimiş "yalnız grounded_answ
 | IV | draft, 130, 2 | draft, 135, **1** |
 | V | draft, 161, 5 | draft, 105, **1** |
 
-**Bayrak sayısı 11 → 2.** Daha önemlisi, kalan iki bayrak artık kıl payı: cümleler kalıp diliyle yazılmış,
-yalnız kalıbın bir sabit sözcüğü eksik ("… ele almaktadır" vs. kalıptaki "sorusunu ele almaktadır"), ve
-`nearest_frames` bu sefer **işe yarar** kalıplar döndürüyor. Yani P8'in onarım çağrısı artık anlamlı ve küçük
-bir iş. Koşu yine de duruyor: tek bayraklı cümle bölümü `valid` olmaktan çıkarıyor.
+**DÜZELTME (aynı gün, commit'ten sonra fark edildi): bu karşılaştırma nedensel değil.** İki koşunun saklı
+`skill_package_hash`'i de `sha256:bf1db174…`, yani **ikisi de eski talimatla koşuldu**. 8799'daki sunucu
+yöntem paketini açılışta (01:59) bir kez yüklüyor; `report.md` düzeltmesi 03:02'de geldi, sunucu yeniden
+başlatılmadı, dolayısıyla 03:44 koşusu sıkılaştırılmış talimatı hiç görmedi. Bugünkü paket hash'i
+`sha256:1a3b2ed1…`.
+
+Buradan iki şey çıkıyor. Birincisi, **talimat sıkılaştırmasının etkisi hâlâ ölçülmemiştir.** İkincisi, ve daha
+önemlisi: aynı model, aynı girdi ve aynı talimatla iki koşuda **11 ve 2 bayrak** üretti. Yani bu görevdeki
+koşudan koşuya değişkenlik, ölçmeye çalıştığımız etkiden büyük olabilir; tek koşuluk karşılaştırmalara
+dayanarak talimat değişikliğine puan vermek yanlış. Ders: yöntem paketi değiştikten sonra **sunucuyu yeniden
+başlat**, ve saklı `skill_package_hash`'i koşudan önce doğrula.
+
+**Bayrak sayısı ölçülen hâliyle 11 → 2, ama nedeni bilinmiyor.**
 
 **Kalan açık konu — uzunluk.** Yazılan bölümler bütçenin alt sınırının çok altında: III 143 (en az 244),
 IV 135 (313), V 105 (244). `plan.section_budgets` varsayılanı 5500 kelime ve on kaynaktan az dahil edildiyse

@@ -4,8 +4,8 @@ Discovery: search plan (model) → compiled provider queries → provider search
 Answer: fetch accessible PDFs for included sources → text retrieval → grounded answer (model)
 → claim review (reviewer model, when one is set).
 The literature model runs the search plan and screening; the research model writes the answer.
-Completed steps are skipped on resume. A connection or provider failure pauses the
-run with its reason; nothing is silently substituted. A review failure is recorded
+Completed steps are skipped on resume. A connection or provider failure is recorded
+with its reason; discovery continues when another provider search succeeds, and nothing is silently substituted. A review failure is recorded
 on the review and does not pause the run: the answer never depends on its review.
 """
 
@@ -247,7 +247,9 @@ class ResearchFlow:
         def searched() -> bool:
             return any(s["kind"].startswith("provider_search") and s["status"] == "succeeded" for s in self.store.run_steps(run_id))
 
-        retry_failed = not searched()
+        # A deliberate retry action reuses the stored plan and retries only failed provider searches. A normal resume
+        # retries failures only when the whole search stage had no successful query (D18).
+        retry_failed = bool(run["budget"].get("retry_failed_searches_only")) or not searched()
         failure = None
         for index, query in enumerate(queries):
             self._checkpoint(run_id, revision)
@@ -344,7 +346,8 @@ class ResearchFlow:
         if step["status"] == "succeeded" or (step["status"] in ("failed", "outcome_unknown") and not retry_failed):
             return None
         # Bounded network and rate-limit retries are requests too and count against the same allowance.
-        allowance = run["budget"]["max_provider_requests"] + MAX_TRANSIENT_NETWORK_RETRIES + MAX_RATE_LIMIT_RETRIES
+        allowance = (run["budget"]["max_provider_requests"] + run["budget"].get("retry_provider_requests", 0)
+                     + MAX_TRANSIENT_NETWORK_RETRIES + MAX_RATE_LIMIT_RETRIES)
         if self.store.run(run_id)["usage"].get("provider_requests", 0) >= allowance:
             self._pause(run_id, "budget_exhausted", {"limit": "provider_requests"})
         self.store.start_step(step["id"])

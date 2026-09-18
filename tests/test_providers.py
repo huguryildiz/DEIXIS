@@ -98,6 +98,7 @@ def no_waits(monkeypatch):
         sleeps.append(seconds)
 
     monkeypatch.setattr(common.asyncio, "sleep", instant)
+    monkeypatch.setattr(common.SEMANTIC_SCHOLAR_PACER, "interval_seconds", 0.0)
     monkeypatch.setattr(arxiv, "MIN_INTERVAL_SECONDS", 0.0)
     return sleeps
 
@@ -285,7 +286,13 @@ def test_short_rate_limit_is_retried_and_counted(provider, no_waits):
         return ok_response(provider, request=request)
     outcome, seen = run(provider, handler, key=key_for(provider))
     assert (outcome.status, outcome.retries, len(seen)) == ("completed", 2, 4 if provider == "pubmed" else 3)
-    assert no_waits[-2:] == [15.0 if provider == "semantic_scholar" else 3.0, 2.0]
+    assert no_waits[-2:] == [15.0 if provider in ("semantic_scholar", "arxiv") else 3.0, 2.0]
+
+
+def test_arxiv_rate_limit_without_retry_after_uses_bounded_15_and_30_second_backoff(no_waits):
+    outcome, seen = run("arxiv", lambda r: httpx.Response(429))
+    assert (outcome.status, outcome.retries, len(seen)) == ("rate_limited", 2, 3)
+    assert no_waits[-2:] == [15.0, 30.0]
 
 
 @pytest.mark.parametrize("provider", ALL)

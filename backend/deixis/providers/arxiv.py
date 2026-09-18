@@ -24,6 +24,8 @@ QUERY_URL = "https://export.arxiv.org/api/query"
 ABSTRACT_ORIGIN = "provider_arxiv_summary"
 MAX_RESULTS = 100
 MIN_INTERVAL_SECONDS = 3.0
+UNSTATED_RATE_LIMIT_WAIT = 15.0  # the second bounded retry waits 30 s when Retry-After is absent
+MAX_RATE_LIMIT_WAIT = 30.0  # do not block a run for an unbounded provider-supplied delay
 NS = {"a": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom",
       "opensearch": "http://a9.com/-/spec/opensearch/1.1/"}
 
@@ -75,7 +77,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         wait = MIN_INTERVAL_SECONDS - (time.monotonic() - _last_request)
         if wait > 0:
             await asyncio.sleep(wait)
-        response, outcome = await send(client, QUERY_URL, params, {}, description, "keyless")
+        response, outcome = await send(client, QUERY_URL, params, {}, description, "keyless",
+                                       unstated_wait=UNSTATED_RATE_LIMIT_WAIT, max_retry_wait=MAX_RATE_LIMIT_WAIT)
         _last_request = time.monotonic()
     if response is None:
         return outcome

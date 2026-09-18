@@ -10,8 +10,11 @@ import asyncio
 import re
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
+
+from deixis.providers.pacing import SEMANTIC_SCHOLAR_PACER
 
 MAX_RATE_LIMIT_RETRIES = 2
 MAX_RETRY_WAIT_SECONDS = 10.0  # a longer provider wait pauses the run instead of blocking it
@@ -90,18 +93,24 @@ def year_of(value: Any) -> int | None:
 
 async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], headers: dict[str, str], description: str,
                access_mode: str, rate_headers: tuple[str, ...] = (), secrets: tuple[str | None, ...] = (),
-               timeout: float = 30.0, retry_rate_limit: bool = True, unstated_wait: float = 3.0) -> tuple[httpx.Response | None, SearchOutcome]:
+               timeout: float = 30.0, retry_rate_limit: bool = True, unstated_wait: float = 3.0,
+               max_retry_wait: float = MAX_RETRY_WAIT_SECONDS) -> tuple[httpx.Response | None, SearchOutcome]:
     """One GET with bounded retries on 429. Returns the 200 response, or None with the classified failure outcome.
 
     A 429 is retried at most MAX_RATE_LIMIT_RETRIES times when the provider's wait is short or unstated (then
-    `unstated_wait` seconds times the retry number); each retry is a
+    `unstated_wait` seconds times the retry number, bounded by `max_retry_wait`); each retry is a
     separate request and is counted by the caller through `outcome.retries`. Another 4xx means the provider rejected the
     request; a 5xx leaves it unknown whether the request was processed.
     """
     retries = 0
     while True:
         try:
-            response = await client.get(url, params=params, headers=headers, timeout=timeout)
+            if urlsplit(url).hostname == "api.semanticscholar.org":
+                response = await SEMANTIC_SCHOLAR_PACER.run(
+                    lambda: client.get(url, params=params, headers=headers, timeout=timeout)
+                )
+            else:
+                response = await client.get(url, params=params, headers=headers, timeout=timeout)
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             return None, SearchOutcome("failed", "before_send", description, access_mode, error=type(exc).__name__, retries=retries)
         except httpx.TimeoutException as exc:
@@ -112,7 +121,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
         base = dict(request_description=description, access_mode=access_mode, http_status=response.status_code, rate_limit=rate,
                     retries=retries)
         if response.status_code == 429:
-            wait = _retry_wait(response.headers.get("retry-after"), retries, unstated_wait)
+            wait = _retry_wait(response.headers.get("retry-after"), retries, unstated_wait, max_retry_wait)
             if retry_rate_limit and retries < MAX_RATE_LIMIT_RETRIES and wait is not None:
                 retries += 1
                 await asyncio.sleep(wait)
@@ -128,11 +137,12 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
         return response, SearchOutcome("completed", None, **base)
 
 
-def _retry_wait(retry_after: str | None, retries: int, unstated_wait: float) -> float | None:
+def _retry_wait(retry_after: str | None, retries: int, unstated_wait: float,
+                max_retry_wait: float = MAX_RETRY_WAIT_SECONDS) -> float | None:
     if retry_after is None:
         return unstated_wait * (retries + 1)
     try:
         wait = float(retry_after)
     except ValueError:
         return None
-    return wait if wait <= MAX_RETRY_WAIT_SECONDS else None
+    return wait if wait <= max_retry_wait else None

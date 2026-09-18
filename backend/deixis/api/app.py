@@ -790,13 +790,16 @@ def create_app(
         return run
 
     @app.post("/api/runs/{run_id}/{action}")
-    async def control_run(run_id: str, action: Literal["pause", "resume", "cancel"], request: Request) -> dict[str, Any]:
+    async def control_run(run_id: str, action: Literal["pause", "resume", "cancel", "retry_failed"], request: Request) -> dict[str, Any]:
         store = store_of(request)
         run = store.run(run_id)
         store.research(run["research_id"])
         status = run["status"]
         worker = request.app.state.worker
-        if action == "pause" and status in ("queued", "running"):
+        if action == "retry_failed":
+            run = store.queue_failed_search_retry(run_id)
+            worker.wake()
+        elif action == "pause" and status in ("queued", "running"):
             new = "paused" if status == "queued" else "pause_requested"
             run = store.update_run(run_id, event="run_pause_requested", status=new, pause_reason="user_requested")
         elif action == "resume" and status == "paused":

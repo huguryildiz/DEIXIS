@@ -40,7 +40,7 @@ async def no_fetch(url):
     return FetchResult("http_error", final_url=url, http_status=404)
 
 
-def discover(tmp_path, monkeypatch, handler, adapter, before_resume=None):
+def discover(tmp_path, monkeypatch, handler, adapter, before_resume=None, retry_failed=False):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
@@ -57,6 +57,10 @@ def discover(tmp_path, monkeypatch, handler, adapter, before_resume=None):
         if before_resume and run["status"] == "paused":
             before_resume(app.state.store, run_id)
             client.post(f"/api/runs/{run_id}/resume")
+            view, run = wait(client, rid, run_id)
+        if retry_failed:
+            response = client.post(f"/api/runs/{run_id}/retry_failed")
+            assert response.status_code == 200, response.text
             view, run = wait(client, rid, run_id)
     return view, run
 
@@ -96,6 +100,23 @@ def test_a_failed_provider_search_is_kept_and_the_other_searches_go_on(tmp_path,
     assert [(s["provider"], s["status"]) for s in view["search_runs"]] == [("openalex", "completed"), ("crossref", "rate_limited")]
     assert [s["status"] for s in run["steps"] if s["operation_key"].startswith("search:")] == ["succeeded", "failed"]
     assert view["counts"]["unique"] == 1 and any(s["operation_key"] == "screening" for s in run["steps"])
+
+
+def test_failed_provider_searches_can_be_retried_without_repeating_the_plan(tmp_path, monkeypatch):
+    attempts = {"crossref": 0}
+
+    def crossref_once(request):
+        if request.url.host == "api.crossref.org":
+            attempts["crossref"] += 1
+            if attempts["crossref"] == 1:
+                return httpx.Response(429, headers={"retry-after": "60"})
+        return routed(request)
+
+    adapter = FakeAdapter(two_provider_plan)
+    view, run = discover(tmp_path, monkeypatch, crossref_once, adapter, retry_failed=True)
+    assert run["status"] == "completed", run
+    assert [s["status"] for s in view["search_runs"]] == ["completed", "rate_limited", "completed"]
+    assert [c["task_type"] for c in adapter.calls].count("search_plan") == 1
 
 
 def test_compiled_queries_are_stored_with_the_plan_and_a_resumed_run_searches_them_again(tmp_path, monkeypatch):

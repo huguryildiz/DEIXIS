@@ -2,6 +2,26 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D67 — Pace Semantic Scholar requests across endpoints
+
+**Status:** accepted; implemented. **Date:** 2026-09-18.
+
+**Context:** Semantic Scholar states that its introductory API-key limit is [one request per second across all endpoints](https://www.semanticscholar.org/product/api). The previous citation-graph pilot used standalone calls and saw HTTP 429; keyed follow-up calls spaced by much more than one second still saw HTTP 429, so pacing is necessary API compliance but not a demonstrated cure for that failure.
+
+**Decision:** Every product request to `api.semanticscholar.org` through the shared provider `send` path uses one process-wide serial gate, for search and any later citation/reference endpoint. The gate waits at least 2 seconds after the preceding attempt finishes before starting another, including 429 retry attempts. It applies to keyed and keyless calls, does not alter other providers, and leaves a persistent 429 visible as `rate_limited`; it does not substitute providers or treat the failure as zero results.
+
+**Evidence and limits:** Synthetic concurrent-client tests check that two Semantic Scholar endpoints cannot overlap, their starts are spaced, and a 429 retry uses the same gate; the provider matrix remains passing. The gate coordinates this DEIXIS process, not independent processes or external tools sharing the same API key. A live probe on 2026-09-18 with the configured key put six searches through at each of three intervals: 1.05 s returned one HTTP 200, 2 s returned four, 5 s also four; a request with a bogus key and a keyless request in the same minute were both throttled while the keyed request succeeded, so the key is honored and the account is not blocked. Two seconds reduces the failure rate but does not eliminate it, and the live service was not restarted for this change.
+
+## D66 — Bound arXiv rate-limit retries and retry failed searches without changing providers
+
+**Status:** accepted; implemented. **Date:** 2026-09-18.
+
+**Context:** arXiv returned `HTTP 429 (Rate exceeded)` and later read timeouts during discovery. A provider failure must not erase successful searches or be represented as zero results, but a completed discovery run also needs a way to retry only the searches that did not complete.
+
+**Decision:** The arXiv adapter respects numeric `Retry-After` values up to 30 seconds and, when the header is absent, uses at most two bounded waits of 15 and 30 seconds. A failed provider search remains recorded and discovery continues when another search succeeds; no other provider is substituted. A completed or paused discovery run with failed provider searches exposes `retry_failed`, which reuses the stored search plan, retries only failed provider-search steps, and adds a bounded request allowance for those retries. The action is refused while another run of the research is active or when no failed provider search remains.
+
+**Evidence and limits:** `tests/test_providers.py` covers the arXiv 15/30 backoff and shared `Retry-After` handling. `tests/test_provider_flow.py` covers continuation after a provider failure, retrying the failed search, and not repeating the search-plan model call. Web build and lint were run after implementation; live arXiv behavior was not re-probed in this change. Numeric `Retry-After` dates are not parsed, and repeated provider failure still remains visible as an incomplete search rather than being hidden.
+
 ## D64 — Add an opt-in compact OpenAlex query strategy; retain the measured deep core search
 
 **Status:** accepted as an opt-in diagnostic, not the default. **Date:** 2026-09-17.

@@ -2,9 +2,10 @@
 
 import asyncio
 
+import pytest
 from fastapi.testclient import TestClient
 
-from deixis.workflow.report.sections import run_report
+from deixis.workflow.report.sections import ROUNDS, run_report
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.views import report_view, research_view
 from helpers import make_pdf
@@ -63,10 +64,11 @@ def test_start_report_refuses_a_table_without_columns_and_creates_nothing(tmp_pa
         assert raw.app.state.store.conn.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 0
 
 
-def test_start_report_returns_an_idempotent_run_with_both_target_ids(tmp_path):
+@pytest.mark.parametrize("effort", ["quick", "standard"])
+def test_start_report_returns_an_idempotent_run_with_both_target_ids(tmp_path, effort):
     with TestClient(app_for(tmp_path, ReportAdapter())) as raw:
         client = session(raw)
-        research_id = create(client, source_scope="attached", effort="standard")
+        research_id = create(client, source_scope="attached", effort=effort)
         upload_and_include(client, research_id)
         table = create_table(client, research_id, with_columns=True)
         fill_table(client, research_id, table)
@@ -78,6 +80,8 @@ def test_start_report_returns_an_idempotent_run_with_both_target_ids(tmp_path):
         assert started.status_code == 202, started.text
         assert replay.status_code == 202, replay.text
         assert replay.json()["id"] == started.json()["id"]
+        assert started.json()["budget"]["max_model_calls"] == 1 + 2 * sum(map(len, ROUNDS)) + 1
+        assert started.json()["budget"]["max_provider_requests"] == 0
         assert started.json()["target"] == {
             "table_id": table["table"]["id"],
             "report_id": started.json()["target"]["report_id"],
@@ -102,7 +106,7 @@ def test_start_report_returns_an_idempotent_run_with_both_target_ids(tmp_path):
 def test_report_run_completes_with_fake_adapter_and_produces_a_valid_report(tmp_path):
     with TestClient(app_for(tmp_path, ReportAdapter())) as raw:
         client = session(raw)
-        research_id = create(client, source_scope="attached", effort="standard")
+        research_id = create(client, source_scope="attached", effort="quick")
         upload_and_include(client, research_id)
         table = create_table(client, research_id, with_columns=True)
         fill_table(client, research_id, table)
@@ -117,6 +121,7 @@ def test_report_run_completes_with_fake_adapter_and_produces_a_valid_report(tmp_
         assert started.status_code == 202, started.text
         _, report_run = wait_run(client, research_id, started.json()["id"])
         assert report_run["status"] == "completed"
+        assert report_run["pause_reason"] is None
 
         report_id = started.json()["target"]["report_id"]
         response = client.get(f"{url}/{report_id}")

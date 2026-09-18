@@ -23,6 +23,7 @@ class ReportStore:
     def request_report(self, research_id: str, table_id: str,
                        idempotency_key: str | None) -> dict[str, Any]:
         """Queue a report run over one evidence table, refusing a table that is not ready."""
+        from deixis.workflow.report.sections import ROUNDS
         from deixis.workflow.tables import report_ready
 
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
@@ -40,7 +41,13 @@ class ReportStore:
             if not self.store.included_sources(research_id) or not readiness["ready"]:
                 raise RevisionConflict("Include sources and fill every active evidence-table column before starting a report")
 
-            budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
+            section_count = sum(map(len, ROUNDS))
+            # Plan + model-written sections + one phrase repair per section + optional research title.
+            max_model_calls = 1 + section_count + section_count + 1
+            budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__ | {
+                "max_model_calls": max_model_calls,
+                "max_provider_requests": 0,
+            }
             run = self.store.create_run(research_id, "report", budget, key, {"table_id": table_id})
             report_id = self.create_report(
                 research_id, run["id"], run["scope_revision"], scope["language_hint"],

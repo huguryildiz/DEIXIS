@@ -262,7 +262,7 @@ export default function App() {
       <main>
         {route.view === 'home' && <Home onCreated={id => { refreshList(); go({ view: 'research', id }) }} />}
         {route.view === 'research' && <ResearchPage key={`${route.id}/${route.tab ?? ''}`} id={route.id} initialTab={route.tab} dark={dark} onChanged={refreshList} />}
-        {route.view === 'library' && <LibraryPage dark={dark} researchKey={researchKey} onChanged={refreshList} onOpenResearch={id => go({ view: 'research', id })} />}
+        {route.view === 'library' && <LibraryPage dark={dark} researchKey={researchKey} onChanged={refreshList} onOpenResearch={id => go({ view: 'research', id })} onStartResearch={() => go({ view: 'home' })} />}
         {route.view === 'settings' && <SettingsPage key={route.tab ?? 'defaults'} dark={dark} tab={route.tab ?? 'defaults'} onTab={tab => go({ view: 'settings', tab: tab === 'connections' ? 'connections' : undefined })} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
       </main>

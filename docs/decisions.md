@@ -2,6 +2,16 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D69 — Show the Library as project bands of record rows, not a fixed table
+
+**Status:** accepted; implemented. **Date:** 2026-09-19.
+
+**Context:** The Library was a fixed-layout table (minimum 900px) with a sticky column header, a project column, per-band pagers and a work-details pane. It answered "what do I hold" as a spreadsheet and pushed the two things the owner reads first — the work's title and how deeply DEIXIS holds it — into a column among ten. The owner asked for a premium, user-friendly Library, and an interactive mockup was approved before any product code changed.
+
+**Decision:** The Library is one page of project bands, each band a sticky head (select-all checkbox, fold caret, title, drop note, band facts, `Open research` and an overflow menu on hover or focus) over record rows. A row is a record, not a table line: source key, then the work's title in the editorial serif, then the byline on the interface sans with the venue italic only, then the reading-depth `.ref-pill`, the stored versions, the date added and the provider's citation count with the date it was read. Above the list, the page states what it holds: a reading-depth rail of three counts, a coverage bar whose widths follow each depth's share, and one command row (search, sort, reading-depth filter, grouping, density). Every stored field the table exposed is still shown; the collapse is of columns into a row, not of data. Selection, drag-to-project, both grouping modes, the pager, the fold, the persisted sort/size/density preferences and every `api.*` call are preserved.
+
+**Limits:** The design was ported from an approved mockup in one change, so it has been verified only against synthetic records and a scripted model (`npm run build`, `npm run lint`, the Playwright suite and a rendered check) — not against a large real library, where band-level and row-level virtualisation may be needed. The table header's sort cycling, per-band paging and the work-details pane (`{n} pages`, `Read the PDF`) are gone; sorting moved to the command row's menu, and a work's pages open in the source sheet that a row title already opens. Drag-and-drop is HTML5 drag, so it is not offered on touch pointers, where no grip is shown. The venue italic switch is a Library-only type exception (`.impeccable.md` §2.2), not a change to the source sheet or the evidence table.
+
 ## D67 — Pace Semantic Scholar requests across endpoints
 
 **Status:** accepted; implemented. **Date:** 2026-09-18.

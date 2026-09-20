@@ -5,7 +5,7 @@ Repo: `/Users/huguryildiz/Documents/GitHub/DEIXIS`. This is slice 04c of the sea
 ## Ground rules
 
 1. Git: start with `git pull --ff-only`. After that, read-only until the slice is finished. When every task is done and the full test run is green except the one known failure, run `git pull --ff-only` again, then make ONE commit and `git push origin main`. No branch, no PR, no AI attribution, no co-author. Never stash, reset, rebase or check out files. If the slice is not finished, commit nothing: leave the tree passing and write what remains into row 04c of `sw-status.md`.
-2. **Slice 04d may be in progress in another session.** It works in `flow.py` around `_vocabulary`, in `protocol.py` on the vocabulary term fields, and in the contracts and the method package. Keep to the three places in `flow.py` that the slice file's touch map names; do not edit `_vocabulary`, `_count_probe`, `_searchable`, `_model_step` or `_step_input`, and do not reformat or reorder anything in `flow.py`. If the second pull brings 04d's commit and it conflicts, resolve by hand keeping both changes, rerun the full tests, and say so in the final message. If files you did not touch show as modified in the working tree, another session is writing here: stop and report.
+2. **Slice 04d is committed (`d42beda`, D74) and its full review is pending**, so a review session may push a fix to `flow.py` around `_vocabulary` / `_vocabulary_labels` or to `protocol.py`'s vocabulary term fields while you work. Keep to the three places in `flow.py` that the slice file's touch map names; do not edit `_vocabulary`, `_vocabulary_labels`, `_count_probe`, `_searchable`, `_model_step` or `_step_input`, and do not reformat or reorder anything in `flow.py`. If the second pull brings a commit that conflicts, resolve by hand keeping both changes, rerun the full tests, and say so in the final message. If files you did not touch show as modified in the working tree, another session is writing here: stop and report.
 3. **Do not touch** `apps/web/`, `contracts/research/`, `methods/deixis-research/`, `backend/deixis/workflow/links.py`, or any existing migration file.
 4. **The `legacy` workflow must behave exactly as before.** A provider search called without `cursor` sends the same request and the same `request_description` as today; `results_per_query`, `max_provider_requests` and `core_depth` keep their meaning; a legacy run opens no `:page:` step and its `search_runs` rows hold NULL in the new columns. No existing test expectation may change. If an existing test fails, the change is wrong or the slice file is; stop and report.
 5. **Leave the screening cut alone.** `[: budget["max_candidates"]]` in `_discovery` stays. Removing it for `sw` is slice 09.
@@ -23,7 +23,7 @@ Repo: `/Users/huguryildiz/Documents/GitHub/DEIXIS`. This is slice 04c of the sea
 - `docs/product/sw-status.md`, then `docs/product/sw-implementation-plan.md` §2 and the slice 04c entry.
 - `docs/product/sw-slice04c-paging-and-read-budget.md` — whole file.
 - `docs/product/search-workflow-review-2026-09-18.md` — SW7 Context (the 1,369-record first round) and SW2 point 3.
-- `docs/decisions.md` — D18, D73, D70, D13.
+- `docs/decisions.md` — D18, D73, D74, D70, D13.
 - Code, before editing:
   - `backend/deixis/workflow/flow.py`: `_discovery` (the search loop, `searched()`, `retry_failed`, the `max_candidates` cut) and `_search` (whole).
   - `backend/deixis/providers/common.py` (`SearchOutcome`, `send`, `redact`), `providers/registry.py`, and the search function of every provider module: `openalex.py`, `biorxiv.py`, `crossref.py`, `semantic_scholar.py`, `arxiv.py`, `pubmed.py`, `ieee_xplore.py`, `scopus.py`, `core.py`, `serpapi.py`; `providers/pacing.py`.
@@ -42,7 +42,7 @@ Tasks 1–6 of the slice file, in that order.
 
 ## Procedure
 
-1. `git pull --ff-only`, then `git status --short` (expect a clean tree), `ls backend/deixis/storage/migrations | tail -1` and `grep -n '^## D' docs/decisions.md | head -1`. The slice file was written at `0040` and D73; use the next free numbers and say which.
+1. `git pull --ff-only`, then `git status --short` (expect a clean tree), `ls backend/deixis/storage/migrations | tail -1` and `grep -n '^## D' docs/decisions.md | head -1`. Expect `0040_scope_key_terms.sql` and D74; this slice takes `0041` and D75. If either differs, use the next free number and say so.
 2. Baseline: `PYTHONPATH=backend:. uv run pytest -q 2>&1 | tail -3`. Record the numbers; the one expected failure is `tests/test_documents.py::test_extraction_is_stopped_when_it_exceeds_the_memory_limit`, known on this machine and unrelated.
 3. Set `sw-status.md` row 04c to `uygulanıyor`.
 4. For each task: failing tests first, see them fail, implement, run them.
@@ -62,5 +62,5 @@ If the session is running long and the work will not finish with tests green, st
 - Every point where the slice file could not be followed as written, and every deviation you chose, with its reason.
 - What you did NOT do.
 - Which evidence boundaries were touched (expected: none; the candidate pool grows, and the content of `search_runs` and of the protocol body changes).
-- Whether the pull brought slice 04d and whether anything conflicted.
+- Whether the second pull brought a commit and whether anything conflicted.
 - Confirmation that the live service was not touched, and the commit hash.

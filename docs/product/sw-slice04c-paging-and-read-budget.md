@@ -2,7 +2,7 @@
 
 **Tarih:** 21 Eylül 2026. **Durum:** yazıldı, uygulanmadı. **Ana dosya:** [sw-status.md](sw-status.md). **Ana plan:** [sw-implementation-plan.md](sw-implementation-plan.md) (§2 kuralları geçerlidir; özellikle §2.4, §2.5, §2.7). **Spec:** [search-workflow-review-2026-09-18.md](search-workflow-review-2026-09-18.md): SW7 bağlamı (ilk tur havuzu 1.369 kayıt), SW2 madde 3. **Önkoşul:** dilim 04a (D73) kapandı. **Tür:** Kur. Okuma sınırı elle seçilmiştir; ölçümü dilim 24'tedir.
 
-**Paralel çalışma:** dilim 04d aynı anda uygulanıyor olabilir ve `flow.py`'de `_vocabulary` çevresine, `protocol.py`'de terim alanlarına dokunur. Bu dilim `flow.py`'de yalnızca üç yere dokunur (aşağıda "Dokunma haritası"); `_vocabulary`, `_count_probe`, `_searchable`, `_model_step` ve `_step_input`'a dokunmaz. Başlamadan önce ve commit'ten hemen önce `git pull --ff-only` yapılır.
+**Dilim 04d:** uygulandı (`d42beda`, D74), tam incelemesi bekliyor; `flow.py`'de `_vocabulary` ve yeni `_vocabulary_labels` çevresine, `protocol.py`'de terim alanlarına dokundu. İnceleme sohbeti aynı yerlere düzeltme commit'i atabilir. Bu dilim `flow.py`'de yalnızca üç yere dokunur (aşağıda "Dokunma haritası"); `_vocabulary`, `_vocabulary_labels`, `_count_probe`, `_searchable`, `_model_step` ve `_step_input`'a dokunmaz. Başlamadan önce ve commit'ten hemen önce `git pull --ff-only` yapılır.
 
 **Goal:** `sw` akışı sağlayıcı başına tek geniş sorgu atar (04a), ama `_search` sorgu başına en çok `results_per_query` (≤ 25) kayıt okur. OpenAlex geçit sorgusu 5.000 kayda kadar "yönetilebilir" sayılırken bunun 25'ini okumak geniş sorguyu anlamsız kılar; SW7'nin sıraladığı ilk tur havuzu 1.369 kayıttı. Bu dilim, yalnızca `sw` araştırmalarında, bir sorgunun sonuçlarını sayfa sayfa okur, okumayı tek bir adlı sınırla durdurur ve okunmayanı sayar. `legacy` araştırmada hiçbir şey değişmez.
 
@@ -12,12 +12,12 @@
 
 ## Global constraints
 
-- `apps/web/`, `contracts/research/`, `methods/deixis-research/`, `backend/deixis/workflow/links.py` ve mevcut migration dosyalarına dokunma. `skill_package_hash` bu dilim yüzünden değişmez (04d değiştirebilir; o ayrı).
+- `apps/web/`, `contracts/research/`, `methods/deixis-research/`, `backend/deixis/workflow/links.py` ve mevcut migration dosyalarına dokunma. `skill_package_hash` değişmez.
 - `legacy` araştırmanın davranışı, bütçeleri (`results_per_query`, `max_provider_requests`, `core_depth`) ve mevcut test beklentileri değişmez. Sağlayıcıya `cursor` verilmediğinde istek parametreleri ve `request_description` bugünküyle aynıdır; mevcut sağlayıcı testleri buna tanıktır.
 - Tarama hâlâ `budget["max_candidates"]` ile kesilir (`_discovery`'deki `[: budget["max_candidates"]]`). Onu `sw` için kaldıran dilim 09'dur (K3). **Dokunma.** Sonuç: bu dilimden sonra bir `sw` koşusu 1.500 aday bulur ama en çok 250'sini tarar; bu bilinen ve kayda geçen bir ara durumdur.
 - Okuma sınırı **kayıt silmez**: sınır yalnızca daha fazla sayfa istememektir. Okunan her kayıt aday olur; okunmayanlar sayılır.
 - Testlerde ağ yok (mock `httpx` taşıyıcısı) ve testler gerçek beklemez (`page_gap` testte 0 ya da `asyncio.sleep` yamalı).
-- Migration numarası bu not yazılırken `0040`, karar numarası `D73`'tür. 04d karar numarası alır (şema değişikliği yapmaz); başlamadan önce ikisini de kontrol et ve sıradakini kullan.
+- Son migration `0040`, son karar `D74`'tür (04d); bu dilim `0041` ve `D75`'i kullanır. Başlamadan önce kontrol et.
 
 ## Sağlayıcı sayfalama tablosu
 
@@ -42,7 +42,7 @@ Kod okundu (21 Eylül 2026): bugün hiçbiri sayfalamıyor. API'lerin sayfalama 
 
 ## Dosya yapısı
 
-Yeni: `backend/deixis/storage/migrations/00NN_search_run_pages.sql`, `tests/test_search_paging.py`, `scripts/probes/time_link_records.py`.
+Yeni: `backend/deixis/storage/migrations/0041_search_run_pages.sql`, `tests/test_search_paging.py`, `scripts/probes/time_link_records.py`.
 
 Değişecek: `providers/common.py` (`FIRST_PAGE`, `SearchOutcome.next_cursor`), dokuz sağlayıcı modülü (`cursor` argümanı), `providers/registry.py` (`Connector.paging`, `max_reachable`, `page_gap`), `domain/rules.py` (`SW_READ_LIMIT`), `workflow/flow.py` (dokunma haritası), `workflow/store.py` (`record_search`: `first_rank`), `workflow/protocol.py` (`thresholds.search_read`), `workflow/views.py` (arama satırının yeni alanları, `counts["unread"]`), `tests/test_providers.py`, `tests/test_protocol_record.py`, `docs/decisions.md`, `docs/product/sw-status.md`.
 
@@ -50,7 +50,7 @@ Değişecek: `providers/common.py` (`FIRST_PAGE`, `SearchOutcome.next_cursor`), 
 
 1. `_discovery`'deki arama döngüsünün gövdesi: `sw` ise `_search_pages`, değilse bugünkü `_search` çağrısı. Başka satır değişmez; `per_query` hesabı, `searched()`, `retry_failed` ve duraklatma kuralı aynen kalır.
 2. `_search`: yeni, varsayılanı `None` olan `page` argümanı ve ona bağlı dört yer (adım anahtarı, istek izni, `connector.search` çağrısı, `search_fields` / adım çıktısı). `page is None` iken yürüyen kod bugünküyle aynıdır.
-3. Yeni `_search_pages`, `_search`'ün **hemen altına** yazılır (04d `_vocabulary` çevresinde çalışır; araya girme).
+3. Yeni `_search_pages`, `_search`'ün **hemen altına** yazılır.
 
 ## Task 1: sağlayıcılara `cursor`
 
@@ -139,7 +139,7 @@ class Page:
 
 ## Task 4: protokol ve görünüm
 
-- `protocol.build_protocol`: `sw` için `thresholds.search_read = {"read_limit_per_query": SW_READ_LIMIT}`; `legacy` gövdesi ve özeti **aynı** kalır (mevcut `record_identity` satırının kalıbı). 04d aynı dosyada terim alanlarına dokunur; bu dilim yalnızca `thresholds` sözlüğüne tek satır ekler.
+- `protocol.build_protocol`: `sw` için `thresholds.search_read = {"read_limit_per_query": SW_READ_LIMIT}`; `legacy` gövdesi ve özeti **aynı** kalır (mevcut `record_identity` satırının kalıbı). 04d aynı dosyada terim alanlarına dokundu; bu dilim yalnızca `thresholds` sözlüğüne tek satır ekler.
 - `views.research_view`: `search_runs` satırlarına beş yeni alan; `counts["unread"]`: her `(run_id, provider, query_text)` için `stop_reason`'ı dolu **son** satırın (`page_number`, `retrieved_at`, `id` sırasıyla) `unread_count`'larının toplamı, `NULL`'lar atlanır. `counts["found"]` zaten sayfaları toplar. Arayüz değişmez; `api.ts` tipleri dilim 08'de.
 
 - [ ] **Tests first:** `sw` protokolünde `search_read` var, `legacy` protokol özeti bu dilimden önceki değerle aynı (`tests/test_protocol_record.py`'deki sabit); görünümde `unread`, yeniden denenen sayfa iki kez sayılmaz.
@@ -157,11 +157,11 @@ class Page:
 - [ ] `PYTHONPATH=backend:. uv run pytest` tamamı; bilinen tek başarısızlık `tests/test_documents.py::test_extraction_is_stopped_when_it_exceeds_the_memory_limit`. `git diff --check`.
 - [ ] `docs/decisions.md` en üste `## D<NN> — Read an sw query page by page up to one named read limit, and count what was not read`. Limits adıyla söylemeli: yalnızca `sw`; `SW_READ_LIMIT = 2.000` elle seçildi, ölçülmedi (dilim 24); **tarama hâlâ `max_candidates` ile kesilir**, okunan adayların çoğu bu dilimden sonra taranmaz (dilim 09, K3); sıra kesmez kuralı (§2.4) ancak dilim 07 ve 09'la tamamlanır; sağlayıcı toplamları kesin değildir (Semantic Scholar ve SerpApi tahmin verir), `unread_count` o toplamın doğruluğu kadardır; Semantic Scholar 1.000'de, SerpApi tek sayfada durur; başarısız sayfa o sorgunun okumasını o koşuda bitirir; OpenAlex imlecinin ne kadar geçerli kaldığı ölçülmedi, eskimiş imleç `page_failed` olarak görünür ve bugün tek çıkışı yeni bir keşif koşusudur; sayfalar arası kayıt tekrarı ve sağlayıcı sırasının sayfalar arasında kayması ölçülmedi; sayım istekleri gibi sayfa istekleri de `max_provider_requests`'e değil türetilmiş bir izne sayılır; `unread` hiçbir ekranda görünmez (dilim 08 / 20); `link_records` süresi Task 5'in sayısıyla; testler SYNTHETIC ve ağsız, canlı sağlayıcı sayfalaması sınanmadı.
 - [ ] `sw-status.md` satır 04c: `uygulandı, inceleme bekliyor` + açık kalanlar + Task 5'in sayıları.
-- [ ] `git pull --ff-only`, çakışma varsa (04d) elle çöz ve testleri yeniden koş; tek commit, `git push origin main` (ana plan §2.11).
+- [ ] `git pull --ff-only`, çakışma varsa (04d'nin inceleme düzeltmesi) elle çöz ve testleri yeniden koş; tek commit, `git push origin main` (ana plan §2.11).
 
 ## Son ileti
 
-Değişen ve eklenen dosyalar; temel ve son test sayıları ve komut; sağlayıcı tablosunda belgeyle doğrulanan ve düzeltilen satırlar; Task 5'in sayıları (hangi kayıtlarla); yazıldığı gibi yapılamayan her şey ve seçilen her sapma; yapılmayanlar; dokunulan kanıt sınırları (beklenen: yok — aday havuzu büyür, `search_runs` ve protokol gövdesinin içeriği değişir); 04d ile çakışma olup olmadığı; canlı servise dokunulmadığı; commit özeti.
+Değişen ve eklenen dosyalar; temel ve son test sayıları ve komut; sağlayıcı tablosunda belgeyle doğrulanan ve düzeltilen satırlar; Task 5'in sayıları (hangi kayıtlarla); yazıldığı gibi yapılamayan her şey ve seçilen her sapma; yapılmayanlar; dokunulan kanıt sınırları (beklenen: yok — aday havuzu büyür, `search_runs` ve protokol gövdesinin içeriği değişir); pull'un getirdiği bir commit'le çakışma olup olmadığı; canlı servise dokunulmadığı; commit özeti.
 
 ## Açık noktalar
 

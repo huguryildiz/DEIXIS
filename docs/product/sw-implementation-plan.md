@@ -92,7 +92,7 @@ Kabul: onaysız hiçbir sağlayıcı isteği çıkmaz (`sw` akışında); Playwr
 ### Faz C — Tarama omurgası
 
 **09 · Özet taraması v2** — SW9.1–4, SW1.2, SW1.6, SW11.1 ve 11.4 (özet kısmı). Kur. Önkoşul: 02, 04, 05, 07.
-Kapsam: kod aşaması (iki blok da yoksa kapsam dışı; başlıkta ikisi de varsa aday; biri eksikse modele); yeni tarama sözleşmesi (tek etiket + özetten birebir alıntı); alıntıyı kod doğrular (boşluk, bitişik harf, satır sonu tiresi normalleştirilir); iki bağımsız koşu; özet aşamasında anlaşmazlık ya da bulunamayan alıntı insana gitmez, kayıt aday sayılır; özetten `include` çıkmaz; sonuç iş düzeyinde birleşir.
+Kapsam: kod aşaması (iki blok da yoksa kapsam dışı; başlıkta ikisi de varsa aday; biri eksikse modele); yeni tarama sözleşmesi (tek etiket + özetten birebir alıntı); alıntıyı kod doğrular (boşluk, bitişik harf, satır sonu tiresi normalleştirilir); iki bağımsız koşu; özet aşamasında anlaşmazlık ya da bulunamayan alıntı insana gitmez, kayıt aday sayılır; özetten `include` çıkmaz; sonuç iş düzeyinde birleşir. Ek ürün ve bildirim kayıtları (SW6.2; türü ve ana makale bağlantısını dilim 03 kurar) kod aşamasında kendi neden kodlarıyla adaylıktan çıkar; kayıt gizlenmez, kullanıcı ezebilir.
 **Açık karar K3 burada uygulanır** (model çağrı bütçesi).
 Kabul: eski `screening` sözleşmesi `legacy` için kalır; `sw` akışında hiçbir kayıt özetle `included` olmaz.
 

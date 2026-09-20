@@ -5,6 +5,10 @@ not interpreted (`"molecular communication" "resource allocation"` returned the 
 a common phrase such as `resource allocation` fills the first results with unrelated records. Abstracts are present
 only when the publisher deposited them, as JATS markup. Results are limited to journal articles, proceedings articles
 and posted content (preprints).
+
+Paging (Crossref REST API docs, "Tips for using the Crossref REST API", read 2026-09-21): `offset` reaches 10,000
+results and a deeper read needs `cursor`; the cursor expires within minutes, so a run that pauses and resumes hours
+later could not use it, and the read limit stays far below 10,000.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, normalize_doi, send
+from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send
 
 PROVIDER_ID = "crossref"
 WORKS_URL = "https://api.crossref.org/works"
@@ -69,12 +73,18 @@ def record_from_item(item: dict[str, Any]) -> ProviderRecord:
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
     rows = min(limit, MAX_RESULTS)
     params: dict[str, Any] = {"query": query, "rows": rows, "select": SELECT, "filter": TYPES}
     if contact_email:
         params["mailto"] = contact_email
-    description = f"GET {WORKS_URL} query={query!r} rows={rows} filter={TYPES} access=keyless"
+    # Crossref offers a deep-paging cursor too, but it expires within minutes: a run resumed hours later would send a
+    # stale one. `offset` is read instead, and it reaches 10,000 records, far above the read limit.
+    offset = page_offset(cursor)
+    if cursor is not None:
+        params["offset"] = offset
+    description = (f"GET {WORKS_URL} query={query!r} rows={rows}"
+                   + (f" offset={offset}" if cursor is not None else "") + f" filter={TYPES} access=keyless")
     response, outcome = await send(client, WORKS_URL, params, {}, description, "keyless", RATE_LIMIT_HEADERS)
     if response is None:
         return outcome
@@ -83,6 +93,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         message = payload["message"]
         outcome.records = [record_from_item(i) for i in message["items"]]
         outcome.provider_total = message.get("total-results")
+        if cursor is not None:
+            outcome.next_cursor = next_offset(offset, len(outcome.records), rows, outcome.provider_total)
     except (json.JSONDecodeError, KeyError, TypeError, IndexError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome

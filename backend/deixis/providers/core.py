@@ -10,6 +10,10 @@ requests per window and no key 10; 4 of 12 rapid keyless requests answered 429 w
 timestamp and no `Retry-After`, so the connector requires a key. Works carry a DOI, often an abstract and a CORE-hosted
 PDF, but no version label, so no PDF is attached. `fullText` (930,022 characters in the largest of 1,000 probe results)
 is dropped from the stored payload.
+
+Paging (CORE API v3 documentation, read 2026-09-21): the search endpoint pages with `limit` and `offset`; the
+commonly stated 10,000-record ceiling for offset paging is not restated in the current documentation, and the read
+limit stays far below it either way.
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, normalize_doi, send, year_of
+from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send, year_of
 
 PROVIDER_ID = "core"
 SEARCH_URL = "https://api.core.ac.uk/v3/search/works/"
@@ -62,11 +66,15 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
     count = min(limit, MAX_RESULTS)
-    params = {"q": query, "limit": count}
+    offset = page_offset(cursor)
+    params: dict[str, Any] = {"q": query, "limit": count}
+    if cursor is not None:
+        params["offset"] = offset  # offset + limit reaches 10,000, far above the read limit
     headers = {"Authorization": f"Bearer {api_key or ''}"}
-    description = f"GET {SEARCH_URL} q={query!r} limit={count} access=api_key"
+    description = (f"GET {SEARCH_URL} q={query!r} limit={count}"
+                   + (f" offset={offset}" if cursor is not None else "") + " access=api_key")
     response, outcome = await send(client, SEARCH_URL, params, headers, description, "api_key", RATE_HEADERS, (api_key,))
     if response is None:
         return outcome
@@ -74,6 +82,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         payload = response.json()
         outcome.records = [_record(w) for w in payload["results"]]
         outcome.provider_total = payload["totalHits"]
+        if cursor is not None:
+            outcome.next_cursor = next_offset(offset, len(outcome.records), count, outcome.provider_total)
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome

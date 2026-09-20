@@ -23,6 +23,10 @@ class Connector:
     key_env: str | None = None
     key_required: bool = False
     supplementary: bool = False  # adds coverage beside direct providers; never used in place of one
+    # How an sw query reads its pages (slice 04c): a provider-issued `cursor`, a record `offset`, or one page only.
+    paging: str = "offset"
+    max_reachable: int | None = None  # the deepest record the provider serves, when that is below the read limit
+    page_gap: float = 0.0  # seconds to wait between two pages of the same query
 
     def api_key(self) -> str | None:
         return (os.environ.get(self.key_env) or None) if self.key_env else None
@@ -34,16 +38,19 @@ class Connector:
 
 
 CONNECTORS = {c.provider_id: c for c in (
-    Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY"),
-    Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY"),
+    Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor"),
+    # Semantic Scholar serves `offset + limit` up to 1,000 and refuses a deeper page.
+    Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000),
     Connector("crossref", crossref.search, crossref.MAX_RESULTS),
-    Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS),
-    Connector("biorxiv", biorxiv.search, biorxiv.MAX_RESULTS, "OPENALEX_API_KEY"),  # searched through OpenAlex
+    # arXiv asks for three seconds between requests and refused consecutive ones on 2026-09-15 (D18).
+    Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS, page_gap=3.0),
+    Connector("biorxiv", biorxiv.search, biorxiv.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor"),  # searched through OpenAlex
     Connector("pubmed", pubmed.search, pubmed.MAX_RESULTS, "NCBI_API_KEY"),
     Connector("ieee_xplore", ieee_xplore.search, ieee_xplore.MAX_RESULTS, "IEEE_API_KEY", key_required=True),
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True),
     Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True),
-    Connector("serpapi", serpapi.search, serpapi.MAX_RESULTS, "SERPAPI_API_KEY", key_required=True, supplementary=True),
+    Connector("serpapi", serpapi.search, serpapi.MAX_RESULTS, "SERPAPI_API_KEY", key_required=True, supplementary=True,
+              paging="single_page"),
 )}
 
 

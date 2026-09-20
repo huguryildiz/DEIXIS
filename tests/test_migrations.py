@@ -231,3 +231,39 @@ def test_record_link_migration_keeps_one_open_row_per_ordered_pair(tmp_path):
         conn.execute("UPDATE record_links SET link_kind = 'invented' WHERE id = 'lnk_two'")
     conn.execute("DELETE FROM record_links")  # links carry no research, so a purge deletes them with the record
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_search_run_paging_migration_leaves_existing_rows_without_a_page(tmp_path, monkeypatch):
+    """The page columns are new; a search recorded before slice 04c has no page number and no stop reason."""
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    for path in db.MIGRATIONS_DIR.glob("*.sql"):
+        if int(path.name.split("_", 1)[0]) < 41:
+            shutil.copy(path, migrations / path.name)
+    paging_migration = db.MIGRATIONS_DIR / "0041_search_run_pages.sql"
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_test', 'Test', 'now', 'now')")
+    conn.execute(
+        "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
+        " VALUES ('run_test', 'res_test', 1, 'discovery', 'completed', 'screening', '{}', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO run_steps (id, run_id, operation_key, kind, status) VALUES ('stp_test', 'run_test', 'search:0',"
+        " 'provider_search:openalex', 'succeeded')"
+    )
+    conn.execute(
+        "INSERT INTO search_runs (id, research_id, run_id, step_id, provider, query_text, request_description,"
+        " access_mode, status, result_count, page_limit, retrieved_at)"
+        " VALUES ('srn_test', 'res_test', 'run_test', 'stp_test', 'openalex', 'q', 'GET test', 'keyless', 'completed',"
+        " 4, 25, 'now')"
+    )
+
+    shutil.copy(paging_migration, migrations / paging_migration.name)
+    assert db.migrate(conn) == [41]
+    row = conn.execute("SELECT page_number, read_limit, read_total, stop_reason, unread_count FROM search_runs"
+                       " WHERE id = 'srn_test'").fetchone()
+    assert tuple(row) == (None, None, None, None, None)
+    assert conn.execute("SELECT result_count FROM search_runs WHERE id = 'srn_test'").fetchone()[0] == 4
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []

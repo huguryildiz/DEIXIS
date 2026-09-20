@@ -7,6 +7,10 @@ one entry holding an `error` field.
 
 On 2026-09-15 the same key over a university VPN answered 200 for `view=COMPLETE`: Elsevier entitles that view by the
 caller's IP range, so `complete_view_entitled` reports whether the current network has institutional access.
+
+Paging (Elsevier Scopus Search API documentation, read 2026-09-21): `start` and `count` page the result set and
+ordinary offset paging returns at most the first 5,000 records; `cursor` is needed beyond that and is not used here,
+because the read limit stays below 5,000.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, normalize_doi, send, year_of
+from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send, year_of
 
 PROVIDER_ID = "scopus"
 SEARCH_URL = "https://api.elsevier.com/content/search/scopus"
@@ -74,11 +78,15 @@ async def complete_view_entitled(client: httpx.AsyncClient, api_key: str) -> boo
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
     count = min(limit, MAX_RESULTS)
-    params = {"query": query, "count": count, "view": "STANDARD", "sort": "relevancy"}
+    offset = page_offset(cursor)
+    params: dict[str, Any] = {"query": query, "count": count, "view": "STANDARD", "sort": "relevancy"}
+    if cursor is not None:
+        params["start"] = offset  # `start` reaches record 5,000; a deeper read would need Scopus's own cursor
     headers = {"X-ELS-APIKey": api_key or "", "Accept": "application/json"}
-    description = f"GET {SEARCH_URL} query={query!r} count={count} view=STANDARD sort=relevancy access=api_key"
+    description = (f"GET {SEARCH_URL} query={query!r} count={count}"
+                   + (f" start={offset}" if cursor is not None else "") + " view=STANDARD sort=relevancy access=api_key")
     response, outcome = await send(client, SEARCH_URL, params, headers, description, "api_key", RATE_LIMIT_HEADERS, (api_key,))
     if response is None:
         return outcome
@@ -87,6 +95,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         results = payload["search-results"]
         outcome.records = [_record(e) for e in results.get("entry") or [] if "error" not in e]
         outcome.provider_total = int(results["opensearch:totalResults"])
+        if cursor is not None:
+            outcome.next_cursor = next_offset(offset, len(outcome.records), count, outcome.provider_total)
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome

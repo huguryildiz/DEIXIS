@@ -27,14 +27,14 @@ from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, math_reader, ocr, pdf
 from deixis.domain import canonical, contracts, phrasebank, vocabulary as question_words
 from deixis.domain.rules import (MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH,
-                                 after_invalid_output, effective_reviewer, schema_repairs, step_model)
+                                 SW_READ_LIMIT, after_invalid_output, effective_reviewer, schema_repairs, step_model)
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
 from deixis.providers import openalex, query_compiler
-from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, normalize_doi
-from deixis.providers.registry import CONNECTORS
+from deixis.providers.common import FIRST_PAGE, MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi
+from deixis.providers.registry import CONNECTORS, Connector
 from deixis.storage.db import dumps, new_id, now
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import protocol
@@ -135,6 +135,48 @@ class OptionalStepFailed(Exception):
     def __init__(self, reason: str, detail: Any = None):
         super().__init__(reason)
         self.reason, self.detail = reason, detail
+
+
+@dataclass(frozen=True)
+class Page:
+    """One page of an sw query's read; each gets its own step, search run and stored payload (slice 04c)."""
+
+    number: int              # 0 for the first page
+    cursor: str              # FIRST_PAGE or the previous page's next_cursor
+    read_before: int         # records this query read on earlier pages
+    known_total: int | None  # the provider total an earlier page reported
+    extra_requests: int      # requests the read limit allows this run beyond max_provider_requests
+
+
+def extra_page_requests(queries: list[dict[str, Any]]) -> int:
+    """Requests a paged run may send beyond `max_provider_requests`, derived from the read limit alone.
+
+    Every query is allowed the pages its provider needs to reach the read limit (or its own reachable depth); the one
+    request the unpaged budget already holds for that query is taken off.
+    """
+    allowed = 0
+    for query in queries:
+        connector = CONNECTORS[query["provider_id"]]
+        if connector.paging == "single_page":
+            allowed += 1
+            continue
+        allowed += math.ceil(min(SW_READ_LIMIT, connector.max_reachable or SW_READ_LIMIT) / connector.max_results)
+    return max(0, allowed - len(queries))
+
+
+def _stop_reason(connector: Connector, outcome: SearchOutcome, ok: bool, read_total: int) -> str | None:
+    """Why this page ends the query's read, or None while another page follows."""
+    if not ok:
+        return "page_failed"
+    if connector.paging == "single_page":
+        return "single_page"
+    if outcome.next_cursor is None:
+        return "exhausted"  # a short page, or none at all: the provider has no more, so no page repeats forever
+    if read_total >= SW_READ_LIMIT:
+        return "read_limit"
+    if connector.max_reachable is not None and read_total >= connector.max_reachable:
+        return "provider_cap"
+    return None
 
 
 @dataclass
@@ -277,9 +319,14 @@ class ResearchFlow:
         # retries failures only when the whole search stage had no successful query (D18).
         retry_failed = bool(run["budget"].get("retry_failed_searches_only")) or not searched()
         failure = None
+        # An sw query is read page by page up to SW_READ_LIMIT; a legacy query reads its one page as it always has.
+        extra_requests = extra_page_requests(queries) if scope.get("search_workflow") == "sw" else 0
         for index, query in enumerate(queries):
             self._checkpoint(run_id, revision)
-            failure = await self._search(run, index, query, per_query, retry_failed) or failure
+            if scope.get("search_workflow") == "sw":
+                failure = await self._search_pages(run, index, query, per_query, retry_failed, extra_requests) or failure
+            else:
+                failure = await self._search(run, index, query, per_query, retry_failed) or failure
         if failure and not searched():
             self._pause(run_id, *failure)
 
@@ -455,26 +502,38 @@ class ResearchFlow:
         self.store.finish_step(step["id"], "succeeded", output={"model": embedder.stored_model, "sources": len(missing)})
 
     async def _search(self, run: dict[str, Any], index: int, query: dict[str, Any], per_query: int,
-                      retry_failed: bool = True) -> tuple[str, dict[str, Any]] | None:
-        """Run one provider query. A failure is recorded and returned as (pause reason, detail) for the caller to weigh."""
+                      retry_failed: bool = True, page: Page | None = None) -> tuple[str, dict[str, Any]] | None:
+        """Run one provider query, or one page of it. A failure is recorded and returned as (pause reason, detail).
+
+        Without a `page` this is the unpaged search the legacy workflow has always run: same request, same step key,
+        no page columns.
+        """
         run_id, rid = run["id"], run["research_id"]
         connector = CONNECTORS[query["provider_id"]]
         provider = connector.provider_id
-        step = self.store.step(run_id, f"search:{index}", f"provider_search:{provider}")
+        key = f"search:{index}" if page is None or page.number == 0 else f"search:{index}:page:{page.number}"
+        step = self.store.step(run_id, key, f"provider_search:{provider}")
         if step["status"] == "succeeded" or (step["status"] in ("failed", "outcome_unknown") and not retry_failed):
             return None
         # Bounded network and rate-limit retries are requests too and count against the same allowance.
         allowance = (run["budget"]["max_provider_requests"] + run["budget"].get("retry_provider_requests", 0)
-                     + MAX_TRANSIENT_NETWORK_RETRIES + MAX_RATE_LIMIT_RETRIES)
+                     + MAX_TRANSIENT_NETWORK_RETRIES + MAX_RATE_LIMIT_RETRIES
+                     + (page.extra_requests if page else 0))
         if self.store.run(run_id)["usage"].get("provider_requests", 0) >= allowance:
             self._pause(run_id, "budget_exhausted", {"limit": "provider_requests"})
         self.store.start_step(step["id"])
         settings = self.deps.settings
         limit = min(query.get("results") or per_query, connector.max_results)  # a deep core query carries its own depth
+        if page is not None:
+            # A paged read is bounded by the read limit, not by results_per_query, and its last page asks only for
+            # what is left of that limit.
+            ceiling = min(SW_READ_LIMIT, connector.max_reachable or SW_READ_LIMIT)
+            limit = min(connector.max_results, ceiling - page.read_before)
         attempts = 0
         while True:
             self.store.add_usage(run_id, "provider_requests")
-            outcome = await connector.search(self.deps.http, query["query_text"], limit, connector.api_key(), settings.contact_email)
+            outcome = await connector.search(self.deps.http, query["query_text"], limit, connector.api_key(),
+                                             settings.contact_email, **({"cursor": page.cursor} if page else {}))
             if outcome.retries:
                 self.store.add_usage(run_id, "provider_requests", outcome.retries)
             if outcome.status == "failed" and outcome.delivery_class == "before_send" and attempts < MAX_TRANSIENT_NETWORK_RETRIES:
@@ -496,16 +555,63 @@ class ResearchFlow:
             error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit}),
             raw_payload_path=payload_path, payload_sha256=payload_digest,
         )
-        if outcome.status in ("completed", "zero_results"):
+        ok = outcome.status in ("completed", "zero_results")
+        stop_reason = read_total = None
+        if page is not None:
+            read_total = page.read_before + len(outcome.records)
+            stop_reason = _stop_reason(connector, outcome, ok, read_total)
+            # The total a later page did not repeat is the one an earlier page reported; unknown stays NULL, not zero.
+            total = outcome.provider_total if outcome.provider_total is not None else page.known_total
+            search_fields |= dict(
+                page_number=page.number, read_limit=SW_READ_LIMIT, read_total=read_total, stop_reason=stop_reason,
+                unread_count=max(0, total - read_total) if stop_reason and total is not None else None,
+            )
+        if ok:
+            output = {"status": outcome.status, "result_count": len(outcome.records)}
+            if page is not None:
+                output |= {"page": page.number, "next_cursor": outcome.next_cursor, "read_total": read_total,
+                           "provider_total": outcome.provider_total, "stop_reason": stop_reason}
             self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], "succeeded",
-                                     step_output={"status": outcome.status, "result_count": len(outcome.records)})
+                                     step_output=output, first_rank=page.read_before if page else 0)
             return None
         final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
         self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], final,
                                  error_code=outcome.status, error={"error": outcome.error, "http_status": outcome.http_status},
-                                 delivery_class=outcome.delivery_class)
+                                 delivery_class=outcome.delivery_class, first_rank=page.read_before if page else 0)
         return f"provider_{outcome.status}", {"provider": provider, "http_status": outcome.http_status,
                                               "retry_after": outcome.rate_limit.get("retry-after")}
+
+    async def _search_pages(self, run: dict[str, Any], index: int, query: dict[str, Any], per_query: int,
+                            retry_failed: bool, extra_requests: int) -> tuple[str, dict[str, Any]] | None:
+        """Read one sw query page by page up to SW_READ_LIMIT, counting what it leaves unread (slice 04c).
+
+        The next page's cursor comes from the previous page's stored step output, so a resumed run asks for no page
+        twice. A failed page ends this query's read in this run; the pages it already read, and every other query,
+        stand (D18). A run pauses only when no search of it succeeded, which `_discovery` still decides.
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        connector = CONNECTORS[query["provider_id"]]
+        cursor, read, number, known_total = FIRST_PAGE, 0, 0, None
+        while True:
+            self._checkpoint(run_id, revision)
+            key = f"search:{index}" if number == 0 else f"search:{index}:page:{number}"
+            step = self.store.step(run_id, key, f"provider_search:{connector.provider_id}")
+            asked = not (step["status"] == "succeeded"
+                         or (step["status"] in ("failed", "outcome_unknown") and not retry_failed))
+            if asked and number and connector.page_gap:
+                await asyncio.sleep(connector.page_gap)  # only before a page that is really requested
+            failure = await self._search(run, index, query, per_query, retry_failed,
+                                         page=Page(number, cursor, read, known_total, extra_requests))
+            step = self.store.step(run_id, key, f"provider_search:{connector.provider_id}")
+            if step["status"] != "succeeded":
+                return failure
+            output = step["output"] or {}
+            read = output.get("read_total", read)
+            if output.get("provider_total") is not None:
+                known_total = output["provider_total"]
+            if output.get("stop_reason") or not output.get("next_cursor"):
+                return failure
+            cursor, number = output["next_cursor"], number + 1
 
     # ---- answer ---------------------------------------------------------------------
     async def _answer(self, run: dict[str, Any], scope: dict[str, Any]) -> None:

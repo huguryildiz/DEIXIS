@@ -19,6 +19,8 @@ from deixis.providers.pacing import SEMANTIC_SCHOLAR_PACER
 MAX_RATE_LIMIT_RETRIES = 2
 MAX_RETRY_WAIT_SECONDS = 10.0  # a longer provider wait pauses the run instead of blocking it
 
+FIRST_PAGE = "*"  # asks a provider for the first page of a paged read; an offset provider reads it as offset 0
+
 
 @dataclass
 class OtherVersion:
@@ -69,6 +71,27 @@ class SearchOutcome:
     error: str | None = None
     raw_payload: dict[str, Any] | None = None
     retries: int = 0
+    next_cursor: str | None = None  # what the next page is asked for with; None when the provider has no more
+
+
+def page_offset(cursor: str | None) -> int:
+    """The record this page starts at. A cursor an offset provider never issued is a code error, not a network one."""
+    if cursor is None or cursor == FIRST_PAGE:
+        return 0
+    try:
+        offset = int(cursor)
+    except ValueError:
+        raise ValueError(f"not an offset cursor: {cursor!r}") from None
+    if offset < 0:
+        raise ValueError(f"not an offset cursor: {cursor!r}")
+    return offset
+
+
+def next_offset(offset: int, read: int, requested: int, provider_total: int | None) -> str | None:
+    """Where the next page starts, or None when this page was the last: a short page or the provider's whole total."""
+    if read < requested or (provider_total is not None and offset + read >= provider_total):
+        return None
+    return str(offset + read)
 
 
 def normalize_doi(value: str | None) -> str | None:

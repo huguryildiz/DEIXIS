@@ -111,7 +111,7 @@ def ok_response(provider, zero=False, request=None):
     return httpx.Response(200, json=(ZERO if zero else SUCCESS)[provider])
 
 
-def run(provider, handler, key=None, limit=5):
+def run(provider, handler, key=None, limit=5, cursor=None):
     seen = []
 
     def record(request):
@@ -120,7 +120,7 @@ def run(provider, handler, key=None, limit=5):
 
     async def go():
         async with httpx.AsyncClient(transport=httpx.MockTransport(record)) as client:
-            return await SEARCH[provider](client, "synthetic query", limit, key, "contact@example.org")
+            return await SEARCH[provider](client, "synthetic query", limit, key, "contact@example.org", cursor=cursor)
     return asyncio.run(go()), seen
 
 
@@ -344,3 +344,120 @@ def test_available_providers_follow_configured_keys(monkeypatch):
     assert CONNECTORS["scopus"].access_mode() == "not_configured"
     monkeypatch.setenv("IEEE_API_KEY", SECRET)
     assert available_providers()[-1] == "ieee_xplore" and CONNECTORS["ieee_xplore"].access_mode() == "api_key"
+
+
+# ---- paging (slice 04c) -------------------------------------------------------------
+# Per provider: the paging mode, the request parameter a page carries, and the value that parameter holds when the
+# read continues at record 200. Verified against each provider's own documentation; see the module docstrings.
+PAGING = {
+    "openalex": ("cursor", "cursor", "IlsxNzA5MjUyNjAwMDAwLCAn"),
+    "biorxiv": ("cursor", "cursor", "IlsxNzA5MjUyNjAwMDAwLCAn"),
+    "crossref": ("offset", "offset", "200"),
+    "semantic_scholar": ("offset", "offset", "200"),
+    "arxiv": ("offset", "start", "200"),
+    "pubmed": ("offset", "retstart", "200"),
+    "ieee_xplore": ("offset", "start_record", "201"),  # 1-based
+    "scopus": ("offset", "start", "200"),
+    "core": ("offset", "offset", "200"),
+    "serpapi": ("single_page", None, None),
+}
+# What an unpaged request sends today for a parameter the paged read reuses; nothing else may appear.
+UNPAGED = {"arxiv": ("start", "0"), "ieee_xplore": ("start_record", "1")}
+# Providers whose next cursor is read from the response rather than counted from the offset.
+NEXT_IN_RESPONSE = {"openalex", "biorxiv", "semantic_scholar"}
+OPENALEX_NEXT = "IlsxNzA5MjUyNjAwMDAwLCAn"
+
+
+def paged_response(provider, next_cursor=OPENALEX_NEXT, request=None):
+    """A first-page answer that says another page follows."""
+    if provider in ("openalex", "biorxiv"):
+        payload = json.loads(json.dumps(SUCCESS["openalex"]))
+        payload["meta"]["next_cursor"] = next_cursor
+        return httpx.Response(200, json=payload)
+    if provider == "semantic_scholar":
+        return httpx.Response(200, json=SUCCESS["semantic_scholar"] | {"next": 1})
+    return ok_response(provider, request=request)
+
+
+def params_of(seen):
+    return seen[0].url.params
+
+
+@pytest.mark.parametrize("provider", ALL)
+def test_a_search_without_a_cursor_sends_the_request_it_sent_before(provider):
+    """The legacy path: no paging parameter appears and the provider is not asked for a next cursor."""
+    outcome, seen = run(provider, lambda r: ok_response(provider, request=r), key=key_for(provider), limit=1)
+    params = params_of(seen)
+    key, expected = UNPAGED.get(provider, (PAGING[provider][1], None))
+    assert params.get(key) == expected if key else True
+    assert "cursor" not in params and outcome.next_cursor is None
+
+
+@pytest.mark.parametrize("provider", ALL)
+def test_the_first_page_is_asked_for_with_the_provider_own_parameter(provider):
+    mode, key, _ = PAGING[provider]
+    outcome, seen = run(provider, lambda r: paged_response(provider, request=r), key=key_for(provider), limit=1,
+                        cursor=common.FIRST_PAGE)
+    params = params_of(seen)
+    if mode == "cursor":
+        assert params["cursor"] == common.FIRST_PAGE
+        assert outcome.next_cursor == OPENALEX_NEXT
+    elif mode == "offset":
+        assert params[key] == ("1" if provider == "ieee_xplore" else "0")
+        assert outcome.next_cursor == "1"  # one record read out of a provider total of three
+    else:
+        assert "start" not in params and outcome.next_cursor is None
+    assert SECRET not in (outcome.request_description or "")
+
+
+@pytest.mark.parametrize("provider", [p for p in ALL if p != "serpapi"])
+def test_a_later_page_carries_the_cursor_the_previous_page_gave(provider):
+    mode, key, sent = PAGING[provider]
+    cursor = OPENALEX_NEXT if mode == "cursor" else "200"
+    _, seen = run(provider, lambda r: paged_response(provider, request=r), key=key_for(provider), limit=1, cursor=cursor)
+    assert params_of(seen)[key] == sent
+
+
+@pytest.mark.parametrize("provider", [p for p in ALL if p not in NEXT_IN_RESPONSE and p != "serpapi"])
+def test_an_offset_page_that_came_back_short_is_the_last_one(provider):
+    """Fewer records than asked for means the provider has no more; nothing further is requested."""
+    outcome, _ = run(provider, lambda r: ok_response(provider, request=r), key=key_for(provider), limit=5,
+                     cursor=common.FIRST_PAGE)
+    assert outcome.next_cursor is None
+
+
+@pytest.mark.parametrize("provider", ["openalex", "biorxiv"])
+def test_openalex_reports_the_end_of_a_cursor_read_as_a_null_cursor(provider):
+    outcome, _ = run(provider, lambda r: paged_response(provider, next_cursor=None), key=key_for(provider), limit=1,
+                     cursor=common.FIRST_PAGE)
+    assert outcome.next_cursor is None
+
+
+def test_semantic_scholar_without_a_next_field_has_no_further_page():
+    outcome, _ = run("semantic_scholar", lambda r: ok_response("semantic_scholar"), limit=1, cursor=common.FIRST_PAGE)
+    assert outcome.next_cursor is None
+
+
+def test_serpapi_reads_one_page_whatever_the_cursor_says():
+    outcome, seen = run("serpapi", lambda r: ok_response("serpapi"), key=SECRET, limit=1, cursor="20")
+    assert outcome.next_cursor is None and "start" not in params_of(seen)
+
+
+@pytest.mark.parametrize("provider", [p for p in ALL if PAGING[p][0] == "offset"])
+def test_a_cursor_an_offset_provider_never_issued_is_a_code_error(provider):
+    with pytest.raises(ValueError):
+        run(provider, lambda r: ok_response(provider, request=r), key=key_for(provider), limit=1, cursor="page-2")
+
+
+@pytest.mark.parametrize("provider", sorted(KEYED))
+def test_a_paged_request_keeps_the_key_out_of_its_description(provider):
+    outcome, _ = run(provider, lambda r: ok_response(provider, request=r), key=SECRET, limit=1, cursor=common.FIRST_PAGE)
+    assert SECRET not in outcome.request_description
+
+
+def test_the_registry_records_how_each_provider_pages():
+    assert {p: CONNECTORS[p].paging for p in ALL} == {p: PAGING[p][0] for p in ALL}
+    assert CONNECTORS["semantic_scholar"].max_reachable == 1000
+    assert [p for p in ALL if CONNECTORS[p].max_reachable] == ["semantic_scholar"]
+    assert CONNECTORS["arxiv"].page_gap == 3.0
+    assert [p for p in ALL if CONNECTORS[p].page_gap] == ["arxiv"]

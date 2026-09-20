@@ -5,6 +5,10 @@ search (poor topical precision), while `search.title_and_abstract=` searches tit
 and abstracts; abstracts arrive as `abstract_inverted_index`; rate-limit and cost
 headers are returned. Keyless and keyed modes have different daily budgets; the
 actual mode and returned limit headers are recorded per call.
+
+Paging (docs.openalex.org, "Paging", read 2026-09-21): `cursor=*` starts a cursor read, every answer carries
+`meta.next_cursor` for the next page and a null one ends it; `per_page` goes up to 200 and cursor paging has no depth
+limit, while basic paging stops at 10,000.
 """
 
 from __future__ import annotations
@@ -97,6 +101,7 @@ async def search_works(
     api_key: str | None = None,
     contact_email: str | None = None,
     works_filter: str | None = None,
+    cursor: str | None = None,
 ) -> SearchOutcome:
     per_page = min(per_page, MAX_RESULTS)
     params: dict[str, Any] = {SEARCH_PARAM: query, "per_page": per_page, "select": SELECT}
@@ -104,17 +109,24 @@ async def search_works(
         params["filter"] = works_filter
     if contact_email:
         params["mailto"] = contact_email
+    if cursor is not None:
+        # Cursor paging: `*` asks for the first page and every answer carries the cursor of the next one.
+        params["cursor"] = cursor
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     access_mode = "api_key" if api_key else "keyless"
     description = (f"GET {WORKS_URL} {SEARCH_PARAM}={query!r}" + (f" filter={works_filter}" if works_filter else "")
-                   + f" per_page={per_page} access={access_mode}")
+                   + f" per_page={per_page}" + (f" cursor={cursor}" if cursor is not None else "")
+                   + f" access={access_mode}")
     response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,))
     if response is None:
         return outcome
     try:
         payload = response.json()
         outcome.records = [_record(w) for w in payload["results"]]
-        outcome.provider_total = (payload.get("meta") or {}).get("count")
+        meta = payload.get("meta") or {}
+        outcome.provider_total = meta.get("count")
+        # `next_cursor` is returned only for a cursor read, and is null on the last page.
+        outcome.next_cursor = meta.get("next_cursor") if cursor is not None else None
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome

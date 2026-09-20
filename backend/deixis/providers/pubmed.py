@@ -6,6 +6,10 @@ An NCBI API key is optional; ``tool`` and the configured contact email identify
 the client as requested by the E-utilities usage guidelines. PubMed supplies
 bibliographic metadata and abstracts, but no version-labelled PDF, so this
 adapter never attaches a file.
+
+Paging (NLM E-utilities documentation, read 2026-09-21): ESearch pages with `retstart` and `retmax`; `retmax` reaches
+100,000 UIDs and no maximum is documented for `retstart`. Paging follows the identifiers ESearch served, because
+EFetch is a second request over those identifiers.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, normalize_doi, send, year_of
+from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send, year_of
 
 PROVIDER_ID = "pubmed"
 BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
@@ -113,18 +117,22 @@ def records_from_xml(value: str) -> list[ProviderRecord]:
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
     count = min(limit, MAX_RESULTS)
+    offset = page_offset(cursor)
     common: dict[str, Any] = {"db": "pubmed", "tool": "DEIXIS"}
     if contact_email:
         common["email"] = contact_email
     if api_key:
         common["api_key"] = api_key
     access_mode = "api_key" if api_key else "keyless"
-    search_description = f"GET {SEARCH_URL} db=pubmed term={query!r} retmax={count} access={access_mode}"
+    search_description = (f"GET {SEARCH_URL} db=pubmed term={query!r} retmax={count}"
+                          + (f" retstart={offset}" if cursor is not None else "") + f" access={access_mode}")
+    esearch = {"term": query, "retmode": "json", "retmax": count, "sort": "relevance"}
+    if cursor is not None:
+        esearch["retstart"] = offset  # ESearch reaches record 9,999; the read limit stops well before that
     response, outcome = await send(
-        client, SEARCH_URL, common | {"term": query, "retmode": "json", "retmax": count, "sort": "relevance"}, {},
-        search_description, access_mode, RATE_LIMIT_HEADERS, (api_key,),
+        client, SEARCH_URL, common | esearch, {}, search_description, access_mode, RATE_LIMIT_HEADERS, (api_key,),
     )
     if response is None:
         return outcome
@@ -133,6 +141,9 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         result = search_payload["esearchresult"]
         ids = [str(value) for value in result.get("idlist") or []]
         outcome.provider_total = int(result["count"])
+        # Paging follows the identifiers the provider served, not the records efetch could be parsed into.
+        if cursor is not None:
+            outcome.next_cursor = next_offset(offset, len(ids), count, outcome.provider_total)
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome

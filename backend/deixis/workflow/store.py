@@ -1271,12 +1271,17 @@ class Store:
 
     # ---- research corpus -------------------------------------------------------------
     def record_search(self, search_fields: dict[str, Any], provider: str, records: list[Any], payload_path: str | None,
-                      step_id: str, step_status: str, step_output: dict[str, Any] | None = None, **step_fields: Any) -> str:
-        """Commit the search run, normalized sources, candidates and the step outcome together."""
+                      step_id: str, step_status: str, step_output: dict[str, Any] | None = None, first_rank: int = 0,
+                      **step_fields: Any) -> str:
+        """Commit the search run, normalized sources, candidates and the step outcome together.
+
+        `first_rank` is how many records the query read on its earlier pages: a candidate's rank is its place in the
+        query, not in the page it arrived on (slice 04c). An unpaged search leaves it at 0.
+        """
         with transaction(self.conn):
             srid = self.add_search_run(**search_fields)
             found = []
-            for rank, record in enumerate(records):
+            for rank, record in enumerate(records, start=first_rank):
                 svid, _ = self.upsert_provider_source(provider, record, payload_path)
                 found.append(svid)
                 # A version of a work that already has a candidate here is found again as that candidate (D46).

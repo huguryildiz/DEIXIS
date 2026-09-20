@@ -5,6 +5,9 @@ Probed live on 2026-09-14: a term without a field prefix, or an unquoted phrase 
 combine prefixed terms; an unbalanced query returns HTTP 400. A record is one arXiv version (`2204.08636v1`). Its DOI
 is arXiv's DataCite DOI, which names every version of the preprint, so it never merges records. A DOI the authors added
 (`arxiv:doi`) names the published version; it is kept as `published_doi` and only flags a suspected duplicate.
+
+Paging (arXiv API User's Manual, "start and max_results paging", read 2026-09-21): `start` is the 0-based record the
+page begins at and the manual asks for a 3-second delay between consecutive requests.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, normalize_doi, send
+from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send
 
 PROVIDER_ID = "arxiv"
 QUERY_URL = "https://export.arxiv.org/api/query"
@@ -68,11 +71,13 @@ def _record(entry: ET.Element) -> ProviderRecord:
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
     global _last_request
     count = min(limit, MAX_RESULTS)
-    params: dict[str, Any] = {"search_query": query, "start": 0, "max_results": count, "sortBy": "relevance", "sortOrder": "descending"}
-    description = f"GET {QUERY_URL} search_query={query!r} max_results={count} sortBy=relevance access=keyless"
+    offset = page_offset(cursor)  # the unpaged request already starts at 0
+    params: dict[str, Any] = {"search_query": query, "start": offset, "max_results": count, "sortBy": "relevance", "sortOrder": "descending"}
+    description = (f"GET {QUERY_URL} search_query={query!r} max_results={count}"
+                   + (f" start={offset}" if cursor is not None else "") + " sortBy=relevance access=keyless")
     async with _lock:
         wait = MIN_INTERVAL_SECONDS - (time.monotonic() - _last_request)
         if wait > 0:
@@ -88,6 +93,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         total = feed.find("opensearch:totalResults", NS)
         outcome.records = [_record(e) for e in entries]
         outcome.provider_total = int(total.text) if total is not None and total.text else None
+        if cursor is not None:
+            outcome.next_cursor = next_offset(offset, len(outcome.records), count, outcome.provider_total)
     except (ET.ParseError, ValueError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome

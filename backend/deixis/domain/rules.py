@@ -24,6 +24,10 @@ class EffortBudget:
     core_depth: int = 0
 
 
+# How many records one sw query reads across its pages. Hand-picked: above the 1,369-record first round SW7 ranked,
+# below the vocabulary step's MANAGEABLE_TOTAL. It never drops a record that was read; what it leaves unread is counted.
+SW_READ_LIMIT = 2_000
+
 # Screening proposals are requested for at most this many candidates per model call.
 SCREENING_BATCH = 40
 

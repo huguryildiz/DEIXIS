@@ -108,8 +108,9 @@ def test_build_protocol_is_repeatable_and_reads_its_thresholds_from_their_defini
 
 
 def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
-    """The identity rule runs on `sw` researches alone, so a legacy protocol body is exactly what it was before."""
+    """The identity rule and the page read limit run on `sw` researches alone, so a legacy body is what it was."""
     from deixis.domain.record_identity import THRESHOLDS
+    from deixis.domain.rules import SW_READ_LIMIT
     from deixis.workflow import protocol
 
     scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
@@ -118,9 +119,11 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     settings = Settings(data_dir=None)
     legacy = protocol.build_protocol(scope | {"search_workflow": "legacy"}, {}, None, [], "pkg_hash", settings)
     sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
-    assert "record_identity" not in legacy["thresholds"]
+    assert "record_identity" not in legacy["thresholds"] and "search_read" not in legacy["thresholds"]
     assert sw["thresholds"]["record_identity"] == THRESHOLDS
-    assert sw["thresholds"] == legacy["thresholds"] | {"record_identity": THRESHOLDS}
+    assert sw["thresholds"]["search_read"] == {"read_limit_per_query": SW_READ_LIMIT}
+    assert sw["thresholds"] == legacy["thresholds"] | {
+        "record_identity": THRESHOLDS, "search_read": {"read_limit_per_query": SW_READ_LIMIT}}
     rest = lambda body: {k: v for k, v in body.items() if k not in ("thresholds", "search_workflow")}
     assert rest(sw) == rest(legacy)  # nothing else about the body differs between the two workflows
 

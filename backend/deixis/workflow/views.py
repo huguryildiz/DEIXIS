@@ -106,10 +106,22 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         runs.append(run)
 
     search_runs = [
-        {**{k: r[k] for k in ("id", "run_id", "scope_revision", "provider", "query_text", "access_mode", "status", "result_count", "provider_total", "page_limit", "retrieved_at")},
+        {**{k: r[k] for k in ("id", "run_id", "scope_revision", "provider", "query_text", "access_mode", "status", "result_count", "provider_total", "page_limit", "retrieved_at",
+                              "page_number", "read_limit", "read_total", "stop_reason", "unread_count")},
          "error": _json(r["error_json"])}
         for r in conn.execute("SELECT * FROM search_runs WHERE research_id = ? ORDER BY retrieved_at", (research_id,))
     ]
+    # What a paged query left unread is the count on its last stopped page; a page read again replaces the earlier
+    # row rather than adding to it, and an unknown provider total is skipped instead of counted as zero (slice 04c).
+    last_stopped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in search_runs:
+        if row["stop_reason"] is None:
+            continue
+        key = (row["run_id"], row["provider"], row["query_text"])
+        order = (row["page_number"] or 0, row["retrieved_at"], row["id"])
+        seen = last_stopped.get(key)
+        if seen is None or order >= (seen["page_number"] or 0, seen["retrieved_at"], seen["id"]):
+            last_stopped[key] = row
 
     answers = []
     cited_sources: set[str] = set()
@@ -288,6 +300,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     latest_given = next((a["inputs_given"] for a in answers if a["inputs_given"]), None)
     counts = {
         "found": sum(s["result_count"] for s in search_runs),
+        "unread": sum(s["unread_count"] or 0 for s in last_stopped.values()),
         "unique": works(work_of),
         # A work's selection is its head's; other versions follow it (D48).
         "included": sum(s["selection"]["state"] == "included" for s in sources if s["version_role"] == "record"),

@@ -5,7 +5,7 @@ bioRxiv's own API (api.biorxiv.org) has no keyword search: probed on 2026-09-14,
 Harbor Laboratory)", 343,487 works). Filtering on any location rather than the primary one also keeps preprints whose
 work OpenAlex now lists under the later journal version (`"quorum sensing" AND (optimization OR control)`: 272 against
 268). Queries use OpenAlex syntax and rules; records are OpenAlex works recorded under provider `biorxiv`, so the same
-DOI found by the OpenAlex connector merges into one source.
+DOI found by the OpenAlex connector merges into one source. Paging is OpenAlex's cursor paging, unchanged.
 """
 
 from __future__ import annotations
@@ -22,5 +22,6 @@ MAX_RESULTS = openalex.MAX_RESULTS
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None) -> SearchOutcome:
-    return await openalex.search_works(client, query, limit, api_key, contact_email, works_filter=WORKS_FILTER)
+                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
+    return await openalex.search_works(client, query, limit, api_key, contact_email, works_filter=WORKS_FILTER,
+                                       cursor=cursor)

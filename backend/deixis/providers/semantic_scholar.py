@@ -5,6 +5,10 @@ requests and 200 after a short wait, so 429s are retried with a bounded backoff.
 supports no query syntax. A paper record groups a work's versions; its DOI names the published version. A record known
 only from arXiv gets no DOI (arXiv's DOI would not say which version). The open-access PDF carries no version label, so
 it is not attached.
+
+Paging (Academic Graph API docs, relevance search, read 2026-09-21): `offset` and `limit` page the result set and
+`offset + limit` may not exceed 1,000; the response names the next `offset` in `next` and leaves it out at the end.
+Reading past 1,000 needs the bulk endpoint, which is not used here.
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, normalize_doi, send
+from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send
 
 PROVIDER_ID = "semantic_scholar"
 SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -51,12 +55,16 @@ def _record(paper: dict[str, Any]) -> ProviderRecord:
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
     count = min(limit, MAX_RESULTS)
-    params = {"query": query, "limit": count, "fields": FIELDS}
+    params: dict[str, Any] = {"query": query, "limit": count, "fields": FIELDS}
+    offset = page_offset(cursor)
+    if cursor is not None:
+        params["offset"] = offset
     headers = {"x-api-key": api_key} if api_key else {}
     access_mode = "api_key" if api_key else "keyless"
-    description = f"GET {SEARCH_URL} query={query!r} limit={count} access={access_mode}"
+    description = (f"GET {SEARCH_URL} query={query!r} limit={count}"
+                   + (f" offset={offset}" if cursor is not None else "") + f" access={access_mode}")
     response, outcome = await send(client, SEARCH_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,),
                                    unstated_wait=UNSTATED_RATE_LIMIT_WAIT)
     if response is None:
@@ -65,6 +73,10 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         payload = response.json()
         outcome.records = [_record(p) for p in payload.get("data") or []]
         outcome.provider_total = payload["total"]
+        # The response names the next offset itself and leaves it out once the reachable window (offset + limit ≤ 1000)
+        # or the result set is spent.
+        nxt = payload.get("next")
+        outcome.next_cursor = str(nxt) if cursor is not None and nxt is not None else None
     except (json.JSONDecodeError, KeyError, TypeError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome

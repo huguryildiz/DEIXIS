@@ -3,6 +3,8 @@
 import shutil
 import sqlite3
 
+import pytest
+
 from deixis.storage import db
 
 
@@ -107,3 +109,95 @@ def test_protocol_migration_keeps_existing_scope_revisions_on_the_legacy_workflo
     assert db.migrate(conn) == [37]
     assert conn.execute("SELECT search_workflow FROM scope_revisions WHERE research_id = 'res_test'").fetchone()[0] == "legacy"
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+SELECTION_ROW = ("res_test", "srv_test", "included", "model_proposal", "kept by the user", "include",
+                 "SYNTHETIC proposal reason", "abstract", "stp_test", 4, "now")
+
+
+def test_stage_decision_migration_rebuilds_selections_without_losing_a_row(tmp_path, monkeypatch):
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    for path in db.MIGRATIONS_DIR.glob("*.sql"):
+        if int(path.name.split("_", 1)[0]) < 38:
+            shutil.copy(path, migrations / path.name)
+    decision_migration = db.MIGRATIONS_DIR / "0038_stage_decisions.sql"
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_test', 'Test', 'now', 'now')")
+    conn.execute("INSERT INTO works (id, created_at) VALUES ('wrk_test', 'now')")
+    conn.execute(
+        "INSERT INTO source_versions (id, work_id, title, origin, created_at)"
+        " VALUES ('srv_test', 'wrk_test', 'SYNTHETIC record', 'provider', 'now')"
+    )
+    for extra in ("srv_other", "srv_third"):
+        conn.execute(
+            "INSERT INTO source_versions (id, work_id, title, origin, created_at)"
+            " VALUES (?, 'wrk_test', 'SYNTHETIC record', 'provider', 'now')", (extra,)
+        )
+    conn.execute(
+        "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
+        " VALUES ('run_test', 'res_test', 1, 'discovery', 'queued', 'discovery', '{}', 'now', 'now')"
+    )
+    conn.execute(
+        "INSERT INTO run_steps (id, run_id, operation_key, kind, status) VALUES ('stp_test', 'run_test', 'screening:0', 'screening', 'succeeded')"
+    )
+    conn.execute(
+        "INSERT INTO selections (research_id, source_version_id, state, origin, user_reason, proposal, proposal_reason,"
+        " proposal_basis, proposal_step_id, version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", SELECTION_ROW
+    )
+    before = dict(conn.execute("SELECT * FROM selections").fetchone())
+    before_columns = [tuple(row) for row in conn.execute("PRAGMA table_info(selections)")]
+
+    shutil.copy(decision_migration, migrations / decision_migration.name)
+    assert db.migrate(conn) == [38]
+    assert dict(conn.execute("SELECT * FROM selections").fetchone()) == before
+    assert conn.execute("SELECT COUNT(*) FROM selections").fetchone()[0] == 1
+    # Every column keeps its name, declared type, not-null flag, default and key position; only the origin CHECK changed.
+    assert [tuple(row) for row in conn.execute("PRAGMA table_info(selections)")] == before_columns
+    assert "code_rule" in conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'selections'").fetchone()[0]
+    conn.execute(
+        "INSERT INTO selections (research_id, source_version_id, state, origin, version, updated_at)"
+        " VALUES ('res_test', 'srv_other', 'pending', 'code_rule', 1, 'now')"
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO selections (research_id, source_version_id, state, origin, version, updated_at)"
+            " VALUES ('res_test', 'srv_third', 'pending', 'invented', 1, 'now')"
+        )
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+
+
+def test_stage_decision_migration_adds_the_three_tables_with_their_guards(tmp_path):
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    columns = lambda table: {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    assert columns("stage_decisions") >= {"id", "research_id", "source_version_id", "stage", "outcome", "reason_code",
+                                          "decided_by", "next_step", "note", "scope_revision", "protocol_hash",
+                                          "criterion_hash", "step_id", "superseded_at", "created_at"}
+    assert columns("model_proposals") >= {"id", "research_id", "source_version_id", "stage", "step_id", "run_no",
+                                          "criterion_part", "label", "quote", "quote_verified", "quote_passage_id",
+                                          "quote_page", "created_at"}
+    assert columns("record_signal_ranks") == {"ranking_step_id", "research_id", "source_version_id", "signal", "rank",
+                                              "available"}
+    conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_test', 'Test', 'now', 'now')")
+    conn.execute("INSERT INTO works (id, created_at) VALUES ('wrk_test', 'now')")
+    conn.execute(
+        "INSERT INTO source_versions (id, work_id, title, origin, created_at)"
+        " VALUES ('srv_test', 'wrk_test', 'SYNTHETIC record', 'provider', 'now')"
+    )
+    decision = ("INSERT INTO stage_decisions (id, research_id, source_version_id, stage, outcome, reason_code,"
+                " decided_by, next_step, scope_revision, created_at) VALUES (?, 'res_test', 'srv_test', ?, ?, 'c', 'code', 'none', 1, 'now')")
+    with pytest.raises(sqlite3.IntegrityError):  # an abstract decision cannot carry a full-text outcome
+        conn.execute(decision, ("dec_bad", "abstract", "include"))
+    conn.execute(decision, ("dec_one", "abstract", "candidate"))
+    with pytest.raises(sqlite3.IntegrityError):  # one current decision per record and stage
+        conn.execute(decision, ("dec_two", "abstract", "out_of_scope"))
+    conn.execute("UPDATE stage_decisions SET superseded_at = 'now' WHERE id = 'dec_one'")
+    conn.execute(decision, ("dec_two", "abstract", "out_of_scope"))
+    with pytest.raises(sqlite3.IntegrityError):  # a decision is deleted only under a purge authorization
+        conn.execute("DELETE FROM stage_decisions WHERE id = 'dec_two'")
+    assert conn.execute("SELECT COUNT(*) FROM stage_decisions").fetchone()[0] == 2

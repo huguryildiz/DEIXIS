@@ -267,9 +267,11 @@ class Store:
             self.conn.execute("DELETE FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM pdf_discovery_runs WHERE research_id = ?", (research_id,))
+            # Stage decisions, proposals and ranks go before the run steps and passages they point at.
             for table in ("answer_reviews", "answers", "model_sessions", "step_inputs", "candidates", "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
-                          "source_similarities", "protocol_records"):
+                          "source_similarities", "protocol_records", "stage_decisions", "model_proposals",
+                          "record_signal_ranks"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
             for table in ("runs", "scope_revisions"):
@@ -1608,9 +1610,14 @@ class Store:
             self.conn.execute(
                 f"DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs"
                 f" WHERE research_id = ? AND source_version_id IN ({marks}))", scoped)
+            # A stage decision is kept unless a purge authorizes removing it; deleting this research's record of these
+            # sources is such a purge (D65), so the same authorization row the research purge uses opens the trigger.
+            self.conn.execute("INSERT OR IGNORE INTO research_purge_authorizations VALUES (?)", (research_id,))
             for table in ("pdf_discovery_runs", "source_similarities", "suspected_duplicates", "selection_history",
-                          "selections", "candidates", "corpus_memberships"):
+                          "selections", "candidates", "stage_decisions", "model_proposals", "record_signal_ranks",
+                          "corpus_memberships"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ? AND source_version_id IN ({marks})", scoped)
+            self.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (research_id,))
             orphan_files: list[str] = []
             for svid in chosen:
                 # The source may still belong to another research; its record, passages and file stay in that case.

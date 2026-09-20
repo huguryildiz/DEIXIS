@@ -11,14 +11,19 @@ from __future__ import annotations
 import argparse
 import random
 import sys
+import tempfile
+from pathlib import Path
 from typing import Any, Callable
 
 from deixis.config import Settings
 from deixis.documents.pdf import chunk_page
 from deixis.domain.canonical import canonical_rows, sha256_hex
 from deixis.providers.query_compiler import compile_queries
+from deixis.storage import db
+from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import answer_source_order, fuse_rankings
 from deixis.workflow.protocol import build_protocol
+from deixis.workflow.store import Store
 
 CONCEPTS = [
     {"label": "diffusion channel", "role": "core", "synonyms": ["diffusion channel", "molecular channel"]},
@@ -66,6 +71,41 @@ def stage_answer_source_order(rows: list[dict[str, Any]]) -> Any:
     return answer_source_order(included, facts, texts, ["molecule", "schedule"])
 
 
+def stage_work_outcome(rows: list[dict[str, Any]]) -> Any:
+    """Decisions written in a shuffled order must still give each work the same outcome (SW9.4).
+
+    The rows are decisions, not a ranking, so the order they arrive in carries nothing. Each work here has at most one
+    human decision, so no outcome depends on which of two same-millisecond writes landed last.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        conn = db.connect(Path(directory) / "library.sqlite")
+        db.migrate(conn)
+        store = Store(conn)
+        rid = store.create_research("SYNTHETIC question?", "academic", "quick", ["openalex"], "fake", "fake-model",
+                                    None, search_workflow="sw")
+        ts = "2026-09-20T00:00:00.000+00:00"
+        with db.transaction(conn):
+            for work_id in sorted({row["work_id"] for row in rows}):
+                conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (work_id, ts))
+            for source_version_id in sorted({row["id"] for row in rows}):
+                conn.execute(
+                    "INSERT INTO source_versions (id, work_id, title, origin, created_at)"
+                    " VALUES (?, ?, 'SYNTHETIC record', 'provider', ?)",
+                    (source_version_id, next(r["work_id"] for r in rows if r["id"] == source_version_id), ts),
+                )
+                conn.execute(
+                    "INSERT INTO corpus_memberships (research_id, source_version_id, added_by, created_at)"
+                    " VALUES (?, ?, 'search', ?)", (rid, source_version_id, ts),
+                )
+        decisions = DecisionStore(store)
+        for row in rows:
+            decisions.record(rid, row["id"], row["reason_code"])
+        outcomes = [{"work_id": work_id, **decisions.work_outcome(rid, work_id)}
+                    for work_id in sorted({row["work_id"] for row in rows})]
+        conn.close()
+    return canonical_rows(outcomes, "work_id")
+
+
 def stage_build_protocol(rows: list[dict[str, Any]]) -> Any:
     scope = SCOPE | {"providers": [row["id"] for row in rows]}
     return build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
@@ -79,6 +119,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "fuse_rankings": stage_fuse_rankings,
     "answer_source_order": stage_answer_source_order,
     "build_protocol": stage_build_protocol,
+    "work_outcome": stage_work_outcome,
 }
 
 ROWS: dict[str, list[dict[str, Any]]] = {
@@ -87,6 +128,16 @@ ROWS: dict[str, list[dict[str, Any]]] = {
     "fuse_rankings": [{"id": f"psg_{i}", "text": "SYNTHETIC passage"} for i in range(6)],
     "answer_source_order": [{"id": f"svr_{i}", "text": "SYNTHETIC molecule release schedule"} for i in range(6)],
     "build_protocol": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed")],
+    # Three works: one still a candidate on the abstract stage, one whose two versions disagree on the full text,
+    # one the user decided. SYNTHETIC decisions; they show merge behavior, not screening quality.
+    "work_outcome": [
+        {"id": "srv_one_a", "work_id": "wrk_one", "reason_code": "both_blocks_missing"},
+        {"id": "srv_one_b", "work_id": "wrk_one", "reason_code": "blocks_in_title"},
+        {"id": "srv_two_a", "work_id": "wrk_two", "reason_code": "all_parts_verified"},
+        {"id": "srv_two_b", "work_id": "wrk_two", "reason_code": "criterion_absent"},
+        {"id": "srv_three_a", "work_id": "wrk_three", "reason_code": "criterion_absent"},
+        {"id": "srv_three_b", "work_id": "wrk_three", "reason_code": "human_include"},
+    ],
 }
 
 

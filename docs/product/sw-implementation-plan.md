@@ -77,6 +77,10 @@ Bölündü (20 Eylül 2026): **04a** son iki madde dışındaki her şey ([sw-sl
 Kapsam: yalnızca `sw` araştırmalarında bir sorgunun sonuçları sayfa sayfa okunur (OpenAlex'te imleçle, diğer sağlayıcılarda kendi sayfalama kuralıyla; sayfalamayı desteklemeyen sağlayıcı tek sayfa okur ve bu kaydedilir); her sayfa kendi adımıdır (`operation_key`), böylece duraklatılan koşu okunmuş sayfayı yeniden istemez ve başarısız sayfa diğerlerini durdurmaz (D18); sorgu başına okuma sınırı tek bir adlı sabittir, protokolün `thresholds` alanına ve `search_runs`'a (okunan / sağlayıcının bildirdiği toplam) yazılır; sınır sağlayıcının toplamından küçükse okunmayan kayıt sayısı saklanır ve gösterilecek sayılar arasına girer (§2.5). `legacy` bütçeleri (`results_per_query`, `max_provider_requests`) değişmez.
 Kabul: sınırın altındaki bir sorguda sağlayıcının bildirdiği her kayıt aday olur; okuma sınırı kayıt silmez, yalnızca okunmayanı sayar; sürdürülen koşu hiçbir sayfayı iki kez istemez. Açık kalan: tarama hâlâ `max_candidates` ile kesilir; onu `sw` için kaldıran dilim 09'dur (K3).
 
+**04d · Blok atamasını modele sordur, kararı kodda tut** — SW17 (tümü), SW2.2 ve 2.6, SW1.3. Kur. Önkoşul: 04a; 04b ve 04c'den bağımsız. (21 Eylül 2026'da eklendi: 04a'nın edat kuralı blokları ölçümde 28 ifadenin 9'unda yanlış atıyor ve iddia sayıp sorgudan düşürüyor; `.local/sw-block-labelling-2026-09-21/`.)
+Kapsam: yeni `vocabulary_labels` model adımı ve sözleşmesi; model yalnızca kodun çıkardığı ifadeleri altı etiketten birine koyar, listeye ifade ekleyemez, bölemez, değiştiremez, atlayamaz ve izin listesi dışına çıkan çıktı reddedilir (onarılmaz); araştırma başına üç koşu, 2/3 çoğunluk, çoğunluk yoksa kuralın etiketi kalır ve ifade sorguya girmez; adım `optional`, model kapalıyken kurala düşülür; kuralın yöntem konumu ikinci veto olarak **tutulmaz** (ölçümde düzeltilen iki vakayı da geri bozuyordu); blok kökeni (`rule` | `model` | `user`) terim başına saklanır ve protokole girer; yeni yöntem paketi dosyası nedeniyle `skill_package_hash` değişir.
+Kabul: model her çağrıda hata verirken `sw` keşif koşusu yine arar (04a kabul koşulu korunur, "hiçbir model çağrısı yok"tan "hiçbir zorunlu model çağrısı yok"a daralır); izin listesi dışı ifade dönen koşu düşer; sürdürülen koşu modeli yeniden çağırmaz; `legacy` ve `key_terms` yollarında adım açılmaz. Ayrıntı: [sw-slice04d-model-block-labelling.md](sw-slice04d-model-block-labelling.md).
+
 **05 · Derleme işareti, eksik özet ve sürüm bağlantıları** — SW5.1–5, SW9.3, SW6.4. Kur. Önkoşul: 02, 03.
 Kapsam: başlık güçlü sözcüğü / özetin kendini tanımlaması / 150+ referans; yalnızca başlık sözcüğü adaylıktan çıkarır, diğer ikisi işaret koyar ve tohum havuzuna ekler; OpenAlex `type` ve mekân adı kullanılmaz; özetsiz kayıt için DOI ile Semantic Scholar, sonra Crossref (D67 hız sınırı altında), nereden geldiği saklanır; S2 `externalIds`, arXiv DOI alanı ve Crossref ön baskı ilişkisi birleştirmeyi doğrular ya da engeller.
 Kabul: özetsiz kayıt hiçbir zaman "kapsam dışı" olmaz. Ölçülmeyen: ikinci kaynağın kaç eksik özeti doldurduğu; dilim bunu iki konuda sayar ve yazar.
@@ -173,7 +177,7 @@ Sonuç sahibe gösterilir; değişmesi gereken eşik ve kurallar yeni SW girişl
 | SW1.4 | 07 | | SW10.4–5 | 18 |
 | SW1.8 | 19 | | SW10.6–8 | 22 |
 | SW2.1–4, 2.7 | 04 | | SW11.1–5 | 02, 09, 12 |
-| SW2.5–6 | 08 | | SW11.4–7, 10, 11, 13 | 16, 17 |
+| SW2.5–6 | 08 (2.5'i SW17 daraltır) | | SW11.4–7, 10, 11, 13 | 16, 17 |
 | SW3.1–4, 3.7 | 14 | | SW11.8, 12, 13 | 20 (+ PRISMA-S dökümü, SW dışı) |
 | SW3.5 | 04 | | SW11.9 | 18 |
 | SW3.6 | 15 | | SW12 | 11 |
@@ -185,6 +189,7 @@ Sonuç sahibe gösterilir; değişmesi gereken eşik ve kurallar yeni SW girişl
 | SW8.1–2 | 07 | | SW15.5 | 12 |
 | SW8.3–6 | 21 | | SW15.6, SW16.2–4 | 23 |
 | SW8.7 | 19 | | SW16.1, 16.5 | 12 |
+| SW17 | 04d | | | |
 
 ## 5. Sahibin vermesi gereken kararlar
 

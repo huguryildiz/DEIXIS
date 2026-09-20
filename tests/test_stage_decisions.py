@@ -139,6 +139,19 @@ def test_undoing_a_human_decision_brings_back_the_decision_before_it(store):
     assert decisions.current(rid, svid, "fulltext")["id"] == restored["id"]
 
 
+def test_a_restored_decision_keeps_the_protocol_it_was_decided_under(store):
+    rid, run_id = research(store)
+    svid, _ = one_record(store, rid, run_id)
+    decisions = DecisionStore(store)
+    first = decisions.record(rid, svid, "criterion_absent")
+    store.revise_scope(rid, store.research(rid)["version"], "SYNTHETIC question, narrowed?", None)
+    decisions.record(rid, svid, "human_include")
+    restored = decisions.undo_human(rid, svid, "fulltext")
+    # Nobody decided again under the revised question, so the restored decision must still read as stale (SW11.10).
+    assert restored["scope_revision"] == first["scope_revision"] == 1
+    assert decisions.is_stale(restored) is True
+
+
 def test_undoing_the_only_decision_leaves_the_stage_undecided(store):
     rid, run_id = research(store)
     svid, _ = one_record(store, rid, run_id)
@@ -276,6 +289,23 @@ def test_one_version_still_a_candidate_keeps_the_work_pending(store):
     assert decisions.derive_selection(rid, work_id) == "pending"
     head = store.conn.execute("SELECT state, origin FROM selections WHERE source_version_id = ?", (published,)).fetchone()
     assert (head["state"], head["origin"]) == ("pending", "code_rule")
+
+
+def test_the_version_named_for_a_work_does_not_depend_on_which_decision_was_written_first(tmp_path):
+    named = []
+    for order in (0, 1):
+        connection = db.connect(tmp_path / f"order-{order}.sqlite")
+        db.migrate(connection)
+        other = Store(connection)
+        rid, run_id = research(other)
+        versions = two_versions(other, rid, run_id)[:2]
+        decisions = DecisionStore(other)
+        for svid in (versions if order == 0 else versions[::-1]):
+            decisions.record(rid, svid, "blocks_in_title")
+        work_id = other.source(versions[0])["work_id"]
+        named.append(versions.index(decisions.work_outcome(rid, work_id)["source_version_id"]))
+        connection.close()
+    assert named == [0, 0]  # the work's head, whichever version was decided first
 
 
 def test_every_version_out_of_scope_excludes_the_work(store):

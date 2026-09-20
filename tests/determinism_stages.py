@@ -128,9 +128,13 @@ ROWS: dict[str, list[dict[str, Any]]] = {
     "fuse_rankings": [{"id": f"psg_{i}", "text": "SYNTHETIC passage"} for i in range(6)],
     "answer_source_order": [{"id": f"svr_{i}", "text": "SYNTHETIC molecule release schedule"} for i in range(6)],
     "build_protocol": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed")],
-    # Three works: one still a candidate on the abstract stage, one whose two versions disagree on the full text,
-    # one the user decided. SYNTHETIC decisions; they show merge behavior, not screening quality.
+    # Four works: one still a candidate on the abstract stage, one whose two versions disagree on the full text, one
+    # the user decided, and one whose two versions reached the same outcome, so the version named for the work must
+    # not be the one decided first. SYNTHETIC decisions; they show merge behavior, not screening quality.
     "work_outcome": [
+        # First in the list: both shuffles the test runs reverse this pair.
+        {"id": "srv_four_a", "work_id": "wrk_four", "reason_code": "blocks_in_title"},
+        {"id": "srv_four_b", "work_id": "wrk_four", "reason_code": "runs_agree_candidate"},
         {"id": "srv_one_a", "work_id": "wrk_one", "reason_code": "both_blocks_missing"},
         {"id": "srv_one_b", "work_id": "wrk_one", "reason_code": "blocks_in_title"},
         {"id": "srv_two_a", "work_id": "wrk_two", "reason_code": "all_parts_verified"},

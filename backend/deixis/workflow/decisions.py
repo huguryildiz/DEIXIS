@@ -116,11 +116,11 @@ class DecisionStore:
             if previous is None:
                 self.conn.execute("UPDATE stage_decisions SET superseded_at = ? WHERE id = ?", (now(), current["id"]))
                 return None
-            scope_revision = self.store.research(research_id)["current_scope_revision"]
-            protocol_hash, criterion_hash = self._protocol_hashes(research_id, scope_revision)
+            # The restored row keeps the revision and protocol it was decided under: nobody decided again, so a
+            # decision that went stale while the user's stood must still read as stale (SW11.10).
             return self._insert(research_id, source_version_id, reason(previous["reason_code"]), previous["step_id"],
-                                "restored after an undone human decision", scope_revision, protocol_hash,
-                                criterion_hash, closing=current)
+                                "restored after an undone human decision", previous["scope_revision"],
+                                previous["protocol_hash"], previous["criterion_hash"], closing=current)
 
     def is_stale(self, decision: dict[str, Any]) -> bool:
         """Whether the research moved on from what this decision was decided under (SW11.10). It is marked, not moved."""
@@ -184,8 +184,15 @@ class DecisionStore:
 
         The full-text stage answers when any version reached it. The user's decision answers before any other; two
         versions that reached opposite full-text decisions leave the work unresolved rather than picking one. An
-        abstract decision on one version never drops the work while another version is still a candidate.
+        abstract decision on one version never drops the work while another version is still a candidate. When several
+        versions carry the winning outcome, the work's head is named, else the smallest identifier, never the one
+        that happened to be decided first.
         """
+        head = self.store.work_heads(research_id).get(work_id)
+
+        def named(rows: list[dict[str, Any]]) -> dict[str, Any]:
+            return min(rows, key=lambda d: (d["source_version_id"] != head, d["source_version_id"]))
+
         versions = [r[0] for r in self.conn.execute(
             "SELECT m.source_version_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
             " WHERE m.research_id = ? AND m.removed_at IS NULL AND v.work_id = ?", (research_id, work_id),
@@ -204,21 +211,21 @@ class DecisionStore:
             outcomes = {d["outcome"] for d in fulltext}
             if {"include", "criterion_not_met"} <= outcomes:
                 # No stored decision says this; the work is left open and the report shows the versions side by side.
+                including = named([d for d in fulltext if d["outcome"] == "include"])
                 return {"stage": "fulltext", "outcome": "unresolved", "reason_code": "versions_disagree",
-                        "decided_by": "code",
-                        "source_version_id": min(d["source_version_id"] for d in fulltext if d["outcome"] == "include")}
+                        "decided_by": "code", "source_version_id": including["source_version_id"]}
             best = next(outcome for outcome in FULLTEXT_ORDER if outcome in outcomes)
-            return _outcome(next(d for d in fulltext if d["outcome"] == best))
+            return _outcome(named([d for d in fulltext if d["outcome"] == best]))
 
         abstract = [d for d in decisions if d["stage"] == "abstract"]
         if not abstract:
             return {}
         candidates = [d for d in abstract if d["outcome"] == "candidate"]
         if candidates:
-            return _outcome(candidates[0])
+            return _outcome(named(candidates))
         if all(d["outcome"] == "out_of_scope" for d in abstract):
-            return _outcome(abstract[0])
-        return _outcome(next(d for d in abstract if d["outcome"] == "unresolved"))
+            return _outcome(named(abstract))
+        return _outcome(named([d for d in abstract if d["outcome"] == "unresolved"]))
 
     def derive_selection(self, research_id: str, work_id: str) -> str | None:
         """Write the work's decision onto the selection its head record carries; returns the state written.

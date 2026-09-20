@@ -12,6 +12,16 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 **Limits:** The design was ported from an approved mockup in one change, so it has been verified only against synthetic records and a scripted model (`npm run build`, `npm run lint`, the Playwright suite and a rendered check) — not against a large real library, where band-level and row-level virtualisation may be needed. The table header's sort cycling, per-band paging and the work-details pane (`{n} pages`, `Read the PDF`) are gone; sorting moved to the command row's menu, and a work's pages open in the source sheet that a row title already opens. Drag-and-drop is HTML5 drag, so it is not offered on touch pointers, where no grip is shown. The venue italic switch is a Library-only type exception (`.impeccable.md` §2.2), not a change to the source sheet or the evidence table.
 
+## D68 — Let the user rename a research in place, as a title and not as evidence
+
+**Status:** accepted; implemented. **Date:** 2026-09-18.
+
+**Context:** A research is named from its question, then renamed by the discovery-time title step or by a valid answer (D36, D39, D42). The owner asked for the title above the question to be editable by the user. The title is a workspace label: it is shown in the header, in the sidebar's recent list, and in exports, but every evidence boundary the answer rests on (question, scope revision, source selection, citation anchors) is unchanged by it.
+
+**Decision:** The user can rename a research from the heading above the question and from a `Rename` item in the sidebar row's action menu. Both write `POST /api/researches/{id}/title` with `expected_version`, which bumps `researches.version` and records a `research_title_edited` event. A blank or unchanged title is a no-op, and the answer, its scope revision and any run in progress are untouched; the title is not a scope change and does not invalidate an answer. The heading is edited in place — double-click, or Enter/F2 while it has focus — with no separate edit control, and the sidebar row keeps a labeled `Rename` action so the operation is reachable without a pointer gesture.
+
+**Limits:** A user-authored title is not final: the next scope revision or the next valid answer renames the research again (D36), so the edit is not a stored override. No flag distinguishes a user title from a model title, so the heading heuristic in `ResearchView` (`question.startsWith(title)`) can show the full question when a user title happens to be a prefix of it. `researches.version` is bumped by a scope revision, so a rename from a stale sidebar list is refused with 409 and the list reloads. Covered by `tests/test_api_flow.py::test_user_can_edit_research_title` and the Playwright case "a research title is renamed in place and from its sidebar row" (synthetic records and a scripted model).
+
 ## D67 — Pace Semantic Scholar requests across endpoints
 
 **Status:** accepted; implemented. **Date:** 2026-09-18.

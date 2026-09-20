@@ -643,6 +643,22 @@ def test_seed_requires_readable_uploaded_pdf_and_rejects_other_scopes(tmp_path):
         assert client.get(f"/api/researches/{rid}").json()["scope"]["seed_status"] == "missing"
 
 
+def test_user_can_edit_research_title(tmp_path):
+    with TestClient(app_for(tmp_path)) as client:
+        session(client)
+        rid = create(client)
+        view = client.get(f"/api/researches/{rid}").json()
+        updated = client.post(f"/api/researches/{rid}/title", json={
+            "title": "SYNTHETIC custom project title",
+            "expected_version": view["research"]["version"],
+        })
+        assert updated.status_code == 200, updated.text
+        payload = updated.json()
+        assert payload["research"]["title"] == "SYNTHETIC custom project title"
+        assert payload["research"]["version"] == view["research"]["version"] + 1
+        assert client.get(f"/api/researches/{rid}").json()["research"]["title"] == "SYNTHETIC custom project title"
+
+
 def test_provider_rate_limit_pauses_without_fallback(tmp_path):
     with TestClient(app_for(tmp_path, http_status=429)) as client:
         session(client)

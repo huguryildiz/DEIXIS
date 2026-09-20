@@ -131,6 +131,11 @@ class ScopeRevision(BaseModel):
     expected_version: int
 
 
+class ResearchTitleChange(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    expected_version: int
+
+
 class SeedSelection(BaseModel):
     source_version_id: str = Field(pattern=r"^srv_[0-9A-Za-z]{8,40}$")
     expected_version: int
@@ -753,6 +758,15 @@ def create_app(
     async def trash_research(research_id: str, request: Request) -> dict[str, bool]:
         store_of(request).trash_research(research_id)
         return {"trashed": True}
+
+    @app.post("/api/researches/{research_id}/title")
+    async def revise_title(research_id: str, body: ResearchTitleChange, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        try:
+            store.rename_research(research_id, body.expected_version, body.title)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return research_view(store, research_id)
 
     @app.post("/api/researches/{research_id}/scope")
     async def revise_scope(research_id: str, body: ScopeRevision, request: Request) -> dict[str, Any]:

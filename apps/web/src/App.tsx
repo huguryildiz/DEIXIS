@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Ban, CircleCheck, CirclePause, CircleX, ChevronDown, ChevronRight, Ellipsis, FlaskConical, Landmark, Library, LoaderCircle, Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, Settings2, ShieldAlert, Sun, Trash2, type LucideIcon } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { Ban, CircleCheck, CirclePause, CircleX, ChevronDown, ChevronRight, Ellipsis, FlaskConical, Landmark, Library, LoaderCircle, Menu, Moon, PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings2, ShieldAlert, Sun, Trash2, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, type InstitutionalAccess, type ResearchSummary, type RunStatus } from './api'
+import { api, ApiError, type InstitutionalAccess, type ResearchSummary, type RunStatus } from './api'
 import { runStatusLabels } from './labels'
 import { Home } from './Home'
 import { ResearchPage } from './ResearchView'
@@ -78,6 +78,13 @@ export default function App() {
   const [listError, setListError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [actionBusy, setActionBusy] = useState<string | null>(null)
+  // Renaming a recent research from the sidebar; the field is opened by a double click or by the row's Rename action.
+  const [renameId, setRenameId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const renameInput = useRef<HTMLInputElement>(null)
+  const renameDone = useRef(true)
+  // A row opens on a single click and is renamed on a double click, so the navigation waits for the second click to miss.
+  const openTimer = useRef<number | null>(null)
   const [sidebar, setSidebar] = useState(false)
   const [theme, setTheme] = useState<ThemeChoice>(readTheme)
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -125,6 +132,60 @@ export default function App() {
     document.addEventListener('visibilitychange', refreshIfVisible)
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refreshIfVisible) }
   }, [refreshList])
+
+  function beginRename(research: ResearchSummary) {
+    setRenameDraft(research.title)
+    renameDone.current = false
+    setRenameId(research.id)
+  }
+
+  function cancelRename() {
+    renameDone.current = true
+    setRenameId(null)
+  }
+
+  async function commitRename(research: ResearchSummary) {
+    if (renameDone.current) return
+    renameDone.current = true
+    const next = renameDraft.trim()
+    setRenameId(null)
+    if (!next || next === research.title) return
+    setActionBusy(research.id)
+    setActionMessage('')
+    try {
+      const renamed = await api.renameResearch(research.id, next, research.version)
+      setResearches(items => items.map(item => (item.id === research.id ? { ...item, title: renamed.research.title } : item)))
+      refreshList()
+      toast('success', t('Research title saved.'))
+    } catch (error) {
+      // 409 means the research changed since this list was read (a scope revision renames it); the list is reloaded below.
+      setActionMessage(t('Could not save the title: {message}', { message: (error as Error).message }))
+      if (error instanceof ApiError && error.status === 409) refreshList()
+    }
+    finally { setActionBusy(null) }
+  }
+
+  // The field appears in the same commit as the menu that closed, so focus is taken once Radix has returned it to the trigger.
+  useEffect(() => {
+    if (!renameId) return
+    const timer = window.setTimeout(() => { renameInput.current?.focus(); renameInput.current?.select() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [renameId])
+
+  useEffect(() => () => { if (openTimer.current !== null) window.clearTimeout(openTimer.current) }, [])
+
+  const clearOpenTimer = () => {
+    if (openTimer.current === null) return
+    window.clearTimeout(openTimer.current)
+    openTimer.current = null
+  }
+
+  function openRecent(event: ReactMouseEvent<HTMLButtonElement>, id: string) {
+    // The second click of a double click must not navigate again; it opens the title for editing instead.
+    if (event.detail > 1) { clearOpenTimer(); return }
+    clearOpenTimer()
+    openTimer.current = window.setTimeout(() => { openTimer.current = null; go({ view: 'research', id }) }, 220)
+  }
 
   async function moveToTrash(research: ResearchSummary) {
     setActionBusy(research.id)
@@ -232,9 +293,22 @@ export default function App() {
         {researches.slice(0, 12).map(r => {
           const StatusIcon = r.last_run_status ? recentStatusIcons[r.last_run_status] : FlaskConical
           const status = t(r.last_run_status ? runStatusLabels[r.last_run_status] : 'No run yet')
-          return <div key={r.id} className={`recent-row ${r.id === activeId ? 'is-active' : ''}`}><button className="recent-open" onClick={() => go({ view: 'research', id: r.id })} title={`${r.question} · ${status}`} aria-label={`${r.title} · ${status}`}><span className="recent-status" data-status={r.last_run_status ?? 'none'}><StatusIcon size={16} className={r.last_run_status && activeRunStatuses.has(r.last_run_status) ? 'recent-status-spinning' : undefined} aria-hidden="true" /></span><span className="recent-title">{r.title}</span><time className="recent-time" dateTime={r.updated_at}>{sinceLabel(r.updated_at)}</time></button>
+          return <div key={r.id} className={`recent-row ${r.id === activeId ? 'is-active' : ''}`}>
+            {renameId === r.id
+              ? <div className="recent-open is-renaming"><span className="recent-status" data-status={r.last_run_status ?? 'none'}><StatusIcon size={16} className={r.last_run_status && activeRunStatuses.has(r.last_run_status) ? 'recent-status-spinning' : undefined} aria-hidden="true" /></span><input
+                ref={renameInput}
+                className="recent-title-input"
+                aria-label={t('Research title')}
+                value={renameDraft}
+                maxLength={160}
+                spellCheck={false}
+                onChange={event => setRenameDraft(event.target.value)}
+                onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void commitRename(r) } else if (event.key === 'Escape') { event.preventDefault(); cancelRename() } }}
+                onBlur={() => void commitRename(r)}
+              /></div>
+              : <button className="recent-open" onClick={event => openRecent(event, r.id)} onDoubleClick={() => beginRename(r)} title={`${r.question} · ${status}`} aria-label={`${r.title} · ${status}`}><span className="recent-status" data-status={r.last_run_status ?? 'none'}><StatusIcon size={16} className={r.last_run_status && activeRunStatuses.has(r.last_run_status) ? 'recent-status-spinning' : undefined} aria-hidden="true" /></span><span className="recent-title">{r.title}</span><time className="recent-time" dateTime={r.updated_at}>{sinceLabel(r.updated_at)}</time></button>}
             <DropdownMenu><DropdownMenuTrigger className="recent-more" disabled={actionBusy === r.id} aria-label={t('Actions for {title}', { title: r.title })} title={t('More actions')}><Ellipsis size={16} /></DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-auto"><DropdownMenuItem variant="destructive" onClick={() => moveToTrash(r)}><Trash2 size={15} />{t('Move to Trash')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
+              <DropdownMenuContent align="end" className="w-auto"><DropdownMenuItem onClick={() => beginRename(r)}><PencilLine size={15} />{t('Rename')}</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => moveToTrash(r)}><Trash2 size={15} />{t('Move to Trash')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
         })}
       </div>
       {actionMessage && route.view !== 'trash' && <p className="sidebar-action-message" role="status">{actionMessage}</p>}

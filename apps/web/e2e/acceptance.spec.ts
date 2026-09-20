@@ -160,6 +160,62 @@ test('mixed search asks which PDF guides it when several are attached', async ({
   } finally { await page.close(); await server.stop() }
 })
 
+test('a research title is renamed in place and from its sidebar row', async ({ browser }) => {
+  const server = new FixtureServer(8788)
+  await server.start()
+  const page = await browser.newPage()
+  try {
+    await startResearch(page, server, 'SYNTHETIC rename flow research')
+    await expect(page.getByText('Ran search & screening')).toBeVisible()
+    const discovery = 'Synthetic short research title'
+    const renamed = 'Own wording for the synthetic rename research'
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(discovery)
+    // No edit control in the header: the heading itself is the whole affordance.
+    await expect(page.getByRole('button', { name: /edit title/i })).toHaveCount(0)
+
+    await page.getByRole('heading', { level: 1 }).click()
+    await expect(page.locator('.research-title-input')).toHaveCount(0)
+    await page.getByRole('heading', { level: 1 }).dblclick()
+    const field = page.getByRole('textbox', { name: 'Research title' })
+    await expect(field).toBeFocused()
+    await field.fill(renamed)
+    await expect(page.locator('.research-title-hint')).toHaveText('Enter saves, Escape cancels')
+    await shot(page, 'rename-in-place-desktop')
+
+    // Escape reverts to the stored title; Enter saves.
+    await field.press('Escape')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(discovery)
+    await page.getByRole('heading', { level: 1 }).dblclick()
+    await page.getByRole('textbox', { name: 'Research title' }).fill(renamed)
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(renamed)
+    await expect(page.locator('.recent-row', { hasText: renamed })).toBeVisible()
+
+    // Stored, not local state: a reload reads the renamed title back.
+    await page.reload()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(renamed)
+
+    // The sidebar row keeps the labeled path, reachable without the pointer gesture.
+    await page.getByRole('button', { name: `Actions for ${renamed}` }).click()
+    await page.getByRole('menuitem', { name: 'Rename' }).click()
+    const rowField = page.locator('.recent-title-input')
+    await expect(rowField).toBeFocused()
+    await rowField.fill('Sidebar rename')
+    await rowField.press('Enter')
+    await expect(page.locator('.recent-title-input')).toHaveCount(0)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sidebar rename')
+    await expect(page.locator('.recent-row', { hasText: 'Sidebar rename' })).toBeVisible()
+
+    // The field replaces the heading without clipping it on a narrow layout.
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.getByRole('heading', { level: 1 }).dblclick()
+    await expect(page.getByRole('textbox', { name: 'Research title' })).toBeVisible()
+    await shot(page, 'rename-in-place-mobile')
+    await page.getByRole('textbox', { name: 'Research title' }).press('Escape')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sidebar rename')
+  } finally { await page.close(); await server.stop() }
+})
+
 async function startResearch(page: Page, server: FixtureServer, question: string, scope?: string) {
   await page.goto(server.url())
   await page.getByLabel('Research question').fill(question)

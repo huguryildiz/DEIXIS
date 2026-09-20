@@ -20,6 +20,10 @@
 @keyframes recent-status-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.app .recent-status>svg.recent-status-spinning{animation:none}}
 .app .recent-list button>.recent-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--ink)}
+/* The row's title is renamed in place: the same row, with the label swapped for a field that keeps the row's own type. */
+.app .recent-row>.recent-open.is-renaming{display:flex;align-items:center;flex:1;min-width:0;gap:10px;padding:9px 4px 9px 12px}
+.app .recent-title-input{flex:1;min-width:0;padding:0;border:0;background:none;color:var(--ink);font:inherit;line-height:1.5;font-size:13px}
+.app .recent-title-input:focus-visible{outline:2px solid var(--accent);outline-offset:0}
 .app .recent-time{flex:none;font-size:12px;color:var(--muted);white-space:nowrap}
 .app .recent-row .recent-more{flex:none;width:28px;height:28px;justify-content:center;padding:0;margin-right:4px;border-radius:6px;color:var(--muted);opacity:0}
 .app .recent-row:is(:hover,:focus-within,.is-active) .recent-more,.app .recent-row .recent-more[data-popup-open]{opacity:1}
@@ -74,6 +78,17 @@
 .phrasing-note ul{margin:6px 0 0}
 /* The question is the provisional heading until the discovery-time title or an answer names the research (D36, D39). */
 .legacy-research h1{font-size:clamp(18px,2vw,24px);line-height:1.25;letter-spacing:-.01em;text-wrap:balance}
+/* Renaming happens in place: double-click the heading, or press Enter/F2 while it has focus. The surface and the ring are the
+   whole affordance, so there is no edit control to advertise; the 6px bleed keeps the text exactly where it already sat. */
+.legacy-research .research-title-text{display:inline-block;max-width:100%;padding:2px 6px;margin:-2px -6px;border-radius:7px;cursor:text;transition:background-color .15s ease}
+.legacy-research .research-title-text:hover{background:var(--hover-surface)}
+.legacy-research .research-title-text:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* The rename field mirrors the `h1` recipe above, since it stands in for the heading and no type may shift. */
+.legacy-research .research-title-input{display:block;width:100%;margin:-2px -6px;padding:2px 6px;border:0;border-radius:7px;background:var(--field-surface);color:var(--ink);font-family:'Newsreader Variable',serif;font-weight:420;font-size:clamp(18px,2vw,24px);line-height:1.25;letter-spacing:-.01em;resize:none;overflow:hidden}
+.legacy-research .research-title-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* The hint takes the row the section label already occupies, so nothing below the title moves while the field is open. */
+.legacy-research .section-label.is-editing{display:flex;align-items:baseline;gap:12px}
+.legacy-research .research-title-hint{margin-left:auto;font-weight:450;font-variant-numeric:tabular-nums}
 /* The revision box is a section of the page, not a second card. */
 .app .legacy-research .legacy-followup{margin-top:46px;padding:22px 0 0;border:0;border-top:1px solid var(--line);border-radius:0;background:none}
 .app .legacy-research .legacy-followup textarea{padding:11px 13px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface,transparent);color:var(--ink)}
@@ -495,9 +510,9 @@ button.chat-step-title svg{color:var(--muted)}
 .activity-chip.is-warn{--pill:var(--tone-uncertain)}
 .activity-chip.is-live{--pill:var(--accent)}
 .passage-text{white-space:pre-wrap}
-.legacy-research>h1.is-typing>span::after{content:'';display:inline-block;width:2px;height:.78em;margin-left:.1em;background:var(--accent);vertical-align:-.02em;animation:title-caret .65s steps(1,end) infinite}
+.legacy-research h1.is-typing>span::after{content:'';display:inline-block;width:2px;height:.78em;margin-left:.1em;background:var(--accent);vertical-align:-.02em;animation:title-caret .65s steps(1,end) infinite}
 @keyframes title-caret{50%{opacity:0}}
-@media(prefers-reduced-motion:reduce){.legacy-research>h1.is-typing>span::after{display:none;animation:none}}
+@media(prefers-reduced-motion:reduce){.legacy-research h1.is-typing>span::after{display:none;animation:none}}
 /* Source details sheet: title, byline, links, then the stored passage (layout follows Elicit's source panel). */
 .source-sheet[data-slot=sheet-content]{width:min(460px,94vw);max-width:94vw;gap:0}
 .detail-sheet.source-sheet [data-slot=sheet-header]{gap:0;padding:17px 92px 16px 22px;border-bottom:1px solid var(--line)}

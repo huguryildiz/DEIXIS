@@ -156,7 +156,7 @@ export type ResearchView = {
   reviewer: { mode: ReviewMode; connection: string | null; model: string | null; reasoning_effort: string | null }
 }
 export type ResearchSummary = {
-  id: string; title: string; question: string; source_scope: SourceScope; effort: Effort; last_run_status: RunStatus | null
+  id: string; title: string; question: string; version: number; source_scope: SourceScope; effort: Effort; last_run_status: RunStatus | null
   last_run_kind: RunKind | null
   answer_count: number; created_at: string; updated_at: string
 }
@@ -348,6 +348,8 @@ export const api = {
   addLibrarySource: (researchId: string, workId: string) =>
     request<LibraryAddition>(`/api/researches/${researchId}/library-sources`, json('POST', { work_id: workId })),
   research: (id: string) => request<ResearchView>(`/api/researches/${id}`),
+  renameResearch: (id: string, title: string, expectedVersion: number) =>
+    request<ResearchView>(`/api/researches/${id}/title`, json('POST', { title, expected_version: expectedVersion })),
   create: (body: {
     question: string; source_scope: SourceScope; seed_mode?: 'question_only' | 'uploaded_seed'; effort: Effort; model_connection: string; requested_model: string; reasoning_effort: string | null
     literature_connection: string; literature_model: string; literature_reasoning_effort: string | null

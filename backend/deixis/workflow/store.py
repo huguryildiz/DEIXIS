@@ -1644,6 +1644,22 @@ class Store:
                 (title.strip(), now(), research_id, scope_revision),
             )
 
+    def rename_research(self, research_id: str, expected_version: int, title: str) -> None:
+        """Persist a user-authored title. It is not final: a later scope revision or a valid answer may name the research again (D68)."""
+        final_title = title.strip()
+        if not final_title:
+            raise ValueError("Title cannot be blank")
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            if research["title"] == final_title:
+                return
+            self.conn.execute(
+                "UPDATE researches SET title = ?, version = version + 1, updated_at = ? WHERE id = ?",
+                (final_title, now(), research_id),
+            )
+            self._event(research_id, "research_title_edited", {"title": final_title})
+
     def set_user_selection(self, research_id: str, svid: str, state: str, expected_version: int, reason: str | None) -> dict[str, Any]:
         with transaction(self.conn):
             current = self.conn.execute(

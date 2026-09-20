@@ -31,7 +31,14 @@ import { Notice } from './Notice'
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
-function TypewriterTitle({ text }: { text: string }) {
+// A research title wraps across the whole column, so the rename field grows with its text instead of scrolling sideways.
+function sizeTitleField(el: HTMLTextAreaElement | null) {
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
+function TypewriterTitle({ text, onStartEdit }: { text: string; onStartEdit: () => void }) {
   const [shown, setShown] = useState(text)
   const previous = useRef(text)
 
@@ -56,11 +63,26 @@ function TypewriterTitle({ text }: { text: string }) {
   }, [text])
 
   const writing = shown.length < text.length
-  return <h1 className={writing ? 'is-typing' : undefined} aria-label={text}><span aria-hidden>{shown}</span></h1>
+  // The title is renamed in place: double-click, or Enter/F2 once the title has focus. The heading stays a heading, so the
+  // full text keeps its aria-label; the sidebar's action menu is the labeled path for assistive technology.
+  return <h1
+    className={`research-title-text${writing ? ' is-typing' : ''}`}
+    aria-label={text}
+    tabIndex={0}
+    title={t('Double-click to rename')}
+    onDoubleClick={onStartEdit}
+    onKeyDown={event => {
+      if (event.key !== 'Enter' && event.key !== 'F2') return
+      event.preventDefault()
+      onStartEdit()
+    }}
+  ><span aria-hidden>{shown}</span></h1>
 }
 
 export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; initialTab?: string; dark: boolean; onChanged: () => void }) {
   const [view, setView] = useState<ResearchView | null>(null)
+  const [titleEditing, setTitleEditing] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
   const [error, setError] = useState('')
   const toast = useToast()
   const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'evidence' || initialTab === 'artifacts' || initialTab === 'activity' ? initialTab : 'answer')
@@ -91,11 +113,31 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const tabsRef = useRef<HTMLDivElement>(null)
   const jumped = useRef(false)
   const lastRun = useRef<{ id: string; status: RunStatus } | null>(null)
+  const titleInput = useRef<HTMLTextAreaElement>(null)
+  // An edit session ends once: Enter, Escape or the blur that follows either one must not save a second time.
+  const titleEditDone = useRef(true)
+  const titleEditingRef = useRef(false)
 
   const load = useCallback(async () => {
-    try { const next = await api.research(id); setView(next); setError(''); if (firstEvent.current === null) firstEvent.current = next.last_event_id } catch (e) { setError(errorText(e)) }
+    try {
+      const next = await api.research(id)
+      setView(next)
+      // A reload arrives on every recorded event; it must not overwrite what is being typed into the open field.
+      if (!titleEditingRef.current) setTitleDraft(next.research.title)
+      setError('')
+      if (firstEvent.current === null) firstEvent.current = next.last_event_id
+    } catch (e) { setError(errorText(e)) }
   }, [id])
   useEffect(() => { void load() }, [load])
+  // The field exists only while editing, so this is also where it takes focus, selects the current title for replacing, and
+  // grows to the height the title needs at this width.
+  useEffect(() => {
+    titleEditingRef.current = titleEditing
+    if (!titleEditing) return
+    titleInput.current?.focus()
+    titleInput.current?.select()
+    sizeTitleField(titleInput.current)
+  }, [titleEditing])
   // Tables of this research, for the Evidence count and the table cards; refreshed on every recorded event (a table created, edited, trashed or restored).
   const [tables, setTables] = useState<TableSummary[] | null>(null)
   const lastEventId = view?.last_event_id
@@ -295,6 +337,16 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
   const ScopeIcon = scopeOptions[view.scope.source_scope].icon
   const EffortIcon = effortOptions[view.scope.effort].icon
+  const beginTitleEdit = () => { setTitleDraft(view.research.title); titleEditDone.current = false; setTitleEditing(true) }
+  const cancelTitle = () => { titleEditDone.current = true; setTitleDraft(view.research.title); setTitleEditing(false) }
+  const commitTitle = () => {
+    if (titleEditDone.current) return
+    titleEditDone.current = true
+    const next = titleDraft.trim()
+    setTitleEditing(false)
+    if (!next || next === view.research.title) { setTitleDraft(view.research.title); return }
+    void act(() => api.renameResearch(id, next, view.research.version), t('Research title saved.'), undefined)
+  }
   // The stored title is the question cut to 160 characters until a valid answer names the research (D36); until then show it whole.
   const heading = view.scope.question.startsWith(view.research.title) ? view.scope.question : view.research.title
   // Each count is the way into the evidence it describes; the selection filter lives here so a count can set it.
@@ -309,10 +361,42 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const tableCards = tables && tables.length > 0 && <div className="table-artifacts">{tables.map(table => <TableCard key={table.id} table={table} onOpen={() => openTable(table.id)} />)}</div>
   const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
   return <section className="research-view legacy-research">
-    <div className="section-label">{t('Research')} <span>· {t('revision {n}', { n: view.research.current_scope_revision })}</span></div>
-    <TypewriterTitle text={heading} />
-    {heading === view.scope.question && !active && run?.status !== 'paused' && <Button variant="ghost" size="sm" className="research-title-suggest" disabled={busy} onClick={startTitle}
-      title={t('The model names the research from its question and included sources, in at most 15 words.')}><Sparkles size={14} aria-hidden />{t('Suggest a short title')}</Button>}
+    {/* The hint takes the row that already exists above the title: reserving it there keeps the field from pushing the counts down
+        while the title is edited, and it leaves the scope revision readable. */}
+    <div className={`section-label${titleEditing ? ' is-editing' : ''}`}>
+      <span>{t('Research')} <span>· {t('revision {n}', { n: view.research.current_scope_revision })}</span></span>
+      {titleEditing && <span className="research-title-hint" id="research-title-hint">
+        {titleDraft.length > 120
+          ? `${t('Enter saves, Escape cancels')} · ${t('{count} of 160 characters', { count: String(titleDraft.length) })}`
+          : t('Enter saves, Escape cancels')}
+      </span>}
+    </div>
+    {titleEditing
+      ? <div className="research-title-block">
+        {/* While the title is being edited the heading gives way to the field: a heading whose whole content is a field has no
+            name to announce. The field restates the heading's type recipe (see .research-title-input) so nothing moves. */}
+        <textarea
+          ref={titleInput}
+          className="research-title-input"
+          aria-label={t('Research title')}
+          aria-describedby="research-title-hint"
+          value={titleDraft}
+          rows={1}
+          maxLength={160}
+          spellCheck={false}
+          onChange={e => { setTitleDraft(e.target.value); sizeTitleField(e.target) }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); commitTitle() }
+            else if (e.key === 'Escape') { e.preventDefault(); cancelTitle() }
+          }}
+          onBlur={commitTitle}
+        />
+      </div>
+      : <div className="research-title-block">
+        <TypewriterTitle text={heading} onStartEdit={beginTitleEdit} />
+        {heading === view.scope.question && !active && run?.status !== 'paused' && <Button variant="ghost" size="sm" className="research-title-suggest" disabled={busy} onClick={startTitle}
+          title={t('The model names the research from its question and included sources, in at most 15 words.')}><Sparkles size={14} aria-hidden />{t('Suggest a short title')}</Button>}
+      </div>}
     {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the tab that can show it. Scope and depth close the line. */}
     <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
       {/* A count is shown once it has something to say; a row of zeroes while the run works is noise, not a boundary. */}
@@ -1015,6 +1099,7 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
   switch (event.type) {
     case 'research_created': return lucide(FilePlus2, t('Research created'))
     case 'scope_revised': return lucide(PencilLine, t('Question revised (revision {n})', { n: String(p.scope_revision) }))
+    case 'research_title_edited': return lucide(PencilLine, t('Research title edited'))
     case 'run_queued': return lucide(ListPlus, p.kind === 'discovery' || p.kind === 'answer' ? t(p.kind === 'discovery' ? 'Search run queued' : 'Answer run queued') : t('{label} queued', { label: t(runKindLabels[String(p.kind) as RunKind] ?? String(p.kind)) }))
     case 'run_started': return lucide(Play, t('Run started'))
     case 'run_completed': return lucide(CircleCheck, t('Run completed'), [statusChip('completed')])

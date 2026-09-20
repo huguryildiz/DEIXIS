@@ -92,6 +92,26 @@ def test_one_surviving_run_is_no_majority_and_leaves_the_whole_rule_in_place():
     assert {r["origin"] for r in records} == {"rule"}
 
 
+def test_runs_that_agree_on_nothing_leave_the_whole_rule_in_place_instead_of_an_empty_query():
+    """Every phrase without a majority would leave the query: the gate would be empty and the run would stop for key
+    terms. A labelling that cannot be searched is not applied; the rule's assignment is the floor (SW17.5)."""
+    extraction = extract(SUPPLY)
+    phrases = [row["phrase"] for row in labelling_phrases(extraction)]
+    runs = [{phrase: block for phrase in phrases} for block in ("setting", "task", "outcome")]
+    labelled, records = apply_labels(extraction, runs)
+    assert labelled == extraction and labelled.block_assignment == "rule"
+    assert {r["origin"] for r in records} == {"rule"}
+    assert all(r["block"] == r["rule_block"] and len(r["runs"]) == LABEL_RUNS for r in records)  # the votes stay on record
+
+
+def test_runs_that_agree_no_phrase_is_a_search_term_leave_the_whole_rule_in_place():
+    extraction = extract(SUPPLY)
+    run = {row["phrase"]: "not_a_term" for row in labelling_phrases(extraction)}
+    labelled, records = apply_labels(extraction, [run] * LABEL_RUNS)
+    assert labelled == extraction and labelled.block_assignment == "rule"
+    assert {r["origin"] for r in records} == {"rule"}
+
+
 def test_a_phrase_labelled_not_a_term_leaves_every_list():
     extraction = extract(AGRONOMY)
     assert "effects" in extraction.blocks["task"]
@@ -197,6 +217,22 @@ def test_two_runs_of_three_agreeing_put_the_models_block_in_the_query(tmp_path, 
     record = next(p for p in vocabulary["labelling"]["phrases"] if p["phrase"] == "distributed ledgers")
     assert record == {"phrase": "distributed ledgers", "rule_block": "claim", "block": "setting", "origin": "model",
                       "runs": ["claim", "setting", "setting"]}
+
+
+def test_a_model_that_calls_every_phrase_a_claim_does_not_take_the_search_away(tmp_path, monkeypatch):
+    """The model is up and wrong. The run searches with the rule's blocks instead of stopping for key terms."""
+    openalex = CountingOpenAlex()
+    phrases = [row["phrase"] for row in labelling_phrases(extract(SUPPLY))]
+    adapter = FakeAdapter(labelling({phrase: "claim" for phrase in phrases}))
+    with TestClient(app_for(tmp_path, monkeypatch, openalex, adapter)) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        rid, run_id = start(client, SUPPLY)
+        wait(client, rid, run_id)
+    vocabulary = stored_vocabulary(tmp_path, rid)
+    assert openalex.searches
+    assert vocabulary["block_assignment"] == "rule"
+    assert vocabulary["labelling"]["runs_ok"] == LABEL_RUNS and vocabulary["labelling"]["fallback"] == "labelling_unsearchable"
+    assert {t["phrase"] for t in vocabulary["terms"]} == {"delivery delay", "supply chains", "shipment batching"}
 
 
 def test_a_run_that_names_a_phrase_outside_the_allowlist_is_dropped_and_the_other_two_decide(tmp_path, monkeypatch):

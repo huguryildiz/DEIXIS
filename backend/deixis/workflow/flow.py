@@ -441,7 +441,10 @@ class ResearchFlow:
             runs.append({label["phrase"]: label["block"] for label in output["result"]["labels"]})
         self._checkpoint(run_id, revision)
         labelled, records = vocabulary_rules.apply_labels(extraction, runs)
-        return labelled, {"runs_ok": len(runs), "skipped": None, "failures": failures, "phrases": records}
+        # Enough runs arrived and the rule still stands: the labelling left nothing to search with (apply_labels).
+        fallback = ("labelling_unsearchable" if len(runs) >= vocabulary_rules.LABEL_MAJORITY
+                    and labelled.block_assignment != "model" else None)
+        return labelled, {"runs_ok": len(runs), "skipped": None, "fallback": fallback, "failures": failures, "phrases": records}
 
     def _searchable(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Stop the run when its vocabulary cannot be searched. A resumed run reads the same stored vocabulary, so it

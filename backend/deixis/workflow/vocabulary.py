@@ -68,6 +68,7 @@ def apply_labels(extraction: Extraction, runs: list[dict[str, str]]) -> tuple[Ex
     so the rule's whole assignment stands and the result is what slice 04a would have searched: the first search
     never depends on the model being reachable. With enough runs, a phrase the runs disagree about keeps the rule's
     label in its record but enters no list, because the rule is the thing this step exists to correct (SW17.3).
+    A labelling that leaves no gate term at all is not applied either: the rule's assignment is the floor.
     """
     applied = len(runs) >= LABEL_MAJORITY
     blocks: dict[str, list[str]] = {name: [] for name in BLOCK_NAMES}
@@ -92,6 +93,11 @@ def apply_labels(extraction: Extraction, runs: list[dict[str, str]]) -> tuple[Ex
         # recorded in canonical order (SW14.6); which step said which is in that step's own stored output.
         records.append({"phrase": phrase, "rule_block": rule_block, "runs": sorted(v for v in votes if v is not None),
                         "block": block, "origin": "model" if decided else "rule"})
+    if applied and not any(blocks[name] for name in GATE_BLOCKS) and any(extraction.blocks[name] for name in GATE_BLOCKS):
+        # The labelling left nothing to search with while the rule has a gate term: runs that agree on nothing, or
+        # that call every phrase a claim. It may correct the rule's query, never take the first search away (SW17.5),
+        # so the rule's whole assignment stands, as it does when too few runs arrive. The votes stay on record.
+        return extraction, [record | {"block": record["rule_block"], "origin": "rule"} for record in records]
     labelled = replace(extraction, blocks=blocks, claim_words=claim_words, exclusion_words=exclusion_words,
                        block_assignment="model" if applied else extraction.block_assignment)
     return labelled, records

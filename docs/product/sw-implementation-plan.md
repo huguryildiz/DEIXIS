@@ -41,15 +41,15 @@ Kod 20 Eylül 2026'da okundu (`flow.py`, `store.py`, `providers/`, `documents/`,
 4. **Hiçbir sıralama kayıt silmez.** Sıra, inceleme sırasıdır (SW7.2, SW8.2).
 5. **Sayılar ayrı tutulur:** bulunan, tekil, taranan, aday, tam metni okunan, dahil edilen, ölçütü karşılamayan, PDF bekleyen, kuyrukta, okunmamış.
 6. **Genelleme:** kuantum tek örnektir. Ürün koduna konuya özgü sözcük, desen ya da eşik girmez. Ölçüm isteyen her dilim en az iki konuda koşar: kuantum dolanıklık dağıtımı ve KAA'da paket boyutu (`.local/second-topic-packet-size-2026-09-20/`).
-7. **Ölçüm modeli:** `deepseek-flash`, DeepSeek bağlantısı, efor `high` (Luna kotası bitti). Ölçüm, canlı kütüphaneye değil ayrı bir `DEIXIS_DATA_DIR` ve 8765 dışı bir porta karşı koşar; çıktı `.local/` altına yazılır; beklenti koşudan önce ayrı bir dosyada dondurulur.
+7. **Ölçüm en sonda, toplu yapılır** (sahibin kararı, 20 Eylül 2026). Yeni akış bayrak arkasında büyüdüğü için ölçülmemiş hiçbir şey kullanıcıya ya da canlı kütüphaneye ulaşmaz; bu yüzden dilimler ölçüm için durmaz. SW'nin "uygulanmadı" ya da "ölçülmedi" dediği parçalar doğrudan kurulur, karar kaydının Limits bölümüne "ölçülmedi; dilim 24 kampanyasında bakılacak" yazılır. Elle seçilmiş her eşik tek bir adlı sabitte durur ve protokol kaydının `thresholds` alanına yazılır ki kampanyadan sonra değiştirmek ucuz olsun. İki istisna: dilim 06'daki bilinen kusur kurulmadan önce düzeltilir ve birkaç model çağrısıyla sınanır; dilim 13 tek soruluk bir duman testidir. Ölçüm modeli `deepseek-flash`, DeepSeek bağlantısı, efor `high` (Luna kotası bitti); ölçüm canlı kütüphaneye değil ayrı bir `DEIXIS_DATA_DIR` ve 8765 dışı bir porta karşı koşar; çıktı `.local/` altına yazılır; beklenti koşudan önce ayrı bir dosyada dondurulur.
 8. **Şema ve sözleşme:** her kalıcı değişiklik yeni numaralı migration'dır (son: `0036`); eski migration düzenlenmez. Sözleşme değişikliği aynı dilimde şema sürümünü, yöntem paketini, `tests/fixtures/research/*.json` ve `tests/fakes.py::valid_response`'u günceller. Model adımı araç almaz, sınırlı onarım dışında döngü yoktur.
 9. **Test:** önce başarısız test. Dilim, `PYTHONPATH=backend:. uv run pytest` tamamen yeşilken ve arayüze dokunduysa `npm run build && npm run lint` ile Playwright A–G geçerken biter. `scripts/` içe aktaran testler depo kökünü yolda ister, bu yüzden `backend:.`. `tests/test_documents.py::test_extraction_is_stopped_when_it_exceeds_the_memory_limit` bu makinede dilim 01'den önce de başarısızdı (bellek sınırı yerine zaman aşımı döner); temel sayıda beklenen tek başarısızlıktır. Geçen test iş akışı davranışını gösterir, model kalitesini değil.
 10. **Karar kaydı:** dilim kapanırken ilgili SW maddeleri `docs/decisions.md`'ye `D` numarasıyla taşınır (numara o an `grep -n '^## D' docs/decisions.md | head -3` ile kontrol edilir; son: D69). SW belgesindeki giriş silinmez, durum satırı güncellenir.
-11. **Uygulayan sohbet git durumunu değiştirmez** (commit, push, stash yok). İnceleme ve commit ayrı yapılır (§6).
+11. **İş bitince commit'lenir** (sahibin kararı, 20 Eylül 2026). Uygulayan sohbet, dilimin bütün görevleri bittiğinde ve tam test koşusu bilinen tek başarısızlık dışında yeşil olduğunda değişikliklerini tek commit olarak `main`'e işler ve iter (`git push origin main`; dal ve PR yok; commit iletisinde yapay zekâ atfı yok). Yarım kalan dilim commit'lenmez: ağaç geçer durumda bırakılır ve kalan iş `sw-status.md`'ye yazılır. Stash, reset, rebase ve dosya geri alma yine yasaktır. İnceleme sohbeti bulduğunu ayrı bir düzeltme commit'iyle işler; dilim ancak inceleme bitince `kapandı` olur.
 
 ## 3. Dilimler
 
-Tür: **Kur** = ölçüm yeterli, doğrudan uygulanır. **Ölç→Kur** = SW'nin "Limits" bölümü uygulanmamış ya da ölçülmemiş diyor; önce yalıtılmış betikle iki konuda ölçülür, sonuç sahibe gösterilir, "uygun" denirse ürüne girer. **Ölç** = yalnızca ölçüm.
+Tür: **Kur** = doğrudan uygulanır. **Kur (ölçülmedi)** = SW'nin "Limits" bölümü uygulanmamış ya da ölçülmemiş diyor; §2.7 gereği yine doğrudan kurulur, eşikleri geçicidir ve dilim 24 kampanyasında sınanır. **Duman** = tek soruluk çalışıyor-mu kontrolü. **Ölç** = ölçüm kampanyası.
 
 ### Faz A — Temel
 
@@ -67,18 +67,18 @@ Kabul: iki yayımlanmış kayıt hiç birleşmez; yıl farkı 5'i aşarsa otomat
 
 ### Faz B — Protokolün içeriği
 
-**04 · Kodla sözcük dağarcığı ve kavram blokları** — SW2.1–4, 2.7, SW1.3, SW3.5. **Ölç→Kur.** Önkoşul: 01.
+**04 · Kodla sözcük dağarcığı ve kavram blokları** — SW2.1–4, 2.7, SW1.3, SW3.5. **Kur (ölçülmedi).** Önkoşul: 01.
 Kapsam: soru dili tespiti ve İngilizce anahtar terim alanı (arka uç); soru çerçevesini atma, ad öbeği çıkarma (yeni NLP bağımlılığı olmadan), OpenAlex sayım sorgusu (`per_page=0`); dört blok; iddia ve dışlama sözcükleri yan listede; kök sözcükle başlama, sayıma göre öbeğe daraltma; blok içi OR, bloklar arası AND, sağlayıcı sözdizimine göre derleme; ilk tur adaylarının yazar anahtar sözcükleri ve başlık n-gramlarından genişleme; terim başına verim kaydı.
-Ölçüm: iki konuda, D44 model planına karşı; prob setinde bulunan pozitifler ve dönen satır sayısı. SW2 "uygulanmadı ve ölçülmedi" diyor; öbekleri bloklara kuralla atamak güvenilmezdir, bu yüzden 08'deki onay adımı zorunludur.
+Ölçüm dilim 24'e kalır (iki konuda, D44 model planına karşı; bulunan pozitifler ve dönen satır sayısı). SW2 "uygulanmadı ve ölçülmedi" diyor; öbekleri bloklara kuralla atamak güvenilmezdir, bu yüzden 08'deki onay adımı zorunludur.
 Kabul: model kapalıyken ilk arama koşar; sorudaki iddia sözcüğü sorguya girmez.
 
 **05 · Derleme işareti, eksik özet ve sürüm bağlantıları** — SW5.1–5, SW9.3, SW6.4. Kur. Önkoşul: 02, 03.
 Kapsam: başlık güçlü sözcüğü / özetin kendini tanımlaması / 150+ referans; yalnızca başlık sözcüğü adaylıktan çıkarır, diğer ikisi işaret koyar ve tohum havuzuna ekler; OpenAlex `type` ve mekân adı kullanılmaz; özetsiz kayıt için DOI ile Semantic Scholar, sonra Crossref (D67 hız sınırı altında), nereden geldiği saklanır; S2 `externalIds`, arXiv DOI alanı ve Crossref ön baskı ilişkisi birleştirmeyi doğrular ya da engeller.
 Kabul: özetsiz kayıt hiçbir zaman "kapsam dışı" olmaz. Ölçülmeyen: ikinci kaynağın kaç eksik özeti doldurduğu; dilim bunu iki konuda sayar ve yazar.
 
-**06 · Ölçüt, parçaları ve ipucu ifadeleri önerisi** — SW15.1, 15.2, 15.7. **Ölç→Kur.** Önkoşul: 01.
+**06 · Ölçüt, parçaları ve ipucu ifadeleri önerisi** — SW15.1, 15.2, 15.7. **Kur (ölçülmedi); önce bilinen kusur düzeltilir.** Önkoşul: 01.
 Kapsam: yeni `criterion_proposal` sözleşmesi ve yöntem dosyası; sorudan tek cümlelik ölçüt, parçalar, parça başına ifadeler, dışlama başlık sözcükleri; üç koşu, en az ikisinde geçen ifadeler kalır; modelin "güçlü" işareti kullanılmaz; sonuç protokol kaydının alanı olur.
-Önce ölçüm: ikinci konu koşusu (`.local/second-topic-packet-size-2026-09-20/result.md`) SW15.1'in yazıldığı haliyle genellemediğini gösterdi. "Konu ve ortam arama bloklarına bırakılır" cümlesi modelin aranan şeyin kendisini de atmasına yol açtı: ölçüt ve 40 ifadenin hepsi "packet size"ı kaybetti. Düzeltme yönü: ortam bloklarda kalır, ama aranan şey bir ölçüt parçası olarak kalır. İstem düzeltilir, 2–3 soruda yeniden koşulur, sonuç **SW17 ya da SW15'e ek** olarak yazılır; ürün kodu ondan sonra gelir.
+Kurmadan önce düzeltme: ikinci konu koşusu (`.local/second-topic-packet-size-2026-09-20/result.md`) SW15.1'in yazıldığı haliyle genellemediğini gösterdi. "Konu ve ortam arama bloklarına bırakılır" cümlesi modelin aranan şeyin kendisini de atmasına yol açtı: ölçüt ve 40 ifadenin hepsi "packet size"ı kaybetti. Düzeltme yönü: ortam bloklarda kalır, ama aranan şey bir ölçüt parçası olarak kalır. İstem düzeltilir ve 2–3 soruda birkaç model çağrısıyla "aranan şey ölçütte kaldı mı" diye sınanır (bu bir ölçüm kampanyası değil, bilinen bir kusurun düzeltmesidir); sonuç SW15'e ek olarak yazılır, ürün kodu aynı dilimde gelir.
 Kabul: tek koşu sonucu hiçbir yerde kullanılmaz; model kapalıysa ölçüt boş kalır ve akış sürer (sıralama konu düzenine düşer).
 
 **07 · Kayıt düzeyinde sıralama** — SW7 (tümü), SW8.1–2. Kur. Önkoşul: 02, 04.
@@ -108,13 +108,13 @@ Kabul: ifade listesi boşsa ölçüt pasajları konu düzenine düşer; alıntı
 Kapsam: yeni `fulltext_adjudication` sözleşmesi (ölçüt parçası başına etiket + birebir alıntı); alıntı sayfa metninde doğrulanır, sayfa numarası saklanır; iki koşu; kural tablosu → `include` (her parça için doğrulanmış alıntı + sayfa), `criterion_not_met`, `unresolved` (nedenine göre ayrılır); kod kapısı kapalı; ön baskı ve model ailesi etikettir, kuyruk nedeni değildir; `include` → `selections.included`; model yalnızca seçilmiş pasajları görür; bütçe kapı tasarrufu olmadan planlanır.
 Kabul: doğrulanamayan alıntıya dayanan `include` kuyruğa gider, dahil edilmez; model kapalıyken her şey `unresolved` bekler.
 
-**13 · Uçtan uca ara ölçüm** — Ölç. Önkoşul: 01–12.
-İki konuda, `sw` bayrağıyla, gerçek modelle, sorudan kaynaklı yanıta kadar tam koşu. Bu akış bugüne kadar hiçbir yerde baştan sona koşmadı; ilk kez burada koşar. Ölçülenler: model çağrısı ve token, süre, aşama başına sayılar, kuyruk boyu ve neden dağılımı, prob setinde bulunan pozitifler. SW10'un ölçülmemiş fikri (açık erişimli kayıtta özet önerisini atlayıp tam metne geçmek) burada ayrı kol olarak ölçülür ve yeni bir SW girişi olarak yazılır. Sonuç sahibe gösterilir; Faz D–H'nin sırası buna göre yeniden bakılır.
+**13 · Uçtan uca duman testi** — Duman. Önkoşul: 01–12.
+Tek soruyla (kuantum), `sw` bayrağıyla, gerçek modelle, ayrı veri dizininde, sorudan kaynaklı yanıta kadar bir koşu. Amaç ölçmek değil, omurganın (tarama, tam metin, karar, `selections`, yanıt) ilk kez birleştiği yerde çalıştığını görmektir; bu akış bugüne kadar hiçbir yerde baştan sona koşmadı. Kaydedilenler: koşu bitti mi, nerede durdu, aşama başına sayılar, model çağrısı ve token, süre. Bulunan hata düzeltilir; kalite yargısı verilmez.
 
 ### Faz D — Keşif genişliği
 
-**14 · Kaynak yönlendirme** — SW3.1–4, 3.7. **Ölç→Kur.** Önkoşul: 04.
-Kapsam: OpenAlex her zaman; alan kaynağı ilk OpenAlex turunun alan dağılımından kodla (IEEE, PubMed, arXiv); Scopus varsayılan kapalı; Semantic Scholar toplu arama ilk turla koşut, kazanç sayılmaz; her kaynak iki sayı raporlar. Alan dağılımı kuralı ölçülmedi; üçüncü bir konu (tıp ya da yaşam bilimi) olmadan PubMed kolu hiç denenmemiş olur (K5).
+**14 · Kaynak yönlendirme** — SW3.1–4, 3.7. **Kur (ölçülmedi).** Önkoşul: 04.
+Kapsam: OpenAlex her zaman; alan kaynağı ilk OpenAlex turunun alan dağılımından kodla (IEEE, PubMed, arXiv); Scopus varsayılan kapalı; Semantic Scholar toplu arama ilk turla koşut, kazanç sayılmaz; her kaynak iki sayı raporlar. Alan dağılımı kuralı ölçülmedi; PubMed kolu ilk kez dilim 24'teki mühendislik dışı soruyla denenir (K5).
 
 **15 · Atıf zinciri** — SW4 (tümü), SW3.6. Kur. Önkoşul: 03, 05, 07.
 Kapsam: tohumlar kodla (başlıkta blok, sonra BM25), gömme ve konuya özgü başlık kapısı yok; 15–25 tohum, son beş tohum neredeyse hiç yeni iş eklemiyorsa erken durur; iş düzeyinde tekilleştirme; OpenAlex referanslar ve atıf yapanlar; geniş ortam-ya da-görev metin süzgeci; geçen her iş taramaya gider; bağlayan tohum sayısı yalnızca öncelik; kullanıcının adlandırdığı ya da yüklediği makale her zaman tohum; ikinci halka doğrulanmış işlerle, koşullu.
@@ -146,16 +146,17 @@ Kabul: dökümün her satırı bir saklı kayda izlenebilir; döküm "PRISMA uyu
 **21 · Yerleşik yerel gömme** — SW8.3–6. Kur. Önkoşul: 01.
 Kapsam: `fastembed` + `BAAI/bge-small-en-v1.5`; Ayarlar → Semantic search'te sıra: Gemini (ücretsiz anahtar, nasıl alınır), "This computer · built-in", kapalı; onayla tek seferlik indirme, boyut gösterilir; yalnızca İngilizce, soru İngilizce değilse İngilizce cümle istenir (model bir kez önerebilir, kullanıcı onaylar, kapsam revizyonuyla saklanır); ücretsiz anahtarda Google'ın metni kullanabileceği uyarısı; HTTP 429'da bekle ve yeniden dene. Ölçülmeyen: `onnxruntime`'ın masaüstü paketinde davranışı; pasaj düzeyinde yerel modelle erişim.
 
-**22 · arXiv LaTeX kaynağından okuma** — SW10.6–8. **Ölç→Kur.** Önkoşul: 10.
-Kapsam: kaynak indirme, makro açma, düzen komutlarını atma, sürüm kaydı; denklem ancak PDF sayfasına eşlenirse alıntılanır (numara metin katmanında bulunur, eşleme metin benzerliğiyle, sayarak değil); güvenilmezse o sayfa Marker'la okunur. Benzerlik eşlemesi hiç kurulmadı; önce ölçülür.
+**22 · arXiv LaTeX kaynağından okuma** — SW10.6–8. **Kur (ölçülmedi).** Önkoşul: 10.
+Kapsam: kaynak indirme, makro açma, düzen komutlarını atma, sürüm kaydı; denklem ancak PDF sayfasına eşlenirse alıntılanır (numara metin katmanında bulunur, eşleme metin benzerliğiyle, sayarak değil); güvenilmezse o sayfa Marker'la okunur. Benzerlik eşlemesi hiç kurulmadı ve ölçülmedi; güvenilmez eşlemede Marker'a düşme kuralı bu yüzden zorunludur.
 
 **23 · Kullanıcının onayladığı kod kapısı** — SW15.6, SW16.2–4. Kur, isteğe bağlı. Önkoşul: 16, 20.
 Kapsam: kural kendiliğinden öğrenilmez ve açılmaz; kullanıcı kuralı görür ve onaylar; kural, yazımında kullanılmayan doğrulanmış kayıtlarda hiçbir kapsam içi negatifi kapatmamış olmalıdır; kural, sınandığı kayıtlar ve onay protokol revizyonuyla saklanır; kapının kapattığı işler denetim örneğine girer, tek yanlış kapatma kapıyı o araştırma için kapatır. Kapının hiç açılmaması olağan sonuçtur; bu dilim yapılmadan da akış tamdır.
 
 ### Faz H — Geçiş
 
-**24 · Varsayılanı değiştir ve kapat** — Önkoşul: 13 sonrası sahibin kararı.
-Kapsam: üç konuda tam koşu; yeni araştırmalar için varsayılan `sw`; README, [CLAUDE.md](../../CLAUDE.md), `docs/README.md`, `implementation-plan.md` §9; kalan SW maddeleri için `D` girişleri; `legacy` yolunun ne zaman kaldırılacağı ayrı karar.
+**24 · Ölçüm kampanyası, varsayılanı değiştir ve kapat** — Ölç. Önkoşul: diğer bütün dilimler (23 hariç).
+Kampanya üç parçadır: (a) kuantum sorusu yeniden, bu kez ürünün `sw` akışıyla, mevcut prob setine karşı; (b) sahibin seçeceği yeni bir soru, tercihen mühendislik dışından (tıp ya da yaşam bilimi), böylece PubMed ve Europe PMC kolları da denenir; (c) aynı sorular için sahibin vereceği Elicit raporlarıyla karşılaştırma: onların bulup bizim bulamadığımız, bizim bulup onların bulamadığı, ikisinin de dahil ettiği işler. Elicit doğruluk ölçütü değildir; karşılaştırma neyi kaçırdığımızı gösterir, kimin haklı olduğunu değil, ve prob setimizin kendi koşularımızdan türemiş olmasının yanlılığını (SW3 Limits) ilk kez dışarıdan sınar. Beklentiler koşudan önce dondurulur. Ölçülenler: "Kur (ölçülmedi)" diye giren her parça (04, 06, 14, 22), elle seçilmiş eşikler, K3'ün N değeri, SW10'un "açık erişimlide özet önerisini atla" fikri, toplam model maliyeti ve süre, kuyruk boyu.
+Sonuç sahibe gösterilir; değişmesi gereken eşik ve kurallar yeni SW girişleri olarak yazılır ve ilgili dilime dönülür. Varsayılanın `sw` olması bu sonuca bağlıdır. Sonra: README, [CLAUDE.md](../../CLAUDE.md), `docs/README.md`, `implementation-plan.md` §9; kalan SW maddeleri için `D` girişleri; `legacy` yolunun ne zaman kaldırılacağı ayrı karar.
 
 ## 4. SW maddesi → dilim
 
@@ -186,28 +187,29 @@ Her biri için öneri yazılıdır; karar gelene kadar dilim 01 bunlardan etkile
 
 - **K1 — Birlikte yaşama.** Öneri: §2.1'deki araştırma başına bayrak. *Bedeli:* dilim 24'e kadar iki yol birlikte bakılır. *Seçenek:* eski yolu yerinde değiştirmek; her dilim canlı kütüphaneyi etkiler.
 - **K2 — `selections` ile ilişki.** Öneri: §2.2; `sw` akışında özet adayı `pending` kalır, yalnızca tam metin `include` kararı `included` yazar, yeni köken değeri `code_rule`. *Sonuç:* `sw` akışında tam metin aşaması en az bir işi dahil etmeden yanıt koşusu başlamaz. Yalnızca ekli PDF'le çalışan araştırmalar (`source_scope = attached`) bu akışa girmez.
-- **K3 — Özet aşamasında model çağrı bütçesi.** Bugünkü bütçe 15–20 model çağrısıdır; SW9 tek turda yaklaşık 1.900 çağrı ölçtü. Öneri: model önerisi yalnızca birleşik sıranın başındaki N kayıt için (efora göre 60 / 150 / 300), gerisi "okunmadı" nedeniyle `unresolved`; SW10'un "açık erişimlide özeti atla" fikri dilim 13'te ölçülür. *Ölçülmeyen:* N'nin kaç pozitif kaybettirdiği.
+- **K3 — Özet aşamasında model çağrı bütçesi.** Bugünkü bütçe 15–20 model çağrısıdır; SW9 tek turda yaklaşık 1.900 çağrı ölçtü. Öneri: model önerisi yalnızca birleşik sıranın başındaki N kayıt için (efora göre 60 / 150 / 300), gerisi "okunmadı" nedeniyle `unresolved`; SW10'un "açık erişimlide özeti atla" fikri dilim 24'te ölçülür. *Ölçülmeyen:* N'nin kaç pozitif kaybettirdiği.
 - **K4 — Ölçüm modeli.** Öneri: `deepseek-flash`, efor `high`. Luna kotası dönerse dilim 13 ve 24 Luna ile tekrarlanır.
-- **K5 — Üçüncü konu.** Öneri: dilim 14'ten önce tıp ya da yaşam biliminden bir soru; yoksa PubMed ve Europe PMC kolları hiç denenmemiş olarak varsayılan olur.
+- **K5 — Yeni soru.** Dilim 24 kampanyasında sahip seçer. Öneri: tıp ya da yaşam biliminden; yoksa PubMed ve Europe PMC kolları hiç denenmemiş olarak varsayılan olur.
 
 ## 6. Bir tur nasıl koşulur
 
 1. **Dilim dosyası ve prompt.** Plan sohbetinde dilimden hemen önce yazılır: `docs/product/sw-sliceNN-<ad>.md` ve `sw-sliceNN-prompt.md`.
 2. **Uygulama.** Yeni sohbet, Opus, efor medium. Her dilimin kendi promptu vardır (`docs/product/sw-sliceNN-prompt.md`: kurallar, önce okunacaklar, yordam, son ileti). İlk ileti yalnızca `docs/product/sw-sliceNN-prompt.md dosyasını uygula.` olur.
-3. **İnceleme.** Ayrı yeni sohbet (Fable): diff dilim dosyasına karşı okunur, `pytest` ve gerekiyorsa build, lint, Playwright koşulur, bulgular düzeltilir, commit ve `git push origin main` yapılır, `sw-status.md` "kapandı" olur.
-4. **Ölç→Kur dilimleri** iki turdur: önce ölçüm betiği ve sonuç (`.local/`), sahibin "uygun" demesi, sonra ürün kodu.
+3. **İnceleme.** Ayrı yeni sohbet (Fable): uygulayan sohbetin commit'i dilim dosyasına karşı okunur, `pytest` ve gerekiyorsa build, lint, Playwright koşulur, bulgular ayrı bir düzeltme commit'iyle işlenir ve itilir, `sw-status.md` "kapandı" olur.
+4. Ölçüm için durulmaz (§2.7); "Kur (ölçülmedi)" dilimleri de tek turdur.
 
 Dilim boyu 300K bağlam sınırına göre değil, "tek oturumda testler yeşil biter" ölçüsüne göre seçildi; hedef kullanım 100–150K'dır, böylece uygulayan sohbet özetlemeye girmeden biter. Bir dilim bunu aşacak gibi görünürse sohbet durur, kalan iş `sw-status.md`'ye yazılır ve dilim ikiye bölünür.
 
 ## 7. Ayrıntılı dilim dosyaları neden baştan yazılmadı
 
-Dilim 02 ve sonrası, önceki dilimin gerçekten indirdiği şemaya (tablo ve sütun adları, işlev imzaları) ve K1–K3 kararlarına dayanır; 13'ten sonrası ara ölçümün sonucuna dayanır. Hepsini bugün satır düzeyinde yazmak, ilk sapmada eskiyen 20 belge üretir. Bu yüzden her dilimin kapsamı ve kabul koşulu burada sabittir; satır düzeyindeki dosya bir dilim önden yazılır. Dilim 01'in dosyası hazırdır.
+Dilim 02 ve sonrası, önceki dilimin gerçekten indirdiği şemaya (tablo ve sütun adları, işlev imzaları) ve K1–K3 kararlarına dayanır; 13'ten sonrası duman testinde çıkanlara dayanır. Hepsini bugün satır düzeyinde yazmak, ilk sapmada eskiyen 20 belge üretir. Bu yüzden her dilimin kapsamı ve kabul koşulu burada sabittir; satır düzeyindeki dosya bir dilim önden yazılır. Dilim 01'in dosyası hazırdır.
 
 ## 8. Bu planın ölçmediği ve bilmediği
 
 - Dilim boyları tahmindir; hiçbiri denenmedi. 04, 09 ve 12 bölünmeye en yakın olanlardır.
 - SW kararlarının çoğu tek konu, tek model ve insan onayı olmayan etiketlerle ölçüldü; plan bunu düzeltmez, yalnızca ikinci konuyu zorunlu kılar.
-- KAA konusunda örneklenen 60 işin yalnızca 8'inin açık erişimli PDF'i vardı (IEEE ağırlıklı alan). Dilim 13'ün ikinci konuda anlamlı olması için sahibin kurum erişimiyle yaklaşık 40 tam metin sağlaması gerekir; yoksa o konuda yalnızca yön ölçülür.
-- `sw` akışının toplam model maliyeti bilinmiyor (SW16 "ölçülmedi" diyor); ilk rakam dilim 13'ten gelir.
+- KAA konusunda örneklenen 60 işin yalnızca 8'inin açık erişimli PDF'i vardı (IEEE ağırlıklı alan). Dilim 24 kampanyasının KAA gibi kapalı erişimli bir alanda anlamlı olması için sahibin kurum erişimiyle yaklaşık 40 tam metin sağlaması gerekir; yoksa o konuda yalnızca yön ölçülür.
+- `sw` akışının toplam model maliyeti bilinmiyor (SW16 "ölçülmedi" diyor); ilk kaba rakam dilim 13'ten, gerçek rakam dilim 24'ten gelir.
+- Ölçümü sona bırakmanın bedeli: elle seçilmiş eşikler ve hiç ölçülmemiş SW2 koda geçici olarak girer; kampanyadan sonra bazı dilimlere geri dönülmesi beklenir.
 - Rapor yolu (`workflow/report/selection.py`) kendi pasaj seçimini kullanır; bu plan ona dokunmaz. Ölçüt pasajlarının rapora girip girmeyeceği açık sorudur.
 - Kanıt tablosu (P5) dahil edilen kaynaklardan başlar; K2 sonrası davranışı ayrıca denenmedi.

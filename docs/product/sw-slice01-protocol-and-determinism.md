@@ -52,7 +52,7 @@ Kurallar (SW14.4): anahtarlar sıralı, ayırıcılar boşluksuz (`separators=("
 
 - [ ] **Step 1: failing tests.** Anahtar sırası farklı iki sözlük aynı özeti verir; satır sırası farklı iki liste `canonical_rows` sonrası aynı özeti verir; `{"b", "a"}` ile `["a", "b"]` aynı; NFC ve NFD yazılmış "ü" aynı; `float("nan")` hata; `unordered_pair("b", "a") == ("a", "b")`.
 - [ ] **Step 2: implement.**
-- [ ] **Step 3:** `PYTHONPATH=backend uv run pytest tests/test_canonical.py -q`
+- [ ] **Step 3:** `PYTHONPATH=backend:. uv run pytest tests/test_canonical.py -q`
 
 ## Task 2: migration and the workflow setting
 
@@ -89,7 +89,7 @@ ALTER TABLE search_runs ADD COLUMN payload_sha256 TEXT;
 
 - [ ] **Step 1: failing tests.** Migration uygulanır ve sütunlar vardır; `protocol_records` UPDATE ve DELETE `sqlite3.IntegrityError` verir; `DEIXIS_SEARCH_WORKFLOW=bogus` ile `load_settings()` hata verir; `sw` ile açılan araştırmanın kapsamı `search_workflow == "sw"` döner ve `revise_scope` sonrası da öyle kalır.
 - [ ] **Step 2: implement.**
-- [ ] **Step 3:** `PYTHONPATH=backend uv run pytest tests/test_protocol_record.py tests/test_migrations.py -q`
+- [ ] **Step 3:** `PYTHONPATH=backend:. uv run pytest tests/test_protocol_record.py tests/test_migrations.py -q`
 
 ## Task 3: the protocol body and its step
 
@@ -154,7 +154,7 @@ if step["status"] != "succeeded":
   - `freeze_protocol` farklı gövde ve `reason=None` ile `ValueError` verir; `reason` ile `protocol_revision == 2` yazar.
   - `build_protocol` aynı girdiyle iki kez çağrıldığında aynı özeti verir; `thresholds` değerleri `rules.SCREENING_BATCH` ve `flow` sabitleriyle eşittir.
 - [ ] **Step 2: implement.**
-- [ ] **Step 3:** `PYTHONPATH=backend uv run pytest tests/test_protocol_record.py tests/test_provider_flow.py tests/test_api_flow.py -q`
+- [ ] **Step 3:** `PYTHONPATH=backend:. uv run pytest tests/test_protocol_record.py tests/test_provider_flow.py tests/test_api_flow.py -q`
 
 ## Task 4: hashes of step inputs, model outputs and provider payloads
 
@@ -180,7 +180,7 @@ if step["status"] != "succeeded":
 
 - [ ] **Step 1: failing tests.** `fuse_rankings(a, b)` ile `fuse_rankings(b, a)` aynı kimlik sırasını verir; eşit puanlı iki satır kimlik sırasıyla gelir.
 - [ ] **Step 2: implement; sırası değişen mevcut test beklentilerini tek tek gözden geçir.** Yalnızca eşitlikten doğan sıra farkı kabul edilir; başka bir fark varsa dur.
-- [ ] **Step 3:** `PYTHONPATH=backend uv run pytest tests/test_semantic_retrieval.py tests/test_api_flow.py -q`
+- [ ] **Step 3:** `PYTHONPATH=backend:. uv run pytest tests/test_semantic_retrieval.py tests/test_api_flow.py -q`
 
 ## Task 6: replay check
 
@@ -191,11 +191,11 @@ if step["status"] != "succeeded":
 `test_determinism.py`: her aşamayı `subprocess.run([sys.executable, ...], env={..., "PYTHONHASHSEED": seed})` ile `seed ∈ {"1", "2"}` × karıştırma ∈ {yok, 1, 2} koşullarında çalıştırır ve altı özetin eşit olduğunu doğrular (SW14.7). Alt süreç `PYTHONPATH=backend` ile koşar.
 
 - [ ] **Step 1: write the test; it must fail for `fuse_rankings` before Task 5 and pass after.** Bunu son iletide doğrula (Task 5'i geri alıp koşmana gerek yok; Task 5'ten önce yazıp kırmızı gördüysen söyle).
-- [ ] **Step 2:** `PYTHONPATH=backend uv run pytest tests/test_determinism.py -q`
+- [ ] **Step 2:** `PYTHONPATH=backend:. uv run pytest tests/test_determinism.py -q`
 
 ## Task 7: close the slice
 
-- [ ] `PYTHONPATH=backend uv run pytest` — tamamı. Başlamadan önceki temel sayıyı ve bittikten sonraki sayıyı yaz.
+- [ ] `PYTHONPATH=backend:. uv run pytest` — tamamı. Başlamadan önceki temel sayıyı ve bittikten sonraki sayıyı yaz.
 - [ ] `git diff --check`
 - [ ] `grep -n '^## D' docs/decisions.md | head -3` ile sıradaki numarayı bul ve en üste şu girişi taslakla (İngilizce; Status / Date / Context / Decision / Limits): `## D<NN> — Freeze and hash one protocol record per research before the first search, and break ranking ties by a stable identifier`. Limits şunları adıyla söylemeli: protokol gövdesinin ölçüt, blok ve sinyal alanları henüz boş; ekli-PDF araştırmalarında kayıt yok; gömme vektörleri makineler arası yeniden hesaplanmadı; FTS eşitliği yalnızca ikinci anahtarla sabitlendi, ayrıca ölçülmedi; testler SYNTHETIC girdiyle koşar ve iş akışı davranışını gösterir.
 - [ ] `search-workflow-review-2026-09-18.md` SW14 **Status** satırına ekle: `Points 1–7 implemented in D<NN> (2026-09-..); the protocol body's criterion, block and signal fields are filled by later slices.` Girişin geri kalanına dokunma.

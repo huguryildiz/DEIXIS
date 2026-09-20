@@ -88,8 +88,10 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     for row in conn.execute("SELECT id FROM runs WHERE research_id = ? ORDER BY created_at DESC LIMIT 10", (research_id,)):
         run = store.run(row["id"])
         run["steps"] = store.run_steps(run["id"])
-        frozen = store.current_protocol(research_id, run["scope_revision"])
-        run["protocol_hash"] = frozen["hash"] if frozen else None
+        # The protocol this run froze; a run that froze none (an answer run) ran under the revision's latest one.
+        own = next((s["output"] for s in run["steps"] if s["operation_key"] == "protocol" and s["output"]), None)
+        frozen = own or store.current_protocol(research_id, run["scope_revision"])
+        run["protocol_hash"] = (frozen.get("protocol_hash") or frozen.get("hash")) if frozen else None
         output = next((o for o in _model_outputs(store, run["id"], "model:search_plan") if o.get("output_type") == "SearchPlan"), None)
         # A v1 plan holds the queries the model wrote; a v2 plan's queries were compiled from its concepts and stored beside it (D44).
         run["plan"] = ({k: output["result"][k] for k in PLAN_FIELDS}

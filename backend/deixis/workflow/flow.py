@@ -248,10 +248,13 @@ class ResearchFlow:
         protocol_step = self.store.step(run_id, "protocol", "protocol:freeze")
         if protocol_step["status"] != "succeeded":
             self.store.start_step(protocol_step["id"])
+            # A later discovery run of the same scope revision may plan other queries; that is a new protocol revision
+            # with its reason, never an edit of the first one (SW14.2).
+            reason = "later_discovery_run" if self.store.current_protocol(rid, revision) else None
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                 scope, budget, plan if plan.get("concepts") else None, queries,
                 self.deps.package.package_hash, self.deps.settings,
-            ))
+            ), reason=reason)
             self.store.finish_step(protocol_step["id"], "succeeded",
                                    output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
 

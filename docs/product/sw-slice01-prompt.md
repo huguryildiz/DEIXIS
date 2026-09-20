@@ -9,7 +9,7 @@ Repo: `/Users/huguryildiz/Documents/GitHub/DEIXIS`. This is slice 01 of the sear
 3. **Do not invent.** If something cannot be built as the slice file says (a function is not where it says, a test expectation changes for a reason other than a score tie, a column already exists), stop and report it instead of choosing a workaround.
 4. No scope beyond the slice file: no UI, no new dependency, no refactor of adjacent code, no branching on `search_workflow` (it is stored and written into the protocol, nothing reads it yet).
 5. Match the surrounding style: comment density, naming, short synchronous SQLite transactions, no `await` inside a transaction, UI-visible events written in the same transaction as the state they describe.
-6. Python runs as `PYTHONPATH=backend uv run ...` from the repo root, on the native arm64 venv. Do not start, stop or restart the service on port 8765, and do not run anything against the live data directory; tests use their own temporary one.
+6. Python runs as `PYTHONPATH=backend:. uv run ...` from the repo root, on the native arm64 venv. Do not start, stop or restart the service on port 8765, and do not run anything against the live data directory; tests use their own temporary one.
 7. Fixture records are SYNTHETIC. A passing test shows workflow behavior, not model quality; say so where you report results.
 
 ## Read first
@@ -35,11 +35,11 @@ Tasks 1–7 of the slice file, in that order. Each task lists its files, interfa
 ## Procedure
 
 1. `git status --short` and `ls backend/deixis/storage/migrations | tail -1`. Expect a clean tree apart from `.playwright-mcp/` and `skills-lock.json`, and `0036_report_section_ii.sql` as the last migration. If either differs, say so before going on.
-2. Baseline: `PYTHONPATH=backend uv run pytest -q 2>&1 | tail -3`. Record the counts. If anything fails at baseline, name it and continue only if it is unrelated to this slice.
+2. Baseline: `PYTHONPATH=backend:. uv run pytest -q 2>&1 | tail -3`. Record the counts. If anything fails at baseline, name it and continue only if it is unrelated to this slice.
 3. Set `sw-status.md` row 01 to `uygulanıyor`.
 4. For each task: write the failing tests, see them fail, implement, run the task's command. For Task 6, write the replay test before Task 5's change if you can, and say whether you saw it red for `fuse_rankings`.
 5. When an existing test's expected order changes in Task 5, check that the two rows really have equal scores before changing the expectation. If they do not, stop.
-6. Task 7: full `PYTHONPATH=backend uv run pytest`, `git diff --check`, the draft `D<NN>` entry at the top of `docs/decisions.md` (check the next free number first; other sessions add decisions), the SW14 status line, and row 01 in `sw-status.md` set to `uygulandı, inceleme bekliyor` with what is left open.
+6. Task 7: full `PYTHONPATH=backend:. uv run pytest`, `git diff --check`, the draft `D<NN>` entry at the top of `docs/decisions.md` (check the next free number first; other sessions add decisions), the SW14 status line, and row 01 in `sw-status.md` set to `uygulandı, inceleme bekliyor` with what is left open.
 
 If the session is running long and the work will not finish with tests green, stop at a task boundary, leave the tree passing, and write the remaining tasks into row 01 of `sw-status.md`.
 

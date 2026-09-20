@@ -194,3 +194,55 @@ def test_a_provider_search_stores_the_digest_of_the_payload_it_kept(tmp_path, mo
     for row in rows:
         stored = json.loads((payloads / row["raw_payload_path"]).read_text(encoding="utf-8"))
         assert row["payload_sha256"] == sha256_hex(stored)
+
+
+def test_a_later_discovery_run_with_another_plan_opens_a_new_protocol_revision(tmp_path, monkeypatch):
+    import httpx
+    from fastapi.testclient import TestClient
+
+    from deixis.api.app import create_app
+    from deixis.providers.registry import CONNECTORS
+    from fakes import FakeAdapter
+    from test_provider_flow import no_fetch, routed, two_provider_plan, wait
+
+    plans = []
+
+    def changing_plan(si):
+        text = two_provider_plan(si)
+        if si["task_type"] != "search_plan":
+            return text
+        plans.append(si["step_input_id"])
+        output = json.loads(text)
+        if len(plans) > 1:
+            output["search_plan"]["concepts"][0]["synonyms"] = ["diffusion channel", "molecular link"]
+        return json.dumps(output)
+
+    for connector in CONNECTORS.values():
+        if connector.key_env:
+            monkeypatch.delenv(connector.key_env, raising=False)
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter(changing_plan)},
+                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(routed)), fetcher=no_fetch,
+                     extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        body = {"question": "How is diffusion channel scheduling optimized?", "model_connection": "fake",
+                "requested_model": "fake-model", "effort": "quick"}
+        rid = client.post("/api/researches", json=body).json()["research"]["id"]
+        runs = []
+        for _ in range(2):
+            run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+            _, run = wait(client, rid, run_id)
+            assert run["status"] == "completed", run
+            runs.append(run)
+        rows = app.state.store.conn.execute(
+            "SELECT protocol_revision, reason, body_sha256 FROM protocol_records ORDER BY protocol_revision").fetchall()
+        assert [(r["protocol_revision"], r["reason"]) for r in rows] == [(1, None), (2, "later_discovery_run")]
+        first_search = app.state.store.conn.execute(
+            "SELECT protocol_hash FROM run_steps WHERE run_id = ? AND operation_key = 'search:0'", (runs[0]["id"],)).fetchone()
+        second_search = app.state.store.conn.execute(
+            "SELECT protocol_hash FROM run_steps WHERE run_id = ? AND operation_key = 'search:0'", (runs[1]["id"],)).fetchone()
+        view = client.get(f"/api/researches/{rid}").json()
+        shown = {r["id"]: r["protocol_hash"] for r in view["runs"]}
+        assert (shown[runs[0]["id"]], shown[runs[1]["id"]]) == (rows[0]["body_sha256"], rows[1]["body_sha256"])
+        # Steps keep the protocol they ran under; the later run does not rewrite the earlier run's hash.
+        assert (first_search["protocol_hash"], second_search["protocol_hash"]) == (rows[0]["body_sha256"], rows[1]["body_sha256"])

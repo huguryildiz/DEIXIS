@@ -141,7 +141,7 @@ Değişen ve eklenen dosyalar; temel ve son test sayıları ve komut; iki sorunu
 
 ## Açık noktalar
 
-- **Sahibe soru (hiçbir dilime atanmamış):** `sw` akışı sağlayıcı başına tek geniş sorgu atar, ama `_search` sorgu başına en çok `results_per_query` (≤ 25) kayıt okur. SW7'nin ölçtüğü ilk tur havuzu 1.369 kayıttı; geniş sorgunun anlamı olması için sayfalama ve `sw`'ye özgü bir okuma bütçesi gerekir. Bu dilim ona dokunmaz; dilim 07'den (sıralama) önce bir yere yazılmalıdır.
+- **Dilim 04c'ye atandı (20 Eylül 2026):** `sw` akışı sağlayıcı başına tek geniş sorgu atar, ama `_search` sorgu başına en çok `results_per_query` (≤ 25) kayıt okur. SW7'nin ölçtüğü ilk tur havuzu 1.369 kayıttı; geniş sorgunun anlamı olması için sayfalama ve `sw`'ye özgü bir okuma bütçesi gerekir. Bu dilim ona dokunmaz; dilim 04c kurar ve dilim 07'nin önkoşuludur.
 - **Yorum:** SW1.3'ün yöntem bloğu "geniş sorgulanır" der; kod geniş terimi iddia sözcüğünden türetemediği için bu dilimde blok boştur ve yöntem konumundaki ifadelerin hepsi sorgu dışında kalır. Böylece kabul koşulu ("iddia sözcüğü sorguya girmez") kuralla değil yapıyla sağlanır; bedeli, yöntem sorunun konusuysa ("routing" gibi) onu da `using` / `with` arkasında kaybetmektir. Kullanıcı `key_terms` ile düzeltebilir.
 - **Yorum:** kök, ifadenin en az geçen sözcüğüdür. SW3.5 "kök sözcük ya da geniş terim" der ve nasıl seçileceğini söylemez.
 - Duraklatma nedenleri (`key_terms_needed`, `vocabulary_empty`, `vocabulary_too_broad`) arayüzde ham metin olarak görünebilir; etiketleri dilim 08'de gelir.

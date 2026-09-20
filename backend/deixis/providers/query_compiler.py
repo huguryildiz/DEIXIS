@@ -18,6 +18,8 @@ from deixis.providers import query_rules
 
 VERSION = "deixis.query_compiler.v2"
 COMPACT_VERSION = "deixis.query_compiler.v3.compact_openalex_v1"
+BLOCKS_VERSION = "deixis.query_compiler.v4.blocks"  # the sw workflow's code vocabulary, compiled block by block
+BLOCK_ORDER = ("setting", "task")  # the two blocks that gate a search; the query keeps them in this order
 STRATEGIES = ("legacy", "compact_openalex_v1")
 MAX_QUERY_CHARS = 300
 # At most six terms in all keep a two-group query within OpenAlex's five operators; the core keeps up to two of them
@@ -45,7 +47,7 @@ def _terms(concept: dict[str, Any]) -> list[str]:
     return list(terms.values())
 
 
-def _quoted(term: str) -> str:
+def quoted(term: str) -> str:
     return term if re.fullmatch(r"\w+", term) else f'"{term}"'
 
 
@@ -61,8 +63,8 @@ def _render(provider: str, core: list[str], family: list[str]) -> str:
                 words.setdefault(word.lower(), word)
         return " ".join(list(words.values())[: query_rules.MAX_PLAIN_WORDS])
     if provider == "serpapi":  # Google Scholar reads no parentheses, so only the first core term stands before the OR chain
-        return " ".join([_quoted(core[0]), *([" OR ".join(_quoted(t) for t in family)] if family else [])])
-    operand = {"arxiv": lambda t: f"abs:{_quoted(t)}", "pubmed": lambda t: f"{_quoted(t)}[Title/Abstract]"}.get(provider, _quoted)
+        return " ".join([quoted(core[0]), *([" OR ".join(quoted(t) for t in family)] if family else [])])
+    operand = {"arxiv": lambda t: f"abs:{quoted(t)}", "pubmed": lambda t: f"{quoted(t)}[Title/Abstract]"}.get(provider, quoted)
     text = " AND ".join(_group([operand(t) for t in group]) for group in (core, family) if group)
     return f"TITLE-ABS-KEY({text})" if provider == "scopus" else text
 
@@ -93,9 +95,57 @@ def _compact_openalex(core_term: str, family_term: str) -> str | None:
                    {part.casefold() for part in anchor}), None)
     if not anchor or not family:
         return None
-    head = _quoted(" ".join(anchor))
+    head = quoted(" ".join(anchor))
     query = f"{head} {family}"
     return query if len(query) <= MAX_QUERY_CHARS and not query_rules.query_issues("openalex", query) else None
+
+
+def _fit_blocks(provider: str, groups: list[list[str]]) -> tuple[str, list[str]] | None:
+    """One query holding as many leading terms of each block as the provider's rules allow, with what was dropped.
+
+    Terms go from the end of the last block first, then the one before it, and every block keeps at least one term:
+    a block that lost all of its terms would widen the query into another question (SW2.7).
+    """
+    counts = [len(group) for group in groups]
+    while True:
+        kept = [group[:count] for group, count in zip(groups, counts)]
+        text = _render(provider, kept[0], kept[1] if len(kept) > 1 else [])
+        if len(text) <= MAX_QUERY_CHARS and not query_rules.query_issues(provider, text):
+            return text, [term for group, count in zip(groups, counts) for term in group[count:]]
+        for position in range(len(counts) - 1, -1, -1):
+            if counts[position] > 1:
+                counts[position] -= 1
+                break
+        else:
+            return None
+
+
+def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[str], limit: int) -> list[dict[str, Any]]:
+    """One query per provider from the code vocabulary's blocks: OR inside a block, AND between blocks (SW2.7).
+
+    Only terms of the setting and task blocks are read. Claim words, exclusion words and outcome terms are not in
+    `terms`, so no query can hold one. The returned dictionaries carry the keys `compile_queries` returns, so the
+    search step reads them unchanged, plus the terms a provider's limits left out.
+    """
+    groups, names = [], []
+    for block in BLOCK_ORDER:
+        terms = list(dict.fromkeys(term["root"] if term["in_query"] == "root" else term["phrase"]
+                                   for term in vocabulary["terms"] if term["block"] == block and not term["dropped"]))
+        if terms:
+            groups.append(terms)
+            names.append(block)
+    if not groups:
+        return []
+    rationale = "Concept blocks: " + " AND ".join(names)
+    queries: list[dict[str, Any]] = []
+    for provider in dict.fromkeys(enabled_providers):
+        if len(queries) >= limit:
+            break
+        if (fitted := _fit_blocks(provider, groups)) is None:
+            continue
+        text, dropped = fitted
+        queries.append({"provider_id": provider, "query_text": text, "rationale": rationale, "dropped_terms": dropped})
+    return queries
 
 
 def _round_robin(families: int, providers: int) -> list[tuple[int, int]]:

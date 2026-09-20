@@ -142,6 +142,7 @@ class Store:
         review_connection: str | None = None,
         seed_mode: str = "question_only",
         search_workflow: str = "legacy",
+        key_terms: str | None = None,
     ) -> str:
         rid, ts = new_id("res"), now()
         title = question.strip().splitlines()[0][:160]
@@ -168,6 +169,11 @@ class Store:
             # Historical migration tests create a Store before migration 0037 exists; those libraries run `legacy` only.
             if any(row[1] == "search_workflow" for row in self.conn.execute("PRAGMA table_info(scope_revisions)")):
                 columns["search_workflow"] = search_workflow
+            # Historical migration tests create a Store before migration 0040 exists.
+            if any(row[1] == "key_terms" for row in self.conn.execute("PRAGMA table_info(scope_revisions)")):
+                columns["key_terms"] = key_terms
+            elif key_terms:
+                raise ValueError("Key terms require the current database schema")
             names = ", ".join(columns)
             placeholders = ", ".join("?" for _ in columns)
             self.conn.execute(
@@ -358,10 +364,13 @@ class Store:
         snapshot = scope.pop("seed_snapshot_json", None)
         scope.setdefault("seed_mode", "question_only")
         scope.setdefault("search_workflow", "legacy")
+        scope.setdefault("key_terms", None)
         scope["seed_snapshot"] = json.loads(snapshot) if snapshot else None
         return scope
 
-    def revise_scope(self, research_id: str, expected_version: int, question: str, steering: str | None) -> int:
+    def revise_scope(self, research_id: str, expected_version: int, question: str, steering: str | None,
+                     key_terms: str | None = None) -> int:
+        """The next scope revision. `key_terms` given replaces the previous terms; left out, they carry over."""
         with transaction(self.conn):
             research = self.research(research_id)
             check_expected_version(expected_version, research["version"])
@@ -371,6 +380,8 @@ class Store:
             ).fetchone())
             revision = research["current_scope_revision"] + 1
             current.update(revision=revision, question=question.strip(), steering=steering, created_at=now())
+            if key_terms is not None and "key_terms" in current:
+                current["key_terms"] = key_terms
             if current.get("seed_mode") == "uploaded_seed":
                 current["seed_snapshot_json"] = None
             names = ", ".join(current)

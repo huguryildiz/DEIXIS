@@ -25,18 +25,19 @@ import httpx
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, math_reader, ocr, pdf
-from deixis.domain import canonical, contracts, phrasebank
+from deixis.domain import canonical, contracts, phrasebank, vocabulary as question_words
 from deixis.domain.rules import (MAX_RATE_LIMIT_MODEL_RETRIES, MAX_SCHEMA_REPAIRS, MAX_TRANSIENT_NETWORK_RETRIES,
                                  SCREENING_BATCH, after_invalid_output, effective_reviewer, step_model)
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.models import prompt
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
-from deixis.providers import query_compiler
+from deixis.providers import openalex, query_compiler
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, normalize_doi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, new_id, now
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import protocol
+from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state
 from deixis.workflow.store import NotFound, RunInProgress, Store
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
@@ -220,30 +221,36 @@ class ResearchFlow:
         seed = scope["seed_snapshot"]
         if scope["seed_mode"] == "uploaded_seed" and self.store.seed_status(rid, scope) != "ready":
             self._pause(run_id, "seed_unavailable")
-        output = await self._model_step(run, scope, "search_plan", "search_plan",
-                                        source_ids=[seed["source_version_id"]] if seed else None,
-                                        passage_rows=seed["passages"] if seed else None)
-        self._checkpoint(run_id, revision)
-        if output.get("invalid"):
-            self._fail(run_id, "invalid_model_output", {"step": "search_plan", "issues": output["issues"]})
-        if output["output_type"] == "ClarificationRequest":
-            self.store.save_answer(rid, run_id, None, output["step_input_id"], revision, "clarification",
-                                   output["result"], {"ok": True, "issues": []})
-            return
-        plan = output["result"]
         budget = run["budget"]
-        if "queries" in plan:  # a SearchPlan v1 from before D44 carries the queries the model wrote
-            queries = [q for q in plan["queries"] if q["provider_id"] in scope["providers"]][: budget["max_provider_requests"]]
-        elif "queries" in output:
-            queries = output["queries"]
+        plan = vocabulary = None
+        if scope.get("search_workflow") == "sw":
+            # The sw workflow takes the first search's words from the question by code, so no model runs before the
+            # search and a broken model connection does not stop it (SW2.3). Screening still goes to the model.
+            vocabulary, queries = await self._vocabulary(run, scope)
         else:
-            # Compiled once and stored with the plan, so a resumed run searches the same queries even after a compiler change.
-            queries = query_compiler.compile_queries(plan, scope["providers"], budget["max_provider_requests"],
-                                                   budget.get("core_depth", 0), self.deps.settings.query_strategy)
-            self.store.set_step_output(self.store.step(run_id, "search_plan", "model:search_plan")["id"],
-                                       output | {"queries": queries, "query_compiler": (
-                                           query_compiler.COMPACT_VERSION if self.deps.settings.query_strategy == "compact_openalex_v1"
-                                           else query_compiler.VERSION)})
+            output = await self._model_step(run, scope, "search_plan", "search_plan",
+                                            source_ids=[seed["source_version_id"]] if seed else None,
+                                            passage_rows=seed["passages"] if seed else None)
+            self._checkpoint(run_id, revision)
+            if output.get("invalid"):
+                self._fail(run_id, "invalid_model_output", {"step": "search_plan", "issues": output["issues"]})
+            if output["output_type"] == "ClarificationRequest":
+                self.store.save_answer(rid, run_id, None, output["step_input_id"], revision, "clarification",
+                                       output["result"], {"ok": True, "issues": []})
+                return
+            plan = output["result"]
+            if "queries" in plan:  # a SearchPlan v1 from before D44 carries the queries the model wrote
+                queries = [q for q in plan["queries"] if q["provider_id"] in scope["providers"]][: budget["max_provider_requests"]]
+            elif "queries" in output:
+                queries = output["queries"]
+            else:
+                # Compiled once and stored with the plan, so a resumed run searches the same queries even after a compiler change.
+                queries = query_compiler.compile_queries(plan, scope["providers"], budget["max_provider_requests"],
+                                                       budget.get("core_depth", 0), self.deps.settings.query_strategy)
+                self.store.set_step_output(self.store.step(run_id, "search_plan", "model:search_plan")["id"],
+                                           output | {"queries": queries, "query_compiler": (
+                                               query_compiler.COMPACT_VERSION if self.deps.settings.query_strategy == "compact_openalex_v1"
+                                               else query_compiler.VERSION)})
         # The protocol is frozen before the first provider request and every step opened after it carries its hash (SW14.1).
         protocol_step = self.store.step(run_id, "protocol", "protocol:freeze")
         if protocol_step["status"] != "succeeded":
@@ -252,8 +259,8 @@ class ResearchFlow:
             # with its reason, never an edit of the first one (SW14.2).
             reason = "later_discovery_run" if self.store.current_protocol(rid, revision) else None
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
-                scope, budget, plan if plan.get("concepts") else None, queries,
-                self.deps.package.package_hash, self.deps.settings,
+                scope, budget, plan if plan and plan.get("concepts") else None, queries,
+                self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary,
             ), reason=reason)
             self.store.finish_step(protocol_step["id"], "succeeded",
                                    output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
@@ -305,6 +312,54 @@ class ResearchFlow:
                 await self._research_title(run, scope, optional=True)
             except OptionalStepFailed:
                 return
+
+    def _count_probe(self, scope: dict[str, Any]) -> Callable[[str], Awaitable[int | None]]:
+        """The count request the vocabulary step probes with, or one that answers "unknown" without asking.
+
+        OpenAlex is the count backbone (SW3.1). Out of scope or without the access it needs, no count is read and
+        every term enters the query as its whole phrase; nothing is substituted for it.
+        """
+        connector = CONNECTORS["openalex"]
+        if "openalex" not in scope["providers"] or connector.access_mode() == "not_configured":
+            async def unavailable(query: str) -> int | None:
+                return None
+            return unavailable
+
+        async def probe(query: str) -> int | None:
+            return await openalex.count_works(self.deps.http, query, api_key=connector.api_key(),
+                                              mailto=self.deps.settings.contact_email)
+        return probe
+
+    async def _vocabulary(self, run: dict[str, Any], scope: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """The sw workflow's search words and queries, taken from the question by code (SW2).
+
+        A step that already succeeded returns its stored output whole, so a resumed run sends no count request twice
+        and searches exactly the queries the first run compiled.
+        """
+        run_id, revision, budget = run["id"], run["scope_revision"], run["budget"]
+        step = self.store.step(run_id, "vocabulary", "code:vocabulary")
+        if step["status"] == "succeeded":
+            stored = step["output"]
+            return stored["vocabulary"], stored["queries"]
+        try:
+            extraction = question_words.extract(scope["question"], scope.get("language_hint"), scope.get("key_terms"))
+        except ValueError as exc:
+            self._pause(run_id, "key_terms_needed", {"error": str(exc)})
+        if extraction is None:
+            # Code does not translate. The run waits for the user's English terms in a new scope revision (SW2.1).
+            self._pause(run_id, "key_terms_needed", {"language": scope.get("language_hint") or "other"})
+        self.store.start_step(step["id"])
+        built = await vocabulary_rules.build_vocabulary(extraction, self._count_probe(scope))
+        self._checkpoint(run_id, revision)
+        queries = query_compiler.compile_block_queries(built, scope["providers"], budget["max_provider_requests"])
+        self.store.finish_step(step["id"], "succeeded", output={
+            "vocabulary": built, "queries": queries, "query_compiler": query_compiler.BLOCKS_VERSION})
+        # The counts are stored before the run stops, so resuming re-reads them instead of paying for them again.
+        if not queries:
+            self._pause(run_id, "vocabulary_empty")
+        if built["too_broad"]:
+            self._pause(run_id, "vocabulary_too_broad", {"gate_count": built["gate_count"]})
+        return built, queries
 
     async def _research_title(self, run: dict[str, Any], scope: dict[str, Any], optional: bool = False) -> None:
         """Name the research from its question and included sources' titles and abstracts (D39, D42)."""
@@ -716,6 +771,13 @@ class ResearchFlow:
             for concept in plan["result"]["concepts"]:
                 for phrase in [concept["label"], *concept["synonyms"]]:
                     terms += [t for t in re.findall(r"\w+", phrase.lower()) if len(t) > 2 and t not in STOPWORDS]
+        elif code_words := self.store.latest_step_output(research_id, "vocabulary", scope["revision"]):
+            # The sw workflow has no search plan. Its queried terms and outcome terms rank passages the same way;
+            # claim words do not, because they are the criterion the passages are read against (slice 11).
+            built = code_words["vocabulary"]
+            queried = [t["root"] if t["in_query"] == "root" else t["phrase"] for t in built["terms"] if not t["dropped"]]
+            for phrase in queried + built["outcome_terms"]:
+                terms += [t for t in re.findall(r"\w+", phrase.lower()) if len(t) > 2 and t not in STOPWORDS]
         unique_terms = list(dict.fromkeys(terms))[:40]
         fts = " OR ".join(f'"{t}"' for t in unique_terms)
         ranked = self.store.search_passages(included, fts, limit * 3)

@@ -26,13 +26,24 @@ def _model(role: tuple[str, str | None, str | None] | None) -> dict[str, Any] | 
 
 
 def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str, Any] | None,
-                   queries: list[dict[str, Any]], skill_package_hash: str, settings: Settings) -> dict[str, Any]:
+                   queries: list[dict[str, Any]], skill_package_hash: str, settings: Settings,
+                   vocabulary: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The body a research freezes. `vocabulary` is the sw workflow's code vocabulary step output (SW2).
+
+    Its counts are the ones the first run read; they change in the literature over time and are never re-probed, so
+    the body keeps the numbers that actually decided this research's query.
+    """
     # Imported here: flow loads this module, and the thresholds are read from their one definition rather than repeated.
     from deixis.documents.pdf import CHUNK_CHARS
     from deixis.workflow.flow import (FORMULATION_SCORE_THRESHOLD, MAX_ABSTRACT_CHARS, MAX_PASSAGES_PER_SOURCE,
                                       PDF_PAGES_PER_SOURCE, RRF_K)
+    from deixis.workflow.vocabulary import GATE_BLOCKS, THRESHOLDS as VOCABULARY_THRESHOLDS
 
-    compiler_version = (query_compiler.COMPACT_VERSION if settings.query_strategy == "compact_openalex_v1"
+    queried = [t for t in vocabulary["terms"] if not t["dropped"]] if vocabulary else []
+
+    # A code vocabulary's queries came from the block compiler, so the body names that compiler, not the plan one.
+    compiler_version = (query_compiler.BLOCKS_VERSION if vocabulary else
+                        query_compiler.COMPACT_VERSION if settings.query_strategy == "compact_openalex_v1"
                         else query_compiler.VERSION)
     return {
         "schema": PROTOCOL_SCHEMA,
@@ -42,16 +53,23 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "language_hint": scope.get("language_hint"),
         "source_scope": scope["source_scope"],
         "seed_mode": scope.get("seed_mode", "question_only"),
-        # The inclusion criterion and its phrases arrive in slice 06, the concept blocks in slice 04.
+        # The inclusion criterion and its phrases arrive in slice 06.
         "inclusion_criterion": None,
         "criterion_parts": None,
         "cue_phrases": None,
         "exclusion_title_words": None,
-        "concept_blocks": None,
-        "claim_words": None,
-        "exclusion_words": None,
+        # The blocks a code vocabulary gated the search with, each holding the form of its terms that was queried.
+        "concept_blocks": ({block: [t["root"] if t["in_query"] == "root" else t["phrase"]
+                                    for t in queried if t["block"] == block] for block in GATE_BLOCKS}
+                           if vocabulary else None),
+        "claim_words": list(vocabulary["claim_words"]) if vocabulary else None,
+        "exclusion_words": list(vocabulary["exclusion_words"]) if vocabulary else None,
         "vocabulary": ([{"label": c["label"], "role": c["role"], "synonyms": list(c.get("synonyms") or [])}
-                        for c in plan.get("concepts", [])] if plan else None),
+                        for c in plan.get("concepts", [])] if plan else
+                       [{"phrase": t["phrase"], "origin": t["origin"], "block": t["block"], "root": t["root"],
+                         "in_query": t["in_query"], "phrase_count": t["phrase_count"], "root_count": t["root_count"],
+                         "and_only": t["and_only"], "dropped": t["dropped"]} for t in vocabulary["terms"]]
+                       if vocabulary else None),
         "compiled_queries": [{"provider_id": q["provider_id"], "query_text": q["query_text"],
                               **({"results": q["results"]} if q.get("results") is not None else {})}
                              for q in queries],
@@ -68,6 +86,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             "formulation_score_threshold": FORMULATION_SCORE_THRESHOLD,
             # The identity rule runs only on the sw workflow, so a legacy protocol body stays exactly as it was.
             **({"record_identity": THRESHOLDS} if scope.get("search_workflow") == "sw" else {}),
+            **({"vocabulary": VOCABULARY_THRESHOLDS} if vocabulary else {}),
         },
         "rule_table_version": "legacy",
         "budget": budget,

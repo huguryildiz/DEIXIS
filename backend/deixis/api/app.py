@@ -79,6 +79,8 @@ class CreateResearch(BaseModel):
     review_connection: str | None = Field(default=None, min_length=1, max_length=40)  # None: model_connection
     review_reasoning_effort: str | None = Field(default=None, min_length=1, max_length=40)
     language_hint: str | None = Field(default=None, pattern=r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
+    # The user's own English search terms, used by the sw workflow when code cannot read the question (SW2.1).
+    key_terms: str | None = Field(default=None, max_length=500)
 
 
 MODEL_ROLES = ("answer", "literature", "reviewer")
@@ -129,6 +131,7 @@ class ScopeRevision(BaseModel):
     question: str = Field(min_length=3, max_length=4000)
     steering: str | None = Field(default=None, max_length=2000)
     expected_version: int
+    key_terms: str | None = Field(default=None, max_length=500)  # left out, the revision keeps the previous terms
 
 
 class ResearchTitleChange(BaseModel):
@@ -602,7 +605,8 @@ def create_app(
                                     body.literature_model, body.literature_reasoning_effort,
                                     body.review_mode, body.review_model, body.review_reasoning_effort,
                                     literature_connection=literature_connection, review_connection=review_connection,
-                                    seed_mode=body.seed_mode, search_workflow=settings.search_workflow)
+                                    seed_mode=body.seed_mode, search_workflow=settings.search_workflow,
+                                    key_terms=body.key_terms)
         return research_view(store, rid)
 
     @app.get("/api/settings")
@@ -771,7 +775,7 @@ def create_app(
     @app.post("/api/researches/{research_id}/scope")
     async def revise_scope(research_id: str, body: ScopeRevision, request: Request) -> dict[str, Any]:
         store = store_of(request)
-        store.revise_scope(research_id, body.expected_version, body.question, body.steering)
+        store.revise_scope(research_id, body.expected_version, body.question, body.steering, body.key_terms)
         return research_view(store, research_id)
 
     @app.post("/api/researches/{research_id}/seed")

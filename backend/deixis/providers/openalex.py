@@ -16,7 +16,8 @@ import httpx
 
 from deixis.providers.common import OtherVersion, ProviderRecord, SearchOutcome, normalize_doi, send
 
-__all__ = ["OtherVersion", "ProviderRecord", "SearchOutcome", "normalize_doi", "reconstruct_abstract", "search_works"]
+__all__ = ["OtherVersion", "ProviderRecord", "SearchOutcome", "count_works", "normalize_doi", "reconstruct_abstract",
+           "search_works"]
 
 PROVIDER_ID = "openalex"
 WORKS_URL = "https://api.openalex.org/works"
@@ -33,6 +34,9 @@ RATE_LIMIT_HEADERS = (
     "x-ratelimit-cost-usd", "x-ratelimit-remaining-usd",
 )
 MAX_RESULTS = 200
+# A count needs no record. OpenAlex refuses per_page=0, so the smallest page is asked for and only meta.count read.
+COUNT_PER_PAGE = 1
+COUNT_SELECT = "id"
 
 
 def reconstruct_abstract(inverted: dict[str, list[int]] | None) -> str | None:
@@ -117,3 +121,28 @@ async def search_works(
     outcome.status = "zero_results" if not outcome.records else "completed"
     outcome.raw_payload = payload
     return outcome
+
+
+async def count_works(client: httpx.AsyncClient, query: str, *, api_key: str | None = None,
+                      mailto: str | None = None) -> int | None:
+    """How many works the query matches, read from `meta.count` alone (SW2.2).
+
+    Same search parameter, credentials and error handling as `search_works`. A failure, a timeout or a rate limit
+    gives `None` and stops nothing: one unanswered probe must not stop the others, as one failed search does not
+    stop a discovery run (D18). `None` means the count is unknown, never that it is zero.
+    """
+    params: dict[str, Any] = {SEARCH_PARAM: query, "per_page": COUNT_PER_PAGE, "select": COUNT_SELECT}
+    if mailto:
+        params["mailto"] = mailto
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    access_mode = "api_key" if api_key else "keyless"
+    description = (f"GET {WORKS_URL} {SEARCH_PARAM}={query!r} per_page={COUNT_PER_PAGE} select={COUNT_SELECT}"
+                   f" access={access_mode}")
+    response, _ = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,))
+    if response is None:
+        return None
+    try:
+        count = (response.json().get("meta") or {}).get("count")
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return None
+    return count if isinstance(count, int) else None

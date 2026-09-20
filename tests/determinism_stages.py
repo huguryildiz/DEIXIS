@@ -9,6 +9,7 @@ Later slices add their own stage to STAGES (implementation plan §2.9).
 from __future__ import annotations
 
 import argparse
+import asyncio
 import random
 import sys
 import tempfile
@@ -18,13 +19,15 @@ from typing import Any, Callable
 from deixis.config import Settings
 from deixis.documents.pdf import chunk_page
 from deixis.domain.canonical import canonical_rows, sha256_hex
+from deixis.domain.vocabulary import extract
 from deixis.providers.common import ProviderRecord
-from deixis.providers.query_compiler import compile_queries
+from deixis.providers.query_compiler import compile_block_queries, compile_queries
 from deixis.storage import db
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import answer_source_order, fuse_rankings
 from deixis.workflow.protocol import build_protocol
 from deixis.workflow.store import Store
+from deixis.workflow.vocabulary import build_vocabulary
 
 CONCEPTS = [
     {"label": "diffusion channel", "role": "core", "synonyms": ["diffusion channel", "molecular channel"]},
@@ -169,6 +172,32 @@ def stage_link_records(rows: list[dict[str, Any]]) -> Any:
     return {"works": canonical_rows(works, "work"), "links": canonical_rows(stored, "pair")}
 
 
+VOCABULARY_QUESTION = ("SYNTHETIC: what is the effect of packet size on energy consumption in wireless sensor "
+                       "networks, using integer programming, not surveys?")
+# A fixed answer per probe query, so the stage reads counts without a network. The numbers are invented: they make
+# the gate exceed MANAGEABLE_TOTAL once, which is the branch the replay has to pin down.
+VOCABULARY_COUNTS = {
+    '"packet size"': 900, "packet": 2_400_000, "size": 9_000_000,
+    '"energy consumption"': 40_000, "energy": 3_100_000, "consumption": 1_200_000,
+    '"wireless sensor networks"': 50_000, "wireless": 800_000, "networks": 7_000_000,
+}
+
+
+def stage_code_vocabulary(rows: list[dict[str, Any]]) -> Any:
+    """The question read by code, probed against fixed counts and compiled for a shuffled provider list (SW2).
+
+    The rows are the providers, which carry no order of their own; the question is one string, so the phrase order
+    inside the vocabulary is the question's and is not shuffled.
+    """
+    async def count(query: str) -> int | None:
+        return VOCABULARY_COUNTS.get(query, 6_000)  # an unlisted query is over MANAGEABLE_TOTAL, so the gate narrows
+
+    vocabulary = asyncio.run(build_vocabulary(extract(VOCABULARY_QUESTION), count))
+    providers = [row["id"] for row in rows]
+    queries = compile_block_queries(vocabulary, providers, len(providers))
+    return {"vocabulary": vocabulary, "queries": canonical_rows(queries, "provider_id")}
+
+
 def stage_build_protocol(rows: list[dict[str, Any]]) -> Any:
     scope = SCOPE | {"providers": [row["id"] for row in rows]}
     return build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
@@ -184,6 +213,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "build_protocol": stage_build_protocol,
     "work_outcome": stage_work_outcome,
     "link_records": stage_link_records,
+    "code_vocabulary": stage_code_vocabulary,
 }
 
 ROWS: dict[str, list[dict[str, Any]]] = {
@@ -192,6 +222,7 @@ ROWS: dict[str, list[dict[str, Any]]] = {
     "fuse_rankings": [{"id": f"psg_{i}", "text": "SYNTHETIC passage"} for i in range(6)],
     "answer_source_order": [{"id": f"svr_{i}", "text": "SYNTHETIC molecule release schedule"} for i in range(6)],
     "build_protocol": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed")],
+    "code_vocabulary": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed", "scopus")],
     # Four works: one still a candidate on the abstract stage, one whose two versions disagree on the full text, one
     # the user decided, and one whose two versions reached the same outcome, so the version named for the work must
     # not be the one decided first. SYNTHETIC decisions; they show merge behavior, not screening quality.

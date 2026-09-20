@@ -48,12 +48,12 @@ Durumlar: `plan` (yalnızca ana planda) · `dosya hazır` · `uygulanıyor` · `
 
 ## Yapılan incelemeler
 
-Her inceleme bir satır: ne bulundu, nasıl kapandı. Bulgu yoksa "bulgu yok" yazılır. Kayıt, hangi tür dilimde incelemenin işe yaradığını gösterir; model ve efor seçimi buna göre gözden geçirilir.
+Her inceleme bir satır: ne bulundu, nasıl kapandı. Bulgu yoksa "bulgu yok" yazılır. Kayıt, hangi tür dilimde incelemenin işe yaradığını gösterir; model ve efor seçimi buna göre gözden geçirilir. "İnceleyen" sütununa gerçekten kullanılan model ve efor yazılır, planlanan değil.
 
 | Tarih | Dilim | Tür | İnceleyen | Bulgu | Düzeltme |
 |---|---|---|---|---|---|
-| 2026-09-20 | 01 | tam | Fable · high | Aynı kapsam revizyonunda ikinci keşif koşusu, model başka bir plan verince `internal_error` ile çöküyordu (değişen protokol gerekçe istiyor, akış vermiyordu); görünüm eski koşuya yeni protokolün özetini gösteriyordu. Kaynak: dilim dosyasında eksik durum, kod hatası değil. Ayrıca plandaki test komutu iki testi toplamıyordu (`PYTHONPATH=backend` yerine `backend:.`). Uygulayanın yerinde sapması: protokol kaydının silme tetikleyicisine kalıcı silme istisnası. | `8f9535c` |
-| 2026-09-20 | 02 | tam | Fable · high | `undo_human` geri getirdiği kararı güncel kapsam revizyonu ve protokol özetiyle damgalıyordu, böylece eskimiş bir karar taze görünüyordu; `work_outcome`, kazanan sonucu birden çok sürüm taşıdığında ilk karar verileni adlandırıyordu (sıraya bağlı), artık işin başını, yoksa en küçük kimliği adlandırıyor. | `8f88582` |
+| 2026-09-20 | 01 | tam | Fable (plan sohbeti; efor kaydedilmedi) | Aynı kapsam revizyonunda ikinci keşif koşusu, model başka bir plan verince `internal_error` ile çöküyordu (değişen protokol gerekçe istiyor, akış vermiyordu); görünüm eski koşuya yeni protokolün özetini gösteriyordu. Kaynak: dilim dosyasında eksik durum, kod hatası değil. Ayrıca plandaki test komutu iki testi toplamıyordu (`PYTHONPATH=backend` yerine `backend:.`). Uygulayanın yerinde sapması: protokol kaydının silme tetikleyicisine kalıcı silme istisnası. | `8f9535c` |
+| 2026-09-20 | 02 | tam | Fable · medium | `undo_human` geri getirdiği kararı güncel kapsam revizyonu ve protokol özetiyle damgalıyordu, böylece eskimiş bir karar taze görünüyordu; `work_outcome`, kazanan sonucu birden çok sürüm taşıdığında ilk karar verileni adlandırıyordu (sıraya bağlı), artık işin başını, yoksa en küçük kimliği adlandırıyor. | `8f88582` |
 
 ## Sahip kararları
 

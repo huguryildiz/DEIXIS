@@ -18,6 +18,7 @@ from typing import Any, Callable
 from deixis.config import Settings
 from deixis.documents.pdf import chunk_page
 from deixis.domain.canonical import canonical_rows, sha256_hex
+from deixis.providers.common import ProviderRecord
 from deixis.providers.query_compiler import compile_queries
 from deixis.storage import db
 from deixis.workflow.decisions import DecisionStore
@@ -106,6 +107,68 @@ def stage_work_outcome(rows: list[dict[str, Any]]) -> Any:
     return canonical_rows(outcomes, "work_id")
 
 
+LINK_AUTHORS = ["Aydin, Mert", "Zhao, Li"]
+LINK_TITLES = {
+    "one": "SYNTHETIC release scheduling for diffusion channels",
+    "two": "SYNTHETIC receiver architectures in molecular communication",
+    "three": "SYNTHETIC energy budgets of nanoscale transmitters",
+    "three_retitled": "SYNTHETIC energy budget of a nanoscale transmitter",  # title similarity 0.81 to "three"
+    "four": "SYNTHETIC coding gain under drift and turbulence",
+    "five": "SYNTHETIC bit error rate of optical wireless links",
+    "six": "SYNTHETIC multi hop relaying in vascular networks",
+}
+LINK_ABSTRACTS = {
+    "one": "We schedule SYNTHETIC molecule releases and report the packet size that minimises the error rate.",
+    "two": "We compare SYNTHETIC receiver architectures for molecular links under a fixed sampling budget.",
+    "three": "We derive the SYNTHETIC energy a nanoscale transmitter spends per emitted molecule.",
+    "three_other": "We measure SYNTHETIC turbulence in a vascular channel and fit a drift model to it.",
+    "four": "We bound the SYNTHETIC coding gain of a drifting channel with a turbulent boundary layer.",
+}
+
+
+def stage_link_records(rows: list[dict[str, Any]]) -> Any:
+    """One search of SYNTHETIC records, recorded in a shuffled order: the works and links must not depend on it.
+
+    The set deliberately leaves out the one case whose outcome does depend on arrival order — two published records
+    asking for the same preprint, where the first one to arrive takes it — which is named in the decision's Limits.
+    Random `srv_` and `wrk_` identifiers and the head of a work stay out of the output; records are named by the
+    identifier the provider gave them.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        conn = db.connect(Path(directory) / "library.sqlite")
+        db.migrate(conn)
+        store = Store(conn)
+        rid = store.create_research("SYNTHETIC question?", "academic", "quick", ["openalex"], "fake", "fake-model",
+                                    None, search_workflow="sw")
+        run = store.create_run(rid, "discovery", {"max_model_calls": 1, "max_provider_requests": 1,
+                                                  "max_candidates": 50, "max_answer_passages": 8}, None)
+        records = [ProviderRecord(
+            provider_record_id=row["id"], title=row["title"], authors=list(LINK_AUTHORS), year=2026, venue=None,
+            publication_type=None, doi=row["doi"], landing_url=None, oa_pdf_url=None, oa_pdf_version=None,
+            version_label="submittedVersion" if row["preprint"] else "publishedVersion", abstract=row["abstract"],
+            abstract_origin="provider" if row["abstract"] else None, identifiers={}, raw={},
+            merge_by_doi=not row["preprint"]) for row in rows]
+        step = store.step(run["id"], "search:0", "provider_search:openalex")
+        store.record_search(
+            dict(research_id=rid, run_id=run["id"], step_id=step["id"], scope_revision=1, provider="openalex",
+                 query_text="q", request_description="GET test", access_mode="keyless", status="completed",
+                 delivery_class=None, result_count=len(records), provider_total=len(records), page_limit=25,
+                 error_json=None, raw_payload_path=None),
+            "openalex", records, None, step["id"], "succeeded", step_output={"status": "completed"})
+        named = {r[0]: r[1] for r in conn.execute(
+            "SELECT source_version_id, value FROM identifier_mappings WHERE scheme = 'openalex'")}
+        grouped: dict[str, list[str]] = {}
+        for svid, work_id in conn.execute("SELECT id, work_id FROM source_versions"):
+            grouped.setdefault(work_id, []).append(named[svid])
+        works = [{"work": " ".join(sorted(ids))} for ids in grouped.values()]
+        stored = [{"pair": " ".join(sorted((named[r["source_version_id"]], named[r["other_source_version_id"]]))),
+                   "link_kind": r["link_kind"], "rule": r["rule"], "merged": r["merged"],
+                   "parent": named.get(r["parent_source_version_id"])}
+                  for r in conn.execute("SELECT * FROM record_links WHERE closed_at IS NULL")]
+        conn.close()
+    return {"works": canonical_rows(works, "work"), "links": canonical_rows(stored, "pair")}
+
+
 def stage_build_protocol(rows: list[dict[str, Any]]) -> Any:
     scope = SCOPE | {"providers": [row["id"] for row in rows]}
     return build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
@@ -120,6 +183,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "answer_source_order": stage_answer_source_order,
     "build_protocol": stage_build_protocol,
     "work_outcome": stage_work_outcome,
+    "link_records": stage_link_records,
 }
 
 ROWS: dict[str, list[dict[str, Any]]] = {
@@ -141,6 +205,32 @@ ROWS: dict[str, list[dict[str, Any]]] = {
         {"id": "srv_two_b", "work_id": "wrk_two", "reason_code": "criterion_absent"},
         {"id": "srv_three_a", "work_id": "wrk_three", "reason_code": "criterion_absent"},
         {"id": "srv_three_b", "work_id": "wrk_three", "reason_code": "human_include"},
+    ],
+    # One merging pair (a preprint and its published record), one extended_version pair of two published records,
+    # one suspected pair of two preprints whose abstracts disagree, a correction notice with its paper, and two
+    # records nothing links to. SYNTHETIC; they show link behavior, not identity accuracy.
+    "link_records": [
+        # PA and RA are the merging pair, placed so that both shuffles the test runs put RA first instead.
+        {"id": "PA", "title": LINK_TITLES["one"], "doi": "10.1109/synth.2026.1", "abstract": LINK_ABSTRACTS["one"],
+         "preprint": False},
+        {"id": "PC", "title": LINK_TITLES["two"], "doi": "10.1109/synth.2026.2", "abstract": LINK_ABSTRACTS["two"],
+         "preprint": False},
+        {"id": "PD", "title": LINK_TITLES["two"], "doi": "10.1145/synth.2026.3", "abstract": LINK_ABSTRACTS["two"],
+         "preprint": False},
+        {"id": "RA", "title": LINK_TITLES["one"], "doi": "10.48550/arxiv.2601.00001",
+         "abstract": LINK_ABSTRACTS["one"], "preprint": True},
+        {"id": "RE", "title": LINK_TITLES["three"], "doi": "10.48550/arxiv.2601.00002",
+         "abstract": LINK_ABSTRACTS["three"], "preprint": True},
+        {"id": "RF", "title": LINK_TITLES["three_retitled"], "doi": "10.48550/arxiv.2601.00003",
+         "abstract": LINK_ABSTRACTS["three_other"], "preprint": True},
+        {"id": "PG", "title": LINK_TITLES["four"], "doi": "10.1109/synth.2026.4", "abstract": LINK_ABSTRACTS["four"],
+         "preprint": False},
+        {"id": "NG", "title": f"Publisher Correction: {LINK_TITLES['four']}", "doi": "10.1109/synth.2026.5",
+         "abstract": None, "preprint": False},
+        {"id": "PH", "title": LINK_TITLES["five"], "doi": "10.1109/synth.2026.6", "abstract": None,
+         "preprint": False},
+        {"id": "PI", "title": LINK_TITLES["six"], "doi": "10.1109/synth.2026.7", "abstract": None,
+         "preprint": False},
     ],
 }
 

@@ -11,6 +11,7 @@ from importlib.metadata import version
 from typing import Any
 
 from deixis.config import Settings
+from deixis.domain.record_identity import THRESHOLDS
 from deixis.domain.rules import SCREENING_BATCH, effective_reviewer, step_model
 from deixis.providers import query_compiler
 
@@ -65,6 +66,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             "max_passages_per_source": MAX_PASSAGES_PER_SOURCE,
             "pdf_pages_per_source": PDF_PAGES_PER_SOURCE,
             "formulation_score_threshold": FORMULATION_SCORE_THRESHOLD,
+            # The identity rule runs only on the sw workflow, so a legacy protocol body stays exactly as it was.
+            **({"record_identity": THRESHOLDS} if scope.get("search_workflow") == "sw" else {}),
         },
         "rule_table_version": "legacy",
         "budget": budget,

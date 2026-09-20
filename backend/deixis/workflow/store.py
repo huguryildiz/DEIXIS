@@ -17,6 +17,7 @@ from typing import Any
 from deixis.domain.canonical import sha256_hex
 from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
+from deixis.workflow import links
 from deixis.workflow.source_keys import key_stem, suffixes
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
@@ -293,6 +294,8 @@ class Store:
                 if source["provider_payload_path"]:
                     payloads.append(source["provider_payload_path"])
                 orphan_files.extend(r[0] for r in self.conn.execute("SELECT storage_path FROM source_assets WHERE source_version_id = ?", (source_id,)))
+                self.conn.execute("DELETE FROM record_links WHERE source_version_id = ? OR other_source_version_id = ?"
+                                  " OR parent_source_version_id = ?", (source_id, source_id, source_id))
                 self.conn.execute("DELETE FROM identifier_mappings WHERE source_version_id = ?", (source_id,))
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (source_id,))
@@ -1272,7 +1275,10 @@ class Store:
                     self.add_to_corpus(search_fields["research_id"], svid, "search", srid, candidate=False)
                 for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
                     self.add_to_corpus(search_fields["research_id"], other, "search", srid, candidate=False)
-            self._flag_suspected_duplicates(search_fields["research_id"], found)
+            if self.scope(search_fields["research_id"])["search_workflow"] == "sw":
+                links.link_records(self, search_fields["research_id"], found)  # D48's narrow rule widens to SW6
+            else:
+                self._flag_suspected_duplicates(search_fields["research_id"], found)
             output = {**step_output, "search_run_id": srid} if step_output is not None else None
             self.finish_step(step_id, step_status, output=output, **step_fields)
         return srid
@@ -1341,18 +1347,29 @@ class Store:
         if not same_publication(first, second, basis):
             return False
         keep, drop = (first, second) if is_published(first) else (second, first)
-        self.conn.execute("UPDATE source_versions SET work_id = ? WHERE work_id = ?", (keep["work_id"], drop["work_id"]))
-        self.conn.execute("DELETE FROM works WHERE id = ?", (drop["work_id"],))
+        self._join_works(keep["work_id"], drop["work_id"])
+        return True
+
+    def _join_works(self, keep_work_id: str, drop_work_id: str) -> dict[str, Any]:
+        """Move every version of one work into another and drop the emptied work; the caller holds the transaction.
+
+        Returns what undoing the join needs: the dropped work's own row and the versions this call moved, so a later
+        undo can tell them from versions that joined the work afterwards.
+        """
+        dropped = dict(self.conn.execute("SELECT * FROM works WHERE id = ?", (drop_work_id,)).fetchone())
+        moved = [r[0] for r in self.conn.execute("SELECT id FROM source_versions WHERE work_id = ? ORDER BY id", (drop_work_id,))]
+        self.conn.execute("UPDATE source_versions SET work_id = ? WHERE work_id = ?", (keep_work_id, drop_work_id))
+        self.conn.execute("DELETE FROM works WHERE id = ?", (drop_work_id,))
         self.conn.execute(
             "DELETE FROM suspected_duplicates WHERE (SELECT work_id FROM source_versions WHERE id = source_version_id)"
             " = (SELECT work_id FROM source_versions WHERE id = other_source_version_id)"
         )
         for (research_id,) in self.conn.execute(
             "SELECT DISTINCT m.research_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
-            " WHERE v.work_id = ?", (keep["work_id"],)
+            " WHERE v.work_id = ?", (keep_work_id,)
         ).fetchall():
-            self._settle_work_head(research_id, keep["work_id"])
-        return True
+            self._settle_work_head(research_id, keep_work_id)
+        return {"dropped_work": dropped, "moved": moved}
 
     def link_published_versions(self) -> int:
         """Join preprints and published records flagged as suspected duplicates before D48; returns the pairs joined."""
@@ -1632,6 +1649,8 @@ class Store:
                 if source["provider_payload_path"]:
                     payloads.append(source["provider_payload_path"])
                 orphan_files.extend(r[0] for r in self.conn.execute("SELECT storage_path FROM source_assets WHERE source_version_id = ?", (svid,)))
+                self.conn.execute("DELETE FROM record_links WHERE source_version_id = ? OR other_source_version_id = ?"
+                                  " OR parent_source_version_id = ?", (svid, svid, svid))
                 self.conn.execute("DELETE FROM identifier_mappings WHERE source_version_id = ?", (svid,))
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (svid,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (svid,))

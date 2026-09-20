@@ -107,6 +107,24 @@ def test_build_protocol_is_repeatable_and_reads_its_thresholds_from_their_defini
     assert protocol.build_protocol(scope, {}, None, [], "pkg_hash", settings)["vocabulary"] is None
 
 
+def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
+    """The identity rule runs on `sw` researches alone, so a legacy protocol body is exactly what it was before."""
+    from deixis.domain.record_identity import THRESHOLDS
+    from deixis.workflow import protocol
+
+    scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
+             "seed_mode": "question_only", "providers": ["openalex"], "model_connection": "fake",
+             "requested_model": "fake-model", "reasoning_effort": None, "literature_model": None, "review_mode": "off"}
+    settings = Settings(data_dir=None)
+    legacy = protocol.build_protocol(scope | {"search_workflow": "legacy"}, {}, None, [], "pkg_hash", settings)
+    sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
+    assert "record_identity" not in legacy["thresholds"]
+    assert sw["thresholds"]["record_identity"] == THRESHOLDS
+    assert sw["thresholds"] == legacy["thresholds"] | {"record_identity": THRESHOLDS}
+    rest = lambda body: {k: v for k, v in body.items() if k not in ("thresholds", "search_workflow")}
+    assert rest(sw) == rest(legacy)  # nothing else about the body differs between the two workflows
+
+
 def test_a_discovery_run_freezes_one_protocol_before_its_first_search_and_stamps_the_later_steps(tmp_path, monkeypatch):
     from fakes import FakeAdapter
     from test_provider_flow import discover, routed, two_provider_plan

@@ -201,3 +201,33 @@ def test_stage_decision_migration_adds_the_three_tables_with_their_guards(tmp_pa
     with pytest.raises(sqlite3.IntegrityError):  # a decision is deleted only under a purge authorization
         conn.execute("DELETE FROM stage_decisions WHERE id = 'dec_two'")
     assert conn.execute("SELECT COUNT(*) FROM stage_decisions").fetchone()[0] == 2
+
+
+def test_record_link_migration_keeps_one_open_row_per_ordered_pair(tmp_path):
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    assert {row[1] for row in conn.execute("PRAGMA table_info(record_links)")} == {
+        "id", "source_version_id", "other_source_version_id", "link_kind", "rule", "source",
+        "parent_source_version_id", "title_similarity", "abstract_similarity", "author_agreement", "year_gap",
+        "merged", "undo_json", "closed_at", "closed_reason", "closed_note", "created_at"}
+    conn.execute("INSERT INTO works (id, created_at) VALUES ('wrk_test', 'now')")
+    for svid in ("srv_a", "srv_b"):
+        conn.execute("INSERT INTO source_versions (id, work_id, title, origin, created_at)"
+                     " VALUES (?, 'wrk_test', 'SYNTHETIC record', 'provider', 'now')", (svid,))
+    link = ("INSERT INTO record_links (id, source_version_id, other_source_version_id, link_kind, rule, source,"
+            " author_agreement, merged, created_at) VALUES (?, ?, ?, 'related_suspected', 'two_published', 'text',"
+            " 'agree', 0, 'now')")
+    with pytest.raises(sqlite3.IntegrityError):  # the pair is always stored with the smaller identifier on the left
+        conn.execute(link, ("lnk_reversed", "srv_b", "srv_a"))
+    conn.execute(link, ("lnk_one", "srv_a", "srv_b"))
+    with pytest.raises(sqlite3.IntegrityError):  # one open link per pair
+        conn.execute(link, ("lnk_two", "srv_a", "srv_b"))
+    with pytest.raises(sqlite3.IntegrityError):  # a closed row says why it closed
+        conn.execute("UPDATE record_links SET closed_at = 'now' WHERE id = 'lnk_one'")
+    conn.execute("UPDATE record_links SET closed_at = 'now', closed_reason = 'superseded' WHERE id = 'lnk_one'")
+    conn.execute(link, ("lnk_two", "srv_a", "srv_b"))  # a closed row leaves room for a new open one
+    assert conn.execute("SELECT COUNT(*) FROM record_links").fetchone()[0] == 2
+    with pytest.raises(sqlite3.IntegrityError):  # the link kinds are a closed list
+        conn.execute("UPDATE record_links SET link_kind = 'invented' WHERE id = 'lnk_two'")
+    conn.execute("DELETE FROM record_links")  # links carry no research, so a purge deletes them with the record
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []

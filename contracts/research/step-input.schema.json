@@ -54,6 +54,7 @@
         "cell_extraction",
         "table_columns",
         "research_title",
+        "vocabulary_labels",
         "report_plan",
         "report_section",
         "report_phrase_repair",
@@ -502,6 +503,58 @@
         }
       }
     },
+    "vocabulary_target": {
+      "type": "object",
+      "description": "vocabulary_labels steps only: the question and the exact phrase list code extracted from it, each with the block the code rule put it in. The step sorts these phrases and may not change the list.",
+      "additionalProperties": false,
+      "required": [
+        "question_text",
+        "language",
+        "phrases"
+      ],
+      "properties": {
+        "question_text": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string",
+          "enum": [
+            "en",
+            "other"
+          ]
+        },
+        "phrases": {
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "phrase",
+              "rule_block"
+            ],
+            "properties": {
+              "phrase": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "rule_block": {
+                "type": "string",
+                "description": "Where the code rule put the phrase. It is shown as context, not as an answer to copy.",
+                "enum": [
+                  "setting",
+                  "task",
+                  "outcome",
+                  "claim",
+                  "exclusion"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "report_target": {
       "type": "object",
       "additionalProperties": false,
@@ -673,6 +726,7 @@
         "column_ids": { "type": "array", "items": { "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" } },
         "cell_ids": { "type": "array", "items": { "type": "string", "pattern": "^cel_[0-9A-Za-z]{8,40}$" } },
         "gap_ids": { "type": "array", "items": { "type": "string", "pattern": "^gap[0-9]{1,3}$" } },
+        "phrases": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 200 } },
         "passage_ids": {
           "type": "array",
           "items": {

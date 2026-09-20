@@ -111,7 +111,10 @@ def test_an_sw_discovery_searches_while_every_model_call_fails(tmp_path, monkeyp
     searched = {s["kind"]: s["status"] for s in run["steps"] if s["operation_key"].startswith("search:")}
     assert searched["provider_search:openalex"] == "succeeded", run["steps"]
     assert openalex.counts and openalex.searches
-    assert [s["operation_key"] for s in run["steps"]][:2] == ["vocabulary", "protocol"]
+    # The vocabulary step opens first and the optional block labelling of slice 04d runs inside it; the protocol is
+    # frozen next, still before any search.
+    assert [s["operation_key"] for s in run["steps"]][:5] == [
+        "vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3", "protocol"]
     assert run["status"] == "paused" and run["pause_reason"] == "model_call_failed", run
     assert view["counts"]["unique"] == 1
     # No step input was ever built for a search plan: the words came from the question.

@@ -40,6 +40,10 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     from deixis.workflow.vocabulary import GATE_BLOCKS, THRESHOLDS as VOCABULARY_THRESHOLDS
 
     queried = [t for t in vocabulary["terms"] if not t["dropped"]] if vocabulary else []
+    # Who put each phrase in its block: the code rule, the model's labelling step (SW17.6) or the user's key terms.
+    default_origin = "user" if vocabulary and vocabulary["block_assignment"] == "user" else "rule"
+    block_origin = {record["phrase"]: record["origin"]
+                    for record in (vocabulary or {}).get("labelling", {}).get("phrases", [])}
 
     # A code vocabulary's queries came from the block compiler, so the body names that compiler, not the plan one.
     compiler_version = (query_compiler.BLOCKS_VERSION if vocabulary else
@@ -62,11 +66,13 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "concept_blocks": ({block: [t["root"] if t["in_query"] == "root" else t["phrase"]
                                     for t in queried if t["block"] == block] for block in GATE_BLOCKS}
                            if vocabulary else None),
+        "block_assignment": vocabulary["block_assignment"] if vocabulary else None,
         "claim_words": list(vocabulary["claim_words"]) if vocabulary else None,
         "exclusion_words": list(vocabulary["exclusion_words"]) if vocabulary else None,
         "vocabulary": ([{"label": c["label"], "role": c["role"], "synonyms": list(c.get("synonyms") or [])}
                         for c in plan.get("concepts", [])] if plan else
-                       [{"phrase": t["phrase"], "origin": t["origin"], "block": t["block"], "root": t["root"],
+                       [{"phrase": t["phrase"], "origin": t["origin"], "block": t["block"],
+                         "block_origin": block_origin.get(t["phrase"], default_origin), "root": t["root"],
                          "in_query": t["in_query"], "phrase_count": t["phrase_count"], "root_count": t["root_count"],
                          "and_only": t["and_only"], "dropped": t["dropped"]} for t in vocabulary["terms"]]
                        if vocabulary else None),

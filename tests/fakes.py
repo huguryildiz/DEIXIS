@@ -59,6 +59,10 @@ def valid_response(si: dict[str, Any]) -> str:
         })
     if task == "research_title":
         return json.dumps(envelope(si, "deixis.research_title.v1") | {"title": "Synthetic short research title"})
+    if task == "vocabulary_labels":
+        return json.dumps(envelope(si, "deixis.vocabulary_labels.v1") | {
+            "labels": [{"phrase": p["phrase"], "block": p["rule_block"]} for p in si["vocabulary_target"]["phrases"]],
+        })
     if task == "report_plan":
         passage_ids = si["allowlist"]["passage_ids"]
         column_ids = si["allowlist"]["column_ids"]

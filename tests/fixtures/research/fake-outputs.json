@@ -432,5 +432,79 @@
         "insufficient_evidence": []
       }
     }
+,
+    {
+      "name": "vocabulary_labels_valid",
+      "step_input": "D_vocabulary_labels",
+      "expect_ok": true,
+      "expect_codes": [],
+      "output": {
+        "schema_version": "deixis.vocabulary_labels.v1",
+        "step_input_id": "sti_SYNTHD0001",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "labels": [
+          { "phrase": "irrigation scheduling", "block": "task" },
+          { "phrase": "marketable yield", "block": "outcome" },
+          { "phrase": "greenhouse tomato production", "block": "setting" },
+          { "phrase": "case reports", "block": "exclusion" }
+        ]
+      }
+    },
+    {
+      "name": "vocabulary_labels_invented_phrase",
+      "step_input": "D_vocabulary_labels",
+      "expect_ok": false,
+      "expect_codes": ["phrase_not_in_allowlist"],
+      "output": {
+        "schema_version": "deixis.vocabulary_labels.v1",
+        "step_input_id": "sti_SYNTHD0001",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "labels": [
+          { "phrase": "irrigation scheduling", "block": "task" },
+          { "phrase": "marketable yield", "block": "outcome" },
+          { "phrase": "greenhouse tomato production", "block": "setting" },
+          { "phrase": "case reports", "block": "exclusion" },
+          { "phrase": "drip emitters", "block": "setting" }
+        ]
+      }
+    },
+    {
+      "name": "vocabulary_labels_missing_phrase",
+      "step_input": "D_vocabulary_labels",
+      "expect_ok": false,
+      "expect_codes": ["phrase_label_incomplete"],
+      "output": {
+        "schema_version": "deixis.vocabulary_labels.v1",
+        "step_input_id": "sti_SYNTHD0001",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "labels": [
+          { "phrase": "irrigation scheduling", "block": "task" },
+          { "phrase": "marketable yield", "block": "outcome" },
+          { "phrase": "greenhouse tomato production", "block": "setting" }
+        ]
+      }
+    },
+    {
+      "name": "vocabulary_labels_duplicate_phrase",
+      "step_input": "D_vocabulary_labels",
+      "expect_ok": false,
+      "expect_codes": ["phrase_label_incomplete"],
+      "output": {
+        "schema_version": "deixis.vocabulary_labels.v1",
+        "step_input_id": "sti_SYNTHD0001",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "labels": [
+          { "phrase": "irrigation scheduling", "block": "task" },
+          { "phrase": "marketable yield", "block": "outcome" },
+          { "phrase": "greenhouse tomato production", "block": "setting" },
+          { "phrase": "case reports", "block": "exclusion" },
+          { "phrase": "marketable yield", "block": "task" }
+        ]
+      }
+    }
   ]
 }

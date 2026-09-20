@@ -63,7 +63,10 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
     return "current"
 
 
-LITERATURE_TASKS = ("search_plan", "screening")
+LITERATURE_TASKS = ("search_plan", "screening", "vocabulary_labels")
+# A repair would let the step name a phrase the question does not hold and then take it back. The block labelling
+# gets one attempt: an output that invents, drops or repeats a phrase is rejected and the rule stands (SW17.1).
+NO_REPAIR_TASKS = ("vocabulary_labels",)
 
 
 def step_model(scope: dict[str, Any], task_type: str) -> tuple[str, str | None, str | None]:
@@ -93,8 +96,12 @@ def effective_reviewer(scope: dict[str, Any], default: dict[str, Any] | None) ->
     return None
 
 
-def after_invalid_output(repairs_used: int) -> str:
-    return "repair" if repairs_used < MAX_SCHEMA_REPAIRS else "store_unverified_draft"
+def schema_repairs(task_type: str) -> int:
+    return 0 if task_type in NO_REPAIR_TASKS else MAX_SCHEMA_REPAIRS
+
+
+def after_invalid_output(repairs_used: int, limit: int = MAX_SCHEMA_REPAIRS) -> str:
+    return "repair" if repairs_used < limit else "store_unverified_draft"
 
 
 def effective_selection(

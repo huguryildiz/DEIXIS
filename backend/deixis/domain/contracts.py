@@ -33,6 +33,7 @@ SCHEMA_FILES = {
     "EvidenceCellDraft": "evidence-cell-draft.schema.json",
     "TableColumnProposal": "table-column-proposal.schema.json",
     "ResearchTitle": "research-title.schema.json",
+    "VocabularyLabels": "vocabulary-labels.schema.json",
     "StepInput": "step-input.schema.json",
     "ReportPlanDraft": "report-plan.schema.json",
     "ReportSectionDraft": "report-section-draft.schema.json",
@@ -48,6 +49,7 @@ SCHEMA_VERSIONS = {
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
     "TableColumnProposal": "deixis.table_column_proposal.v1",
     "ResearchTitle": "deixis.research_title.v1",
+    "VocabularyLabels": "deixis.vocabulary_labels.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
     "ReportSectionDraft": "deixis.report_section_draft.v1",
     "ReportPhraseRepairDraft": "deixis.report_phrase_repair_draft.v1",
@@ -63,12 +65,15 @@ TASK_OUTPUTS = {
     "cell_extraction": ("EvidenceCellDraft",),
     "table_columns": ("TableColumnProposal",),
     "research_title": ("ResearchTitle",),
+    "vocabulary_labels": ("VocabularyLabels",),
     "report_plan": ("ReportPlanDraft",),
     "report_section": ("ReportSectionDraft",),
     "report_phrase_repair": ("ReportPhraseRepairDraft",),
     "report_review": ("ReportReview",),
 }
 EXTRACTION_TASKS = ("cell_extraction", "table_columns")
+# The block-labelling step sorts a phrase list code extracted; it carries a vocabulary_target instead (SW17.1).
+VOCABULARY_TASKS = ("vocabulary_labels",)
 GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
 REPORT_TASKS = ("report_plan", "report_section", "report_phrase_repair", "report_review")
 # The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's (D37).
@@ -232,6 +237,16 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
                 issues.append(Issue("passage_outside_extraction_source", f"/passages/{p['passage_id']}", p["source_id"]))
         if not 1 <= len(target["columns"]) <= MAX_COLUMNS_PER_CALL:
             issues.append(Issue("extraction_column_count", "/extraction_target/columns", str(len(target["columns"]))))
+    vocabulary_target = step_input.get("vocabulary_target")
+    if (vocabulary_target is not None) != (step_input["task_type"] in VOCABULARY_TASKS):
+        issues.append(Issue("vocabulary_target_mismatch", "/vocabulary_target", step_input["task_type"]))
+    elif vocabulary_target is not None:
+        # The allowlist is the phrase list itself: the step may name nothing else, and nothing else may be allowed.
+        phrases = [entry["phrase"] for entry in vocabulary_target["phrases"]]
+        if len(set(phrases)) != len(phrases):
+            issues.append(Issue("duplicate_vocabulary_phrase", "/vocabulary_target/phrases", "phrase must be unique"))
+        if sorted(set(allow.get("phrases", []))) != sorted(set(phrases)):
+            issues.append(Issue("phrase_allowlist_mismatch", "/allowlist/phrases", "the allowlist is the phrase list"))
     report_target = step_input.get("report_target")
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
         issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
@@ -342,6 +357,8 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         _check_column_proposal(step_input, result, report)
     elif output_type == "ResearchTitle":
         _check_title(step_input, result, report)
+    elif output_type == "VocabularyLabels":
+        _check_vocabulary_labels(allow, result, report)
     elif output_type == "ReportPlanDraft":
         _check_report_plan(step_input, allow, result, report)
     elif output_type == "ReportSectionDraft":
@@ -714,6 +731,26 @@ def _check_title(step_input: dict[str, Any], draft: dict[str, Any], report: Vali
         report.issues.append(Issue("title_too_long", "/title", f"expected at most 15 words, got {words}"))
     if title and title == step_input["question"]["text"].strip():
         report.issues.append(Issue("title_copies_question", "/title", "rewrite the title from the question and sources"))
+
+
+def _check_vocabulary_labels(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
+    """Every given phrase is labelled exactly once and nothing else is named (SW17.1).
+
+    Both are errors, not warnings: an invented phrase is a phrase the question does not hold, and a missing label
+    would silently leave the rule's assignment in place, which is what this step exists to correct.
+    """
+    allowed = allow.get("phrases", set())
+    labelled: list[str] = []
+    for index, label in enumerate(draft["labels"]):
+        if label["phrase"] not in allowed:
+            report.issues.append(Issue("phrase_not_in_allowlist", f"/labels/{index}/phrase", label["phrase"]))
+        else:
+            labelled.append(label["phrase"])
+    counts = Counter(labelled)
+    for phrase in sorted(set(allowed) - set(labelled)):
+        report.issues.append(Issue("phrase_label_incomplete", "/labels", f"{phrase!r} was not labelled"))
+    for phrase in sorted(p for p, n in counts.items() if n > 1):
+        report.issues.append(Issue("phrase_label_incomplete", "/labels", f"{phrase!r} was labelled more than once"))
 
 
 def _report_phrasing_fields(draft: dict[str, Any]) -> list[tuple[str, str]]:

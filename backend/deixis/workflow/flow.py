@@ -26,9 +26,10 @@ from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, math_reader, ocr, pdf
 from deixis.domain import canonical, contracts, phrasebank, vocabulary as question_words
-from deixis.domain.rules import (MAX_RATE_LIMIT_MODEL_RETRIES, MAX_SCHEMA_REPAIRS, MAX_TRANSIENT_NETWORK_RETRIES,
-                                 SCREENING_BATCH, after_invalid_output, effective_reviewer, step_model)
+from deixis.domain.rules import (MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH,
+                                 after_invalid_output, effective_reviewer, schema_repairs, step_model)
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
+from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
 from deixis.providers import openalex, query_compiler
@@ -348,14 +349,52 @@ class ResearchFlow:
         if extraction is None:
             # Code does not translate. The run waits for the user's English terms in a new scope revision (SW2.1).
             self._pause(run_id, "key_terms_needed", {"language": scope.get("language_hint") or "other"})
+        extraction, labelling = await self._vocabulary_labels(run, scope, extraction)
         self.store.start_step(step["id"])
         built = await vocabulary_rules.build_vocabulary(extraction, self._count_probe(scope))
+        built["labelling"] = labelling
         self._checkpoint(run_id, revision)
         queries = query_compiler.compile_block_queries(built, scope["providers"], budget["max_provider_requests"])
         self.store.finish_step(step["id"], "succeeded", output={
             "vocabulary": built, "queries": queries, "query_compiler": query_compiler.BLOCKS_VERSION})
         # The counts are stored before the run stops, so resuming re-reads them instead of paying for them again.
         return self._searchable(run_id, built, queries)
+
+    async def _vocabulary_labels(self, run: dict[str, Any], scope: dict[str, Any],
+                                 extraction: Extraction) -> tuple[Extraction, dict[str, Any]]:
+        """Ask a model which block each extracted phrase belongs to, and keep the rule wherever it does not answer (SW17).
+
+        Three optional calls: a failed one is recorded and the run goes on, and with too few of them the rule's own
+        assignment stands, so a search never waits for a model. A call whose step already succeeded returns its stored
+        output, so a resumed run labels nothing twice.
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        phrases = vocabulary_rules.labelling_phrases(extraction)
+        skipped = ("user_key_terms" if extraction.block_assignment == "user" else
+                   "no_phrases" if not phrases else
+                   "too_many_phrases" if len(phrases) > vocabulary_rules.MAX_LABELLED_PHRASES else None)
+        if skipped:
+            # The user's own key terms are above both assignments (SW2.6), and a list this long is not sent at all.
+            return extraction, {"runs_ok": 0, "skipped": skipped, "failures": [], "phrases": []}
+        target = {"question_text": scope["question"], "language": extraction.language, "phrases": phrases}
+        runs: list[dict[str, str]] = []
+        failures: list[dict[str, Any]] = []
+        for index in range(vocabulary_rules.LABEL_RUNS):
+            self._checkpoint(run_id, revision)  # a pause or cancel is honoured between the calls, not only after them
+            key = f"vocabulary_labels_{index + 1}"
+            try:
+                output = await self._model_step(run, scope, key, "vocabulary_labels", optional=True, vocabulary_target=target)
+            except OptionalStepFailed as failure:
+                failures.append({"step": key, "reason": failure.reason})
+                continue
+            if output.get("invalid"):
+                # An invented, missing or repeated phrase drops this run; it is not repaired and not half-applied.
+                failures.append({"step": key, "reason": "invalid_model_output"})
+                continue
+            runs.append({label["phrase"]: label["block"] for label in output["result"]["labels"]})
+        self._checkpoint(run_id, revision)
+        labelled, records = vocabulary_rules.apply_labels(extraction, runs)
+        return labelled, {"runs_ok": len(runs), "skipped": None, "failures": failures, "phrases": records}
 
     def _searchable(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Stop the run when its vocabulary cannot be searched. A resumed run reads the same stored vocabulary, so it
@@ -1053,7 +1092,8 @@ class ResearchFlow:
                     candidate_rows: list[dict[str, Any]], source_ids: list[str], passage_rows: list[dict[str, Any]],
                     claims: list[dict[str, Any]], model: tuple[str, str | None, str | None],
                     extraction_target: dict[str, Any] | None = None,
-                    report_target: dict[str, Any] | None = None) -> dict[str, Any]:
+                    report_target: dict[str, Any] | None = None,
+                    vocabulary_target: dict[str, Any] | None = None) -> dict[str, Any]:
         candidates = []
         for c in candidate_rows:
             source = self.store.source(c["source_version_id"])
@@ -1088,8 +1128,13 @@ class ResearchFlow:
             target["extraction_target"] = extraction_target
         if report_target is not None:
             target["report_target"] = report_target
+        if vocabulary_target is not None:
+            target["vocabulary_target"] = vocabulary_target
         allowlist = {"candidate_ids": [c["candidate_id"] for c in candidates], "source_ids": [s["source_id"] for s in sources],
                      "passage_ids": [p["passage_id"] for p in passages]}
+        if vocabulary_target is not None:
+            # The allowlist for this step is the phrase list itself: it may label those phrases and name no other.
+            allowlist["phrases"] = [entry["phrase"] for entry in vocabulary_target["phrases"]]
         if task_type in contracts.REPORT_TASKS:
             report = report_target or {}
             cells, gaps = report.get("cells", []), report.get("gap_candidates", [])
@@ -1110,7 +1155,7 @@ class ResearchFlow:
             "candidates": candidates, "sources": sources, "passages": passages,
             "allowlist": allowlist,
             "human_corrections": [],
-            "budget": {"max_model_calls": run["budget"]["max_model_calls"], "max_schema_repairs": MAX_SCHEMA_REPAIRS,
+            "budget": {"max_model_calls": run["budget"]["max_model_calls"], "max_schema_repairs": schema_repairs(task_type),
                        "max_provider_requests": run["budget"]["max_provider_requests"]},
             "model": {"connection": model[0], "requested_model": model[1]},
             "created_at": now(),
@@ -1147,7 +1192,7 @@ class ResearchFlow:
                           passage_rows: list[dict[str, Any]] | None = None, selection_revision: int | None = None,
                           claims: list[dict[str, Any]] | None = None, model: tuple[str, str | None, str | None] | None = None,
                           optional: bool = False, extraction_target: dict[str, Any] | None = None,
-                          report_target: dict[str, Any] | None = None,
+                          report_target: dict[str, Any] | None = None, vocabulary_target: dict[str, Any] | None = None,
                           limiter: ModelCallLimiter | None = None) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run."""
@@ -1172,12 +1217,13 @@ class ResearchFlow:
         self._checkpoint(run_id)  # a pause or cancel may have arrived while the connection was checked
         self.store.start_step(step["id"])
         repair_issues: list[dict[str, Any]] | None = None
-        for attempt in range(MAX_SCHEMA_REPAIRS + 1):
+        max_repairs = schema_repairs(task_type)
+        for attempt in range(max_repairs + 1):
             if self.store.run(run_id)["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"]:
                 self.store.finish_step(step["id"], "failed", error_code="budget_exhausted")
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
-                                       claims or [], model, extraction_target, report_target)
+                                       claims or [], model, extraction_target, report_target, vocabulary_target)
             if issues := contracts.check_step_input(payload):
                 self.store.finish_step(step["id"], "failed", error_code="step_input_invalid", error=[vars(i) for i in issues])
                 halt("step_input_invalid", fail=True)
@@ -1224,7 +1270,7 @@ class ResearchFlow:
             report = contracts.validate_model_output(payload, output_text)
             salvage: list[contracts.Issue] = []
             if (not report.ok and task_type == "grounded_answer" and isinstance(output_text, dict)
-                    and after_invalid_output(attempt) == "store_unverified_draft"):
+                    and after_invalid_output(attempt, max_repairs) == "store_unverified_draft"):
                 # The repair did not fix the draft: drop only citations that lack a quote before giving up on it.
                 salvaged, salvage = contracts.salvage_answer_draft(payload, json.loads(json.dumps(output_text)))
                 retry = contracts.validate_model_output(payload, salvaged) if salvage else report
@@ -1242,7 +1288,7 @@ class ResearchFlow:
                 self.store.complete_model_step(session, recorded, step["id"], "succeeded", output=output)
                 return output
             repair_issues = [vars(i) for i in report.issues]
-            if after_invalid_output(attempt) == "store_unverified_draft":
+            if after_invalid_output(attempt, max_repairs) == "store_unverified_draft":
                 self.store.complete_model_step(session, recorded, step["id"], "failed", output={"step_input_id": payload["step_input_id"]},
                                                error_code="invalid_model_output", error=repair_issues)
                 return {"invalid": True, "raw_output": result.raw_text, "issues": repair_issues, "step_input_id": payload["step_input_id"]}

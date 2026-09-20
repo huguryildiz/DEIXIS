@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/vocabulary-labels.schema.json",
+  "title": "VocabularyLabels",
+  "description": "The concept block each phrase of the step's phrase list belongs to (SW17). Code extracted the phrases; this step only sorts them. Every given phrase must appear exactly once and no other phrase may appear: the step may not add, split, reword or drop a phrase, and an output that does is rejected rather than repaired.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "labels"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "deixis.vocabulary_labels.v1" },
+    "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
+    "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
+    "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "labels": {
+      "type": "array",
+      "description": "One entry per phrase in vocabulary_target.phrases, in any order. No rationale field: the step makes one classification and free text would not be checked.",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["phrase", "block"],
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Copied exactly from the given phrase list."
+          },
+          "block": {
+            "type": "string",
+            "enum": ["setting", "task", "outcome", "claim", "exclusion", "not_a_term"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -25,7 +25,7 @@ Measurement evidence (untracked): `.local/quantum-work-adjudication-2026-09-18/`
 
 ## SW2 — Search keywords come from code first; the model is a conditional expansion step
 
-**Status:** accepted as design direction in the workflow review with the owner; points 1, 2, 3 and 7 implemented for the `sw` workflow on 2026-09-21 ([D73](../decisions.md), slice 04a) and not measured; points 4, 5 and 6 not implemented. **Date:** 2026-09-18.
+**Status:** accepted as design direction in the workflow review with the owner; points 1, 2, 3 and 7 implemented for the `sw` workflow on 2026-09-21 ([D73](../decisions.md), slice 04a) and not measured; points 4, 5 and 6 not implemented. Point 2's block assignment is no longer code's alone: SW17 narrows point 5 with a second, phrase-bounded model step that proposes no terms ([D74](../decisions.md), slice 04d), and point 6's user correction still stands above it. **Date:** 2026-09-18.
 
 **Context:** First question of the workflow review after SW1: who determines the search keywords derived from the user's question. Code alone cannot know synonyms that are absent from the question; a model alone is not repeatable (SW1 measured an 11% answer change on identical input), can invent plausible terms the field does not use, and tends to put the claim under test into the query.
 
@@ -295,7 +295,7 @@ Measurement evidence (untracked): `.local/quantum-work-adjudication-2026-09-18/`
 
 ## SW17 — The block a phrase belongs to is assigned by a model over the phrases code extracted, never by the word in front of it
 
-**Status:** accepted as design direction; measured once in `.local/sw-block-labelling-2026-09-21/`; not implemented. **Date:** 2026-09-21. Narrows SW2 point 5.
+**Status:** accepted as design direction; measured once in `.local/sw-block-labelling-2026-09-21/`; implemented for the `sw` workflow on 2026-09-21 ([D74](../decisions.md), slice 04d) and not measured inside the product. **Date:** 2026-09-21. Narrows SW2 point 5.
 
 **Context:** SW2 point 2 leaves block assignment to code, and its Limits already call that assignment unreliable. Slice 04a ([D73](../decisions.md)) built it as "the word immediately before a phrase names its block". The slice's own dry run and the measurement below show the rule is wrong about a third of the time, and wrong in the expensive direction: `with` marks a method position, so in "effect of metformin on cardiovascular mortality in patients with type 2 diabetes" the phrase "type 2 diabetes" becomes a claim word and the population drops out of the query. The rule also never fills the outcome block at all, because multi-word cues such as `effect on` do not survive an intervening `of`.
 

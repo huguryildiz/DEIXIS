@@ -12,13 +12,19 @@ what the literature held on the day of the first run, not today.
 
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import replace
 from typing import Any, Awaitable, Callable
 
-from deixis.domain.vocabulary import ENGLISH_FUNCTION_WORD_SHARE, LONG_QUESTION_WORDS, Extraction
+from deixis.domain.vocabulary import BLOCK_NAMES, ENGLISH_FUNCTION_WORD_SHARE, LONG_QUESTION_WORDS, Extraction
 from deixis.domain.vocabulary_words import GENERAL_WORDS
 from deixis.providers.query_compiler import quoted
 
 MAX_PROBES = 40  # count requests one vocabulary step may send
+LABEL_RUNS = 3  # SW17.3: the block labelling is asked this many times
+LABEL_MAJORITY = 2  # and a label is kept when it appears in at least this many runs
+MAX_LABELLED_PHRASES = 40  # a longer phrase list is not sent: the rule's assignment stands
+LABELS = ("setting", "task", "outcome", "claim", "exclusion", "not_a_term")
 VERY_LARGE_COUNT = 1_000_000  # SW2.2: a term this frequent is usable only inside an AND
 MANAGEABLE_TOTAL = 5_000  # SW3.5: above this the gate query is narrowed from a root word to its phrase
 THRESHOLDS = {
@@ -40,6 +46,55 @@ def _distinctive(phrase: str) -> list[str]:
 
 def _or_group(forms: list[str]) -> str:
     return "(" + " OR ".join(forms) + ")"
+
+
+def labelling_phrases(extraction: Extraction) -> list[dict[str, str]]:
+    """The phrases the labelling step is given, each with the block the code rule put it in.
+
+    The order is block by block and, inside a block, the order the question gave: an `Extraction` keeps the order
+    within a block and not the order across blocks, so this is the closest stable order to the question's own. It
+    is fixed, which is what the step needs; no set iteration reaches the model or the result.
+    """
+    rows = [{"phrase": phrase, "rule_block": block} for block in BLOCK_NAMES for phrase in extraction.blocks[block]]
+    rows += [{"phrase": phrase, "rule_block": "claim"} for phrase in extraction.claim_words]
+    rows += [{"phrase": phrase, "rule_block": "exclusion"} for phrase in extraction.exclusion_words]
+    return rows
+
+
+def apply_labels(extraction: Extraction, runs: list[dict[str, str]]) -> tuple[Extraction, list[dict[str, Any]]]:
+    """The extraction with the model's block for each phrase, and the per-phrase record of how it was decided (SW17).
+
+    Only runs that produced a valid output are passed in. Below `LABEL_MAJORITY` of them no majority can form at all,
+    so the rule's whole assignment stands and the result is what slice 04a would have searched: the first search
+    never depends on the model being reachable. With enough runs, a phrase the runs disagree about keeps the rule's
+    label in its record but enters no list, because the rule is the thing this step exists to correct (SW17.3).
+    """
+    applied = len(runs) >= LABEL_MAJORITY
+    blocks: dict[str, list[str]] = {name: [] for name in BLOCK_NAMES}
+    claim_words: list[str] = []
+    exclusion_words: list[str] = []
+    records: list[dict[str, Any]] = []
+    for row in labelling_phrases(extraction):
+        phrase, rule_block = row["phrase"], row["rule_block"]
+        votes = [run.get(phrase) for run in runs]
+        counted = Counter(vote for vote in votes if vote in LABELS)
+        agreed = sorted(label for label, count in counted.items() if count >= LABEL_MAJORITY)
+        decided = agreed[0] if applied and len(agreed) == 1 else None
+        block = decided or rule_block
+        place = block if decided or not applied else None
+        if place in blocks:
+            blocks[place].append(phrase)
+        elif place == "claim":
+            claim_words.append(phrase)
+        elif place == "exclusion":
+            exclusion_words.append(phrase)
+        # The runs are three answers to one question and have no order of their own, so what each of them said is
+        # recorded in canonical order (SW14.6); which step said which is in that step's own stored output.
+        records.append({"phrase": phrase, "rule_block": rule_block, "runs": sorted(v for v in votes if v is not None),
+                        "block": block, "origin": "model" if decided else "rule"})
+    labelled = replace(extraction, blocks=blocks, claim_words=claim_words, exclusion_words=exclusion_words,
+                       block_assignment="model" if applied else extraction.block_assignment)
+    return labelled, records
 
 
 async def build_vocabulary(extraction: Extraction, count: Callable[[str], Awaitable[int | None]]) -> dict[str, Any]:

@@ -44,6 +44,11 @@ that matches `task_type`:
 For `answer_review`, read [answer review](references/answer-review.md) instead:
 you review claims another step wrote and do not answer the question yourself.
 
+For `vocabulary_labels`, read
+[vocabulary labels](references/vocabulary-labels.md): you sort a phrase list the
+application extracted from the question into concept blocks, and propose no
+phrases of your own.
+
 For `cell_extraction` and `table_columns`, read
 [evidence table](references/evidence-table.md): you answer evidence table
 columns for one source, or suggest columns, and do not answer the question.

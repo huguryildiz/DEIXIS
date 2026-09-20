@@ -160,6 +160,18 @@ def test_a_work_that_already_has_a_published_record_takes_no_second_one(store):
     assert (row["link_kind"], row["rule"], row["merged"]) == ("related_suspected", "work_already_has_published", 0)
 
 
+def test_a_refused_second_published_record_found_again_adds_no_row(store):
+    rid, run_id = research(store)
+    _, pre = joined_preprint(store, rid, run_id)
+    second = record("C1", doi="10.1145/synth.2026.9")
+    search(store, rid, run_id, 2, "crossref", [second])
+    search(store, rid, run_id, 3, "crossref", [second])
+    other = store.find_source_by_identifier("crossref", "C1")
+    rows = [r for r in links.links_for(store, other, include_closed=True)
+            if pre in (r["source_version_id"], r["other_source_version_id"])]
+    assert [(r["rule"], r["closed_reason"]) for r in rows] == [("work_already_has_published", None)]
+
+
 def test_a_sibling_paper_by_the_same_authors_stays_suspected(store):
     rid, run_id = research(store)
     search(store, rid, run_id, 0, "openalex", [record("W1", abstract=ABSTRACT)])

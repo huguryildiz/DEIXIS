@@ -36,16 +36,9 @@ def save_link(store: Store, a: str, b: str, verdict: Verdict, source: str) -> di
     if conn.execute("SELECT 1 FROM record_links WHERE source_version_id = ? AND other_source_version_id = ?"
                     " AND closed_reason = 'undone' LIMIT 1", (first, second)).fetchone():
         return None
-    current = conn.execute("SELECT * FROM record_links WHERE source_version_id = ? AND other_source_version_id = ?"
-                           " AND closed_at IS NULL", (first, second)).fetchone()
-    if current is not None:
-        # The same reading of the same pair (a resumed run, a record found again) adds nothing, and a joined work is
-        # not split again by a weaker reading; only the user undoes a merge.
-        if (current["link_kind"], current["rule"]) == (verdict.link_kind, verdict.rule) or current["merged"]:
-            return dict(current)
-        conn.execute("UPDATE record_links SET closed_at = ?, closed_reason = 'superseded' WHERE id = ?",
-                     (now(), current["id"]))
-    link_kind, rule, merged, undo = verdict.link_kind, verdict.rule, 0, None
+    # What will be stored is settled before it is compared to the open link: a merge the guard refuses is stored as
+    # `work_already_has_published`, and finding the record again must read as that same link, not as a new verdict.
+    link_kind, rule, join = verdict.link_kind, verdict.rule, None
     if verdict.merge:
         work_a, work_b = store.source(a)["work_id"], store.source(b)["work_id"]
         if work_a != work_b:
@@ -53,9 +46,20 @@ def save_link(store: Store, a: str, b: str, verdict: Verdict, source: str) -> di
                 # Two published records never share a work, by any path (SW6.5).
                 link_kind, rule = "related_suspected", "work_already_has_published"
             else:
-                keep, drop = _keep_and_drop(store, work_a, work_b)
-                undo = {"keep_work_id": keep, **store._join_works(keep, drop)}
-                merged = 1
+                join = _keep_and_drop(store, work_a, work_b)
+    current = conn.execute("SELECT * FROM record_links WHERE source_version_id = ? AND other_source_version_id = ?"
+                           " AND closed_at IS NULL", (first, second)).fetchone()
+    if current is not None:
+        # The same reading of the same pair (a resumed run, a record found again) adds nothing, and a joined work is
+        # not split again by a weaker reading; only the user undoes a merge.
+        if (current["link_kind"], current["rule"]) == (link_kind, rule) or current["merged"]:
+            return dict(current)
+        conn.execute("UPDATE record_links SET closed_at = ?, closed_reason = 'superseded' WHERE id = ?",
+                     (now(), current["id"]))
+    merged, undo = 0, None
+    if join is not None:
+        undo = {"keep_work_id": join[0], **store._join_works(*join)}
+        merged = 1
     row_id = new_id("lnk")
     conn.execute(
         "INSERT INTO record_links (id, source_version_id, other_source_version_id, link_kind, rule, source,"

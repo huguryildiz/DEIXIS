@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
-from deixis.domain.vocabulary import ENGLISH_FUNCTION_WORD_SHARE, Extraction
+from deixis.domain.vocabulary import ENGLISH_FUNCTION_WORD_SHARE, LONG_QUESTION_WORDS, Extraction
 from deixis.domain.vocabulary_words import GENERAL_WORDS
 from deixis.providers.query_compiler import quoted
 
@@ -23,6 +23,7 @@ VERY_LARGE_COUNT = 1_000_000  # SW2.2: a term this frequent is usable only insid
 MANAGEABLE_TOTAL = 5_000  # SW3.5: above this the gate query is narrowed from a root word to its phrase
 THRESHOLDS = {
     "english_function_word_share": ENGLISH_FUNCTION_WORD_SHARE,
+    "long_question_words": LONG_QUESTION_WORDS,
     "max_probes": MAX_PROBES,
     "very_large_count": VERY_LARGE_COUNT,
     "manageable_total": MANAGEABLE_TOTAL,

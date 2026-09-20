@@ -340,7 +340,7 @@ class ResearchFlow:
         step = self.store.step(run_id, "vocabulary", "code:vocabulary")
         if step["status"] == "succeeded":
             stored = step["output"]
-            return stored["vocabulary"], stored["queries"]
+            return self._searchable(run_id, stored["vocabulary"], stored["queries"])
         try:
             extraction = question_words.extract(scope["question"], scope.get("language_hint"), scope.get("key_terms"))
         except ValueError as exc:
@@ -355,6 +355,12 @@ class ResearchFlow:
         self.store.finish_step(step["id"], "succeeded", output={
             "vocabulary": built, "queries": queries, "query_compiler": query_compiler.BLOCKS_VERSION})
         # The counts are stored before the run stops, so resuming re-reads them instead of paying for them again.
+        return self._searchable(run_id, built, queries)
+
+    def _searchable(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Stop the run when its vocabulary cannot be searched. A resumed run reads the same stored vocabulary, so it
+        stops for the same reason again instead of going on with no query or with the query that was refused; the way
+        out is a scope revision that names key terms."""
         if not queries:
             self._pause(run_id, "vocabulary_empty")
         if built["too_broad"]:

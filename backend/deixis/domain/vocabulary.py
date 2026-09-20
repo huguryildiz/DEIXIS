@@ -20,7 +20,8 @@ from dataclasses import dataclass, replace
 from deixis.domain.vocabulary_words import (CUE_WORDS, ENGLISH_FUNCTION_WORDS, GENERAL_WORDS, MAX_CUE_WORDS,
                                             QUESTION_FRAMES)
 
-ENGLISH_FUNCTION_WORD_SHARE = 0.2  # a question is read as English at or above this share of function words
+ENGLISH_FUNCTION_WORD_SHARE = 0.2  # a question with accented letters is English only at or above this share
+LONG_QUESTION_WORDS = 8  # a text this long without one English function word is not an English sentence
 BLOCK_NAMES = ("setting", "task", "outcome")
 MAX_KEY_TERM_GROUPS = len(BLOCK_NAMES)
 KEY_TERM_PREFIXES = {"claim": "method", "not": "excluded"}
@@ -45,7 +46,13 @@ class Extraction:
 
 
 def detect_language(question: str, language_hint: str | None) -> str:
-    """The hint decides when there is one; otherwise the share of English function words does."""
+    """The hint decides when there is one; otherwise the question is English unless something says it is not.
+
+    Something is a letter outside the Latin script, accented letters together with few English function words, or a
+    long text with no English function word at all. A plain English question dense in content words, or a short list
+    of keywords, holds few function words and must not be sent back for key terms. A question in another language
+    written without accents is read as English; its phrases then meet the count probe, which is the second guard
+    (SW2.1)."""
     if language_hint:
         return "en" if language_hint.strip().lower().startswith("en") else "other"
     for character in question:
@@ -55,7 +62,9 @@ def detect_language(question: str, language_hint: str | None) -> str:
     if not words:
         return "other"
     share = sum(word in ENGLISH_FUNCTION_WORDS for word in words) / len(words)
-    return "en" if share >= ENGLISH_FUNCTION_WORD_SHARE else "other"
+    if any(not character.isascii() for character in question if character.isalpha()):
+        return "en" if share >= ENGLISH_FUNCTION_WORD_SHARE else "other"
+    return "other" if share == 0 and len(words) >= LONG_QUESTION_WORDS else "en"
 
 
 def parse_key_terms(key_terms: str) -> Extraction:

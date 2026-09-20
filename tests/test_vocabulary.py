@@ -68,6 +68,18 @@ def test_the_first_position_a_phrase_appears_in_is_the_one_it_keeps():
     assert extraction.blocks["setting"] == ["wireless sensor networks", "wired networks"]
 
 
+def test_a_plain_english_question_dense_in_content_words_is_read_as_english():
+    # SYNTHETIC questions with two function words in eleven, and with none at all in a short keyword list.
+    assert vocabulary.detect_language("Does packet size optimization reduce energy consumption in wireless sensor networks?", None) == "en"
+    assert vocabulary.detect_language("Packet size optimization wireless sensor networks", None) == "en"
+    assert vocabulary.detect_language("How does the Schrödinger bridge improve sampling in diffusion models?", None) == "en"
+
+
+def test_accents_with_few_english_function_words_or_a_long_text_with_none_is_not_english():
+    assert vocabulary.detect_language("Wie beeinflusst die Paketgröße den Energieverbrauch in drahtlosen Sensornetzen?", None) == "other"
+    assert vocabulary.detect_language("Kablosuz algilayici aglarda paket boyutu enerji tuketimini nasil etkiler acaba", None) == "other"
+
+
 def test_a_question_that_is_not_english_needs_the_users_key_terms():
     assert vocabulary.detect_language(TURKISH, None) == "other"
     assert vocabulary.detect_language(TURKISH, "en") == "en"  # an explicit hint decides

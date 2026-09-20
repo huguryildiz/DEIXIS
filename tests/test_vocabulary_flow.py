@@ -243,6 +243,23 @@ def test_one_block_of_terms_too_frequent_to_search_stops_the_run(tmp_path, monke
     assert not openalex.searches
 
 
+def test_resuming_a_run_stopped_for_its_vocabulary_stops_it_again_and_searches_nothing(tmp_path, monkeypatch):
+    from deixis.workflow.vocabulary import VERY_LARGE_COUNT
+
+    for count, question, reason in ((0, QUESTION, "vocabulary_empty"),
+                                    (VERY_LARGE_COUNT + 1, "Which networks are reported?", "vocabulary_too_broad")):
+        openalex = CountingOpenAlex(count=count)
+        with TestClient(app_for(tmp_path / reason, monkeypatch, openalex, DeadAdapter())) as client:
+            client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+            rid, run_id = start(client, question)
+            wait(client, rid, run_id)
+            assert client.post(f"/api/runs/{run_id}/resume").status_code < 300
+            time.sleep(0.2)
+            view, run = wait(client, rid, run_id)
+        assert (run["status"], run["pause_reason"]) == ("paused", reason), run
+        assert not openalex.searches
+
+
 def test_key_terms_survive_a_revision_that_does_not_name_them(tmp_path, monkeypatch):
     app = app_for(tmp_path, monkeypatch, CountingOpenAlex(), DeadAdapter())
     with TestClient(app) as client:

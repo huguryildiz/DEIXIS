@@ -602,7 +602,7 @@ def create_app(
                                     body.literature_model, body.literature_reasoning_effort,
                                     body.review_mode, body.review_model, body.review_reasoning_effort,
                                     literature_connection=literature_connection, review_connection=review_connection,
-                                    seed_mode=body.seed_mode)
+                                    seed_mode=body.seed_mode, search_workflow=settings.search_workflow)
         return research_view(store, rid)
 
     @app.get("/api/settings")

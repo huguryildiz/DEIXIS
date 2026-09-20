@@ -88,6 +88,8 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     for row in conn.execute("SELECT id FROM runs WHERE research_id = ? ORDER BY created_at DESC LIMIT 10", (research_id,)):
         run = store.run(row["id"])
         run["steps"] = store.run_steps(run["id"])
+        frozen = store.current_protocol(research_id, run["scope_revision"])
+        run["protocol_hash"] = frozen["hash"] if frozen else None
         output = next((o for o in _model_outputs(store, run["id"], "model:search_plan") if o.get("output_type") == "SearchPlan"), None)
         # A v1 plan holds the queries the model wrote; a v2 plan's queries were compiled from its concepts and stored beside it (D44).
         run["plan"] = ({k: output["result"][k] for k in PLAN_FIELDS}

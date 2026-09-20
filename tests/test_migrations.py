@@ -85,3 +85,25 @@ def test_report_section_ii_migration_preserves_existing_sections_and_enables_ii(
     assert conn.execute("SELECT section_id FROM report_sections WHERE id = 'rsc_ii'").fetchone()[0] == "II"
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+
+
+def test_protocol_migration_keeps_existing_scope_revisions_on_the_legacy_workflow(tmp_path, monkeypatch):
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    for path in db.MIGRATIONS_DIR.glob("*.sql"):
+        if int(path.name.split("_", 1)[0]) < 37:
+            shutil.copy(path, migrations / path.name)
+    protocol_migration = db.MIGRATIONS_DIR / "0037_protocol_records.sql"
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_test', 'Test', 'now', 'now')")
+    conn.execute(
+        "INSERT INTO scope_revisions (research_id, revision, question, source_scope, providers_json, effort,"
+        " model_connection, created_at) VALUES ('res_test', 1, 'SYNTHETIC question', 'academic', '[]', 'quick', 'fake', 'now')"
+    )
+
+    shutil.copy(protocol_migration, migrations / protocol_migration.name)
+    assert db.migrate(conn) == [37]
+    assert conn.execute("SELECT search_workflow FROM scope_revisions WHERE research_id = 'res_test'").fetchone()[0] == "legacy"
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []

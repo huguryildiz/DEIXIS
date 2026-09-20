@@ -14,6 +14,7 @@ import re
 import sqlite3
 from typing import Any
 
+from deixis.domain.canonical import sha256_hex
 from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
 from deixis.workflow.source_keys import key_stem, suffixes
@@ -28,10 +29,22 @@ EVIDENCE_STATUS_SQL = (
 MIN_TITLE_KEY_CHARS = 12  # shorter normalized titles ("Introduction") say too little to suspect a duplicate
 ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions (D46)
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
-STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge")
+STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze")
 STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")
 MAX_SEED_PASSAGES = 4
 MAX_SEED_CHARS = 5600
+
+
+def _output_digest(raw_output: str) -> str:
+    """Digest of a model's answer, over the parsed value when it is JSON and over its text when it is not.
+
+    The prefix says which was read: two syntactically different JSON texts of one value are the same output, and
+    text that never parsed is not silently compared as if it had.
+    """
+    try:
+        return f"json:{sha256_hex(json.loads(raw_output))}"
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return f"text:{sha256_hex(raw_output)}"
 
 
 def title_key(title: str | None) -> str:
@@ -127,6 +140,7 @@ class Store:
         literature_connection: str | None = None,
         review_connection: str | None = None,
         seed_mode: str = "question_only",
+        search_workflow: str = "legacy",
     ) -> str:
         rid, ts = new_id("res"), now()
         title = question.strip().splitlines()[0][:160]
@@ -150,6 +164,9 @@ class Store:
                 columns["seed_mode"] = seed_mode
             elif seed_mode != "question_only":
                 raise SeedUnavailable("Seed-guided search requires the current database schema")
+            # Historical migration tests create a Store before migration 0037 exists; those libraries run `legacy` only.
+            if any(row[1] == "search_workflow" for row in self.conn.execute("PRAGMA table_info(scope_revisions)")):
+                columns["search_workflow"] = search_workflow
             names = ", ".join(columns)
             placeholders = ", ".join("?" for _ in columns)
             self.conn.execute(
@@ -252,7 +269,7 @@ class Store:
             self.conn.execute("DELETE FROM pdf_discovery_runs WHERE research_id = ?", (research_id,))
             for table in ("answer_reviews", "answers", "model_sessions", "step_inputs", "candidates", "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
-                          "source_similarities"):
+                          "source_similarities", "protocol_records"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
             for table in ("runs", "scope_revisions"):
@@ -335,6 +352,7 @@ class Store:
         scope["providers"] = json.loads(scope.pop("providers_json"))
         snapshot = scope.pop("seed_snapshot_json", None)
         scope.setdefault("seed_mode", "question_only")
+        scope.setdefault("search_workflow", "legacy")
         scope["seed_snapshot"] = json.loads(snapshot) if snapshot else None
         return scope
 
@@ -454,6 +472,48 @@ class Store:
                                                        "source_version_id": source_version_id, "asset_id": asset["id"]})
             return revision
 
+    # ---- protocol ---------------------------------------------------------------------
+    def freeze_protocol(self, research_id: str, scope_revision: int, body: dict[str, Any],
+                        reason: str | None = None) -> dict[str, Any]:
+        """Freeze what this research searches under, before its first provider request (SW14.1).
+
+        Re-freezing the same body returns the record already stored, so a resumed run keeps one protocol. A different
+        body is a new revision and needs its reason; a record is never edited in place.
+        """
+        digest = sha256_hex(body)
+        with transaction(self.conn):
+            last = self.conn.execute(
+                "SELECT * FROM protocol_records WHERE research_id = ? AND scope_revision = ?"
+                " ORDER BY protocol_revision DESC LIMIT 1", (research_id, scope_revision),
+            ).fetchone()
+            if last is not None and last["body_sha256"] == digest:
+                return {"id": last["id"], "protocol_revision": last["protocol_revision"],
+                        "body": json.loads(last["body_json"]), "hash": last["body_sha256"]}
+            if last is not None and not reason:
+                raise ValueError("A changed protocol needs the reason it changed")
+            highest = self.conn.execute(
+                "SELECT MAX(protocol_revision) FROM protocol_records WHERE research_id = ?", (research_id,)
+            ).fetchone()[0]
+            revision = (highest or 0) + 1
+            pid = new_id("prt")
+            self.conn.execute(
+                "INSERT INTO protocol_records (id, research_id, scope_revision, protocol_revision, reason, body_json,"
+                " body_sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (pid, research_id, scope_revision, revision, reason, dumps(body), digest, now()),
+            )
+            self._event(research_id, "protocol_frozen", {"protocol_revision": revision, "protocol_hash": digest})
+        return {"id": pid, "protocol_revision": revision, "body": body, "hash": digest}
+
+    def current_protocol(self, research_id: str, scope_revision: int) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM protocol_records WHERE research_id = ? AND scope_revision = ?"
+            " ORDER BY protocol_revision DESC LIMIT 1", (research_id, scope_revision),
+        ).fetchone()
+        if row is None:
+            return None
+        return {"id": row["id"], "protocol_revision": row["protocol_revision"],
+                "body": json.loads(row["body_json"]), "hash": row["body_sha256"]}
+
     # ---- runs -------------------------------------------------------------------------
     def create_run(self, research_id: str, kind: str, budget: dict[str, Any], idempotency_key: str | None,
                    target: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -555,9 +615,17 @@ class Store:
             ).fetchone()
             if row is None:
                 sid = new_id("stp")
+                # A step opened after the protocol was frozen carries its hash; the protocol step and whatever ran
+                # before it (the search plan) keep NULL, because no protocol was frozen when they opened.
+                columns = {"id": sid, "run_id": run_id, "operation_key": operation_key, "kind": kind, "status": "pending"}
+                # Historical migration tests create a Store before migration 0037 exists.
+                if any(row[1] == "protocol_hash" for row in self.conn.execute("PRAGMA table_info(run_steps)")):
+                    run = self.conn.execute("SELECT research_id, scope_revision FROM runs WHERE id = ?", (run_id,)).fetchone()
+                    frozen = self.current_protocol(run["research_id"], run["scope_revision"]) if run else None
+                    columns["protocol_hash"] = frozen["hash"] if frozen else None
                 self.conn.execute(
-                    "INSERT INTO run_steps (id, run_id, operation_key, kind, status) VALUES (?, ?, ?, ?, 'pending')",
-                    (sid, run_id, operation_key, kind),
+                    f"INSERT INTO run_steps ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                    tuple(columns.values()),
                 )
                 row = self.conn.execute("SELECT * FROM run_steps WHERE id = ?", (sid,)).fetchone()
         step = dict(row)
@@ -621,13 +689,20 @@ class Store:
     def insert_step_input(self, step_id: str, research_id: str, run_id: str, attempt: int, payload: dict[str, Any],
                           base: str, developer: str, message: str, output_schema: dict[str, Any],
                           selection_revision: int | None = None) -> None:
+        columns = {
+            "id": payload["step_input_id"], "step_id": step_id, "research_id": research_id, "run_id": run_id,
+            "attempt": attempt, "task_type": payload["task_type"], "scope_revision": payload["scope_revision"],
+            "selection_revision": selection_revision, "skill_package_hash": payload["skill_package_hash"],
+            "payload_json": dumps(payload), "base_instructions": base, "developer_instructions": developer,
+            "user_message": message, "output_schema_json": dumps(output_schema), "created_at": now(),
+        }
+        # Historical migration tests create a Store before migration 0037 exists.
+        if any(row[1] == "payload_sha256" for row in self.conn.execute("PRAGMA table_info(step_inputs)")):
+            columns["payload_sha256"] = sha256_hex(payload)
         with transaction(self.conn):
             self.conn.execute(
-                "INSERT INTO step_inputs (id, step_id, research_id, run_id, attempt, task_type, scope_revision, selection_revision,"
-                " skill_package_hash, payload_json, base_instructions, developer_instructions, user_message, output_schema_json, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (payload["step_input_id"], step_id, research_id, run_id, attempt, payload["task_type"], payload["scope_revision"],
-                 selection_revision, payload["skill_package_hash"], dumps(payload), base, developer, message, dumps(output_schema), now()),
+                f"INSERT INTO step_inputs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                tuple(columns.values()),
             )
 
     def start_model_session(self, research_id: str, run_id: str, step_id: str, step_input_id: str,
@@ -648,6 +723,10 @@ class Store:
 
     def finish_model_session(self, session_id: str, **fields: Any) -> None:
         encoded = {k: (dumps(v) if k.endswith("_json") and v is not None else v) for k, v in fields.items()}
+        # Historical migration tests create a Store before migration 0037 exists.
+        if fields.get("raw_output") is not None and any(
+                row[1] == "output_sha256" for row in self.conn.execute("PRAGMA table_info(model_sessions)")):
+            encoded["output_sha256"] = _output_digest(fields["raw_output"])
         encoded["finished_at"] = now()
         with transaction(self.conn):
             self.conn.execute(
@@ -1688,7 +1767,8 @@ class Store:
         return [r[0] for r in self.conn.execute(
             "SELECT s.source_version_id FROM selections s JOIN corpus_memberships m"
             " ON m.research_id = s.research_id AND m.source_version_id = s.source_version_id AND m.removed_at IS NULL"
-            " WHERE s.research_id = ? AND s.state = 'included' ORDER BY s.updated_at", (research_id,)
+            # The selection order an answer reads must come back the same on every call, so equal times order by identifier.
+            " WHERE s.research_id = ? AND s.state = 'included' ORDER BY s.updated_at, s.source_version_id", (research_id,)
         )]
 
     def answer_order_facts(self, research_id: str, svids: list[str]) -> dict[str, tuple[bool, int]]:
@@ -1727,7 +1807,7 @@ class Store:
             f"SELECT p.* FROM passages_fts f JOIN passages p ON p.rowid = f.rowid"
             f" WHERE passages_fts MATCH ? AND p.source_version_id IN ({marks}) AND (p.asset_id IS NULL OR EXISTS"
             f" (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL AND a.extraction_version IS p.extraction_version))"
-            " ORDER BY bm25(passages_fts) LIMIT ?",
+            " ORDER BY bm25(passages_fts), p.id LIMIT ?",  # an equal BM25 score orders by passage identifier (SW14.6)
             (fts_query, *svids, limit),
         ).fetchall()
         return [dict(r) for r in rows]

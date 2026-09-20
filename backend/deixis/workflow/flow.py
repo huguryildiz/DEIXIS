@@ -25,7 +25,7 @@ import httpx
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, math_reader, ocr, pdf
-from deixis.domain import contracts, phrasebank
+from deixis.domain import canonical, contracts, phrasebank
 from deixis.domain.rules import (MAX_RATE_LIMIT_MODEL_RETRIES, MAX_SCHEMA_REPAIRS, MAX_TRANSIENT_NETWORK_RETRIES,
                                  SCREENING_BATCH, after_invalid_output, effective_reviewer, step_model)
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
@@ -36,6 +36,7 @@ from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, normalize_doi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, new_id, now
 from deixis.workflow.concurrency import ModelCallLimiter
+from deixis.workflow import protocol
 from deixis.workflow.equations import equation_state
 from deixis.workflow.store import NotFound, RunInProgress, Store
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
@@ -56,6 +57,7 @@ MAX_CELL_PASSAGES = 48
 MAX_FILL_PASSAGES = 24
 MAX_RECHECK_PASSAGES = 16
 COLUMN_FIELDS = ("name", "instruction", "answer_format", "options", "allow_multiple", "unit_hint")
+RRF_K = 60  # reciprocal rank fusion constant (D27)
 FORMULATION_SCORE_THRESHOLD = 3
 FORMULATION_TERMS = re.compile(
     r"\b(?:minimi[sz]e|maximi[sz]e|subject\s+to|s\.\s*t|objective\s+function|constraints?|decision\s+variables?"
@@ -76,7 +78,7 @@ def formulation_score(text: str) -> int:
     return 2 * len(FORMULATION_TERMS.findall(text)) + min(6, len(FORMULATION_SYMBOLS.findall(text)))
 
 
-def fuse_rankings(*rankings: list[dict[str, Any]], k: int = 60) -> list[dict[str, Any]]:
+def fuse_rankings(*rankings: list[dict[str, Any]], k: int = RRF_K) -> list[dict[str, Any]]:
     """Reciprocal rank fusion: a passage ranked high lexically or semantically comes first (D27)."""
     scores: dict[str, float] = {}
     rows: dict[str, dict[str, Any]] = {}
@@ -84,7 +86,8 @@ def fuse_rankings(*rankings: list[dict[str, Any]], k: int = 60) -> list[dict[str
         for position, row in enumerate(ranking):
             scores[row["id"]] = scores.get(row["id"], 0.0) + 1 / (k + position + 1)
             rows.setdefault(row["id"], row)
-    return sorted(rows.values(), key=lambda row: -scores[row["id"]])
+    # An equal score is broken by the record identifier, never by which ranking was passed first (SW14.6).
+    return sorted(rows.values(), key=lambda row: (-scores[row["id"]], row["id"]))
 
 
 def extraction_column(column: dict[str, Any]) -> dict[str, Any]:
@@ -116,7 +119,8 @@ def answer_source_order(included: list[str], facts: dict[str, tuple[bool, int]],
     if semantic_rank is not None:
         lexical_rank = {s: i for i, s in enumerate(sorted(included, key=lambda s: (-relevance[s], position[s])))}
         relevance = {s: 1 / (61 + lexical_rank[s]) + (1 / (61 + semantic_rank[s]) if s in semantic_rank else 0.0) for s in included}
-    return sorted(included, key=lambda s: (not facts.get(s, (False, 0))[0], -facts.get(s, (False, 0))[1], -relevance[s], position[s]))
+    # Selection order stays a signal (D17); the identifier only breaks what is equal down to that order (SW14.6).
+    return sorted(included, key=lambda s: (not facts.get(s, (False, 0))[0], -facts.get(s, (False, 0))[1], -relevance[s], position[s], s))
 
 
 class RunStopped(Exception):
@@ -240,6 +244,17 @@ class ResearchFlow:
                                        output | {"queries": queries, "query_compiler": (
                                            query_compiler.COMPACT_VERSION if self.deps.settings.query_strategy == "compact_openalex_v1"
                                            else query_compiler.VERSION)})
+        # The protocol is frozen before the first provider request and every step opened after it carries its hash (SW14.1).
+        protocol_step = self.store.step(run_id, "protocol", "protocol:freeze")
+        if protocol_step["status"] != "succeeded":
+            self.store.start_step(protocol_step["id"])
+            record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
+                scope, budget, plan if plan.get("concepts") else None, queries,
+                self.deps.package.package_hash, self.deps.settings,
+            ))
+            self.store.finish_step(protocol_step["id"], "succeeded",
+                                   output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
+
         # Runs created before results_per_query existed split the candidate limit across their queries.
         per_query = budget.get("results_per_query") or max(5, min(25, budget["max_candidates"] // max(1, len(queries))))
         # A failed search is recorded and shown, and the other searches go on (D18). The run pauses on a failure only when
@@ -364,18 +379,19 @@ class ResearchFlow:
                 await asyncio.sleep(1.5 * attempts)
                 continue
             break
-        payload_path = None
+        payload_path = payload_digest = None
         if outcome.raw_payload is not None:
             settings.payloads_dir.mkdir(parents=True, exist_ok=True)
             payload_path = f"{step['id']}.json"
             (settings.payloads_dir / payload_path).write_text(json.dumps(outcome.raw_payload), encoding="utf-8")
+            payload_digest = canonical.sha256_hex(outcome.raw_payload)
         search_fields = dict(
             research_id=rid, run_id=run_id, step_id=step["id"], scope_revision=run["scope_revision"], provider=provider,
             query_text=query["query_text"], request_description=outcome.request_description,
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
             result_count=len(outcome.records), provider_total=outcome.provider_total, page_limit=limit,
             error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit}),
-            raw_payload_path=payload_path,
+            raw_payload_path=payload_path, payload_sha256=payload_digest,
         )
         if outcome.status in ("completed", "zero_results"):
             self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], "succeeded",

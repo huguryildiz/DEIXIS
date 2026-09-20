@@ -25,6 +25,7 @@ class Settings:
     port: int = 8765
     model_concurrency: int = 6
     query_strategy: str = "legacy"
+    search_workflow: str = "legacy"
 
     @property
     def db_path(self) -> Path:
@@ -84,10 +85,14 @@ def load_settings() -> Settings:
     query_strategy = os.environ.get("DEIXIS_QUERY_STRATEGY", "legacy")
     if query_strategy not in ("legacy", "compact_openalex_v1"):
         raise ValueError("DEIXIS_QUERY_STRATEGY must be legacy or compact_openalex_v1")
+    search_workflow = os.environ.get("DEIXIS_SEARCH_WORKFLOW", "legacy")
+    if search_workflow not in ("legacy", "sw"):
+        raise ValueError("DEIXIS_SEARCH_WORKFLOW must be legacy or sw")
     return Settings(
         data_dir=default_data_dir(),
         host=os.environ.get("DEIXIS_HOST", "127.0.0.1"),
         port=int(os.environ.get("DEIXIS_PORT", "8765")),
         model_concurrency=max(1, int(os.environ.get("DEIXIS_MODEL_CONCURRENCY", "6") or "6")),
         query_strategy=query_strategy,
+        search_workflow=search_workflow,
     )

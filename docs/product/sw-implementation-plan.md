@@ -195,7 +195,7 @@ Her biri için öneri yazılıdır; karar gelene kadar dilim 01 bunlardan etkile
 
 1. **Dilim dosyası ve prompt.** Plan sohbetinde dilimden hemen önce yazılır: `docs/product/sw-sliceNN-<ad>.md` ve `sw-sliceNN-prompt.md`.
 2. **Uygulama.** Yeni sohbet, Opus, efor medium. Her dilimin kendi promptu vardır (`docs/product/sw-sliceNN-prompt.md`: kurallar, önce okunacaklar, yordam, son ileti). İlk ileti yalnızca `docs/product/sw-sliceNN-prompt.md dosyasını uygula.` olur.
-3. **İnceleme.** Ayrı yeni sohbet (Fable): uygulayan sohbetin commit'i dilim dosyasına karşı okunur, `pytest` ve gerekiyorsa build, lint, Playwright koşulur, bulgular ayrı bir düzeltme commit'iyle işlenir ve itilir, `sw-status.md` "kapandı" olur.
+3. **İnceleme.** Ayrı yeni sohbet (Fable · high; uygulayandan farklı model). Ağırlığı dilime göre değişir: **tam** (dilim biter bitmez, tek başına: 02, 03, 09, 12, 16, açılırsa 23) ya da **toplu** (iki üç dilim birlikte, doğal bir durakta; üst üste kurulan omurga dilimleri biriktirilmez). Hangi dilimin hangisi olduğu, kurallar ve **yapılan incelemelerin kaydı** [sw-status.md](sw-status.md)'dedir. Bulgular ayrı bir düzeltme commit'iyle işlenir ve itilir; dilim ancak o zaman `kapandı` olur.
 4. Ölçüm için durulmaz (§2.7); "Kur (ölçülmedi)" dilimleri de tek turdur.
 
 Dilim boyu 300K bağlam sınırına göre değil, "tek oturumda testler yeşil biter" ölçüsüne göre seçildi; hedef kullanım 100–150K'dır, böylece uygulayan sohbet özetlemeye girmeden biter. Bir dilim bunu aşacak gibi görünürse sohbet durur, kalan iş `sw-status.md`'ye yazılır ve dilim ikiye bölünür.

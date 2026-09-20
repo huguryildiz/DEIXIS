@@ -18,7 +18,7 @@ Durumlar: `plan` (yalnızca ana planda) · `dosya hazır` · `uygulanıyor` · `
 | # | Dilim | Tür | Uygulayan model · efor | Durum | Dosya · prompt | Commit / D | Açık kalan |
 |---|---|---|---|---|---|---|---|
 | 01 | Protokol kaydı ve belirlenimcilik | Kur | Opus · medium | kapandı | [dilim](sw-slice01-protocol-and-determinism.md) · [prompt](sw-slice01-prompt.md) | `b09e9a9` + inceleme düzeltmesi · D70 | Protokol gövdesinin ölçüt/blok/sinyal alanları `None`; `attached` araştırmada protokol kaydı yok (sahip kararı); uygulama-geneli varsayılan gözden geçirici gövdeye çözülmüyor (`build_protocol` deposuz); `code_version` commit başına değişmiyor (dilim 24 öncesi); FTS eşitliği yalnızca ikinci anahtarla sabit, ölçülmedi; `search_workflow` yalnızca saklanıyor. Slice SQL'inden sapma: `protocol_records_no_delete` tetikleyicisine 0010'daki kalıcı-silme istisnası eklendi. |
-| 02 | Aşama kararlarının saklanması | Kur | Opus · high | sahip kararı bekliyor (K1, K2) | | | |
+| 02 | Aşama kararlarının saklanması | Kur | Opus · high | dosya hazır | [dilim](sw-slice02-stage-decisions.md) · [prompt](sw-slice02-prompt.md) | | |
 | 03 | Kayıt türü ve sürüm birleştirme | Kur | Opus · high | plan | | | |
 | 04 | Kodla sözcük dağarcığı ve kavram blokları | Ölç→Kur | Fable · high (ölçüm), Opus · high (kod) | plan | | | |
 | 05 | Derleme işareti, eksik özet, sürüm bağlantıları | Kur | Opus · medium | plan | | | |
@@ -48,8 +48,8 @@ Durumlar: `plan` (yalnızca ana planda) · `dosya hazır` · `uygulanıyor` · `
 
 | Karar | Konu | Durum |
 |---|---|---|
-| K1 | Eski ve yeni akışın birlikte yaşaması (araştırma başına bayrak) | bekliyor |
-| K2 | Yeni aşama kararlarının `selections` ile ilişkisi | bekliyor |
+| K1 | Eski ve yeni akışın birlikte yaşaması (araştırma başına bayrak) | kabul edildi, önerildiği gibi (2026-09-20); bayrak D70 ile geldi |
+| K2 | Yeni aşama kararlarının `selections` ile ilişkisi | kabul edildi, önerildiği gibi (2026-09-20); dilim 02 uygular |
 | K3 | Özet aşamasında model çağrı bütçesi | bekliyor |
 | K4 | Ölçüm modeli (`deepseek-flash`, efor `high`) | bekliyor |
 | K5 | Üçüncü konu (tıp ya da yaşam bilimi) | bekliyor |

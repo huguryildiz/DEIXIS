@@ -24,7 +24,7 @@ import httpx
 
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
-from deixis.documents import acquisition, embeddings, math_reader, ocr, pdf
+from deixis.documents import acquisition, embeddings, identity, math_reader, ocr, pdf
 from deixis.domain import canonical, contracts, expansion as phrase_candidates, phrasebank, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH,
@@ -42,6 +42,7 @@ from deixis.workflow import abstract_stage
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import criterion as criterion_rules
 from deixis.workflow import expansion as expansion_rules
+from deixis.workflow import fulltext
 from deixis.workflow import lookups
 from deixis.workflow import protocol
 from deixis.workflow import ranking as ranking_rules
@@ -87,6 +88,9 @@ STOPWORDS = set(
     "ve bir bu şu hangi mı mi mu mü midir var yok daha çok".split()
 )
 RATE_LIMIT_BACKOFF_SECONDS = 1.5  # matches the provider search retry backoff in providers/common.py
+# A route that did not answer, so the work it was tried for is decided by no code and is tried again (SW10, D35).
+UNANSWERED_FETCH_CODES = ("fetch_timeout", "fetch_failed")
+UNANSWERED_LOOKUP_STATUSES = ("timeout", "rate_limited", "failed")
 
 
 def formulation_score(text: str) -> int:
@@ -255,6 +259,8 @@ class ResearchFlow:
                 await self._answer(run, scope)
             elif run["kind"] == "pdf_collection":
                 await self._inspect(run, limit=None)
+            elif run["kind"] == "fulltext_fetch":
+                await self._fulltext_fetch(run, scope)
             elif run["kind"] == "pdf_ocr":
                 await self._pdf_ocr(run)
             elif run["kind"] == "table_fill":
@@ -272,6 +278,11 @@ class ResearchFlow:
         if self.store.run(run_id)["status"] in ("running", "pause_requested"):
             # Nothing is left to pause once the last step's result has been applied.
             self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
+            if run["kind"] == "discovery":
+                # An sw discovery run is followed by the retrieval of the open full text of the works it ranked
+                # (D83). Nothing is queued for a `legacy` research, for a run that did not complete, or when the
+                # setting is off.
+                self._queue_fulltext_fetch(run, scope)
 
     # ---- run control ---------------------------------------------------------------
     def _checkpoint(self, run_id: str, scope_revision: int | None = None) -> None:
@@ -1544,27 +1555,328 @@ class ResearchFlow:
         return (refusal["http_status"] in (403, 404) and normalize_doi(source["doi"]) is not None
                 and not self.store.pdf_discoveries(research_id, source["id"]))
 
-    async def _find_other_copy(self, run: dict[str, Any], source: dict[str, Any]) -> None:
+    async def _find_other_copy(self, run: dict[str, Any], source: dict[str, Any],
+                               other_versions: bool = False) -> dict[str, Any]:
         """Look the DOI up in Unpaywall, OpenAlex, Crossref and CORE and retrieve a copy of the same version.
 
         Web search stays the user's "Find PDF" action, and a copy of uncertain version waits for the user to confirm it.
+        `other_versions` is the full-text retrieval run's addition (D83): a verified copy of a different declared
+        version is attached to its own row under the work. An answer run and a PDF collection run never pass it.
         """
         step = self.store.step(run["id"], f"other_copy:{source['id']}", "pdf_other_copy")
         self.store.start_step(step["id"])
         settings = self.deps.settings
         found = await acquisition.acquire_for_source(
             self.store, run["research_id"], source["id"], self.deps.http, settings.papers_dir, settings.contact_email, None,
-            self.deps.fetch_pdf, core_key=CONNECTORS["core"].api_key(), web_search=False,
+            self.deps.fetch_pdf, core_key=CONNECTORS["core"].api_key(), web_search=False, other_versions=other_versions,
         )
         if found["asset_id"] is None:
             self.store.finish_step(step["id"], "failed", error_code="no_other_copy", error={"candidates": found["candidates"]})
-            return
+            return found
         asset = self.store.asset(found["asset_id"])
         status = "succeeded" if asset["extraction_status"] in ("succeeded", "partial") else "partial"
         self.store.finish_step(step["id"], status, output={"asset_id": asset["id"], "extraction_status": asset["extraction_status"],
                                                           "page_count": asset["page_count"],
-                                                          "passage_count": self.store.asset_passage_count(asset["id"])},
+                                                          "passage_count": self.store.asset_passage_count(asset["id"]),
+                                                          **({"source_version_id": found["lookup_version_id"]}
+                                                             if found.get("lookup_version_id") else {})},
                                error_code=None if status == "succeeded" else f"extraction_{asset['extraction_status']}")
+        return found
+
+    # ---- the full-text retrieval run of an sw research (slice 10, SW10, D83) --------------
+    async def _fulltext_fetch(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+        """Retrieve the open full text of this research's ranked works, one attempt per work, and record what came back.
+
+        No model is called and nothing is included or excluded: the three codes this run writes are all
+        `unresolved` (SW1.2), and the user's own decision is skipped rather than overwritten. The plan is frozen in
+        the first step's output, so a resumed run finishes the same list instead of one that moved under it, and a
+        work whose step is already stored is skipped without touching any counter (slice 09's review, lesson 1).
+
+        The works are fetched one after another on purpose: the run's limiter is sized for model calls, and six
+        parallel downloads to one publisher or one preprint server are not acceptable. How long a sequential run
+        takes was not measured (slice 24).
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        self._checkpoint(run_id, revision)
+        self.store.update_run(run_id, stage="inspection")
+        plan = self._fulltext_plan(run, scope)
+        for head in plan["works"]:
+            self._checkpoint(run_id, revision)
+            await self._fulltext_work(run, head)
+        self._fulltext_summary(run, plan)
+
+    def _fulltext_plan(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
+        """Freeze which works this run fetches, and write the code of the works whose text is already here.
+
+        A step that already succeeded returns its stored plan: the eligible works are a different list once this
+        run has written its first decisions, and a plan derived again would skip what it had already fetched and
+        fetch what it had not (the bug slice 07's review found, in the shape slice 09 kept it out of).
+        """
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        step = self.store.step(run_id, "fulltext_plan", "code:fulltext_plan")
+        if step["status"] == "succeeded":
+            return step["output"]
+        self.store.start_step(step["id"])
+        works = self._fulltext_works(rid)
+        order = DecisionStore(self.store).latest_ranking(rid, revision) or []
+        limit = run["budget"]["max_fulltext_works"]
+        plan = fulltext.fetch_plan(works, order, limit)
+        by_head = {work["head"]: work for work in works}
+        # Nothing is requested for a work whose text is already here; the code it asks for is written straight away,
+        # on the version an answer would read (D48).
+        written = self._write_fulltext_codes(
+            run, step["id"], [(self.store.answer_version(rid, head), "not_read_yet") for head in plan["already_text"]])
+        groups = Counter(fulltext.group_of(by_head[head])
+                         for head in plan["works"] + plan["not_reached"] + plan["already_text"])
+        output = {"limit": limit, "works": plan["works"], "not_reached": len(plan["not_reached"]),
+                  "already_text": len(plan["already_text"]), "decisions": written,
+                  "groups": {name: groups.get(name, 0) for name in fulltext.GROUPS}}
+        self.store.finish_step(step["id"], "succeeded", output=output)
+        return output
+
+    def _fulltext_works(self, research_id: str) -> list[dict[str, Any]]:
+        """Every work of the research with what the retrieval plan reads about it, in a few whole-research queries.
+
+        Asking per record cost a second on 2,000 candidates on the thread the API answers from (slices 05 and 07),
+        and this runs on the same thread.
+        """
+        decisions = DecisionStore(self.store)
+        stale_key = decisions.staleness_key(research_id)
+        versions = ranking_rules._versions(self.store, research_id)
+        heads = self.store.work_heads(research_id)
+        with_text = {row[0] for row in self.store.conn.execute(
+            "SELECT DISTINCT p.source_version_id FROM passages p"
+            " JOIN corpus_memberships m ON m.source_version_id = p.source_version_id"
+            "  AND m.research_id = ? AND m.removed_at IS NULL"
+            " JOIN source_assets a ON a.id = p.asset_id AND a.removed_at IS NULL"
+            "  AND a.extraction_version IS p.extraction_version"
+            " WHERE p.kind = 'pdf_page'", (research_id,))}
+        held: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in self.store.conn.execute(
+            "SELECT * FROM stage_decisions WHERE research_id = ? AND superseded_at IS NULL", (research_id,)
+        ):
+            held[(row["source_version_id"], row["stage"])] = dict(row)
+        selections = {row["source_version_id"]: {"state": row["state"], "origin": row["origin"]}
+                      for row in self.store.conn.execute(
+                          "SELECT source_version_id, state, origin FROM selections WHERE research_id = ?", (research_id,))}
+
+        by_work: dict[str, list[str]] = {}
+        for version in versions.values():
+            by_work.setdefault(version["work_id"], []).append(version["id"])
+
+        def decision(svid: str, stage: str) -> dict[str, Any] | None:
+            row = held.get((svid, stage))
+            return None if row is None else {"reason_code": row["reason_code"], "decided_by": row["decided_by"],
+                                             "stale": decisions.is_stale(row, stale_key)}
+
+        return [{"work_id": work_id, "head": head, "selection": selections.get(head),
+                 "versions": [{"id": svid, "has_text": svid in with_text,
+                               "abstract": decision(svid, "abstract"), "fulltext": decision(svid, "fulltext")}
+                              for svid in sorted(by_work.get(work_id, []))]}
+                for work_id, head in sorted(heads.items())]
+
+    async def _fulltext_work(self, run: dict[str, Any], head: str) -> None:
+        """One work's single retrieval attempt, its identity check and the code it settles on.
+
+        A work whose step is already stored is skipped before anything is counted, so a resumed run charges its
+        limit only for the work it still has to do. One work's unexpected failure closes that work's step and the
+        next work goes on (D18): the run stops only where `_checkpoint` sees a pause, a cancellation or a newer
+        question revision.
+        """
+        run_id, rid = run["id"], run["research_id"]
+        step = self.store.step(run_id, f"fulltext_work:{head}", "code:fulltext_work")
+        if step["status"] in ("succeeded", "failed"):
+            return
+        self.store.start_step(step["id"])
+        try:
+            output = await self._fetch_work_text(run, head)
+        except RunStopped:
+            raise
+        except Exception as exc:  # noqa: BLE001 - one work's failure must not end the run
+            self.store.finish_step(step["id"], "failed", error_code="fulltext_work_failed",
+                                   error={"head": head, "error": f"{type(exc).__name__}: {exc}"})
+            return
+        if output["code"] is None:
+            # Not every route answered, so nothing is decided; the next retrieval run plans this work again.
+            self.store.finish_step(step["id"], "failed", output=output, error_code="fetch_not_settled",
+                                   error={"head": head, "requests_unanswered": output["requests_unanswered"]})
+            return
+        self._write_fulltext_codes(run, step["id"], [(output["read_version"], output["code"])])
+        self.store.finish_step(step["id"], "succeeded", output=output)
+
+    async def _fetch_work_text(self, run: dict[str, Any], head: str) -> dict[str, Any]:
+        """Try this work's routes in order and report what the attempt found; writes no decision itself.
+
+        The routes are the ones an answer run already uses: the record's own open link, then the research's other
+        versions of the same work (D48), then one DOI lookup for another copy. Web search stays off — it is the
+        user's "Find PDF" action (SW10.4) — and no second downloader, arXiv title search or Europe PMC request is
+        opened here.
+        """
+        run_id, rid = run["id"], run["research_id"]
+        source = self.store.source(head)
+        route = None
+        await self._acquire_pdf(run, head, 0, None)
+        if self.store.has_pdf_text(head):
+            route = "other_copy" if self._other_copy_found(run_id, head) else "record_link"
+        else:
+            for other in self.store.work_versions(rid, head):
+                if not self.store.has_pdf_text(other):
+                    self._checkpoint(run_id)
+                    await self._acquire_pdf(run, other, 0, None)
+                if self.store.has_pdf_text(other):
+                    route = "work_version"
+                    break
+        # Wider than D35, by name: `_needs_other_copy` opens the lookup only after a link that answered 403 or 404,
+        # so a work with no open link at all — most closed publisher records — would never be looked up, and
+        # SW10.5's "the twin first, then the author's copy" would never be tried. An answer run and a PDF
+        # collection run keep the narrow trigger.
+        if route is None and normalize_doi(source["doi"]) and not self.store.pdf_discoveries(rid, head):
+            self._checkpoint(run_id)
+            found = await self._find_other_copy(run, source, other_versions=True)
+            opened = found.get("lookup_version_id")
+            if opened and self.store.has_pdf_text(opened):
+                route = "lookup_version"
+            elif self.store.has_pdf_text(head):
+                route = "other_copy"
+
+        versions = [head, *self.store.work_versions(rid, head)]
+        has_text = any(self.store.has_pdf_text(svid) for svid in versions)
+        has_asset = any(self.store.has_asset(svid) for svid in versions)
+        unanswered = self._unanswered_routes(run_id, rid, versions)
+        read = self.store.answer_version(rid, head) if has_text else head
+        asset_id = self._current_asset(read) if has_text else None
+        return {"work_id": source["work_id"], "head": head, "read_version": read,
+                "version_label": self.store.source(read)["version_label"], "asset_id": asset_id, "route": route,
+                "identity": identity.check(self._pdf_head_text(read), [self.store.source(s) for s in versions])
+                            if has_text else None,
+                "code": fulltext.settled_code({"has_text": has_text, "has_asset": has_asset, "unanswered": unanswered}),
+                "requests_unanswered": unanswered}
+
+    def _other_copy_found(self, run_id: str, svid: str) -> bool:
+        step = self.store.step(run_id, f"other_copy:{svid}", "pdf_other_copy")
+        return step["status"] in ("succeeded", "partial")
+
+    def _current_asset(self, svid: str) -> str | None:
+        row = self.store.conn.execute(
+            "SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL"
+            " ORDER BY retrieved_at DESC, id DESC LIMIT 1", (svid,)).fetchone()
+        return row["id"] if row else None
+
+    def _pdf_head_text(self, svid: str) -> str:
+        """The start of this record's stored PDF text, for the identity check. A paper names itself on its first
+        page; a later page may quote any number of other papers."""
+        pages = [p["text"] for p in self.store.passages_for(svid) if p["kind"] == "pdf_page"]
+        return "\n".join(pages)[:identity.MATCH_TEXT_CHARS]
+
+    def _unanswered_routes(self, run_id: str, research_id: str, svids: list[str]) -> int:
+        """How many routes tried for this work did not answer: a timeout, a lost connection, a 429 or a 5xx.
+
+        A link that refused, a 404, a lookup with no result and a route that was never configured have all
+        answered, and a work for which every route answered has no open full text. The same distinction D35 draws
+        between a link that refused — which is not requested again — and one that timed out.
+        """
+        unanswered = 0
+        for svid in svids:
+            for row in self.store.conn.execute(
+                "SELECT error_code, json_extract(error_json, '$.http_status') AS http_status FROM run_steps"
+                " WHERE run_id = ? AND operation_key = ? AND kind = 'fetch_pdf' AND status = 'failed'",
+                (run_id, f"fetch:{svid}"),
+            ):
+                status = row["http_status"]
+                unanswered += (row["error_code"] in UNANSWERED_FETCH_CODES
+                               or (row["error_code"] == "fetch_http_error" and bool(status)
+                                   and (status == 429 or status >= 500)))
+            unanswered += sum(1 for d in self.store.pdf_discoveries(research_id, svid)
+                              if d["status"] in UNANSWERED_LOOKUP_STATUSES)
+            unanswered += sum(1 for c in self.store.pdf_candidates(svid)
+                              if c["access_status"] in UNANSWERED_LOOKUP_STATUSES)
+        return unanswered
+
+    def _write_fulltext_codes(self, run: dict[str, Any], step_id: str | None,
+                              writes: list[tuple[str, str]]) -> dict[str, int]:
+        """Write these full-text decisions and derive the selection of each work they touched.
+
+        The user's own decision is skipped, never swallowed (AGENTS.md, User Authority), and a decision that
+        already says this is not closed and written again merely because the step identifier is new — so a second
+        retrieval run adds no row for what it re-derives. Every code written here is `unresolved`, which derives
+        to the `pending` the record already had: no work is included or excluded by this run.
+        """
+        rid = run["research_id"]
+        decisions = DecisionStore(self.store)
+        stale_key = decisions.staleness_key(rid)
+        written: dict[str, int] = {}
+        touched: set[str] = set()
+        for svid, code in writes:
+            held = decisions.current(rid, svid, "fulltext")
+            if held is not None and held["decided_by"] == "human":
+                continue
+            if not fulltext.should_write(held, code, bool(held) and decisions.is_stale(held, stale_key)):
+                continue
+            try:
+                decisions.record(rid, svid, code, step_id=step_id)
+            except HumanDecisionStands:
+                continue
+            written[code] = written.get(code, 0) + 1
+            touched.add(self.store.source(svid)["work_id"])
+        for work_id in sorted(touched):
+            decisions.derive_selection(rid, work_id)
+        return dict(sorted(written.items()))
+
+    def _fulltext_summary(self, run: dict[str, Any], plan: dict[str, Any]) -> None:
+        """What this run retrieved, totalled from its stored work steps rather than from a live counter.
+
+        A resumed run read its earlier works back without counting them, so the counter in memory knows only the
+        second half; the steps know the whole run, and an uninterrupted run and a resumed one report the same
+        numbers because of it (slice 09's review, lesson 1).
+        """
+        run_id = run["id"]
+        step = self.store.step(run_id, "fulltext_summary", "code:fulltext_summary")
+        if step["status"] == "succeeded":
+            return
+        self.store.start_step(step["id"])
+        codes: Counter[str] = Counter()
+        identities: Counter[str] = Counter()
+        routes: Counter[str] = Counter()
+        not_settled = 0
+        for row in self.store.run_steps(run_id):
+            if row["kind"] != "code:fulltext_work":
+                continue
+            output = row["output"] or {}
+            if row["status"] != "succeeded" or not output.get("code"):
+                not_settled += 1
+                continue
+            codes[output["code"]] += 1
+            routes[output["route"] or "none"] += 1
+            if output.get("identity"):
+                identities[output["identity"]] += 1
+        summary = {"fetched": codes["not_read_yet"], "unreadable": codes["text_unreadable"],
+                   "no_fulltext": codes["no_fulltext"], "not_settled": not_settled,
+                   "already_text": plan["already_text"], "not_reached": plan["not_reached"],
+                   "identity": dict(sorted(identities.items())), "routes": dict(sorted(routes.items()))}
+        self.store.finish_step(step["id"], "succeeded", output=summary)
+
+    def _queue_fulltext_fetch(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+        """Queue the full-text retrieval run that follows a completed `sw` discovery run (D83, SW10.1).
+
+        Only after a run that really completed: a paused, cancelled or failed discovery run queues nothing, and the
+        idempotency key keeps one discovery run from ever opening two retrieval runs. Nothing is queued when the
+        plan holds no work. The budget comes from the one function the API route calls too, so a run the user
+        starts and a run left behind here can never be given different room.
+
+        Named deviation from SW10.1: the retrieval does not start "right after the code stage" but after the whole
+        discovery run, model screening included, because the worker runs one run at a time and a research cannot
+        hold two active runs.
+        """
+        if scope.get("search_workflow") != "sw" or self.deps.settings.fulltext_fetch != "auto":
+            return
+        rid, revision = run["research_id"], run["scope_revision"]
+        budget = fulltext.fetch_budget(scope["effort"])
+        plan = fulltext.fetch_plan(self._fulltext_works(rid),
+                                   DecisionStore(self.store).latest_ranking(rid, revision) or [],
+                                   budget["max_fulltext_works"])
+        if not plan["works"] and not plan["already_text"]:
+            return
+        self.store.create_run(rid, "fulltext_fetch", budget, idempotency_key=f"fulltext_fetch:after:{run['id']}")
 
     async def _semantic_ranking(self, run: dict[str, Any], scope: dict[str, Any], included: list[str], query_text: str | None = None,
                                 key: str = "semantic_retrieval") -> list[dict[str, Any]] | None:

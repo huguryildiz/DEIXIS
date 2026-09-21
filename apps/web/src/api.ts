@@ -43,7 +43,7 @@ export type SearchPlan = {
   concepts: { label: string; role: string; synonyms: string[] }[]
   queries: { provider_id: string; query_text: string; rationale: string }[]
 }
-export type RunKind = 'discovery' | 'answer' | 'pdf_collection' | 'pdf_ocr' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title'
+export type RunKind = 'discovery' | 'answer' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   table_id: string; column_id?: string; source_version_id?: string; cell_version?: number

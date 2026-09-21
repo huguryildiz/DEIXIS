@@ -29,7 +29,7 @@ from deixis.workflow.decisions import DecisionStore
 from deixis.workflow import links
 from deixis.workflow.expansion import expand
 from deixis.workflow.flow import answer_source_order, fuse_rankings
-from deixis.workflow import abstract_stage, ranking, suggestions
+from deixis.workflow import abstract_stage, fulltext, ranking, suggestions
 from deixis.workflow.protocol import build_protocol
 from deixis.workflow.store import Store
 from deixis.workflow.approval import apply_criterion, canonical_edits, edited_extraction
@@ -488,6 +488,39 @@ def stage_term_suggestions(rows: list[dict[str, Any]]) -> Any:
             "known": suggestions.known_counts(screened), "model": sorted(suggestions.model_phrases(screened))}
 
 
+# The retrieval plan of the full-text stage (slice 10, SW10, SW14.6). One SYNTHETIC field, eight works: one the
+# user included, two code candidates, one the abstract stage routed here unresolved, one it routed back to the
+# model, one out of scope, one the user excluded, one whose text is already here and one already carrying a fresh
+# code of this stage. The attempts below are the four rows of the result table.
+FULLTEXT_ORDER = ["F2", "F1", "F4", "F8"]
+FULLTEXT_ATTEMPTS = [
+    {"has_text": True, "has_asset": True, "unanswered": 0},
+    {"has_text": False, "has_asset": True, "unanswered": 0},
+    {"has_text": False, "has_asset": False, "unanswered": 0},
+    {"has_text": False, "has_asset": False, "unanswered": 2},
+]
+
+
+def stage_fulltext_plan(rows: list[dict[str, Any]]) -> Any:
+    """Which works a retrieval run fetches, in which order, and what one attempt settles (slice 10).
+
+    The records are what the providers happened to return and carry no order of their own, so neither their order
+    nor a set's iteration may reach the groups, the plan or a code. The reading order is the inspection order the
+    ranking stored, which is an order and is therefore given, not shuffled.
+    """
+    by_work: dict[str, list[dict[str, Any]]] = {}
+    for row in sorted(rows, key=lambda row: row["id"]):
+        by_work.setdefault(row["work_id"], []).append(row)
+    works = [{"work_id": work_id, "head": min(v["id"] for v in versions), "selection": versions[0].get("selection"),
+              "versions": [{"id": v["id"], "has_text": bool(v.get("has_text")),
+                            "abstract": v.get("abstract"), "fulltext": v.get("fulltext")} for v in versions]}
+             for work_id, versions in sorted(by_work.items())]
+    return {"groups": {work["head"]: fulltext.group_of(work) for work in works},
+            "plan": fulltext.fetch_plan(works, FULLTEXT_ORDER, limit=3),
+            "whole": fulltext.fetch_plan(works, FULLTEXT_ORDER, limit=99),
+            "codes": [fulltext.settled_code(attempt) for attempt in FULLTEXT_ATTEMPTS]}
+
+
 def stage_build_protocol(rows: list[dict[str, Any]]) -> Any:
     scope = SCOPE | {"providers": [row["id"] for row in rows]}
     return build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
@@ -511,6 +544,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "term_suggestions": stage_term_suggestions,
     "record_ranking": stage_record_ranking,
     "abstract_stage": stage_abstract_stage,
+    "fulltext_plan": stage_fulltext_plan,
 }
 
 ROWS: dict[str, list[dict[str, Any]]] = {
@@ -591,6 +625,32 @@ ROWS: dict[str, list[dict[str, Any]]] = {
          "abstract": "We deliver bread to the market every morning.", "own_ids": ["W5"], "references": None},
         {"id": "R6", "work_id": "wrk_six", "title": "SYNTHETIC diffusion channel capacity",
          "abstract": None, "own_ids": ["W6"], "references": []},
+    ],
+    # Eight SYNTHETIC works of the full-text retrieval plan: F1 the user included, F2 and F4 code candidates (F4 in
+    # two versions, only one of them decided), F3 unresolved and routed here, F5 unresolved but routed back to the
+    # model, F6 out of scope, F7 excluded by the user, F8 already carrying a fresh code of this stage, and F9 whose
+    # text is already here.
+    "fulltext_plan": [
+        {"id": "F1", "work_id": "wrk_1", "selection": {"state": "included", "origin": "user"},
+         "abstract": {"reason_code": "runs_agree_out_of_scope", "decided_by": "model_agreement", "stale": False}},
+        {"id": "F2", "work_id": "wrk_2",
+         "abstract": {"reason_code": "runs_agree_candidate", "decided_by": "model_agreement", "stale": False}},
+        {"id": "F3", "work_id": "wrk_3",
+         "abstract": {"reason_code": "abstract_not_found", "decided_by": "code", "stale": False}},
+        {"id": "F4", "work_id": "wrk_4",
+         "abstract": {"reason_code": "blocks_in_title", "decided_by": "code", "stale": False}},
+        {"id": "F4b", "work_id": "wrk_4"},
+        {"id": "F5", "work_id": "wrk_5",
+         "abstract": {"reason_code": "abstract_not_read", "decided_by": "code", "stale": False}},
+        {"id": "F6", "work_id": "wrk_6",
+         "abstract": {"reason_code": "both_blocks_missing", "decided_by": "code", "stale": False}},
+        {"id": "F7", "work_id": "wrk_7", "selection": {"state": "excluded", "origin": "user"},
+         "abstract": {"reason_code": "runs_agree_candidate", "decided_by": "model_agreement", "stale": False}},
+        {"id": "F8", "work_id": "wrk_8",
+         "abstract": {"reason_code": "runs_agree_candidate", "decided_by": "model_agreement", "stale": False},
+         "fulltext": {"reason_code": "no_fulltext", "decided_by": "code", "stale": False}},
+        {"id": "F9", "work_id": "wrk_9", "has_text": True,
+         "abstract": {"reason_code": "runs_agree_unresolved", "decided_by": "model_agreement", "stale": False}},
     ],
     # Six SYNTHETIC records of five works from one field: A1 holds both gate blocks in its title, A2 is a
     # correction notice, A3 an artifact with a stored link, A4 and A6 are read by the model, and A7 shares a work

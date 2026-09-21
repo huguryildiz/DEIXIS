@@ -12,7 +12,7 @@ import { useToast } from './Toast'
 // and a sheet with each run's detail. The research list names each research's latest run; the views give the progress.
 
 const LIVE = new Set<RunStatus>(['queued', 'running', 'pause_requested', 'paused'])
-const JOB_KINDS = new Set(['pdf_collection', 'pdf_ocr'])
+const JOB_KINDS = new Set(['pdf_collection', 'pdf_ocr', 'fulltext_fetch'])
 
 type Job = { research: ResearchSummary; view: ResearchView; run: Run; label: string; done: number; total: number; extra: number; unit: string }
 

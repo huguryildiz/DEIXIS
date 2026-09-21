@@ -21,7 +21,7 @@ export const runStatusLabels: Record<RunStatus, string> = {
 }
 
 export const runKindLabels: Record<RunKind, string> = {
-  discovery: 'Search & screening', answer: 'Answer', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
+  discovery: 'Search & screening', answer: 'Answer', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
 }
 
 const pauseReasons: Record<string, string> = {
@@ -143,6 +143,9 @@ export const stepLabel = (kind: string, key: string) => {
   if (kind === 'model:research_title') return t('Research title (model)')
   if (kind === 'table_no_text') return t('Source without stored text')
   if (kind.startsWith('provider_search')) return t('{provider} search {n}', { provider: providerName(kind.split(':')[1] ?? ''), n: Number(key.split(':')[1]) + 1 })
+  if (kind === 'code:fulltext_plan') return t('Retrieval plan (code)')
+  if (kind === 'code:fulltext_work') return t('Full text of one work')
+  if (kind === 'code:fulltext_summary') return t('Retrieval summary (code)')
   if (kind === 'fetch_pdf') return t('Open-access PDF retrieval')
   if (kind === 'pdf_other_copy') return t('Search for another open copy')
   if (kind === 'read_equations') return t('Reading equations (Marker)')

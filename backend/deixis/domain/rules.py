@@ -41,6 +41,13 @@ ABSTRACT_BATCH = 20
 ABSTRACT_RUNS = 2
 ABSTRACT_QUOTE_MIN_CHARS = 12
 
+# How many works one full-text retrieval run fetches, by effort (D83, slice 10). Hand-picked, the same numbers as
+# the abstract stage's read limit; the one measurement behind them is SW10's single topic, where a work cost about
+# five seconds and five requests on one machine and one network. Neither the limit nor the time it implies was
+# measured in the product. A work outside the limit is not dropped: it is counted as not reached and the next
+# retrieval run starts from it.
+FULLTEXT_WORK_LIMIT = {"quick": 40, "standard": 100, "detailed": 300}
+
 # Effort presets bound work; they are not paper-count or accuracy guarantees. Model calls cover the search plan, one
 # screening call per SCREENING_BATCH candidates and the answer, each with its one schema repair. Provider requests are
 # the plan's query limit; with several providers enabled, one query per relevant provider needs room. `core_depth` is

@@ -27,6 +27,7 @@ from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
 from deixis.documents import embeddings
 from deixis.documents import figures
+from deixis.documents.identity import MATCH_TEXT_CHARS, match_pdf_to_source
 from deixis.documents import math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
@@ -43,14 +44,14 @@ from deixis.providers import zotero
 from deixis.providers.registry import CONNECTORS, available_providers
 from deixis.storage import db
 from deixis.workflow import approval as approval_rules
+from deixis.workflow import fulltext
 from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import bibliography
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.equations import EquationService, equation_state, equations_to_check
 from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.providers.common import normalize_doi
 from deixis.workflow.report.store import ReportStore
-from deixis.workflow.store import NotASource, NotFound, PdfInUse, RunInProgress, SameFile, SeedUnavailable, Store, title_key
+from deixis.workflow.store import NotASource, NotFound, PdfInUse, RunInProgress, SameFile, SeedUnavailable, Store
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, report_view, research_view
 from deixis.workflow.worker import Worker
@@ -124,7 +125,7 @@ class SemanticChoice(BaseModel):
 
 
 class StartRun(BaseModel):
-    kind: Literal["discovery", "answer", "pdf_collection", "research_title"]
+    kind: Literal["discovery", "answer", "pdf_collection", "research_title", "fulltext_fetch"]
 
 
 class SelectionChange(BaseModel):
@@ -262,30 +263,6 @@ class TemplateCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     research_id: str = Field(max_length=40)
     table_id: str = Field(max_length=40)
-
-
-DOI_IN_TEXT = re.compile(r"\b10\.\d+/[^\s\"<>]+")
-ARXIV_IN_TEXT = re.compile(r"arXiv:\s*(\d{4}\.\d{4,5})", re.IGNORECASE)
-MATCH_TEXT_CHARS = 6000
-
-
-def match_pdf_to_source(text: str, sources: list[dict[str, Any]]) -> tuple[str | None, str | None]:
-    """The source a dropped PDF belongs to, from a DOI or arXiv identifier in its first pages, else its title (D49).
-
-    Returns (source_version_id, basis). The user confirms every match before the file is attached.
-    """
-    head = text[:MATCH_TEXT_CHARS]
-    dois = {normalize_doi(d.rstrip(".,;:)]}")) for d in DOI_IN_TEXT.findall(head)}
-    dois |= {f"10.48550/arxiv.{a}" for a in ARXIV_IN_TEXT.findall(head)}
-    for source in sources:
-        if normalize_doi(source["doi"]) in dois:
-            return source["id"], "doi"
-    body = f" {title_key(head)} "
-    titled = [s for s in sources if len(title_key(s["title"]).split()) >= 4 and f" {title_key(s['title'])} " in body]
-    # One work only; its versions share a title, so the first listed (the included record) is proposed for the user to check.
-    if len({s["work_id"] for s in titled}) == 1:
-        return titled[0]["id"], "title"
-    return None, None
 
 
 async def store_upload(file: UploadFile, papers_dir: Path) -> tuple[str, int, Path]:
@@ -817,6 +794,8 @@ def create_app(
                                     else "The selected PDF changed; select it again before searching")
         if body.kind in ("answer", "pdf_collection") and not store.included_works(research_id):
             raise HTTPException(422, "Include at least one source before generating an answer")
+        if body.kind == "fulltext_fetch" and scope.get("search_workflow") != "sw":
+            raise HTTPException(422, "Full-text retrieval runs belong to the search workflow")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
         if body.kind == "discovery" and scope.get("search_workflow") == "sw":
             # The criterion proposal before the first search (D78) and the abstract stage's two runs over the
@@ -833,6 +812,10 @@ def create_app(
         elif body.kind == "pdf_collection":
             # Downloads and open-copy lookups only; no model is called and no search is run.
             budget = {"max_model_calls": 0, "max_provider_requests": 0}
+        elif body.kind == "fulltext_fetch":
+            # Downloads and open-copy lookups for the works the rank order reaches (D83). The same function the
+            # flow's auto-queue calls, so neither route can give this run more room than the other.
+            budget = fulltext.fetch_budget(scope["effort"])
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
         run = store.create_run(research_id, body.kind, budget, key)
         request.app.state.worker.wake()

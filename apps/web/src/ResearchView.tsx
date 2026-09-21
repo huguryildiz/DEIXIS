@@ -429,7 +429,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
       <TabsContent value="answer">
         {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
-        <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'pdf_collection' || r.kind === 'pdf_ocr' || r.kind === 'answer') }} modelText={modelText}
+        <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'pdf_collection' || r.kind === 'fulltext_fetch' || r.kind === 'pdf_ocr' || r.kind === 'answer') }} modelText={modelText}
           onRetryFailedSearches={target => act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.'))}
           onProtocolApproved={async () => { toast('success', t('Correction recorded. The run is queued again.')); await load(); onChanged() }}
           onGiveKeyTerms={() => { keyTerms.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }); keyTerms.current?.focus({ preventScroll: true }) }}

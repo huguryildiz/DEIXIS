@@ -30,6 +30,10 @@ class Settings:
     # product's behavior; `as_proposed` approves the proposal without stopping, for a measurement or a test that
     # needs a run nobody attends, and says so in the protocol body rather than looking like a user's approval.
     protocol_approval: str = "ask"
+    # Whether a completed `sw` discovery run is followed by a full-text retrieval run (D83, slice 10). `auto` is the
+    # product's behavior; `off` leaves the corpus where the discovery run left it, for a measurement or a test that
+    # needs no second run. A `legacy` research queues nothing either way.
+    fulltext_fetch: str = "auto"
 
     @property
     def db_path(self) -> Path:
@@ -95,6 +99,9 @@ def load_settings() -> Settings:
     protocol_approval = os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "ask")
     if protocol_approval not in ("ask", "as_proposed"):
         raise ValueError("DEIXIS_PROTOCOL_APPROVAL must be ask or as_proposed")
+    fulltext_fetch = os.environ.get("DEIXIS_FULLTEXT_FETCH", "auto")
+    if fulltext_fetch not in ("auto", "off"):
+        raise ValueError("DEIXIS_FULLTEXT_FETCH must be auto or off")
     return Settings(
         data_dir=default_data_dir(),
         host=os.environ.get("DEIXIS_HOST", "127.0.0.1"),
@@ -103,4 +110,5 @@ def load_settings() -> Settings:
         query_strategy=query_strategy,
         search_workflow=search_workflow,
         protocol_approval=protocol_approval,
+        fulltext_fetch=fulltext_fetch,
     )

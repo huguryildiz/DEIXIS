@@ -61,7 +61,7 @@ def app_for(tmp_path, monkeypatch, handler, adapter, workflow="sw"):
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
     return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow,
-                               protocol_approval="as_proposed"),
+                               protocol_approval="as_proposed", fulltext_fetch="off"),
                       adapters={"fake": adapter},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
                       extra_hosts=("testserver",), trusted_clients=("testclient",))

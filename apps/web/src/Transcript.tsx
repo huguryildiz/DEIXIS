@@ -37,6 +37,7 @@ const attachedTitles = (n: number): [string, string, string] => n === 1
   : ['Reading the attached PDFs', 'Read the attached PDFs', 'Attached PDFs']
 const discoveryHeadings: Record<string, string> = { active: 'Searching and screening', completed: 'Ran search & screening', paused: 'Search & screening paused', failed: 'Search & screening failed', cancelled: 'Search & screening cancelled' }
 const collectionHeadings: Record<string, string> = { active: 'Collecting open-access PDFs', completed: 'Collected open-access PDFs', paused: 'PDF collection paused', failed: 'PDF collection failed', cancelled: 'PDF collection cancelled' }
+const fulltextHeadings: Record<string, string> = { active: 'Retrieving the full texts', completed: 'Retrieved the full texts', paused: 'Full-text retrieval paused', failed: 'Full-text retrieval failed', cancelled: 'Full-text retrieval cancelled' }
 const ocrHeadings: Record<string, string> = { active: 'Reading a PDF with OCR', completed: 'Read a PDF with OCR', paused: 'OCR reading paused', failed: 'OCR reading failed', cancelled: 'OCR reading cancelled' }
 const answerHeadings: Record<string, string> = { active: 'Generating the answer', completed: 'Ran answer generation', paused: 'Answer generation paused', failed: 'Answer generation failed', cancelled: 'Answer generation cancelled' }
 // The run's stage names the phase it has reached before that phase records its first step.
@@ -54,6 +55,8 @@ function phaseOf(kind: string): PhaseKey | null {
   // An sw run screens abstracts in two steps: code classifies every record, then the model proposes.
   if (kind === 'code:abstract_stage' || kind === 'model:abstract_screening') return 'screen'
   if (kind === 'fetch_pdf' || kind === 'pdf_other_copy') return 'pdf'
+  // A full-text retrieval run plans, fetches and totals in code; all three belong to the run's one PDF phase.
+  if (kind.startsWith('code:fulltext_')) return 'pdf'
   if (kind.startsWith('ocr_')) return 'ocr'
   if (kind.startsWith('embedding:')) return 'semantic'
   if (kind === 'model:grounded_answer') return 'answer'
@@ -143,7 +146,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
 
   const steps = run.steps ?? []
-  const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen'] : run.kind === 'pdf_collection' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
+  const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen'] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
   const reached = Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
   const searches = view.search_runs.filter(s => s.run_id === run.id)
@@ -366,7 +369,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const providers = new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(view.scope.providers.map(providerName))
   // Worded as what happened, so it reads apart from the run strip's status next to the tabs.
   const outcome = active ? 'active' : run.status
-  const label = t((run.kind === 'discovery' ? discoveryHeadings : run.kind === 'pdf_collection' ? collectionHeadings : run.kind === 'pdf_ocr' ? ocrHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
+  const label = t((run.kind === 'discovery' ? discoveryHeadings : run.kind === 'pdf_collection' ? collectionHeadings : run.kind === 'fulltext_fetch' ? fulltextHeadings : run.kind === 'pdf_ocr' ? ocrHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
   const olderRevision = run.scope_revision !== view.research.current_scope_revision
   const tokens = totalTokens(answer?.model?.token_usage)
   // What the run spent against what it was allowed; the token figure is the answer step's own, and no cost is estimated.
@@ -394,7 +397,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
       {expanded && <>
         {latest && active && !collapsed && <div className="chat-run-plan" role="note">
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />
-          <div><p className="chat-run-plan-title">{run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
+          <div><p className="chat-run-plan-title">{run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'fulltext_fetch' ? t('Retrieve the open full text of the candidate works in rank order; nothing is included or excluded by this.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
         </div>}
         <ol className="chat-steps">{order.map((key, i) => {
         const state = stateOf(i)
@@ -456,7 +459,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         </li>}</ol>
         <div className="chat-run-foot">
           {/* What ran this run and what it spent: one quiet line under the phases, not a disclosure. */}
-          {run.status !== 'queued' && run.kind !== 'pdf_collection' && run.kind !== 'pdf_ocr' && <p className="chat-run-meta">
+          {run.status !== 'queued' && run.kind !== 'pdf_collection' && run.kind !== 'pdf_ocr' && run.kind !== 'fulltext_fetch' && <p className="chat-run-meta">
             {models.length > 0 && <span className="chat-run-models">{models}</span>}
             <span>{spend}</span>
           </p>}

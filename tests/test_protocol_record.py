@@ -116,7 +116,7 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     from deixis.workflow.criterion import THRESHOLDS as CRITERION_THRESHOLDS
     from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS
     from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT,
-                                     ABSTRACT_RUNS)
+                                     ABSTRACT_RUNS, FULLTEXT_WORK_LIMIT)
     from deixis.workflow.ranking import SIGNALS as RANKING_SIGNALS, THRESHOLDS as RANKING_THRESHOLDS
 
     scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
@@ -126,7 +126,8 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     settings = Settings(data_dir=None)
     legacy = protocol.build_protocol(scope | {"search_workflow": "legacy"}, {}, None, [], "pkg_hash", settings)
     sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
-    assert not {"record_identity", "search_read", "survey", "lookup", "criterion", "ranking"} & set(legacy["thresholds"])
+    assert not {"record_identity", "search_read", "survey", "lookup", "criterion", "ranking",
+                "fulltext_fetch"} & set(legacy["thresholds"])
     assert sw["thresholds"]["record_identity"] == THRESHOLDS
     assert sw["thresholds"]["search_read"] == {"read_limit_per_query": SW_READ_LIMIT}
     assert sw["thresholds"] == legacy["thresholds"] | {
@@ -135,7 +136,9 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
         "ranking": RANKING_THRESHOLDS,
         # How deep this research's effort reads abstracts, and what counts as a verbatim quote (slice 09, D81).
         "abstract_screening": {"read_limit": ABSTRACT_READ_LIMIT[scope["effort"]], "batch": ABSTRACT_BATCH,
-                               "runs": ABSTRACT_RUNS, "quote_min_chars": ABSTRACT_QUOTE_MIN_CHARS}}
+                               "runs": ABSTRACT_RUNS, "quote_min_chars": ABSTRACT_QUOTE_MIN_CHARS},
+        # How many works one full-text retrieval run of this effort fetches (slice 10, D83).
+        "fulltext_fetch": {"work_limit": FULLTEXT_WORK_LIMIT[scope["effort"]]}}
     # The survey word lists (slice 05) and the ranking signals (slice 07) are the only other sw-only fields of the
     # body; a legacy body carries no survey block and an empty signal list, exactly as it did before slice 07.
     rest = lambda body: {k: v for k, v in body.items()

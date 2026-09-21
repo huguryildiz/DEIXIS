@@ -249,7 +249,15 @@ async def web_lookup(client: httpx.AsyncClient, doi: str, title: str, api_key: s
 async def acquire_for_source(store: Store, research_id: str, source_version_id: str, client: httpx.AsyncClient,
                              papers_dir: Any, contact_email: str | None, serpapi_key: str | None,
                              fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch.fetch_pdf,
-                             core_key: str | None = None, web_search: bool = True) -> dict[str, Any]:
+                             core_key: str | None = None, web_search: bool = True,
+                             other_versions: bool = False) -> dict[str, Any]:
+    """Look this record's DOI up in Unpaywall, OpenAlex, Crossref and CORE and retrieve a copy of its own version.
+
+    `other_versions` is the full-text retrieval run's one addition (D83): when the record's own version gave no
+    file, a verified copy of a *different declared* version opens its own row under the same work and is attached
+    there, never onto the published record (D4). Without it the function is what it has always been, and a copy of
+    uncertain version still waits for the user in both.
+    """
     source = store.source(source_version_id)
     doi = normalize_doi(source.get("doi"))
     if not doi:
@@ -285,6 +293,11 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                                          result.final_url or candidate["candidate_url"])
             break
 
+    lookup_version_id = None
+    if other_versions and not store.has_asset(source_version_id):
+        asset_id, lookup_version_id = await _attach_other_version(
+            store, research_id, source_version_id, papers_dir, fetcher)
+
     # A listed URL is not a found PDF: it may be gated, dead, HTML, or a different version. Make the fallback explicit
     # and retain its uncertain-version candidates for manual review/upload; never silently attach them.
     if web_search and not store.has_asset(source_version_id):
@@ -295,7 +308,44 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
         lookups.append(("web_search", web_query, web))
 
     return {"source_version_id": source_version_id, "lookups": len(lookups), "asset_id": asset_id,
-            "candidates": len(store.pdf_candidates(source_version_id)), "pdf_found": store.has_asset(source_version_id)}
+            "candidates": len(store.pdf_candidates(source_version_id)),
+            "pdf_found": store.has_asset(source_version_id) or lookup_version_id is not None,
+            **({"lookup_version_id": lookup_version_id} if lookup_version_id else {})}
+
+
+# Which declared version is tried first when the record's own version gave nothing: the published file, then the
+# accepted manuscript, then the submitted one. Named deviation from SW10.3, which orders by who hosts the copy
+# (publisher, preprint server, author or institution): a candidate row carries the version label a provider
+# declared, not its host. How much this order gains was not measured.
+VERSION_ORDER = ("publishedVersion", "acceptedVersion", "submittedVersion")
+
+
+async def _attach_other_version(store: Store, research_id: str, source_version_id: str, papers_dir: Any,
+                                fetcher: Callable[[str], Awaitable[fetch.FetchResult]]) -> tuple[str | None, str | None]:
+    """Attach a verified copy of another declared version to its own row under the same work; (asset, row) or (None, None).
+
+    Only a candidate whose DOI was verified and whose version the provider named is taken: an `uncertain` copy is
+    never attached by code and keeps waiting for the user, and a `mismatch` is not this work at all. The row it
+    lands on carries that version's label, so the passages say which version was read (D48). A row opened by an
+    earlier run is found again rather than opened twice, and its file is not fetched a second time.
+    """
+    wanted = [c for c in store.pdf_candidates(source_version_id)
+              if c["identity_status"] == "doi_verified" and c["version_status"] == "different"
+              and c["version_label"] in VERSION_ORDER]
+    for candidate in sorted(wanted, key=lambda c: (VERSION_ORDER.index(c["version_label"]), c["id"])):
+        existing = store.find_source_by_identifier("pdf_lookup_version", f"{source_version_id}:{candidate['version_label']}")
+        if existing and store.has_asset(existing):
+            return None, existing
+        result = await fetcher(candidate["candidate_url"])
+        store.record_pdf_attempt(candidate["id"], result)
+        if result.status != "ok":
+            continue
+        version_id = store.open_lookup_version(research_id, source_version_id, candidate["version_label"],
+                                               candidate["landing_url"])
+        asset_id = await _attach_pdf(store, version_id, result.data, papers_dir, "download",
+                                     result.final_url or candidate["candidate_url"])
+        return asset_id, version_id
+    return None, None
 
 
 async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_dir: Any, origin: str,

@@ -17,6 +17,8 @@ REPORT_TABLES = {
     "report_citation_links", "report_gaps", "report_snapshot", "report_phrase_repairs",
 }
 PRE_SECTION_II_IDS = ("I", "III", "IV", "V", "VI", "VII", "VIII", "IX", "abstract", "index_terms")
+# Every run kind the database held before the full-text retrieval run was added (slice 10, migration 0045).
+PRE_FULLTEXT_KINDS = (*PRE_REPORT_KINDS, "report")
 
 
 def test_report_migration_preserves_all_existing_run_kinds(tmp_path, monkeypatch):
@@ -267,3 +269,39 @@ def test_search_run_paging_migration_leaves_existing_rows_without_a_page(tmp_pat
     assert tuple(row) == (None, None, None, None, None)
     assert conn.execute("SELECT result_count FROM search_runs WHERE id = 'srn_test'").fetchone()[0] == 4
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_the_fulltext_fetch_migration_keeps_every_run_it_found_and_accepts_the_new_kind(tmp_path, monkeypatch):
+    """Migration 0045 rebuilds `runs` to widen its CHECK; the rows already there must survive it (D83)."""
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    for path in db.MIGRATIONS_DIR.glob("*.sql"):
+        if int(path.name.split("_", 1)[0]) < 45:
+            shutil.copy(path, migrations / path.name)
+    fulltext_migration = db.MIGRATIONS_DIR / "0045_fulltext_fetch_run_kind.sql"
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_test', 'Test', 'now', 'now')")
+    for kind in PRE_FULLTEXT_KINDS:
+        conn.execute(
+            "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
+            " VALUES (?, 'res_test', 1, ?, 'queued', 'synthesis', '{}', 'now', 'now')",
+            (f"run_{kind}", kind),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
+            " VALUES ('run_early', 'res_test', 1, 'fulltext_fetch', 'queued', 'inspection', '{}', 'now', 'now')"
+        )
+    shutil.copy(fulltext_migration, migrations / fulltext_migration.name)
+    assert db.migrate(conn) == [45]
+    conn.execute(
+        "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
+        " VALUES ('run_fulltext', 'res_test', 1, 'fulltext_fetch', 'queued', 'inspection', '{}', 'now', 'now')"
+    )
+    assert {row["kind"] for row in conn.execute("SELECT kind FROM runs")} == {*PRE_FULLTEXT_KINDS, "fulltext_fetch"}
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    with sqlite3.connect(tmp_path / "library.sqlite") as reopened:
+        assert reopened.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == len(PRE_FULLTEXT_KINDS) + 1

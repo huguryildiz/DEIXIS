@@ -30,7 +30,8 @@ EVIDENCE_STATUS_SQL = (
 MIN_TITLE_KEY_CHARS = 12  # shorter normalized titles ("Introduction") say too little to suspect a duplicate
 ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions (D46)
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
-STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze")
+STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze",
+                     "code:fulltext_plan", "code:fulltext_work", "code:fulltext_summary")
 STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")
 MAX_SEED_PASSAGES = 4
 MAX_SEED_CHARS = 5600
@@ -578,7 +579,8 @@ class Store:
             if active:
                 raise RevisionConflict(f"run {active['id']} is still active")
             run_id, ts = new_id("run"), now()
-            stage = {"discovery": "discovery", "answer": "inspection", "pdf_collection": "inspection", "research_title": "intake"}.get(kind, "extraction")
+            stage = {"discovery": "discovery", "answer": "inspection", "pdf_collection": "inspection",
+                     "fulltext_fetch": "inspection", "research_title": "intake"}.get(kind, "extraction")
             self.conn.execute(
                 "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
@@ -1000,6 +1002,40 @@ class Store:
             "INSERT INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at) VALUES (?, ?, ?, ?, ?)",
             (oid, f"{provider}_version", key, provider, ts),
         )
+
+    def open_lookup_version(self, research_id: str, svid: str, version_label: str, landing_url: str | None) -> str:
+        """Open the record's own row for a declared other version of the same work, so a copy of that version can be
+        attached to it instead of to the published record (D4, D48, D83).
+
+        Built with `_insert_other_version`'s pattern: the title and the authors are the work's, and neither the DOI
+        nor the abstract is copied, because both describe the version the record itself is. The row is a member of
+        the research the way a provider's other versions are — never a candidate of its own, so it is not screened
+        a second time — and it does not head the work. Called again with the same version label it opens nothing
+        and returns the row it opened the first time.
+        """
+        key = f"{svid}:{version_label}"
+        existing = self.find_source_by_identifier("pdf_lookup_version", key)
+        if existing:
+            return existing
+        source = self.source(svid)
+        ts, oid = now(), new_id("srv")
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label,"
+                " publication_type, doi, landing_url, oa_pdf_url, oa_pdf_version, origin, created_at, volume, issue, pages)"
+                " VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?, NULL, ?, 'provider', ?, ?, ?, ?)",
+                (oid, source["work_id"], source["title"], dumps(source["authors"]), version_label,
+                 source["publication_type"], landing_url, version_label, ts, source["volume"], source["issue"],
+                 source["pages"]),
+            )
+            self.conn.execute(
+                "INSERT INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at)"
+                " VALUES (?, 'pdf_lookup_version', ?, 'pdf_lookup', ?)", (oid, key, ts),
+            )
+            self.add_to_corpus(research_id, oid, "search", None, candidate=False)
+            self._event(research_id, "lookup_version_opened",
+                        {"source_version_id": oid, "of": svid, "version_label": version_label})
+        return oid
 
     def _insert_provider_record(self, provider: str, record: Any, payload_path: str | None) -> tuple[str, str]:
         ts, svid = now(), new_id("srv")

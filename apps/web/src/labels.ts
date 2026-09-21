@@ -1,4 +1,4 @@
-import type { Evidence, RunKind, RunStatus, Source, SourceScope, Verdict } from './api'
+import type { ApprovalBlock, Evidence, RunKind, RunStatus, Source, SourceScope, Verdict } from './api'
 import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
@@ -55,8 +55,40 @@ const pauseReasons: Record<string, string> = {
   ocr_pages_changed: 'The PDF’s pages without text changed while OCR was running. Nothing was stored; start OCR again.',
   asset_removed: 'The PDF was removed from the source before OCR finished. Nothing was stored.',
   extraction_failed: 'The PDF could not be opened to find its pages without text.',
+  // The sw workflow's own stops: the run has searched nothing yet and waits for the user (D80).
+  protocol_approval_needed: 'This run has not searched yet. Check the search terms and the inclusion criterion below, correct them if needed, and approve them.',
+  key_terms_needed: 'DEIXIS reads search terms from an English question and does not translate. Revise the question in English, or give the English key terms below.',
+  vocabulary_empty: 'No term is left that a provider query could be built from. Add a term below, or move one back into the setting or task block.',
+  vocabulary_too_broad: 'Every remaining term is too frequent to search on its own, and they are all in one block. Add a term to the other block, or replace one with a narrower phrase.',
 }
 export const pauseReasonText = (reason: string | null) => (reason ? t(pauseReasons[reason] ?? reason) : '')
+
+// ---- the protocol approval card (D80) ----
+// The five blocks a term can sit in, and what each one does with it.
+export const blockLabels: Record<ApprovalBlock, string> = {
+  setting: 'Setting', task: 'Task', outcome: 'Outcome', claim: 'Claim under test', exclusion: 'Excluded words',
+}
+export const blockNotes: Record<ApprovalBlock, string> = {
+  setting: 'Searched: one part of the provider query.',
+  task: 'Searched: the other part of the provider query.',
+  outcome: 'Not searched; used to order the records that were found.',
+  claim: 'Not searched: a record that states the claim is what the search is looking for.',
+  exclusion: 'Not searched; a record whose title holds one of these words is kept out.',
+}
+// Who supplied a phrase, and who put it in its block. Both are shown, because they answer different questions.
+const termOrigins: Record<string, string> = { question: 'from the question', key_terms: 'from your key terms', user: 'added by you' }
+const blockOrigins: Record<string, string> = { rule: 'block by rule', model: 'block by the model', user: 'block by you' }
+export const termOriginText = (origin: string) => t(termOrigins[origin] ?? origin)
+export const blockOriginText = (origin: string) => t(blockOrigins[origin] ?? origin)
+// Why a phrase left the query. It stays on record with its reason rather than disappearing.
+const dropReasons: Record<string, string> = { zero_results: 'no record holds it' }
+export const dropReasonText = (reason: string) => t(dropReasons[reason] ?? reason)
+const approvedByNames: Record<string, string> = {
+  user: 'You approved these search terms and this criterion.',
+  setting: 'Approved as proposed by the unattended setting, not by a person.',
+  earlier_approval: 'Approved with the correction you made earlier for this question.',
+}
+export const approvedByText = (by: string | null) => (by ? t(approvedByNames[by] ?? by) : '')
 
 const stageNames: Record<string, string> = { claim_check: 'claim review' }
 export const stageLabel = (stage: string) => t(stageNames[stage] ?? stage)

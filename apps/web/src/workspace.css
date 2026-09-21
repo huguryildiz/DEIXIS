@@ -94,6 +94,11 @@
 .app .legacy-research .legacy-followup textarea{padding:11px 13px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface,transparent);color:var(--ink)}
 .legacy-research .legacy-followup textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .app .legacy-research .legacy-followup>div{margin-top:10px}
+.app .legacy-research .legacy-followup>.revise-key-terms{display:block;margin-top:12px}
+.legacy-research .revise-key-terms label{display:block;color:var(--muted);font-size:12px}
+.legacy-research .revise-key-terms input{width:100%;height:32px;margin-top:4px;padding:0 11px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface);color:var(--ink);font-family:inherit;font-size:13px}
+.legacy-research .revise-key-terms input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.legacy-research .revise-key-terms small{display:block;margin-top:4px;color:var(--muted);font-size:11.5px;line-height:1.55}
 /* The run timeline (Transcript.tsx) */
 .chat-question{display:flex;justify-content:flex-end;max-width:1308px;margin:26px 0 0}
 .chat-question p{max-width:min(640px,78%);margin:0;padding:12px 18px;border-radius:18px;background:color-mix(in srgb,var(--ink),var(--paper) 94%);color:var(--ink);font-size:14.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -249,6 +254,78 @@ button.chat-step-title svg{color:var(--muted)}
 /* A paused run needs attention (amber); a failed run is a blocking failure (red); a cancelled run was stopped on purpose (neutral). */
 .chat-note.is-error{--note-tone:var(--tone-exclude)}
 .chat-note.is-neutral{--note-tone:var(--muted)}
+/* The protocol approval card (ProtocolApproval.tsx, D80): it sits inside the run's timeline item, so it is in the
+   flow of the page and carries no shadow. Nothing here says the run succeeded; the pause note above keeps its amber. */
+.approval-card{border:1px solid var(--line);border-radius:10px;background:var(--raised-surface);color:var(--ink);font-size:13px;line-height:1.6}
+.approval-head{padding:14px 16px 12px;border-bottom:1px solid var(--line)}
+.approval-head h3{margin:0;font-family:'DM Sans Variable',sans-serif;font-size:15px;font-weight:600;letter-spacing:-.01em}
+.approval-head p{margin:5px 0 0;color:var(--muted);font-size:12.5px;max-width:76ch}
+.approval-card .notice{margin:12px 16px 0}
+.approval-blocks{display:flex;flex-direction:column;gap:2px;padding:6px 0 0}
+.approval-block{padding:10px 16px 12px;border-bottom:1px solid color-mix(in srgb,var(--line),transparent 40%)}
+.approval-block-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.approval-block-head strong{font-size:13px;font-weight:600}
+.approval-block-head small{color:var(--muted);font-size:11.5px}
+.approval-terms{list-style:none;margin:8px 0 0;padding:0}
+.approval-term{display:flex;flex-wrap:wrap;align-items:flex-start;gap:4px 12px;padding:7px 0;border-top:1px solid color-mix(in srgb,var(--line),transparent 40%)}
+.approval-term:first-child{border-top:0}
+.approval-term-main{flex:1;min-width:min(100%,220px)}
+.approval-phrase{display:block;color:var(--ink);font-size:13.5px;font-weight:550;overflow-wrap:anywhere}
+.approval-term-facts{display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px;margin-top:3px}
+.approval-count{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+.approval-badge{padding:0 6px;border:1px solid var(--strong-line);border-radius:999px;color:var(--muted);font-size:10.5px;line-height:1.7;white-space:nowrap}
+.approval-badge.is-changed{border-color:color-mix(in srgb,var(--accent),transparent 55%);color:var(--accent)}
+.approval-badge.is-dropped{border-color:color-mix(in srgb,var(--tone-uncertain),transparent 55%);color:color-mix(in srgb,var(--tone-uncertain),var(--ink) 20%)}
+.approval-term-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+/* A term the user removed stays readable and says who removed it; it is faded, never struck through. */
+.approval-term.is-removed .approval-phrase,.approval-term.is-dropped .approval-phrase{color:var(--muted);font-weight:450}
+.approval-term.is-empty{color:var(--muted);font-size:12px;padding:6px 0}
+.approval-row-error{flex:1 0 100%;margin:4px 0 0;color:var(--tone-exclude);font-size:11.5px}
+.approval-add{margin:10px 0 0}
+.approval-add label{display:block;color:var(--muted);font-size:11.5px}
+.approval-add>div{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px}
+.approval-card input[type=text],.approval-card input:not([type]){min-width:0;flex:1 1 200px;height:28px;padding:0 9px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--ink);font-family:inherit;font-size:12.5px}
+.approval-card input:focus-visible,.approval-card textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.approval-criterion{padding:12px 16px 14px;border-bottom:1px solid color-mix(in srgb,var(--line),transparent 40%)}
+.approval-criterion-empty{margin-top:8px}
+.approval-field{display:block;margin:10px 0 0}
+.approval-field>span,.approval-field-label{display:block;color:var(--muted);font-size:11.5px}
+.approval-field textarea,.approval-note textarea{margin-top:4px;font-size:12.5px;border-color:var(--strong-line);background:var(--field-surface)}
+.approval-readonly{margin:4px 0 0;color:var(--ink);font-size:13px;max-width:76ch}
+.approval-readonly small{color:var(--muted);font-size:11px}
+.approval-parts,.approval-cues,.approval-words{margin:12px 0 0}
+.approval-part{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.approval-part input:first-child{flex:1 1 150px}
+.approval-part textarea{flex:3 1 260px;min-height:0;padding:5px 9px;border-color:var(--strong-line);background:var(--field-surface);font-size:12.5px}
+.approval-cue-group{margin-top:10px}
+.approval-cue-group>small{color:var(--muted);font-size:11.5px}
+.approval-cues ul,.approval-words ul{list-style:none;margin:4px 0 0;padding:0}
+.approval-cues li,.approval-words li{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:4px 0;border-top:1px solid color-mix(in srgb,var(--line),transparent 50%);font-size:12.5px}
+.approval-cues li.is-empty,.approval-words li.is-empty{color:var(--muted);font-size:12px}
+.approval-cues li>span:first-child,.approval-words li>span:first-child{flex:1;min-width:140px;overflow-wrap:anywhere}
+.approval-foot{padding:12px 16px 14px}
+.approval-note{display:block}
+.approval-note>span{display:block;color:var(--muted);font-size:11.5px}
+.approval-summary{margin:10px 0 0;color:color-mix(in srgb,var(--ink),var(--muted) 25%);font-size:12.5px}
+.approval-checking{margin:6px 0 0;color:color-mix(in srgb,var(--tone-uncertain),var(--ink) 20%);font-size:12.5px}
+.approval-errors{margin:10px 0 0;padding:10px 12px;border:1px solid color-mix(in srgb,var(--error-line),transparent 20%);border-radius:8px;background:var(--error-surface);color:var(--error-ink);font-size:12.5px}
+.approval-errors p{margin:0 0 4px;font-weight:550}
+.approval-errors ul{margin:0;padding-left:18px}
+.approval-hint{margin:6px 0 0;color:var(--muted);font-size:11.5px}
+.approval-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:12px 0 0}
+/* Approved: one line, opened only to compare what was proposed with what was searched. */
+.approval-card.is-approved{background:none}
+.approval-toggle{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;width:100%;padding:10px 14px;border:0;background:none;color:var(--ink);font-size:12.5px;text-align:left;cursor:pointer}
+.approval-toggle>svg{flex:none;color:var(--muted)}
+.approval-toggle small{color:var(--muted);font-size:11.5px}
+.approval-diff{padding:0 14px 14px}
+.approval-diff-group{margin-top:10px}
+.approval-diff-group strong{display:block;font-size:12px;font-weight:600}
+.approval-diff-group ul{list-style:none;margin:4px 0 0;padding:0}
+.approval-diff-group li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:3px 0;border-top:1px solid color-mix(in srgb,var(--line),transparent 50%);font-size:12.5px}
+.approval-diff-group li small{color:var(--muted);font-size:11px}
+.approval-diff-group code{font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-size:11.5px;overflow-wrap:anywhere}
+@media (max-width:650px){.approval-term-actions{width:100%}.approval-block,.approval-criterion,.approval-foot{padding-left:12px;padding-right:12px}}
 .pdf-suggest{margin:26px 0 0;border:1px solid var(--strong-line);border-radius:12px;background:var(--raised-surface);overflow:hidden}
 .pdf-suggest-head{display:flex;align-items:flex-start;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line)}
 .pdf-suggest-head>svg{flex:none;margin-top:3px;color:var(--muted)}

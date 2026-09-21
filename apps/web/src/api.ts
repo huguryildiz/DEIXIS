@@ -16,6 +16,8 @@ export type Scope = {
   // null connection: the role uses model_connection (researches created before per-role connections).
   literature_connection: string | null; review_connection: string | null
   steering: string | null; created_at: string
+  // Which search workflow this revision runs under, and the English key terms the user gave for it (SW2.1).
+  search_workflow: 'legacy' | 'sw'; key_terms: string | null
 }
 export type ReviewMode = 'default' | 'custom' | 'off'
 export type Verdict = 'supported' | 'partially_supported' | 'not_supported' | 'cannot_assess'
@@ -55,6 +57,57 @@ export type Run = {
   created_at: string; updated_at: string; version: number; steps?: Step[]; target: RunTarget | null
   // plan null: this run wrote no search plan. screening_notes: the note of each screening batch, in order, with its step.
   plan: SearchPlan | null; screening_notes: { step_id: string; text: string }[]
+  // What this run asked the user to approve before freezing its protocol; null for a legacy run (D80).
+  approval: RunApproval | null
+}
+
+// ---- the protocol approval of an sw discovery run (D80) --------------------------------------------
+// The blocks a term can sit in. setting and task are the two blocks that make the provider query; outcome orders
+// the records; claim is the assertion under test and exclusion the words that keep a record out — neither is searched.
+export type ApprovalBlock = 'setting' | 'task' | 'outcome' | 'claim' | 'exclusion'
+export type ApprovalTerm = {
+  phrase: string; block: ApprovalBlock
+  // Who supplied the phrase (the question, the user's key terms, the user's own correction) and who put it in its
+  // block (the code rule, the model's labelling step, the user).
+  origin: 'question' | 'key_terms' | 'user'; block_origin: 'rule' | 'model' | 'user'
+  // The form the phrase enters the query in, and what each form was counted at. A null count was not read.
+  root: string; in_query: 'root' | 'phrase'; phrase_count: number | null; root_count: number | null
+  // and_only: the form is too frequent to stand alone. dropped: why the phrase left the query, e.g. 'zero_results'.
+  and_only: boolean; dropped: string | null
+}
+export type CriterionPart = { name: string; definition: string }
+export type CriterionCue = { phrase: string; part: string | null; runs?: number[] }
+export type ApprovalCriterion = {
+  criterion: string; parts: CriterionPart[]; cue_phrases: CriterionCue[]; exclusion_title_words: string[]
+  dropped_exclusion_title_words?: string[]; base_run?: number | null; runs_ok?: number[]
+  // Whether what the question looks for is named in the criterion; null when it was not checked.
+  sought_term_in_criterion?: boolean | null; origin?: string
+}
+// One side of the approval: what the run proposed, or what it was approved with.
+export type ApprovalSide = {
+  terms: ApprovalTerm[]
+  // Phrases that never enter a provider query; they carry no count of their own.
+  claim_words: string[]; exclusion_words: string[]; outcome_terms: string[]
+  gate_count: number | null; too_broad: boolean
+  criterion: ApprovalCriterion | null; criterion_available: boolean; sought_term_in_criterion: boolean | null
+  // Only the approved side carries them: the compiled text of every query the run will send.
+  queries?: { provider_id: string; query_text: string }[]
+}
+export type TermEdit = { op: 'remove' | 'move' | 'add'; phrase: string; block?: ApprovalBlock }
+// What the user sends back. An empty package approves the proposal as it stands; a criterion given replaces the
+// proposed one whole (slice 08a).
+export type ProtocolEdits = {
+  terms: TermEdit[]
+  criterion: { criterion: string; parts: CriterionPart[]; cue_phrases: { phrase: string; part: string | null }[]; exclusion_title_words: string[] } | null
+  note: string | null
+}
+export type RunApproval = {
+  // waiting: the card is editable. submitted: the correction was sent and is being applied. approved: it is frozen.
+  status: 'waiting' | 'submitted' | 'approved'
+  approved_by: 'user' | 'setting' | 'earlier_approval' | null; edited: boolean | null; proposal_hash: string
+  proposal: ApprovalSide; approved: ApprovalSide | null
+  // Operations of an earlier approval this run could not apply, because the phrase is no longer in the proposal.
+  skipped_edits: { op: string; phrase: string; block?: string; reason?: string }[]
 }
 export type SearchRun = {
   id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string
@@ -114,7 +167,7 @@ export type Source = {
   // Some of that text was read with OCR from scanned pages (D51).
   has_ocr_text: boolean
   access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; replaced_assets: ReplacedAsset[]; fetch: { status: string; error_code: string | null; http_status: number | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; pdf_discoveries: PdfDiscovery[] }
-  selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null }
+  selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'code_rule' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null }
   cited_in_latest_answer: boolean
   provider_records: string[]; suspected_duplicates: { source_version_id: string; basis: 'same_title' | 'published_doi' }[]
 }
@@ -304,7 +357,9 @@ export type CellEdit = { state: CellState; value: CellValue | null; note: string
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) { super(message); this.status = status }
+  // A 422 from the approval route names every fault of the correction at once; the card shows them by their row.
+  errors: string[]
+  constructor(status: number, message: string, errors: string[] = []) { super(message); this.status = status; this.errors = errors }
 }
 
 let csrfToken: string | null = null
@@ -327,8 +382,14 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
   }
   if (!response.ok) {
     let detail = response.statusText
-    try { const body = await response.json(); if (typeof body.detail === 'string') detail = body.detail } catch { /* keep status text */ }
-    throw new ApiError(response.status, detail)
+    let errors: string[] = []
+    try {
+      const body = await response.json()
+      if (typeof body.detail === 'string') detail = body.detail
+      // A validation refusal answers with a list of faults rather than one sentence (slice 08a).
+      else if (Array.isArray(body.detail?.errors)) { errors = body.detail.errors.map(String); detail = errors.join(' · ') }
+    } catch { /* keep status text */ }
+    throw new ApiError(response.status, detail, errors)
   }
   return response.json() as Promise<T>
 }
@@ -413,8 +474,11 @@ export const api = {
   controlRun: (runId: string, action: 'pause' | 'resume' | 'cancel' | 'retry_failed') => request<Run>(`/api/runs/${runId}/${action}`, { method: 'POST' }),
   select: (id: string, sourceId: string, state: Source['selection']['state'], expectedVersion: number, reason?: string) =>
     request<unknown>(`/api/researches/${id}/selections/${sourceId}`, json('PATCH', { state, expected_version: expectedVersion, reason })),
-  reviseScope: (id: string, question: string, expectedVersion: number) =>
-    request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion })),
+  reviseScope: (id: string, question: string, expectedVersion: number, keyTerms?: string | null) =>
+    request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion, key_terms: keyTerms ?? null })),
+  // Approve or correct the protocol an sw discovery run stopped for; the run is queued again (D80).
+  approveProtocol: (runId: string, edits: ProtocolEdits) =>
+    request<Run>(`/api/runs/${runId}/protocol-approval`, json('POST', edits)),
   passage: (id: string, passageId: string) => request<Passage>(`/api/researches/${id}/passages/${passageId}`),
   assetText: (id: string, assetId: string) => request<AssetText>(`/api/researches/${id}/assets/${assetId}/text`),
   assetFigures: (id: string, assetId: string) => request<{ figures: AssetFigure[] }>(`/api/researches/${id}/assets/${assetId}/figures`),

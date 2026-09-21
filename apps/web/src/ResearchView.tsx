@@ -111,6 +111,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const replaceFileInput = useRef<HTMLInputElement>(null)
   const firstEvent = useRef<number | null>(null)
   const tabsRef = useRef<HTMLDivElement>(null)
+  // A run stopped for key terms sends the user here, to the one field that answers it.
+  const keyTerms = useRef<HTMLInputElement>(null)
   const jumped = useRef(false)
   const lastRun = useRef<{ id: string; status: RunStatus } | null>(null)
   const titleInput = useRef<HTMLTextAreaElement>(null)
@@ -418,7 +420,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         : run && (active || run.status === 'paused') && <div className="run-strip">
           <span className="run-strip-status">{active && <LoaderCircle size={13} className="chat-spin" aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
           {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />{t('Pause')}</Button>}
-          {run.status === 'paused' && <Button variant="default" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'resume'))}><Play size={14} />{t('Resume')}</Button>}
+          {/* A run stopped for the approval has no plain Resume: it would freeze a protocol nobody saw, and the
+              backend refuses it. The approval card in the timeline carries the only way on (D80). */}
+          {run.status === 'paused' && run.pause_reason !== 'protocol_approval_needed' && <Button variant="default" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'resume'))}><Play size={14} />{t('Resume')}</Button>}
           <Button variant="destructive" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'cancel'))}><X size={14} />{t('Cancel')}</Button>
         </div>}
       </div>
@@ -427,6 +431,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
         <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'pdf_collection' || r.kind === 'pdf_ocr' || r.kind === 'answer') }} modelText={modelText}
           onRetryFailedSearches={target => act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.'))}
+          onProtocolApproved={async () => { toast('success', t('Correction recorded. The run is queued again.')); await load(); onChanged() }}
+          onGiveKeyTerms={() => { keyTerms.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }); keyTerms.current?.focus({ preventScroll: true }) }}
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
           latestAnswer={answer ? <><AnswerBlock researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
         {!answer && tableCards}
@@ -517,7 +523,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <input ref={replaceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void reviewReplacement(e.target.files); e.target.value = '' }} />
 
     <RevisionForm key={view.research.version} question={view.scope.question} disabled={busy || active}
-      onSubmit={text => act(() => api.reviseScope(id, text, view.research.version), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />
+      keyTerms={view.scope.search_workflow === 'sw' ? view.scope.key_terms ?? '' : null} keyTermsRef={keyTerms}
+      onSubmit={(text, terms) => act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />
     <ConfirmDialog open={Boolean(removeTarget)} dark={dark} title={t('Remove PDF?')}
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}
@@ -1040,12 +1047,23 @@ function PdfLookupTable({ source, busy, onAttachCandidate }: { source: Source; b
   </table></div>
 }
 
-function RevisionForm({ question, disabled, onSubmit }: { question: string; disabled: boolean; onSubmit: (text: string) => void }) {
+// `keyTerms` null: this research does not run the sw workflow, and its search words are not read from key terms.
+function RevisionForm({ question, keyTerms, keyTermsRef, disabled, onSubmit }: {
+  question: string; keyTerms: string | null; keyTermsRef: React.RefObject<HTMLInputElement | null>
+  disabled: boolean; onSubmit: (text: string, keyTerms: string | null) => void
+}) {
   const [text, setText] = useState(question)
-  return <form className="legacy-followup" onSubmit={e => { e.preventDefault(); if (text.trim() && text.trim() !== question) onSubmit(text.trim()) }}>
+  const [terms, setTerms] = useState(keyTerms ?? '')
+  const changed = (text.trim() && text.trim() !== question) || terms.trim() !== (keyTerms ?? '').trim()
+  return <form className="legacy-followup" onSubmit={e => { e.preventDefault(); if (changed && text.trim()) onSubmit(text.trim(), terms.trim() || null) }}>
     <label htmlFor="revise-question">{t('Revise the question')}</label>
     <textarea id="revise-question" value={text} onChange={e => setText(e.target.value)} />
-    <div><span>{t('Creates a new question revision. Sources and earlier answers are kept.')}</span><Button type="submit" disabled={disabled || !text.trim() || text.trim() === question}>{t('Save revision')}</Button></div>
+    {keyTerms !== null && <div className="revise-key-terms">
+      <label htmlFor="revise-key-terms">{t('English key terms (optional)')}</label>
+      <input id="revise-key-terms" ref={keyTermsRef} value={terms} onChange={e => setTerms(e.target.value)} maxLength={500} dir="auto" />
+      <small>{t('Blocks are separated by “;”, synonyms of one block by “,”; a group written “claim:” is the assertion under test and one written “not:” keeps records out.')}</small>
+    </div>}
+    <div><span>{t('Creates a new question revision. Sources and earlier answers are kept.')}</span><Button type="submit" disabled={disabled || !text.trim() || !changed}>{t('Save revision')}</Button></div>
   </form>
 }
 

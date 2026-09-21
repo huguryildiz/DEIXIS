@@ -264,3 +264,38 @@ def test_a_transport_question_is_screened_by_the_same_rules_as_a_reef_one():
         ("urban bus networks", "already_present"),
         ("bus bunching control", None),
         ("we formulate a headway model", "contains_claim_word")]
+
+
+# ---- review: a carried list is judged against the proposal it is shown on -------------------------------
+
+def _counted(rows, counts):
+    return [row | {"phrase_count": None if row["dropped"] else counts[row["phrase"]]} for row in rows]
+
+
+def test_a_carried_list_is_screened_again_against_the_proposal_it_is_shown_on():
+    """A later run of the same question may build other phrases (the labelling is a model's); the rows must follow."""
+    earlier = _counted(suggestions.screen(vocabulary(), proposed(
+        ("reef rehabilitation", "coral restoration"), ("coral survival rate", "coral restoration"),
+        ("outplanting", "degraded reefs"))), {"reef rehabilitation": 30, "coral survival rate": 90, "outplanting": 12})
+    assert [row["dropped"] for row in earlier] == [None, None, None]
+    # The second proposal holds one of the names as a term of its own, keeps another as a claim phrase, and no
+    # longer searches the phrase the third one was another name for.
+    later = vocabulary(claim=["survival rate"], extra_task=["reef rehabilitation"])
+    later["terms"] = [term for term in later["terms"] if term["phrase"] != "degraded reefs"]
+    rows = {row["phrase"]: row for row in suggestions.carry(later, earlier)}
+    assert rows["reef rehabilitation"]["dropped"] == "already_present"
+    assert rows["coral survival rate"]["dropped"] == "contains_claim_word"
+    assert rows["outplanting"]["dropped"] == "anchor_not_searched"
+    # Every row is still on record, so a reapplied correction still reads its `model` origin from the list.
+    assert suggestions.model_phrases(list(rows.values())) == {"reef rehabilitation", "coral survival rate", "outplanting"}
+
+
+def test_a_carried_row_keeps_the_count_it_was_read_at_and_is_not_counted_again():
+    earlier = _counted(suggestions.screen(vocabulary(), proposed(
+        ("reef rehabilitation", "coral restoration"), ("no record holds this", "coral restoration"))),
+        {"reef rehabilitation": 30, "no record holds this": 0})
+    earlier[0]["dropped"] = "zero_results"  # rows sort by phrase: "no record holds this" comes first
+    rows = suggestions.carry(vocabulary(), earlier)
+    assert [(row["phrase"], row["phrase_count"], row["dropped"]) for row in rows] == [
+        ("no record holds this", 0, "zero_results"), ("reef rehabilitation", 30, None)]
+    assert suggestions.known_counts(rows) == {quoted("reef rehabilitation"): 30, quoted("no record holds this"): 0}

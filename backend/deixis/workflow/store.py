@@ -757,6 +757,15 @@ class Store:
         return [{"id": row["id"], "operation_key": row["operation_key"], "status": row["status"],
                  "output": json.loads(row["output_json"]) if row["output_json"] else None} for row in rows]
 
+    def suggestion_calls(self, run_id: str) -> int:
+        """The model calls this run's term-suggestion requests were charged for, failed ones included.
+
+        A request that failed before any call started — no connection, none ready — is not here and may be repeated.
+        """
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM model_sessions m JOIN run_steps s ON s.id = m.step_id"
+            " WHERE m.run_id = ? AND s.kind = 'model:term_suggestions'", (run_id,)).fetchone()[0]
+
     def request_term_suggestions(self, run_id: str) -> dict[str, Any]:
         """Count the user's request for other names and queue the run in one transaction (slice 08c).
 

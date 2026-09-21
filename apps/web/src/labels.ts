@@ -93,12 +93,14 @@ const dropReasons: Record<string, string> = {
   contains_exclusion_word: 'contains an excluded word',
   too_long: 'longer than six words',
   duplicate: 'proposed twice',
+  anchor_not_searched: 'the term it was another name for is no longer searched',
 }
 export const dropReasonText = (reason: string) => t(dropReasons[reason] ?? reason)
 // Why the model cannot be asked for other names right now.
 const suggestionBlockers: Record<string, string> = {
   no_anchor_phrases: 'There is no searched term to ask about. Add a term to the setting or task block first.',
   already_suggested: 'The model has already been asked for this question; its proposals are below.',
+  suggestion_call_spent: 'This run has used the one model call it had for other names. You can still add terms yourself.',
 }
 export const suggestionBlockerText = (reason: string | null) => (reason ? t(suggestionBlockers[reason] ?? reason) : '')
 const approvedByNames: Record<string, string> = {

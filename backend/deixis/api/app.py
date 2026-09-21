@@ -889,6 +889,10 @@ def create_app(
         if answered or step["output"].get("carried_suggestions"):
             # SW2.6: the model is not asked twice for the same thing. Only a failed request may be repeated.
             raise HTTPException(409, "This card already has the model's suggestions")
+        if store.suggestion_calls(run_id) >= SUGGESTION_CALLS:
+            # The run was given SUGGESTION_CALLS on top of its preset for this. A started call is charged even when
+            # it fails, so another one would be paid for out of the abstract screening's share.
+            raise HTTPException(409, "This run has spent the model call it had for other names")
         run = store.request_term_suggestions(run_id)
         request.app.state.worker.wake()
         return run

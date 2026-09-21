@@ -335,9 +335,11 @@ function SuggestionSection({ suggestions, editable, working, busy, drafted, onAd
 
     {suggestions.status === 'failed' && <>
       <p className="approval-hint" role="status">{pauseReasonText(suggestions.failure)}</p>
-      {editable && <div className="approval-actions">
+      {editable && suggestions.available && <div className="approval-actions">
         <Button variant="outline" size="sm" disabled={busy} onClick={onAsk}><RotateCcw size={13} />{t('Try again')}</Button>
       </div>}
+      {!suggestions.available && suggestions.unavailable_reason
+        && <p className="approval-hint">{suggestionBlockerText(suggestions.unavailable_reason)}</p>}
     </>}
 
     {/* Only one way in at a time: the retry above belongs to a failed request, the button below to a card that has

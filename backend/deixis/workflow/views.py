@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from deixis.documents import embeddings, pdf
-from deixis.domain.rules import effective_reviewer, result_applicability
+from deixis.domain.rules import SUGGESTION_CALLS, effective_reviewer, result_applicability
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import suggestions as suggestions_rules
 from deixis.workflow import vocabulary as vocabulary_rules
@@ -57,20 +57,24 @@ def _suggestions_side(store: Store, run_id: str, step: dict[str, Any], output: d
     carried = output.get("carried_suggestions") or {}
     ready = [row for row in steps if (row["output"] or {}).get("status") == "ready"]
     terms = ready[-1]["output"]["terms"] if ready else carried.get("terms") or []
-    answered = {row["operation_key"] for row in steps if row["status"] == "succeeded"}
-    working = bool(requests) and f"term_suggestions:{requests}" not in answered
+    # A list with no row in it is an answer too: the model proposed nothing, and it is not asked again.
+    answered = bool(ready) or bool(carried)
+    closed = {row["operation_key"] for row in steps if row["status"] == "succeeded"}
+    working = bool(requests) and f"term_suggestions:{requests}" not in closed
     failure = next((row["output"]["failure"] for row in reversed(steps)
                     if (row["output"] or {}).get("status") == "failed"), None)
-    status = ("requested" if working else "ready" if terms else "failed" if failure else "none")
+    status = ("requested" if working else "ready" if answered else "failed" if failure else "none")
     reason = ("no_anchor_phrases" if not suggestions_rules.anchors(output["proposal"]["vocabulary"])
-              else "already_suggested" if terms else None)
+              else "already_suggested" if answered
+              # A started call is charged to the run even when it fails; the run was given SUGGESTION_CALLS for this.
+              else "suggestion_call_spent" if store.suggestion_calls(run_id) >= SUGGESTION_CALLS else None)
     return {
         "status": status,
         # The card shows the button only while it is editable, so the run's own status is not read here.
         "available": step["status"] != "succeeded" and reason is None and not working,
         "unavailable_reason": reason,
         "failure": failure if status == "failed" else None,
-        "carried": not ready and bool(terms),
+        "carried": not ready and bool(carried),
         "terms": [{field: row[field] for field in SUGGESTION_FIELDS} for row in terms],
     }
 

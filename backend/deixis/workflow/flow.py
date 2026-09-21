@@ -636,8 +636,11 @@ class ResearchFlow:
                       "asked_for": asked_for, "submitted": None, "suggestion_requests": 0}
             # The model is not asked twice for the same thing (SW2.6): an earlier approval's suggestions are carried
             # over, so a card the user is shown again for the same question has them without a new call.
-            if carried := (earlier or {}).get("output", {}).get("suggestions"):
-                output["carried_suggestions"] = {"terms": carried, "from_step_id": earlier["id"]}
+            # They are judged again against this proposal, whose phrases need not be the earlier one's. An answer
+            # that proposed nothing is carried too: it is an answer, and asking again would be the second call.
+            if (carried := (earlier or {}).get("output", {}).get("suggestions")) is not None:
+                output["carried_suggestions"] = {"terms": suggestion_rules.carry(vocabulary, carried),
+                                                 "from_step_id": earlier["id"]}
             # Written before the run can stop, and never started: a step that is still `pending` is not half-finished
             # work the worker's recovery has to guess about.
             self.store.set_step_output(step["id"], output)
@@ -708,7 +711,7 @@ class ResearchFlow:
             "approved": {"vocabulary": built, "queries": compiled, "criterion": agreed},
             # What was proposed stays with the closed approval, so a later run of this question can carry it and a
             # reader can still see which proposals were added and which were not (SW14.2).
-            "suggestions": proposals or None,
+            "suggestions": proposals if from_step or output.get("carried_suggestions") else None,
             "approval": record, "skipped_edits": skipped})
         return built, compiled, agreed, record
 

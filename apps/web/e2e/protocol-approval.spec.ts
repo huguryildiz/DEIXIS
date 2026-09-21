@@ -202,14 +202,16 @@ test.describe.serial('H: the protocol approval of an sw discovery run', () => {
     await shot(page, 'H-suggestions-approved-desktop')
   })
 
-  test('a failed request shows its reason and a retry, and the run can be approved without proposals', async ({ browser }) => {
+  test('a failed request shows its reason and that its one call is spent, and the run can be approved without proposals', async ({ browser }) => {
     const down = await browser.newPage()
     try {
       await startResearch(down, server, `${QUESTION} [suggest-down]`)
       await expect(card(down)).toBeVisible({ timeout: 60_000 })
       await card(down).getByRole('button', { name: 'Ask the model for other names' }).click()
       await expect(suggestions(down)).toContainText('The model call did not complete', { timeout: 60_000 })
-      await expect(suggestions(down).getByRole('button', { name: 'Try again' })).toBeVisible()
+      // The failed call was charged to the run, so the card offers no second one and says why.
+      await expect(suggestions(down)).toContainText('This run has used the one model call it had for other names')
+      await expect(suggestions(down).getByRole('button', { name: 'Try again' })).toHaveCount(0)
       await shot(down, 'H-suggestions-failed-desktop')
       await down.getByRole('button', { name: 'Use dark theme' }).click()
       await shot(down, 'H-suggestions-failed-desktop-dark')

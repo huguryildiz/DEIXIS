@@ -55,7 +55,7 @@ class Table(dict):
         return 100 if query == f'"{ACCEPTED}"' else 40
 
 
-def suggesting(names=(KEPT, UNHELD), down=False, criterion_down=None):
+def suggesting(names=(KEPT, UNHELD), down=False, criterion_down=None, repeat_anchor=True):
     """The criterion-proposing model of slice 08a, with a term-suggestion answer of this slice's own.
 
     It repeats one phrase the proposal already holds on purpose: such a proposal is valid output that code drops.
@@ -69,7 +69,8 @@ def suggesting(names=(KEPT, UNHELD), down=False, criterion_down=None):
             return base(si)
         anchor = si["suggestion_target"]["phrases"][0]["phrase"]
         terms = [{"phrase": phrase, "synonym_of": anchor} for phrase in names]
-        terms.append({"phrase": anchor, "synonym_of": anchor})
+        if repeat_anchor:
+            terms.append({"phrase": anchor, "synonym_of": anchor})
         return json.dumps(envelope(si, "deixis.term_suggestions.v1") | {"terms": terms})
 
     def fail(si):
@@ -365,7 +366,9 @@ def test_a_failed_request_is_recorded_the_card_reopens_and_the_user_can_approve_
         assert (run["status"], run["pause_reason"]) == ("paused", "protocol_approval_needed"), run
         suggestions = rows_of(view, run_id)
         assert suggestions["status"] == "failed" and suggestions["failure"] == "model_call_failed"
-        assert suggestions["terms"] == [] and suggestions["available"] is True
+        # The failed call was charged to the run, so the card offers no second one (slice 08c review); the user can
+        # still approve, which is what the rest of this test does.
+        assert suggestions["terms"] == [] and suggestions["available"] is False
         approve(client, run_id)
         _, run = wait(client, rid, run_id)
     finally:
@@ -376,20 +379,22 @@ def test_a_failed_request_is_recorded_the_card_reopens_and_the_user_can_approve_
         "step_input_id": None, "carried_from_step_id": None}
 
 
-def test_a_failed_request_may_be_repeated_under_a_new_step_key(tmp_path, monkeypatch):
-    adapter = suggesting(down=True)
+def test_a_failed_request_that_cost_no_call_may_be_repeated_under_a_new_step_key(tmp_path, monkeypatch):
+    adapter = suggesting()
     client = client_of(app_for(tmp_path, monkeypatch, Counts(), adapter))
     try:
         rid, run_id = start(client, QUESTION)
         wait(client, rid, run_id)
-        asked(client, rid, run_id)
-        # Allowed because the first one failed; it fails again on the same dead connection.
-        _, run = asked(client, rid, run_id)
+        adapter.ready = False  # the connection is not ready: the request fails before any call is charged
+        view, _ = asked(client, rid, run_id)
+        assert rows_of(view, run_id)["status"] == "failed" and rows_of(view, run_id)["available"] is True
+        adapter.ready = True
+        view, run = asked(client, rid, run_id)
     finally:
         client.__exit__(None, None, None)
-    assert sorted(s["operation_key"] for s in suggestion_steps(run)) == [
-        "term_suggestion:1", "term_suggestion:2", "term_suggestions:1", "term_suggestions:2"]
-    assert model_calls(adapter) == 2
+    assert "term_suggestions:2" in [s["operation_key"] for s in suggestion_steps(run)]
+    assert rows_of(view, run_id)["status"] == "ready"
+    assert model_calls(adapter) == 1
 
 
 # ---- what a later run of the same question sees ----------------------------------------------------------
@@ -581,3 +586,60 @@ def test_the_suggestions_stay_on_the_card_after_the_approval(tmp_path, monkeypat
     assert [row["phrase"] for row in suggestions["terms"]] == sorted(
         [KEPT, UNHELD, approval["proposal"]["terms"][0]["phrase"]])
     assert next(t for t in approval["approved"]["terms"] if t["phrase"] == KEPT)["origin"] == "model"
+
+
+# ---- review: an empty answer, and what a repeated request costs -------------------------------------------
+
+def test_a_model_that_proposes_no_name_has_answered_and_is_not_asked_again(tmp_path, monkeypatch):
+    adapter = suggesting(names=(), repeat_anchor=False)
+    client = client_of(app_for(tmp_path, monkeypatch, Counts(), adapter))
+    try:
+        rid, run_id = start(client, QUESTION)
+        wait(client, rid, run_id)
+        view, _ = asked(client, rid, run_id)
+        suggestions = rows_of(view, run_id)
+        assert (suggestions["status"], suggestions["terms"]) == ("ready", [])
+        assert suggestions["available"] is False and suggestions["unavailable_reason"] == "already_suggested"
+        suggest(client, run_id, expect=409)
+    finally:
+        client.__exit__(None, None, None)
+    assert model_calls(adapter) == 1
+
+
+def test_a_paid_request_that_failed_is_not_repeated_out_of_the_screening_budget(tmp_path, monkeypatch):
+    """Every started call is charged to the run, a failed one too, and the run was given one call for this."""
+    adapter = suggesting(down=True)
+    client = client_of(app_for(tmp_path, monkeypatch, Counts(), adapter))
+    try:
+        rid, run_id = start(client, QUESTION)
+        wait(client, rid, run_id)
+        view, _ = asked(client, rid, run_id)
+        suggestions = rows_of(view, run_id)
+        assert (suggestions["status"], suggestions["available"]) == ("failed", False)
+        assert suggestions["unavailable_reason"] == "suggestion_call_spent"
+        suggest(client, run_id, expect=409)
+    finally:
+        client.__exit__(None, None, None)
+    assert model_calls(adapter) == 1
+
+
+def test_a_card_asked_again_carries_an_answer_that_proposed_nothing(tmp_path, monkeypatch):
+    criterion_down = [True]
+    adapter = suggesting(names=(), repeat_anchor=False, criterion_down=criterion_down)
+    client = client_of(app_for(tmp_path, monkeypatch, Counts(), adapter))
+    try:
+        rid, first_id = start(client, QUESTION)
+        wait(client, rid, first_id)
+        asked(client, rid, first_id)
+        approve(client, first_id)
+        wait(client, rid, first_id)
+        criterion_down[0] = False
+        second_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        view, run = wait(client, rid, second_id)
+        suggestions = rows_of(view, second_id)
+        assert run["pause_reason"] == "protocol_approval_needed", run
+        assert (suggestions["status"], suggestions["carried"], suggestions["terms"]) == ("ready", True, [])
+        suggest(client, second_id, expect=409)
+    finally:
+        client.__exit__(None, None, None)
+    assert model_calls(adapter) == 1

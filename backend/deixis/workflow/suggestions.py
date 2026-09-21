@@ -28,7 +28,7 @@ from deixis.workflow.vocabulary import GATE_BLOCKS
 AVOID_FIELDS = ("claim_words", "exclusion_words", "outcome_terms")
 # Why a proposal cannot enter the query, in the order the reasons are tried. Only the first one is recorded.
 DROP_REASONS = ("too_long", "already_present", "contains_claim_word", "contains_exclusion_word", "duplicate",
-                "zero_results")
+                "zero_results", "anchor_not_searched")
 
 
 def anchors(vocabulary: dict[str, Any]) -> list[dict[str, Any]]:
@@ -90,6 +90,24 @@ def screen(vocabulary: dict[str, Any], proposed: list[dict[str, Any]]) -> list[d
             "duplicate" if phrase in seen else None)
         seen.add(phrase)
     return rows
+
+
+def carry(vocabulary: dict[str, Any], rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """An earlier approval's rows, judged again against the proposal they are about to be shown on.
+
+    A later run of the same question need not build the same phrases — the block labelling is a model's — so a row
+    that could be added then may now repeat a term, carry a claim phrase, or name an anchor that is no longer
+    searched (`anchor_not_searched`). Such a row stays on the list with its reason, so a reapplied correction still
+    reads its `model` origin from it. A count already read is kept and never asked for again.
+    """
+    given = {anchor["phrase"] for anchor in anchors(vocabulary)}
+    counts = {row["phrase"]: row["phrase_count"] for row in reversed(rows) if row["phrase_count"] is not None}
+    judged = screen(vocabulary, [row for row in rows if row["synonym_of"] in given])
+    for row in judged:
+        if not row["dropped"]:
+            row["phrase_count"] = counts.get(row["phrase"])
+            row["dropped"] = "zero_results" if row["phrase_count"] == 0 else None
+    return judged + [row | {"dropped": "anchor_not_searched"} for row in rows if row["synonym_of"] not in given]
 
 
 def known_counts(rows: list[dict[str, Any]]) -> dict[str, int]:

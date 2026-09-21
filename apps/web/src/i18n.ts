@@ -1697,6 +1697,8 @@ const tr: Record<string, string> = {
   // Other names the user asked a model for on the approval card (D82).
   'suggested by the model': 'modelin önerdiği',
   'already one of the terms above': 'yukarıdaki terimlerden biri',
+  'the term it was another name for is no longer searched': 'başka adı olduğu terim artık aranmıyor',
+  'This run has used the one model call it had for other names. You can still add terms yourself.': 'Bu koşu, başka adlar için ayrılan tek model çağrısını kullandı. Terimleri yine kendiniz ekleyebilirsiniz.',
   'contains a word of the claim under test': 'sınanan iddianın bir ifadesini taşıyor',
   'contains an excluded word': 'dışlanan bir sözcüğü taşıyor',
   'longer than six words': 'altı sözcükten uzun',

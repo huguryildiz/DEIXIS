@@ -124,7 +124,7 @@ export type ApprovalSuggestions = {
   // request did not complete and may be repeated.
   status: 'none' | 'requested' | 'ready' | 'failed'
   // Whether the run would take a request now, and why it would not.
-  available: boolean; unavailable_reason: null | 'no_anchor_phrases' | 'already_suggested'
+  available: boolean; unavailable_reason: null | 'no_anchor_phrases' | 'already_suggested' | 'suggestion_call_spent'
   failure: string | null
   // Whether this list came from an earlier approval of the same question rather than from a request of this run.
   carried: boolean

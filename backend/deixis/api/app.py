@@ -31,7 +31,7 @@ from deixis.documents import math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import skill
-from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict
+from deixis.domain.rules import CRITERION_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
 from deixis.models.deepseek import DeepSeekAdapter
@@ -800,6 +800,9 @@ def create_app(
         if body.kind in ("answer", "pdf_collection") and not store.included_works(research_id):
             raise HTTPException(422, "Include at least one source before generating an answer")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
+        if body.kind == "discovery" and scope.get("search_workflow") == "sw":
+            # The criterion proposal runs before the first search of an sw research only (D78).
+            budget = budget | {"max_model_calls": budget["max_model_calls"] + CRITERION_CALLS}
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
             budget = {"max_model_calls": 2, "max_provider_requests": 0}

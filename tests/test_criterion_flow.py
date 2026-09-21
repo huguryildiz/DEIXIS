@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.domain.canonical import sha256_hex
+from deixis.domain.rules import CRITERION_CALLS, TEST_EFFORT_BUDGETS
 from deixis.models.adapter import ModelStepResult
 from deixis.workflow.criterion import PROPOSAL_RUNS
 from deixis.workflow.decisions import CRITERION_FIELDS
@@ -158,6 +159,9 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     # The known defect's trace: a record only, read by nothing in this slice.
     assert body["criterion_origin"]["sought_term_in_criterion"] is True
     assert body["thresholds"]["criterion"] == {"proposal_runs": 3, "proposal_majority": 2}
+    # An sw discovery run is given the three calls on top of its preset, so its room for screening is unchanged.
+    presets = {preset.max_model_calls for preset in TEST_EFFORT_BUDGETS.values()}
+    assert body["budget"]["max_model_calls"] - CRITERION_CALLS in presets
 
 
 def test_the_criterion_decides_nothing_and_selects_nothing_in_this_slice(tmp_path, monkeypatch):
@@ -301,6 +305,8 @@ def test_a_legacy_research_opens_no_criterion_step_and_its_protocol_body_is_what
     assert criterion_fields(body) == {"inclusion_criterion": None, "criterion_parts": None, "cue_phrases": None,
                                       "exclusion_title_words": None}
     assert "criterion_origin" not in body and "criterion" not in body["thresholds"]
+    # The three calls the criterion adds are given to an sw discovery run alone: a legacy run keeps its preset.
+    assert body["budget"]["max_model_calls"] == TEST_EFFORT_BUDGETS[view["scope"]["effort"]].max_model_calls
 
 
 def test_the_legacy_protocol_body_has_the_digest_it_had_before_this_slice():

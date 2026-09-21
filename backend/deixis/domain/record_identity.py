@@ -177,11 +177,17 @@ class Verdict:
     parent: str | None  # "a" or "b": the paper an artifact or a notice belongs to
 
 
-def classify_pair(a: dict, b: dict, *, names_published_doi: bool = False) -> Verdict | None:
+def classify_pair(a: dict, b: dict, *, names_published_doi: bool = False, external_link: bool = False,
+                  names_other_doi: bool = False) -> Verdict | None:
     """What the two records are to each other, or None when the pair is not worth storing.
 
     Each record carries `doi`, `title`, `authors`, `year`, `abstract`, `version_label` and `publication_type`; an
     absent field is None. The verdict is symmetric: swapping the two records changes only `parent`.
+
+    The three keyword arguments carry what a record says about itself outside its own fields (SW6.4): the author's
+    own DOI field or an external source naming this pair as one work (`names_published_doi`, `external_link`), and
+    the same record naming a *different* published version, which blocks a merge (`names_other_doi`). They only add
+    rows; every rule below decides exactly what it decided before when all three are false.
     """
     kinds = (record_kind(a), record_kind(b))
     titles = (comparable_title(a), comparable_title(b))
@@ -206,8 +212,10 @@ def classify_pair(a: dict, b: dict, *, names_published_doi: bool = False) -> Ver
         if kinds[side] == "artifact" and agreement == "agree":
             return verdict("artifact_of", "artifact_same_title", parent=parent)
         return None
-    if names_published_doi and set(kinds) == {"preprint", "published"}:  # 5: the author named the link themselves
-        return verdict("same_work", "preprint_names_published_doi", merge=True)
+    if (names_published_doi or external_link) and set(kinds) == {"preprint", "published"}:  # 5: someone named the link
+        # No title similarity is asked for: SW6.4 keeps the link even when the title was rewritten at publication.
+        rule = "preprint_names_published_doi" if names_published_doi else "external_link_names_published_doi"
+        return verdict("same_work", rule, merge=True)
     if title_similarity is None or title_similarity < TITLE_RELATED:  # 6
         return None
     if min(len(titles[0]), len(titles[1])) < MIN_TITLE_CHARS:  # 6
@@ -228,6 +236,10 @@ def classify_pair(a: dict, b: dict, *, names_published_doi: bool = False) -> Ver
                    or (not both_abstracts and titles[0] == titles[1]))
     if would_merge and year_gap is not None and year_gap > MAX_YEAR_GAP:  # 12
         return verdict("related_suspected", "year_gap_blocks_merge")
+    if would_merge and names_other_doi and set(kinds) == {"preprint", "published"}:  # 12b
+        # The preprint names a published version, and it is not this one: the text alone would have merged them
+        # (SW6.4). The pair is kept and left apart.
+        return verdict("related_suspected", "external_link_names_other_doi")
     if title_similarity >= TITLE_MERGE and both_abstracts and abstract_similarity >= ABSTRACT_MERGE:  # 13
         return verdict("same_work", "title_authors_abstract", merge=True)
     if not both_abstracts and titles[0] == titles[1]:  # 14

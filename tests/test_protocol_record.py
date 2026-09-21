@@ -111,7 +111,9 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     """The identity rule and the page read limit run on `sw` researches alone, so a legacy body is what it was."""
     from deixis.domain.record_identity import THRESHOLDS
     from deixis.domain.rules import SW_READ_LIMIT
+    from deixis.domain.survey import THRESHOLDS as SURVEY_THRESHOLDS
     from deixis.workflow import protocol
+    from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS
 
     scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
              "seed_mode": "question_only", "providers": ["openalex"], "model_connection": "fake",
@@ -119,13 +121,16 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     settings = Settings(data_dir=None)
     legacy = protocol.build_protocol(scope | {"search_workflow": "legacy"}, {}, None, [], "pkg_hash", settings)
     sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
-    assert "record_identity" not in legacy["thresholds"] and "search_read" not in legacy["thresholds"]
+    assert not {"record_identity", "search_read", "survey", "lookup"} & set(legacy["thresholds"])
     assert sw["thresholds"]["record_identity"] == THRESHOLDS
     assert sw["thresholds"]["search_read"] == {"read_limit_per_query": SW_READ_LIMIT}
     assert sw["thresholds"] == legacy["thresholds"] | {
-        "record_identity": THRESHOLDS, "search_read": {"read_limit_per_query": SW_READ_LIMIT}}
-    rest = lambda body: {k: v for k, v in body.items() if k not in ("thresholds", "search_workflow")}
-    assert rest(sw) == rest(legacy)  # nothing else about the body differs between the two workflows
+        "record_identity": THRESHOLDS, "search_read": {"read_limit_per_query": SW_READ_LIMIT},
+        "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS}
+    # The survey word lists are the only other sw-only field of the body (slice 05); a legacy body carries none.
+    rest = lambda body: {k: v for k, v in body.items()
+                         if k not in ("thresholds", "search_workflow", "survey")}
+    assert "survey" not in legacy and rest(sw) == rest(legacy)
 
 
 def test_a_discovery_run_freezes_one_protocol_before_its_first_search_and_stamps_the_later_steps(tmp_path, monkeypatch):
@@ -267,3 +272,68 @@ def test_a_later_discovery_run_with_another_plan_opens_a_new_protocol_revision(t
         assert (shown[runs[0]["id"]], shown[runs[1]["id"]]) == (rows[0]["body_sha256"], rows[1]["body_sha256"])
         # Steps keep the protocol they ran under; the later run does not rewrite the earlier run's hash.
         assert (first_search["protocol_hash"], second_search["protocol_hash"]) == (rows[0]["body_sha256"], rows[1]["body_sha256"])
+
+
+# ---- the survey rule the body records (slice 05) --------------------------------------------
+
+
+SW_SCOPE = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
+            "seed_mode": "question_only", "providers": ["openalex"], "model_connection": "fake",
+            "requested_model": "fake-model", "reasoning_effort": None, "literature_model": None, "review_mode": "off",
+            "search_workflow": "sw"}
+
+
+def vocabulary_for(*phrases, claim_words=(), exclusion_words=()):
+    """The shape `build_protocol` reads: one queried term per phrase, plus the two side lists."""
+    return {"terms": [{"phrase": phrase, "block": "task", "origin": "question", "root": phrase.split()[0],
+                       "in_query": "phrase", "phrase_count": 100, "root_count": 100, "and_only": False,
+                       "dropped": None} for phrase in phrases],
+            "claim_words": list(claim_words), "exclusion_words": list(exclusion_words),
+            "block_assignment": "rule"}
+
+
+def sw_body(vocabulary):
+    from deixis.workflow import protocol
+    return protocol.build_protocol(SW_SCOPE, {}, None, [], "pkg_hash", Settings(data_dir=None),
+                                   vocabulary=vocabulary)
+
+
+def test_an_sw_body_records_the_survey_words_the_thresholds_and_the_lookup_limits():
+    from deixis.domain.survey import REFERENCE_COUNT_SURVEY
+    from deixis.domain.survey_words import ABSTRACT_SELF_DESCRIPTIONS, STRONG_TITLE_WORDS
+    from deixis.workflow.lookups import MAX_LOOKUP_REQUESTS
+
+    body = sw_body(vocabulary_for("molecular communication"))
+    assert body["survey"] == {"title_words": list(STRONG_TITLE_WORDS), "dropped_title_words": [],
+                              "abstract_patterns": list(ABSTRACT_SELF_DESCRIPTIONS)}
+    assert body["thresholds"]["survey"] == {"reference_count": REFERENCE_COUNT_SURVEY}
+    assert body["thresholds"]["lookup"]["max_requests"] == MAX_LOOKUP_REQUESTS
+    # Retries are requests too, so the worst case one run can send is written down beside the limit.
+    assert body["thresholds"]["lookup"]["max_requests_with_retries"] > MAX_LOOKUP_REQUESTS
+
+
+def test_a_word_the_question_itself_uses_is_recorded_as_dropped():
+    """The list stays field-independent; what leaves it for this research is written into its protocol."""
+    body = sw_body(vocabulary_for("code review", claim_words=["static analysis"]))
+    assert body["survey"]["dropped_title_words"] == ["review"]
+    assert "review" not in body["survey"]["title_words"] and "survey" in body["survey"]["title_words"]
+
+
+def test_a_word_only_the_exclusion_list_uses_is_dropped_too():
+    body = sw_body(vocabulary_for("packet size", exclusion_words=["survey"]))
+    assert body["survey"]["dropped_title_words"] == ["survey"]
+
+
+def test_a_plural_in_the_question_does_not_drop_the_singular_word():
+    """The match is at a word boundary and nothing is stemmed, so "not surveys" leaves the rule its word.
+
+    This is the rule as written, not a measured choice: a question that excludes surveys still wants them routed to
+    the seed pool, but a question whose *subject* is written in the plural would keep a word it should drop.
+    """
+    body = sw_body(vocabulary_for("packet size", exclusion_words=["surveys"]))
+    assert body["survey"]["dropped_title_words"] == []
+
+
+def test_the_same_research_freezes_one_survey_record_twice():
+    first, second = sw_body(vocabulary_for("code review")), sw_body(vocabulary_for("code review"))
+    assert sha256_hex(first) == sha256_hex(second)

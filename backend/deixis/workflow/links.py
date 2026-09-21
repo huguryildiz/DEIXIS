@@ -11,10 +11,11 @@ Works are library-wide (D46), so links are too: `record_links` carries no resear
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from deixis.domain.record_identity import (TITLE_RELATED, Verdict, classify_pair, comparable_title, record_kind,
-                                           trigrams)
+from deixis.domain.record_identity import (TITLE_RELATED, Verdict, classify_pair, comparable_title,
+                                           record_kind, trigrams)
 from deixis.storage.db import dumps, new_id, now, transaction
 
 if TYPE_CHECKING:  # store imports this module, so the type is a name here and never an import at run time
@@ -194,12 +195,39 @@ def link_records(store: Store, research_id: str, source_version_ids: list[str]) 
     if not pairs:
         return
     _read_abstracts(store, records, {svid for pair in pairs for svid in pair})
+    named = {svid: named_dois(store, svid) for svid in {svid for pair in pairs for svid in pair}}
     # A fixed order, so the same stored records give the same links: the DOI the author supplied first, then the
     # closest titles, then the identifier pair.
     for (a, b), (source, _) in sorted(pairs.items(), key=lambda item: (item[1][0] != "arxiv_doi", -item[1][1], item[0])):
-        verdict = classify_pair(records[a], records[b], names_published_doi=source == "arxiv_doi")
+        verdict = classify_pair(records[a], records[b], names_published_doi=source == "arxiv_doi",
+                                names_other_doi=names_other_doi(records, named, a, b))
         if verdict is not None:
             save_link(store, a, b, verdict, source)
+
+
+def named_dois(store: Store, source_version_id: str) -> list[str]:
+    """Every DOI this record names as another version of itself, whoever named it (SW6.4).
+
+    Two schemes together: `published_doi`, which arXiv's author-supplied field writes at search time, and
+    `linked_doi`, which the DOI lookups of slice 05 write. A `legacy` research reads only the first one, so an
+    external link changes nothing there.
+    """
+    return [row[0] for row in store.conn.execute(
+        "SELECT DISTINCT value FROM identifier_mappings WHERE source_version_id = ?"
+        " AND scheme IN ('published_doi', 'linked_doi') ORDER BY value", (source_version_id,))]
+
+
+def names_other_doi(records: dict[str, Any], named: dict[str, list[str]], a: str, b: str) -> bool:
+    """Whether the preprint of this pair names a published version, and it is not the other record (SW6.4).
+
+    This is the blocking direction of the same evidence that confirms a merge: until slice 05 the author's DOI field
+    could only confirm one. A record naming nothing blocks nothing.
+    """
+    kinds = {record_kind(records[svid]): svid for svid in (a, b)}
+    if set(kinds) != {"preprint", "published"}:
+        return False
+    preprint, published = kinds["preprint"], kinds["published"]
+    return bool(named.get(preprint)) and (records[published]["doi"] or "") not in named[preprint]
 
 
 def _record(row: Any) -> dict[str, Any]:
@@ -260,3 +288,78 @@ def _read_abstracts(store: Store, records: dict[str, Any], wanted: set[str]) -> 
         f" AND source_version_id IN ({', '.join('?' * len(wanted))}) ORDER BY id", tuple(sorted(wanted))
     ):
         records[row[0]]["abstract"] = records[row[0]]["abstract"] or row[1]
+
+
+# ---- linking the records an external source named -------------------------------------------
+
+
+LINK_SOURCES = {"semantic_scholar": "semantic_scholar", "crossref": "crossref_relation"}
+
+
+def link_external(store: Store, research_id: str) -> dict[str, int]:
+    """Read the version links a second source named and store what they say (SW6.4); the caller holds the transaction.
+
+    A link confirms a merge even when the title was rewritten at publication, and one that names a different
+    published version blocks it. A record naming more than one different DOI confirms nothing: the sources disagree
+    about it, so every pair it is in is stored as suspected and left apart.
+
+    A merge goes through `save_link` like any other, so the two-published guard, the pair the user undid and the undo
+    record all hold here unchanged.
+    """
+    records = {r["id"]: _record(r) for r in store.conn.execute(
+        "SELECT v.* FROM candidates c JOIN source_versions v ON v.id = c.source_version_id WHERE c.research_id = ?",
+        (research_id,))}
+    named = {svid: named_dois(store, svid) for svid in records}
+    counts = {"confirmed": 0, "blocked": 0, "disagree": 0}
+    pairs: dict[tuple[str, str], str] = {}
+    for svid in sorted(records):  # identifier order, so the same library gives the same links
+        for provider, value in _external_links(store, svid):
+            other = store.find_source_by_identifier("doi", value)
+            if other is None or other == svid or other not in records:
+                continue
+            pairs.setdefault((min(svid, other), max(svid, other)), LINK_SOURCES[provider])
+    if not pairs:
+        return counts
+    _read_abstracts(store, records, {svid for pair in pairs for svid in pair})
+    for (a, b), source in sorted(pairs.items()):
+        verdict = classify_pair(records[a], records[b], external_link=True)
+        if verdict is None:
+            continue
+        # More than one different DOI named by either side is the sources disagreeing about this record; nothing it
+        # names may confirm a merge then, and the scores the pair was read with are kept as they were.
+        if any(len(set(named[svid])) > 1 for svid in (a, b)):
+            verdict = replace(verdict, link_kind="related_suspected", rule="external_links_disagree", merge=False,
+                              parent=None)
+            counts["disagree"] += 1
+        else:
+            counts["confirmed" if verdict.merge else "blocked"] += 1
+        save_link(store, a, b, verdict, source)
+    return counts
+
+
+def _external_links(store: Store, source_version_id: str) -> list[tuple[str, str]]:
+    """The DOIs a second source named for this record, with the source that named them; `published_doi` is not one."""
+    return [(row[0], row[1]) for row in store.conn.execute(
+        "SELECT provider, value FROM identifier_mappings WHERE source_version_id = ? AND scheme = 'linked_doi'"
+        " ORDER BY provider, value", (source_version_id,))]
+
+
+def contradicted_merges(store: Store, research_id: str) -> list[list[str]]:
+    """Merged pairs whose preprint now names a published version other than the one it was merged with (SW6.4).
+
+    They are counted and left merged: slice 03's rule is that only the user undoes a merge, and the external link is
+    the code's reading, not the user's decision. In the measurement this was about 1 pair in 181.
+    """
+    found = []
+    for row in research_links(store, research_id):
+        if not row["merged"]:
+            continue
+        pair = (row["source_version_id"], row["other_source_version_id"])
+        records = {svid: store.source(svid) for svid in pair}
+        kinds = {record_kind(records[svid]): svid for svid in pair}
+        if set(kinds) != {"preprint", "published"}:
+            continue
+        names = named_dois(store, kinds["preprint"])
+        if names and (records[kinds["published"]]["doi"] or "") not in names:
+            found.append(sorted(pair))
+    return sorted(found)

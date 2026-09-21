@@ -150,14 +150,22 @@ def test_two_published_records_stay_in_separate_works_and_are_linked_as_extended
     assert (row["link_kind"], row["rule"], row["merged"]) == ("extended_version", "two_published_similar_title", 0)
 
 
-def test_a_work_that_already_has_a_published_record_takes_no_second_one(store):
+def test_a_second_published_record_the_preprint_does_not_name_is_kept_apart(store):
+    """Slice 05 gave the author's DOI field its blocking direction, so this pair is refused one rule earlier.
+
+    The preprint names 10.1109/…; this second published record is 10.1145/…, so the rule that speaks is "the
+    preprint names another published version" rather than "the work already has a published record". The verdict is
+    the same one either way — suspected, not merged — and the SW6.5 guard itself is checked in
+    `tests/test_external_links.py`, where no DOI field speaks first.
+    """
     rid, run_id = research(store)
     published, pre = joined_preprint(store, rid, run_id)
     search(store, rid, run_id, 2, "crossref", [record("C1", doi="10.1145/synth.2026.9")])
     other = store.find_source_by_identifier("crossref", "C1")
     assert store.source(other)["work_id"] != store.source(pre)["work_id"]
     row = link_between(store, rid, pre, other)
-    assert (row["link_kind"], row["rule"], row["merged"]) == ("related_suspected", "work_already_has_published", 0)
+    assert (row["link_kind"], row["rule"], row["merged"]) == ("related_suspected",
+                                                              "external_link_names_other_doi", 0)
 
 
 def test_a_refused_second_published_record_found_again_adds_no_row(store):
@@ -169,7 +177,7 @@ def test_a_refused_second_published_record_found_again_adds_no_row(store):
     other = store.find_source_by_identifier("crossref", "C1")
     rows = [r for r in links.links_for(store, other, include_closed=True)
             if pre in (r["source_version_id"], r["other_source_version_id"])]
-    assert [(r["rule"], r["closed_reason"]) for r in rows] == [("work_already_has_published", None)]
+    assert [(r["rule"], r["closed_reason"]) for r in rows] == [("external_link_names_other_doi", None)]
 
 
 def test_a_sibling_paper_by_the_same_authors_stays_suspected(store):

@@ -47,6 +47,12 @@ REASON_CODES: dict[str, ReasonCode] = _table(
     ReasonCode("runs_disagree_kept_as_candidate", "abstract", "candidate", "code", "fulltext_fetch"),
     ReasonCode("quote_not_found_kept_as_candidate", "abstract", "candidate", "code", "fulltext_fetch"),
     ReasonCode("abstract_not_proposed", "abstract", "unresolved", "code", "abstract_model"),
+    # A strong title word routes the record out of screening and into the seed pool; it is not "out of scope"
+    # (SW5.4, SW9.3). The record is never deleted and the user may still include it.
+    ReasonCode("survey_title_word", "abstract", "unresolved", "code", "seed_pool"),
+    # Both second sources answered without an abstract, or the record has no DOI to ask by; only a full text can
+    # decide it. A record without an abstract is never out of scope, by any route (SW5.5).
+    ReasonCode("abstract_not_found", "abstract", "unresolved", "code", "fulltext_fetch"),
     # ---- full-text stage ---------------------------------------------------------------
     ReasonCode("all_parts_verified", "fulltext", "include", "model_agreement", "answer"),
     ReasonCode("criterion_absent", "fulltext", "criterion_not_met", "model_agreement", "none"),

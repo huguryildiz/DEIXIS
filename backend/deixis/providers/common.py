@@ -51,6 +51,9 @@ class ProviderRecord:
     raw: dict[str, Any] = field(repr=False)
     other_versions: list[OtherVersion] = field(default_factory=list)
     cited_by_count: int | None = None
+    # How many works the record's own bibliography lists. A paper's bibliography does not change, so the first count
+    # read stands; a record whose source names none has no count, which is not the same as a count of zero (SW5.1).
+    reference_count: int | None = None
     # False when the DOI covers several file versions (arXiv's DataCite DOI names every version of a preprint).
     merge_by_doi: bool = True
     volume: str | None = None
@@ -130,8 +133,11 @@ def year_of(value: Any) -> int | None:
 async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], headers: dict[str, str], description: str,
                access_mode: str, rate_headers: tuple[str, ...] = (), secrets: tuple[str | None, ...] = (),
                timeout: float = 30.0, retry_rate_limit: bool = True, unstated_wait: float = 3.0,
-               max_retry_wait: float = MAX_RETRY_WAIT_SECONDS) -> tuple[httpx.Response | None, SearchOutcome]:
-    """One GET with bounded retries on 429. Returns the 200 response, or None with the classified failure outcome.
+               max_retry_wait: float = MAX_RETRY_WAIT_SECONDS,
+               json_body: Any = None) -> tuple[httpx.Response | None, SearchOutcome]:
+    """One GET, or a POST when `json_body` is given, with bounded retries on 429.
+
+    Returns the 200 response, or None with the classified failure outcome.
 
     A 429 is retried at most MAX_RATE_LIMIT_RETRIES times when the provider's wait is short or unstated (then
     `unstated_wait` seconds times the retry number, bounded by `max_retry_wait`); each retry is a
@@ -141,12 +147,17 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
     retries = 0
     while True:
         try:
+            # A body makes this a POST; everything else — the Semantic Scholar gate (D67), the bounded 429 retries
+            # and the failure classes — is the same path every provider request takes.
+            def attempt() -> Any:
+                if json_body is not None:
+                    return client.post(url, params=params, headers=headers, json=json_body, timeout=timeout)
+                return client.get(url, params=params, headers=headers, timeout=timeout)
+
             if urlsplit(url).hostname == "api.semanticscholar.org":
-                response = await SEMANTIC_SCHOLAR_PACER.run(
-                    lambda: client.get(url, params=params, headers=headers, timeout=timeout)
-                )
+                response = await SEMANTIC_SCHOLAR_PACER.run(attempt)
             else:
-                response = await client.get(url, params=params, headers=headers, timeout=timeout)
+                response = await attempt()
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             return None, SearchOutcome("failed", "before_send", description, access_mode, error=type(exc).__name__, retries=retries)
         except httpx.TimeoutException as exc:

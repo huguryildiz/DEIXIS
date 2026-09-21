@@ -33,6 +33,8 @@ SELECT = ",".join(
     ]
 )
 ABSTRACT_ORIGIN = "provider_openalex_inverted_index"
+# Asked for only on an sw read (slice 05), so a legacy request keeps the `select` it always had.
+REFERENCE_COUNT_FIELD = "referenced_works_count"
 RATE_LIMIT_HEADERS = (
     "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset",
     "x-ratelimit-cost-usd", "x-ratelimit-remaining-usd",
@@ -91,6 +93,9 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
         raw=work,
         other_versions=other_versions,
         cited_by_count=work.get("cited_by_count") if isinstance(work.get("cited_by_count"), int) else None,
+        # Absent unless this read asked for the field; an absent count is unknown, never zero.
+        reference_count=(work.get(REFERENCE_COUNT_FIELD)
+                         if isinstance(work.get(REFERENCE_COUNT_FIELD), int) else None),
     )
 
 
@@ -102,9 +107,11 @@ async def search_works(
     contact_email: str | None = None,
     works_filter: str | None = None,
     cursor: str | None = None,
+    reference_count: bool = False,
 ) -> SearchOutcome:
     per_page = min(per_page, MAX_RESULTS)
-    params: dict[str, Any] = {SEARCH_PARAM: query, "per_page": per_page, "select": SELECT}
+    select = f"{SELECT},{REFERENCE_COUNT_FIELD}" if reference_count else SELECT
+    params: dict[str, Any] = {SEARCH_PARAM: query, "per_page": per_page, "select": select}
     if works_filter:
         params["filter"] = works_filter
     if contact_email:

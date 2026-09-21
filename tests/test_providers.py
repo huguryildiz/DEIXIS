@@ -223,6 +223,46 @@ def test_a_provider_that_names_no_author_keywords_gives_an_empty_list():
     assert outcome.records[0].author_keywords == []
 
 
+# ---- the reference count, asked for only on an sw read (slice 05) --------------------------
+
+
+def openalex_reference_count(handler, reference_count):
+    """One OpenAlex search with the slice 05 flag, returning the outcome and the request it sent."""
+    seen = []
+
+    def record(request):
+        seen.append(request)
+        return handler(request)
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(record)) as client:
+            return await openalex.search_works(client, "synthetic query", 5, None, "contact@example.org",
+                                               reference_count=reference_count)
+    return asyncio.run(go()), seen
+
+
+def test_an_openalex_search_asks_for_no_reference_count_by_default():
+    """The legacy request is byte for byte what it was: the field is not in `select` and no record carries a count."""
+    (outcome, seen) = openalex_reference_count(lambda r: ok_response("openalex"), False)
+    assert seen[0].url.params["select"] == openalex.SELECT
+    assert "referenced_works_count" not in seen[0].url.params["select"]
+    assert outcome.records[0].reference_count is None
+
+
+def test_an_sw_openalex_search_asks_for_the_reference_count_and_reads_it():
+    payload = {"meta": {"count": 1}, "results": [
+        {"id": "https://openalex.org/W1", "display_name": "SYNTHETIC", "referenced_works_count": 182}]}
+    (outcome, seen) = openalex_reference_count(lambda r: httpx.Response(200, json=payload), True)
+    assert seen[0].url.params["select"] == openalex.SELECT + ",referenced_works_count"
+    assert outcome.records[0].reference_count == 182
+
+
+def test_a_record_without_a_reference_count_field_has_no_count_rather_than_zero():
+    payload = {"meta": {"count": 1}, "results": [{"id": "https://openalex.org/W1", "display_name": "SYNTHETIC"}]}
+    (outcome, _) = openalex_reference_count(lambda r: httpx.Response(200, json=payload), True)
+    assert outcome.records[0].reference_count is None
+
+
 def test_ieee_over_quota_403_is_a_rate_limit():
     outcome, _ = run("ieee_xplore", lambda r: httpx.Response(403, headers={"x-error-detail-header": "Account Over Queries Per Day Limit"}), key=SECRET)
     assert (outcome.status, outcome.delivery_class) == ("rate_limited", "rejected_not_executed")

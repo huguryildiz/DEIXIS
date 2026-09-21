@@ -8,8 +8,8 @@ at call time and never stored.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-from typing import Awaitable, Callable
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable
 
 from deixis.providers import arxiv, biorxiv, core, crossref, ieee_xplore, openalex, pubmed, scopus, semantic_scholar, serpapi
 from deixis.providers.common import SearchOutcome
@@ -27,6 +27,9 @@ class Connector:
     paging: str = "offset"
     max_reachable: int | None = None  # the deepest record the provider serves, when that is below the read limit
     page_gap: float = 0.0  # seconds to wait between two pages of the same query
+    # Extra arguments an sw paged read passes to `search`, so a legacy request stays byte for byte what it was and
+    # the flow never names a provider to decide what to ask for (slice 05).
+    sw_options: dict[str, Any] = field(default_factory=dict)
 
     def api_key(self) -> str | None:
         return (os.environ.get(self.key_env) or None) if self.key_env else None
@@ -38,7 +41,8 @@ class Connector:
 
 
 CONNECTORS = {c.provider_id: c for c in (
-    Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor"),
+    Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",
+              sw_options={"reference_count": True}),
     # Semantic Scholar serves `offset + limit` up to 1,000 and refuses a deeper page.
     Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000),
     Connector("crossref", crossref.search, crossref.MAX_RESULTS),

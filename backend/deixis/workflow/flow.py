@@ -38,6 +38,7 @@ from deixis.providers.registry import CONNECTORS, Connector
 from deixis.storage.db import dumps, new_id, now
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import expansion as expansion_rules
+from deixis.workflow import lookups
 from deixis.workflow import protocol
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state
@@ -346,12 +347,21 @@ class ResearchFlow:
                 # succeeded, so nothing here can pause it (D18).
                 await self._search_pages(run, index, query, per_query, retry_failed, extra_requests)
 
+        held: set[str] = set()
+        if scope.get("search_workflow") == "sw":
+            # Both rounds are done and nothing here feeds the search: a second source is asked for the abstracts
+            # that are missing, the links it names are read, and the survey labels are written (slice 05).
+            held = await self._second_sources(run, scope, vocabulary)
+
         self._checkpoint(run_id, revision)
         self.store.update_run(run_id, stage="screening")
         # A work is screened once, through its head; its other versions follow the head's selection (D46, D48).
         heads = set(self.store.work_heads(rid).values())
+        # A held record is not screened and not deleted: it stays `pending` and the user may still include it. The
+        # filter runs before the candidate limit, so holding one record does not cost another its place.
         candidates = [c for c in self.store.candidates(rid, revision)
-                      if c["origin"] != "user" and c["source_version_id"] in heads][: budget["max_candidates"]]
+                      if c["origin"] != "user" and c["source_version_id"] in heads
+                      and c["source_version_id"] not in held][: budget["max_candidates"]]
         # Map through all candidates: a resumed run may apply a proposal made for an earlier candidate list.
         by_candidate = {c["candidate_id"]: c["source_version_id"] for c in self.store.candidates(rid)}
         for start in range(0, len(candidates), SCREENING_BATCH):
@@ -376,6 +386,21 @@ class ResearchFlow:
                 await self._research_title(run, scope, optional=True)
             except OptionalStepFailed:
                 return
+
+    async def _second_sources(self, run: dict[str, Any], scope: dict[str, Any],
+                              vocabulary: dict[str, Any] | None) -> set[str]:
+        """The three code steps of slice 05; returns the work heads screening does not see (SW5, SW9.3).
+
+        No model is called and no selection is written here. A failed lookup is recorded on the record and the run
+        carries on (D18); a resumed run reads the stored plan and asks nothing twice.
+        """
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        words, _ = lookups.title_words(vocabulary)
+        await lookups.ask_second_sources(self.store, self.deps.http, self.deps.settings, run, scope, words,
+                                         lambda: self._checkpoint(run_id, revision))
+        lookups.external_links(self.store, run)
+        lookups.flag_and_decide(self.store, run, scope, words)
+        return lookups.held_from_screening(self.store, rid, revision)
 
     def _count_probe(self, scope: dict[str, Any]) -> Callable[[str], Awaitable[int | None]]:
         """The count request the vocabulary step probes with, or one that answers "unknown" without asking.
@@ -551,8 +576,11 @@ class ResearchFlow:
         attempts = 0
         while True:
             self.store.add_usage(run_id, "provider_requests")
+            # A paged read is the sw workflow's, and only it asks for the extra fields the connector names; the
+            # unpaged legacy request keeps the parameters it has always sent.
             outcome = await connector.search(self.deps.http, query["query_text"], limit, connector.api_key(),
-                                             settings.contact_email, **({"cursor": page.cursor} if page else {}))
+                                             settings.contact_email,
+                                             **({"cursor": page.cursor, **connector.sw_options} if page else {}))
             if outcome.retries:
                 self.store.add_usage(run_id, "provider_requests", outcome.retries)
             if outcome.status == "failed" and outcome.delivery_class == "before_send" and attempts < MAX_TRANSIENT_NETWORK_RETRIES:

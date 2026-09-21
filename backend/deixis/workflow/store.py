@@ -279,7 +279,7 @@ class Store:
             for table in ("answer_reviews", "answers", "model_sessions", "step_inputs", "candidates", "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
                           "source_similarities", "protocol_records", "stage_decisions", "model_proposals",
-                          "record_signal_ranks"):
+                          "record_signal_ranks", "record_flags"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
             for table in ("runs", "scope_revisions"):
@@ -303,6 +303,7 @@ class Store:
                 orphan_files.extend(r[0] for r in self.conn.execute("SELECT storage_path FROM source_assets WHERE source_version_id = ?", (source_id,)))
                 self.conn.execute("DELETE FROM record_links WHERE source_version_id = ? OR other_source_version_id = ?"
                                   " OR parent_source_version_id = ?", (source_id, source_id, source_id))
+                self.conn.execute("DELETE FROM record_lookups WHERE source_version_id = ?", (source_id,))
                 self.conn.execute("DELETE FROM identifier_mappings WHERE source_version_id = ?", (source_id,))
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (source_id,))
@@ -802,6 +803,7 @@ class Store:
             else:
                 svid, wid = self._insert_provider_record(provider, record, payload_path)
             self._store_author_keywords(svid, record)
+            self.set_reference_count(svid, record.reference_count)
             for other in record.other_versions:
                 self._insert_other_version(provider, record, wid, other, payload_path)
         return svid, existing is None
@@ -819,6 +821,18 @@ class Store:
             "UPDATE source_versions SET author_keywords_json = ? WHERE id = ? AND author_keywords_json IS NULL",
             (dumps(record.author_keywords), svid),
         )
+
+    def set_reference_count(self, svid: str, count: int | None) -> None:
+        """Fill the record's reference count while the column is empty; the caller holds the transaction.
+
+        A paper's bibliography does not change, so this is not dated and not overwritten the way the citation count
+        is: the first source that names a count settles it, whether that was a search or a DOI lookup (SW5.1).
+        Historical migration tests run today's code against a schema from before 0043, where the column is absent.
+        """
+        if count is None or not self._has_column("source_versions", "reference_count"):
+            return
+        self.conn.execute("UPDATE source_versions SET reference_count = ? WHERE id = ? AND reference_count IS NULL",
+                          (count, svid))
 
     def _has_column(self, table: str, column: str) -> bool:
         """Whether this database has already been migrated far enough to hold the column. Only a present column is
@@ -1674,7 +1688,7 @@ class Store:
             self.conn.execute("INSERT OR IGNORE INTO research_purge_authorizations VALUES (?)", (research_id,))
             for table in ("pdf_discovery_runs", "source_similarities", "suspected_duplicates", "selection_history",
                           "selections", "candidates", "stage_decisions", "model_proposals", "record_signal_ranks",
-                          "corpus_memberships"):
+                          "record_flags", "corpus_memberships"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ? AND source_version_id IN ({marks})", scoped)
             self.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (research_id,))
             orphan_files: list[str] = []
@@ -1693,6 +1707,7 @@ class Store:
                 orphan_files.extend(r[0] for r in self.conn.execute("SELECT storage_path FROM source_assets WHERE source_version_id = ?", (svid,)))
                 self.conn.execute("DELETE FROM record_links WHERE source_version_id = ? OR other_source_version_id = ?"
                                   " OR parent_source_version_id = ?", (svid, svid, svid))
+                self.conn.execute("DELETE FROM record_lookups WHERE source_version_id = ?", (svid,))
                 self.conn.execute("DELETE FROM identifier_mappings WHERE source_version_id = ?", (svid,))
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (svid,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (svid,))

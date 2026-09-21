@@ -159,6 +159,10 @@ class PagedProviders:
             return httpx.Response(200, json={"meta": {"count": total, "next_cursor": str(end) if end < self.openalex_total else None},
                                              "results": [work(i) for i in range(start, end)]})
         if request.url.host == "api.crossref.org":
+            if "rows" not in params:
+                # A slice 05 DOI lookup, not a search: these SYNTHETIC DOIs are in no registry, and a record whose
+                # abstract no source fills changes nothing about the paging these tests are for.
+                return httpx.Response(404, text="Resource not found.")
             start, size = int(params.get("offset") or 0), int(params["rows"])
             self.crossref.append((start, size))
             end = min(start + size, self.crossref_total)

@@ -19,12 +19,14 @@ from typing import Any, Callable
 from deixis.config import Settings
 from deixis.documents.pdf import chunk_page
 from deixis.domain.canonical import canonical_rows, sha256_hex
+from deixis.domain import survey
 from deixis.domain.expansion import candidates as phrase_candidates
 from deixis.domain.vocabulary import extract
 from deixis.providers.common import ProviderRecord
 from deixis.providers.query_compiler import compile_block_queries, compile_queries
 from deixis.storage import db
 from deixis.workflow.decisions import DecisionStore
+from deixis.workflow import links
 from deixis.workflow.expansion import expand
 from deixis.workflow.flow import answer_source_order, fuse_rankings
 from deixis.workflow.protocol import build_protocol
@@ -147,6 +149,7 @@ def stage_link_records(rows: list[dict[str, Any]]) -> Any:
                                     None, search_workflow="sw")
         run = store.create_run(rid, "discovery", {"max_model_calls": 1, "max_provider_requests": 1,
                                                   "max_candidates": 50, "max_answer_passages": 8}, None)
+        ts = "2026-09-20T00:00:00.000+00:00"
         records = [ProviderRecord(
             provider_record_id=row["id"], title=row["title"], authors=list(LINK_AUTHORS), year=2026, venue=None,
             publication_type=None, doi=row["doi"], landing_url=None, oa_pdf_url=None, oa_pdf_version=None,
@@ -160,6 +163,19 @@ def stage_link_records(rows: list[dict[str, Any]]) -> Any:
                  delivery_class=None, result_count=len(records), provider_total=len(records), page_limit=25,
                  error_json=None, raw_payload_path=None),
             "openalex", records, None, step["id"], "succeeded", step_output={"status": "completed"})
+        # The links a second source named, read after the search as the `external_links` step reads them. A record
+        # naming a DOI is written before the reading, so the reading order is the one under test, not the writing.
+        for row in sorted((r for r in rows if r.get("names")), key=lambda r: r["id"]):
+            svid = store.find_source_by_identifier("openalex", row["id"])
+            with db.transaction(conn):
+                conn.execute("INSERT OR IGNORE INTO identifier_mappings (source_version_id, scheme, value, provider,"
+                             " retrieved_at) VALUES (?, 'doi', ?, 'openalex', ?)", (svid, row["doi"], ts))
+                for value in row["names"]:
+                    conn.execute("INSERT OR IGNORE INTO identifier_mappings (source_version_id, scheme, value,"
+                                 " provider, retrieved_at) VALUES (?, 'linked_doi', ?, 'semantic_scholar', ?)",
+                                 (svid, value, ts))
+        with db.transaction(conn):
+            links.link_external(store, rid)
         named = {r[0]: r[1] for r in conn.execute(
             "SELECT source_version_id, value FROM identifier_mappings WHERE scheme = 'openalex'")}
         grouped: dict[str, list[str]] = {}
@@ -248,6 +264,28 @@ def stage_expansion(rows: list[dict[str, Any]]) -> Any:
             "expansion": asyncio.run(expand(EXPANSION_VOCABULARY, found, count))}
 
 
+SURVEY_QUESTION_FORMS = ["release scheduling", "diffusion channel", "integer programming", "code review"]
+
+
+def stage_survey_flags(rows: list[dict[str, Any]]) -> Any:
+    """The survey signals of fixed SYNTHETIC records and the abstract-stage code each of them asks for (SW5, SW9.3).
+
+    The records carry no order of their own — they are what the providers happened to return — so neither their
+    order nor a set's iteration order may reach the flags, their evidence or the code. "code review" is among the
+    question's own forms, so this research reads no title for the word "review".
+    """
+    kept, dropped = survey.title_words(SURVEY_QUESTION_FORMS)
+    found = []
+    for row in sorted(rows, key=lambda r: r["id"]):
+        signals = survey.signals(row["title"], row["abstract"], row["reference_count"], kept)
+        # The same rule `lookups._wanted_decision` applies, without the database it reads for the rest of it.
+        code = ("survey_title_word" if any(s.flag == "survey_title_word" for s in signals)
+                else "no_abstract" if row["abstract"] is None else None)
+        found.append({"id": row["id"], "flags": [{"flag": s.flag, "evidence": s.evidence} for s in signals],
+                      "code": code})
+    return {"words": {"kept": list(kept), "dropped": list(dropped)}, "records": canonical_rows(found, "id")}
+
+
 def stage_build_protocol(rows: list[dict[str, Any]]) -> Any:
     scope = SCOPE | {"providers": [row["id"] for row in rows]}
     return build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
@@ -265,6 +303,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "link_records": stage_link_records,
     "code_vocabulary": stage_code_vocabulary,
     "expansion": stage_expansion,
+    "survey_flags": stage_survey_flags,
 }
 
 ROWS: dict[str, list[dict[str, Any]]] = {
@@ -291,6 +330,23 @@ ROWS: dict[str, list[dict[str, Any]]] = {
     # Four works: one still a candidate on the abstract stage, one whose two versions disagree on the full text, one
     # the user decided, and one whose two versions reached the same outcome, so the version named for the work must
     # not be the one decided first. SYNTHETIC decisions; they show merge behavior, not screening quality.
+    # Six SYNTHETIC records from two fields: a title survey, a title word the question itself uses (so it is not a
+    # signal here), an abstract that names itself a survey, a record at the reference threshold, a record just under
+    # it, and one with no signal and no abstract. They show the rule's behavior, not its accuracy.
+    "survey_flags": [
+        {"id": "R1", "title": "SYNTHETIC survey of relay scheduling in wireless sensor networks",
+         "abstract": "We collect SYNTHETIC scheduling results.", "reference_count": 20},
+        {"id": "R2", "title": "SYNTHETIC code review at scale in industrial practice",
+         "abstract": "We measure SYNTHETIC defect density.", "reference_count": 30},
+        {"id": "R3", "title": "SYNTHETIC release scheduling for diffusion channels",
+         "abstract": "This review collects SYNTHETIC scheduling results and compares them.", "reference_count": 40},
+        {"id": "R4", "title": "SYNTHETIC energy budgets of nanoscale transmitters",
+         "abstract": "We derive the SYNTHETIC energy a transmitter spends.", "reference_count": 150},
+        {"id": "R5", "title": "SYNTHETIC bit error rate of optical wireless links",
+         "abstract": "We bound the SYNTHETIC error rate.", "reference_count": 149},
+        {"id": "R6", "title": "SYNTHETIC multi hop relaying in vascular networks", "abstract": None,
+         "reference_count": None},
+    ],
     "work_outcome": [
         # First in the list: both shuffles the test runs reverse this pair.
         {"id": "srv_four_a", "work_id": "wrk_four", "reason_code": "blocks_in_title"},
@@ -316,9 +372,13 @@ ROWS: dict[str, list[dict[str, Any]]] = {
         {"id": "RA", "title": LINK_TITLES["one"], "doi": "10.48550/arxiv.2601.00001",
          "abstract": LINK_ABSTRACTS["one"], "preprint": True},
         {"id": "RE", "title": LINK_TITLES["three"], "doi": "10.48550/arxiv.2601.00002",
-         "abstract": LINK_ABSTRACTS["three"], "preprint": True},
+         "abstract": LINK_ABSTRACTS["three"], "preprint": True,
+         # Two sources naming two different published versions: this confirms nothing, whatever the row order.
+         "names": ["10.1109/synth.2026.4", "10.1109/synth.2026.6"]},
+        # A preprint whose title shares nothing with the published record a source names as its version: only the
+        # external link can join them.
         {"id": "RF", "title": LINK_TITLES["three_retitled"], "doi": "10.48550/arxiv.2601.00003",
-         "abstract": LINK_ABSTRACTS["three_other"], "preprint": True},
+         "abstract": LINK_ABSTRACTS["three_other"], "preprint": True, "names": ["10.1109/synth.2026.2"]},
         {"id": "PG", "title": LINK_TITLES["four"], "doi": "10.1109/synth.2026.4", "abstract": LINK_ABSTRACTS["four"],
          "preprint": False},
         {"id": "NG", "title": f"Publisher Correction: {LINK_TITLES['four']}", "doi": "10.1109/synth.2026.5",

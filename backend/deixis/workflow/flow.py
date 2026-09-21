@@ -393,7 +393,12 @@ class ResearchFlow:
             place = {svid: position for position, svid in enumerate(order)}
             # A record the ranking did not see — a version that headed its work only after the ranking — keeps its
             # place in the candidate order, at the end. The sort is stable, so that order is what decides there.
-            screenable = sorted(screenable, key=lambda c: (c["proposed"], place.get(c["source_version_id"], len(place))))
+            # A record an earlier run screened goes last, as it does in the candidate order. One this run screened
+            # keeps its place: a batch is keyed by where it starts, so a run resumed between two batches must find
+            # the same list, or the places the first batch held are read again and the next ones never are.
+            own = {s["id"] for s in self.store.run_steps(run_id)}
+            screenable = sorted(screenable, key=lambda c: (bool(c["proposed"]) and c["proposal_step_id"] not in own,
+                                                           place.get(c["source_version_id"], len(place))))
         # The limit still cuts (slice 09 lifts it); what changed is the order it cuts by. A record outside it stays
         # `pending`, is counted and is not deleted.
         candidates = screenable[: budget["max_candidates"]]

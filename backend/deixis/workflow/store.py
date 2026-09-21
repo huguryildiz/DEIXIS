@@ -1812,7 +1812,7 @@ class Store:
         params = (research_id, scope_revision) if scope_revision is not None else (research_id,)
         rows = self.conn.execute(
             "SELECT c.id AS candidate_id, c.source_version_id, c.rank, s.state, s.origin,"
-            " s.proposal IS NOT NULL AS proposed FROM candidates c"
+            " s.proposal IS NOT NULL AS proposed, s.proposal_step_id FROM candidates c"
             " JOIN selections s ON s.research_id = c.research_id AND s.source_version_id = c.source_version_id"
             f" WHERE c.research_id = ?{revision_filter} ORDER BY s.proposal IS NOT NULL, c.rank, c.created_at", params
         ).fetchall()

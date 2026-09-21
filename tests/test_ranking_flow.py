@@ -584,3 +584,37 @@ def test_the_number_of_queries_does_not_grow_with_the_pool(tmp_path):
     counted.append(ranked(tmp_path / "small", 20))
     counted.append(ranked(tmp_path / "large", 200))
     assert counted[0] == counted[1], counted
+
+
+def test_a_run_paused_between_two_screening_batches_screens_the_next_places_of_the_order_when_it_resumes(tmp_path, monkeypatch):
+    """The first batch's records now carry a proposal; they must not push the rest of the order out of its batches."""
+    from deixis.workflow.flow import SCREENING_BATCH
+
+    failed = []
+
+    def fail_the_second_batch_once(si):
+        if si["task_type"] == "screening" and len(failed) == 0 and len(screening_calls) == 1:
+            failed.append(si)
+            return ModelStepResult("failed", error="SYNTHETIC model connection dropped")
+        if si["task_type"] == "screening":
+            screening_calls.append(si)
+        return None
+
+    screening_calls: list = []
+    size = 3 * SCREENING_BATCH
+    app = app_for(tmp_path, monkeypatch, Pool(pool(size)), adapter=FakeAdapter(valid_response, fail=fail_the_second_batch_once))
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client, effort="standard")
+        assert run["status"] == "paused"
+        store = app.state.store
+        order = DecisionStore(store).latest_ranking(rid, 1)
+        client.post(f"/api/runs/{run_id}/resume")
+        view, run = wait(client, rid, run_id)
+        batches = [[by["source_version_id"] for by in store.candidates(rid) if by["candidate_id"] in
+                    {c["candidate_id"] for c in si["candidates"]}] for si in screening_calls]
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed"
+    assert [sorted(batch) for batch in batches] == [sorted(order[start:start + SCREENING_BATCH])
+                                                    for start in range(0, size, SCREENING_BATCH)]

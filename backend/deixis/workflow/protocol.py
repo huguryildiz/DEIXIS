@@ -12,7 +12,8 @@ from typing import Any
 
 from deixis.config import Settings
 from deixis.domain.record_identity import THRESHOLDS
-from deixis.domain.rules import SCREENING_BATCH, SW_READ_LIMIT, effective_reviewer, step_model
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
+                                 SCREENING_BATCH, SW_READ_LIMIT, effective_reviewer, step_model)
 from deixis.domain.survey import THRESHOLDS as SURVEY_THRESHOLDS
 from deixis.domain.survey_words import ABSTRACT_SELF_DESCRIPTIONS as SURVEY_PATTERNS
 from deixis.providers import query_compiler
@@ -135,6 +136,10 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             **({"record_identity": THRESHOLDS,
                 "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS,
                 "ranking": RANKING_THRESHOLDS,
+                # How deep the abstract stage reads and what it counts as a verbatim quote (D81). `read_limit` is
+                # this research's own effort: it says how many works the model was asked about, not how many exist.
+                "abstract_screening": {"read_limit": ABSTRACT_READ_LIMIT[scope["effort"]], "batch": ABSTRACT_BATCH,
+                                       "runs": ABSTRACT_RUNS, "quote_min_chars": ABSTRACT_QUOTE_MIN_CHARS},
                 "search_read": {"read_limit_per_query": SW_READ_LIMIT}} if scope.get("search_workflow") == "sw" else {}),
             **({"vocabulary": VOCABULARY_THRESHOLDS} if vocabulary else {}),
             **({"expansion": EXPANSION_THRESHOLDS} if expansion else {}),

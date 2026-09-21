@@ -162,6 +162,11 @@ def rank_rows(store, rid, signals=ranking.CODE_SIGNALS):
                       (rid,)) if row["signal"] in signals)
 
 
+def decision_of(store, rid, svid):
+    """The record's open abstract-stage decision."""
+    return DecisionStore(store).current(rid, svid, "abstract") or {"reason_code": None}
+
+
 def ordered_titles(store, rid, revision=1):
     return [store.source(svid)["title"] for svid in DecisionStore(store).latest_ranking(rid, revision)]
 
@@ -173,11 +178,15 @@ def table_rows(store, rid):
         f"SELECT * FROM {table} WHERE {where.get(table, 'research_id = ?')}", (rid,))] for table in DECISION_TABLES}
 
 
-def screened_titles(store, run_id):
-    """The candidate titles of the first screening call, in the order the step input listed them."""
+def screened_titles(store, run_id, key="abstract_screening:0:1"):
+    """The candidate titles of one screening call, in the order the step input listed them.
+
+    Since slice 09 an `sw` run screens through the abstract stage; the stored payload keeps the real record rows
+    (the model itself was shown short handles).
+    """
     row = store.conn.execute(
         "SELECT i.payload_json FROM step_inputs i JOIN run_steps s ON s.id = i.step_id"
-        " WHERE s.run_id = ? AND s.operation_key = 'screening' ORDER BY i.rowid LIMIT 1", (run_id,)).fetchone()
+        " WHERE s.run_id = ? AND s.operation_key = ? ORDER BY i.rowid LIMIT 1", (run_id, key)).fetchone()
     return [] if row is None else [c["title"] for c in json.loads(row[0])["candidates"]]
 
 
@@ -192,51 +201,68 @@ def test_the_screening_list_follows_the_inspection_order_and_not_the_provider_s(
         rid, run_id, view, run = discover(client)
         store = app.state.store
         output = step_output(store, run_id, "ranking")
+        plan = step_output(store, run_id, "abstract_stage")
         titles = ordered_titles(store, rid)
         screened = screened_titles(store, run_id)
+        second_place = DecisionStore(store).latest_ranking(rid, 1)[1]
         provider_order = [store.source(c["source_version_id"])["title"] for c in store.candidates(rid, 1)]
     finally:
         client.__exit__(None, None, None)
     assert output["pool"] == 24 and output["signals"]["bm25"]["ran"] is True
     assert titles[0].startswith(STRONG), titles[:3]
-    # The provider returned that record last; the list screening read starts with it.
-    assert provider_order[-1].startswith(STRONG) and screened[0].startswith(STRONG)
-    assert screened == titles[:len(screened)]
+    # The provider returned that record last; the ranking puts it first. Code closes it as a candidate before any
+    # model is asked (both concept blocks stand in its title), so the batch the model reads starts at the order's
+    # second place and follows it from there (slice 09).
+    assert provider_order[-1].startswith(STRONG)
+    assert plan["batches"][0][0] == second_place
+    assert screened == [title for title in titles[1:] if not title.startswith(STRONG)][:len(screened)]
 
 
-def test_the_candidate_limit_still_cuts_but_cuts_by_the_new_order_and_deletes_nothing(tmp_path, monkeypatch):
-    """SW7.2: the order removes no record. `max_candidates` was cutting before this slice and still cuts (slice 09)."""
-    app = app_for(tmp_path, monkeypatch, Pool())
+def test_the_read_limit_cuts_by_the_new_order_deletes_nothing_and_max_candidates_cuts_nothing(tmp_path, monkeypatch):
+    """SW7.2 and slice 09: the read limit replaced `max_candidates` here, and what it leaves out stays unread.
+
+    A pool of 45 at quick effort, whose read limit is 40 and whose `max_candidates` is 20: if the old limit still
+    cut, 25 works would never be looked at.
+    """
+    app = app_for(tmp_path, monkeypatch, Pool(pool(45)))
     client = client_of(app)
     try:
-        rid, run_id, view, run = discover(client)  # quick: max_candidates = 20, pool = 24
+        rid, run_id, view, run = discover(client)
         store = app.state.store
         candidates = store.candidates(rid, 1)
         order = DecisionStore(store).latest_ranking(rid, 1)
-        states = {row["source_version_id"]: row["state"] for row in candidates}
-        proposed = {svid for svid, state in states.items() if state != "pending"}
+        plan = step_output(store, run_id, "abstract_stage")
+        decided = {row["source_version_id"]: decision_of(store, rid, row["source_version_id"])
+                   for row in candidates}
+        states = {row["state"] for row in candidates}
     finally:
         client.__exit__(None, None, None)
-    assert len(candidates) == 24 and len(order) == 24  # nothing was removed and everything was ranked
-    assert len(proposed) == 20 and len(states) - len(proposed) == 4
-    # The four left outside the limit are the four the ranking put last, not the four the provider returned last.
-    assert set(order[:20]) == proposed and order[0] not in (set(order) - proposed)
+    assert len(candidates) == 45 and len(order) == 45  # nothing was removed and everything was ranked
+    assert plan["limit"] == 40 and sum(len(batch) for batch in plan["batches"]) + plan["not_read"] == 44
+    # The read plan followed the order: the works left unread are the last ones in it, not the last found.
+    unread = {svid for svid, row in decided.items() if row["reason_code"] == "abstract_not_read"}
+    assert unread == set(order[-plan["not_read"]:])
+    assert plan["not_read"] == 4 and states == {"pending"}
 
 
 def test_the_ranking_step_writes_no_row_in_any_decision_table(tmp_path, monkeypatch):
-    """The step orders and stores ranks; every decision in this run came from screening, as it did before."""
+    """The step orders and stores ranks; every decision this run holds was written by another step."""
     app = app_for(tmp_path, monkeypatch, Pool(), adapter=DeadAdapter())
     client = client_of(app)
     try:
         rid, run_id, view, run = discover(client)
         store = app.state.store
         rows = table_rows(store, rid)
+        ranking_step = store.step(run_id, "ranking", "code:ranking")["id"]
         ranked = store.conn.execute("SELECT COUNT(*) FROM record_signal_ranks WHERE research_id = ?", (rid,)).fetchone()[0]
         step = step_output(store, run_id, "ranking")
     finally:
         client.__exit__(None, None, None)
     assert ranked > 0 and step["pool"] == 24
-    assert rows["stage_decisions"] == [] and rows["model_proposals"] == [] and rows["record_flags"] == []
+    # The abstract stage of slice 09 writes decisions in the same run; none of them came from this step, and with
+    # the connection down no model proposed anything.
+    assert all(row["step_id"] != ranking_step for row in rows["stage_decisions"])
+    assert rows["model_proposals"] == [] and rows["record_flags"] == []
     assert {row["state"] for row in rows["selections"]} == {"pending"}
     assert all(row["proposal"] is None for row in rows["selections"])
 
@@ -396,7 +422,7 @@ def test_an_sw_run_scores_the_whole_pool_before_it_ranks_and_not_again_after_scr
         client.__exit__(None, None, None)
     # Every record of the pool was embedded, not only the 20 the candidate limit screens.
     assert len([text for text in handler.embedded if text.startswith("SYNTHETIC")]) == 24
-    assert keys.index("source_similarity") < keys.index("ranking") < keys.index("screening")
+    assert keys.index("source_similarity") < keys.index("ranking") < keys.index("abstract_stage")
 
 
 # ---- the protocol -----------------------------------------------------------------------------
@@ -588,37 +614,45 @@ def test_the_number_of_queries_does_not_grow_with_the_pool(tmp_path):
 
 
 def test_a_run_paused_between_two_screening_batches_screens_the_next_places_of_the_order_when_it_resumes(tmp_path, monkeypatch):
-    """The first batch's records now carry a proposal; they must not push the rest of the order out of its batches."""
-    from deixis.workflow.flow import SCREENING_BATCH
+    """The first batch's records now carry a decision; they must not push the rest of the order out of its batches.
+
+    The read plan is frozen in the code step's output, so a resumed run finds the same batches under the same keys
+    even though "the works still needing a model" is a shorter list by then.
+    """
+    from deixis.domain.rules import ABSTRACT_BATCH
 
     failed = []
 
     def fail_the_second_batch_once(si):
-        if si["task_type"] == "screening" and len(failed) == 0 and len(screening_calls) == 1:
+        if si["task_type"] != "abstract_screening":
+            return None
+        if not failed and si["screening_target"] == {"runs": 2, "run": 1} and len(screening_calls) == 2:
             failed.append(si)
             return ModelStepResult("failed", error="SYNTHETIC model connection dropped")
-        if si["task_type"] == "screening":
-            screening_calls.append(si)
+        screening_calls.append(si)
         return None
 
     screening_calls: list = []
-    size = 3 * SCREENING_BATCH
+    size = 3 * ABSTRACT_BATCH
     app = app_for(tmp_path, monkeypatch, Pool(pool(size)), adapter=FakeAdapter(valid_response, fail=fail_the_second_batch_once))
     client = client_of(app)
     try:
         rid, run_id, view, run = discover(client, effort="standard")
-        assert run["status"] == "paused"
+        assert run["status"] == "paused" and run["pause_reason"] == "model_call_failed", run
         store = app.state.store
-        order = DecisionStore(store).latest_ranking(rid, 1)
+        plan = step_output(store, run_id, "abstract_stage")
         client.post(f"/api/runs/{run_id}/resume")
         view, run = wait(client, rid, run_id)
-        batches = [[by["source_version_id"] for by in store.candidates(rid) if by["candidate_id"] in
-                    {c["candidate_id"] for c in si["candidates"]}] for si in screening_calls]
+        # The model is shown short handles, so what it saw is compared by title, which handles do not touch.
+        read = [sorted(c["title"] for c in si["candidates"]) for si in screening_calls]
+        planned = [sorted(store.source(svid)["title"] for svid in batch) for batch in plan["batches"]]
+        resumed = step_output(store, run_id, "abstract_stage")
     finally:
         client.__exit__(None, None, None)
     assert run["status"] == "completed"
-    assert [sorted(batch) for batch in batches] == [sorted(order[start:start + SCREENING_BATCH])
-                                                    for start in range(0, size, SCREENING_BATCH)]
+    # The stored plan is what the resumed run read, unchanged, and every batch was read twice and only twice.
+    assert resumed["batches"] == plan["batches"]
+    assert read == [batch for batch in planned for _ in range(2)]
 
 
 def test_a_legacy_run_paused_between_two_screening_batches_screens_every_candidate_when_it_resumes(tmp_path, monkeypatch):

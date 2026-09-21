@@ -112,6 +112,8 @@ export const localToolIcon = (id: string) => (id === 'gemini_cli' ? 'gemini' : i
 export const stepLabel = (kind: string, key: string) => {
   if (kind === 'model:search_plan') return t('Search plan (model)')
   if (kind === 'model:screening') return t('Screening proposal (model)')
+  if (kind === 'code:abstract_stage') return t('Abstract screening (code)')
+  if (kind === 'model:abstract_screening') return t('Abstract screening proposal (model)')
   if (kind === 'model:grounded_answer') return t('Source-linked answer (model)')
   if (kind === 'model:answer_review') return t('Claim review (reviewer model)')
   if (kind === 'model:cell_extraction') return t('Cell extraction (model)')

@@ -36,6 +36,15 @@ def valid_response(si: dict[str, Any]) -> str:
                           for c in si["candidates"]],
             "notes": "fake screening notes.",
         })
+    if task == "abstract_screening":
+        # SYNTHETIC and field-independent: every record with an abstract is a candidate quoted from its own first
+        # words, so the quote always locates and the two runs always agree. It says nothing about model behavior.
+        return json.dumps(envelope(si, "deixis.abstract_screening.v1") | {"records": [
+            {"candidate_id": c["candidate_id"],
+             "label": "candidate" if c["abstract"] else "unresolved",
+             "quote": " ".join((c["abstract"] or "").split())[:60],
+             "rationale": "SYNTHETIC: the abstract names the question's setting and task."}
+            for c in si["candidates"]]})
     if task == "cell_extraction":
         first = si["passages"][0]
         values = {"choice": lambda c: {"option_ids": [c["options"][0]["id"]]}, "number_unit": lambda c: {"number": 128, "unit": "byte", "as_stated": None},

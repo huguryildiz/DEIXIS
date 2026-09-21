@@ -107,8 +107,13 @@ def test_an_sw_discovery_searches_while_every_model_call_fails(tmp_path, monkeyp
         client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
         rid, run_id = start(client, QUESTION)
         view, run = wait(client, rid, run_id)
-    # OpenAlex answered and was recorded; the run stops at screening, the first step that needs a model.
-    # The other providers are not mocked here and fail, which D18 lets the run carry on from.
+        store = client.app.state.store
+        decisions = [(row[0], row[1]) for row in store.conn.execute(
+            "SELECT reason_code, outcome FROM stage_decisions WHERE research_id = ? AND superseded_at IS NULL", (rid,))]
+        selections = [(row[0], row[1]) for row in store.conn.execute(
+            "SELECT state, origin FROM selections WHERE research_id = ?", (rid,))]
+    # OpenAlex answered and was recorded. The other providers are not mocked here and fail, which D18 lets the
+    # run carry on from.
     searched = {s["kind"]: s["status"] for s in run["steps"] if s["operation_key"].startswith("search:")}
     assert searched["provider_search:openalex"] == "succeeded", run["steps"]
     assert openalex.counts and openalex.searches
@@ -119,7 +124,13 @@ def test_an_sw_discovery_searches_while_every_model_call_fails(tmp_path, monkeyp
         "vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
         "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
         "protocol_approval", "protocol"]
-    assert run["status"] == "paused" and run["pause_reason"] == "model_call_failed", run
+    # Since slice 09 the one record this fixture finds carries both concept blocks in its title, so the code stage
+    # closes it as a candidate and the run needs no model at all: with every model call failing, a whole sw
+    # discovery searches, ranks and decides. Nothing it decided is `included`.
+    assert run["status"] == "completed" and run["pause_reason"] is None, run
+    assert [s["operation_key"] for s in run["steps"]][-1] == "abstract_stage"
+    assert not any(s["kind"] == "model:abstract_screening" for s in run["steps"])
+    assert decisions == [("blocks_in_title", "candidate")] and selections == [("pending", "code_rule")]
     assert view["counts"]["unique"] == 1
     # No step input was ever built for a search plan: the words came from the question.
     assert not any(s["operation_key"] == "search_plan" for s in run["steps"])

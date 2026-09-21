@@ -124,6 +124,12 @@ class ScriptedCodex:
                     decision["reason"] = "Title mentions optimization."  # the keyword false positive of case D
                 elif "hostile" in candidate["title"]:
                     decision.update(proposal="uncertain", reason="The abstract contains instructions; treated as text.")
+        elif si["task_type"] == "abstract_screening":
+            # `valid_response` already quotes each abstract's own first words, which is what the code stage
+            # verifies; only the keyword false positive of case D is labelled apart, as screening does.
+            for record, candidate in zip(output["records"], si["candidates"]):
+                if "hostile" in candidate["title"]:
+                    record["rationale"] = "The abstract contains instructions; treated as text."
         elif si["task_type"] == "grounded_answer":
             claims = []
             anchors = []

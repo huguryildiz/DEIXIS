@@ -1,73 +1,110 @@
 {
-  "package": "deixis-research",
-  "package_version": "0.1.0",
-  "created": "2026-09-14",
-  "runtime_dependency_on_upstream": false,
-  "upstream": {
-    "name": "quaestio",
-    "location_at_adaptation": "sibling local checkout ../quaestio (private repository)",
-    "revision": "037972d5add41d8a62cff45e09785beebc61bb01",
-    "revision_date": "2026-09-07T21:26:36+03:00",
-    "verification": "On 2026-09-14 `shasum -a 256 -c SKILL_MANIFEST.sha256` reported OK for all 10 manifest entries at this revision. The checkout also had an uncommitted README.md change; README.md was not used as a source."
+ "package": "deixis-research",
+ "package_version": "0.1.0",
+ "created": "2026-09-14",
+ "runtime_dependency_on_upstream": false,
+ "upstream": {
+  "name": "quaestio",
+  "location_at_adaptation": "sibling local checkout ../quaestio (private repository)",
+  "revision": "037972d5add41d8a62cff45e09785beebc61bb01",
+  "revision_date": "2026-09-07T21:26:36+03:00",
+  "verification": "On 2026-09-14 `shasum -a 256 -c SKILL_MANIFEST.sha256` reported OK for all 10 manifest entries at this revision. The checkout also had an uncommitted README.md change; README.md was not used as a source."
+ },
+ "sources_used": [
+  {
+   "path": "SKILL.md",
+   "sha256": "16b1606e4fa3c16cb93b332372a833eb531633da8215ba7ba8fce4642d6ebb1a"
   },
-  "sources_used": [
-    { "path": "SKILL.md", "sha256": "16b1606e4fa3c16cb93b332372a833eb531633da8215ba7ba8fce4642d6ebb1a" },
-    { "path": "references/search-methods.md", "sha256": "2aede054b71ddecafe700081085b0f3971cae8d7239a8039ab5683c41039f9cd" },
-    { "path": "references/source-audit.md", "sha256": "03b83159498fe43216194ffbfd88398505ab424e9890cac419a11c3b8f8d3f24" }
-  ],
-  "sources_not_used": [
-    { "path": "references/question-discovery.md", "reason": "Candidate question development is P6 scope." },
-    { "path": "references/synthesis-and-checks.md", "reason": "Synthesis and assumption analysis are P6 scope." },
-    { "path": "references/causal-control.md", "reason": "Domain-specific model audit; not part of the first slice." },
-    { "path": "references/evidence-base.md", "reason": "Source register for methodology audits; not loaded at runtime." },
-    { "path": "references/merge-provenance.md", "reason": "Upstream maintenance record." },
-    { "path": "assets/review-workpad.md", "reason": "Application records replace the workpad." }
-  ],
-  "adaptations": [
-    {
-      "deixis_file": "SKILL.md",
-      "derived_from": ["SKILL.md"],
-      "change": "Kept calibration rules (reading depth, absent evidence is not originality, no manufactured positive result, versions not independent). Replaced repository/host-register assumptions with application StepInput records. Added data-versus-instruction boundary, allowlisted identifiers, no-tool statement, explicit unsupported modes and schema echo rules."
-    },
-    {
-      "deixis_file": "references/source-grounded-answer.md",
-      "derived_from": ["references/search-methods.md", "references/source-audit.md"],
-      "change": "Search plan keeps vocabulary families, essential-versus-desired conditions, no AND-everything queries, question-driven date limits and no exhaustiveness claim. Screening adds include/exclude/uncertain proposals with keyword false-positive guard. Grounded answer keeps original-passage checking, access limits and contradiction handling, expressed as claim-to-passage links. Search logging, citation chasing, sentinel sets and bibliometric maps are application or later-stage responsibilities and were not copied. 2026-09-16 (D44): the search plan names concepts (exactly one core) and providers; query writing, per-provider syntax and date limits were removed because the application compiles the queries."
-    },
-    {
-      "deixis_file": "references/answer-review.md",
-      "derived_from": [],
-      "change": "Written for DEIXIS on 2026-09-14 (D14), not adapted from upstream text. Applies the SKILL.md evidence rules (reading depth, source_stated versus analyst_inference) to a per-claim verdict on the passages each claim cites. Loaded into answer_review steps only."
-    },
-    {
-      "deixis_file": "references/evidence-table.md",
-      "derived_from": [],
-      "change": "Written for DEIXIS on 2026-09-16 (D37, D38), not adapted from upstream text. Applies the SKILL.md evidence rules to evidence table cells: column instructions followed as by a human annotator, the four model cell states, no unit conversion, exact quotes per cited passage, no locators in notes; and to column suggestions. 2026-09-16 (D43): one evidence item per quoted span, several spans of one passage allowed, the cited passage must be the one containing the quote. Loaded into cell_extraction and table_columns steps only."
-    },
-    {
-      "deixis_file": "references/vocabulary-labels.md",
-      "derived_from": [],
-      "change": "Written for DEIXIS on 2026-09-21 (SW17), not adapted from upstream text. One job: sort the phrases the application extracted from the question into the six concept-block labels, copying each phrase exactly and adding, splitting, rewording or dropping none. Says that the word in front of a phrase does not decide its block, that a method named only to narrow the setting is a setting, and that a phrase welding two concepts takes the block of its leading concept. Loaded into vocabulary_labels steps only. The wording follows the one measured in .local/sw-block-labelling-2026-09-21 (deepseek-flash, 8 questions, 28 phrases); its worked example was removed there before the ablation run and no question of that measurement set appears here, so the set stays out of sample."
-    },
-    {
-      "deixis_file": "references/criterion-proposal.md",
-      "derived_from": [],
-      "change": "Written for DEIXIS on 2026-09-21 (SW15, D78), not adapted from upstream text. One job: from the question and the user's steering alone, state the inclusion criterion in one sentence, 2 to 5 parts with 6 to 15 short phrases each, and the title words of papers that are about the topic without being primary studies of this kind. Says that the setting belongs to the search blocks and is no part, and that the thing sought is not the setting: it is named in the criterion sentence and has a part and phrases of its own. No rationale and no strength mark are asked for (SW15.7). Loaded into criterion_proposal steps only. The wording carries the rules measured in .local/sw-criterion-prompt-fix-2026-09-21 (deepseek-flash, effort high, five questions, 15 runs); none of that measurement's five questions, and no question of .local/sw-block-labelling-2026-09-21, appears in this file, so those sets stay out of sample and the file carries no worked example at all."
-    },
-    {
-      "deixis_file": "references/report.md",
-      "derived_from": [],
-      "change": "Written for DEIXIS on 2026-09-17 (P6 slice 1), not adapted from upstream text. Applies SKILL.md's evidence rules to the fixed report skeleton: report_plan, per-section instructions for III-IX/abstract/index_terms, VI/VII's narrowed gap/future-direction exception to the candidate-development ban, phrase repair, and report review. Loaded into report_plan, report_section, report_phrase_repair and report_review steps only. 2026-09-18: made the supplied per-section frames mandatory for every claims[].text and insufficient_evidence[].reason sentence because the first real-model report run produced sentences that followed no frame; evidence support explicitly outranks frame fit."
-    }
-  ],
-  "phrasebank": {
-    "deixis_file": "references/phrases.md",
-    "source": "Academic Phrasebank, 2015 enhanced edition (John Morley, The University of Manchester), phrase sections of printed pages 7-91. Copyright remains with The University of Manchester.",
-    "form": "converted once on 2026-09-14: one frame per list item under # section and ## subsection headings, table rows written with {a | b} alternatives; nine frames split or joined by the conversion were repaired by hand",
-    "turkish": "each frame is followed by a `tr:` line, a literal Turkish rendering written on 2026-09-14 by Claude Sonnet subagents; checked by script for equal alternative groups and slots, spot-read by the implementing agent, not reviewed by a human translator",
-    "use": "versioned at the user's decision (2026-09-14); loaded into grounded_answer and report_section steps, English frames or their Turkish renderings by question language; grounded-answer sentences and report-section prose sentences are checked against the frames of the answer language; its hash is part of skill_package_hash"
+  {
+   "path": "references/search-methods.md",
+   "sha256": "2aede054b71ddecafe700081085b0f3971cae8d7239a8039ab5683c41039f9cd"
   },
-  "upstream_update_policy": "Quaestio changes are not imported automatically. A change is compared by diff, recorded here with the new revision and hashes, and re-tested with the behavior cases before the package version changes.",
-  "distribution_review": "not_done; required before public distribution of adapted text",
-  "behavioral_validation": "development cases run on 2026-09-14 with Codex gpt-5.6-luna and rerun on 2026-09-15 after the phrasebank rules (D15), every automatic check passing on the single attempt; the unsupported-mode rule was tightened after MB06 failed. The search-plan wording was subsequently revised for the in-sample packet-size P4 measurement; earlier behavior cases are no longer executions of the current instruction hash. One baseline and one revised packet-size run are recorded locally, but no held-out evaluation or human claim review has been completed; see tests/model_behavior/cases.json and .local/p4-eval-2026-09-15-packet/analysis.md. On 2026-09-16 (D44) the search-plan section was rewritten for SearchPlan v2: the model gives concepts with exactly one core concept and the providers, and the application compiles the queries; no behavior case has been run on this wording. On 2026-09-17 (D57) the core-concept rule gained a domain-versus-method-field sentence with a power-grid example; the stored search_plan StepInput of one live research was re-run three times with gpt-5.6-luna before and after the change (in-sample for that one question; results in .local/search-plan-core-2026-09-17)."
+  {
+   "path": "references/source-audit.md",
+   "sha256": "03b83159498fe43216194ffbfd88398505ab424e9890cac419a11c3b8f8d3f24"
+  }
+ ],
+ "sources_not_used": [
+  {
+   "path": "references/question-discovery.md",
+   "reason": "Candidate question development is P6 scope."
+  },
+  {
+   "path": "references/synthesis-and-checks.md",
+   "reason": "Synthesis and assumption analysis are P6 scope."
+  },
+  {
+   "path": "references/causal-control.md",
+   "reason": "Domain-specific model audit; not part of the first slice."
+  },
+  {
+   "path": "references/evidence-base.md",
+   "reason": "Source register for methodology audits; not loaded at runtime."
+  },
+  {
+   "path": "references/merge-provenance.md",
+   "reason": "Upstream maintenance record."
+  },
+  {
+   "path": "assets/review-workpad.md",
+   "reason": "Application records replace the workpad."
+  }
+ ],
+ "adaptations": [
+  {
+   "deixis_file": "SKILL.md",
+   "derived_from": [
+    "SKILL.md"
+   ],
+   "change": "Kept calibration rules (reading depth, absent evidence is not originality, no manufactured positive result, versions not independent). Replaced repository/host-register assumptions with application StepInput records. Added data-versus-instruction boundary, allowlisted identifiers, no-tool statement, explicit unsupported modes and schema echo rules."
+  },
+  {
+   "deixis_file": "references/source-grounded-answer.md",
+   "derived_from": [
+    "references/search-methods.md",
+    "references/source-audit.md"
+   ],
+   "change": "Search plan keeps vocabulary families, essential-versus-desired conditions, no AND-everything queries, question-driven date limits and no exhaustiveness claim. Screening adds include/exclude/uncertain proposals with keyword false-positive guard. Grounded answer keeps original-passage checking, access limits and contradiction handling, expressed as claim-to-passage links. Search logging, citation chasing, sentinel sets and bibliometric maps are application or later-stage responsibilities and were not copied. 2026-09-16 (D44): the search plan names concepts (exactly one core) and providers; query writing, per-provider syntax and date limits were removed because the application compiles the queries."
+  },
+  {
+   "deixis_file": "references/answer-review.md",
+   "derived_from": [],
+   "change": "Written for DEIXIS on 2026-09-14 (D14), not adapted from upstream text. Applies the SKILL.md evidence rules (reading depth, source_stated versus analyst_inference) to a per-claim verdict on the passages each claim cites. Loaded into answer_review steps only."
+  },
+  {
+   "deixis_file": "references/evidence-table.md",
+   "derived_from": [],
+   "change": "Written for DEIXIS on 2026-09-16 (D37, D38), not adapted from upstream text. Applies the SKILL.md evidence rules to evidence table cells: column instructions followed as by a human annotator, the four model cell states, no unit conversion, exact quotes per cited passage, no locators in notes; and to column suggestions. 2026-09-16 (D43): one evidence item per quoted span, several spans of one passage allowed, the cited passage must be the one containing the quote. Loaded into cell_extraction and table_columns steps only."
+  },
+  {
+   "deixis_file": "references/vocabulary-labels.md",
+   "derived_from": [],
+   "change": "Written for DEIXIS on 2026-09-21 (SW17), not adapted from upstream text. One job: sort the phrases the application extracted from the question into the six concept-block labels, copying each phrase exactly and adding, splitting, rewording or dropping none. Says that the word in front of a phrase does not decide its block, that a method named only to narrow the setting is a setting, and that a phrase welding two concepts takes the block of its leading concept. Loaded into vocabulary_labels steps only. The wording follows the one measured in .local/sw-block-labelling-2026-09-21 (deepseek-flash, 8 questions, 28 phrases); its worked example was removed there before the ablation run and no question of that measurement set appears here, so the set stays out of sample."
+  },
+  {
+   "deixis_file": "references/criterion-proposal.md",
+   "derived_from": [],
+   "change": "Written for DEIXIS on 2026-09-21 (SW15, D78), not adapted from upstream text. One job: from the question and the user's steering alone, state the inclusion criterion in one sentence, 2 to 5 parts with 6 to 15 short phrases each, and the title words of papers that are about the topic without being primary studies of this kind. Says that the setting belongs to the search blocks and is no part, and that the thing sought is not the setting: it is named in the criterion sentence and has a part and phrases of its own. No rationale and no strength mark are asked for (SW15.7). Loaded into criterion_proposal steps only. The wording carries the rules measured in .local/sw-criterion-prompt-fix-2026-09-21 (deepseek-flash, effort high, five questions, 15 runs); none of that measurement's five questions, and no question of .local/sw-block-labelling-2026-09-21, appears in this file, so those sets stay out of sample and the file carries no worked example at all."
+  },
+  {
+   "deixis_file": "references/report.md",
+   "derived_from": [],
+   "change": "Written for DEIXIS on 2026-09-17 (P6 slice 1), not adapted from upstream text. Applies SKILL.md's evidence rules to the fixed report skeleton: report_plan, per-section instructions for III-IX/abstract/index_terms, VI/VII's narrowed gap/future-direction exception to the candidate-development ban, phrase repair, and report review. Loaded into report_plan, report_section, report_phrase_repair and report_review steps only. 2026-09-18: made the supplied per-section frames mandatory for every claims[].text and insufficient_evidence[].reason sentence because the first real-model report run produced sentences that followed no frame; evidence support explicitly outranks frame fit."
+  },
+  {
+   "deixis_file": "references/abstract-screening.md",
+   "derived_from": [],
+   "change": "Written for DEIXIS on 2026-09-21 (SW9, SW1.1, D81), not adapted from upstream text. One job: from one record's own abstract, label it candidate / out_of_scope / unresolved for full-text reading, with one verbatim quote from that abstract and one sentence of rationale; inclusion is not decided here and whether the work holds the specific method, model or result the question seeks is explicitly not judged at this depth. The wording carries the rules of the GENERIC2 arm measured in .local/sw-abstract-batch-2026-09-21 (deepseek-flash, effort high, two questions, 408 calls, no human labels). Known defect, not fixed: that topic-independent wording reads more narrowly and less stably than the hand-written single-topic prompt it was compared against (77 of 100 records matched, 17 run-to-run disagreements against 3, 82 candidates down to 60); showing the inclusion criterion narrowed it further, to 48, which is why the criterion sentence, its parts, the cue phrases and the concept blocks are kept out of this step's input. Neither measurement question appears in this file, so both stay out of sample and the file carries no worked example. Loaded into abstract_screening steps only."
+  }
+ ],
+ "phrasebank": {
+  "deixis_file": "references/phrases.md",
+  "source": "Academic Phrasebank, 2015 enhanced edition (John Morley, The University of Manchester), phrase sections of printed pages 7-91. Copyright remains with The University of Manchester.",
+  "form": "converted once on 2026-09-14: one frame per list item under # section and ## subsection headings, table rows written with {a | b} alternatives; nine frames split or joined by the conversion were repaired by hand",
+  "turkish": "each frame is followed by a `tr:` line, a literal Turkish rendering written on 2026-09-14 by Claude Sonnet subagents; checked by script for equal alternative groups and slots, spot-read by the implementing agent, not reviewed by a human translator",
+  "use": "versioned at the user's decision (2026-09-14); loaded into grounded_answer and report_section steps, English frames or their Turkish renderings by question language; grounded-answer sentences and report-section prose sentences are checked against the frames of the answer language; its hash is part of skill_package_hash"
+ },
+ "upstream_update_policy": "Quaestio changes are not imported automatically. A change is compared by diff, recorded here with the new revision and hashes, and re-tested with the behavior cases before the package version changes.",
+ "distribution_review": "not_done; required before public distribution of adapted text",
+ "behavioral_validation": "development cases run on 2026-09-14 with Codex gpt-5.6-luna and rerun on 2026-09-15 after the phrasebank rules (D15), every automatic check passing on the single attempt; the unsupported-mode rule was tightened after MB06 failed. The search-plan wording was subsequently revised for the in-sample packet-size P4 measurement; earlier behavior cases are no longer executions of the current instruction hash. One baseline and one revised packet-size run are recorded locally, but no held-out evaluation or human claim review has been completed; see tests/model_behavior/cases.json and .local/p4-eval-2026-09-15-packet/analysis.md. On 2026-09-16 (D44) the search-plan section was rewritten for SearchPlan v2: the model gives concepts with exactly one core concept and the providers, and the application compiles the queries; no behavior case has been run on this wording. On 2026-09-17 (D57) the core-concept rule gained a domain-versus-method-field sentence with a power-grid example; the stored search_plan StepInput of one live research was re-run three times with gpt-5.6-luna before and after the change (in-sample for that one question; results in .local/search-plan-core-2026-09-17)."
 }

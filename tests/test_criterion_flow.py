@@ -13,7 +13,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.domain.canonical import sha256_hex
-from deixis.domain.rules import CRITERION_CALLS, TEST_EFFORT_BUDGETS
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS,
+                                 TEST_EFFORT_BUDGETS)
+from deixis.workflow.abstract_stage import model_calls
 from deixis.models.adapter import ModelStepResult
 from deixis.workflow.criterion import PROPOSAL_RUNS
 from deixis.workflow.decisions import CRITERION_FIELDS
@@ -99,8 +101,10 @@ def test_an_sw_discovery_searches_with_no_criterion_while_every_model_call_fails
     assert criterion_fields(body) == {"inclusion_criterion": None, "criterion_parts": None, "cue_phrases": None,
                                       "exclusion_title_words": None}
     assert "criterion_origin" not in body
-    # The run went on to screening and stopped there, at the first step that needs a model, not before it.
-    assert (run["status"], run["pause_reason"]) == ("paused", "model_call_failed"), run
+    # The run went on to the abstract stage, whose code half needs no model. This fixture's one record carries
+    # both concept blocks in its title, so code closed it and the run finished with the connection down (slice 09).
+    assert (run["status"], run["pause_reason"]) == ("completed", None), run
+    assert [s["operation_key"] for s in run["steps"]][-1] == "abstract_stage"
 
 
 def test_two_failed_proposals_do_not_cancel_the_third_call_and_one_run_builds_nothing(tmp_path, monkeypatch):
@@ -159,9 +163,11 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     # The known defect's trace: a record only, read by nothing in this slice.
     assert body["criterion_origin"]["sought_term_in_criterion"] is True
     assert body["thresholds"]["criterion"] == {"proposal_runs": 3, "proposal_majority": 2}
-    # An sw discovery run is given the three calls on top of its preset, so its room for screening is unchanged.
+    # An sw discovery run is given the criterion's three calls, and since slice 09 the abstract stage's own, on
+    # top of its preset; the preset a legacy run and an answer run read is untouched.
     presets = {preset.max_model_calls for preset in TEST_EFFORT_BUDGETS.values()}
-    assert body["budget"]["max_model_calls"] - CRITERION_CALLS in presets
+    abstract_calls = model_calls(ABSTRACT_READ_LIMIT["quick"], ABSTRACT_BATCH, ABSTRACT_RUNS)
+    assert body["budget"]["max_model_calls"] - CRITERION_CALLS - abstract_calls in presets
 
 
 def test_the_criterion_decides_nothing_and_selects_nothing_in_this_slice(tmp_path, monkeypatch):

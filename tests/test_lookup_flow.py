@@ -47,11 +47,17 @@ def DeadAdapter():
 
 
 def excluding(step_input):
-    """A scripted model that proposes `exclude` for every record it is shown.
+    """A scripted model that puts every record it is shown out of scope.
 
     It is the sharpest test of SW5.5: a record this model never sees cannot be excluded by it, and a record without
-    an abstract must never be excluded by anything.
+    an abstract must never be excluded by anything. Since slice 09 the model's word is a proposal only; the code
+    stage turns two agreeing runs into the decision, so the quote is copied from the abstract it was shown.
     """
+    if step_input["task_type"] == "abstract_screening":
+        return json.dumps(envelope(step_input, "deixis.abstract_screening.v1") | {"records": [
+            {"candidate_id": c["candidate_id"], "label": "out_of_scope",
+             "quote": " ".join((c["abstract"] or "").split())[:60],
+             "rationale": "SYNTHETIC: another setting."} for c in step_input["candidates"]]})
     if step_input["task_type"] != "screening":
         return valid_response(step_input)
     return json.dumps(envelope(step_input, "deixis.screening_proposal.v1") | {
@@ -435,12 +441,18 @@ def test_an_abstract_phrase_and_a_reference_count_flag_a_record_that_is_still_sc
         screened = _screened_records(store, run_id)
         flags = {row[0]: row[1] for row in store.conn.execute(
             "SELECT source_version_id, flag FROM record_flags")}
+        labelling = json.loads(store.conn.execute(
+            "SELECT output_json FROM run_steps WHERE run_id = ? AND operation_key = 'record_flags'",
+            (run_id,)).fetchone()[0])
         decisions = {key: decision_of(store, rid, by_id[key]) for key in ("W1", "W2")}
     finally:
         client.__exit__(None, None, None)
     assert flags == {by_id["W1"]: "survey_abstract_phrase", by_id["W2"]: "survey_reference_count"}
     assert by_id["W1"] in screened and by_id["W2"] in screened
-    assert decisions["W1"] is None and decisions["W2"] is None  # a label, not a decision
+    # A label, not a decision: the labelling step wrote none. What each record carries afterwards is the abstract
+    # stage's own decision, taken from the two model runs (slice 09), not from the flag.
+    assert labelling["decisions"] == {}
+    assert {decisions[key]["reason_code"] for key in ("W1", "W2")} == {"runs_agree_out_of_scope"}
 
 
 def test_a_second_run_of_the_same_scope_writes_no_second_flag_and_no_second_decision(tmp_path, monkeypatch):
@@ -576,12 +588,13 @@ def _screened_records(store, run_id):
     """Which records this run really put in front of the screening model, read from the stored step inputs.
 
     The step input names candidates, not records, so the candidate rows map them back; what was sent is what was
-    stored, which is the only account of what the model saw.
+    stored, which is the only account of what the model saw. Since slice 09 an `sw` run's screening step is the
+    abstract stage's, whose stored payload holds the record identifiers (the model itself saw short handles).
     """
     sent = set()
     for row in store.conn.execute(
         "SELECT i.payload_json FROM step_inputs i JOIN run_steps s ON s.id = i.step_id"
-        " WHERE s.run_id = ? AND s.kind = 'model:screening'", (run_id,),
+        " WHERE s.run_id = ? AND s.kind IN ('model:screening', 'model:abstract_screening')", (run_id,),
     ):
         sent |= {c["candidate_id"] for c in json.loads(row[0]).get("candidates", [])}
     if not sent:

@@ -29,7 +29,7 @@ from deixis.workflow.decisions import DecisionStore
 from deixis.workflow import links
 from deixis.workflow.expansion import expand
 from deixis.workflow.flow import answer_source_order, fuse_rankings
-from deixis.workflow import ranking
+from deixis.workflow import abstract_stage, ranking
 from deixis.workflow.protocol import build_protocol
 from deixis.workflow.store import Store
 from deixis.workflow.approval import apply_criterion, canonical_edits, edited_extraction
@@ -427,6 +427,43 @@ def stage_protocol_approval(rows: list[dict[str, Any]]) -> Any:
                 APPROVAL_CRITERION)}
 
 
+# The blocks, the read plan and the two model runs of the abstract stage (slice 09, SW9, SW14.6). One SYNTHETIC
+# question and six SYNTHETIC records from a field no other stage here uses: a title holding both gate blocks, a
+# notice, an artifact with a stored link, two records the model reads, and one whose two versions share a work and
+# whose head carries no abstract of its own.
+ABSTRACT_BLOCKS = {"setting": ["greenhouse tomato"], "task": ["irrigation scheduling"], "outcome": ["marketable yield"]}
+ABSTRACT_ORDER = ["A1", "A2", "A4", "A6", "A7"]
+# What each of the two runs proposed about each record, and whether its quote was found. The runs carry no order of
+# their own beyond their number, and neither do the records.
+ABSTRACT_PROPOSALS = {
+    "A4": [{"label": "candidate", "quote_verified": True}, {"label": "candidate", "quote_verified": True}],
+    "A6": [{"label": "out_of_scope", "quote_verified": True}, {"label": "candidate", "quote_verified": True}],
+    "A7": [{"label": "out_of_scope", "quote_verified": False}, {"label": "out_of_scope", "quote_verified": True}],
+}
+
+
+def stage_abstract_stage(rows: list[dict[str, Any]]) -> Any:
+    """What code settles, which works the model reads and what the two runs mean (slice 09).
+
+    The records are what the providers happened to return and carry no order of their own, so neither their order
+    nor a set's iteration order may reach a code, the batches or a combined decision. The reading order is the
+    inspection order the ranking stored, which is an order and is therefore given, not shuffled.
+    """
+    records = {row["id"]: row for row in sorted(rows, key=lambda row: row["id"])}
+    codes = {rid: abstract_stage.code_outcome(row, ABSTRACT_BLOCKS, {"A3"}) for rid, row in records.items()}
+    by_work: dict[str, list[dict[str, Any]]] = {}
+    for rid, row in records.items():
+        by_work.setdefault(row["work_id"], []).append(
+            {"id": rid, "has_abstract": bool(row["abstract"]), "code": codes[rid],
+             "decision": row.get("decision"), "decided_by": row.get("decided_by"), "stale": False})
+    works = [{"work_id": work_id, "head": min(v["id"] for v in versions), "versions": versions}
+             for work_id, versions in sorted(by_work.items())]
+    plan = abstract_stage.read_plan(ABSTRACT_ORDER, works, limit=4, batch=2)
+    combined = {rid: abstract_stage.combine(*runs) for rid, runs in sorted(ABSTRACT_PROPOSALS.items())}
+    return {"codes": codes, "reading": {work["work_id"]: abstract_stage.reading_version(work) for work in works},
+            "plan": plan, "combined": combined}
+
+
 def stage_build_protocol(rows: list[dict[str, Any]]) -> Any:
     scope = SCOPE | {"providers": [row["id"] for row in rows]}
     return build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
@@ -448,6 +485,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "criterion": stage_criterion,
     "protocol_approval": stage_protocol_approval,
     "record_ranking": stage_record_ranking,
+    "abstract_stage": stage_abstract_stage,
 }
 
 ROWS: dict[str, list[dict[str, Any]]] = {
@@ -515,6 +553,31 @@ ROWS: dict[str, list[dict[str, Any]]] = {
          "abstract": "We deliver bread to the market every morning.", "own_ids": ["W5"], "references": None},
         {"id": "R6", "work_id": "wrk_six", "title": "SYNTHETIC diffusion channel capacity",
          "abstract": None, "own_ids": ["W6"], "references": []},
+    ],
+    # Six SYNTHETIC records of five works from one field: A1 holds both gate blocks in its title, A2 is a
+    # correction notice, A3 an artifact with a stored link, A4 and A6 are read by the model, and A7 shares a work
+    # with A5, whose head carries no abstract of its own.
+    "abstract_stage": [
+        {"id": "A1", "work_id": "wrk_a", "doi": "10.1/syn.1", "version_label": None,
+         "title": "SYNTHETIC irrigation scheduling of a greenhouse tomato crop",
+         "abstract": "We schedule the irrigation of a greenhouse tomato crop."},
+        {"id": "A2", "work_id": "wrk_b", "doi": "10.1/syn.2", "version_label": None,
+         "title": "Publisher Correction: SYNTHETIC irrigation scheduling of a greenhouse tomato crop",
+         "abstract": "This corrects the SYNTHETIC article on irrigation scheduling."},
+        {"id": "A3", "work_id": "wrk_c", "doi": "10.5281/zenodo.9", "version_label": None,
+         "title": "SYNTHETIC irrigation scheduling data of a greenhouse tomato crop",
+         "abstract": "The SYNTHETIC measurements behind the irrigation study."},
+        {"id": "A4", "work_id": "wrk_d", "doi": "10.1/syn.4", "version_label": None,
+         "title": "SYNTHETIC irrigation scheduling of an open field crop",
+         "abstract": "We vary the irrigation scheduling of an open field crop and report the water it used."},
+        {"id": "A5", "work_id": "wrk_e", "doi": "10.1/syn.5", "version_label": None,
+         "title": "SYNTHETIC drip lines in a greenhouse tomato row", "abstract": None},
+        {"id": "A7", "work_id": "wrk_e", "doi": "10.48550/arxiv.7", "version_label": "submittedVersion",
+         "title": "SYNTHETIC drip lines in a greenhouse tomato row (preprint)",
+         "abstract": "We place drip lines along a greenhouse tomato row and report the water each one carries."},
+        {"id": "A6", "work_id": "wrk_f", "doi": "10.1/syn.6", "version_label": None,
+         "title": "SYNTHETIC bakery delivery rounds of a small town",
+         "abstract": "We measure the irrigation scheduling of the bakery garden between two delivery rounds."},
     ],
     "work_outcome": [
         # First in the list: both shuffles the test runs reverse this pair.

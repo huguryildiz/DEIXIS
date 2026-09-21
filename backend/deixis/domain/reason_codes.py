@@ -47,6 +47,16 @@ REASON_CODES: dict[str, ReasonCode] = _table(
     ReasonCode("runs_disagree_kept_as_candidate", "abstract", "candidate", "code", "fulltext_fetch"),
     ReasonCode("quote_not_found_kept_as_candidate", "abstract", "candidate", "code", "fulltext_fetch"),
     ReasonCode("abstract_not_proposed", "abstract", "unresolved", "code", "abstract_model"),
+    # Two kinds of record the abstract stage decides without a model: a correction, retraction or withdrawal notice,
+    # and a data or code artifact that a stored link says belongs to a paper the search also found (SW6.2). An
+    # artifact with no such link is screened like any other record.
+    ReasonCode("notice_record", "abstract", "out_of_scope", "code", "none"),
+    ReasonCode("artifact_of_paper", "abstract", "out_of_scope", "code", "none"),
+    # Outside this run's read limit: the model was not asked about the record and a later discovery run asks. It is
+    # not a verdict about the record and nothing is dropped by it (SW9.4, K3).
+    ReasonCode("abstract_not_read", "abstract", "unresolved", "code", "abstract_model"),
+    # Both runs read the abstract and neither could tell; only the full text can.
+    ReasonCode("runs_agree_unresolved", "abstract", "unresolved", "model_agreement", "fulltext_fetch"),
     # A strong title word routes the record out of screening and into the seed pool; it is not "out of scope"
     # (SW5.4, SW9.3). The record is never deleted and the user may still include it.
     ReasonCode("survey_title_word", "abstract", "unresolved", "code", "seed_pool"),

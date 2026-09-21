@@ -149,6 +149,18 @@ def openalex_rows(view):
     return [row for row in view["search_runs"] if row["provider"] == "openalex"]
 
 
+def reached_screening(run):
+    """Whether the run got past the search stage to the abstract stage, whatever it then did (slice 09).
+
+    These tests run with the model connection down. Before slice 09 that always paused the run at the screening
+    call; now the abstract stage's code half decides first, so a run whose records code can classify finishes.
+    What each test here is about is that the search stage completed and the run went on, not which of the two.
+    """
+    assert "abstract_stage" in {s["operation_key"] for s in run["steps"]}, run
+    assert run["status"] in ("paused", "completed") and run["pause_reason"] in (None, "model_call_failed"), run
+    return True
+
+
 def test_a_phrase_the_first_round_repeated_enters_a_second_round_query(tmp_path, monkeypatch):
     """The question never wrote "duty cycle"; the records it found did, and the field probe kept it."""
     field = Field()
@@ -281,7 +293,7 @@ def test_a_count_probe_that_cannot_be_read_accepts_nothing_and_the_run_goes_on(t
         client.__exit__(None, None, None)
     assert expansion["terms"] == []
     assert {row["reason"] for row in expansion["candidates"]} == {"count_unknown"}
-    assert run["pause_reason"] == "model_call_failed"  # the run reached screening, which is where a model is needed
+    assert reached_screening(run)  # the second round refused every phrase and the run went on
     assert openalex_rows(view)
 
 

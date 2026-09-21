@@ -57,6 +57,18 @@ def ranks(store, rid):
         "SELECT rank FROM candidates WHERE research_id = ? ORDER BY rank", (rid,))]
 
 
+def reached_screening(run):
+    """Whether the run got past the search stage to the abstract stage, whatever it then did (slice 09).
+
+    These tests run with the model connection down. Before slice 09 that always paused the run at the screening
+    call; now the abstract stage's code half decides first, so a run whose records code can classify finishes.
+    What each test here is about is that the search stage completed and the run went on, not which of the two.
+    """
+    assert "abstract_stage" in {s["operation_key"] for s in run["steps"]}, run
+    assert run["status"] in ("paused", "completed") and run["pause_reason"] in (None, "model_call_failed"), run
+    return True
+
+
 def test_a_page_ranks_its_records_where_the_query_left_off(store):
     """Rank is the record's place in the query, not in its page, so a later page never outranks an earlier one."""
     rid, run_id = research(store)
@@ -267,7 +279,7 @@ def test_a_resumed_run_asks_for_no_page_twice(tmp_path, monkeypatch):
     client = client_of(app_for(tmp_path, monkeypatch, providers))
     try:
         rid, run_id, _, run = discover(client)
-        assert run["status"] == "paused" and run["pause_reason"] == "model_call_failed", run
+        assert reached_screening(run)
         read = list(providers.openalex)
         client.post(f"/api/runs/{run_id}/resume")
         view, run = wait(client, rid, run_id)
@@ -283,7 +295,7 @@ def test_a_failed_page_stops_its_query_only_and_is_retried_on_request(tmp_path, 
     try:
         rid, run_id, view, run = discover(client)
         # The first page's records stand, the failed page is recorded, and the other provider reads all of its own.
-        assert run["status"] == "paused" and run["pause_reason"] == "model_call_failed", run
+        assert reached_screening(run)
         rows = rows_of(view)
         assert [(r["page_number"], r["status"], r["stop_reason"]) for r in rows] == [
             (0, "completed", None), (1, "rate_limited", "page_failed")]
@@ -384,7 +396,7 @@ def test_a_paged_run_may_send_more_requests_than_max_provider_requests(tmp_path,
         rid, run_id, view, run = discover(client)
     finally:
         client.__exit__(None, None, None)
-    assert len(providers.openalex) == 4 and run["pause_reason"] == "model_call_failed", run
+    assert len(providers.openalex) == 4 and reached_screening(run)
     assert run["usage"]["provider_requests"] > 3  # quick effort allows three provider requests
     assert rows_of(view)[-1]["stop_reason"] == "read_limit"
 
@@ -442,7 +454,7 @@ def test_pages_that_each_needed_a_rate_limit_retry_do_not_exhaust_the_request_al
         rid, run_id, view, run = discover(client)
     finally:
         client.__exit__(None, None, None)
-    assert run["pause_reason"] == "model_call_failed", run  # it read everything and stopped at screening
+    assert reached_screening(run)  # it read everything and went on to the abstract stage
     assert rows_of(view)[-1]["stop_reason"] and rows_of(view, "crossref")[-1]["stop_reason"]
     assert sum(r["result_count"] for r in rows_of(view)) == 200 and sum(r["result_count"] for r in rows_of(view, "crossref")) == 200
 

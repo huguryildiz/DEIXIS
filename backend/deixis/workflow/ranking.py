@@ -69,19 +69,34 @@ def bm25_scores(pool: list[dict[str, Any]], query_words: set[str]) -> dict[str, 
     return scores
 
 
+def block_forms(blocks: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Each block's terms as the space-padded run of words a word-start search looks for.
+
+    The one form the product matches a concept block with. A form matches at a word start, so a root catches its
+    plural but not a word that merely contains it (named deviation 3); this is deliberately not
+    `expansion.count_yields`'s two-ended match, which counts rather than ranks. The abstract stage reads block
+    presence through this same pair of helpers (slice 09) rather than writing a second matcher.
+    """
+    return {name: [f" {' '.join(words(form))}" for form in group if words(form)] for name, group in blocks.items()}
+
+
+def blocks_in(forms: dict[str, list[str]], text: str) -> set[str]:
+    """The blocks at least one of whose forms stands at a word start in `text`."""
+    padded = _padded(text)
+    return {name for name, group in forms.items() if any(form in padded for form in group)}
+
+
 def block_scores(pool: list[dict[str, Any]], blocks: dict[str, list[str]]) -> dict[str, tuple[int, int]]:
     """How many concept blocks the title hits, then how many distinct forms title and abstract hold.
 
     A pair, not fuse.py's `blocks * 100 + forms` (named deviation 2): the order is the same and no term count can
-    overflow into the block count. A form matches at a word start, so a root catches its plural but not a word that
-    merely contains it (named deviation 3); this is deliberately not `expansion.count_yields`'s two-ended match,
-    which counts rather than ranks.
+    overflow into the block count.
     """
-    forms = {name: [f" {' '.join(words(form))}" for form in group if words(form)] for name, group in blocks.items()}
+    forms = block_forms(blocks)
     scores: dict[str, tuple[int, int]] = {}
     for row in pool:
-        title, whole = _padded(row["title"]), _padded(f"{row['title']} {row['abstract'] or ''}")
-        in_title = sum(any(form in title for form in group) for group in forms.values())
+        whole = _padded(f"{row['title']} {row['abstract'] or ''}")
+        in_title = len(blocks_in(forms, row["title"]))
         distinct = sum(form in whole for group in forms.values() for form in group)
         scores[row["id"]] = (in_title, distinct)
     return scores
@@ -231,10 +246,12 @@ def _versions(store: Any, research_id: str) -> dict[str, dict[str, Any]]:
     2,000 candidates when it asked per record (slice 05 review).
     """
     rows = {row["id"]: {"id": row["id"], "work_id": row["work_id"], "title": row["title"],
+                        # The abstract stage reads the same pool and needs what `record_kind` reads (slice 09).
+                        "doi": row["doi"], "version_label": row["version_label"],
                         "abstract": row["abstract"], "references_read": bool(row["references_read"]),
                         "own_ids": set(), "references": set()}
             for row in store.conn.execute(
-                "SELECT v.id, v.work_id, v.title, v.references_read,"
+                "SELECT v.id, v.work_id, v.title, v.doi, v.version_label, v.references_read,"
                 " (SELECT group_concat(p.text, ' ') FROM passages p WHERE p.source_version_id = v.id"
                 "  AND p.kind = 'abstract') AS abstract"
                 " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"

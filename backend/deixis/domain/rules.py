@@ -31,6 +31,16 @@ SW_READ_LIMIT = 2_000
 # Screening proposals are requested for at most this many candidates per model call.
 SCREENING_BATCH = 40
 
+# The abstract stage of an `sw` run (K3, decided 2026-09-21; measurement in .local/sw-abstract-batch-2026-09-21).
+# The model reads the first N works of the inspection order, N by effort; every other work stays `abstract_not_read`
+# and the next discovery run of the same question reads on from there. Hand-picked, not optimised: a batch of 20 gave
+# the same labels as one record per call on two topics (96 of 100, 54 of 60) at half the time, and label accuracy was
+# not measured at all. The quote bound keeps a two-word fragment from standing as a whole abstract's evidence.
+ABSTRACT_READ_LIMIT = {"quick": 40, "standard": 100, "detailed": 300}
+ABSTRACT_BATCH = 20
+ABSTRACT_RUNS = 2
+ABSTRACT_QUOTE_MIN_CHARS = 12
+
 # Effort presets bound work; they are not paper-count or accuracy guarantees. Model calls cover the search plan, one
 # screening call per SCREENING_BATCH candidates and the answer, each with its one schema repair. Provider requests are
 # the plan's query limit; with several providers enabled, one query per relevant provider needs room. `core_depth` is
@@ -72,10 +82,12 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
     return "current"
 
 
-LITERATURE_TASKS = ("search_plan", "screening", "vocabulary_labels", "criterion_proposal")
+LITERATURE_TASKS = ("search_plan", "screening", "vocabulary_labels", "criterion_proposal", "abstract_screening")
 # A repair would let the step name a phrase the question does not hold and then take it back. The block labelling
-# gets one attempt: an output that invents, drops or repeats a phrase is rejected and the rule stands (SW17.1).
-NO_REPAIR_TASKS = ("vocabulary_labels",)
+# gets one attempt: an output that invents, drops or repeats a phrase is rejected and the rule stands (SW17.1). An
+# abstract screening batch gets one too, because an invalid output costs nothing: its records stay
+# `abstract_not_proposed` and a later discovery run reads them (slice 09).
+NO_REPAIR_TASKS = ("vocabulary_labels", "abstract_screening")
 
 
 def step_model(scope: dict[str, Any], task_type: str) -> tuple[str, str | None, str | None]:

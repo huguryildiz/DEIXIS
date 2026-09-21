@@ -87,7 +87,7 @@ def test_build_protocol_is_repeatable_and_reads_its_thresholds_from_their_defini
     scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
              "seed_mode": "question_only", "search_workflow": "sw", "providers": ["openalex", "crossref"],
              "model_connection": "fake", "requested_model": "fake-model", "reasoning_effort": None,
-             "literature_model": None, "review_mode": "off"}
+             "literature_model": None, "review_mode": "off", "effort": "quick"}
     plan = {"concepts": [{"label": "diffusion channel", "role": "core", "synonyms": ["diffusion channel"]}]}
     queries = [{"provider_id": "openalex", "query_text": "diffusion channel", "results": 25}]
     settings = Settings(data_dir=None)
@@ -115,11 +115,14 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     from deixis.workflow import protocol
     from deixis.workflow.criterion import THRESHOLDS as CRITERION_THRESHOLDS
     from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS
+    from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT,
+                                     ABSTRACT_RUNS)
     from deixis.workflow.ranking import SIGNALS as RANKING_SIGNALS, THRESHOLDS as RANKING_THRESHOLDS
 
     scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
              "seed_mode": "question_only", "providers": ["openalex"], "model_connection": "fake",
-             "requested_model": "fake-model", "reasoning_effort": None, "literature_model": None, "review_mode": "off"}
+             "requested_model": "fake-model", "reasoning_effort": None, "literature_model": None,
+             "review_mode": "off", "effort": "quick"}
     settings = Settings(data_dir=None)
     legacy = protocol.build_protocol(scope | {"search_workflow": "legacy"}, {}, None, [], "pkg_hash", settings)
     sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
@@ -129,7 +132,10 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     assert sw["thresholds"] == legacy["thresholds"] | {
         "record_identity": THRESHOLDS, "search_read": {"read_limit_per_query": SW_READ_LIMIT},
         "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS,
-        "ranking": RANKING_THRESHOLDS}
+        "ranking": RANKING_THRESHOLDS,
+        # How deep this research's effort reads abstracts, and what counts as a verbatim quote (slice 09, D81).
+        "abstract_screening": {"read_limit": ABSTRACT_READ_LIMIT[scope["effort"]], "batch": ABSTRACT_BATCH,
+                               "runs": ABSTRACT_RUNS, "quote_min_chars": ABSTRACT_QUOTE_MIN_CHARS}}
     # The survey word lists (slice 05) and the ranking signals (slice 07) are the only other sw-only fields of the
     # body; a legacy body carries no survey block and an empty signal list, exactly as it did before slice 07.
     rest = lambda body: {k: v for k, v in body.items()
@@ -286,7 +292,7 @@ def test_a_later_discovery_run_with_another_plan_opens_a_new_protocol_revision(t
 SW_SCOPE = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
             "seed_mode": "question_only", "providers": ["openalex"], "model_connection": "fake",
             "requested_model": "fake-model", "reasoning_effort": None, "literature_model": None, "review_mode": "off",
-            "search_workflow": "sw"}
+            "search_workflow": "sw", "effort": "quick"}
 
 
 def vocabulary_for(*phrases, claim_words=(), exclusion_words=()):

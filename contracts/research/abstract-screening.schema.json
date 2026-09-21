@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/abstract-screening.schema.json",
+  "title": "AbstractScreening",
+  "description": "Whether each given record's abstract is worth reading in full (SW9, SW1.1). This is not an inclusion decision and no record is included by it: the application decides, from two independent runs of this step, and only a full text can include anything. One entry per given record, judged on its own abstract alone.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "records"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "deixis.abstract_screening.v1" },
+    "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
+    "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
+    "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "records": {
+      "type": "array",
+      "description": "One entry per candidate in the step input, in the order they were given.",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "label", "quote", "rationale"],
+        "properties": {
+          "candidate_id": { "$ref": "common.schema.json#/$defs/candidate_id" },
+          "label": {
+            "type": "string",
+            "description": "candidate: the abstract shows the work is on the question's topic. out_of_scope: it is about something else. unresolved: the abstract does not say.",
+            "enum": ["candidate", "out_of_scope", "unresolved"]
+          },
+          "quote": {
+            "type": "string",
+            "description": "One span copied verbatim from that record's own abstract, supporting the label. Empty only under unresolved. The application looks the span up in the abstract it showed and records whether it found it; a quote it cannot find does not drop the record.",
+            "maxLength": 600
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        }
+      }
+    }
+  }
+}

@@ -122,13 +122,17 @@ class DecisionStore:
                                 "restored after an undone human decision", previous["scope_revision"],
                                 previous["protocol_hash"], previous["criterion_hash"], closing=current)
 
-    def is_stale(self, decision: dict[str, Any]) -> bool:
+    def staleness_key(self, research_id: str) -> tuple[int, str | None]:
+        """What a decision must have been made under to still be current: the question revision and the criterion
+        digest (SW11.10). Read once by a stage that judges many decisions, rather than twice per record."""
+        scope_revision = self.store.research(research_id)["current_scope_revision"]
+        _, criterion_hash = self._protocol_hashes(research_id, scope_revision)
+        return scope_revision, criterion_hash
+
+    def is_stale(self, decision: dict[str, Any], key: tuple[int, str | None] | None = None) -> bool:
         """Whether the research moved on from what this decision was decided under (SW11.10). It is marked, not moved."""
-        scope_revision = self.store.research(decision["research_id"])["current_scope_revision"]
-        if decision["scope_revision"] != scope_revision:
-            return True
-        _, criterion_hash = self._protocol_hashes(decision["research_id"], scope_revision)
-        return decision["criterion_hash"] != criterion_hash
+        scope_revision, criterion_hash = key if key is not None else self.staleness_key(decision["research_id"])
+        return decision["scope_revision"] != scope_revision or decision["criterion_hash"] != criterion_hash
 
     # ---- what each model run proposed --------------------------------------------------
     def add_proposal(self, research_id: str, source_version_id: str, stage: str, step_id: str, run_no: int, label: str, *,

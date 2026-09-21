@@ -442,6 +442,8 @@ const tr: Record<string, string> = {
   'cannot assess': 'değerlendirilemiyor',
   'Search plan (model)': 'Arama planı (model)',
   'Screening proposal (model)': 'Tarama önerisi (model)',
+  'Abstract screening (code)': 'Özet taraması (kod)',
+  'Abstract screening proposal (model)': 'Özet taraması önerisi (model)',
   'Source-linked answer (model)': 'Kaynağa bağlı yanıt (model)',
   'Claim review (reviewer model)': 'İddia incelemesi (inceleyici model)',
   '{provider} search {n}': '{provider} araması {n}',

@@ -26,7 +26,8 @@ from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, math_reader, ocr, pdf
 from deixis.domain import canonical, contracts, expansion as phrase_candidates, phrasebank, vocabulary as question_words
-from deixis.domain.rules import (MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH,
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
+                                 MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH,
                                  SW_READ_LIMIT, after_invalid_output, effective_reviewer, schema_repairs, step_model)
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
@@ -37,6 +38,7 @@ from deixis.providers.common import FIRST_PAGE, MAX_RATE_LIMIT_RETRIES, SearchOu
 from deixis.providers.registry import CONNECTORS, Connector
 from deixis.storage.db import dumps, new_id, now
 from deixis.workflow.concurrency import ModelCallLimiter
+from deixis.workflow import abstract_stage
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import criterion as criterion_rules
 from deixis.workflow import expansion as expansion_rules
@@ -44,13 +46,15 @@ from deixis.workflow import lookups
 from deixis.workflow import protocol
 from deixis.workflow import ranking as ranking_rules
 from deixis.workflow import vocabulary as vocabulary_rules
-from deixis.workflow.decisions import DecisionStore
+from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
 from deixis.workflow.equations import equation_state
 from deixis.workflow.store import NotFound, RunInProgress, Store
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
 
 CAPABILITIES = {
     "supported_tasks": ["search_plan", "screening", "grounded_answer", "answer_review", "cell_extraction", "table_columns", "research_title"],
+    # `abstract_screening` is deliberately not listed: adding it would change every stored StepInput, including a
+    # `legacy` run's, and this field tells the model what the product can do, not which step it is running.
     "unsupported_tasks": ["synthesis", "candidate_development", "claim_check", "experiment"],
 }
 MAX_DOWNLOADS_PER_RUN = 8
@@ -66,6 +70,9 @@ MAX_FILL_PASSAGES = 24
 MAX_RECHECK_PASSAGES = 16
 COLUMN_FIELDS = ("name", "instruction", "answer_format", "options", "allow_multiple", "unit_hint")
 RRF_K = 60  # reciprocal rank fusion constant (D27)
+# Steps whose records are shown as short handles instead of stored identifiers, because long random IDs were
+# mis-copied (D12). The abstract stage joined them in slice 09: its batches name 20 candidates each.
+HANDLE_TASKS = ("grounded_answer", "answer_review", "cell_extraction", "abstract_screening")
 FORMULATION_SCORE_THRESHOLD = 3
 FORMULATION_TERMS = re.compile(
     r"\b(?:minimi[sz]e|maximi[sz]e|subject\s+to|s\.\s*t|objective\s+function|constraints?|decision\s+variables?"
@@ -372,62 +379,54 @@ class ResearchFlow:
                 # succeeded, so nothing here can pause it (D18).
                 await self._search_pages(run, index, query, per_query, retry_failed, extra_requests)
 
-        held: set[str] = set()
         if scope.get("search_workflow") == "sw":
             # Both rounds are done and nothing here feeds the search: a second source is asked for the abstracts
             # that are missing, the links it names are read, and the survey labels are written (slice 05).
-            held = await self._second_sources(run, scope, vocabulary)
+            await self._second_sources(run, scope, vocabulary)
 
         self._checkpoint(run_id, revision)
         # A work is screened once, through its head; its other versions follow the head's selection (D46, D48).
         heads = set(self.store.work_heads(rid).values())
         pool = [c for c in self.store.candidates(rid, revision)
                 if c["origin"] != "user" and c["source_version_id"] in heads]
-        order: list[str] = []
         if scope.get("search_workflow") == "sw":
             # The whole pool is embedded and then ranked before screening reads anything (SW7, SW8, slice 07). The
-            # held records are ranked too; only the screening list leaves them out.
+            # records slice 05 holds back are ranked too; only the read plan leaves them out.
             await self._source_similarity(run, scope, pool)
             order = await self._ranking(run, scope, vocabulary)
-        self.store.update_run(run_id, stage="screening")
-        # A held record is not screened and not deleted: it stays `pending` and the user may still include it. The
-        # filter runs before the candidate limit, so holding one record does not cost another its place.
-        screenable = [c for c in pool if c["source_version_id"] not in held]
-        # A record an earlier run screened goes last, as it does in the candidate order. One this run screened keeps
-        # its place: a batch is keyed by where it starts, so a run resumed between two batches must find the same
-        # list, or the places the first batch held are read again and the next ones never are.
-        own = {s["id"] for s in self.store.run_steps(run_id)}
-
-        def earlier(c: dict[str, Any]) -> bool:
-            return bool(c["proposed"]) and c["proposal_step_id"] not in own
-
-        if order:
-            place = {svid: position for position, svid in enumerate(order)}
-            # A record the ranking did not see — a version that headed its work only after the ranking — keeps its
-            # place in the candidate order, at the end. The sort is stable, so that order is what decides there.
-            screenable = sorted(screenable, key=lambda c: (earlier(c), place.get(c["source_version_id"], len(place))))
+            self.store.update_run(run_id, stage="screening")
+            # Slice 09: code classifies every record and the model is asked, twice, only about the works code left
+            # open and the read limit reaches. Nothing is included from an abstract and `max_candidates` does not
+            # cut here any more: what the model does not read stays `abstract_not_read` for the next run.
+            await self._abstract_stage(run, scope, vocabulary, order)
         else:
+            self.store.update_run(run_id, stage="screening")
+            # A record an earlier run screened goes last, as it does in the candidate order. One this run screened
+            # keeps its place: a batch is keyed by where it starts, so a run resumed between two batches must find
+            # the same list, or the places the first batch held are read again and the next ones never are.
+            own = {s["id"] for s in self.store.run_steps(run_id)}
+
+            def earlier(c: dict[str, Any]) -> bool:
+                return bool(c["proposed"]) and c["proposal_step_id"] not in own
+
             # The candidate order itself, with this run's own proposals left where they were.
-            screenable = sorted(screenable, key=lambda c: (earlier(c), c["rank"] is not None, c["rank"] or 0, c["created_at"]))
-        # The limit still cuts (slice 09 lifts it); what changed is the order it cuts by. A record outside it stays
-        # `pending`, is counted and is not deleted.
-        candidates = screenable[: budget["max_candidates"]]
-        # Map through all candidates: a resumed run may apply a proposal made for an earlier candidate list.
-        by_candidate = {c["candidate_id"]: c["source_version_id"] for c in self.store.candidates(rid)}
-        for start in range(0, len(candidates), SCREENING_BATCH):
-            # The first batch keeps the single-call key so a run from before batching resumes without screening again.
-            key = "screening" if start == 0 else f"screening:{start // SCREENING_BATCH}"
-            output = await self._model_step(run, scope, key, "screening", candidate_rows=candidates[start:start + SCREENING_BATCH])
-            self._checkpoint(run_id, revision)
-            if output.get("invalid"):
-                self._fail(run_id, "invalid_model_output", {"step": key, "issues": output["issues"]})
-            step = self.store.step(run_id, key, "model:screening")
-            for decision in output["result"]["decisions"]:
-                self.store.apply_screening_proposal(
-                    rid, by_candidate[decision["candidate_id"]], decision["proposal"], decision["reason"],
-                    decision["evidence_basis"], step["id"],
-                )
-        if scope.get("search_workflow") != "sw":
+            screenable = sorted(pool, key=lambda c: (earlier(c), c["rank"] is not None, c["rank"] or 0, c["created_at"]))
+            candidates = screenable[: budget["max_candidates"]]
+            # Map through all candidates: a resumed run may apply a proposal made for an earlier candidate list.
+            by_candidate = {c["candidate_id"]: c["source_version_id"] for c in self.store.candidates(rid)}
+            for start in range(0, len(candidates), SCREENING_BATCH):
+                # The first batch keeps the single-call key so a run from before batching resumes without screening again.
+                key = "screening" if start == 0 else f"screening:{start // SCREENING_BATCH}"
+                output = await self._model_step(run, scope, key, "screening", candidate_rows=candidates[start:start + SCREENING_BATCH])
+                self._checkpoint(run_id, revision)
+                if output.get("invalid"):
+                    self._fail(run_id, "invalid_model_output", {"step": key, "issues": output["issues"]})
+                step = self.store.step(run_id, key, "model:screening")
+                for decision in output["result"]["decisions"]:
+                    self.store.apply_screening_proposal(
+                        rid, by_candidate[decision["candidate_id"]], decision["proposal"], decision["reason"],
+                        decision["evidence_basis"], step["id"],
+                    )
             # An sw run scored the whole pool before it ranked it; a legacy run scores its screened candidates here,
             # exactly where it always did.
             await self._source_similarity(run, scope, candidates)
@@ -441,19 +440,20 @@ class ResearchFlow:
                 return
 
     async def _second_sources(self, run: dict[str, Any], scope: dict[str, Any],
-                              vocabulary: dict[str, Any] | None) -> set[str]:
-        """The three code steps of slice 05; returns the work heads screening does not see (SW5, SW9.3).
+                              vocabulary: dict[str, Any] | None) -> None:
+        """The three code steps of slice 05 (SW5, SW9.3).
 
         No model is called and no selection is written here. A failed lookup is recorded on the record and the run
-        carries on (D18); a resumed run reads the stored plan and asks nothing twice.
+        carries on (D18); a resumed run reads the stored plan and asks nothing twice. Which records stay away from
+        the model is no longer read here: since slice 09 the abstract stage's own read plan decides that, and
+        `lookups.held_from_screening` is what `record_flags` counts with.
         """
-        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        run_id, revision = run["id"], run["scope_revision"]
         words, _ = lookups.title_words(vocabulary)
         await lookups.ask_second_sources(self.store, self.deps.http, self.deps.settings, run, scope, words,
                                          lambda: self._checkpoint(run_id, revision))
         lookups.external_links(self.store, run)
         lookups.flag_and_decide(self.store, run, scope, words)
-        return lookups.held_from_screening(self.store, rid, revision)
 
     def _count_probe(self, scope: dict[str, Any]) -> Callable[[str], Awaitable[int | None]]:
         """The count request the vocabulary step probes with, or one that answers "unknown" without asking.
@@ -759,6 +759,198 @@ class ResearchFlow:
         output = ranking_rules.rank_records(self.store, run, scope, vocabulary, terms, self._embedding_model())
         self.store.finish_step(step["id"], "succeeded", output=output)
         return decisions.ranking_order(step["id"])
+
+    # ---- the abstract stage of an sw run (slice 09, SW9, SW1, SW11) ----------------------
+    async def _abstract_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                              order: list[str]) -> None:
+        """Classify every record by code, then ask the model twice about the works code left open (K3, D81).
+
+        Nothing is included here: the abstract stage has no `include` outcome, so until slice 12 an `sw` research
+        includes no work by itself (SW1.2). What the read limit does not reach is `abstract_not_read`, which is
+        `unresolved`, so the next discovery run of the same question reads on from there rather than repeating.
+        The plan is frozen in the code step's output: a resumed run reads it back instead of deriving it again,
+        because "the works still needing a model" is a different list by then and the batch keys would move to
+        other records (the bug slice 07's review found).
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        plan = self._abstract_code_stage(run, scope, vocabulary, order)
+        batches, runs = plan["batches"], plan["runs"]
+        by_svid = {c["source_version_id"]: c for c in self.store.candidates(run["research_id"])}
+        unread: list[str] = []
+        for number, batch in enumerate(batches):
+            self._checkpoint(run_id, revision)
+            if not self._model_calls_left(run, runs):
+                # The budget stopped short of this batch. Its records are unread, which is a state the workflow
+                # already has, so the run finishes rather than pausing on something a later run will pick up.
+                unread = [svid for later in batches[number:] for svid in later]
+                break
+            rows = [by_svid[svid] for svid in batch if svid in by_svid]
+            outputs = [await self._abstract_call(run, scope, number, run_no, rows) for run_no in range(1, runs + 1)]
+            self._checkpoint(run_id, revision)
+            self._close_abstract_batch(run, number, rows, outputs, runs)
+        if unread:
+            step_id = self.store.step(run_id, "abstract_stage", "code:abstract_stage")["id"]
+            self._write_abstract_codes(run, step_id, [(svid, "abstract_not_read") for svid in unread])
+
+    def _model_calls_left(self, run: dict[str, Any], wanted: int) -> bool:
+        """Whether the run's model-call budget still holds a whole batch. A batch is read twice or not at all."""
+        spent = self.store.run(run["id"])["usage"].get("model_calls", 0)
+        return spent + wanted <= run["budget"]["max_model_calls"]
+
+    async def _abstract_call(self, run: dict[str, Any], scope: dict[str, Any], number: int, run_no: int,
+                             rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """One run of one batch; None when the model's output did not validate.
+
+        An invalid output does not stop the run and is not repaired: its records stay `abstract_not_proposed` and
+        a later discovery run reads them. A resumed run does not call the step again either (the guard
+        `_extraction` uses), so an unusable answer is paid for once.
+        """
+        key = f"abstract_screening:{number}:{run_no}"
+        step = self.store.step(run["id"], key, "model:abstract_screening")
+        if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
+            return None
+        output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
+                                        screening_target={"runs": ABSTRACT_RUNS, "run": run_no})
+        return None if output.get("invalid") else output
+
+    def _abstract_code_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                             order: list[str]) -> dict[str, Any]:
+        """Write what code decides about every record, then freeze the read plan in this step's output."""
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        step = self.store.step(run_id, "abstract_stage", "code:abstract_stage")
+        if step["status"] == "succeeded":
+            return step["output"]
+        self.store.start_step(step["id"])
+        decisions = DecisionStore(self.store)
+        stale_key = decisions.staleness_key(rid)
+        stored = self.store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")["output"] or {}
+        terms = list((stored.get("expansion") or {}).get("terms") or [])
+        _, blocks = ranking_rules.query_vocabulary(scope, vocabulary, terms)
+        # One read of the whole research, as the ranking does: asking per record cost a second on 2,000 candidates
+        # on the thread the API answers from (slice 05 and 07 reviews).
+        versions = ranking_rules._versions(self.store, rid)
+        current = self._abstract_decisions(rid)
+        links = self._artifact_links(rid)
+        candidates = {c["source_version_id"]: c for c in self.store.candidates(rid)}
+        heads = self.store.work_heads(rid)
+        by_work: dict[str, list[dict[str, Any]]] = {}
+        for version in versions.values():
+            # Only records a search offered are screened; an uploaded source is the user's own and is not judged.
+            if version["id"] in candidates:
+                by_work.setdefault(version["work_id"], []).append(version)
+
+        works, writes = [], []
+        for candidate in self.store.candidates(rid, revision):
+            svid = candidate["source_version_id"]
+            if candidate["origin"] == "user" or svid not in versions or heads.get(versions[svid]["work_id"]) != svid:
+                continue
+            rows = []
+            for version in sorted(by_work[versions[svid]["work_id"]], key=lambda v: v["id"]):
+                held = current.get(version["id"])
+                record = dict(version, decision=held["reason_code"] if held else None)
+                code = abstract_stage.code_outcome(record, blocks, links)
+                stale = bool(held) and decisions.is_stale(held, stale_key)
+                if code and (held is None or held["decided_by"] != "human") and abstract_stage.should_write(held, code, stale):
+                    writes.append((version["id"], code))
+                    held, stale = {"reason_code": code, "decided_by": "code"}, False
+                rows.append({"id": version["id"], "has_abstract": bool(version["abstract"]), "code": code,
+                             "decision": held["reason_code"] if held else None,
+                             "decided_by": held["decided_by"] if held else None, "stale": stale})
+            works.append({"work_id": versions[svid]["work_id"], "head": svid, "versions": rows})
+
+        limit = ABSTRACT_READ_LIMIT[scope["effort"]]
+        plan = abstract_stage.read_plan(order, works, limit, ABSTRACT_BATCH)
+        writes += [(svid, "abstract_not_read") for svid in plan["not_read"]]
+        written = self._write_abstract_codes(run, step["id"], writes)
+        output = {"decisions": written, "limit": limit, "batch": ABSTRACT_BATCH, "runs": ABSTRACT_RUNS,
+                  "batches": plan["batches"], "not_read": len(plan["not_read"]),
+                  "works_needing_model": sum(len(batch) for batch in plan["batches"]) + len(plan["not_read"])}
+        self.store.finish_step(step["id"], "succeeded", output=output)
+        return output
+
+    def _abstract_decisions(self, research_id: str) -> dict[str, dict[str, Any]]:
+        """Every record's open abstract-stage decision, in one query."""
+        return {row["source_version_id"]: dict(row) for row in self.store.conn.execute(
+            "SELECT * FROM stage_decisions WHERE research_id = ? AND stage = 'abstract' AND superseded_at IS NULL",
+            (research_id,))}
+
+    def _artifact_links(self, research_id: str) -> set[str]:
+        """The records of this research carrying an open `artifact_of` link, from either side of the pair (SW6.2).
+
+        A link the user undid is closed and is not here, so an artifact whose link was taken back is screened like
+        any other record.
+        """
+        member = ("SELECT source_version_id FROM corpus_memberships WHERE research_id = ? AND removed_at IS NULL")
+        found: set[str] = set()
+        for row in self.store.conn.execute(
+            "SELECT source_version_id, other_source_version_id FROM record_links"
+            " WHERE link_kind = 'artifact_of' AND closed_at IS NULL"
+            f" AND (source_version_id IN ({member}) OR other_source_version_id IN ({member}))",
+            (research_id, research_id),
+        ):
+            found |= {row["source_version_id"], row["other_source_version_id"]}
+        return found
+
+    def _write_abstract_codes(self, run: dict[str, Any], step_id: str | None,
+                              writes: list[tuple[str, str]]) -> dict[str, int]:
+        """Write these abstract-stage decisions and derive the selection of each work they touched.
+
+        The user's own decision is skipped, never swallowed into a code decision (AGENTS.md, User Authority), and
+        a decision that already says this is not closed and written again merely because the step identifier is
+        new — so a second discovery run of the same question adds no row for what it re-derives.
+        """
+        rid = run["research_id"]
+        decisions = DecisionStore(self.store)
+        stale_key = decisions.staleness_key(rid)
+        written: dict[str, int] = {}
+        touched: set[str] = set()
+        for svid, code in writes:
+            held = decisions.current(rid, svid, "abstract")
+            if held is not None and held["decided_by"] == "human":
+                continue
+            if not abstract_stage.should_write(held, code, bool(held) and decisions.is_stale(held, stale_key)):
+                continue
+            try:
+                decisions.record(rid, svid, code, step_id=step_id)
+            except HumanDecisionStands:
+                continue
+            written[code] = written.get(code, 0) + 1
+            touched.add(self.store.source(svid)["work_id"])
+        for work_id in sorted(touched):
+            decisions.derive_selection(rid, work_id)
+        return dict(sorted(written.items()))
+
+    def _close_abstract_batch(self, run: dict[str, Any], number: int, rows: list[dict[str, Any]],
+                              outputs: list[dict[str, Any] | None], runs: int) -> None:
+        """Store what each run proposed for each record of the batch and write the code the two of them mean.
+
+        Code does this, not the model: the quote is looked for in the abstract the model was shown, and the pair of
+        labels is read through `abstract_stage.combine`. Called again on a resumed run it adds no row, because
+        `add_proposal` and `DecisionStore.record` both already say the same thing twice without writing twice.
+        """
+        rid = run["research_id"]
+        decisions = DecisionStore(self.store)
+        steps = [self.store.step(run["id"], f"abstract_screening:{number}:{run_no}", "model:abstract_screening")["id"]
+                 for run_no in range(1, runs + 1)]
+        proposals: list[dict[str, Any]] = []
+        for output in outputs:
+            if output is None:
+                proposals.append({})
+                continue
+            payload = self.store.step_input_payload(output["step_input_id"])
+            proposals.append(abstract_stage.proposals_of(payload["candidates"], output["result"]["records"],
+                                                         ABSTRACT_QUOTE_MIN_CHARS))
+        writes = []
+        for row in rows:
+            cid, svid = row["candidate_id"], row["source_version_id"]
+            pair = [found.get(cid) for found in proposals]
+            for run_no, (found, step_id) in enumerate(zip(pair, steps), start=1):
+                if found is not None:
+                    decisions.add_proposal(rid, svid, "abstract", step_id, run_no, found["label"],
+                                           quote=found["quote"], quote_verified=found["quote_verified"])
+            writes.append((svid, abstract_stage.combine(*pair)))
+        # The decision is attributed to the last run's step: it is the one that made the pair readable.
+        self._write_abstract_codes(run, steps[-1], writes)
 
     async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]]) -> None:
         """Score screened sources by the similarity of their title and abstract to the question (D30).
@@ -1551,7 +1743,8 @@ class ResearchFlow:
                     claims: list[dict[str, Any]], model: tuple[str, str | None, str | None],
                     extraction_target: dict[str, Any] | None = None,
                     report_target: dict[str, Any] | None = None,
-                    vocabulary_target: dict[str, Any] | None = None) -> dict[str, Any]:
+                    vocabulary_target: dict[str, Any] | None = None,
+                    screening_target: dict[str, Any] | None = None) -> dict[str, Any]:
         candidates = []
         for c in candidate_rows:
             source = self.store.source(c["source_version_id"])
@@ -1588,6 +1781,8 @@ class ResearchFlow:
             target["report_target"] = report_target
         if vocabulary_target is not None:
             target["vocabulary_target"] = vocabulary_target
+        if screening_target is not None:
+            target["screening_target"] = screening_target
         allowlist = {"candidate_ids": [c["candidate_id"] for c in candidates], "source_ids": [s["source_id"] for s in sources],
                      "passage_ids": [p["passage_id"] for p in passages]}
         if vocabulary_target is not None:
@@ -1651,6 +1846,7 @@ class ResearchFlow:
                           claims: list[dict[str, Any]] | None = None, model: tuple[str, str | None, str | None] | None = None,
                           optional: bool = False, extraction_target: dict[str, Any] | None = None,
                           report_target: dict[str, Any] | None = None, vocabulary_target: dict[str, Any] | None = None,
+                          screening_target: dict[str, Any] | None = None,
                           limiter: ModelCallLimiter | None = None) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run."""
@@ -1681,7 +1877,8 @@ class ResearchFlow:
                 self.store.finish_step(step["id"], "failed", error_code="budget_exhausted")
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
-                                       claims or [], model, extraction_target, report_target, vocabulary_target)
+                                       claims or [], model, extraction_target, report_target, vocabulary_target,
+                                       screening_target)
             if issues := contracts.check_step_input(payload):
                 self.store.finish_step(step["id"], "failed", error_code="step_input_invalid", error=[vars(i) for i in issues])
                 halt("step_input_invalid", fail=True)
@@ -1693,7 +1890,7 @@ class ResearchFlow:
                 self.deps.package, task_type, phrasebank.frames_language(payload), sections=sections,
             )
             # Answer, review and cell steps show short handles; the stored StepInput keeps the record IDs they map back to.
-            shown = contracts.with_citation_handles(payload) if task_type in ("grounded_answer", "answer_review", "cell_extraction") else payload
+            shown = contracts.with_citation_handles(payload) if task_type in HANDLE_TASKS else payload
             if repair_issues is None:
                 message = prompt.step_message(shown)
             else:  # issues name records by ID; the model knows them only by the handles it was shown
@@ -1723,7 +1920,7 @@ class ResearchFlow:
                 self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_mismatch", error=mismatch)
                 halt("model_mismatch", mismatch)
             output_text = result.raw_text or ""
-            if task_type in ("grounded_answer", "cell_extraction"):
+            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening"):
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             report = contracts.validate_model_output(payload, output_text)
             salvage: list[contracts.Issue] = []

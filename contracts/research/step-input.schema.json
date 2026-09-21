@@ -56,6 +56,7 @@
         "research_title",
         "vocabulary_labels",
         "criterion_proposal",
+        "abstract_screening",
         "report_plan",
         "report_section",
         "report_phrase_repair",
@@ -501,6 +502,25 @@
               "type": "null"
             }
           ]
+        }
+      }
+    },
+    "screening_target": {
+      "type": "object",
+      "description": "abstract_screening steps only: how many independent runs read this batch and which of them this call is. The two runs get the same records and the same instructions; nothing else distinguishes them.",
+      "additionalProperties": false,
+      "required": [
+        "runs",
+        "run"
+      ],
+      "properties": {
+        "runs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "run": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },

@@ -50,6 +50,8 @@ function phaseOf(kind: string): PhaseKey | null {
   if (['code:vocabulary', 'model:vocabulary_labels', 'model:criterion_proposal', 'code:criterion', 'code:protocol_approval'].includes(kind)) return 'plan'
   if (kind.startsWith('provider_search')) return 'search'
   if (kind === 'model:screening') return 'screen'
+  // An sw run screens abstracts in two steps: code classifies every record, then the model proposes.
+  if (kind === 'code:abstract_stage' || kind === 'model:abstract_screening') return 'screen'
   if (kind === 'fetch_pdf' || kind === 'pdf_other_copy') return 'pdf'
   if (kind.startsWith('ocr_')) return 'ocr'
   if (kind.startsWith('embedding:')) return 'semantic'

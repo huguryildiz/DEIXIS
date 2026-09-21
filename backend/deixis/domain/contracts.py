@@ -37,6 +37,7 @@ SCHEMA_FILES = {
     "ResearchTitle": "research-title.schema.json",
     "VocabularyLabels": "vocabulary-labels.schema.json",
     "CriterionProposal": "criterion-proposal.schema.json",
+    "AbstractScreening": "abstract-screening.schema.json",
     "StepInput": "step-input.schema.json",
     "ReportPlanDraft": "report-plan.schema.json",
     "ReportSectionDraft": "report-section-draft.schema.json",
@@ -54,6 +55,7 @@ SCHEMA_VERSIONS = {
     "ResearchTitle": "deixis.research_title.v1",
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
     "CriterionProposal": "deixis.criterion_proposal.v1",
+    "AbstractScreening": "deixis.abstract_screening.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
     "ReportSectionDraft": "deixis.report_section_draft.v1",
     "ReportPhraseRepairDraft": "deixis.report_phrase_repair_draft.v1",
@@ -71,6 +73,7 @@ TASK_OUTPUTS = {
     "research_title": ("ResearchTitle",),
     "vocabulary_labels": ("VocabularyLabels",),
     "criterion_proposal": ("CriterionProposal",),
+    "abstract_screening": ("AbstractScreening",),
     "report_plan": ("ReportPlanDraft",),
     "report_section": ("ReportSectionDraft",),
     "report_phrase_repair": ("ReportPhraseRepairDraft",),
@@ -79,6 +82,8 @@ TASK_OUTPUTS = {
 EXTRACTION_TASKS = ("cell_extraction", "table_columns")
 # The block-labelling step sorts a phrase list code extracted; it carries a vocabulary_target instead (SW17.1).
 VOCABULARY_TASKS = ("vocabulary_labels",)
+# The abstract stage asks the same batch twice and tells each call which of the two runs it is (slice 09, K3).
+SCREENING_TARGET_TASKS = ("abstract_screening",)
 GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
 REPORT_TASKS = ("report_plan", "report_section", "report_phrase_repair", "report_review")
 # The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's (D37).
@@ -252,6 +257,11 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
             issues.append(Issue("duplicate_vocabulary_phrase", "/vocabulary_target/phrases", "phrase must be unique"))
         if sorted(set(allow.get("phrases", []))) != sorted(set(phrases)):
             issues.append(Issue("phrase_allowlist_mismatch", "/allowlist/phrases", "the allowlist is the phrase list"))
+    screening_target = step_input.get("screening_target")
+    if (screening_target is not None) != (step_input["task_type"] in SCREENING_TARGET_TASKS):
+        issues.append(Issue("screening_target_mismatch", "/screening_target", step_input["task_type"]))
+    elif screening_target is not None and not 1 <= screening_target["run"] <= screening_target["runs"]:
+        issues.append(Issue("screening_run_out_of_range", "/screening_target/run", str(screening_target["run"])))
     report_target = step_input.get("report_target")
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
         issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
@@ -366,6 +376,8 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         _check_vocabulary_labels(allow, result, report)
     elif output_type == "CriterionProposal":
         _check_criterion_proposal(result, report)
+    elif output_type == "AbstractScreening":
+        _check_abstract_screening(allow, result, report)
     elif output_type == "ReportPlanDraft":
         _check_report_plan(step_input, allow, result, report)
     elif output_type == "ReportSectionDraft":
@@ -792,6 +804,28 @@ def _check_criterion_proposal(draft: dict[str, Any], report: ValidationReport) -
             report.issues.append(Issue("duplicate_criterion_phrase", f"/parts/{index}/phrases", normalized))
 
 
+def _check_abstract_screening(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
+    """Record-level defects are warnings, never errors (slice 09, SW9).
+
+    A batch is not repaired and is not thrown away for one bad entry: the entry costs that record its proposal for
+    this run, the rest of the batch stands, and a record left without two usable proposals stays
+    `abstract_not_proposed` for a later discovery run to read. `workflow/abstract_stage.proposals_of` drops exactly
+    the entries warned about here; the two must stay in step.
+    """
+    seen: set[str] = set()
+    for index, record in enumerate(draft["records"]):
+        cid = record["candidate_id"]
+        if cid not in allow["candidate_ids"]:
+            report.warnings.append(Issue("unknown_candidate_id", f"/records/{index}/candidate_id", cid))
+        if cid in seen:
+            report.warnings.append(Issue("duplicate_candidate_proposal", f"/records/{index}/candidate_id", cid))
+        seen.add(cid)
+        if record["label"] in ("candidate", "out_of_scope") and not record["quote"].strip():
+            report.warnings.append(Issue("label_without_quote", f"/records/{index}/quote", cid))
+    for cid in sorted(allow["candidate_ids"] - seen):
+        report.warnings.append(Issue("candidate_without_proposal", "/records", cid))
+
+
 def _report_phrasing_fields(draft: dict[str, Any]) -> list[tuple[str, str]]:
     fields = [(f"/claims/{i}/text", claim["text"]) for i, claim in enumerate(draft["claims"])]
     fields += [(f"/insufficient_evidence/{i}/reason", entry["reason"])
@@ -921,6 +955,9 @@ def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     handles = {p["passage_id"]: f"psg_P{n:07d}" for n, p in enumerate(step_input["passages"], start=1)}
     columns = (step_input.get("extraction_target") or {}).get("columns", [])
     handles |= {c["column_id"]: f"col_C{n:07d}" for n, c in enumerate(columns, start=1)}
+    # The abstract stage's batches are the only handled step with candidates; every other one sends none, so this
+    # line adds nothing to them (slice 09).
+    handles |= {c["candidate_id"]: f"cnd_C{n:07d}" for n, c in enumerate(step_input["candidates"], start=1)}
     return handles | {s["source_id"]: f"srv_S{n:07d}" for n, s in enumerate(step_input["sources"], start=1)}
 
 
@@ -931,13 +968,15 @@ def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
         passage["passage_id"], passage["source_id"] = handles[passage["passage_id"]], handles[passage["source_id"]]
     for source in shown["sources"]:
         source["source_id"] = handles[source["source_id"]]
+    for candidate in shown["candidates"]:
+        candidate["candidate_id"] = handles[candidate["candidate_id"]]
     for claim in shown.get("claims_under_review", []):
         claim["passage_ids"] = [handles.get(i, i) for i in claim["passage_ids"]]
     if target := shown.get("extraction_target"):
         target["source_id"] = handles.get(target["source_id"], target["source_id"])
         for column in target["columns"]:
             column["column_id"] = handles[column["column_id"]]
-    for key in ("passage_ids", "source_ids"):
+    for key in ("passage_ids", "source_ids", "candidate_ids"):
         shown["allowlist"][key] = [handles.get(i, i) for i in shown["allowlist"][key]]
     return shown
 
@@ -1016,11 +1055,11 @@ def salvage_answer_draft(step_input: dict[str, Any], draft: dict[str, Any]) -> t
     return draft, warnings
 
 
-PADDED_HANDLE = re.compile(r"^(psg_P|srv_S|col_C)0*(\d{1,7})$")
+PADDED_HANDLE = re.compile(r"^(psg_P|srv_S|col_C|cnd_C)0*(\d{1,7})$")
 
 
 def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict[str, Any]:
-    """Map handles in a grounded answer or cell draft back to IDs; anything else is left for validation to report.
+    """Map handles in an answer, a cell draft or an abstract screening back to IDs; the rest validation reports.
 
     A handle copied with more or fewer leading zeros (`psg_P00000017`) is read as the handle with that number.
     """
@@ -1042,6 +1081,10 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
     for anchor in data.get("citation_anchors", []):
         if isinstance(anchor, dict) and isinstance(anchor.get("passage_id"), str):
             anchor["passage_id"] = real(anchor["passage_id"])
+    records = data.get("records")
+    for record in records if isinstance(records, list) else []:
+        if isinstance(record, dict) and isinstance(record.get("candidate_id"), str):
+            record["candidate_id"] = real(record["candidate_id"])
     cells = data.get("cells")
     for cell in cells if isinstance(cells, list) else []:
         if not isinstance(cell, dict):

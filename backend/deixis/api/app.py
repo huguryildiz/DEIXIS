@@ -31,7 +31,9 @@ from deixis.documents import math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import skill
-from deixis.domain.rules import CRITERION_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict
+from deixis.workflow import abstract_stage
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS,
+                                 TEST_EFFORT_BUDGETS, RevisionConflict)
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
 from deixis.models.deepseek import DeepSeekAdapter
@@ -816,8 +818,12 @@ def create_app(
             raise HTTPException(422, "Include at least one source before generating an answer")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
         if body.kind == "discovery" and scope.get("search_workflow") == "sw":
-            # The criterion proposal runs before the first search of an sw research only (D78).
-            budget = budget | {"max_model_calls": budget["max_model_calls"] + CRITERION_CALLS}
+            # The criterion proposal before the first search (D78) and the abstract stage's two runs over the
+            # works the read limit reaches (D81) are given on top of the preset, so the preset itself — which a
+            # legacy run and an answer run read — is what it always was (slice 06 review).
+            extra = CRITERION_CALLS + abstract_stage.model_calls(ABSTRACT_READ_LIMIT[scope["effort"]],
+                                                                 ABSTRACT_BATCH, ABSTRACT_RUNS)
+            budget = budget | {"max_model_calls": budget["max_model_calls"] + extra}
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
             budget = {"max_model_calls": 2, "max_provider_requests": 0}

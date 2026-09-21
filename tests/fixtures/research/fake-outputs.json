@@ -1,646 +1,1070 @@
 {
-  "_note": "SYNTHETIC fake model outputs for deterministic contract tests. They are hand-written, not produced by any model, and say nothing about model behavior.",
-  "cases": [
-    {
-      "name": "search_plan_valid",
-      "step_input": "A_search_plan",
-      "expect_ok": true,
-      "expect_codes": [],
-      "output": {
-        "search_plan": {
-          "schema_version": "deixis.search_plan.v2",
-          "step_input_id": "sti_SYNTHA0001",
-          "scope_revision": 1,
-          "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-          "question_interpretation": "Published decision models (variables, objective, constraints) applied to molecular communication systems.",
-          "concepts": [
-            { "label": "molecular communication", "role": "core", "synonyms": ["diffusion-based communication", "nano networks"] },
-            { "label": "mathematical programming", "role": "method", "synonyms": ["integer programming", "MILP", "convex optimization"] }
-          ],
-          "providers": ["openalex"],
-          "scope_boundaries": ["OpenAlex keyword search only; not exhaustive."],
-          "search_rationale": "Separate method and phenomenon vocabularies without requiring every desired feature."
-        },
-        "clarification_request": null
+ "_note": "SYNTHETIC fake model outputs for deterministic contract tests. They are hand-written, not produced by any model, and say nothing about model behavior.",
+ "cases": [
+  {
+   "name": "search_plan_valid",
+   "step_input": "A_search_plan",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "search_plan": {
+     "schema_version": "deixis.search_plan.v2",
+     "step_input_id": "sti_SYNTHA0001",
+     "scope_revision": 1,
+     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+     "question_interpretation": "Published decision models (variables, objective, constraints) applied to molecular communication systems.",
+     "concepts": [
+      {
+       "label": "molecular communication",
+       "role": "core",
+       "synonyms": [
+        "diffusion-based communication",
+        "nano networks"
+       ]
+      },
+      {
+       "label": "mathematical programming",
+       "role": "method",
+       "synonyms": [
+        "integer programming",
+        "MILP",
+        "convex optimization"
+       ]
       }
+     ],
+     "providers": [
+      "openalex"
+     ],
+     "scope_boundaries": [
+      "OpenAlex keyword search only; not exhaustive."
+     ],
+     "search_rationale": "Separate method and phenomenon vocabularies without requiring every desired feature."
     },
-    {
-      "name": "search_plan_clarification_valid",
-      "step_input": "A_search_plan",
-      "expect_ok": true,
-      "expect_codes": [],
-      "output": {
-        "search_plan": null,
-        "clarification_request": {
-          "schema_version": "deixis.clarification_request.v1",
-          "step_input_id": "sti_SYNTHA0001",
-          "scope_revision": 1,
-          "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-          "ambiguity": "Operations research could mean optimization models or queueing/performance analysis.",
-          "question": "Should the answer cover only optimization formulations, or also queueing and performance models?",
-          "why_it_matters": "It changes which query vocabulary and which papers are relevant.",
-          "options": ["Optimization formulations only", "Include queueing and performance models"]
-        }
+    "clarification_request": null
+   }
+  },
+  {
+   "name": "search_plan_clarification_valid",
+   "step_input": "A_search_plan",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "search_plan": null,
+    "clarification_request": {
+     "schema_version": "deixis.clarification_request.v1",
+     "step_input_id": "sti_SYNTHA0001",
+     "scope_revision": 1,
+     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+     "ambiguity": "Operations research could mean optimization models or queueing/performance analysis.",
+     "question": "Should the answer cover only optimization formulations, or also queueing and performance models?",
+     "why_it_matters": "It changes which query vocabulary and which papers are relevant.",
+     "options": [
+      "Optimization formulations only",
+      "Include queueing and performance models"
+     ]
+    }
+   }
+  },
+  {
+   "name": "search_plan_both_null",
+   "step_input": "A_search_plan",
+   "expect_ok": false,
+   "expect_codes": [
+    "ambiguous_result"
+   ],
+   "output": {
+    "search_plan": null,
+    "clarification_request": null
+   }
+  },
+  {
+   "name": "search_plan_disabled_provider_and_two_cores",
+   "step_input": "A_search_plan",
+   "expect_ok": false,
+   "expect_codes": [
+    "core_concept_count",
+    "provider_not_enabled"
+   ],
+   "output": {
+    "search_plan": {
+     "schema_version": "deixis.search_plan.v2",
+     "step_input_id": "sti_SYNTHA0001",
+     "scope_revision": 1,
+     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+     "question_interpretation": "x",
+     "concepts": [
+      {
+       "label": "molecular communication",
+       "role": "core",
+       "synonyms": [
+        "molecular communication"
+       ]
+      },
+      {
+       "label": "operations research",
+       "role": "core",
+       "synonyms": [
+        "operations research"
+       ]
       }
+     ],
+     "providers": [
+      "openalex",
+      "scopus"
+     ],
+     "scope_boundaries": [],
+     "search_rationale": "x"
     },
-    {
-      "name": "search_plan_both_null",
-      "step_input": "A_search_plan",
-      "expect_ok": false,
-      "expect_codes": ["ambiguous_result"],
-      "output": { "search_plan": null, "clarification_request": null }
-    },
-    {
-      "name": "search_plan_disabled_provider_and_two_cores",
-      "step_input": "A_search_plan",
-      "expect_ok": false,
-      "expect_codes": ["core_concept_count", "provider_not_enabled"],
-      "output": {
-        "search_plan": {
-          "schema_version": "deixis.search_plan.v2",
-          "step_input_id": "sti_SYNTHA0001",
-          "scope_revision": 1,
-          "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-          "question_interpretation": "x",
-          "concepts": [
-            { "label": "molecular communication", "role": "core", "synonyms": ["molecular communication"] },
-            { "label": "operations research", "role": "core", "synonyms": ["operations research"] }
-          ],
-          "providers": ["openalex", "scopus"],
-          "scope_boundaries": [],
-          "search_rationale": "x"
-        },
-        "clarification_request": null
-      }
-    },
-    {
-      "name": "screening_valid_keyword_false_positive_excluded",
-      "step_input": "A_screening",
-      "expect_ok": true,
-      "expect_codes": [],
-      "expect_warnings": [],
-      "output": {
-        "schema_version": "deixis.screening_proposal.v1",
-        "step_input_id": "sti_SYNTHA0002",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "decisions": [
-          { "candidate_id": "cnd_SYNA1cand", "proposal": "include", "reason": "Abstract states a mixed-integer linear program with binary release variables.", "evidence_basis": "title_and_abstract" },
-          { "candidate_id": "cnd_SYNA2cand", "proposal": "uncertain", "reason": "No abstract; title suggests allocation but the method is unknown.", "evidence_basis": "title_only" },
-          { "candidate_id": "cnd_SYNA4cand", "proposal": "exclude", "reason": "'Optimization' refers to measured circuit energy; abstract states no decision model.", "evidence_basis": "title_and_abstract" }
-        ],
-        "notes": ""
-      }
-    },
-    {
-      "name": "screening_unknown_and_duplicate_candidate",
-      "step_input": "A_screening",
-      "expect_ok": false,
-      "expect_codes": ["duplicate_candidate_decision", "unknown_candidate_id"],
-      "output": {
-        "schema_version": "deixis.screening_proposal.v1",
-        "step_input_id": "sti_SYNTHA0002",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "decisions": [
-          { "candidate_id": "cnd_SYNA1cand", "proposal": "include", "reason": "r", "evidence_basis": "title_and_abstract" },
-          { "candidate_id": "cnd_SYNA1cand", "proposal": "exclude", "reason": "r", "evidence_basis": "title_and_abstract" },
-          { "candidate_id": "cnd_INVENTED99", "proposal": "include", "reason": "invented", "evidence_basis": "metadata_only" }
-        ],
-        "notes": ""
-      }
-    },
-    {
-      "name": "answer_valid",
-      "step_input": "A_answer",
-      "expect_ok": true,
-      "expect_codes": [],
-      "output": {
-        "schema_version": "deixis.grounded_answer_draft.v3",
-        "step_input_id": "sti_SYNTHA0003",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
-        "answer_language": "en",
-        "claims": [
-          { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that transmitter release-time scheduling is formulated as a mixed-integer linear program with binary release variables.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01"] },
-          { "claim_label": "c2", "section": "Formulations", "text": "It has been reported that its objective minimizes expected bit error probability under a per-frame molecule budget.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1pg003"] },
-          { "claim_label": "c3", "section": "Formulations", "text": "It is possible that relay placement in the inspected preprint is heuristic rather than an optimization model with a guarantee.", "support_type": "analyst_inference", "passage_ids": ["psg_SYNA3pg002"] }
-        ],
-        "citation_anchors": [
-          { "claim_label": "c1", "passage_id": "psg_SYNA1abs01", "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint." },
-          { "claim_label": "c2", "passage_id": "psg_SYNA1pg003", "quote": "SYNTHETIC. The objective minimizes expected bit error probability subject to a total molecule budget per frame." },
-          { "claim_label": "c3", "passage_id": "psg_SYNA3pg002", "quote": "SYNTHETIC. Relay positions are chosen by a heuristic; no optimality guarantee is claimed in this version." }
-        ],
-        "limitations": [
-          { "kind": "access", "text": "It was not possible to assess the formulation of the relay-network source; therefore, it is unknown if it describes an optimization model.", "source_ids": ["srv_SYNA2pub01"] },
-          { "kind": "scope", "text": "An issue that was not addressed in the supplied passages was whether the published version of A3 differs from the preprint.", "source_ids": ["srv_SYNA3pre01", "srv_SYNA3pub01"] }
-        ],
-        "unanswered_aspects": ["An issue that was not addressed in the supplied passages was whether the models were validated."],
-        "capability_notice": null
-      }
-    },
-    {
-      "name": "answer_cross_research_passage",
-      "step_input": "A_answer",
-      "expect_ok": false,
-      "expect_codes": ["unknown_passage_id"],
-      "output": {
-        "schema_version": "deixis.grounded_answer_draft.v3",
-        "step_input_id": "sti_SYNTHA0003",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
-        "answer_language": "en",
-        "claims": [
-          { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that nodes carry hydrophones.", "support_type": "source_stated", "passage_ids": ["psg_SYNB1pg001"] }
-        ],
-        "citation_anchors": [],
-        "limitations": [],
-        "unanswered_aspects": [],
-        "capability_notice": null
-      }
-    },
-    {
-      "name": "answer_invented_page_field",
-      "step_input": "A_answer",
-      "expect_ok": false,
-      "expect_codes": ["schema_invalid"],
-      "output": {
-        "schema_version": "deixis.grounded_answer_draft.v3",
-        "step_input_id": "sti_SYNTHA0003",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
-        "answer_language": "en",
-        "claims": [
-          { "claim_label": "c1", "section": "Formulations", "text": "Constraint (7) bounds nutrients.", "support_type": "source_stated", "passage_ids": ["psg_SYNA2abs01"], "page": 7 }
-        ],
-        "citation_anchors": [],
-        "limitations": [],
-        "unanswered_aspects": [],
-        "capability_notice": null
-      }
-    },
-    {
-      "name": "answer_self_assigned_human_review",
-      "step_input": "A_answer",
-      "expect_ok": false,
-      "expect_codes": ["schema_invalid"],
-      "output": {
-        "schema_version": "deixis.grounded_answer_draft.v3",
-        "step_input_id": "sti_SYNTHA0003",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
-        "answer_language": "en",
-        "claims": [
-          { "claim_label": "c1", "section": "Formulations", "text": "x", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01"], "semantic_review": "human_checked" }
-        ],
-        "citation_anchors": [],
-        "limitations": [],
-        "unanswered_aspects": [],
-        "capability_notice": null
-      }
-    },
-    {
-      "name": "answer_envelope_mismatch",
-      "step_input": "A_answer",
-      "expect_ok": false,
-      "expect_codes": ["envelope_mismatch"],
-      "output": {
-        "schema_version": "deixis.grounded_answer_draft.v3",
-        "step_input_id": "sti_SYNTHB0001",
-        "scope_revision": 2,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
-        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
-        "answer_language": "en",
-        "claims": [],
-        "citation_anchors": [],
-        "limitations": [],
-        "unanswered_aspects": ["An issue that was not addressed in the supplied passages was whether X holds."],
-        "capability_notice": null
-      }
-    },
-    {
-      "name": "answer_claim_without_passage_and_duplicates",
-      "step_input": "A_answer",
-      "expect_ok": false,
-      "expect_codes": ["claim_without_passage", "duplicate_claim_label", "duplicate_passage_id", "missing_citation_anchor", "unknown_source_id"],
-      "output": {
-        "schema_version": "deixis.grounded_answer_draft.v3",
-        "step_input_id": "sti_SYNTHA0003",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
-        "answer_language": "en",
-        "claims": [
-          { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that X is unsupported.", "support_type": "analyst_inference", "passage_ids": [] },
-          { "claim_label": "c1", "section": "Formulations", "text": "It has been reported that X carries a repeated label.", "support_type": "source_stated", "passage_ids": ["psg_SYNA1abs01", "psg_SYNA1abs01"] }
-        ],
-        "citation_anchors": [],
-        "limitations": [
-          { "kind": "access", "text": "It was not possible to assess X; therefore, it is unknown if Y holds.", "source_ids": ["srv_SYNB1pub01"] }
-        ],
-        "unanswered_aspects": [],
-        "capability_notice": null
-      }
-    },
-    {
-      "name": "answer_wrong_schema_version",
-      "step_input": "A_answer",
-      "expect_ok": false,
-      "expect_codes": ["schema_invalid"],
-      "output": {
-        "schema_version": "deixis.grounded_answer_draft.v0",
-        "step_input_id": "sti_SYNTHA0003",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "answer_language": "en",
-        "claims": [],
-        "citation_anchors": [],
-        "limitations": [],
-        "unanswered_aspects": [],
-        "capability_notice": null
-      }
-    },
-    {
-      "name": "answer_not_json",
-      "step_input": "A_answer",
-      "expect_ok": false,
-      "expect_codes": ["invalid_json"],
-      "output_raw": "Here is my answer: the sources say..."
-    },
-    {
-      "name": "report_plan_valid",
-      "step_input": "C_report_plan",
-      "expect_ok": true,
-      "expect_codes": [],
-      "output": {
-        "schema_version": "deixis.report_plan_draft.v2",
-        "step_input_id": "sti_SYNTHR0001",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "scope_statement": "SYNTHETIC scope covering release scheduling formulations in molecular communication.",
-        "research_questions": [
-          {
-            "rq_id": "RQ1",
-            "text": "SYNTHETIC: what decision variables are used?"
-          },
-          {
-            "rq_id": "RQ2",
-            "text": "SYNTHETIC: what constraints are reported?"
-          }
-        ],
-        "glossary": [
-          {
-            "term": "release scheduling",
-            "definition": "SYNTHETIC definition.",
-            "passage_id": "psg_SYNA1abs01"
-          }
-        ],
-        "axes": [
-          {
-            "axis_id": "AX1",
-            "label": "SYNTHETIC method",
-            "column_id": "col_SYNTHR0001"
-          }
-        ],
-        "limitations_column_id": "col_SYNTHR0001",
-        "future_work_column_id": "col_SYNTHR0001"
-      }
-    },
-    {
-      "name": "report_section_valid",
-      "step_input": "C_report_section_IV",
-      "expect_ok": true,
-      "expect_codes": [],
-      "output": {
-        "schema_version": "deixis.report_section_draft.v1",
-        "step_input_id": "sti_SYNTHR0002",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "section_id": "IV",
-        "claims": [
-          {
-            "claim_key": "IV.1",
-            "text": "It has been reported that the fake claim holds.",
-            "support_type": "source_stated",
-            "passage_ids": [
-              "psg_SYNA1abs01"
-            ],
-            "cell_ids": [],
-            "paragraph": 1,
-            "table_ref": null,
-            "equation_ref": null,
-            "body_refs": [],
-            "axis_id": null,
-            "count": null,
-            "equation_origin": null,
-            "gap_refs": []
-          }
-        ],
-        "citation_anchors": [
-          {
-            "claim_key": "IV.1",
-            "passage_id": "psg_SYNA1abs01",
-            "cell_id": null,
-            "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
-          }
-        ],
-        "subsections": [],
-        "gaps": [],
-        "insufficient_evidence": []
-      }
-    },
-    {
-      "name": "report_phrase_repair_valid",
-      "step_input": "C_report_phrase_repair",
-      "expect_ok": true,
-      "expect_codes": [],
-      "output": {
-        "schema_version": "deixis.report_phrase_repair_draft.v1",
-        "step_input_id": "sti_SYNTHR0003",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "repairs": [
-          {
-            "sentence_id": "IV.1#1",
-            "text": "It has been reported that the rewritten sentence holds."
-          }
-        ]
-      }
-    },
-    {
-      "name": "report_review_valid",
-      "step_input": "C_report_review",
-      "expect_ok": true,
-      "expect_codes": [],
-      "output": {
-        "schema_version": "deixis.report_review.v1",
-        "step_input_id": "sti_SYNTHR0004",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "findings": [],
-        "notes": ""
-      }
-    },
-    {
-      "name": "report_section_unknown_gap_ref",
-      "step_input": "C_report_section_VII",
-      "expect_ok": false,
-      "expect_codes": [
-        "unknown_gap_ref"
+    "clarification_request": null
+   }
+  },
+  {
+   "name": "screening_valid_keyword_false_positive_excluded",
+   "step_input": "A_screening",
+   "expect_ok": true,
+   "expect_codes": [],
+   "expect_warnings": [],
+   "output": {
+    "schema_version": "deixis.screening_proposal.v1",
+    "step_input_id": "sti_SYNTHA0002",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "decisions": [
+     {
+      "candidate_id": "cnd_SYNA1cand",
+      "proposal": "include",
+      "reason": "Abstract states a mixed-integer linear program with binary release variables.",
+      "evidence_basis": "title_and_abstract"
+     },
+     {
+      "candidate_id": "cnd_SYNA2cand",
+      "proposal": "uncertain",
+      "reason": "No abstract; title suggests allocation but the method is unknown.",
+      "evidence_basis": "title_only"
+     },
+     {
+      "candidate_id": "cnd_SYNA4cand",
+      "proposal": "exclude",
+      "reason": "'Optimization' refers to measured circuit energy; abstract states no decision model.",
+      "evidence_basis": "title_and_abstract"
+     }
+    ],
+    "notes": ""
+   }
+  },
+  {
+   "name": "screening_unknown_and_duplicate_candidate",
+   "step_input": "A_screening",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_candidate_decision",
+    "unknown_candidate_id"
+   ],
+   "output": {
+    "schema_version": "deixis.screening_proposal.v1",
+    "step_input_id": "sti_SYNTHA0002",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "decisions": [
+     {
+      "candidate_id": "cnd_SYNA1cand",
+      "proposal": "include",
+      "reason": "r",
+      "evidence_basis": "title_and_abstract"
+     },
+     {
+      "candidate_id": "cnd_SYNA1cand",
+      "proposal": "exclude",
+      "reason": "r",
+      "evidence_basis": "title_and_abstract"
+     },
+     {
+      "candidate_id": "cnd_INVENTED99",
+      "proposal": "include",
+      "reason": "invented",
+      "evidence_basis": "metadata_only"
+     }
+    ],
+    "notes": ""
+   }
+  },
+  {
+   "name": "answer_valid",
+   "step_input": "A_answer",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.grounded_answer_draft.v3",
+    "step_input_id": "sti_SYNTHA0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
+    "answer_language": "en",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "section": "Formulations",
+      "text": "It has been reported that transmitter release-time scheduling is formulated as a mixed-integer linear program with binary release variables.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01"
+      ]
+     },
+     {
+      "claim_label": "c2",
+      "section": "Formulations",
+      "text": "It has been reported that its objective minimizes expected bit error probability under a per-frame molecule budget.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1pg003"
+      ]
+     },
+     {
+      "claim_label": "c3",
+      "section": "Formulations",
+      "text": "It is possible that relay placement in the inspected preprint is heuristic rather than an optimization model with a guarantee.",
+      "support_type": "analyst_inference",
+      "passage_ids": [
+       "psg_SYNA3pg002"
+      ]
+     }
+    ],
+    "citation_anchors": [
+     {
+      "claim_label": "c1",
+      "passage_id": "psg_SYNA1abs01",
+      "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+     },
+     {
+      "claim_label": "c2",
+      "passage_id": "psg_SYNA1pg003",
+      "quote": "SYNTHETIC. The objective minimizes expected bit error probability subject to a total molecule budget per frame."
+     },
+     {
+      "claim_label": "c3",
+      "passage_id": "psg_SYNA3pg002",
+      "quote": "SYNTHETIC. Relay positions are chosen by a heuristic; no optimality guarantee is claimed in this version."
+     }
+    ],
+    "limitations": [
+     {
+      "kind": "access",
+      "text": "It was not possible to assess the formulation of the relay-network source; therefore, it is unknown if it describes an optimization model.",
+      "source_ids": [
+       "srv_SYNA2pub01"
+      ]
+     },
+     {
+      "kind": "scope",
+      "text": "An issue that was not addressed in the supplied passages was whether the published version of A3 differs from the preprint.",
+      "source_ids": [
+       "srv_SYNA3pre01",
+       "srv_SYNA3pub01"
+      ]
+     }
+    ],
+    "unanswered_aspects": [
+     "An issue that was not addressed in the supplied passages was whether the models were validated."
+    ],
+    "capability_notice": null
+   }
+  },
+  {
+   "name": "answer_cross_research_passage",
+   "step_input": "A_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "unknown_passage_id"
+   ],
+   "output": {
+    "schema_version": "deixis.grounded_answer_draft.v3",
+    "step_input_id": "sti_SYNTHA0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
+    "answer_language": "en",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "section": "Formulations",
+      "text": "It has been reported that nodes carry hydrophones.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNB1pg001"
+      ]
+     }
+    ],
+    "citation_anchors": [],
+    "limitations": [],
+    "unanswered_aspects": [],
+    "capability_notice": null
+   }
+  },
+  {
+   "name": "answer_invented_page_field",
+   "step_input": "A_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "schema_invalid"
+   ],
+   "output": {
+    "schema_version": "deixis.grounded_answer_draft.v3",
+    "step_input_id": "sti_SYNTHA0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
+    "answer_language": "en",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "section": "Formulations",
+      "text": "Constraint (7) bounds nutrients.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA2abs01"
       ],
-      "output": {
-        "schema_version": "deixis.report_section_draft.v1",
-        "step_input_id": "sti_SYNTHR0005",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "section_id": "VII",
-        "claims": [
-          {
-            "claim_key": "VII.1",
-            "text": "It has been reported that the fake claim holds.",
-            "support_type": "source_stated",
-            "passage_ids": [
-              "psg_SYNA1abs01"
-            ],
-            "cell_ids": [],
-            "paragraph": 1,
-            "table_ref": null,
-            "equation_ref": null,
-            "body_refs": [],
-            "axis_id": null,
-            "count": null,
-            "equation_origin": null,
-            "gap_refs": [
-              "gap999"
-            ]
-          }
-        ],
-        "citation_anchors": [
-          {
-            "claim_key": "VII.1",
-            "passage_id": "psg_SYNA1abs01",
-            "cell_id": null,
-            "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
-          }
-        ],
-        "subsections": [],
-        "gaps": [],
-        "insufficient_evidence": []
-      }
-    }
-,
-    {
-      "name": "vocabulary_labels_valid",
-      "step_input": "D_vocabulary_labels",
-      "expect_ok": true,
-      "expect_codes": [],
-      "output": {
-        "schema_version": "deixis.vocabulary_labels.v1",
-        "step_input_id": "sti_SYNTHD0001",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "labels": [
-          { "phrase": "irrigation scheduling", "block": "task" },
-          { "phrase": "marketable yield", "block": "outcome" },
-          { "phrase": "greenhouse tomato production", "block": "setting" },
-          { "phrase": "case reports", "block": "exclusion" }
-        ]
-      }
-    },
-    {
-      "name": "vocabulary_labels_invented_phrase",
-      "step_input": "D_vocabulary_labels",
-      "expect_ok": false,
-      "expect_codes": ["phrase_not_in_allowlist"],
-      "output": {
-        "schema_version": "deixis.vocabulary_labels.v1",
-        "step_input_id": "sti_SYNTHD0001",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "labels": [
-          { "phrase": "irrigation scheduling", "block": "task" },
-          { "phrase": "marketable yield", "block": "outcome" },
-          { "phrase": "greenhouse tomato production", "block": "setting" },
-          { "phrase": "case reports", "block": "exclusion" },
-          { "phrase": "drip emitters", "block": "setting" }
-        ]
-      }
-    },
-    {
-      "name": "vocabulary_labels_missing_phrase",
-      "step_input": "D_vocabulary_labels",
-      "expect_ok": false,
-      "expect_codes": ["phrase_label_incomplete"],
-      "output": {
-        "schema_version": "deixis.vocabulary_labels.v1",
-        "step_input_id": "sti_SYNTHD0001",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "labels": [
-          { "phrase": "irrigation scheduling", "block": "task" },
-          { "phrase": "marketable yield", "block": "outcome" },
-          { "phrase": "greenhouse tomato production", "block": "setting" }
-        ]
-      }
-    },
-    {
-      "name": "vocabulary_labels_duplicate_phrase",
-      "step_input": "D_vocabulary_labels",
-      "expect_ok": false,
-      "expect_codes": ["phrase_label_incomplete"],
-      "output": {
-        "schema_version": "deixis.vocabulary_labels.v1",
-        "step_input_id": "sti_SYNTHD0001",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "labels": [
-          { "phrase": "irrigation scheduling", "block": "task" },
-          { "phrase": "marketable yield", "block": "outcome" },
-          { "phrase": "greenhouse tomato production", "block": "setting" },
-          { "phrase": "case reports", "block": "exclusion" },
-          { "phrase": "marketable yield", "block": "task" }
-        ]
-      }
-    },
-    {
-      "name": "criterion_proposal_valid",
-      "step_input": "E_criterion_proposal",
-      "expect_ok": true,
-      "expect_codes": [],
-      "output": {
-        "schema_version": "deixis.criterion_proposal.v1",
-        "step_input_id": "sti_SYNTHE0001",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
-        "parts": [
-          {
-            "name": "supervised exercise programme",
-            "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
-            "phrases": ["supervised exercise", "exercise programme", "aerobic training", "resistance training",
-                        "training sessions", "supervised sessions"]
-          },
-          {
-            "name": "fatigue outcome",
-            "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
-            "phrases": ["fatigue score", "fatigue severity", "facit-f", "validated scale", "fatigue outcome",
-                        "we measured fatigue"]
-          }
-        ],
-        "exclusion_title_words": ["review", "protocol", "commentary"]
-      }
-    },
-    {
-      "name": "criterion_proposal_one_part",
-      "step_input": "E_criterion_proposal",
-      "expect_ok": false,
-      "expect_codes": ["schema_invalid"],
-      "output": {
-        "schema_version": "deixis.criterion_proposal.v1",
-        "step_input_id": "sti_SYNTHE0001",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme.",
-        "parts": [
-          {
-            "name": "supervised exercise programme",
-            "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
-            "phrases": ["supervised exercise", "exercise programme", "aerobic training", "resistance training",
-                        "training sessions", "supervised sessions"]
-          }
-        ],
-        "exclusion_title_words": []
-      }
-    },
-    {
-      "name": "criterion_proposal_sixteen_phrases",
-      "step_input": "E_criterion_proposal",
-      "expect_ok": false,
-      "expect_codes": ["schema_invalid"],
-      "output": {
-        "schema_version": "deixis.criterion_proposal.v1",
-        "step_input_id": "sti_SYNTHE0001",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
-        "parts": [
-          {
-            "name": "supervised exercise programme",
-            "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
-            "phrases": ["supervised exercise", "exercise programme", "aerobic training", "resistance training",
-                        "training sessions", "supervised sessions", "walking programme", "cycling programme",
-                        "exercise intervention", "training protocol", "home based training", "group sessions",
-                        "physical training", "exercise arm", "training load", "weekly sessions"]
-          },
-          {
-            "name": "fatigue outcome",
-            "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
-            "phrases": ["fatigue score", "fatigue severity", "facit-f", "validated scale", "fatigue outcome",
-                        "we measured fatigue"]
-          }
-        ],
-        "exclusion_title_words": []
-      }
-    },
-    {
-      "name": "criterion_proposal_five_word_phrase",
-      "step_input": "E_criterion_proposal",
-      "expect_ok": false,
-      "expect_codes": ["criterion_phrase_too_long"],
-      "output": {
-        "schema_version": "deixis.criterion_proposal.v1",
-        "step_input_id": "sti_SYNTHE0001",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
-        "parts": [
-          {
-            "name": "supervised exercise programme",
-            "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
-            "phrases": ["supervised exercise", "exercise programme", "aerobic training", "resistance training",
-                        "training sessions", "the participants attended supervised sessions"]
-          },
-          {
-            "name": "fatigue outcome",
-            "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
-            "phrases": ["fatigue score", "fatigue severity", "facit-f", "validated scale", "fatigue outcome",
-                        "we measured fatigue"]
-          }
-        ],
-        "exclusion_title_words": []
-      }
-    },
-    {
-      "name": "criterion_proposal_repeated_part_name",
-      "step_input": "E_criterion_proposal",
-      "expect_ok": false,
-      "expect_codes": ["duplicate_criterion_part"],
-      "output": {
-        "schema_version": "deixis.criterion_proposal.v1",
-        "step_input_id": "sti_SYNTHE0001",
-        "scope_revision": 1,
-        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-        "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
-        "parts": [
-          {
-            "name": "Fatigue outcome",
-            "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
-            "phrases": ["supervised exercise", "exercise programme", "aerobic training", "resistance training",
-                        "training sessions", "supervised sessions"]
-          },
-          {
-            "name": "fatigue outcome",
-            "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
-            "phrases": ["fatigue score", "fatigue severity", "facit-f", "validated scale", "fatigue outcome",
-                        "we measured fatigue"]
-          }
-        ],
-        "exclusion_title_words": []
-      }
-    }
-  ]
+      "page": 7
+     }
+    ],
+    "citation_anchors": [],
+    "limitations": [],
+    "unanswered_aspects": [],
+    "capability_notice": null
+   }
+  },
+  {
+   "name": "answer_self_assigned_human_review",
+   "step_input": "A_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "schema_invalid"
+   ],
+   "output": {
+    "schema_version": "deixis.grounded_answer_draft.v3",
+    "step_input_id": "sti_SYNTHA0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
+    "answer_language": "en",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "section": "Formulations",
+      "text": "x",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01"
+      ],
+      "semantic_review": "human_checked"
+     }
+    ],
+    "citation_anchors": [],
+    "limitations": [],
+    "unanswered_aspects": [],
+    "capability_notice": null
+   }
+  },
+  {
+   "name": "answer_envelope_mismatch",
+   "step_input": "A_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "envelope_mismatch"
+   ],
+   "output": {
+    "schema_version": "deixis.grounded_answer_draft.v3",
+    "step_input_id": "sti_SYNTHB0001",
+    "scope_revision": 2,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+    "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
+    "answer_language": "en",
+    "claims": [],
+    "citation_anchors": [],
+    "limitations": [],
+    "unanswered_aspects": [
+     "An issue that was not addressed in the supplied passages was whether X holds."
+    ],
+    "capability_notice": null
+   }
+  },
+  {
+   "name": "answer_claim_without_passage_and_duplicates",
+   "step_input": "A_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "claim_without_passage",
+    "duplicate_claim_label",
+    "duplicate_passage_id",
+    "missing_citation_anchor",
+    "unknown_source_id"
+   ],
+   "output": {
+    "schema_version": "deixis.grounded_answer_draft.v3",
+    "step_input_id": "sti_SYNTHA0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "title": "Synthetic evidence for release scheduling formulations and relay placement in constrained molecular communication diffusion networks",
+    "answer_language": "en",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "section": "Formulations",
+      "text": "It has been reported that X is unsupported.",
+      "support_type": "analyst_inference",
+      "passage_ids": []
+     },
+     {
+      "claim_label": "c1",
+      "section": "Formulations",
+      "text": "It has been reported that X carries a repeated label.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01",
+       "psg_SYNA1abs01"
+      ]
+     }
+    ],
+    "citation_anchors": [],
+    "limitations": [
+     {
+      "kind": "access",
+      "text": "It was not possible to assess X; therefore, it is unknown if Y holds.",
+      "source_ids": [
+       "srv_SYNB1pub01"
+      ]
+     }
+    ],
+    "unanswered_aspects": [],
+    "capability_notice": null
+   }
+  },
+  {
+   "name": "answer_wrong_schema_version",
+   "step_input": "A_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "schema_invalid"
+   ],
+   "output": {
+    "schema_version": "deixis.grounded_answer_draft.v0",
+    "step_input_id": "sti_SYNTHA0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "claims": [],
+    "citation_anchors": [],
+    "limitations": [],
+    "unanswered_aspects": [],
+    "capability_notice": null
+   }
+  },
+  {
+   "name": "answer_not_json",
+   "step_input": "A_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "invalid_json"
+   ],
+   "output_raw": "Here is my answer: the sources say..."
+  },
+  {
+   "name": "report_plan_valid",
+   "step_input": "C_report_plan",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.report_plan_draft.v2",
+    "step_input_id": "sti_SYNTHR0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "scope_statement": "SYNTHETIC scope covering release scheduling formulations in molecular communication.",
+    "research_questions": [
+     {
+      "rq_id": "RQ1",
+      "text": "SYNTHETIC: what decision variables are used?"
+     },
+     {
+      "rq_id": "RQ2",
+      "text": "SYNTHETIC: what constraints are reported?"
+     }
+    ],
+    "glossary": [
+     {
+      "term": "release scheduling",
+      "definition": "SYNTHETIC definition.",
+      "passage_id": "psg_SYNA1abs01"
+     }
+    ],
+    "axes": [
+     {
+      "axis_id": "AX1",
+      "label": "SYNTHETIC method",
+      "column_id": "col_SYNTHR0001"
+     }
+    ],
+    "limitations_column_id": "col_SYNTHR0001",
+    "future_work_column_id": "col_SYNTHR0001"
+   }
+  },
+  {
+   "name": "report_section_valid",
+   "step_input": "C_report_section_IV",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.report_section_draft.v1",
+    "step_input_id": "sti_SYNTHR0002",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "section_id": "IV",
+    "claims": [
+     {
+      "claim_key": "IV.1",
+      "text": "It has been reported that the fake claim holds.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01"
+      ],
+      "cell_ids": [],
+      "paragraph": 1,
+      "table_ref": null,
+      "equation_ref": null,
+      "body_refs": [],
+      "axis_id": null,
+      "count": null,
+      "equation_origin": null,
+      "gap_refs": []
+     }
+    ],
+    "citation_anchors": [
+     {
+      "claim_key": "IV.1",
+      "passage_id": "psg_SYNA1abs01",
+      "cell_id": null,
+      "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+     }
+    ],
+    "subsections": [],
+    "gaps": [],
+    "insufficient_evidence": []
+   }
+  },
+  {
+   "name": "report_phrase_repair_valid",
+   "step_input": "C_report_phrase_repair",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.report_phrase_repair_draft.v1",
+    "step_input_id": "sti_SYNTHR0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "repairs": [
+     {
+      "sentence_id": "IV.1#1",
+      "text": "It has been reported that the rewritten sentence holds."
+     }
+    ]
+   }
+  },
+  {
+   "name": "report_review_valid",
+   "step_input": "C_report_review",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.report_review.v1",
+    "step_input_id": "sti_SYNTHR0004",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "findings": [],
+    "notes": ""
+   }
+  },
+  {
+   "name": "report_section_unknown_gap_ref",
+   "step_input": "C_report_section_VII",
+   "expect_ok": false,
+   "expect_codes": [
+    "unknown_gap_ref"
+   ],
+   "output": {
+    "schema_version": "deixis.report_section_draft.v1",
+    "step_input_id": "sti_SYNTHR0005",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "section_id": "VII",
+    "claims": [
+     {
+      "claim_key": "VII.1",
+      "text": "It has been reported that the fake claim holds.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01"
+      ],
+      "cell_ids": [],
+      "paragraph": 1,
+      "table_ref": null,
+      "equation_ref": null,
+      "body_refs": [],
+      "axis_id": null,
+      "count": null,
+      "equation_origin": null,
+      "gap_refs": [
+       "gap999"
+      ]
+     }
+    ],
+    "citation_anchors": [
+     {
+      "claim_key": "VII.1",
+      "passage_id": "psg_SYNA1abs01",
+      "cell_id": null,
+      "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+     }
+    ],
+    "subsections": [],
+    "gaps": [],
+    "insufficient_evidence": []
+   }
+  },
+  {
+   "name": "vocabulary_labels_valid",
+   "step_input": "D_vocabulary_labels",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.vocabulary_labels.v1",
+    "step_input_id": "sti_SYNTHD0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "labels": [
+     {
+      "phrase": "irrigation scheduling",
+      "block": "task"
+     },
+     {
+      "phrase": "marketable yield",
+      "block": "outcome"
+     },
+     {
+      "phrase": "greenhouse tomato production",
+      "block": "setting"
+     },
+     {
+      "phrase": "case reports",
+      "block": "exclusion"
+     }
+    ]
+   }
+  },
+  {
+   "name": "vocabulary_labels_invented_phrase",
+   "step_input": "D_vocabulary_labels",
+   "expect_ok": false,
+   "expect_codes": [
+    "phrase_not_in_allowlist"
+   ],
+   "output": {
+    "schema_version": "deixis.vocabulary_labels.v1",
+    "step_input_id": "sti_SYNTHD0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "labels": [
+     {
+      "phrase": "irrigation scheduling",
+      "block": "task"
+     },
+     {
+      "phrase": "marketable yield",
+      "block": "outcome"
+     },
+     {
+      "phrase": "greenhouse tomato production",
+      "block": "setting"
+     },
+     {
+      "phrase": "case reports",
+      "block": "exclusion"
+     },
+     {
+      "phrase": "drip emitters",
+      "block": "setting"
+     }
+    ]
+   }
+  },
+  {
+   "name": "vocabulary_labels_missing_phrase",
+   "step_input": "D_vocabulary_labels",
+   "expect_ok": false,
+   "expect_codes": [
+    "phrase_label_incomplete"
+   ],
+   "output": {
+    "schema_version": "deixis.vocabulary_labels.v1",
+    "step_input_id": "sti_SYNTHD0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "labels": [
+     {
+      "phrase": "irrigation scheduling",
+      "block": "task"
+     },
+     {
+      "phrase": "marketable yield",
+      "block": "outcome"
+     },
+     {
+      "phrase": "greenhouse tomato production",
+      "block": "setting"
+     }
+    ]
+   }
+  },
+  {
+   "name": "vocabulary_labels_duplicate_phrase",
+   "step_input": "D_vocabulary_labels",
+   "expect_ok": false,
+   "expect_codes": [
+    "phrase_label_incomplete"
+   ],
+   "output": {
+    "schema_version": "deixis.vocabulary_labels.v1",
+    "step_input_id": "sti_SYNTHD0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "labels": [
+     {
+      "phrase": "irrigation scheduling",
+      "block": "task"
+     },
+     {
+      "phrase": "marketable yield",
+      "block": "outcome"
+     },
+     {
+      "phrase": "greenhouse tomato production",
+      "block": "setting"
+     },
+     {
+      "phrase": "case reports",
+      "block": "exclusion"
+     },
+     {
+      "phrase": "marketable yield",
+      "block": "task"
+     }
+    ]
+   }
+  },
+  {
+   "name": "criterion_proposal_valid",
+   "step_input": "E_criterion_proposal",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.criterion_proposal.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
+    "parts": [
+     {
+      "name": "supervised exercise programme",
+      "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+      "phrases": [
+       "supervised exercise",
+       "exercise programme",
+       "aerobic training",
+       "resistance training",
+       "training sessions",
+       "supervised sessions"
+      ]
+     },
+     {
+      "name": "fatigue outcome",
+      "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+      "phrases": [
+       "fatigue score",
+       "fatigue severity",
+       "facit-f",
+       "validated scale",
+       "fatigue outcome",
+       "we measured fatigue"
+      ]
+     }
+    ],
+    "exclusion_title_words": [
+     "review",
+     "protocol",
+     "commentary"
+    ]
+   }
+  },
+  {
+   "name": "criterion_proposal_one_part",
+   "step_input": "E_criterion_proposal",
+   "expect_ok": false,
+   "expect_codes": [
+    "schema_invalid"
+   ],
+   "output": {
+    "schema_version": "deixis.criterion_proposal.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme.",
+    "parts": [
+     {
+      "name": "supervised exercise programme",
+      "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+      "phrases": [
+       "supervised exercise",
+       "exercise programme",
+       "aerobic training",
+       "resistance training",
+       "training sessions",
+       "supervised sessions"
+      ]
+     }
+    ],
+    "exclusion_title_words": []
+   }
+  },
+  {
+   "name": "criterion_proposal_sixteen_phrases",
+   "step_input": "E_criterion_proposal",
+   "expect_ok": false,
+   "expect_codes": [
+    "schema_invalid"
+   ],
+   "output": {
+    "schema_version": "deixis.criterion_proposal.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
+    "parts": [
+     {
+      "name": "supervised exercise programme",
+      "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+      "phrases": [
+       "supervised exercise",
+       "exercise programme",
+       "aerobic training",
+       "resistance training",
+       "training sessions",
+       "supervised sessions",
+       "walking programme",
+       "cycling programme",
+       "exercise intervention",
+       "training protocol",
+       "home based training",
+       "group sessions",
+       "physical training",
+       "exercise arm",
+       "training load",
+       "weekly sessions"
+      ]
+     },
+     {
+      "name": "fatigue outcome",
+      "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+      "phrases": [
+       "fatigue score",
+       "fatigue severity",
+       "facit-f",
+       "validated scale",
+       "fatigue outcome",
+       "we measured fatigue"
+      ]
+     }
+    ],
+    "exclusion_title_words": []
+   }
+  },
+  {
+   "name": "criterion_proposal_five_word_phrase",
+   "step_input": "E_criterion_proposal",
+   "expect_ok": false,
+   "expect_codes": [
+    "criterion_phrase_too_long"
+   ],
+   "output": {
+    "schema_version": "deixis.criterion_proposal.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
+    "parts": [
+     {
+      "name": "supervised exercise programme",
+      "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+      "phrases": [
+       "supervised exercise",
+       "exercise programme",
+       "aerobic training",
+       "resistance training",
+       "training sessions",
+       "the participants attended supervised sessions"
+      ]
+     },
+     {
+      "name": "fatigue outcome",
+      "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+      "phrases": [
+       "fatigue score",
+       "fatigue severity",
+       "facit-f",
+       "validated scale",
+       "fatigue outcome",
+       "we measured fatigue"
+      ]
+     }
+    ],
+    "exclusion_title_words": []
+   }
+  },
+  {
+   "name": "criterion_proposal_repeated_part_name",
+   "step_input": "E_criterion_proposal",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_criterion_part"
+   ],
+   "output": {
+    "schema_version": "deixis.criterion_proposal.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
+    "parts": [
+     {
+      "name": "Fatigue outcome",
+      "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+      "phrases": [
+       "supervised exercise",
+       "exercise programme",
+       "aerobic training",
+       "resistance training",
+       "training sessions",
+       "supervised sessions"
+      ]
+     },
+     {
+      "name": "fatigue outcome",
+      "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+      "phrases": [
+       "fatigue score",
+       "fatigue severity",
+       "facit-f",
+       "validated scale",
+       "fatigue outcome",
+       "we measured fatigue"
+      ]
+     }
+    ],
+    "exclusion_title_words": []
+   }
+  },
+  {
+   "name": "abstract_screening_valid",
+   "step_input": "F_abstract_screening",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.abstract_screening.v1",
+    "step_input_id": "sti_SYNTHF0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "records": [
+     {
+      "candidate_id": "cnd_C0000001",
+      "label": "candidate",
+      "quote": "We schedule drip irrigation in a greenhouse tomato crop over one season",
+      "rationale": "SYNTHETIC: the abstract names the setting and the task."
+     },
+     {
+      "candidate_id": "cnd_C0000002",
+      "label": "out_of_scope",
+      "quote": "We measure the bread delivery rounds of a small town bakery",
+      "rationale": "SYNTHETIC: another setting and another problem."
+     },
+     {
+      "candidate_id": "cnd_C0000003",
+      "label": "unresolved",
+      "quote": "",
+      "rationale": "SYNTHETIC: there is no abstract to read."
+     }
+    ]
+   }
+  },
+  {
+   "name": "abstract_screening_unknown_duplicate_and_quoteless_are_warnings",
+   "step_input": "F_abstract_screening",
+   "expect_ok": true,
+   "expect_codes": [],
+   "expect_warnings": [
+    "duplicate_candidate_proposal",
+    "unknown_candidate_id",
+    "label_without_quote",
+    "candidate_without_proposal"
+   ],
+   "output": {
+    "schema_version": "deixis.abstract_screening.v1",
+    "step_input_id": "sti_SYNTHF0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "records": [
+     {
+      "candidate_id": "cnd_C0000001",
+      "label": "candidate",
+      "quote": "We schedule drip irrigation in a greenhouse tomato crop over one season",
+      "rationale": "SYNTHETIC first."
+     },
+     {
+      "candidate_id": "cnd_C0000001",
+      "label": "out_of_scope",
+      "quote": "We schedule drip irrigation",
+      "rationale": "SYNTHETIC second."
+     },
+     {
+      "candidate_id": "cnd_C0000009",
+      "label": "candidate",
+      "quote": "SYNTHETIC invented record",
+      "rationale": "SYNTHETIC: this record was never sent."
+     },
+     {
+      "candidate_id": "cnd_C0000002",
+      "label": "out_of_scope",
+      "quote": "",
+      "rationale": "SYNTHETIC: a label with no quote."
+     }
+    ]
+   }
+  },
+  {
+   "name": "abstract_screening_label_outside_the_schema",
+   "step_input": "F_abstract_screening",
+   "expect_ok": false,
+   "expect_codes": [
+    "schema_invalid"
+   ],
+   "output": {
+    "schema_version": "deixis.abstract_screening.v1",
+    "step_input_id": "sti_SYNTHF0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "records": [
+     {
+      "candidate_id": "cnd_C0000001",
+      "label": "include",
+      "quote": "We schedule drip irrigation",
+      "rationale": "SYNTHETIC: inclusion is not this step's to decide."
+     }
+    ]
+   }
+  }
+ ]
 }

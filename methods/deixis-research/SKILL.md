@@ -49,6 +49,10 @@ For `vocabulary_labels`, read
 application extracted from the question into concept blocks, and propose no
 phrases of your own.
 
+For `abstract_screening`, read
+[abstract screening](references/abstract-screening.md): you say whether each
+given record's abstract is worth reading in full, and you decide no inclusion.
+
 For `criterion_proposal`, read
 [criterion proposal](references/criterion-proposal.md): you state, from the
 question alone, what a paper must contain to be included, and name the words an

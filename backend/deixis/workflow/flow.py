@@ -1475,8 +1475,13 @@ class ResearchFlow:
                 self._pause(run_id, "equations_failed", {"asset_id": asset_id, **state})
             self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, **state})
 
-    async def _acquire_pdf(self, run: dict[str, Any], svid: str, downloads: int, limit: int | None) -> int:
-        """Retrieve the source's open PDF of the same version, if it has none yet; returns the downloads it counted."""
+    async def _acquire_pdf(self, run: dict[str, Any], svid: str, downloads: int, limit: int | None,
+                           other_versions: bool = False) -> int:
+        """Retrieve the source's open PDF of the same version, if it has none yet; returns the downloads it counted.
+
+        `other_versions` is passed by the full-text retrieval run alone (D83) and reaches only the DOI lookup a
+        refused link opens here; an answer run and a PDF collection run never pass it.
+        """
         source = self.store.source(svid)
         # A PDF from a different version (e.g. a submitted manuscript for a published record) is not attached.
         same_version = source["oa_pdf_version"] is not None and source["oa_pdf_version"] == source["version_label"]
@@ -1490,7 +1495,7 @@ class ResearchFlow:
             await self._fetch_pdf(run, source)
             refusal = self.store.pdf_link_refusal(svid, source["oa_pdf_url"])
         if refusal is not None and self._needs_other_copy(run["research_id"], source, refusal):
-            await self._find_other_copy(run, source)
+            await self._find_other_copy(run, source, other_versions=other_versions)
         return 1
 
     async def _review(self, run: dict[str, Any], scope: dict[str, Any], answer_id: str, draft: dict[str, Any]) -> None:
@@ -1715,9 +1720,13 @@ class ResearchFlow:
         run_id, rid = run["id"], run["research_id"]
         source = self.store.source(head)
         route = None
-        await self._acquire_pdf(run, head, 0, None)
+        # A refused link opens the DOI lookup inside `_acquire_pdf`, and that lookup is this work's one lookup: it
+        # has to be the one that may open a row for another version, or no later one ever would.
+        await self._acquire_pdf(run, head, 0, None, other_versions=True)
         if self.store.has_pdf_text(head):
             route = "other_copy" if self._other_copy_found(run_id, head) else "record_link"
+        elif self._opened_version_has_text(run_id, head):
+            route = "lookup_version"
         else:
             for other in self.store.work_versions(rid, head):
                 if not self.store.has_pdf_text(other):
@@ -1730,7 +1739,10 @@ class ResearchFlow:
         # so a work with no open link at all — most closed publisher records — would never be looked up, and
         # SW10.5's "the twin first, then the author's copy" would never be tried. An answer run and a PDF
         # collection run keep the narrow trigger.
-        if route is None and normalize_doi(source["doi"]) and not self.store.pdf_discoveries(rid, head):
+        # The lookup rows are the research's history, not this run's: a lookup or a copy that did not answer an
+        # earlier run is asked again here, or the work would be planned by every later run and settled by none.
+        if route is None and normalize_doi(source["doi"]) and (
+                not self.store.pdf_discoveries(rid, head) or self._unanswered_lookups(rid, head)):
             self._checkpoint(run_id)
             found = await self._find_other_copy(run, source, other_versions=True)
             opened = found.get("lookup_version_id")
@@ -1752,9 +1764,21 @@ class ResearchFlow:
                 "code": fulltext.settled_code({"has_text": has_text, "has_asset": has_asset, "unanswered": unanswered}),
                 "requests_unanswered": unanswered}
 
+    def _other_copy_step(self, run_id: str, svid: str) -> dict[str, Any]:
+        """This run's DOI lookup step for the record, read without opening one: `store.step` would leave a step
+        that never runs on the timeline of every work that needed no lookup."""
+        row = self.store.conn.execute(
+            "SELECT status, output_json FROM run_steps WHERE run_id = ? AND operation_key = ?",
+            (run_id, f"other_copy:{svid}")).fetchone()
+        return {"status": row["status"], "output": json.loads(row["output_json"] or "{}")} if row else {"status": None, "output": {}}
+
     def _other_copy_found(self, run_id: str, svid: str) -> bool:
-        step = self.store.step(run_id, f"other_copy:{svid}", "pdf_other_copy")
-        return step["status"] in ("succeeded", "partial")
+        return self._other_copy_step(run_id, svid)["status"] in ("succeeded", "partial")
+
+    def _opened_version_has_text(self, run_id: str, svid: str) -> bool:
+        """Whether this run's DOI lookup for the record opened a row for another version, and that row has text."""
+        opened = self._other_copy_step(run_id, svid)["output"].get("source_version_id")
+        return bool(opened) and self.store.has_pdf_text(opened)
 
     def _current_asset(self, svid: str) -> str | None:
         row = self.store.conn.execute(
@@ -1786,11 +1810,18 @@ class ResearchFlow:
                 unanswered += (row["error_code"] in UNANSWERED_FETCH_CODES
                                or (row["error_code"] == "fetch_http_error" and bool(status)
                                    and (status == 429 or status >= 500)))
-            unanswered += sum(1 for d in self.store.pdf_discoveries(research_id, svid)
-                              if d["status"] in UNANSWERED_LOOKUP_STATUSES)
-            unanswered += sum(1 for c in self.store.pdf_candidates(svid)
-                              if c["access_status"] in UNANSWERED_LOOKUP_STATUSES)
+            unanswered += self._unanswered_lookups(research_id, svid)
         return unanswered
+
+    def _unanswered_lookups(self, research_id: str, svid: str) -> int:
+        """How many of this record's DOI lookups and looked-up copies did not answer the last time they were asked.
+
+        A lookup is stored once per asking, so only each provider's newest row counts: a 429 an earlier run met
+        says nothing once the same provider has answered since. A copy's row is updated in place.
+        """
+        latest = {d["provider"]: d["status"] for d in self.store.pdf_discoveries(research_id, svid)}
+        return (sum(1 for status in latest.values() if status in UNANSWERED_LOOKUP_STATUSES)
+                + sum(1 for c in self.store.pdf_candidates(svid) if c["access_status"] in UNANSWERED_LOOKUP_STATUSES))
 
     def _write_fulltext_codes(self, run: dict[str, Any], step_id: str | None,
                               writes: list[tuple[str, str]]) -> dict[str, int]:

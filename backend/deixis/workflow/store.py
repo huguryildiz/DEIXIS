@@ -1016,6 +1016,9 @@ class Store:
         key = f"{svid}:{version_label}"
         existing = self.find_source_by_identifier("pdf_lookup_version", key)
         if existing:
+            # Records are shared by every research: a row another research's lookup opened joins this one too, or
+            # this research would read the work as having no text while the file is in the library.
+            self.add_to_corpus(research_id, existing, "search", None, candidate=False)
             return existing
         source = self.source(svid)
         ts, oid = now(), new_id("srv")

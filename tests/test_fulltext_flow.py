@@ -753,3 +753,99 @@ def test_a_stale_fulltext_decision_still_shadows_a_newer_abstract_decision(tmp_p
         client.__exit__(None, None, None)
     assert run["status"] == "completed" and held["reason_code"] == "not_read_yet" and stale
     assert outcome["stage"] == "fulltext" and outcome["reason_code"] == "not_read_yet"
+
+
+# ---- review: a lookup that did not answer ----------------------------------------------------------------
+
+def test_a_lookup_that_did_not_answer_is_asked_again_by_the_next_run_and_the_work_can_settle(tmp_path, monkeypatch):
+    """The lookup rows are the research's history, not the run's: an old 429 must neither stop the next run from
+    looking the DOI up again nor keep the work undecided for ever."""
+    doi = "10.1/oa.1"
+
+    class Limited(Transport):
+        limited = True
+
+        def __call__(self, request):
+            if request.url.host == "api.unpaywall.org" and self.limited:
+                self.lookups.append(doi)
+                return httpx.Response(429)
+            return super().__call__(request)
+
+    transport = Limited([work(1)])  # a closed record: no open link, so the DOI lookup is its only route
+    app = app_for(tmp_path, monkeypatch, transport, Fetcher({}))
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, first = wait_for_retrieval(client, rid)
+        store = app.state.store
+        head = records_of(store, rid)["W1"]
+        undecided = (work_steps(store, first["id"])[head]["error_code"], fulltext_codes(store, rid))
+        transport.limited = False  # Unpaywall answers now: it holds no copy
+        second = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_fetch"}).json()["id"]
+        wait(client, rid, second)
+        codes = fulltext_codes(store, rid)
+    finally:
+        client.__exit__(None, None, None)
+    assert undecided == ("fetch_not_settled", {"W1": None})
+    assert transport.lookups == [doi, doi], "the next run did not look the DOI up again"
+    assert codes == {"W1": "no_fulltext"}
+
+
+def test_a_record_whose_own_link_refused_still_gets_the_verified_copy_of_another_version(tmp_path, monkeypatch):
+    """A 403 on the record's own link opens the DOI lookup inside `_acquire_pdf`; the retrieval run's lookup must be
+    the one that may open a row for another version there too, or the owner's decision 3 never applies to the
+    records most likely to need it."""
+    own, copy = "https://example.org/w1.pdf", "https://example.org/w1-submitted.pdf"
+    transport = Transport([work(1, pdf_url=own)], unpaywall("10.1/oa.1", copy, "submittedVersion"))
+    fetcher = Fetcher({own: REFUSED, copy: ok()})
+    app = app_for(tmp_path, monkeypatch, transport, fetcher)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, run = wait_for_retrieval(client, rid)
+        store = app.state.store
+        head = records_of(store, rid)["W1"]
+        output = json.loads(work_steps(store, run["id"])[head]["output_json"])
+        opened = store.source(output["read_version"])
+        text = (store.has_pdf_text(opened["id"]), store.has_pdf_text(head))
+    finally:
+        client.__exit__(None, None, None)
+    assert output["route"] == "lookup_version" and output["code"] == "not_read_yet"
+    assert opened["id"] != head and opened["version_label"] == "submittedVersion"
+    assert text == (True, False) and transport.lookups == ["10.1/oa.1"]
+
+
+def test_a_work_read_through_its_own_link_leaves_no_lookup_step_that_never_runs(tmp_path, monkeypatch):
+    fetcher = Fetcher({"https://example.org/w1.pdf": ok()})
+    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, run = wait_for_retrieval(client, rid)
+        kinds = [row["kind"] for row in app.state.store.run_steps(run["id"])]
+    finally:
+        client.__exit__(None, None, None)
+    assert "pdf_other_copy" not in kinds, kinds
+
+
+def test_a_second_research_with_the_same_record_reads_the_version_row_the_first_one_opened(tmp_path, monkeypatch):
+    """Records are shared by every research; a row one research's lookup opened has to join the next research too, or
+    that research says `no_fulltext` about a work whose text is in the library."""
+    copy = "https://example.org/w1-submitted.pdf"
+    transport = Transport([work(1)], unpaywall("10.1/oa.1", copy, "submittedVersion"))
+    fetcher = Fetcher({copy: ok()})
+    app = app_for(tmp_path, monkeypatch, transport, fetcher)
+    client = client_of(app)
+    try:
+        first, _, _, _ = discover(client)
+        wait_for_retrieval(client, first)
+        second, _, _, _ = discover(client)
+        _, run = wait_for_retrieval(client, second)
+        store = app.state.store
+        plan = step_output(store, run["id"], "fulltext_plan")
+        outputs = [json.loads(row["output_json"]) for row in work_steps(store, run["id"]).values()]
+    finally:
+        client.__exit__(None, None, None)
+    # Either the plan already saw the text or the work step found the row; in neither case is the work without text.
+    assert plan["already_text"] == 1 or [o["code"] for o in outputs] == ["not_read_yet"], (plan, outputs)
+    assert fetcher.calls.count(copy) == 1

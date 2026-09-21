@@ -335,6 +335,9 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
     for candidate in sorted(wanted, key=lambda c: (VERSION_ORDER.index(c["version_label"]), c["id"])):
         existing = store.find_source_by_identifier("pdf_lookup_version", f"{source_version_id}:{candidate['version_label']}")
         if existing and store.has_asset(existing):
+            # Already fetched, perhaps by another research that holds the same record: the row joins this research
+            # and the file is not asked for again.
+            store.open_lookup_version(research_id, source_version_id, candidate["version_label"], candidate["landing_url"])
             return None, existing
         result = await fetcher(candidate["candidate_url"])
         store.record_pdf_attempt(candidate["id"], result)

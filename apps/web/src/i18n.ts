@@ -1419,6 +1419,7 @@ const tr: Record<string, string> = {
   'Retrieval plan (code)': 'Getirme planı (kod)',
   'Full text of one work': 'Bir işin tam metni',
   'Retrieval summary (code)': 'Getirme özeti (kod)',
+  'Criterion phrases (code)': 'Ölçüt ifadeleri (kod)',
   'Retrieving the full texts': 'Tam metinler getiriliyor',
   'Retrieved the full texts': 'Tam metinler getirildi',
   'Full-text retrieval paused': 'Tam metin getirme duraklatıldı',

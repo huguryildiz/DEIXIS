@@ -146,6 +146,7 @@ export const stepLabel = (kind: string, key: string) => {
   if (kind === 'code:fulltext_plan') return t('Retrieval plan (code)')
   if (kind === 'code:fulltext_work') return t('Full text of one work')
   if (kind === 'code:fulltext_summary') return t('Retrieval summary (code)')
+  if (kind === 'code:criterion_phrases') return t('Criterion phrases (code)')
   if (kind === 'fetch_pdf') return t('Open-access PDF retrieval')
   if (kind === 'pdf_other_copy') return t('Search for another open copy')
   if (kind === 'read_equations') return t('Reading equations (Marker)')

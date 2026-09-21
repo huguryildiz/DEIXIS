@@ -56,6 +56,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     from deixis.workflow.flow import (FORMULATION_SCORE_THRESHOLD, MAX_ABSTRACT_CHARS, MAX_PASSAGES_PER_SOURCE,
                                       PDF_PAGES_PER_SOURCE, RRF_K)
     from deixis.workflow.criterion import THRESHOLDS as CRITERION_THRESHOLDS
+    from deixis.workflow.criterion_passages import THRESHOLDS as CRITERION_PASSAGE_THRESHOLDS
     from deixis.workflow.expansion import THRESHOLDS as EXPANSION_THRESHOLDS
     from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS, title_words
     from deixis.workflow.ranking import THRESHOLDS as RANKING_THRESHOLDS
@@ -130,10 +131,15 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             "chunk_chars": CHUNK_CHARS,
             "max_passages_per_source": MAX_PASSAGES_PER_SOURCE,
             "pdf_pages_per_source": PDF_PAGES_PER_SOURCE,
-            "formulation_score_threshold": FORMULATION_SCORE_THRESHOLD,
+            # The hand-written formulation quota is a legacy body's alone: an sw answer fills that room from the
+            # criterion's approved cue phrases instead (D84), so a threshold it no longer applies is not recorded.
+            **({"formulation_score_threshold": FORMULATION_SCORE_THRESHOLD}
+               if scope.get("search_workflow") != "sw" else {}),
             # The identity rule and the page read limit run only on the sw workflow, so a legacy protocol body stays
             # exactly as it was.
             **({"record_identity": THRESHOLDS,
+                # How much of the answer input the criterion order may fill, and how it is split per source (D84).
+                "criterion_passages": CRITERION_PASSAGE_THRESHOLDS,
                 "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS,
                 "ranking": RANKING_THRESHOLDS,
                 # How deep the abstract stage reads and what it counts as a verbatim quote (D81). `read_limit` is

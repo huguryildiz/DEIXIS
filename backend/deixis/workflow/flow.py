@@ -41,6 +41,7 @@ from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import abstract_stage
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import criterion as criterion_rules
+from deixis.workflow import criterion_passages
 from deixis.workflow import expansion as expansion_rules
 from deixis.workflow import fulltext
 from deixis.workflow import lookups
@@ -1330,7 +1331,10 @@ class ResearchFlow:
         self._checkpoint(run_id)
         self.store.update_run(run_id, stage="answer")
         semantic = await self._semantic_ranking(run, scope, included)
-        passages = self._retrieve(rid, scope, included, run["budget"]["max_answer_passages"], semantic)
+        # An sw research fills part of the input from the cue phrases its criterion was approved with (D84); a
+        # legacy research passes nothing and keeps the hand-written formulation quota it had.
+        patterns = self._criterion_phrases(run, scope) if scope.get("search_workflow") == "sw" else None
+        passages = self._retrieve(rid, scope, included, run["budget"]["max_answer_passages"], semantic, patterns)
         if not passages:
             self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
                                    {"ok": True, "issues": [], "note": "No accessible passages for the included sources."},
@@ -1358,6 +1362,33 @@ class ResearchFlow:
                                            output["result"], {"ok": True, "issues": [], "warnings": output.get("warnings", [])}, links,
                                            selection_revision=step_selection)
         await self._review(run, scope, answer_id, output["result"])
+
+    def _criterion_phrases(self, run: dict[str, Any], scope: dict[str, Any]) -> list[tuple[str, re.Pattern[str]]]:
+        """The approved cue phrases this answer run orders criterion passages with, compiled (D84, SW12.3).
+
+        They are read from `protocol_records` alone, never from a step output: a proposal still waiting on the
+        approval card is not a criterion, and a phrase list belongs to the research, not to the run that proposed it.
+        `frozen_criterion` matches the question and steering this run answers, so a revised question leaves the old
+        phrases behind, and passes over a body whose criterion is null, so an older filled body of the same question
+        is used instead (D78).
+
+        The step is frozen like a plan: a resumed run recompiles what it stored and does not read the protocol again,
+        and a second answer run opens its own step. No model is called and nothing can fail here, so the step is
+        `succeeded` even when it found no phrases; what it found is in its output.
+        """
+        step = self.store.step(run["id"], "criterion_phrases", "code:criterion_phrases")
+        if step["status"] == "succeeded":
+            return criterion_passages.compile_phrases([{"phrase": p} for p in step["output"]["phrases"]])["patterns"]
+        self.store.start_step(step["id"])
+        frozen = self.store.frozen_criterion(run["research_id"], scope["question"], scope.get("steering"))
+        compiled = criterion_passages.compile_phrases((frozen or {}).get("cue_phrases") or [])
+        phrases = [phrase for phrase, _ in compiled["patterns"]]
+        reason = "no_criterion" if frozen is None else None if phrases else "no_phrases"
+        self.store.finish_step(step["id"], "succeeded", output={
+            "source": "none" if frozen is None else "protocol", "reason": reason,
+            "protocol_revision": frozen["protocol_revision"] if frozen else None,
+            "phrases": phrases, "dropped": compiled["dropped"]})
+        return compiled["patterns"]
 
     async def _pdf_ocr(self, run: dict[str, Any]) -> None:
         """Read a PDF's scanned pages with the local Tesseract, one step per page, and write the OCR extraction (D51).
@@ -1941,7 +1972,14 @@ class ResearchFlow:
         return ranked
 
     def _retrieve(self, research_id: str, scope: dict[str, Any], included: list[str], limit: int,
-                  semantic: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+                  semantic: list[dict[str, Any]] | None = None,
+                  patterns: list[tuple[str, re.Pattern[str]]] | None = None) -> list[dict[str, Any]]:
+        """Passages for the answer step. `patterns` is given by an sw run alone and may be empty (D84).
+
+        Without it the selection is what it was before slice 11: the hand-written formulation quota. With it, part
+        of the room is filled from the criterion order instead, and an empty list means the whole input comes from
+        the topic order — an sw research never falls back to the topic-specific formulation list.
+        """
         # A short attached document can fit in the answer input in its entirety. Do not discard relevant later pages
         # merely because the multi-source six-passage cap was reached; keep that cap for larger or mixed corpora.
         if len(included) == 1 and scope.get("source_scope") in ("attached", "attached_and_academic"):
@@ -1986,6 +2024,11 @@ class ResearchFlow:
         order = answer_source_order(included, self.store.answer_order_facts(research_id, included), texts, unique_terms, semantic_rank)
         with_text = [svid for svid in included if passages_of[svid]]
         with_pdf = [svid for svid in with_text if any(q["kind"] == "pdf_page" for q in passages_of[svid])]
+        # Scored once per retrieval, in memory: the phrase score is a pure function of stored text and stored
+        # phrases and belongs to no shared passage row, because phrases are this research's and passages are not.
+        criterion_of = {svid: criterion_passages.criterion_order(
+            [q for q in passages_of[svid] if q["kind"] == "pdf_page"], patterns) for svid in included
+        } if patterns else {}
         if len(with_text) + PDF_PAGES_PER_SOURCE * len(with_pdf) > limit:
             # One passage per source would leave too little room for PDF pages (D55). A source with PDF text gives its
             # abstract and its best pages, and the sources at the end of the order are not given.
@@ -2000,7 +2043,14 @@ class ResearchFlow:
                 if pages:
                     matched = {q["id"]: i for i, q in enumerate(self.store.search_passages([svid], fts, MAX_PASSAGES_PER_SOURCE * 2))}
                     pages.sort(key=lambda q: (0, position[q["id"]]) if q["id"] in position else (1, matched[q["id"]]) if q["id"] in matched
+                               else (2, q["physical_page"] if q["physical_page"] is not None else math.inf) if patterns is not None
                                else (2, -formulation_score(q["text"]), q["physical_page"] if q["physical_page"] is not None else math.inf))
+                if patterns is not None and pages:
+                    # The source still gives the same number of pages; one of them comes from the criterion order,
+                    # and a source with no criterion page gives its second page from the topic order. The page
+                    # already given as `first` is not offered again, or it would spend one of the two places.
+                    offered = {q["id"] for q in pages}
+                    pages = self._two_quota_pages(pages, [q for q in criterion_of.get(svid, []) if q["id"] in offered])
                 for q in ([first] if first else []) + pages[:PDF_PAGES_PER_SOURCE]:
                     if len(selected) < limit:
                         selected[q["id"]] = q
@@ -2014,21 +2064,41 @@ class ResearchFlow:
             if p:
                 selected[p["id"]] = p
         taken = {svid: 1 for svid in {p["source_version_id"] for p in selected.values()}}
-        order_position = {svid: i for i, svid in enumerate(order)}
-        formulation_pages = [p for svid in order for p in passages_of[svid]
-                             if p["kind"] == "pdf_page" and formulation_score(p["text"]) >= FORMULATION_SCORE_THRESHOLD]
-        formulation_pages.sort(key=lambda p: (-formulation_score(p["text"]), order_position[p["source_version_id"]],
-                                               p["physical_page"] if p["physical_page"] is not None else math.inf))
-        formulation_room = limit // 4
-        formulations_added = 0
-        for p in formulation_pages:
-            if len(selected) >= limit or formulations_added >= formulation_room:
-                break
-            svid = p["source_version_id"]
-            if p["id"] not in selected and taken.get(svid, 0) < MAX_PASSAGES_PER_SOURCE:
-                selected[p["id"]] = p
-                taken[svid] = taken.get(svid, 0) + 1
-                formulations_added += 1
+        if patterns is None:
+            order_position = {svid: i for i, svid in enumerate(order)}
+            formulation_pages = [p for svid in order for p in passages_of[svid]
+                                 if p["kind"] == "pdf_page" and formulation_score(p["text"]) >= FORMULATION_SCORE_THRESHOLD]
+            formulation_pages.sort(key=lambda p: (-formulation_score(p["text"]), order_position[p["source_version_id"]],
+                                                   p["physical_page"] if p["physical_page"] is not None else math.inf))
+            formulation_room = limit // 4
+            formulations_added = 0
+            for p in formulation_pages:
+                if len(selected) >= limit or formulations_added >= formulation_room:
+                    break
+                svid = p["source_version_id"]
+                if p["id"] not in selected and taken.get(svid, 0) < MAX_PASSAGES_PER_SOURCE:
+                    selected[p["id"]] = p
+                    taken[svid] = taken.get(svid, 0) + 1
+                    formulations_added += 1
+        else:
+            # The criterion quota fills in rounds down the source order, so it is not spent on one source's pages
+            # and every source holding a criterion page is represented before any source gives a second one.
+            room = limit // criterion_passages.CRITERION_ROOM_DIVISOR
+            added = 0
+            for depth in range(max((len(ordered) for ordered in criterion_of.values()), default=0)):
+                if len(selected) >= limit or added >= room:
+                    break
+                for svid in order:
+                    if len(selected) >= limit or added >= room:
+                        break
+                    ordered = criterion_of.get(svid, [])
+                    if depth >= len(ordered):
+                        continue
+                    p = ordered[depth]
+                    if p["id"] not in selected and taken.get(svid, 0) < MAX_PASSAGES_PER_SOURCE:
+                        selected[p["id"]] = p
+                        taken[svid] = taken.get(svid, 0) + 1
+                        added += 1
         for p in ranked:
             if len(selected) >= limit:
                 break
@@ -2036,6 +2106,21 @@ class ResearchFlow:
                 selected[p["id"]] = p
                 taken[p["source_version_id"]] = taken.get(p["source_version_id"], 0) + 1
         return list(selected.values())
+
+    @staticmethod
+    def _two_quota_pages(topic: list[dict[str, Any]], criterion: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The pages one source gives when the included sources outnumber the passage limit (D55, D84).
+
+        The best topic page first, then the first criterion pages this source has, then the topic order again for
+        whatever room is left. The count a source contributes does not change; which pages they are does.
+        """
+        picked = topic[:1]
+        ids = {q["id"] for q in picked}
+        for q in criterion[:criterion_passages.CRITERION_PAGES_PER_SOURCE]:
+            if q["id"] not in ids:
+                picked.append(q)
+                ids.add(q["id"])
+        return picked + [q for q in topic if q["id"] not in ids]
 
     # ---- evidence tables ----------------------------------------------------------------
     async def _table_fill(self, run: dict[str, Any], scope: dict[str, Any]) -> None:

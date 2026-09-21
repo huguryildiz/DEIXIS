@@ -59,7 +59,8 @@ function phaseOf(kind: string): PhaseKey | null {
   if (kind.startsWith('code:fulltext_')) return 'pdf'
   if (kind.startsWith('ocr_')) return 'ocr'
   if (kind.startsWith('embedding:')) return 'semantic'
-  if (kind === 'model:grounded_answer') return 'answer'
+  // The answer run compiles its criterion phrases in code just before it chooses passages; that is its answer phase.
+  if (kind === 'model:grounded_answer' || kind === 'code:criterion_phrases') return 'answer'
   if (kind === 'model:answer_review') return 'review'
   return null
 }

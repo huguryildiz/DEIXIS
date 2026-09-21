@@ -34,6 +34,7 @@ from deixis.workflow.protocol import build_protocol
 from deixis.workflow.store import Store
 from deixis.workflow.approval import apply_criterion, canonical_edits, edited_extraction
 from deixis.workflow.criterion import consensus
+from deixis.workflow import criterion_passages
 from deixis.workflow.vocabulary import apply_labels, build_vocabulary
 
 CONCEPTS = [
@@ -521,6 +522,21 @@ def stage_fulltext_plan(rows: list[dict[str, Any]]) -> Any:
             "codes": [fulltext.settled_code(attempt) for attempt in FULLTEXT_ATTEMPTS]}
 
 
+def stage_criterion_passages(rows: list[dict[str, Any]]) -> Any:
+    """The compiled cue phrases, the score of every passage and the criterion order (slice 11, SW12.3).
+
+    The approved phrases carry no order of their own and neither does the passage pool, so both are shuffled
+    together here: neither may reach the compiled list, a score or the order (SW14.6).
+    """
+    phrases = [{"phrase": row["phrase"]} for row in rows if "phrase" in row]
+    passages = [row for row in rows if "text" in row]
+    compiled = criterion_passages.compile_phrases(phrases)
+    patterns = compiled["patterns"]
+    return {"phrases": [phrase for phrase, _ in patterns], "dropped": compiled["dropped"],
+            "scores": {p["id"]: list(criterion_passages.score(p["text"], patterns)) for p in sorted(passages, key=lambda p: p["id"])},
+            "order": [p["id"] for p in criterion_passages.criterion_order(passages, patterns)]}
+
+
 def stage_build_protocol(rows: list[dict[str, Any]]) -> Any:
     scope = SCOPE | {"providers": [row["id"] for row in rows]}
     return build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
@@ -545,6 +561,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "record_ranking": stage_record_ranking,
     "abstract_stage": stage_abstract_stage,
     "fulltext_plan": stage_fulltext_plan,
+    "criterion_passages": stage_criterion_passages,
 }
 
 ROWS: dict[str, list[dict[str, Any]]] = {
@@ -676,6 +693,25 @@ ROWS: dict[str, list[dict[str, Any]]] = {
         {"id": "A6", "work_id": "wrk_f", "doi": "10.1/syn.6", "version_label": None,
          "title": "SYNTHETIC bakery delivery rounds of a small town",
          "abstract": "We measure the irrigation scheduling of the bakery garden between two delivery rounds."},
+    ],
+    # The approved cue phrases of a SYNTHETIC criterion (an optimization one and, from another field, a clinical
+    # one), with the two rows code drops: one below the character floor and one that normalises onto another.
+    # The passages are six SYNTHETIC chunks of two fields: two hold several phrases, two hold one, one holds none
+    # and one carries no physical page.
+    "criterion_passages": [
+        {"phrase": "subject to"}, {"phrase": "decision variable"}, {"phrase": "Subject  To"}, {"phrase": "at"},
+        {"phrase": "randomised controlled trial"}, {"phrase": "s.t."},
+        {"id": "psg_a", "physical_page": 4,
+         "text": "SYNTHETIC we minimise the release cost subject to a budget, s.t. one decision variable stays free."},
+        {"id": "psg_b", "physical_page": 2,
+         "text": "SYNTHETIC the schedule is subject to a deadline and subject to the channel width."},
+        {"id": "psg_c", "physical_page": 2,
+         "text": "SYNTHETIC a randomised controlled trial of supervised exercise after chemotherapy."},
+        {"id": "psg_d", "physical_page": 9,
+         "text": "SYNTHETIC two decision variables and one randomised controlled trial arm are reported."},
+        {"id": "psg_e", "physical_page": None,
+         "text": "SYNTHETIC the bakery delivers bread subject to the morning round."},
+        {"id": "psg_f", "physical_page": 1, "text": "SYNTHETIC the bakery delivers bread every morning."},
     ],
     "work_outcome": [
         # First in the list: both shuffles the test runs reverse this pair.

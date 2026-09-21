@@ -82,7 +82,7 @@ def test_a_second_freeze_of_the_same_body_keeps_one_record_and_a_changed_body_ne
 def test_build_protocol_is_repeatable_and_reads_its_thresholds_from_their_definitions():
     from deixis.documents.pdf import CHUNK_CHARS
     from deixis.domain.rules import SCREENING_BATCH
-    from deixis.workflow import flow, protocol
+    from deixis.workflow import criterion_passages, flow, protocol
 
     scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
              "seed_mode": "question_only", "search_workflow": "sw", "providers": ["openalex", "crossref"],
@@ -100,7 +100,11 @@ def test_build_protocol_is_repeatable_and_reads_its_thresholds_from_their_defini
     assert body["thresholds"]["max_passages_per_source"] == flow.MAX_PASSAGES_PER_SOURCE
     assert body["thresholds"]["pdf_pages_per_source"] == flow.PDF_PAGES_PER_SOURCE
     assert body["thresholds"]["max_abstract_chars"] == flow.MAX_ABSTRACT_CHARS
-    assert body["thresholds"]["formulation_score_threshold"] == flow.FORMULATION_SCORE_THRESHOLD
+    # This body is an `sw` one, which no longer carries the formulation threshold; a legacy body still reads it
+    # from its one definition (slice 11, D84).
+    assert protocol.build_protocol(scope | {"search_workflow": "legacy"}, {"max_candidates": 20}, plan, queries,
+                                   "pkg_hash", settings)["thresholds"]["formulation_score_threshold"] == flow.FORMULATION_SCORE_THRESHOLD
+    assert body["thresholds"]["criterion_passages"] == criterion_passages.THRESHOLDS
     assert body["providers"] == ["crossref", "openalex"] and body["arms"] == ["keyword_search"]
     assert body["compiled_queries"] == [{"provider_id": "openalex", "query_text": "diffusion channel", "results": 25}]
     assert body["vocabulary"] == plan["concepts"] and body["inclusion_criterion"] is None
@@ -114,6 +118,7 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     from deixis.domain.survey import THRESHOLDS as SURVEY_THRESHOLDS
     from deixis.workflow import protocol
     from deixis.workflow.criterion import THRESHOLDS as CRITERION_THRESHOLDS
+    from deixis.workflow.criterion_passages import THRESHOLDS as CRITERION_PASSAGE_THRESHOLDS
     from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS
     from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT,
                                      ABSTRACT_RUNS, FULLTEXT_WORK_LIMIT)
@@ -127,11 +132,15 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     legacy = protocol.build_protocol(scope | {"search_workflow": "legacy"}, {}, None, [], "pkg_hash", settings)
     sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
     assert not {"record_identity", "search_read", "survey", "lookup", "criterion", "ranking",
-                "fulltext_fetch"} & set(legacy["thresholds"])
+                "fulltext_fetch", "criterion_passages"} & set(legacy["thresholds"])
+    # The hand-written formulation quota is the legacy body's alone now: an sw answer fills that room from the
+    # approved cue phrases and no longer applies this threshold (slice 11, D84).
+    assert "formulation_score_threshold" in legacy["thresholds"] and "formulation_score_threshold" not in sw["thresholds"]
     assert sw["thresholds"]["record_identity"] == THRESHOLDS
     assert sw["thresholds"]["search_read"] == {"read_limit_per_query": SW_READ_LIMIT}
-    assert sw["thresholds"] == legacy["thresholds"] | {
+    assert sw["thresholds"] == {k: v for k, v in legacy["thresholds"].items() if k != "formulation_score_threshold"} | {
         "record_identity": THRESHOLDS, "search_read": {"read_limit_per_query": SW_READ_LIMIT},
+        "criterion_passages": CRITERION_PASSAGE_THRESHOLDS,
         "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS,
         "ranking": RANKING_THRESHOLDS,
         # How deep this research's effort reads abstracts, and what counts as a verbatim quote (slice 09, D81).

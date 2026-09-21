@@ -73,7 +73,7 @@ export const blockNotes: Record<ApprovalBlock, string> = {
   task: 'Searched: the other part of the provider query.',
   outcome: 'Not searched; used to order the records that were found.',
   claim: 'Not searched: a record that states the claim is what the search is looking for.',
-  exclusion: 'Not searched; a record whose title holds one of these words is kept out.',
+  exclusion: 'Not searched. Kept with the protocol; in this version no record is kept out by them yet.',
 }
 // Who supplied a phrase, and who put it in its block. Both are shown, because they answer different questions.
 const termOrigins: Record<string, string> = { question: 'from the question', key_terms: 'from your key terms', user: 'added by you' }

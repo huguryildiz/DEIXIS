@@ -331,7 +331,7 @@ function CriterionSection({ criterion, available, sought, draft, now, editable, 
           {editable && <AddCue label={group.name} onAdd={phrase => onEdit({ cue_phrases: [...now.cue_phrases, { phrase, part: group.name }] })} />}
         </div>)}
       </div>
-      <WordList label={t('Words that keep a record out by its title')} words={now.exclusion_title_words} editable={editable}
+      <WordList label={t('Title words of records that are not this kind of study (kept with the protocol; not used yet)')} words={now.exclusion_title_words} editable={editable}
         onChange={words => onEdit({ exclusion_title_words: words })} />
       {criterion?.dropped_exclusion_title_words?.length ? <p className="approval-hint">
         {t('Dropped as words of the question itself: {words}', { words: criterion.dropped_exclusion_title_words.join(', ') })}</p> : null}

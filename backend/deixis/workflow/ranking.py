@@ -304,6 +304,10 @@ def query_vocabulary(scope: dict[str, Any], vocabulary: dict[str, Any],
     query_words = set(words(scope["question"]))
     for row in term_rows(vocabulary["terms"], {"terms": list(expansion_terms)}):
         query_words |= set(words(row["phrase"])) | set(words(row["form"]))
+    # An outcome term is not searched but does order: the question's own are in its words already, one the user added
+    # at the approval is not, and the card tells the user it orders the records.
+    for phrase in vocabulary.get("outcome_terms") or []:
+        query_words |= set(words(phrase))
     blocks = {block: [queried_form(term) for term in queried_terms(vocabulary, block)] for block in GATE_BLOCKS}
     # The second round's accepted phrases were searched as the task block, so that is where they rank (slice 04b).
     blocks[TASK_BLOCK] = blocks[TASK_BLOCK] + list(expansion_terms)

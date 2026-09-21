@@ -221,3 +221,10 @@ def test_every_output_is_the_same_whatever_order_the_pool_rows_arrive_in(seed):
                                      for name, row in ranks.items()}, "fused": fused})
 
     assert digest(shuffled) == digest(POOL)
+
+
+def test_an_outcome_term_the_question_did_not_hold_is_among_the_words_bm25_reads():
+    """The approval card tells the user an outcome term orders the records; one added there must really do so."""
+    vocabulary = {"terms": [], "outcome_terms": ["SYNTHETIC seedling survival"]}
+    query_words, _ = ranking.query_vocabulary({"question": "Which canopy is reported?"}, vocabulary, [])
+    assert {"seedling", "survival"} <= query_words

@@ -13,7 +13,9 @@ from typing import Any
 from deixis.config import Settings
 from deixis.domain.record_identity import THRESHOLDS
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
-                                 FULLTEXT_WORK_LIMIT, SCREENING_BATCH, SW_READ_LIMIT, effective_reviewer, step_model)
+                                 FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
+                                 FULLTEXT_READ_LIMIT, FULLTEXT_RUNS, FULLTEXT_WORK_LIMIT, SCREENING_BATCH,
+                                 SW_READ_LIMIT, effective_reviewer, step_model)
 from deixis.domain.survey import THRESHOLDS as SURVEY_THRESHOLDS
 from deixis.domain.survey_words import ABSTRACT_SELF_DESCRIPTIONS as SURVEY_PATTERNS
 from deixis.providers import query_compiler
@@ -149,7 +151,12 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                 "search_read": {"read_limit_per_query": SW_READ_LIMIT},
                 # How many works one full-text retrieval run fetches (D83). This research's own effort, so it says
                 # how many works were tried, not how many have a full text.
-                "fulltext_fetch": {"work_limit": FULLTEXT_WORK_LIMIT[scope["effort"]]}}
+                "fulltext_fetch": {"work_limit": FULLTEXT_WORK_LIMIT[scope["effort"]]},
+                # How many works one reading run sends to the model, and what one call is shown (D85).
+                "fulltext_adjudication": {"read_limit": FULLTEXT_READ_LIMIT[scope["effort"]], "runs": FULLTEXT_RUNS,
+                                          "passages_per_call": FULLTEXT_PASSAGES_PER_CALL,
+                                          "criterion_passages": FULLTEXT_CRITERION_PASSAGES,
+                                          "quote_min_chars": FULLTEXT_QUOTE_MIN_CHARS}}
                if scope.get("search_workflow") == "sw" else {}),
             **({"vocabulary": VOCABULARY_THRESHOLDS} if vocabulary else {}),
             **({"expansion": EXPANSION_THRESHOLDS} if expansion else {}),

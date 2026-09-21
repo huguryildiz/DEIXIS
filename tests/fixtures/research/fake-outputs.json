@@ -1142,6 +1142,127 @@
      }
     ]
    }
+  },
+  {
+   "name": "fulltext_adjudication_valid",
+   "step_input": "H_fulltext_adjudication",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.fulltext_adjudication.v1",
+    "step_input_id": "sti_SYNTHH0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "parts": [
+     {
+      "part": "irrigation",
+      "label": "present",
+      "quote": "SYNTHETIC greenhouse tomato drip irrigation raised marketabl",
+      "passage_id": "psg_SYNTHH0001",
+      "rationale": "SYNTHETIC: the shown passage is what this label rests on."
+     },
+     {
+      "part": "yield",
+      "label": "present",
+      "quote": "SYNTHETIC greenhouse tomato drip irrigation raised marketabl",
+      "passage_id": "psg_SYNTHH0001",
+      "rationale": "SYNTHETIC: the shown passage is what this label rests on."
+     },
+     {
+      "part": "rounds",
+      "label": "present",
+      "quote": "SYNTHETIC greenhouse tomato drip irrigation raised marketabl",
+      "passage_id": "psg_SYNTHH0001",
+      "rationale": "SYNTHETIC: the shown passage is what this label rests on."
+     },
+     {
+      "part": "cover",
+      "label": "present",
+      "quote": "SYNTHETIC greenhouse tomato drip irrigation raised marketabl",
+      "passage_id": "psg_SYNTHH0001",
+      "rationale": "SYNTHETIC: the shown passage is what this label rests on."
+     }
+    ]
+   }
+  },
+  {
+   "name": "fulltext_adjudication_unknown_duplicate_and_quoteless_are_warnings",
+   "step_input": "H_fulltext_adjudication",
+   "expect_ok": true,
+   "expect_codes": [],
+   "expect_warnings": [
+    "duplicate_part",
+    "unknown_part",
+    "label_without_quote",
+    "passage_not_in_allowlist",
+    "part_without_proposal"
+   ],
+   "output": {
+    "schema_version": "deixis.fulltext_adjudication.v1",
+    "step_input_id": "sti_SYNTHH0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "parts": [
+     {
+      "part": "irrigation",
+      "label": "present",
+      "quote": "SYNTHETIC greenhouse tomato drip irrigation raised marketabl",
+      "passage_id": "psg_SYNTHH0001",
+      "rationale": "SYNTHETIC: the shown passage is what this label rests on."
+     },
+     {
+      "part": "irrigation",
+      "label": "present",
+      "quote": "SYNTHETIC greenhouse tomato drip irrigation raised marketabl",
+      "passage_id": "psg_SYNTHH0001",
+      "rationale": "SYNTHETIC: the shown passage is what this label rests on."
+     },
+     {
+      "part": "invented",
+      "label": "absent",
+      "quote": "",
+      "passage_id": null,
+      "rationale": "SYNTHETIC: the shown passage is what this label rests on."
+     },
+     {
+      "part": "yield",
+      "label": "present",
+      "quote": "",
+      "passage_id": "psg_SYNTHH0001",
+      "rationale": "SYNTHETIC: the shown passage is what this label rests on."
+     },
+     {
+      "part": "rounds",
+      "label": "present",
+      "quote": "SYNTHETIC greenhouse tomato drip irrigation raised marketabl",
+      "passage_id": "psg_NOTINLIST1",
+      "rationale": "SYNTHETIC: the shown passage is what this label rests on."
+     }
+    ]
+   }
+  },
+  {
+   "name": "fulltext_adjudication_label_outside_the_schema",
+   "step_input": "H_fulltext_adjudication",
+   "expect_ok": false,
+   "expect_codes": [
+    "schema_invalid"
+   ],
+   "output": {
+    "schema_version": "deixis.fulltext_adjudication.v1",
+    "step_input_id": "sti_SYNTHH0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "parts": [
+     {
+      "part": "irrigation",
+      "label": "maybe",
+      "quote": "SYNTHETIC greenhouse tomato drip irrigation raised marketabl",
+      "passage_id": "psg_SYNTHH0001",
+      "rationale": "SYNTHETIC: the shown passage is what this label rests on."
+     }
+    ]
+   }
   }
  ]
 }

@@ -29,7 +29,7 @@ from deixis.workflow.decisions import DecisionStore
 from deixis.workflow import links
 from deixis.workflow.expansion import expand
 from deixis.workflow.flow import answer_source_order, fuse_rankings
-from deixis.workflow import abstract_stage, fulltext, ranking, suggestions
+from deixis.workflow import abstract_stage, adjudication, fulltext, ranking, suggestions
 from deixis.workflow.protocol import build_protocol
 from deixis.workflow.store import Store
 from deixis.workflow.approval import apply_criterion, canonical_edits, edited_extraction
@@ -522,6 +522,65 @@ def stage_fulltext_plan(rows: list[dict[str, Any]]) -> Any:
             "codes": [fulltext.settled_code(attempt) for attempt in FULLTEXT_ATTEMPTS]}
 
 
+
+ADJUDICATION_ORDER = ["A2", "A1", "A3"]
+ADJUDICATION_CRITERION = {
+    "criterion": "SYNTHETIC the paper reports a measured outcome of a method of its own.",
+    "parts": [{"name": "method", "definition": "The paper puts forward a method of its own."},
+              {"name": "outcome", "definition": "The paper reports a measured outcome."}],
+    "cue_phrases": [{"phrase": "greenhouse tomato", "part": "method"},
+                    {"phrase": "marketable yield", "part": "outcome"}],
+}
+
+
+def stage_adjudication(rows: list[dict[str, Any]]) -> Any:
+    """The reading plan, the passages each call is shown, the quote checks and one summary (slice 12).
+
+    Works, passages and the two runs' proposals arrive together and carry no order of their own. The inspection
+    order is given. Neither a set's iteration nor the arrival order may reach the plan, a reading list or a code.
+    """
+    work_rows = [row for row in rows if row.get("kind") == "work"]
+    passage_rows = [row for row in rows if row.get("kind") == "passage"]
+    proposal_rows = [row for row in rows if row.get("kind") == "proposal"]
+    by_work: dict[str, list[dict[str, Any]]] = {}
+    for row in sorted(work_rows, key=lambda row: row["id"]):
+        by_work.setdefault(row["work_id"], []).append(row)
+    works = [{"work_id": work_id, "head": min(v["id"] for v in versions), "selection": versions[0].get("selection"),
+              "versions": [{"id": v["id"], "has_text": bool(v.get("has_text")),
+                            "abstract": v.get("abstract"), "fulltext": v.get("fulltext")} for v in versions]}
+             for work_id, versions in sorted(by_work.items())]
+    plan = adjudication.read_plan(works, ADJUDICATION_ORDER, limit=2)
+    passages_of: dict[str, list[dict[str, Any]]] = {}
+    for row in sorted(passage_rows, key=lambda row: row["id"]):
+        passages_of.setdefault(row["head"], []).append(
+            {"id": row["id"], "kind": "pdf_page", "physical_page": row["page"], "text": row["text"]})
+    lists = {}
+    checks = {}
+    codes = {}
+    for head in plan["works"]:
+        pages = passages_of.get(head, [])
+        chosen = adjudication.reading_list(pages, ADJUDICATION_CRITERION, [p["id"] for p in pages], 12, 8)
+        lists[head] = [p["id"] for p in chosen["passages"]]
+        shown = {p["id"]: {"physical_page": p["physical_page"]} for p in chosen["passages"]}
+        page_text: dict[int, str] = {}
+        for passage in sorted(chosen["passages"], key=lambda p: p["id"]):
+            page_text[passage["physical_page"]] = (page_text.get(passage["physical_page"], "") + " " + passage["text"]).strip()
+        views = []
+        verified = []
+        for run_no in (1, 2):
+            records = [row for row in proposal_rows if row["head"] == head and row["run"] == run_no]
+            records = sorted(records, key=lambda row: row["part"])
+            proposals = adjudication.proposals_of(ADJUDICATION_CRITERION["parts"], records, shown, page_text, 12)
+            views.append(adjudication.run_view(proposals))
+            verified.append({name: row["quote_verified"] for name, row in sorted(proposals.items())})
+        checks[head] = verified
+        codes[head] = adjudication.combine(views[0], views[1])
+    summary = {"works": plan["works"], "not_reached": plan["not_reached"], "lists": lists,
+               "checks": checks, "codes": codes,
+               "include": sum(1 for code in codes.values() if code == "all_parts_verified")}
+    return summary
+
+
 def stage_criterion_passages(rows: list[dict[str, Any]]) -> Any:
     """The compiled cue phrases, the score of every passage and the criterion order (slice 11, SW12.3).
 
@@ -562,6 +621,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "abstract_stage": stage_abstract_stage,
     "fulltext_plan": stage_fulltext_plan,
     "criterion_passages": stage_criterion_passages,
+    "adjudication": stage_adjudication,
 }
 
 ROWS: dict[str, list[dict[str, Any]]] = {
@@ -672,6 +732,45 @@ ROWS: dict[str, list[dict[str, Any]]] = {
     # Six SYNTHETIC records of five works from one field: A1 holds both gate blocks in its title, A2 is a
     # correction notice, A3 an artifact with a stored link, A4 and A6 are read by the model, and A7 shares a work
     # with A5, whose head carries no abstract of its own.
+    "adjudication": [
+        {"kind": "work", "id": "A1", "work_id": "wrk_a1", "has_text": True,
+         "abstract": {"reason_code": "runs_agree_candidate", "decided_by": "model_agreement", "stale": False}},
+        {"kind": "work", "id": "A2", "work_id": "wrk_a2", "has_text": True,
+         "selection": {"state": "included", "origin": "user"},
+         "abstract": {"reason_code": "runs_agree_out_of_scope", "decided_by": "model_agreement", "stale": False}},
+        {"kind": "work", "id": "A3", "work_id": "wrk_a3", "has_text": True,
+         "abstract": {"reason_code": "abstract_not_found", "decided_by": "code", "stale": False}},
+        {"kind": "work", "id": "A4", "work_id": "wrk_a4", "has_text": True,
+         "selection": {"state": "excluded", "origin": "user"},
+         "abstract": {"reason_code": "runs_agree_candidate", "decided_by": "model_agreement", "stale": False}},
+        {"kind": "work", "id": "A5", "work_id": "wrk_a5", "has_text": True,
+         "abstract": {"reason_code": "runs_agree_candidate", "decided_by": "model_agreement", "stale": False},
+         "fulltext": {"reason_code": "all_parts_verified", "decided_by": "model_agreement", "stale": False}},
+        {"kind": "passage", "id": "P1", "head": "A1", "page": 1,
+         "text": "SYNTHETIC greenhouse tomato drip irrigation raised marketable yield."},
+        {"kind": "passage", "id": "P2", "head": "A1", "page": 2,
+         "text": "SYNTHETIC the bakery route delivered bread before the market opened."},
+        {"kind": "passage", "id": "P3", "head": "A2", "page": 1,
+         "text": "SYNTHETIC greenhouse tomato beds were irrigated on a fixed schedule."},
+        {"kind": "passage", "id": "P4", "head": "A3", "page": 1,
+         "text": "SYNTHETIC a bakery counted loaves and a greenhouse counted fruit."},
+        {"kind": "proposal", "head": "A1", "run": 1, "part": "method", "label": "present",
+         "quote": "SYNTHETIC greenhouse tomato drip irrigation", "passage_id": "P1"},
+        {"kind": "proposal", "head": "A1", "run": 1, "part": "outcome", "label": "present",
+         "quote": "raised marketable yield", "passage_id": "P1"},
+        {"kind": "proposal", "head": "A1", "run": 2, "part": "method", "label": "present",
+         "quote": "SYNTHETIC greenhouse tomato drip irrigation", "passage_id": "P1"},
+        {"kind": "proposal", "head": "A1", "run": 2, "part": "outcome", "label": "present",
+         "quote": "raised marketable yield", "passage_id": "P1"},
+        {"kind": "proposal", "head": "A2", "run": 1, "part": "method", "label": "present",
+         "quote": "SYNTHETIC greenhouse tomato beds", "passage_id": "P3"},
+        {"kind": "proposal", "head": "A2", "run": 1, "part": "outcome", "label": "absent",
+         "quote": "", "passage_id": None},
+        {"kind": "proposal", "head": "A2", "run": 2, "part": "method", "label": "absent",
+         "quote": "", "passage_id": None},
+        {"kind": "proposal", "head": "A2", "run": 2, "part": "outcome", "label": "absent",
+         "quote": "", "passage_id": None},
+    ],
     "abstract_stage": [
         {"id": "A1", "work_id": "wrk_a", "doi": "10.1/syn.1", "version_label": None,
          "title": "SYNTHETIC irrigation scheduling of a greenhouse tomato crop",

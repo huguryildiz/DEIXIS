@@ -305,3 +305,43 @@ def test_the_fulltext_fetch_migration_keeps_every_run_it_found_and_accepts_the_n
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     with sqlite3.connect(tmp_path / "library.sqlite") as reopened:
         assert reopened.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == len(PRE_FULLTEXT_KINDS) + 1
+
+
+# Every run kind the database held before the full-text reading run was added (slice 12, migration 0046).
+PRE_ADJUDICATION_KINDS = (*PRE_FULLTEXT_KINDS, "fulltext_fetch")
+
+
+def test_the_adjudication_migration_keeps_every_run_it_found_and_accepts_the_new_kind(tmp_path, monkeypatch):
+    """Migration 0046 rebuilds `runs` to widen its CHECK; the rows already there must survive it (D85)."""
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    for path in db.MIGRATIONS_DIR.glob("*.sql"):
+        if int(path.name.split("_", 1)[0]) < 46:
+            shutil.copy(path, migrations / path.name)
+    adjudication_migration = db.MIGRATIONS_DIR / "0046_fulltext_adjudication_run_kind.sql"
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_test', 'Test', 'now', 'now')")
+    for kind in PRE_ADJUDICATION_KINDS:
+        conn.execute(
+            "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
+            " VALUES (?, 'res_test', 1, ?, 'queued', 'inspection', '{}', 'now', 'now')",
+            (f"run_{kind}", kind),
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
+            " VALUES ('run_early', 'res_test', 1, 'fulltext_adjudication', 'queued', 'inspection', '{}', 'now', 'now')"
+        )
+    shutil.copy(adjudication_migration, migrations / adjudication_migration.name)
+    assert db.migrate(conn) == [46]
+    conn.execute(
+        "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
+        " VALUES ('run_reading', 'res_test', 1, 'fulltext_adjudication', 'queued', 'inspection', '{}', 'now', 'now')"
+    )
+    assert {row["kind"] for row in conn.execute("SELECT kind FROM runs")} == {*PRE_ADJUDICATION_KINDS, "fulltext_adjudication"}
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    with sqlite3.connect(tmp_path / "library.sqlite") as reopened:
+        assert reopened.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == len(PRE_ADJUDICATION_KINDS) + 1

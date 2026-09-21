@@ -44,7 +44,7 @@ from deixis.providers import zotero
 from deixis.providers.registry import CONNECTORS, available_providers
 from deixis.storage import db
 from deixis.workflow import approval as approval_rules
-from deixis.workflow import fulltext
+from deixis.workflow import adjudication, fulltext
 from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import bibliography
 from deixis.workflow.concurrency import ModelCallLimiter
@@ -125,7 +125,7 @@ class SemanticChoice(BaseModel):
 
 
 class StartRun(BaseModel):
-    kind: Literal["discovery", "answer", "pdf_collection", "research_title", "fulltext_fetch"]
+    kind: Literal["discovery", "answer", "pdf_collection", "research_title", "fulltext_fetch", "fulltext_adjudication"]
 
 
 class SelectionChange(BaseModel):
@@ -796,6 +796,8 @@ def create_app(
             raise HTTPException(422, "Include at least one source before generating an answer")
         if body.kind == "fulltext_fetch" and scope.get("search_workflow") != "sw":
             raise HTTPException(422, "Full-text retrieval runs belong to the search workflow")
+        if body.kind == "fulltext_adjudication" and scope.get("search_workflow") != "sw":
+            raise HTTPException(422, "Full-text reading runs belong to the search workflow")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
         if body.kind == "discovery" and scope.get("search_workflow") == "sw":
             # The criterion proposal before the first search (D78) and the abstract stage's two runs over the
@@ -816,6 +818,9 @@ def create_app(
             # Downloads and open-copy lookups for the works the rank order reaches (D83). The same function the
             # flow's auto-queue calls, so neither route can give this run more room than the other.
             budget = fulltext.fetch_budget(scope["effort"])
+        elif body.kind == "fulltext_adjudication":
+            # Two model calls per work the read limit reaches (D85). The same function the flow's auto-queue calls.
+            budget = adjudication.read_budget(scope["effort"])
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
         run = store.create_run(research_id, body.kind, budget, key)
         request.app.state.worker.wake()

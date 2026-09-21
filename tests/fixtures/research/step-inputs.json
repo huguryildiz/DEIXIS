@@ -1875,5 +1875,126 @@
    ],
    "max_terms": 12
   }
+ },
+ "H_fulltext_adjudication": {
+  "step_input_id": "sti_SYNTHH0001",
+  "research_id": "res_SYNTHH0001",
+  "run_id": "run_SYNTHH0001",
+  "step_id": "stp_SYNTHH0001",
+  "task_type": "fulltext_adjudication",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "skill_files": [
+   "SKILL.md",
+   "references/fulltext-adjudication.md"
+  ],
+  "output_schema_versions": [
+   "deixis.fulltext_adjudication.v1"
+  ],
+  "question": {
+   "text": "SYNTHETIC: how does drip irrigation affect marketable yield in greenhouse tomato production, and what do a bakery's delivery rounds cover?",
+   "language_hint": "en"
+  },
+  "user_steering": [],
+  "adjudication_target": {
+   "source_id": "srv_SYNTHH0001",
+   "criterion": "SYNTHETIC: the paper itself reports drip irrigation, marketable yield, delivery rounds and a greenhouse cover.",
+   "parts": [
+    {
+     "name": "irrigation",
+     "definition": "SYNTHETIC drip irrigation of a greenhouse tomato crop."
+    },
+    {
+     "name": "yield",
+     "definition": "SYNTHETIC marketable yield of that crop."
+    },
+    {
+     "name": "rounds",
+     "definition": "SYNTHETIC bread delivery rounds of a small town bakery."
+    },
+    {
+     "name": "cover",
+     "definition": "SYNTHETIC the cover material of the greenhouse."
+    }
+   ],
+   "runs": 2,
+   "run": 1
+  },
+  "capabilities": {
+   "supported_tasks": [
+    "search_plan",
+    "screening",
+    "grounded_answer"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [
+   "openalex"
+  ],
+  "candidates": [],
+  "sources": [
+   {
+    "source_id": "srv_SYNTHH0001",
+    "work_id": "wrk_SYNTHH0001",
+    "title": "SYNTHETIC H1: Drip irrigation and marketable yield of greenhouse tomato, beside a bakery log",
+    "year": 2024,
+    "version_label": "published",
+    "access_level": "pdf_available"
+   }
+  ],
+  "passages": [
+   {
+    "passage_id": "psg_SYNTHH0001",
+    "source_id": "srv_SYNTHH0001",
+    "reading_depth": "selected_sections",
+    "locator": {
+     "kind": "pdf_page",
+     "physical_page": 1,
+     "printed_label": null
+    },
+    "abstract_origin": null,
+    "text_source": "text_layer",
+    "text": "SYNTHETIC greenhouse tomato drip irrigation raised marketable yield over one season of the trial."
+   },
+   {
+    "passage_id": "psg_SYNTHH0002",
+    "source_id": "srv_SYNTHH0001",
+    "reading_depth": "selected_sections",
+    "locator": {
+     "kind": "pdf_page",
+     "physical_page": 2,
+     "printed_label": null
+    },
+    "abstract_origin": null,
+    "text_source": "text_layer",
+    "text": "SYNTHETIC a small town bakery logs its bread delivery rounds and the distance each round covers."
+   }
+  ],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [
+    "srv_SYNTHH0001"
+   ],
+   "passage_ids": [
+    "psg_SYNTHH0001",
+    "psg_SYNTHH0002"
+   ]
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 10,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 0
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": null
+  },
+  "created_at": "2026-09-22T00:00:00Z"
  }
 }

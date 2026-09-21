@@ -27,8 +27,10 @@ from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, identity, math_reader, ocr, pdf
 from deixis.domain import canonical, contracts, expansion as phrase_candidates, phrasebank, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
-                                 MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH,
-                                 SW_READ_LIMIT, after_invalid_output, effective_reviewer, schema_repairs, step_model)
+                                 FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
+                                 FULLTEXT_RUNS, MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES,
+                                 SCREENING_BATCH, SW_READ_LIMIT, after_invalid_output, effective_reviewer,
+                                 schema_repairs, step_model)
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt
@@ -39,6 +41,7 @@ from deixis.providers.registry import CONNECTORS, Connector
 from deixis.storage.db import dumps, new_id, now
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import abstract_stage
+from deixis.workflow import adjudication
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import criterion as criterion_rules
 from deixis.workflow import criterion_passages
@@ -75,7 +78,8 @@ COLUMN_FIELDS = ("name", "instruction", "answer_format", "options", "allow_multi
 RRF_K = 60  # reciprocal rank fusion constant (D27)
 # Steps whose records are shown as short handles instead of stored identifiers, because long random IDs were
 # mis-copied (D12). The abstract stage joined them in slice 09: its batches name 20 candidates each.
-HANDLE_TASKS = ("grounded_answer", "answer_review", "cell_extraction", "abstract_screening")
+HANDLE_TASKS = ("grounded_answer", "answer_review", "cell_extraction", "abstract_screening",
+                "fulltext_adjudication")
 FORMULATION_SCORE_THRESHOLD = 3
 FORMULATION_TERMS = re.compile(
     r"\b(?:minimi[sz]e|maximi[sz]e|subject\s+to|s\.\s*t|objective\s+function|constraints?|decision\s+variables?"
@@ -234,6 +238,14 @@ class _AbstractJob:
 
 
 @dataclass
+class _AdjudicationJob:
+    key: str
+    head: str
+    read_version: str
+    run_no: int               # 1 or 2: the two independent reads of that work (D85)
+
+
+@dataclass
 class FlowDeps:
     settings: Settings
     store: Store
@@ -262,6 +274,8 @@ class ResearchFlow:
                 await self._inspect(run, limit=None)
             elif run["kind"] == "fulltext_fetch":
                 await self._fulltext_fetch(run, scope)
+            elif run["kind"] == "fulltext_adjudication":
+                await self._fulltext_adjudication(run, scope)
             elif run["kind"] == "pdf_ocr":
                 await self._pdf_ocr(run)
             elif run["kind"] == "table_fill":
@@ -284,6 +298,9 @@ class ResearchFlow:
                 # (D83). Nothing is queued for a `legacy` research, for a run that did not complete, or when the
                 # setting is off.
                 self._queue_fulltext_fetch(run, scope)
+            elif run["kind"] == "fulltext_fetch":
+                # The reading run is queued in this same turn, with no await between the two (D85).
+                self._queue_fulltext_adjudication(run, scope)
 
     # ---- run control ---------------------------------------------------------------
     def _checkpoint(self, run_id: str, scope_revision: int | None = None) -> None:
@@ -876,8 +893,9 @@ class ResearchFlow:
                               order: list[str]) -> None:
         """Classify every record by code, then ask the model twice about the works code left open (K3, D81).
 
-        Nothing is included here: the abstract stage has no `include` outcome, so until slice 12 an `sw` research
-        includes no work by itself (SW1.2). What the read limit does not reach is `abstract_not_read`, which is
+        Nothing is included here: the abstract stage has no `include` outcome (SW1.2). A work is included only by
+        the full-text reading run, and only when both of its runs agree and every quote is on the page (D85). What
+        the read limit does not reach is `abstract_not_read`, which is
         `unresolved`, so the next discovery run of the same question reads on from there rather than repeating.
         The plan is frozen in the code step's output: a resumed run reads it back instead of deriving it again,
         because "the works still needing a model" is a different list by then and the batch keys would move to
@@ -1917,6 +1935,306 @@ class ResearchFlow:
                    "identity": dict(sorted(identities.items())), "routes": dict(sorted(routes.items()))}
         self.store.finish_step(step["id"], "succeeded", output=summary)
 
+    async def _fulltext_adjudication(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+        """Two model runs per work, then a code decision from the pair (D85).
+
+        The plan is frozen before any call. A work is sent only when every call it still owes fits in the run's
+        budget; a work at the end of the plan that no longer fits is not read and gets no decision. Both runs of
+        one work may be in flight together. The decision is written on the event loop, in one short transaction,
+        and only while this run is still the active one at this scope revision. A response that arrives after the
+        run stopped is stored as a step and writes nothing, because `_send_through_limiter` does not apply it.
+
+        A repair is not reserved up front. With the limiter at one, the next work is pulled only after the call
+        in flight has returned, so a repair already in `usage` keeps a later work from being sent. With a higher
+        limit the generator can pull a later work before that repair returns; the end of the plan is then not
+        guaranteed to be the part left unread.
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        plan = self._adjudication_plan(run, scope)
+        works = plan["works"]
+        if plan.get("reason") == "no_criterion" or not works:
+            self._adjudication_summary(run, plan)
+            return
+        spent_before = self.store.run(run_id)["usage"].get("model_calls", 0)
+        submitted = 0
+        collected: dict[str, dict[int, dict[str, Any] | None]] = {}
+        closed: set[str] = set()
+        items = {item["head"]: item for item in works}
+        answered = {s["operation_key"] for s in self.store.run_steps(run_id)
+                    if s["kind"] == "model:fulltext_adjudication"
+                    and (s["status"] == "succeeded" or s["error_code"] == "invalid_model_output")}
+
+        def jobs() -> Iterator[_AdjudicationJob]:
+            nonlocal submitted
+            for item in works:
+                head, read_version = item["head"], item["read_version"]
+                if not self._adjudication_member(run["research_id"], head, read_version):
+                    continue
+                owed = [run_no for run_no in range(1, FULLTEXT_RUNS + 1)
+                        if f"fulltext_adjudication:{head}:{run_no}" not in answered]
+                if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
+                    return
+                for run_no in range(1, FULLTEXT_RUNS + 1):
+                    still_owed = run_no in owed
+                    if still_owed and not self._model_calls_left(run, 1, submitted, spent_before):
+                        # A repair on an earlier call of this work used the room this call needed. The run
+                        # finishes; this work is not given a decision from one run.
+                        return
+                    submitted += still_owed
+                    yield _AdjudicationJob(f"fulltext_adjudication:{head}:{run_no}", head, read_version, run_no)
+
+        async def call(job: _AdjudicationJob) -> dict[str, Any] | None:
+            if not self._adjudication_member(run["research_id"], job.head, job.read_version):
+                return None
+            try:
+                return await self._adjudication_call(run, scope, plan, job, self.deps.limiter)
+            except RunStopped:
+                raise
+            except Exception:
+                # One work's unexpected failure is recorded by not deciding it. The rest of the run continues (D18).
+                return None
+
+        def close_ready(completed: list[tuple[dict[str, Any] | None, _AdjudicationJob]]) -> None:
+            for output, job in completed:
+                collected.setdefault(job.head, {})[job.run_no] = output
+            for head in sorted(collected):
+                if head in closed or len(collected[head]) < FULLTEXT_RUNS:
+                    continue
+                try:
+                    self._checkpoint(run_id, revision)
+                    self._close_adjudication(run, items[head], plan,
+                                             [collected[head][run_no] for run_no in range(1, FULLTEXT_RUNS + 1)])
+                except RunStopped:
+                    raise
+                except Exception:
+                    pass
+                closed.add(head)
+
+        stop = await self._send_through_limiter(run, jobs(), call, close_ready)
+        if stop is not None:
+            raise stop
+        self._adjudication_summary(run, plan)
+
+    def _adjudication_member(self, research_id: str, head: str, read_version: str) -> bool:
+        """Whether both records are still in this research. A purged member is skipped, not crashed on."""
+        return self.store.is_active_member(research_id, head) and self.store.is_active_member(research_id, read_version)
+
+    def _adjudication_plan(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
+        """Freeze which works are read, on which version, and which PDFs are not confirmed as the work's own.
+
+        Identity is computed here, from the text and the work's versions, never from a retrieval run's step.
+        An unconfirmed PDF is decided `pdf_identity_unconfirmed` with no model call and does not consume the
+        read limit. A file the user supplied is confirmed without that check.
+        """
+        run_id, rid = run["id"], run["research_id"]
+        step = self.store.step(run_id, "adjudication_plan", "code:adjudication_plan")
+        if step["status"] == "succeeded":
+            return step["output"]
+        self.store.start_step(step["id"])
+        limit = run["budget"]["max_fulltext_reads"]
+        frozen = self.store.frozen_criterion(rid, scope["question"], scope.get("steering"))
+        if frozen is None:
+            plan = {"limit": limit, "criterion": None, "works": [], "not_reached": 0,
+                    "identity_unconfirmed": 0, "reason": "no_criterion"}
+            self.store.finish_step(step["id"], "succeeded", output=plan)
+            return plan
+        parts = frozen["parts"] or []
+        sent = ([{"name": "criterion", "definition": frozen["criterion"]}] if not parts
+                else [{"name": part["name"], "definition": part["definition"]} for part in parts])
+        criterion = {"criterion": frozen["criterion"], "parts": sent, "cue_phrases": frozen["cue_phrases"],
+                     "protocol_revision": frozen["protocol_revision"]}
+        order = DecisionStore(self.store).latest_ranking(rid, run["scope_revision"]) or []
+        corpus = self._fulltext_works(rid)
+        eligible = adjudication.read_plan(corpus, order, len(corpus))
+        readable: list[dict[str, str]] = []
+        unconfirmed: list[tuple[str, str]] = []
+        for head in eligible["works"]:
+            read = self.store.answer_version(rid, head)
+            versions = [head, *self.store.work_versions(rid, head)]
+            if self._user_supplied_pdf(read):
+                readable.append({"head": head, "read_version": read})
+                continue
+            found = identity.check(self._pdf_head_text(read), [self.store.source(svid) for svid in versions])
+            if found == "unconfirmed":
+                unconfirmed.append((head, read))
+            else:
+                readable.append({"head": head, "read_version": read})
+        plan = {"limit": limit, "criterion": criterion, "works": readable[:limit],
+                "not_reached": len(readable) - len(readable[:limit]),
+                "identity_unconfirmed": len(unconfirmed), "reason": None}
+        self._write_adjudication_codes(run, step["id"], [(read, "pdf_identity_unconfirmed") for _, read in unconfirmed])
+        self.store.finish_step(step["id"], "succeeded", output=plan)
+        return plan
+
+    def _user_supplied_pdf(self, svid: str) -> bool:
+        """A PDF the user added is the file they meant. It is not held back for an identity check."""
+        if self.store.source(svid).get("origin") == "user_upload":
+            return True
+        asset_id = self._current_asset(svid)
+        return bool(asset_id) and self.store.asset(asset_id).get("origin") == "user_upload"
+
+    async def _adjudication_call(self, run: dict[str, Any], scope: dict[str, Any], plan: dict[str, Any],
+                                 job: _AdjudicationJob, limiter: ModelCallLimiter | None) -> dict[str, Any] | None:
+        """One run of one work. None when the output did not validate: that is an answer for this run, not a retry."""
+        step = self.store.step(run["id"], job.key, "model:fulltext_adjudication")
+        if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
+            return None
+        passages = self._adjudication_passages(run["research_id"], scope, plan["criterion"], job.read_version)
+        target = {"source_id": job.read_version, "criterion": plan["criterion"]["criterion"],
+                  "parts": plan["criterion"]["parts"], "runs": FULLTEXT_RUNS, "run": job.run_no}
+        output = await self._model_step(run, scope, job.key, "fulltext_adjudication", source_ids=[job.read_version],
+                                        passage_rows=passages, adjudication_target=target, limiter=limiter)
+        return None if output.get("invalid") else output
+
+    def _adjudication_passages(self, research_id: str, scope: dict[str, Any], criterion: dict[str, Any],
+                               svid: str) -> list[dict[str, Any]]:
+        """The pages this call is shown, chosen when the call is sent and stored with its StepInput."""
+        pages = [p for p in self.store.passages_for(svid) if p["kind"] == "pdf_page"]
+        terms = self._topic_terms(research_id, scope)
+        fts = " OR ".join(f'"{term}"' for term in terms)
+        ranked = [p["id"] for p in self.store.search_passages([svid], fts, FULLTEXT_PASSAGES_PER_CALL * 3)]
+        return adjudication.reading_list(pages, criterion, ranked, FULLTEXT_PASSAGES_PER_CALL,
+                                         FULLTEXT_CRITERION_PASSAGES)["passages"]
+
+    def _close_adjudication(self, run: dict[str, Any], item: dict[str, str], plan: dict[str, Any],
+                            outputs: list[dict[str, Any] | None]) -> None:
+        """Verify both runs' quotes on the pages they were shown and write one decision on the read version."""
+        read = item["read_version"]
+        parts = plan["criterion"]["parts"]
+        decisions = DecisionStore(self.store)
+        views: list[dict[str, Any] | None] = []
+        last_step: str | None = None
+        for run_no, output in enumerate(outputs, start=1):
+            if not output or output.get("invalid") or not output.get("step_input_id"):
+                views.append(None)
+                continue
+            payload = self.store.step_input_payload(output["step_input_id"])
+            last_step = payload["step_id"]
+            shown: dict[str, dict[str, Any]] = {}
+            page_numbers: set[int] = set()
+            for passage in payload["passages"]:
+                page = (passage.get("locator") or {}).get("physical_page")
+                shown[passage["passage_id"]] = {"physical_page": page}
+                if isinstance(page, int):
+                    page_numbers.add(page)
+            stored = self.store.page_texts(read)
+            pages = {page: stored[page] for page in page_numbers if page in stored}
+            proposals = adjudication.proposals_of(parts, (output.get("result") or {}).get("parts") or [],
+                                                  shown, pages, FULLTEXT_QUOTE_MIN_CHARS)
+            for name, row in proposals.items():
+                decisions.add_proposal(run["research_id"], read, "fulltext", payload["step_id"], run_no, row["label"],
+                                       criterion_part=name, quote=row["quote"] or None,
+                                       quote_verified=row["quote_verified"], quote_passage_id=row["passage_id"],
+                                       quote_page=row["page"])
+            views.append(adjudication.run_view(proposals))
+        code = adjudication.combine(views[0] if views else None, views[1] if len(views) > 1 else None)
+        if code is not None:
+            self._write_adjudication_codes(run, last_step, [(read, code)])
+
+    def _write_adjudication_codes(self, run: dict[str, Any], step_id: str | None,
+                                  writes: list[tuple[str, str]]) -> None:
+        """Write these full-text decisions and derive each work's selection. The user's decision is left as it is."""
+        rid = run["research_id"]
+        decisions = DecisionStore(self.store)
+        stale_key = decisions.staleness_key(rid)
+        touched: set[str] = set()
+        for svid, code in writes:
+            held = decisions.current(rid, svid, "fulltext")
+            if held is not None and held["decided_by"] == "human":
+                continue
+            if not adjudication.should_write(held, code, bool(held) and decisions.is_stale(held, stale_key)):
+                continue
+            try:
+                decisions.record(rid, svid, code, step_id=step_id)
+            except HumanDecisionStands:
+                continue
+            touched.add(self.store.source(svid)["work_id"])
+        for work_id in sorted(touched):
+            decisions.derive_selection(rid, work_id)
+
+    def _adjudication_summary(self, run: dict[str, Any], plan: dict[str, Any]) -> None:
+        """What this run decided, totalled from its stored steps and decisions so a resumed run matches."""
+        run_id = run["id"]
+        step = self.store.step(run_id, "adjudication_summary", "code:adjudication_summary")
+        if step["status"] == "succeeded":
+            return
+        self.store.start_step(step["id"])
+        steps = self.store.run_steps(run_id)
+        step_ids = [row["id"] for row in steps]
+        planned = {item["head"]: item["read_version"] for item in plan["works"]}
+        model_heads: set[str] = set()
+        for row in steps:
+            if row["kind"] != "model:fulltext_adjudication":
+                continue
+            head, _, _run_no = row["operation_key"].removeprefix("fulltext_adjudication:").rpartition(":")
+            model_heads.add(head)
+        codes: dict[str, int] = {}
+        if step_ids:
+            marks = ",".join("?" * len(step_ids))
+            for row in self.store.conn.execute(
+                    f"SELECT source_version_id, reason_code FROM stage_decisions WHERE step_id IN ({marks})",
+                    tuple(step_ids)):
+                codes[row["reason_code"]] = codes.get(row["reason_code"], 0) + 1
+        include = codes.get("all_parts_verified", 0)
+        not_met = codes.get("criterion_absent", 0)
+        unresolved = {code: count for code, count in sorted(codes.items())
+                      if code not in ("all_parts_verified", "criterion_absent")}
+        decided_versions = set()
+        if step_ids:
+            marks = ",".join("?" * len(step_ids))
+            decided_versions = {row["source_version_id"] for row in self.store.conn.execute(
+                f"SELECT source_version_id FROM stage_decisions WHERE step_id IN ({marks})"
+                " AND reason_code != 'pdf_identity_unconfirmed'", tuple(step_ids))}
+        not_settled = sum(1 for head, read in planned.items() if head in model_heads and read not in decided_versions)
+        not_reached = plan["not_reached"] + sum(1 for head in planned if head not in model_heads)
+        whole_text = self._adjudication_whole_text(run_id)
+        summary = {"read": include + not_met + sum(unresolved.values()) - unresolved.get("pdf_identity_unconfirmed", 0),
+                   "include": include, "criterion_not_met": not_met, "unresolved": unresolved,
+                   "not_settled": not_settled, "not_reached": not_reached,
+                   "identity_unconfirmed": plan["identity_unconfirmed"], "whole_text": whole_text,
+                   "model_calls": self.store.run(run_id)["usage"].get("model_calls", 0)}
+        self.store.finish_step(step["id"], "succeeded", output=summary)
+
+    def _adjudication_whole_text(self, run_id: str) -> int:
+        """Works whose stored call was every pdf page, and that was fewer than a full call. Exactly 12 is not whole."""
+        seen: set[str] = set()
+        count = 0
+        for row in self.store.conn.execute(
+                "SELECT payload_json FROM step_inputs WHERE run_id = ? AND task_type = 'fulltext_adjudication' AND attempt = 0",
+                (run_id,)):
+            payload = json.loads(row["payload_json"])
+            source = (payload.get("adjudication_target") or {}).get("source_id")
+            if not source or source in seen:
+                continue
+            seen.add(source)
+            shown = payload.get("passages") or []
+            pdf_count = sum(1 for passage in self.store.passages_for(source) if passage["kind"] == "pdf_page")
+            if len(shown) < FULLTEXT_PASSAGES_PER_CALL and len(shown) == pdf_count:
+                count += 1
+        return count
+
+    def _queue_fulltext_adjudication(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+        """Queue the reading run that follows a completed `sw` retrieval run (D85).
+
+        Only when the setting is `auto`, a criterion is frozen, and the read plan holds at least one work.
+        The budget is the one function the API route calls too. The idempotency key keeps one retrieval run
+        from opening two reading runs. Called in the same turn that marks the retrieval run completed.
+        """
+        if scope.get("search_workflow") != "sw" or self.deps.settings.fulltext_adjudication != "auto":
+            return
+        rid, revision = run["research_id"], run["scope_revision"]
+        if self.store.frozen_criterion(rid, scope["question"], scope.get("steering")) is None:
+            return
+        budget = adjudication.read_budget(scope["effort"])
+        plan = adjudication.read_plan(self._fulltext_works(rid),
+                                      DecisionStore(self.store).latest_ranking(rid, revision) or [],
+                                      budget["max_fulltext_reads"])
+        if not plan["works"]:
+            return
+        self.store.create_run(rid, "fulltext_adjudication", budget,
+                              idempotency_key=f"fulltext_adjudication:after:{run['id']}")
+
+
     def _queue_fulltext_fetch(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
         """Queue the full-text retrieval run that follows a completed `sw` discovery run (D83, SW10.1).
 
@@ -1971,6 +2289,25 @@ class ResearchFlow:
                                output={"model": embedder.stored_model, "passages": len(passages), "embedded": len(missing)})
         return ranked
 
+    def _topic_terms(self, research_id: str, scope: dict[str, Any]) -> list[str]:
+        """The words `_retrieve` and the full-text reading list both rank passages by.
+
+        Moved out of `_retrieve` so the reading run uses the same terms and does not grow a second ranker.
+        What `_retrieve` selects from them is unchanged. Claim words stay out: they are the criterion (slice 11).
+        """
+        terms = [t for t in re.findall(r"\w+", scope["question"].lower()) if len(t) > 2 and t not in STOPWORDS]
+        plan = self.store.latest_step_output(research_id, "search_plan", scope["revision"])
+        if plan and plan.get("output_type") == "SearchPlan":
+            for concept in plan["result"]["concepts"]:
+                for phrase in [concept["label"], *concept["synonyms"]]:
+                    terms += [t for t in re.findall(r"\w+", phrase.lower()) if len(t) > 2 and t not in STOPWORDS]
+        elif code_words := self.store.latest_step_output(research_id, "vocabulary", scope["revision"]):
+            built = code_words["vocabulary"]
+            queried = [t["root"] if t["in_query"] == "root" else t["phrase"] for t in built["terms"] if not t["dropped"]]
+            for phrase in queried + built["outcome_terms"]:
+                terms += [t for t in re.findall(r"\w+", phrase.lower()) if len(t) > 2 and t not in STOPWORDS]
+        return list(dict.fromkeys(terms))[:40]
+
     def _retrieve(self, research_id: str, scope: dict[str, Any], included: list[str], limit: int,
                   semantic: list[dict[str, Any]] | None = None,
                   patterns: list[tuple[str, re.Pattern[str]]] | None = None) -> list[dict[str, Any]]:
@@ -1991,20 +2328,7 @@ class ResearchFlow:
                 asset = self.store.asset(next(iter(asset_ids)))
                 if asset["page_count"] is not None and asset["page_count"] <= MAX_SMALL_PDF_PAGES:
                     return all_passages
-        terms = [t for t in re.findall(r"\w+", scope["question"].lower()) if len(t) > 2 and t not in STOPWORDS]
-        plan = self.store.latest_step_output(research_id, "search_plan", scope["revision"])
-        if plan and plan.get("output_type") == "SearchPlan":
-            for concept in plan["result"]["concepts"]:
-                for phrase in [concept["label"], *concept["synonyms"]]:
-                    terms += [t for t in re.findall(r"\w+", phrase.lower()) if len(t) > 2 and t not in STOPWORDS]
-        elif code_words := self.store.latest_step_output(research_id, "vocabulary", scope["revision"]):
-            # The sw workflow has no search plan. Its queried terms and outcome terms rank passages the same way;
-            # claim words do not, because they are the criterion the passages are read against (slice 11).
-            built = code_words["vocabulary"]
-            queried = [t["root"] if t["in_query"] == "root" else t["phrase"] for t in built["terms"] if not t["dropped"]]
-            for phrase in queried + built["outcome_terms"]:
-                terms += [t for t in re.findall(r"\w+", phrase.lower()) if len(t) > 2 and t not in STOPWORDS]
-        unique_terms = list(dict.fromkeys(terms))[:40]
+        unique_terms = self._topic_terms(research_id, scope)
         fts = " OR ".join(f'"{t}"' for t in unique_terms)
         ranked = self.store.search_passages(included, fts, limit * 3)
         if semantic is not None:
@@ -2347,7 +2671,8 @@ class ResearchFlow:
                     report_target: dict[str, Any] | None = None,
                     vocabulary_target: dict[str, Any] | None = None,
                     screening_target: dict[str, Any] | None = None,
-                    suggestion_target: dict[str, Any] | None = None) -> dict[str, Any]:
+                    suggestion_target: dict[str, Any] | None = None,
+                    adjudication_target: dict[str, Any] | None = None) -> dict[str, Any]:
         candidates = []
         for c in candidate_rows:
             source = self.store.source(c["source_version_id"])
@@ -2388,6 +2713,8 @@ class ResearchFlow:
             target["screening_target"] = screening_target
         if suggestion_target is not None:
             target["suggestion_target"] = suggestion_target
+        if adjudication_target is not None:
+            target["adjudication_target"] = adjudication_target
         allowlist = {"candidate_ids": [c["candidate_id"] for c in candidates], "source_ids": [s["source_id"] for s in sources],
                      "passage_ids": [p["passage_id"] for p in passages]}
         if vocabulary_target is not None:
@@ -2457,6 +2784,7 @@ class ResearchFlow:
                           report_target: dict[str, Any] | None = None, vocabulary_target: dict[str, Any] | None = None,
                           screening_target: dict[str, Any] | None = None,
                           suggestion_target: dict[str, Any] | None = None,
+                          adjudication_target: dict[str, Any] | None = None,
                           limiter: ModelCallLimiter | None = None) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run."""
@@ -2488,7 +2816,7 @@ class ResearchFlow:
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
                                        claims or [], model, extraction_target, report_target, vocabulary_target,
-                                       screening_target, suggestion_target)
+                                       screening_target, suggestion_target, adjudication_target)
             if issues := contracts.check_step_input(payload):
                 self.store.finish_step(step["id"], "failed", error_code="step_input_invalid", error=[vars(i) for i in issues])
                 halt("step_input_invalid", fail=True)
@@ -2530,7 +2858,7 @@ class ResearchFlow:
                 self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_mismatch", error=mismatch)
                 halt("model_mismatch", mismatch)
             output_text = result.raw_text or ""
-            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening"):
+            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication"):
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             report = contracts.validate_model_output(payload, output_text)
             salvage: list[contracts.Issue] = []

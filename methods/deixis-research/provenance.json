@@ -100,6 +100,11 @@
    "deixis_file": "references/abstract-screening.md",
    "derived_from": [],
    "change": "Written for DEIXIS on 2026-09-21 (SW9, SW1.1, D81), not adapted from upstream text. One job: from one record's own abstract, label it candidate / out_of_scope / unresolved for full-text reading, with one verbatim quote from that abstract and one sentence of rationale; inclusion is not decided here and whether the work holds the specific method, model or result the question seeks is explicitly not judged at this depth. The wording carries the rules of the GENERIC2 arm measured in .local/sw-abstract-batch-2026-09-21 (deepseek-flash, effort high, two questions, 408 calls, no human labels). Known defect, not fixed: that topic-independent wording reads more narrowly and less stably than the hand-written single-topic prompt it was compared against (77 of 100 records matched, 17 run-to-run disagreements against 3, 82 candidates down to 60); showing the inclusion criterion narrowed it further, to 48, which is why the criterion sentence, its parts, the cue phrases and the concept blocks are kept out of this step's input. Neither measurement question appears in this file, so both stay out of sample and the file carries no worked example. Loaded into abstract_screening steps only."
+  },
+  {
+   "deixis_file": "references/fulltext-adjudication.md",
+   "derived_from": [],
+   "change": "Written for DEIXIS on 2026-09-22 (D85, slice 12), not adapted from upstream text. One job: for each part of one inclusion criterion, label the shown passages of one paper present, absent or unclear, and when present copy one continuous quote from one shown passage. Inclusion is not decided here. The text was copied from the slice unchanged. Not measured: this wording was tried against no model; the first trial is the slice 13 smoke test."
   }
  ],
  "phrasebank": {

@@ -53,6 +53,11 @@ For `abstract_screening`, read
 [abstract screening](references/abstract-screening.md): you say whether each
 given record's abstract is worth reading in full, and you decide no inclusion.
 
+For `fulltext_adjudication`, read
+[full-text reading](references/fulltext-adjudication.md): for each part of one
+inclusion criterion, you say whether the passages you were shown state that the
+paper itself contains it. You decide no inclusion.
+
 For `criterion_proposal`, read
 [criterion proposal](references/criterion-proposal.md): you state, from the
 question alone, what a paper must contain to be included, and name the words an

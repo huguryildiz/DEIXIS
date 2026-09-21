@@ -29,6 +29,7 @@ RUNTIME_FILES = {
     "criterion_proposal": ("SKILL.md", "references/criterion-proposal.md"),
     "term_suggestions": ("SKILL.md", "references/term-suggestions.md"),
     "abstract_screening": ("SKILL.md", "references/abstract-screening.md"),
+    "fulltext_adjudication": ("SKILL.md", "references/fulltext-adjudication.md"),
     "report_plan": ("SKILL.md", "references/report.md"),
     "report_section": ("SKILL.md", "references/report.md", "references/source-grounded-answer.md", PHRASEBANK),
     "report_phrase_repair": ("SKILL.md", "references/report.md", PHRASEBANK),

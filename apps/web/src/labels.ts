@@ -21,7 +21,7 @@ export const runStatusLabels: Record<RunStatus, string> = {
 }
 
 export const runKindLabels: Record<RunKind, string> = {
-  discovery: 'Search & screening', answer: 'Answer', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
+  discovery: 'Search & screening', answer: 'Answer', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
 }
 
 const pauseReasons: Record<string, string> = {
@@ -146,6 +146,9 @@ export const stepLabel = (kind: string, key: string) => {
   if (kind === 'code:fulltext_plan') return t('Retrieval plan (code)')
   if (kind === 'code:fulltext_work') return t('Full text of one work')
   if (kind === 'code:fulltext_summary') return t('Retrieval summary (code)')
+  if (kind === 'code:adjudication_plan') return t('Reading plan (code)')
+  if (kind === 'model:fulltext_adjudication') return t('Full-text proposal')
+  if (kind === 'code:adjudication_summary') return t('Reading summary (code)')
   if (kind === 'code:criterion_phrases') return t('Criterion phrases (code)')
   if (kind === 'fetch_pdf') return t('Open-access PDF retrieval')
   if (kind === 'pdf_other_copy') return t('Search for another open copy')

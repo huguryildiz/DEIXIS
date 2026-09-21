@@ -111,7 +111,7 @@ def app_for(tmp_path, monkeypatch, transport, fetcher, workflow="sw", setting="a
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
     return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow,
-                               protocol_approval=approval, fulltext_fetch=setting),
+                               protocol_approval=approval, fulltext_fetch=setting, fulltext_adjudication="off"),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport)), fetcher=fetcher,
                       extra_hosts=("testserver",), trusted_clients=("testclient",))
@@ -725,12 +725,10 @@ def test_an_answer_run_and_a_pdf_collection_run_keep_the_steps_they_had(tmp_path
     assert answered["status"] in ("completed", "paused")
 
 
-def test_a_stale_fulltext_decision_still_shadows_a_newer_abstract_decision(tmp_path, monkeypatch):
-    """Documented, not fixed: `work_outcome` lets the full-text stage answer first and does not read staleness.
-
-    A work this run fetched keeps its `pending` selection even after a revised question puts its abstract out of
-    scope, because the stale `not_read_yet` still speaks for the work. The full-text stage is slice 12's, so the
-    fix belongs there; this test records the behaviour as it is today (slice 10, open point).
+def test_a_stale_non_human_fulltext_decision_yields_to_a_newer_abstract_decision(tmp_path, monkeypatch):
+    """A stale full-text code no longer speaks for the work (slice 12). The abstract decision under the question
+    the research is now asking does. A stale human full-text decision still speaks; that case is in
+    `test_adjudication.py`.
     """
     fetcher = Fetcher({"https://example.org/w1.pdf": ok()})
     app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher)
@@ -752,7 +750,7 @@ def test_a_stale_fulltext_decision_still_shadows_a_newer_abstract_decision(tmp_p
     finally:
         client.__exit__(None, None, None)
     assert run["status"] == "completed" and held["reason_code"] == "not_read_yet" and stale
-    assert outcome["stage"] == "fulltext" and outcome["reason_code"] == "not_read_yet"
+    assert outcome["stage"] == "abstract" and outcome["reason_code"] == "both_blocks_missing"
 
 
 # ---- review: a lookup that did not answer ----------------------------------------------------------------

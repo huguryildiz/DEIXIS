@@ -190,7 +190,7 @@ def main() -> None:
                         protocol_approval=os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "ask"),
                         # Case H reads the approval card of one discovery run; the retrieval run that would follow
                         # it (D83) is not part of the case and would open a second run under it.
-                        fulltext_fetch="off")
+                        fulltext_fetch="off", fulltext_adjudication="off")
     app = create_app(settings, adapters={"codex": ScriptedCodex()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(openalex)), fetcher=fetch)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", timeout_graceful_shutdown=1)

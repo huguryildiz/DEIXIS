@@ -232,15 +232,19 @@ class DecisionStore:
         if fulltext:
             human = [d for d in fulltext if d["decided_by"] == "human"]
             if human:
-                return _outcome(human[-1])  # the decisions arrive oldest first, so the user's newest is the last
-            outcomes = {d["outcome"] for d in fulltext}
-            if {"include", "criterion_not_met"} <= outcomes:
-                # No stored decision says this; the work is left open and the report shows the versions side by side.
-                including = named([d for d in fulltext if d["outcome"] == "include"])
-                return {"stage": "fulltext", "outcome": "unresolved", "reason_code": "versions_disagree",
-                        "decided_by": "code", "source_version_id": including["source_version_id"]}
-            best = next(outcome for outcome in FULLTEXT_ORDER if outcome in outcomes)
-            return _outcome(named([d for d in fulltext if d["outcome"] == best]))
+                return _outcome(human[-1])  # the user's newest stands, stale or not (SW11.7)
+            # A stale code decision no longer speaks for the work: the abstract outcome does (slice 12). A fresh
+            # full-text decision still answers first, and two versions at opposite fresh decisions stay unresolved.
+            key = self.staleness_key(research_id)
+            fresh = [d for d in fulltext if not self.is_stale(d, key)]
+            if fresh:
+                outcomes = {d["outcome"] for d in fresh}
+                if {"include", "criterion_not_met"} <= outcomes:
+                    including = named([d for d in fresh if d["outcome"] == "include"])
+                    return {"stage": "fulltext", "outcome": "unresolved", "reason_code": "versions_disagree",
+                            "decided_by": "code", "source_version_id": including["source_version_id"]}
+                best = next(outcome for outcome in FULLTEXT_ORDER if outcome in outcomes)
+                return _outcome(named([d for d in fresh if d["outcome"] == best]))
 
         abstract = [d for d in decisions if d["stage"] == "abstract"]
         if not abstract:

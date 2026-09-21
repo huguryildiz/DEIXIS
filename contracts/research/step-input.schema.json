@@ -58,6 +58,7 @@
         "criterion_proposal",
         "term_suggestions",
         "abstract_screening",
+        "fulltext_adjudication",
         "report_plan",
         "report_section",
         "report_phrase_repair",
@@ -523,6 +524,32 @@
           "type": "integer",
           "minimum": 1
         }
+      }
+    },
+    "adjudication_target": {
+      "type": "object",
+      "description": "fulltext_adjudication steps only: one work, the inclusion criterion and its parts, and which of the two runs this call is. The two runs get the same passages and the same parts.",
+      "additionalProperties": false,
+      "required": ["source_id", "criterion", "parts", "runs", "run"],
+      "properties": {
+        "source_id": { "$ref": "common.schema.json#/$defs/source_id" },
+        "criterion": { "type": "string", "minLength": 1 },
+        "parts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "definition"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "definition": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "runs": { "type": "integer", "minimum": 1 },
+        "run": { "type": "integer", "minimum": 1 }
       }
     },
     "vocabulary_target": {

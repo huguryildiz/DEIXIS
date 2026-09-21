@@ -34,6 +34,10 @@ class Settings:
     # product's behavior; `off` leaves the corpus where the discovery run left it, for a measurement or a test that
     # needs no second run. A `legacy` research queues nothing either way.
     fulltext_fetch: str = "auto"
+    # Whether a completed `sw` full-text retrieval run is followed by a full-text reading run (D85, slice 12).
+    # `auto` is the product's behavior; `off` leaves the fetched works at `not_read_yet`, for a measurement or a
+    # test that needs no second model run. A `legacy` research queues nothing either way.
+    fulltext_adjudication: str = "auto"
 
     @property
     def db_path(self) -> Path:
@@ -102,6 +106,9 @@ def load_settings() -> Settings:
     fulltext_fetch = os.environ.get("DEIXIS_FULLTEXT_FETCH", "auto")
     if fulltext_fetch not in ("auto", "off"):
         raise ValueError("DEIXIS_FULLTEXT_FETCH must be auto or off")
+    fulltext_adjudication = os.environ.get("DEIXIS_FULLTEXT_ADJUDICATION", "auto")
+    if fulltext_adjudication not in ("auto", "off"):
+        raise ValueError("DEIXIS_FULLTEXT_ADJUDICATION must be auto or off")
     return Settings(
         data_dir=default_data_dir(),
         host=os.environ.get("DEIXIS_HOST", "127.0.0.1"),
@@ -111,4 +118,5 @@ def load_settings() -> Settings:
         search_workflow=search_workflow,
         protocol_approval=protocol_approval,
         fulltext_fetch=fulltext_fetch,
+        fulltext_adjudication=fulltext_adjudication,
     )

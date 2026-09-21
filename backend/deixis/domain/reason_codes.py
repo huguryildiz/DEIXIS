@@ -73,6 +73,11 @@ REASON_CODES: dict[str, ReasonCode] = _table(
     ReasonCode("include_quote_unverified", "fulltext", "unresolved", "code", "human_queue"),
     ReasonCode("part_without_evidence", "fulltext", "unresolved", "code", "human_queue"),
     ReasonCode("abstract_promise_absent", "fulltext", "unresolved", "code", "human_queue"),
+    # Both runs read the shown passages and agreed, and still could not tell (slice 12). Not an exclusion.
+    ReasonCode("fulltext_runs_agree_unresolved", "fulltext", "unresolved", "code", "human_queue"),
+    # The PDF's first pages name neither this work's DOI nor a long enough title (slice 12). The text stays;
+    # the work is not read until a person confirms it, and a file the user uploaded is never given this code.
+    ReasonCode("pdf_identity_unconfirmed", "fulltext", "unresolved", "code", "human_queue"),
     # ---- what the user decided (SW11.7, SW11.11) ---------------------------------------
     ReasonCode("human_include", "fulltext", "include", "human", "answer"),
     ReasonCode("human_criterion_not_met", "fulltext", "criterion_not_met", "human", "none"),

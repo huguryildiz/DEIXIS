@@ -48,6 +48,15 @@ ABSTRACT_QUOTE_MIN_CHARS = 12
 # retrieval run starts from it.
 FULLTEXT_WORK_LIMIT = {"quick": 40, "standard": 100, "detailed": 300}
 
+# How many works one full-text reading run sends to the model, by effort (D85, slice 12). Hand-picked and not
+# measured. Each work is read twice, so the model-call budget is twice this. A work outside the limit is not
+# dropped: it is counted as not reached and the next reading run starts from it.
+FULLTEXT_READ_LIMIT = {"quick": 20, "standard": 50, "detailed": 150}
+FULLTEXT_RUNS = 2
+FULLTEXT_PASSAGES_PER_CALL = 12
+FULLTEXT_CRITERION_PASSAGES = 8
+FULLTEXT_QUOTE_MIN_CHARS = 12
+
 # Effort presets bound work; they are not paper-count or accuracy guarantees. Model calls cover the search plan, one
 # screening call per SCREENING_BATCH candidates and the answer, each with its one schema repair. Provider requests are
 # the plan's query limit; with several providers enabled, one query per relevant provider needs room. `core_depth` is
@@ -94,8 +103,10 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
     return "current"
 
 
+# `fulltext_adjudication` uses the literature model, as abstract screening does. The slice names no other model
+# for the reading step.
 LITERATURE_TASKS = ("search_plan", "screening", "vocabulary_labels", "criterion_proposal", "term_suggestions",
-                    "abstract_screening")
+                    "abstract_screening", "fulltext_adjudication")
 # A repair would let the step name a phrase the question does not hold and then take it back. The block labelling
 # gets one attempt: an output that invents, drops or repeats a phrase is rejected and the rule stands (SW17.1). An
 # abstract screening batch gets one too, because an invalid output costs nothing: its records stay

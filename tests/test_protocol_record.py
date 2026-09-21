@@ -121,7 +121,9 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     from deixis.workflow.criterion_passages import THRESHOLDS as CRITERION_PASSAGE_THRESHOLDS
     from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS
     from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT,
-                                     ABSTRACT_RUNS, FULLTEXT_WORK_LIMIT)
+                                     ABSTRACT_RUNS, FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL,
+                                     FULLTEXT_QUOTE_MIN_CHARS, FULLTEXT_READ_LIMIT, FULLTEXT_RUNS,
+                                     FULLTEXT_WORK_LIMIT)
     from deixis.workflow.ranking import SIGNALS as RANKING_SIGNALS, THRESHOLDS as RANKING_THRESHOLDS
 
     scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
@@ -132,7 +134,7 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     legacy = protocol.build_protocol(scope | {"search_workflow": "legacy"}, {}, None, [], "pkg_hash", settings)
     sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
     assert not {"record_identity", "search_read", "survey", "lookup", "criterion", "ranking",
-                "fulltext_fetch", "criterion_passages"} & set(legacy["thresholds"])
+                "fulltext_fetch", "criterion_passages", "fulltext_adjudication"} & set(legacy["thresholds"])
     # The hand-written formulation quota is the legacy body's alone now: an sw answer fills that room from the
     # approved cue phrases and no longer applies this threshold (slice 11, D84).
     assert "formulation_score_threshold" in legacy["thresholds"] and "formulation_score_threshold" not in sw["thresholds"]
@@ -147,7 +149,11 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
         "abstract_screening": {"read_limit": ABSTRACT_READ_LIMIT[scope["effort"]], "batch": ABSTRACT_BATCH,
                                "runs": ABSTRACT_RUNS, "quote_min_chars": ABSTRACT_QUOTE_MIN_CHARS},
         # How many works one full-text retrieval run of this effort fetches (slice 10, D83).
-        "fulltext_fetch": {"work_limit": FULLTEXT_WORK_LIMIT[scope["effort"]]}}
+        "fulltext_fetch": {"work_limit": FULLTEXT_WORK_LIMIT[scope["effort"]]},
+        "fulltext_adjudication": {"read_limit": FULLTEXT_READ_LIMIT[scope["effort"]], "runs": FULLTEXT_RUNS,
+                                  "passages_per_call": FULLTEXT_PASSAGES_PER_CALL,
+                                  "criterion_passages": FULLTEXT_CRITERION_PASSAGES,
+                                  "quote_min_chars": FULLTEXT_QUOTE_MIN_CHARS}}
     # The survey word lists (slice 05) and the ranking signals (slice 07) are the only other sw-only fields of the
     # body; a legacy body carries no survey block and an empty signal list, exactly as it did before slice 07.
     rest = lambda body: {k: v for k, v in body.items()

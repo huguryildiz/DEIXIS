@@ -31,7 +31,8 @@ MIN_TITLE_KEY_CHARS = 12  # shorter normalized titles ("Introduction") say too l
 ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions (D46)
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
 STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze",
-                     "code:fulltext_plan", "code:fulltext_work", "code:fulltext_summary", "code:criterion_phrases")
+                     "code:fulltext_plan", "code:fulltext_work", "code:fulltext_summary", "code:criterion_phrases",
+                     "code:adjudication_plan", "code:adjudication_summary")
 STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")
 MAX_SEED_PASSAGES = 4
 MAX_SEED_CHARS = 5600
@@ -580,7 +581,8 @@ class Store:
                 raise RevisionConflict(f"run {active['id']} is still active")
             run_id, ts = new_id("run"), now()
             stage = {"discovery": "discovery", "answer": "inspection", "pdf_collection": "inspection",
-                     "fulltext_fetch": "inspection", "research_title": "intake"}.get(kind, "extraction")
+                     "fulltext_fetch": "inspection", "fulltext_adjudication": "inspection",
+                     "research_title": "intake"}.get(kind, "extraction")
             self.conn.execute(
                 "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
@@ -2045,6 +2047,19 @@ class Store:
             ).fetchone()[0]
             facts[svid] = (origin is not None and origin["origin"] == "user", providers)
         return facts
+
+    def page_texts(self, svid: str) -> dict[int, str]:
+        """The text of each PDF page, fragments of one page joined with a space in rowid order.
+
+        Read only. A quote split across two fragments of a page the model was shown is looked for in this string
+        (D85). Pages of a removed file or of another extraction are not here, the same filter `passages_for` uses.
+        """
+        pages: dict[int, list[str]] = {}
+        for passage in self.passages_for(svid):
+            if passage["kind"] != "pdf_page" or passage["physical_page"] is None:
+                continue
+            pages.setdefault(passage["physical_page"], []).append(passage["text"])
+        return {page: " ".join(parts) for page, parts in pages.items()}
 
     def passages_for(self, svid: str) -> list[dict[str, Any]]:
         """Passages a model step may read: an abstract, or text of the PDF in use from its current extraction (D45).

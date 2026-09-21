@@ -72,3 +72,22 @@ def test_provenance_records_pinned_upstream_without_runtime_dependency():
     assert "validated" not in provenance["behavioral_validation"]
     for source in provenance["sources_used"]:
         assert len(source["sha256"]) == 64
+
+
+def test_fulltext_adjudication_method_text_is_the_slice_text_and_the_hash_changed():
+    """The method file is the slice text, unchanged, and loading it moves the package hash (slice 12)."""
+    before = "sha256:8f0e6cfb9116b5fba081d5959a45d04d9704b12ff38671f54b0400e540664d47"
+    assert skill.package_hash() != before
+    assert skill.integrity_issues() == []
+    assert skill.RUNTIME_FILES["fulltext_adjudication"] == ("SKILL.md", "references/fulltext-adjudication.md")
+    text = (SKILL_DIR / "references/fulltext-adjudication.md").read_text()
+    assert text == (
+        "You are given one paper's selected passages, one inclusion criterion and its parts. For each part decide whether these passages show that the paper itself contains it. Answer every part exactly once, by its name.\n"
+        "`present`: a passage states it. Copy one continuous quote from that passage, character for character, at most 600 characters, and name the passage. Do not join text from two places, do not correct, translate or complete it. An equation may be quoted as it is printed.\n"
+        "`absent`: the passages describe what the paper does and this part is not among it. No quote.\n"
+        "`unclear`: the passages do not let you tell. No quote. Passages are a selection, not the whole paper: when the part could be elsewhere in the paper, say `unclear`, not `absent`.\n"
+        "What the paper cites, surveys or plans as future work is not something the paper contains. Judge only the passages given; use nothing you remember about this paper. Give one sentence of rationale per part. Do not state a confidence.\n"
+    )
+    loaded = skill.load_skill_package().runtime_text("fulltext_adjudication")
+    assert '<method-file path="references/fulltext-adjudication.md">' in loaded
+    assert "You are given one paper's selected passages" in loaded

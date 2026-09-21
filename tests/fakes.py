@@ -136,6 +136,16 @@ def valid_response(si: dict[str, Any]) -> str:
         })
     if task == "report_review":
         return json.dumps(envelope(si, "deixis.report_review.v1") | {"findings": [], "notes": ""})
+    if task == "fulltext_adjudication":
+        # Every part present, quoting the first passage, so two runs agree and the quote verifies.
+        passage = si["passages"][0]
+        quote = passage["text"][:60]
+        return json.dumps(envelope(si, "deixis.fulltext_adjudication.v1") | {
+            "parts": [{"part": part["name"], "label": "present", "quote": quote,
+                       "passage_id": passage["passage_id"],
+                       "rationale": "SYNTHETIC: the shown passage states this part."}
+                      for part in si["adjudication_target"]["parts"]],
+        })
     first = si["passages"][0]
     return json.dumps(envelope(si, "deixis.grounded_answer_draft.v3") | {
         "title": "Synthetic evidence for release scheduling and optimization in constrained molecular communication networks",

@@ -39,6 +39,7 @@ SCHEMA_FILES = {
     "CriterionProposal": "criterion-proposal.schema.json",
     "TermSuggestions": "term-suggestions.schema.json",
     "AbstractScreening": "abstract-screening.schema.json",
+    "FulltextAdjudication": "fulltext-adjudication.schema.json",
     "StepInput": "step-input.schema.json",
     "ReportPlanDraft": "report-plan.schema.json",
     "ReportSectionDraft": "report-section-draft.schema.json",
@@ -58,6 +59,7 @@ SCHEMA_VERSIONS = {
     "CriterionProposal": "deixis.criterion_proposal.v1",
     "TermSuggestions": "deixis.term_suggestions.v1",
     "AbstractScreening": "deixis.abstract_screening.v1",
+    "FulltextAdjudication": "deixis.fulltext_adjudication.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
     "ReportSectionDraft": "deixis.report_section_draft.v1",
     "ReportPhraseRepairDraft": "deixis.report_phrase_repair_draft.v1",
@@ -77,6 +79,7 @@ TASK_OUTPUTS = {
     "criterion_proposal": ("CriterionProposal",),
     "term_suggestions": ("TermSuggestions",),
     "abstract_screening": ("AbstractScreening",),
+    "fulltext_adjudication": ("FulltextAdjudication",),
     "report_plan": ("ReportPlanDraft",),
     "report_section": ("ReportSectionDraft",),
     "report_phrase_repair": ("ReportPhraseRepairDraft",),
@@ -90,6 +93,8 @@ VOCABULARY_TASKS = ("vocabulary_labels",)
 SUGGESTION_TASKS = ("term_suggestions",)
 # The abstract stage asks the same batch twice and tells each call which of the two runs it is (slice 09, K3).
 SCREENING_TARGET_TASKS = ("abstract_screening",)
+# The full-text reading step is given one work, the criterion parts, and which of the two runs this call is (D85).
+ADJUDICATION_TARGET_TASKS = ("fulltext_adjudication",)
 GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
 REPORT_TASKS = ("report_plan", "report_section", "report_phrase_repair", "report_review")
 # The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's (D37).
@@ -278,6 +283,11 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
         issues.append(Issue("screening_target_mismatch", "/screening_target", step_input["task_type"]))
     elif screening_target is not None and not 1 <= screening_target["run"] <= screening_target["runs"]:
         issues.append(Issue("screening_run_out_of_range", "/screening_target/run", str(screening_target["run"])))
+    adjudication_target = step_input.get("adjudication_target")
+    if (adjudication_target is not None) != (step_input["task_type"] in ADJUDICATION_TARGET_TASKS):
+        issues.append(Issue("adjudication_target_mismatch", "/adjudication_target", step_input["task_type"]))
+    elif adjudication_target is not None and not 1 <= adjudication_target["run"] <= adjudication_target["runs"]:
+        issues.append(Issue("adjudication_run_out_of_range", "/adjudication_target/run", str(adjudication_target["run"])))
     report_target = step_input.get("report_target")
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
         issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
@@ -396,6 +406,8 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         _check_term_suggestions(allow, result, report)
     elif output_type == "AbstractScreening":
         _check_abstract_screening(allow, result, report)
+    elif output_type == "FulltextAdjudication":
+        _check_fulltext_adjudication(step_input, allow, result, report)
     elif output_type == "ReportPlanDraft":
         _check_report_plan(step_input, allow, result, report)
     elif output_type == "ReportSectionDraft":
@@ -857,6 +869,33 @@ def _check_abstract_screening(allow: dict[str, set[str]], draft: dict[str, Any],
         report.warnings.append(Issue("candidate_without_proposal", "/records", cid))
 
 
+def _check_fulltext_adjudication(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any],
+                                 report: ValidationReport) -> None:
+    """Record-level defects are warnings, never errors (slice 12).
+
+    One bad part does not throw the call away. `workflow/adjudication.proposals_of` reads the same defects as
+    `unclear` for that part of this run: an unknown part, a part named twice, a part never named, a `present`
+    with no quote, and a passage the step did not show. An unverified quote is not a defect here. The quote is
+    looked up later, on the page, and a miss keeps the label.
+    """
+    target = step_input.get("adjudication_target") or {}
+    expected = {part["name"] for part in target.get("parts", [])}
+    seen: set[str] = set()
+    for index, record in enumerate(draft["parts"]):
+        name = record["part"]
+        if name not in expected:
+            report.warnings.append(Issue("unknown_part", f"/parts/{index}/part", name))
+        if name in seen:
+            report.warnings.append(Issue("duplicate_part", f"/parts/{index}/part", name))
+        seen.add(name)
+        if record["label"] == "present" and not record["quote"].strip():
+            report.warnings.append(Issue("label_without_quote", f"/parts/{index}/quote", name))
+        if record["label"] == "present" and record.get("passage_id") not in allow["passage_ids"]:
+            report.warnings.append(Issue("passage_not_in_allowlist", f"/parts/{index}/passage_id", name))
+    for name in sorted(expected - seen):
+        report.warnings.append(Issue("part_without_proposal", "/parts", name))
+
+
 def _report_phrasing_fields(draft: dict[str, Any]) -> list[tuple[str, str]]:
     fields = [(f"/claims/{i}/text", claim["text"]) for i, claim in enumerate(draft["claims"])]
     fields += [(f"/insufficient_evidence/{i}/reason", entry["reason"])
@@ -1007,6 +1046,8 @@ def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
         target["source_id"] = handles.get(target["source_id"], target["source_id"])
         for column in target["columns"]:
             column["column_id"] = handles[column["column_id"]]
+    if target := shown.get("adjudication_target"):
+        target["source_id"] = handles.get(target["source_id"], target["source_id"])
     for key in ("passage_ids", "source_ids", "candidate_ids"):
         shown["allowlist"][key] = [handles.get(i, i) for i in shown["allowlist"][key]]
     return shown
@@ -1126,6 +1167,10 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
         for item in evidence if isinstance(evidence, list) else []:
             if isinstance(item, dict) and isinstance(item.get("passage_id"), str):
                 item["passage_id"] = real(item["passage_id"])
+    if step_input.get("task_type") == "fulltext_adjudication":
+        for part in data.get("parts") if isinstance(data.get("parts"), list) else []:
+            if isinstance(part, dict) and isinstance(part.get("passage_id"), str):
+                part["passage_id"] = real(part["passage_id"])
     return data
 
 

@@ -98,6 +98,7 @@ Kabul: sıra kayıt silmez; gömme kapalıyken dört sinyal değişmeden koşar.
 **08 · Protokol onay adımı (arayüz)** — SW2.5–6, SW15.3, SW14.2, SW2.1 (alan). Kur. Önkoşul: 04, 06. Önce [.impeccable.md](../../.impeccable.md).
 Kapsam: koşu "onay bekliyor" durumunda durur; dağarcık (her terimin kökeni: soru, veri, model), bloklar, ölçüt, parçalar ve ifadeler tek ekranda gösterilir, düzeltilir, dondurulur; değişiklik gerekçeli yeni protokol revizyonu açar; aynı araştırmada model yeniden sorulmaz; ilk tur zayıfsa ya da kullanıcı isterse model terim listesi önerir (sorgu değil), terimler aynı sayım sınamasından geçer.
 Kabul: onaysız hiçbir sağlayıcı isteği çıkmaz (`sw` akışında); Playwright'ta yeni bir durum senaryosu.
+Bölündü (21 Eylül 2026): **08a** arka uç ([sw-slice08a-protocol-approval-backend.md](sw-slice08a-protocol-approval-backend.md)); **08b** arayüz ve Playwright ([sw-slice08b-protocol-approval-ui.md](sw-slice08b-protocol-approval-ui.md)); **08c** koşullu model terim önerisi (SW2.5), ayrı yazılacak. Kabul koşulu 08a'da daraltıldı: onaysız hiçbir sağlayıcı **arama** isteği çıkmaz; sayım sınamaları onaydan önce koşar, çünkü ekranın gösterdiği sayılar onlardır.
 
 ### Faz C — Tarama omurgası
 

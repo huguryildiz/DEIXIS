@@ -2083,6 +2083,9 @@ class ResearchFlow:
         else:
             # The criterion quota fills in rounds down the source order, so it is not spent on one source's pages
             # and every source holding a criterion page is represented before any source gives a second one.
+            # A crowded pass that short sources left unfilled has already given a source up to three passages; the
+            # cap counts them. The legacy branch keeps its count from one, as it always did (D84, limits).
+            taken = dict(Counter(p["source_version_id"] for p in selected.values()))
             room = limit // criterion_passages.CRITERION_ROOM_DIVISOR
             added = 0
             for depth in range(max((len(ordered) for ordered in criterion_of.values()), default=0)):

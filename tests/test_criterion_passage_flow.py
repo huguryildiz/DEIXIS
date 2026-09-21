@@ -154,6 +154,20 @@ def test_a_revised_question_leaves_the_old_phrases_behind(tmp_path, monkeypatch)
                       "phrases": [], "dropped": []}
 
 
+def test_phrases_frozen_under_another_steering_are_left_behind(tmp_path, monkeypatch):
+    """Lesson A: the same question steered elsewhere is another request, and its row does not answer this one."""
+    app = app_for(tmp_path, monkeypatch)
+    client = client_of(app)
+    try:
+        rid = research_with_pdf(client)
+        app.state.store.freeze_protocol(rid, 1, body_with(QUESTION, PHRASES, steering="SYNTHETIC only trials in adults"))
+        answer(client, rid)
+        output = only_step(app.state.store, rid)
+    finally:
+        client.__exit__(None, None, None)
+    assert output["source"] == "none" and output["reason"] == "no_criterion" and output["phrases"] == []
+
+
 def test_a_null_criterion_does_not_hide_an_older_filled_one_of_the_same_question(tmp_path, monkeypatch):
     """A later run that could not reach the model froze a body with no criterion; the filled one behind it is read."""
     app = app_for(tmp_path, monkeypatch)
@@ -273,6 +287,10 @@ def test_no_other_run_kind_opens_the_step_and_reading_a_run_leaves_none_pending(
         collection = client.post(f"/api/researches/{rid}/runs", json={"kind": "pdf_collection"}).json()["id"]
         wait_run(client, rid, collection)
         collection_keys = {s["operation_key"] for s in store.run_steps(collection)}
+        retrieval = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_fetch"})
+        assert retrieval.status_code < 300, retrieval.text
+        _, fetched = wait_run(client, rid, retrieval.json()["id"])
+        collection_keys |= {s["operation_key"] for s in store.run_steps(fetched["id"])}
         research_view(store, rid)  # the run view a UI reads must open nothing
         before = phrase_steps(store, rid)
         answer(client, rid)
@@ -425,6 +443,24 @@ def test_no_source_gives_more_than_the_passage_cap(tmp_path):
                        ABSTRACT)
     chosen = retrieve(store, rid, [svid], 48, compiled())
     assert len(chosen) == MAX_PASSAGES_PER_SOURCE
+
+
+def test_a_crowded_selection_that_leaves_room_still_holds_every_source_to_the_passage_cap(tmp_path):
+    """Review: the crowded branch and the quota below it run in one call when short sources leave the limit unfilled.
+
+    Seventeen sources count as crowded (17 + 2 x 17 > 48), but sixteen of them hold one page and cannot give a
+    second, so the crowded pass ends at 35. The rounds and the topic order then fill the room, and they must count
+    the three passages the long source was already given rather than start it again from one.
+    """
+    store, rid = library(tmp_path)
+    limit = 48
+    long = page_source(store, rid, "long", [f"{CRITERION_PAGE} SYNTHETIC page {n}." for n in range(12)], ABSTRACT)
+    short = [page_source(store, rid, f"short{i}", [OFF_PAGE], f"SYNTHETIC bakery round {i}: an abstract.")
+             for i in range(16)]
+    assert 17 + PDF_PAGES_PER_SOURCE * 17 > limit
+    chosen = retrieve(store, rid, [long, *short], limit, compiled())
+    assert len([p for p in chosen if p["source_version_id"] == long]) == MAX_PASSAGES_PER_SOURCE
+    assert len(chosen) == MAX_PASSAGES_PER_SOURCE + 2 * len(short)
 
 
 def test_a_crowded_source_gives_one_topic_page_and_one_criterion_page(tmp_path):

@@ -389,16 +389,22 @@ class ResearchFlow:
         # A held record is not screened and not deleted: it stays `pending` and the user may still include it. The
         # filter runs before the candidate limit, so holding one record does not cost another its place.
         screenable = [c for c in pool if c["source_version_id"] not in held]
+        # A record an earlier run screened goes last, as it does in the candidate order. One this run screened keeps
+        # its place: a batch is keyed by where it starts, so a run resumed between two batches must find the same
+        # list, or the places the first batch held are read again and the next ones never are.
+        own = {s["id"] for s in self.store.run_steps(run_id)}
+
+        def earlier(c: dict[str, Any]) -> bool:
+            return bool(c["proposed"]) and c["proposal_step_id"] not in own
+
         if order:
             place = {svid: position for position, svid in enumerate(order)}
             # A record the ranking did not see — a version that headed its work only after the ranking — keeps its
             # place in the candidate order, at the end. The sort is stable, so that order is what decides there.
-            # A record an earlier run screened goes last, as it does in the candidate order. One this run screened
-            # keeps its place: a batch is keyed by where it starts, so a run resumed between two batches must find
-            # the same list, or the places the first batch held are read again and the next ones never are.
-            own = {s["id"] for s in self.store.run_steps(run_id)}
-            screenable = sorted(screenable, key=lambda c: (bool(c["proposed"]) and c["proposal_step_id"] not in own,
-                                                           place.get(c["source_version_id"], len(place))))
+            screenable = sorted(screenable, key=lambda c: (earlier(c), place.get(c["source_version_id"], len(place))))
+        else:
+            # The candidate order itself, with this run's own proposals left where they were.
+            screenable = sorted(screenable, key=lambda c: (earlier(c), c["rank"] is not None, c["rank"] or 0, c["created_at"]))
         # The limit still cuts (slice 09 lifts it); what changed is the order it cuts by. A record outside it stays
         # `pending`, is counted and is not deleted.
         candidates = screenable[: budget["max_candidates"]]

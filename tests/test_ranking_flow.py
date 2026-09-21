@@ -618,3 +618,34 @@ def test_a_run_paused_between_two_screening_batches_screens_the_next_places_of_t
     assert run["status"] == "completed"
     assert [sorted(batch) for batch in batches] == [sorted(order[start:start + SCREENING_BATCH])
                                                     for start in range(0, size, SCREENING_BATCH)]
+
+
+def test_a_legacy_run_paused_between_two_screening_batches_screens_every_candidate_when_it_resumes(tmp_path, monkeypatch):
+    """The same list on resume in the legacy workflow too: before, a batch's worth of candidates was never screened."""
+    from deixis.workflow.flow import SCREENING_BATCH
+
+    calls, failed = [], []
+
+    def fail_the_second_batch_once(si):
+        if si["task_type"] == "screening":
+            if len(calls) == 1 and not failed:
+                failed.append(si)
+                return ModelStepResult("failed", error="SYNTHETIC model connection dropped")
+            calls.append(si)
+        return None
+
+    size = 3 * SCREENING_BATCH
+    app = app_for(tmp_path, monkeypatch, Pool(pool(size)), workflow="legacy",
+                  adapter=FakeAdapter(valid_response, fail=fail_the_second_batch_once))
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client, effort="standard")
+        assert run["status"] == "paused"
+        client.post(f"/api/runs/{run_id}/resume")
+        view, run = wait(client, rid, run_id)
+        sent = [c["candidate_id"] for si in calls for c in si["candidates"]]
+        unscreened = [c for c in app.state.store.candidates(rid, 1) if not c["proposed"]]
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed"
+    assert len(sent) == len(set(sent)) == size and not unscreened

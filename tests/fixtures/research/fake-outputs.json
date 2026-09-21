@@ -505,6 +505,142 @@
           { "phrase": "marketable yield", "block": "task" }
         ]
       }
+    },
+    {
+      "name": "criterion_proposal_valid",
+      "step_input": "E_criterion_proposal",
+      "expect_ok": true,
+      "expect_codes": [],
+      "output": {
+        "schema_version": "deixis.criterion_proposal.v1",
+        "step_input_id": "sti_SYNTHE0001",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
+        "parts": [
+          {
+            "name": "supervised exercise programme",
+            "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+            "phrases": ["supervised exercise", "exercise programme", "aerobic training", "resistance training",
+                        "training sessions", "supervised sessions"]
+          },
+          {
+            "name": "fatigue outcome",
+            "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+            "phrases": ["fatigue score", "fatigue severity", "facit-f", "validated scale", "fatigue outcome",
+                        "we measured fatigue"]
+          }
+        ],
+        "exclusion_title_words": ["review", "protocol", "commentary"]
+      }
+    },
+    {
+      "name": "criterion_proposal_one_part",
+      "step_input": "E_criterion_proposal",
+      "expect_ok": false,
+      "expect_codes": ["schema_invalid"],
+      "output": {
+        "schema_version": "deixis.criterion_proposal.v1",
+        "step_input_id": "sti_SYNTHE0001",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme.",
+        "parts": [
+          {
+            "name": "supervised exercise programme",
+            "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+            "phrases": ["supervised exercise", "exercise programme", "aerobic training", "resistance training",
+                        "training sessions", "supervised sessions"]
+          }
+        ],
+        "exclusion_title_words": []
+      }
+    },
+    {
+      "name": "criterion_proposal_sixteen_phrases",
+      "step_input": "E_criterion_proposal",
+      "expect_ok": false,
+      "expect_codes": ["schema_invalid"],
+      "output": {
+        "schema_version": "deixis.criterion_proposal.v1",
+        "step_input_id": "sti_SYNTHE0001",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
+        "parts": [
+          {
+            "name": "supervised exercise programme",
+            "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+            "phrases": ["supervised exercise", "exercise programme", "aerobic training", "resistance training",
+                        "training sessions", "supervised sessions", "walking programme", "cycling programme",
+                        "exercise intervention", "training protocol", "home based training", "group sessions",
+                        "physical training", "exercise arm", "training load", "weekly sessions"]
+          },
+          {
+            "name": "fatigue outcome",
+            "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+            "phrases": ["fatigue score", "fatigue severity", "facit-f", "validated scale", "fatigue outcome",
+                        "we measured fatigue"]
+          }
+        ],
+        "exclusion_title_words": []
+      }
+    },
+    {
+      "name": "criterion_proposal_five_word_phrase",
+      "step_input": "E_criterion_proposal",
+      "expect_ok": false,
+      "expect_codes": ["criterion_phrase_too_long"],
+      "output": {
+        "schema_version": "deixis.criterion_proposal.v1",
+        "step_input_id": "sti_SYNTHE0001",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
+        "parts": [
+          {
+            "name": "supervised exercise programme",
+            "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+            "phrases": ["supervised exercise", "exercise programme", "aerobic training", "resistance training",
+                        "training sessions", "the participants attended supervised sessions"]
+          },
+          {
+            "name": "fatigue outcome",
+            "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+            "phrases": ["fatigue score", "fatigue severity", "facit-f", "validated scale", "fatigue outcome",
+                        "we measured fatigue"]
+          }
+        ],
+        "exclusion_title_words": []
+      }
+    },
+    {
+      "name": "criterion_proposal_repeated_part_name",
+      "step_input": "E_criterion_proposal",
+      "expect_ok": false,
+      "expect_codes": ["duplicate_criterion_part"],
+      "output": {
+        "schema_version": "deixis.criterion_proposal.v1",
+        "step_input_id": "sti_SYNTHE0001",
+        "scope_revision": 1,
+        "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme and reports a fatigue outcome measured with a named scale.",
+        "parts": [
+          {
+            "name": "Fatigue outcome",
+            "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+            "phrases": ["supervised exercise", "exercise programme", "aerobic training", "resistance training",
+                        "training sessions", "supervised sessions"]
+          },
+          {
+            "name": "fatigue outcome",
+            "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+            "phrases": ["fatigue score", "fatigue severity", "facit-f", "validated scale", "fatigue outcome",
+                        "we measured fatigue"]
+          }
+        ],
+        "exclusion_title_words": []
+      }
     }
   ]
 }

@@ -310,6 +310,7 @@ def test_the_frozen_protocol_names_the_origin_of_every_block_and_is_the_same_on_
     from deixis.config import Settings
     from deixis.domain.canonical import sha256_hex
     from deixis.workflow import protocol
+    from deixis.workflow.flow import _criterion_result
 
     adapter = FakeAdapter(labelling({"distributed ledgers": "setting"}))
     with TestClient(app_for(tmp_path, monkeypatch, CountingOpenAlex(), adapter)) as client:
@@ -324,7 +325,9 @@ def test_the_frozen_protocol_names_the_origin_of_every_block_and_is_the_same_on_
     assert all(term["block_origin"] in ("rule", "model") for term in body["vocabulary"])
 
     stored = store.latest_step_output(rid, "vocabulary", 1)
+    # The criterion this run agreed on is an input of the body like the vocabulary, so the rebuild is given it too.
+    criterion = _criterion_result(store.latest_step_output(rid, "criterion", 1))
     again = protocol.build_protocol(
         store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"], body["skill_package_hash"],
-        Settings(data_dir=None, search_workflow="sw"), vocabulary=stored["vocabulary"])
+        Settings(data_dir=None, search_workflow="sw"), vocabulary=stored["vocabulary"], criterion=criterion)
     assert sha256_hex(again) == row["body_sha256"]

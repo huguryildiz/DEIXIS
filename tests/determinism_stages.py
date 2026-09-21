@@ -31,6 +31,7 @@ from deixis.workflow.expansion import expand
 from deixis.workflow.flow import answer_source_order, fuse_rankings
 from deixis.workflow.protocol import build_protocol
 from deixis.workflow.store import Store
+from deixis.workflow.criterion import consensus
 from deixis.workflow.vocabulary import apply_labels, build_vocabulary
 
 CONCEPTS = [
@@ -286,6 +287,61 @@ def stage_survey_flags(rows: list[dict[str, Any]]) -> Any:
     return {"words": {"kept": list(kept), "dropped": list(dropped)}, "records": canonical_rows(found, "id")}
 
 
+# One SYNTHETIC question and three SYNTHETIC proposals for it, from a field no other stage here uses. Two phrases
+# stand in two runs, one in all three and one in a single run; two exclusion words are written twice.
+CRITERION_QUESTION = "SYNTHETIC: which supervised exercise programmes reduce fatigue after chemotherapy?"
+CRITERION_SOUGHT = ["supervised exercise", "supervised"]
+CRITERION_RUNS = [
+    {"criterion": "SYNTHETIC: the paper runs a supervised programme and reports a fatigue score.",
+     "parts": [{"name": "programme", "definition": "SYNTHETIC: the paper delivers the programme.",
+                "phrases": ["supervised exercise", "aerobic training", "resistance training", "training sessions",
+                            "exercise programme", "training protocol"]},
+               {"name": "fatigue", "definition": "SYNTHETIC: the paper reports fatigue.",
+                "phrases": ["facit-f", "fatigue score", "fatigue severity", "validated scale", "fatigue outcome",
+                            "we measured fatigue"]}],
+     "exclusion_title_words": ["review", "protocol"]},
+    {"criterion": "SYNTHETIC: the paper delivers exercise and measures fatigue.",
+     "parts": [{"name": "exercise", "definition": "SYNTHETIC: the paper delivers the programme.",
+                "phrases": ["supervised exercise", "aerobic training", "resistance training", "training sessions",
+                            "exercise programme", "walking programme"]},
+               {"name": "fatigue", "definition": "SYNTHETIC: the paper reports fatigue.",
+                "phrases": ["facit-f", "fatigue questionnaire", "tiredness scale", "exhaustion", "vitality",
+                            "energy level"]}],
+     "exclusion_title_words": ["review", "editorial"]},
+    {"criterion": "SYNTHETIC: the paper is about exercise.",
+     "parts": [{"name": "something else", "definition": "SYNTHETIC: the paper is about activity.",
+                "phrases": ["walking programme", "physical activity", "cycling", "step count", "activity monitor",
+                            "gym visits"]},
+               {"name": "fatigue", "definition": "SYNTHETIC: the paper reports fatigue.",
+                "phrases": ["fatigue score", "fatigue severity", "validated scale", "tiredness", "brief fatigue",
+                            "fatigue scale"]}],
+     "exclusion_title_words": ["review", "editorial"]},
+]
+
+
+def stage_criterion(rows: list[dict[str, Any]]) -> Any:
+    """What three fixed SYNTHETIC proposals agree on (SW15.2).
+
+    The three runs are three answers to one question and have no order of their own; neither have the phrases inside
+    a part or the exclusion words. So the row order decides which run arrives first and in which direction its
+    phrases were written, and neither may reach the result (SW14.6). The order of the parts inside a run is that
+    run's own and is kept: it decides which part a kept phrase is attached to.
+    """
+    runs: dict[int, dict[str, Any]] = {}
+    for position, row in enumerate(rows):
+        source = CRITERION_RUNS[row["run"] - 1]
+        backwards = position % 2 == 1
+        runs[row["run"]] = {
+            "criterion": source["criterion"],
+            "parts": [{"name": part["name"], "definition": part["definition"],
+                       "phrases": list(reversed(part["phrases"])) if backwards else list(part["phrases"])}
+                      for part in source["parts"]],
+            "exclusion_title_words": (list(reversed(source["exclusion_title_words"])) if backwards
+                                      else list(source["exclusion_title_words"])),
+        }
+    return consensus(CRITERION_QUESTION, runs, CRITERION_SOUGHT)
+
+
 def stage_build_protocol(rows: list[dict[str, Any]]) -> Any:
     scope = SCOPE | {"providers": [row["id"] for row in rows]}
     return build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
@@ -304,6 +360,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "code_vocabulary": stage_code_vocabulary,
     "expansion": stage_expansion,
     "survey_flags": stage_survey_flags,
+    "criterion": stage_criterion,
 }
 
 ROWS: dict[str, list[dict[str, Any]]] = {
@@ -313,6 +370,7 @@ ROWS: dict[str, list[dict[str, Any]]] = {
     "answer_source_order": [{"id": f"svr_{i}", "text": "SYNTHETIC molecule release schedule"} for i in range(6)],
     "build_protocol": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed")],
     "code_vocabulary": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed", "scopus")],
+    "criterion": [{"run": number} for number in (1, 2, 3)],
     # Five records of four works: two versions of one work, so a phrase both of them hold is counted once. The
     # titles are SYNTHETIC and hold phrases the question's own terms do not cover.
     "expansion": [

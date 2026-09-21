@@ -55,6 +55,7 @@
         "table_columns",
         "research_title",
         "vocabulary_labels",
+        "criterion_proposal",
         "report_plan",
         "report_section",
         "report_phrase_repair",

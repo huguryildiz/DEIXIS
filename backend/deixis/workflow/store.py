@@ -532,6 +532,34 @@ class Store:
         return {"id": row["id"], "protocol_revision": row["protocol_revision"],
                 "body": json.loads(row["body_json"]), "hash": row["body_sha256"]}
 
+    def frozen_criterion(self, research_id: str, question: str, steering: str | None) -> dict[str, Any] | None:
+        """The criterion this research already froze for the same question and steering, or None (SW15, D78).
+
+        Read across scope revisions on purpose: a revision that changed only the providers must not send the model
+        back for a criterion, because the same question answered in other words would mark every decision made under
+        the old criterion stale (`decisions.CRITERION_FIELDS`, SW11.10). A body whose criterion is null is passed
+        over, so a research whose first run could not reach the model asks again.
+        """
+        for row in self.conn.execute(
+                "SELECT body_json, protocol_revision FROM protocol_records WHERE research_id = ?"
+                " ORDER BY protocol_revision DESC", (research_id,)):
+            body = json.loads(row["body_json"])
+            if body.get("inclusion_criterion") is None or body.get("question") != question:
+                continue
+            if body.get("steering") != steering:
+                continue
+            origin = body.get("criterion_origin") or {}
+            return {
+                "criterion": body["inclusion_criterion"], "parts": body["criterion_parts"],
+                "cue_phrases": body["cue_phrases"], "exclusion_title_words": body["exclusion_title_words"],
+                # The source record of the run that proposed it travels with it; only `origin` becomes "protocol".
+                "dropped_exclusion_title_words": origin.get("dropped_exclusion_title_words", []),
+                "base_run": origin.get("base_run"), "runs_ok": origin.get("runs_ok", []),
+                "sought_term_in_criterion": origin.get("sought_term_in_criterion"),
+                "protocol_revision": row["protocol_revision"],
+            }
+        return None
+
     # ---- runs -------------------------------------------------------------------------
     def create_run(self, research_id: str, kind: str, budget: dict[str, Any], idempotency_key: str | None,
                    target: dict[str, Any] | None = None) -> dict[str, Any]:

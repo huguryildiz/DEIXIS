@@ -22,6 +22,8 @@ from referencing import Registry, Resource
 from deixis.domain import phrasebank
 from deixis.paths import CONTRACTS_DIR, SKILL_DIR
 from deixis.providers import query_compiler
+from deixis.workflow.criterion import (MAX_PHRASE_WORDS, PARTS_PER_PROPOSAL, PHRASES_PER_PART,
+                                       norm as normalize_phrase)
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, InvalidTableInput, check_value, column_spec
 
 SCHEMA_FILES = {
@@ -34,6 +36,7 @@ SCHEMA_FILES = {
     "TableColumnProposal": "table-column-proposal.schema.json",
     "ResearchTitle": "research-title.schema.json",
     "VocabularyLabels": "vocabulary-labels.schema.json",
+    "CriterionProposal": "criterion-proposal.schema.json",
     "StepInput": "step-input.schema.json",
     "ReportPlanDraft": "report-plan.schema.json",
     "ReportSectionDraft": "report-section-draft.schema.json",
@@ -50,6 +53,7 @@ SCHEMA_VERSIONS = {
     "TableColumnProposal": "deixis.table_column_proposal.v1",
     "ResearchTitle": "deixis.research_title.v1",
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
+    "CriterionProposal": "deixis.criterion_proposal.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
     "ReportSectionDraft": "deixis.report_section_draft.v1",
     "ReportPhraseRepairDraft": "deixis.report_phrase_repair_draft.v1",
@@ -66,6 +70,7 @@ TASK_OUTPUTS = {
     "table_columns": ("TableColumnProposal",),
     "research_title": ("ResearchTitle",),
     "vocabulary_labels": ("VocabularyLabels",),
+    "criterion_proposal": ("CriterionProposal",),
     "report_plan": ("ReportPlanDraft",),
     "report_section": ("ReportSectionDraft",),
     "report_phrase_repair": ("ReportPhraseRepairDraft",),
@@ -359,6 +364,8 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         _check_title(step_input, result, report)
     elif output_type == "VocabularyLabels":
         _check_vocabulary_labels(allow, result, report)
+    elif output_type == "CriterionProposal":
+        _check_criterion_proposal(result, report)
     elif output_type == "ReportPlanDraft":
         _check_report_plan(step_input, allow, result, report)
     elif output_type == "ReportSectionDraft":
@@ -751,6 +758,38 @@ def _check_vocabulary_labels(allow: dict[str, set[str]], draft: dict[str, Any], 
         report.issues.append(Issue("phrase_label_incomplete", "/labels", f"{phrase!r} was not labelled"))
     for phrase in sorted(p for p, n in counts.items() if n > 1):
         report.issues.append(Issue("phrase_label_incomplete", "/labels", f"{phrase!r} was labelled more than once"))
+
+
+def _check_criterion_proposal(draft: dict[str, Any], report: ValidationReport) -> None:
+    """The bounds one proposal must hold, enforced in code rather than left to the prompt (SW15.1).
+
+    All of them are errors: a proposal that breaks one is not half-used, because the consensus over three runs would
+    then count a part or a phrase that the step was not allowed to write. A phrase appearing in two parts is not an
+    error; the consensus gives it the first part it stands in.
+    """
+    low, high = PARTS_PER_PROPOSAL
+    if not low <= len(draft["parts"]) <= high:
+        report.issues.append(Issue("criterion_part_count", "/parts", f"expected {low} to {high}, got {len(draft['parts'])}"))
+    least, most = PHRASES_PER_PART
+    names = Counter(normalize_phrase(part["name"]) for part in draft["parts"])
+    for name in sorted(n for n, count in names.items() if count > 1):
+        report.issues.append(Issue("duplicate_criterion_part", "/parts", f"{name!r} names more than one part"))
+    for index, part in enumerate(draft["parts"]):
+        phrases = part["phrases"]
+        if not least <= len(phrases) <= most:
+            report.issues.append(Issue("criterion_phrase_count", f"/parts/{index}/phrases",
+                                       f"expected {least} to {most}, got {len(phrases)}"))
+        seen: Counter[str] = Counter()
+        for position, phrase in enumerate(phrases):
+            normalized = normalize_phrase(phrase)
+            if not normalized:
+                report.issues.append(Issue("criterion_phrase_empty", f"/parts/{index}/phrases/{position}", phrase))
+                continue
+            if len(normalized.split()) > MAX_PHRASE_WORDS:
+                report.issues.append(Issue("criterion_phrase_too_long", f"/parts/{index}/phrases/{position}", phrase))
+            seen[normalized] += 1
+        for normalized in sorted(p for p, count in seen.items() if count > 1):
+            report.issues.append(Issue("duplicate_criterion_phrase", f"/parts/{index}/phrases", normalized))
 
 
 def _report_phrasing_fields(draft: dict[str, Any]) -> list[tuple[str, str]]:

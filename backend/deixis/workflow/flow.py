@@ -37,6 +37,7 @@ from deixis.providers.common import FIRST_PAGE, MAX_RATE_LIMIT_RETRIES, SearchOu
 from deixis.providers.registry import CONNECTORS, Connector
 from deixis.storage.db import dumps, new_id, now
 from deixis.workflow.concurrency import ModelCallLimiter
+from deixis.workflow import criterion as criterion_rules
 from deixis.workflow import expansion as expansion_rules
 from deixis.workflow import lookups
 from deixis.workflow import protocol
@@ -125,6 +126,20 @@ def answer_source_order(included: list[str], facts: dict[str, tuple[bool, int]],
         relevance = {s: 1 / (61 + lexical_rank[s]) + (1 / (61 + semantic_rank[s]) if s in semantic_rank else 0.0) for s in included}
     # Selection order stays a signal (D17); the identifier only breaks what is equal down to that order (SW14.6).
     return sorted(included, key=lambda s: (not facts.get(s, (False, 0))[0], -facts.get(s, (False, 0))[1], -relevance[s], position[s], s))
+
+
+def _sought_terms(vocabulary: dict[str, Any]) -> list[str]:
+    """The forms of the question's own task terms, for the record of whether the criterion named what is sought.
+
+    Both forms are given because a term enters the query as one of them and the criterion may write either.
+    """
+    return [form for term in vocabulary["terms"] if term["block"] == "task" and not term["dropped"]
+            for form in (term["phrase"], term["root"])]
+
+
+def _criterion_result(output: dict[str, Any]) -> dict[str, Any] | None:
+    """The stored criterion step output read back as the value the protocol is built from."""
+    return output["criterion"] | {"origin": output["origin"]} if output["criterion"] else None
 
 
 class RunStopped(Exception):
@@ -272,11 +287,14 @@ class ResearchFlow:
         if scope["seed_mode"] == "uploaded_seed" and self.store.seed_status(rid, scope) != "ready":
             self._pause(run_id, "seed_unavailable")
         budget = run["budget"]
-        plan = vocabulary = None
+        plan = vocabulary = criterion = None
         if scope.get("search_workflow") == "sw":
             # The sw workflow takes the first search's words from the question by code, so no model runs before the
             # search and a broken model connection does not stop it (SW2.3). Screening still goes to the model.
             vocabulary, queries = await self._vocabulary(run, scope)
+            # The criterion is proposed before the protocol is frozen, so the body this research searches under
+            # already carries it. It orders nothing and decides nothing yet (SW15.4 is slice 11).
+            criterion = await self._criterion(run, scope, vocabulary)
         else:
             output = await self._model_step(run, scope, "search_plan", "search_plan",
                                             source_ids=[seed["source_version_id"]] if seed else None,
@@ -310,7 +328,7 @@ class ResearchFlow:
             reason = "later_discovery_run" if self.store.current_protocol(rid, revision) else None
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                 scope, budget, plan if plan and plan.get("concepts") else None, queries,
-                self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary,
+                self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
             ), reason=reason)
             self.store.finish_step(protocol_step["id"], "succeeded",
                                    output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
@@ -339,7 +357,7 @@ class ResearchFlow:
         if scope.get("search_workflow") == "sw":
             # A second arm that only adds: phrases the first round's own records offered, each kept by a count
             # probe (SW2.4). The first round's query is not sent again.
-            more = await self._expansion(run, scope, vocabulary, queries)
+            more = await self._expansion(run, scope, vocabulary, queries, criterion)
             extra_requests = extra_page_requests(queries + more)  # the allowance covers every query the run reads
             for index, query in enumerate(more, start=len(queries)):
                 self._checkpoint(run_id, revision)
@@ -486,6 +504,52 @@ class ResearchFlow:
         fallback = ("labelling_unsearchable" if len(runs) >= vocabulary_rules.LABEL_MAJORITY
                     and labelled.block_assignment != "model" else None)
         return labelled, {"runs_ok": len(runs), "skipped": None, "fallback": fallback, "failures": failures, "phrases": records}
+
+    async def _criterion(self, run: dict[str, Any], scope: dict[str, Any],
+                         vocabulary: dict[str, Any]) -> dict[str, Any] | None:
+        """The inclusion criterion, its parts and cue phrases, proposed from the question alone (SW15.1, SW15.2).
+
+        Three optional calls, and nothing one of them said on its own is used: `consensus` keeps the phrases at least
+        two runs wrote and returns nothing at all below two valid runs. A failed call is recorded and the run goes on,
+        so a search never waits for a model. A criterion this research already froze for the same question and
+        steering is taken back unchanged instead of asked again: the same criterion in other words would mark every
+        decision made under the old one stale (SW11.10).
+
+        The step is `succeeded` even when no criterion could be built, so a resumed run does not call the model again;
+        a later discovery run of the same scope asks afresh, because it has no frozen criterion to read.
+        """
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        step = self.store.step(run_id, "criterion", "code:criterion")
+        if step["status"] == "succeeded":
+            return _criterion_result(step["output"])
+        self.store.start_step(step["id"])
+        frozen = self.store.frozen_criterion(rid, scope["question"], scope.get("steering"))
+        if frozen is not None:
+            taken = frozen.pop("protocol_revision")  # where it was read from; the criterion fields stay as they were
+            output = {"origin": "protocol", "criterion": frozen, "protocol_revision": taken, "failures": []}
+        else:
+            runs: dict[int, dict[str, Any]] = {}
+            failures: list[dict[str, Any]] = []
+            for index in range(criterion_rules.PROPOSAL_RUNS):
+                self._checkpoint(run_id, revision)  # a pause or cancel is honoured between the calls
+                key = f"criterion_proposal_{index + 1}"
+                try:
+                    proposal = await self._model_step(run, scope, key, "criterion_proposal", optional=True)
+                except OptionalStepFailed as failure:
+                    failures.append({"step": key, "reason": failure.reason})
+                    continue
+                if proposal.get("invalid"):
+                    # A proposal that broke a bound of the contract is dropped whole; a half-used one would enter
+                    # the vote with parts or phrases the step was not allowed to write.
+                    failures.append({"step": key, "reason": "invalid_model_output"})
+                    continue
+                runs[index + 1] = proposal["result"]
+            self._checkpoint(run_id, revision)
+            agreed = criterion_rules.consensus(scope["question"], runs, _sought_terms(vocabulary))
+            output = {"origin": "model" if agreed else None, "criterion": agreed,
+                      "protocol_revision": None, "failures": failures}
+        self.store.finish_step(step["id"], "succeeded", output=output)
+        return _criterion_result(output)
 
     def _searchable(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Stop the run when its vocabulary cannot be searched. A resumed run reads the same stored vocabulary, so it
@@ -661,7 +725,7 @@ class ResearchFlow:
             cursor, number = output["next_cursor"], number + 1
 
     async def _expansion(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                         queries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                         queries: list[dict[str, Any]], criterion: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """The second round's queries, taken from the first round's own records by code (SW2.4, slice 04b).
 
         No model is called: the candidate phrases are the authors' keywords and the titles' repeated n-grams, and a
@@ -691,15 +755,17 @@ class ResearchFlow:
                 "expansion": result, "queries": more, "query_compiler": query_compiler.BLOCKS_VERSION})
         self._checkpoint(run_id, revision)
         if more:
-            self._freeze_expansion(run, scope, vocabulary, queries + more, result)
+            self._freeze_expansion(run, scope, vocabulary, queries + more, result, criterion)
         return more
 
     def _freeze_expansion(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                          queries: list[dict[str, Any]], expansion: dict[str, Any]) -> None:
+                          queries: list[dict[str, Any]], expansion: dict[str, Any],
+                          criterion: dict[str, Any] | None = None) -> None:
         """Freeze the protocol again, before the second round's first provider request.
 
         The first record is never edited: a query the research did not have when it started is a new revision with
-        its reason (SW14.2). With no accepted term there is no second revision at all.
+        its reason (SW14.2). With no accepted term there is no second revision at all. The criterion is carried over
+        unchanged: a revision that dropped it would mark every decision made under it stale (SW11.10).
         """
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         step = self.store.step(run_id, "protocol_expansion", "protocol:expansion")
@@ -708,7 +774,7 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
             scope, run["budget"], None, queries, self.deps.package.package_hash, self.deps.settings,
-            vocabulary=vocabulary, expansion=expansion), reason="data_expansion")
+            vocabulary=vocabulary, expansion=expansion, criterion=criterion), reason="data_expansion")
         self.store.finish_step(step["id"], "succeeded",
                                output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
 

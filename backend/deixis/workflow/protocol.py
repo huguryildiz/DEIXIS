@@ -18,6 +18,9 @@ from deixis.domain.survey_words import ABSTRACT_SELF_DESCRIPTIONS as SURVEY_PATT
 from deixis.providers import query_compiler
 
 PROTOCOL_SCHEMA = "deixis.protocol.v1"
+# What the criterion body says about where it came from. It is kept out of `decisions.CRITERION_FIELDS` on purpose:
+# the same criterion read back from an earlier protocol must not make the decisions taken under it stale (SW11.10).
+CRITERION_ORIGIN_FIELDS = ("origin", "base_run", "runs_ok", "dropped_exclusion_title_words", "sought_term_in_criterion")
 
 
 def _model(role: tuple[str, str | None, str | None] | None) -> dict[str, Any] | None:
@@ -30,17 +33,21 @@ def _model(role: tuple[str, str | None, str | None] | None) -> dict[str, Any] | 
 def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str, Any] | None,
                    queries: list[dict[str, Any]], skill_package_hash: str, settings: Settings,
                    vocabulary: dict[str, Any] | None = None,
-                   expansion: dict[str, Any] | None = None) -> dict[str, Any]:
+                   expansion: dict[str, Any] | None = None,
+                   criterion: dict[str, Any] | None = None) -> dict[str, Any]:
     """The body a research freezes. `vocabulary` is the sw workflow's code vocabulary step output (SW2).
 
     Its counts are the ones the first run read; they change in the literature over time and are never re-probed, so
     the body keeps the numbers that actually decided this research's query. `expansion` is the step output of the
     second arm (SW2.4) and is given only for the revision that opened it, so a body without one is what it was.
+    `criterion` is what three proposals agreed on (SW15.2); without one the four criterion fields stay null, which
+    is what a `legacy` body and a run whose model was unreachable both have.
     """
     # Imported here: flow loads this module, and the thresholds are read from their one definition rather than repeated.
     from deixis.documents.pdf import CHUNK_CHARS
     from deixis.workflow.flow import (FORMULATION_SCORE_THRESHOLD, MAX_ABSTRACT_CHARS, MAX_PASSAGES_PER_SOURCE,
                                       PDF_PAGES_PER_SOURCE, RRF_K)
+    from deixis.workflow.criterion import THRESHOLDS as CRITERION_THRESHOLDS
     from deixis.workflow.expansion import THRESHOLDS as EXPANSION_THRESHOLDS
     from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS, title_words
     from deixis.workflow.vocabulary import GATE_BLOCKS, THRESHOLDS as VOCABULARY_THRESHOLDS
@@ -65,11 +72,13 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "language_hint": scope.get("language_hint"),
         "source_scope": scope["source_scope"],
         "seed_mode": scope.get("seed_mode", "question_only"),
-        # The inclusion criterion and its phrases arrive in slice 06.
-        "inclusion_criterion": None,
-        "criterion_parts": None,
-        "cue_phrases": None,
-        "exclusion_title_words": None,
+        # What a record must contain to be included, and the words an author of such a paper writes (SW15). Null
+        # here means the criterion was not built — no sw workflow, or fewer than two valid proposals.
+        "inclusion_criterion": criterion["criterion"] if criterion else None,
+        "criterion_parts": criterion["parts"] if criterion else None,
+        "cue_phrases": criterion["cue_phrases"] if criterion else None,
+        "exclusion_title_words": criterion["exclusion_title_words"] if criterion else None,
+        **({"criterion_origin": {name: criterion[name] for name in CRITERION_ORIGIN_FIELDS}} if criterion else {}),
         # The blocks a code vocabulary gated the search with, each holding the form of its terms that was queried.
         "concept_blocks": ({block: [t["root"] if t["in_query"] == "root" else t["phrase"]
                                     for t in queried if t["block"] == block] for block in GATE_BLOCKS}
@@ -108,7 +117,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             # The identity rule and the page read limit run only on the sw workflow, so a legacy protocol body stays
             # exactly as it was.
             **({"record_identity": THRESHOLDS,
-                "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS,
+                "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS,
                 "search_read": {"read_limit_per_query": SW_READ_LIMIT}} if scope.get("search_workflow") == "sw" else {}),
             **({"vocabulary": VOCABULARY_THRESHOLDS} if vocabulary else {}),
             **({"expansion": EXPANSION_THRESHOLDS} if expansion else {}),

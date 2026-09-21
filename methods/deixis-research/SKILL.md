@@ -49,6 +49,11 @@ For `vocabulary_labels`, read
 application extracted from the question into concept blocks, and propose no
 phrases of your own.
 
+For `criterion_proposal`, read
+[criterion proposal](references/criterion-proposal.md): you state, from the
+question alone, what a paper must contain to be included, and name the words an
+author of such a paper would write.
+
 For `cell_extraction` and `table_columns`, read
 [evidence table](references/evidence-table.md): you answer evidence table
 columns for one source, or suggest columns, and do not answer the question.

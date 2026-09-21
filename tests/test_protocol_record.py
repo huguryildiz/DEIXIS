@@ -113,6 +113,7 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     from deixis.domain.rules import SW_READ_LIMIT
     from deixis.domain.survey import THRESHOLDS as SURVEY_THRESHOLDS
     from deixis.workflow import protocol
+    from deixis.workflow.criterion import THRESHOLDS as CRITERION_THRESHOLDS
     from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS
 
     scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
@@ -121,12 +122,12 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     settings = Settings(data_dir=None)
     legacy = protocol.build_protocol(scope | {"search_workflow": "legacy"}, {}, None, [], "pkg_hash", settings)
     sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
-    assert not {"record_identity", "search_read", "survey", "lookup"} & set(legacy["thresholds"])
+    assert not {"record_identity", "search_read", "survey", "lookup", "criterion"} & set(legacy["thresholds"])
     assert sw["thresholds"]["record_identity"] == THRESHOLDS
     assert sw["thresholds"]["search_read"] == {"read_limit_per_query": SW_READ_LIMIT}
     assert sw["thresholds"] == legacy["thresholds"] | {
         "record_identity": THRESHOLDS, "search_read": {"read_limit_per_query": SW_READ_LIMIT},
-        "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS}
+        "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS}
     # The survey word lists are the only other sw-only field of the body (slice 05); a legacy body carries none.
     rest = lambda body: {k: v for k, v in body.items()
                          if k not in ("thresholds", "search_workflow", "survey")}

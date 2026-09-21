@@ -36,12 +36,16 @@ SCREENING_BATCH = 40
 # the plan's query limit; with several providers enabled, one query per relevant provider needs room. `core_depth` is
 # how many results OpenAlex's core-only query reads (0: no such query); standard's 250 candidates and 15 model calls were
 # chosen for it in docs/product/search-recall-depth-2026-09-17.md, detailed keeps more room than standard.
+# 2026-09-21 (D78): every preset gained the CRITERION_CALLS the criterion proposal adds before the first search, so
+# the room each of them had for screening, the answer and their repairs is the room it had before that step existed.
+CRITERION_CALLS = 3
 TEST_EFFORT_BUDGETS = {
-    "quick": EffortBudget(max_model_calls=6, max_provider_requests=3, max_candidates=20, max_answer_passages=16, results_per_query=10),
-    "standard": EffortBudget(max_model_calls=15, max_provider_requests=8, max_candidates=250, max_answer_passages=48, results_per_query=25,
-                             core_depth=100),
-    "detailed": EffortBudget(max_model_calls=20, max_provider_requests=12, max_candidates=300, max_answer_passages=80, results_per_query=25,
-                             core_depth=100),
+    "quick": EffortBudget(max_model_calls=6 + CRITERION_CALLS, max_provider_requests=3, max_candidates=20,
+                          max_answer_passages=16, results_per_query=10),
+    "standard": EffortBudget(max_model_calls=15 + CRITERION_CALLS, max_provider_requests=8, max_candidates=250,
+                             max_answer_passages=48, results_per_query=25, core_depth=100),
+    "detailed": EffortBudget(max_model_calls=20 + CRITERION_CALLS, max_provider_requests=12, max_candidates=300,
+                             max_answer_passages=80, results_per_query=25, core_depth=100),
 }
 
 
@@ -67,7 +71,7 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
     return "current"
 
 
-LITERATURE_TASKS = ("search_plan", "screening", "vocabulary_labels")
+LITERATURE_TASKS = ("search_plan", "screening", "vocabulary_labels", "criterion_proposal")
 # A repair would let the step name a phrase the question does not hold and then take it back. The block labelling
 # gets one attempt: an output that invents, drops or repeats a phrase is rejected and the rule stands (SW17.1).
 NO_REPAIR_TASKS = ("vocabulary_labels",)

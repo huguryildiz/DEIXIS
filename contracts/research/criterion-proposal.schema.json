@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/criterion-proposal.schema.json",
+  "title": "CriterionProposal",
+  "description": "The inclusion criterion a paper must meet to answer this research's question, its parts and the phrases an author writing about each part would use (SW15). The proposal is made from the question and the user's steering alone: no record, no vocabulary and no block is shown. It is asked three times and code keeps what two runs agree on, so one output is a proposal, never the criterion. There is no rationale field and no strength mark (SW15.7): neither would be checked.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "criterion",
+    "parts",
+    "exclusion_title_words"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "deixis.criterion_proposal.v1" },
+    "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
+    "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
+    "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "criterion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "description": "One sentence a reader can check against a full text. It names the thing the question seeks."
+    },
+    "parts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 5,
+      "description": "What the paper itself must do or state, one entry per part. The setting the question asks about is not a part: the search blocks already hold it.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "definition", "phrases"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 60 },
+          "definition": { "type": "string", "minLength": 1, "maxLength": 400,
+                          "description": "What must be present in the paper for this part to be met." },
+          "phrases": {
+            "type": "array",
+            "minItems": 6,
+            "maxItems": 15,
+            "description": "Words an author would literally write in a paper that has this part: one to four words, lower case, as running text or as a standard abbreviation or notation.",
+            "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+          }
+        }
+      }
+    },
+    "exclusion_title_words": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 30,
+      "description": "Title words of papers that are about the topic but are not primary studies of this kind.",
+      "items": { "type": "string", "minLength": 1, "maxLength": 40 }
+    }
+  }
+}

@@ -80,6 +80,16 @@ def test_one_missing_block_does_not_close_a_record_and_two_missing_blocks_do():
     assert abstract_stage.code_outcome(neither, BLOCKS, set()) == "both_blocks_missing"
 
 
+def test_a_vocabulary_with_one_searched_block_closes_nothing_by_code():
+    """SW9.2 closes a record that lacks *both* blocks. When only one block holds a term, "both missing" would mean
+    "the one block missing", which is exactly the case SW9.2 leaves to the model."""
+    off_topic = record(title="SYNTHETIC bakery logistics of a small town",
+                       abstract="We deliver SYNTHETIC bread to the market every morning.")
+    for blocks in ({"setting": [], "task": ["irrigation scheduling"], "outcome": []},
+                   {"setting": ["greenhouse tomato"], "outcome": ["marketable yield"]}):
+        assert abstract_stage.code_outcome(off_topic, blocks, set()) is None
+
+
 def test_a_record_without_an_abstract_is_never_out_of_scope_whatever_the_blocks_say():
     """SW5.5: nothing a code rule reads can drop a record nobody could judge."""
     for decision in (None, "abstract_not_found", "no_abstract"):

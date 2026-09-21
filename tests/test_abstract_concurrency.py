@@ -145,6 +145,44 @@ def test_the_budget_stops_before_a_batch_it_cannot_read_twice(tmp_path, monkeypa
     assert {codes[key] for key in unread} == {"abstract_not_read"}
 
 
+def test_a_resumed_run_does_not_charge_the_budget_for_calls_it_reads_back(tmp_path, monkeypatch):
+    """A step read back from the store costs no model call, so it takes no room from the batches still to be sent."""
+    holder, seen = {}, []
+    original = ResearchFlow._abstract_stage
+
+    async def room_for_the_whole_read(self, run, scope, vocabulary, order):
+        # Fixed on the first entry: every call already spent, plus exactly the six this read costs.
+        holder.setdefault("limit", self.store.run(run["id"])["usage"].get("model_calls", 0) + 3 * ABSTRACT_RUNS)
+        run["budget"] = run["budget"] | {"max_model_calls": holder["limit"]}
+        return await original(self, run, scope, vocabulary, order)
+
+    def before(si):
+        if si["task_type"] != "abstract_screening":
+            return
+        seen.append(si["step_id"])
+        if len(seen) == 4:
+            holder["store"].update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
+                                       pause_reason="user_requested")
+
+    monkeypatch.setattr(ResearchFlow, "_abstract_stage", room_for_the_whole_read)
+    adapter = FakeAdapter(responder(), delay=0.02, before=before)
+    app = app_for(tmp_path, monkeypatch, Pool([work(n) for n in range(SIZE)]), adapter=adapter, concurrency=4)
+    client = client_of(app)
+    try:
+        store = holder["store"] = app.state.store
+        rid, run_id, view, run = discover(client, effort="standard")
+        assert len(abstract_calls(adapter)) == 4
+        client.post(f"/api/runs/{run_id}/resume")
+        view, run = wait(client, rid, run_id)
+        codes, steps = codes_of(store, rid), screening_steps(store, run_id)
+    finally:
+        client.__exit__(None, None, None)
+    assert (run["status"], run["pause_reason"]) == ("completed", None)
+    # The four answers the run had paid for are used, and the third batch is sent: the budget held all six calls.
+    assert len(abstract_calls(adapter)) == 6 and len(steps) == 6
+    assert set(codes.values()) == {"runs_agree_candidate"}
+
+
 # ---- one invalid run, and a rate-limited answer --------------------------------------------------
 
 def test_one_invalid_run_closes_its_own_batch_and_leaves_the_others_decided(tmp_path, monkeypatch):

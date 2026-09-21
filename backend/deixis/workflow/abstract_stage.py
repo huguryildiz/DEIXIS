@@ -68,7 +68,10 @@ def code_outcome(record: dict[str, Any], blocks: dict[str, list[str]], links: It
     forms = block_forms({name: blocks.get(name) or [] for name in GATE_BLOCKS})
     if blocks_in(forms, record["title"] or "") == set(GATE_BLOCKS):
         return "blocks_in_title"
-    if record.get("abstract") and not blocks_in(forms, f"{record['title'] or ''} {record['abstract']}"):
+    # "Both missing" needs two blocks to be missing from. With one searched block, the record that lacks it is the
+    # record SW9.2 leaves to the model ("one missing block does not close"), not one code may put out of scope.
+    if (record.get("abstract") and all(forms[name] for name in GATE_BLOCKS)
+            and not blocks_in(forms, f"{record['title'] or ''} {record['abstract']}")):
         return "both_blocks_missing"
     return None
 

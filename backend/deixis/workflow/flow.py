@@ -884,18 +884,28 @@ class ResearchFlow:
         rows_of: dict[int, list[dict[str, Any]]] = {}
         closed: set[int] = set()
 
+        # Read, not opened: a batch the budget never reaches must not be left with a pending step of its own.
+        answered = {s["operation_key"] for s in self.store.run_steps(run_id)
+                    if s["kind"] == "model:abstract_screening"
+                    and (s["status"] == "succeeded" or s["error_code"] == "invalid_model_output")}
+
         def jobs() -> Iterator[_AbstractJob]:
             """The (batch, run) calls in plan order, up to the batch the budget no longer holds whole."""
             nonlocal submitted
             for number, batch in enumerate(batches):
-                if not self._model_calls_left(run, runs, submitted, spent_before):
+                # A call whose step is already stored is read back and costs nothing, so a resumed run charges the
+                # budget only for the calls it still has to make; counting the stored ones too left paid-for
+                # answers unused and later batches unread while the budget still held them.
+                owed = [run_no for run_no in range(1, runs + 1)
+                        if f"abstract_screening:{number}:{run_no}" not in answered]
+                if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
                     # The budget stopped short of this batch. Its records are unread, which is a state the workflow
                     # already has, so the run finishes rather than pausing on something a later run will pick up.
                     unread.extend(svid for later in batches[number:] for svid in later)
                     return
                 rows_of[number] = [by_svid[svid] for svid in batch if svid in by_svid]
                 for run_no in range(1, runs + 1):
-                    submitted += 1
+                    submitted += run_no in owed
                     yield _AbstractJob(f"abstract_screening:{number}:{run_no}", number, run_no, rows_of[number])
 
         async def call(job: _AbstractJob) -> dict[str, Any] | None:

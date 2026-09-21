@@ -178,6 +178,27 @@ class DecisionStore:
             " ORDER BY signal, ranking_step_id", (research_id, source_version_id),
         )]
 
+    def ranking_order(self, ranking_step_id: str) -> list[str]:
+        """The inspection order one ranking step wrote, best first."""
+        return [row[0] for row in self.conn.execute(
+            "SELECT source_version_id FROM record_signal_ranks WHERE ranking_step_id = ? AND signal = 'inspection'"
+            " ORDER BY rank", (ranking_step_id,),
+        )]
+
+    def latest_ranking(self, research_id: str, scope_revision: int) -> list[str] | None:
+        """The inspection order this question revision was last ranked in; `None` when it was never ranked.
+
+        A later discovery run of the same revision opens its own ranking step and the earlier step's rows stay, so
+        this is the newest one, not a merge of them (slices 10 and 15 read it).
+        """
+        row = self.conn.execute(
+            "SELECT s.id FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
+            " AND r.scope_revision = ? AND s.operation_key = 'ranking' AND s.kind = 'code:ranking'"
+            " AND s.status = 'succeeded' ORDER BY s.finished_at DESC, s.id DESC LIMIT 1",
+            (research_id, scope_revision),
+        ).fetchone()
+        return None if row is None else self.ranking_order(row["id"])
+
     # ---- from the decisions of a work's versions to one selection ----------------------
     def work_outcome(self, research_id: str, work_id: str) -> dict[str, Any]:
         """What this research decided about the work, over every version of it still in the research (SW9.4, SW1.7).

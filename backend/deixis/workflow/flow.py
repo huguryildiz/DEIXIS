@@ -41,7 +41,9 @@ from deixis.workflow import criterion as criterion_rules
 from deixis.workflow import expansion as expansion_rules
 from deixis.workflow import lookups
 from deixis.workflow import protocol
+from deixis.workflow import ranking as ranking_rules
 from deixis.workflow import vocabulary as vocabulary_rules
+from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.equations import equation_state
 from deixis.workflow.store import NotFound, RunInProgress, Store
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
@@ -329,6 +331,7 @@ class ResearchFlow:
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                 scope, budget, plan if plan and plan.get("concepts") else None, queries,
                 self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
+                embedding_model=self._embedding_model(),
             ), reason=reason)
             self.store.finish_step(protocol_step["id"], "succeeded",
                                    output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
@@ -372,14 +375,28 @@ class ResearchFlow:
             held = await self._second_sources(run, scope, vocabulary)
 
         self._checkpoint(run_id, revision)
-        self.store.update_run(run_id, stage="screening")
         # A work is screened once, through its head; its other versions follow the head's selection (D46, D48).
         heads = set(self.store.work_heads(rid).values())
+        pool = [c for c in self.store.candidates(rid, revision)
+                if c["origin"] != "user" and c["source_version_id"] in heads]
+        order: list[str] = []
+        if scope.get("search_workflow") == "sw":
+            # The whole pool is embedded and then ranked before screening reads anything (SW7, SW8, slice 07). The
+            # held records are ranked too; only the screening list leaves them out.
+            await self._source_similarity(run, scope, pool)
+            order = await self._ranking(run, scope, vocabulary)
+        self.store.update_run(run_id, stage="screening")
         # A held record is not screened and not deleted: it stays `pending` and the user may still include it. The
         # filter runs before the candidate limit, so holding one record does not cost another its place.
-        candidates = [c for c in self.store.candidates(rid, revision)
-                      if c["origin"] != "user" and c["source_version_id"] in heads
-                      and c["source_version_id"] not in held][: budget["max_candidates"]]
+        screenable = [c for c in pool if c["source_version_id"] not in held]
+        if order:
+            place = {svid: position for position, svid in enumerate(order)}
+            # A record the ranking did not see — a version that headed its work only after the ranking — keeps its
+            # place in the candidate order, at the end. The sort is stable, so that order is what decides there.
+            screenable = sorted(screenable, key=lambda c: (c["proposed"], place.get(c["source_version_id"], len(place))))
+        # The limit still cuts (slice 09 lifts it); what changed is the order it cuts by. A record outside it stays
+        # `pending`, is counted and is not deleted.
+        candidates = screenable[: budget["max_candidates"]]
         # Map through all candidates: a resumed run may apply a proposal made for an earlier candidate list.
         by_candidate = {c["candidate_id"]: c["source_version_id"] for c in self.store.candidates(rid)}
         for start in range(0, len(candidates), SCREENING_BATCH):
@@ -395,7 +412,10 @@ class ResearchFlow:
                     rid, by_candidate[decision["candidate_id"]], decision["proposal"], decision["reason"],
                     decision["evidence_basis"], step["id"],
                 )
-        await self._source_similarity(run, scope, candidates)
+        if scope.get("search_workflow") != "sw":
+            # An sw run scored the whole pool before it ranked it; a legacy run scores its screened candidates here,
+            # exactly where it always did.
+            await self._source_similarity(run, scope, candidates)
 
         # Derive a short title from the question and the included sources once screening is done. A structurally valid
         # answer later replaces it (store.save_answer). Optional: the run continues with the provisional title on failure.
@@ -579,6 +599,39 @@ class ResearchFlow:
         from deixis.workflow.report.sections import run_report
 
         await run_report(self, run, scope)
+
+    def _embedding_model(self) -> str | None:
+        """The semantic search model this research would embed with, or None when it is off (D29, SW8.3).
+
+        The protocol step and the expansion revision both read it here, so the two bodies name the same model and a
+        changed setting never turns the frozen one into null (SW11.10).
+        """
+        provider, model = embeddings.chosen(self.store.setting("semantic_search"))
+        if provider == "off" or not model:
+            return None
+        return embeddings.Embedder(provider, model).stored_model
+
+    async def _ranking(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> list[str]:
+        """Order this revision's records by rank fusion before screening reads them; returns the inspection order.
+
+        The step is code, not a model call: with every model call failing the run still searches, ranks and stores
+        every rank (SW7). A step that already succeeded is not computed again — its stored order comes back, so a
+        resumed run screens the same batches, whose keys are places in that order. A *new* discovery run of the same
+        scope opens its own step and ranks again, because the pool may have grown and the user may have verified a
+        seed; the earlier step's rows stay where they are.
+        """
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        self._checkpoint(run_id, revision)
+        decisions = DecisionStore(self.store)
+        step = self.store.step(run_id, "ranking", "code:ranking")
+        if step["status"] == "succeeded":
+            return decisions.ranking_order(step["id"])
+        self.store.start_step(step["id"])
+        stored = self.store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")["output"] or {}
+        terms = list((stored.get("expansion") or {}).get("terms") or [])
+        output = ranking_rules.rank_records(self.store, run, scope, vocabulary, terms, self._embedding_model())
+        self.store.finish_step(step["id"], "succeeded", output=output)
+        return decisions.ranking_order(step["id"])
 
     async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]]) -> None:
         """Score screened sources by the similarity of their title and abstract to the question (D30).
@@ -772,9 +825,12 @@ class ResearchFlow:
         if step["status"] == "succeeded":
             return
         self.store.start_step(step["id"])
+        # The same embedding model the first revision named: a revision that dropped it would say this research
+        # ordered its records without one, which is not what happened (the criterion is carried over for the same reason).
         record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
             scope, run["budget"], None, queries, self.deps.package.package_hash, self.deps.settings,
-            vocabulary=vocabulary, expansion=expansion, criterion=criterion), reason="data_expansion")
+            vocabulary=vocabulary, expansion=expansion, criterion=criterion,
+            embedding_model=self._embedding_model()), reason="data_expansion")
         self.store.finish_step(step["id"], "succeeded",
                                output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
 

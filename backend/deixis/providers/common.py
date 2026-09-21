@@ -54,6 +54,9 @@ class ProviderRecord:
     # How many works the record's own bibliography lists. A paper's bibliography does not change, so the first count
     # read stands; a record whose source names none has no count, which is not the same as a count of zero (SW5.1).
     reference_count: int | None = None
+    # The works the record's own bibliography lists, in the provider's own short identifiers. `None` means no read
+    # asked for them or the provider carries none; `()` means the provider answered with an empty list (SW7.4).
+    references: tuple[str, ...] | None = None
     # False when the DOI covers several file versions (arXiv's DataCite DOI names every version of a preprint).
     merge_by_doi: bool = True
     volume: str | None = None

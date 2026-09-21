@@ -34,14 +34,18 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                    queries: list[dict[str, Any]], skill_package_hash: str, settings: Settings,
                    vocabulary: dict[str, Any] | None = None,
                    expansion: dict[str, Any] | None = None,
-                   criterion: dict[str, Any] | None = None) -> dict[str, Any]:
+                   criterion: dict[str, Any] | None = None,
+                   embedding_model: str | None = None) -> dict[str, Any]:
     """The body a research freezes. `vocabulary` is the sw workflow's code vocabulary step output (SW2).
 
     Its counts are the ones the first run read; they change in the literature over time and are never re-probed, so
     the body keeps the numbers that actually decided this research's query. `expansion` is the step output of the
     second arm (SW2.4) and is given only for the revision that opened it, so a body without one is what it was.
     `criterion` is what three proposals agreed on (SW15.2); without one the four criterion fields stay null, which
-    is what a `legacy` body and a run whose model was unreachable both have.
+    is what a `legacy` body and a run whose model was unreachable both have. `embedding_model` is the semantic search
+    model the research was configured with when it froze this body; the flow reads it, because this function sees no
+    store. It says which signals were configured, never which of them really ran — that is in the ranking step's own
+    output — so a research whose embedding failed keeps the body it froze.
     """
     # Imported here: flow loads this module, and the thresholds are read from their one definition rather than repeated.
     from deixis.documents.pdf import CHUNK_CHARS
@@ -50,6 +54,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     from deixis.workflow.criterion import THRESHOLDS as CRITERION_THRESHOLDS
     from deixis.workflow.expansion import THRESHOLDS as EXPANSION_THRESHOLDS
     from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS, title_words
+    from deixis.workflow.ranking import THRESHOLDS as RANKING_THRESHOLDS
     from deixis.workflow.vocabulary import GATE_BLOCKS, THRESHOLDS as VOCABULARY_THRESHOLDS
 
     queried = [t for t in vocabulary["terms"] if not t["dropped"]] if vocabulary else []
@@ -105,7 +110,12 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         **({"survey": {"title_words": list(kept_words), "dropped_title_words": list(dropped_words),
                        "abstract_patterns": list(SURVEY_PATTERNS)}}
            if scope.get("search_workflow") == "sw" else {}),
-        "signals": [],  # record-level ranking signals arrive in slice 07
+        # How this research was configured to order its inspection list (SW7, SW8). A `legacy` body has no signal.
+        "signals": ([{"signal": "bm25"}, {"signal": "blocks"},
+                     {"signal": "tfidf", "seeds": "verified"},
+                     {"signal": "graph", "seeds": "verified_then_code"},
+                     {"signal": "embedding", "model": embedding_model, "rescue": True}]
+                    if scope.get("search_workflow") == "sw" else []),
         "thresholds": {
             "screening_batch": SCREENING_BATCH,
             "max_abstract_chars": MAX_ABSTRACT_CHARS,
@@ -118,6 +128,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             # exactly as it was.
             **({"record_identity": THRESHOLDS,
                 "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS,
+                "ranking": RANKING_THRESHOLDS,
                 "search_read": {"read_limit_per_query": SW_READ_LIMIT}} if scope.get("search_workflow") == "sw" else {}),
             **({"vocabulary": VOCABULARY_THRESHOLDS} if vocabulary else {}),
             **({"expansion": EXPANSION_THRESHOLDS} if expansion else {}),

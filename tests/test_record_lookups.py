@@ -209,13 +209,14 @@ def store(tmp_path):
 
 def provider_record(record_id="W1", doi=DOI, title="SYNTHETIC release scheduling for diffusion channels",
                     abstract=None, reference_count=None, version_label="publishedVersion", merge_by_doi=True,
-                    **identifiers):
+                    references=None, **identifiers):
     from deixis.providers.common import ProviderRecord
     return ProviderRecord(
         provider_record_id=record_id, title=title, authors=["Aydin, Mert"], year=2026, venue=None,
         publication_type=None, doi=doi, landing_url=None, oa_pdf_url=None, oa_pdf_version=None,
         version_label=version_label, abstract=abstract, abstract_origin="provider" if abstract else None,
-        identifiers=identifiers, raw={}, reference_count=reference_count, merge_by_doi=merge_by_doi)
+        identifiers=identifiers, raw={}, reference_count=reference_count, merge_by_doi=merge_by_doi,
+        references=references)
 
 
 def research(store, providers=("openalex", "semantic_scholar", "crossref"), workflow="sw"):
@@ -473,3 +474,61 @@ def test_purging_a_research_clears_its_flags_and_the_lookups_of_its_records(stor
     store.purge_research(rid)
     assert store.conn.execute("SELECT COUNT(*) FROM record_flags").fetchone()[0] == 0
     assert store.conn.execute("SELECT COUNT(*) FROM record_lookups").fetchone()[0] == 0
+
+
+# ---- the reference list a record's own bibliography names (slice 07) -------------------------
+
+
+def reference_rows(store, source_version_id):
+    return [r[0] for r in store.conn.execute(
+        "SELECT referenced_id FROM record_references WHERE source_version_id = ? ORDER BY referenced_id",
+        (source_version_id,))]
+
+
+def references_read(store, source_version_id):
+    return store.conn.execute("SELECT references_read FROM source_versions WHERE id = ?",
+                              (source_version_id,)).fetchone()[0]
+
+
+def test_a_read_list_an_empty_list_and_an_unasked_one_are_three_different_records(store):
+    """"Read and empty" is not "not read": both have no graph signal, but only one of them was asked (SW7.4)."""
+    rid, run_id = research(store)
+    search(store, rid, run_id, 0, "openalex", [
+        provider_record("W1", doi="10.1/one", references=("W7", "W8")),
+        provider_record("W2", doi="10.1/two", references=()),
+        provider_record("W3", doi="10.1/three", references=None),
+    ])
+    listed, empty, unasked = (store.find_source_by_identifier("openalex", f"W{i}") for i in (1, 2, 3))
+    assert (reference_rows(store, listed), references_read(store, listed)) == (["W7", "W8"], 1)
+    assert (reference_rows(store, empty), references_read(store, empty)) == ([], 1)
+    assert (reference_rows(store, unasked), references_read(store, unasked)) == ([], 0)
+
+
+def test_the_same_record_found_again_does_not_multiply_its_references(store):
+    rid, run_id = research(store)
+    search(store, rid, run_id, 0, "openalex", [provider_record("W1", references=("W7", "W8"))])
+    svid = store.find_source_by_identifier("openalex", "W1")
+    search(store, rid, run_id, 1, "openalex", [provider_record("W1", references=("W8", "W9"))])
+    assert reference_rows(store, svid) == ["W7", "W8", "W9"]  # a second read adds what it names, nothing twice
+
+
+def test_a_second_provider_that_names_no_list_does_not_unread_the_first_one(store):
+    rid, run_id = research(store)
+    search(store, rid, run_id, 0, "openalex", [provider_record("W1", references=("W7",))])
+    svid = store.find_source_by_identifier("openalex", "W1")
+    search(store, rid, run_id, 1, "crossref", [provider_record("C1", references=None)])
+    assert (reference_rows(store, svid), references_read(store, svid)) == (["W7"], 1)
+
+
+def test_purging_a_source_takes_its_reference_rows(store):
+    rid, run_id = research(store)
+    search(store, rid, run_id, 0, "openalex", [
+        provider_record("W1", doi="10.1/one", references=("W7",)),
+        provider_record("W2", doi="10.1/two", references=("W8",)),
+    ])
+    gone = store.find_source_by_identifier("openalex", "W1")
+    kept = store.find_source_by_identifier("openalex", "W2")
+    store.update_run(run_id, status="cancelled")
+    store.remove_sources(rid, [gone], None)
+    assert store.purge_sources(rid, [gone])[0] == [gone]
+    assert reference_rows(store, gone) == [] and reference_rows(store, kept) == ["W8"]

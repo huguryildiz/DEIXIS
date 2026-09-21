@@ -304,6 +304,7 @@ class Store:
                 self.conn.execute("DELETE FROM record_links WHERE source_version_id = ? OR other_source_version_id = ?"
                                   " OR parent_source_version_id = ?", (source_id, source_id, source_id))
                 self.conn.execute("DELETE FROM record_lookups WHERE source_version_id = ?", (source_id,))
+                self.conn.execute("DELETE FROM record_references WHERE source_version_id = ?", (source_id,))
                 self.conn.execute("DELETE FROM identifier_mappings WHERE source_version_id = ?", (source_id,))
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (source_id,))
@@ -832,6 +833,7 @@ class Store:
                 svid, wid = self._insert_provider_record(provider, record, payload_path)
             self._store_author_keywords(svid, record)
             self.set_reference_count(svid, record.reference_count)
+            self._store_references(svid, record)
             for other in record.other_versions:
                 self._insert_other_version(provider, record, wid, other, payload_path)
         return svid, existing is None
@@ -861,6 +863,20 @@ class Store:
             return
         self.conn.execute("UPDATE source_versions SET reference_count = ? WHERE id = ? AND reference_count IS NULL",
                           (count, svid))
+
+    def _store_references(self, svid: str, record: Any) -> None:
+        """Add the works this record's bibliography names and mark its list read; the caller holds the transaction.
+
+        A list is added to, never replaced: a second provider that names none must not unread what the first read
+        (SW7.4). Historical migration tests run today's code against a schema from before 0044.
+        """
+        if record.references is None or not self._has_column("source_versions", "references_read"):
+            return
+        self.conn.executemany(
+            "INSERT OR IGNORE INTO record_references (source_version_id, referenced_id) VALUES (?, ?)",
+            [(svid, referenced) for referenced in record.references],
+        )
+        self.conn.execute("UPDATE source_versions SET references_read = 1 WHERE id = ?", (svid,))
 
     def _has_column(self, table: str, column: str) -> bool:
         """Whether this database has already been migrated far enough to hold the column. Only a present column is
@@ -1736,6 +1752,7 @@ class Store:
                 self.conn.execute("DELETE FROM record_links WHERE source_version_id = ? OR other_source_version_id = ?"
                                   " OR parent_source_version_id = ?", (svid, svid, svid))
                 self.conn.execute("DELETE FROM record_lookups WHERE source_version_id = ?", (svid,))
+                self.conn.execute("DELETE FROM record_references WHERE source_version_id = ?", (svid,))
                 self.conn.execute("DELETE FROM identifier_mappings WHERE source_version_id = ?", (svid,))
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (svid,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (svid,))
@@ -1794,7 +1811,8 @@ class Store:
         revision_filter = " AND c.scope_revision = ?" if scope_revision is not None else ""
         params = (research_id, scope_revision) if scope_revision is not None else (research_id,)
         rows = self.conn.execute(
-            "SELECT c.id AS candidate_id, c.source_version_id, c.rank, s.state, s.origin FROM candidates c"
+            "SELECT c.id AS candidate_id, c.source_version_id, c.rank, s.state, s.origin,"
+            " s.proposal IS NOT NULL AS proposed FROM candidates c"
             " JOIN selections s ON s.research_id = c.research_id AND s.source_version_id = c.source_version_id"
             f" WHERE c.research_id = ?{revision_filter} ORDER BY s.proposal IS NOT NULL, c.rank, c.created_at", params
         ).fetchall()
@@ -1976,6 +1994,13 @@ class Store:
         return {r[0] for r in self.conn.execute(
             "SELECT source_version_id FROM source_similarities WHERE research_id = ? AND scope_revision = ? AND model = ?",
             (research_id, scope_revision, model),
+        )}
+
+    def source_similarities(self, research_id: str, scope_revision: int, model: str) -> dict[str, float]:
+        """Every stored similarity of this question revision under one embedding model; empty when none was written."""
+        return {row[0]: row[1] for row in self.conn.execute(
+            "SELECT source_version_id, similarity FROM source_similarities WHERE research_id = ? AND scope_revision = ?"
+            " AND model = ?", (research_id, scope_revision, model),
         )}
 
     def save_source_similarities(self, research_id: str, scope_revision: int, model: str, scores: dict[str, float]) -> None:

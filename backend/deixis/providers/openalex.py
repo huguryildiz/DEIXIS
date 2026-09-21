@@ -33,8 +33,9 @@ SELECT = ",".join(
     ]
 )
 ABSTRACT_ORIGIN = "provider_openalex_inverted_index"
-# Asked for only on an sw read (slice 05), so a legacy request keeps the `select` it always had.
+# Asked for only on an sw read (slices 05 and 07), so a legacy request keeps the `select` it always had.
 REFERENCE_COUNT_FIELD = "referenced_works_count"
+REFERENCES_FIELD = "referenced_works"
 RATE_LIMIT_HEADERS = (
     "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset",
     "x-ratelimit-cost-usd", "x-ratelimit-remaining-usd",
@@ -96,6 +97,10 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
         # Absent unless this read asked for the field; an absent count is unknown, never zero.
         reference_count=(work.get(REFERENCE_COUNT_FIELD)
                          if isinstance(work.get(REFERENCE_COUNT_FIELD), int) else None),
+        # Same shape as `provider_record_id`, so a reference and a record are the same identifier. An absent field
+        # is no list at all; a list the work really has empty is an empty one.
+        references=(tuple(str(w).rsplit("/", 1)[-1] for w in work[REFERENCES_FIELD])
+                    if isinstance(work.get(REFERENCES_FIELD), list) else None),
     )
 
 
@@ -108,9 +113,11 @@ async def search_works(
     works_filter: str | None = None,
     cursor: str | None = None,
     reference_count: bool = False,
+    references: bool = False,
 ) -> SearchOutcome:
     per_page = min(per_page, MAX_RESULTS)
-    select = f"{SELECT},{REFERENCE_COUNT_FIELD}" if reference_count else SELECT
+    select = SELECT + "".join(f",{field}" for field, asked in
+                              ((REFERENCE_COUNT_FIELD, reference_count), (REFERENCES_FIELD, references)) if asked)
     params: dict[str, Any] = {SEARCH_PARAM: query, "per_page": per_page, "select": select}
     if works_filter:
         params["filter"] = works_filter

@@ -115,6 +115,7 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     from deixis.workflow import protocol
     from deixis.workflow.criterion import THRESHOLDS as CRITERION_THRESHOLDS
     from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS
+    from deixis.workflow.ranking import SIGNALS as RANKING_SIGNALS, THRESHOLDS as RANKING_THRESHOLDS
 
     scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
              "seed_mode": "question_only", "providers": ["openalex"], "model_connection": "fake",
@@ -122,16 +123,20 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     settings = Settings(data_dir=None)
     legacy = protocol.build_protocol(scope | {"search_workflow": "legacy"}, {}, None, [], "pkg_hash", settings)
     sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
-    assert not {"record_identity", "search_read", "survey", "lookup", "criterion"} & set(legacy["thresholds"])
+    assert not {"record_identity", "search_read", "survey", "lookup", "criterion", "ranking"} & set(legacy["thresholds"])
     assert sw["thresholds"]["record_identity"] == THRESHOLDS
     assert sw["thresholds"]["search_read"] == {"read_limit_per_query": SW_READ_LIMIT}
     assert sw["thresholds"] == legacy["thresholds"] | {
         "record_identity": THRESHOLDS, "search_read": {"read_limit_per_query": SW_READ_LIMIT},
-        "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS}
-    # The survey word lists are the only other sw-only field of the body (slice 05); a legacy body carries none.
+        "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS,
+        "ranking": RANKING_THRESHOLDS}
+    # The survey word lists (slice 05) and the ranking signals (slice 07) are the only other sw-only fields of the
+    # body; a legacy body carries no survey block and an empty signal list, exactly as it did before slice 07.
     rest = lambda body: {k: v for k, v in body.items()
-                         if k not in ("thresholds", "search_workflow", "survey")}
-    assert "survey" not in legacy and rest(sw) == rest(legacy)
+                         if k not in ("thresholds", "search_workflow", "survey", "signals")}
+    assert "survey" not in legacy and legacy["signals"] == [] and rest(sw) == rest(legacy)
+    assert [signal["signal"] for signal in sw["signals"]] == list(RANKING_SIGNALS)
+    assert sw["signals"][-1] == {"signal": "embedding", "model": None, "rescue": True}
 
 
 def test_a_discovery_run_freezes_one_protocol_before_its_first_search_and_stamps_the_later_steps(tmp_path, monkeypatch):

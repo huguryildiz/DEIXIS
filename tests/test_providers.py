@@ -518,3 +518,63 @@ def test_the_registry_records_how_each_provider_pages():
     assert [p for p in ALL if CONNECTORS[p].max_reachable] == ["semantic_scholar"]
     assert CONNECTORS["arxiv"].page_gap == 3.0
     assert [p for p in ALL if CONNECTORS[p].page_gap] == ["arxiv"]
+
+
+# ---- the reference list, asked for only on an sw read (slice 07) ---------------------------
+
+
+def openalex_references(handler, references):
+    """One OpenAlex search with the slice 07 flag, returning the outcome and the request it sent."""
+    seen = []
+
+    def record(request):
+        seen.append(request)
+        return handler(request)
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(record)) as client:
+            return await openalex.search_works(client, "synthetic query", 5, None, "contact@example.org",
+                                               references=references)
+    return asyncio.run(go()), seen
+
+
+def test_an_openalex_search_asks_for_no_reference_list_by_default():
+    """The legacy request is byte for byte what it was: the field is not in `select` and no record carries a list."""
+    (outcome, seen) = openalex_references(lambda r: ok_response("openalex"), False)
+    assert seen[0].url.params["select"] == openalex.SELECT
+    assert "referenced_works" not in seen[0].url.params["select"]
+    assert outcome.records[0].references is None
+
+
+def test_an_sw_openalex_search_asks_for_the_reference_list_and_reads_it_in_short_form():
+    payload = {"meta": {"count": 1}, "results": [
+        {"id": "https://openalex.org/W1", "display_name": "SYNTHETIC",
+         "referenced_works": ["https://openalex.org/W2", "https://openalex.org/W3"]}]}
+    (outcome, seen) = openalex_references(lambda r: httpx.Response(200, json=payload), True)
+    assert seen[0].url.params["select"] == openalex.SELECT + ",referenced_works"
+    assert outcome.records[0].references == ("W2", "W3")
+
+
+def test_an_empty_reference_list_is_not_the_same_as_an_unasked_one():
+    """`()` is "OpenAlex gave an empty list", `None` is "nobody asked"; the graph signal has neither (SW7.4)."""
+    payload = {"meta": {"count": 2}, "results": [
+        {"id": "https://openalex.org/W1", "display_name": "SYNTHETIC", "referenced_works": []},
+        {"id": "https://openalex.org/W2", "display_name": "SYNTHETIC"}]}
+    (outcome, _) = openalex_references(lambda r: httpx.Response(200, json=payload), True)
+    assert [r.references for r in outcome.records] == [(), None]
+
+
+def test_an_sw_read_asks_for_both_the_count_and_the_list_in_one_select():
+    async def go():
+        seen = []
+
+        def record(request):
+            seen.append(request)
+            return ok_response("openalex")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(record)) as client:
+            await openalex.search_works(client, "q", 5, None, None, reference_count=True, references=True)
+        return seen
+
+    seen = asyncio.run(go())
+    assert seen[0].url.params["select"] == openalex.SELECT + ",referenced_works_count,referenced_works"

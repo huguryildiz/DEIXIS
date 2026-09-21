@@ -29,6 +29,7 @@ from deixis.workflow.decisions import DecisionStore
 from deixis.workflow import links
 from deixis.workflow.expansion import expand
 from deixis.workflow.flow import answer_source_order, fuse_rankings
+from deixis.workflow import ranking
 from deixis.workflow.protocol import build_protocol
 from deixis.workflow.store import Store
 from deixis.workflow.criterion import consensus
@@ -342,6 +343,39 @@ def stage_criterion(rows: list[dict[str, Any]]) -> Any:
     return consensus(CRITERION_QUESTION, runs, CRITERION_SOUGHT)
 
 
+RANKING_BLOCKS = {"setting": ["diffusion channel", "sensor node"], "task": ["release scheduling", "repeater"]}
+RANKING_QUERY_WORDS = {"diffusion", "channel", "release", "scheduling", "sensor", "node", "repeater"}
+
+
+def stage_record_ranking(rows: list[dict[str, Any]]) -> Any:
+    """The four code signals, their ranks and the fused order of a fixed SYNTHETIC pool (SW7, SW14.6).
+
+    The records are what the providers happened to return and carry no order of their own, so neither their order,
+    nor the iteration order of a reference set or of the query words, may reach a score, a rank or the order. Two
+    pairs hold identical text and identical reference lists, so each pair is a tie that must share its mean rank;
+    two records have no reference list and one has no abstract, so two signals are missing for them. The seeds are
+    two of the records, which also fixes the "a record never seeds itself" rule in this digest.
+    """
+    pool = [{"id": row["id"], "work_id": row["work_id"], "title": row["title"], "abstract": row["abstract"],
+             "own_ids": frozenset(row["own_ids"]), "references": None if row["references"] is None
+             else frozenset(row["references"])}
+            for row in sorted(rows, key=lambda row: row["id"])]
+    arrival = {row["id"]: position for position, row in enumerate(rows)}
+    # The seeds are named by identifier, but the order they are given in follows the shuffled rows: which seed comes
+    # first must not change a score either.
+    seeds = sorted((row for row in pool if row["id"] in ("R1", "R5")), key=lambda row: arrival[row["id"]])
+    scores = {"bm25": ranking.bm25_scores(pool, RANKING_QUERY_WORDS),
+              "blocks": ranking.block_scores(pool, RANKING_BLOCKS),
+              "tfidf": ranking.tfidf_scores(pool, seeds), "graph": ranking.graph_scores(pool, seeds)}
+    ranks = {name: ranking.mean_ranks(score, ranking.availability(pool, name)) for name, score in scores.items()}
+    fused = ranking.fuse(ranks, ranking.CODE_SIGNALS)
+    order, rescued = ranking.inspection_order(fused, fused, None)
+    return {"scores": {name: {rid: list(value) if isinstance(value, tuple) else value
+                              for rid, value in score.items()} for name, score in scores.items()},
+            "ranks": {name: {rid: list(value) for rid, value in row.items()} for name, row in ranks.items()},
+            "fused": fused, "order": order, "rescued": rescued}
+
+
 def stage_build_protocol(rows: list[dict[str, Any]]) -> Any:
     scope = SCOPE | {"providers": [row["id"] for row in rows]}
     return build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
@@ -361,6 +395,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "expansion": stage_expansion,
     "survey_flags": stage_survey_flags,
     "criterion": stage_criterion,
+    "record_ranking": stage_record_ranking,
 }
 
 ROWS: dict[str, list[dict[str, Any]]] = {
@@ -404,6 +439,26 @@ ROWS: dict[str, list[dict[str, Any]]] = {
          "abstract": "We bound the SYNTHETIC error rate.", "reference_count": 149},
         {"id": "R6", "title": "SYNTHETIC multi hop relaying in vascular networks", "abstract": None,
          "reference_count": None},
+    ],
+    # Six SYNTHETIC records of two fields. R1/R2 and R3/R4 are two pairs of identical text and identical reference
+    # lists, so each pair ties in every signal; R5 has no reference list, R6 has neither a list nor an abstract.
+    "record_ranking": [
+        {"id": "R1", "work_id": "wrk_one", "title": "SYNTHETIC release scheduling in a diffusion channel",
+         "abstract": "We schedule releases in a diffusion channel and bound the error.",
+         "own_ids": ["W1"], "references": ["W90", "W91", "W92"]},
+        {"id": "R2", "work_id": "wrk_two", "title": "SYNTHETIC release scheduling in a diffusion channel",
+         "abstract": "We schedule releases in a diffusion channel and bound the error.",
+         "own_ids": ["W2"], "references": ["W92", "W91", "W90"]},
+        {"id": "R3", "work_id": "wrk_three", "title": "SYNTHETIC repeater placement for a sensor node",
+         "abstract": "Repeaters are placed along the link of a sensor node.",
+         "own_ids": ["W3"], "references": ["W90", "W93"]},
+        {"id": "R4", "work_id": "wrk_four", "title": "SYNTHETIC repeater placement for a sensor node",
+         "abstract": "Repeaters are placed along the link of a sensor node.",
+         "own_ids": ["W4"], "references": ["W93", "W90"]},
+        {"id": "R5", "work_id": "wrk_five", "title": "SYNTHETIC bakery logistics of a small town",
+         "abstract": "We deliver bread to the market every morning.", "own_ids": ["W5"], "references": None},
+        {"id": "R6", "work_id": "wrk_six", "title": "SYNTHETIC diffusion channel capacity",
+         "abstract": None, "own_ids": ["W6"], "references": []},
     ],
     "work_outcome": [
         # First in the list: both shuffles the test runs reverse this pair.

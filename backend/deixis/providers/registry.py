@@ -42,7 +42,7 @@ class Connector:
 
 CONNECTORS = {c.provider_id: c for c in (
     Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",
-              sw_options={"reference_count": True}),
+              sw_options={"reference_count": True, "references": True}),
     # Semantic Scholar serves `offset + limit` up to 1,000 and refuses a deeper page.
     Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000),
     Connector("crossref", crossref.search, crossref.MAX_RESULTS),

@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.domain.canonical import sha256_hex
+from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.decisions import CRITERION_FIELDS
 from fakes import FakeAdapter, envelope, valid_response
@@ -572,3 +573,51 @@ def test_the_view_carries_the_waiting_then_approved_states_with_both_sides(tmp_p
     # The compiled queries reach the screen by provider and text only.
     assert approved["approved"]["queries"]
     assert all(set(q) == {"provider_id", "query_text"} for q in approved["approved"]["queries"])
+
+
+def test_a_criterion_first_proposed_after_the_approval_is_shown_to_the_user_and_not_taken_as_approved(tmp_path, monkeypatch):
+    """The first run's model was down, so the user approved a protocol with no criterion. A later run whose model
+    answers holds a criterion nobody has seen: the earlier approval covers the terms, not that (SW15.3)."""
+    down = []
+
+    def down_for_the_first_run(si):
+        if si["task_type"] == "criterion_proposal" and len(down) < 3:
+            down.append(si)
+            return ModelStepResult("failed", error="SYNTHETIC model connection is down")
+        return None
+
+    adapter = proposing()
+    adapter.fail = down_for_the_first_run
+    client = client_of(app_for(tmp_path, monkeypatch, CountingOpenAlex(), adapter))
+    try:
+        rid, first = start(client, QUESTION)
+        wait(client, rid, first)
+        approve(client, first)
+        wait(client, rid, first)
+        second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        view, run = wait(client, rid, second)
+    finally:
+        client.__exit__(None, None, None)
+    assert bodies(tmp_path, rid)[0]["inclusion_criterion"] is None
+    assert run["pause_reason"] == "protocol_approval_needed", run
+    assert approval_of(view, second)["proposal"]["criterion"] is not None
+
+
+def test_a_proposal_that_cannot_be_searched_reaches_the_user_who_can_correct_it(tmp_path, monkeypatch):
+    """Too broad as proposed: the run stops for the approval, not at a dead end, and approving it unchanged stops it
+    for the reason it cannot search, with the approval still open."""
+    from deixis.workflow.vocabulary import VERY_LARGE_COUNT
+
+    openalex = CountingOpenAlex(count=VERY_LARGE_COUNT + 1)
+    client = client_of(app_for(tmp_path, monkeypatch, openalex, DeadAdapter()))
+    try:
+        rid, run_id = start(client, "Which networks are reported?")
+        view, run = wait(client, rid, run_id)
+        assert run["pause_reason"] == "protocol_approval_needed", run
+        assert approval_of(view, run_id)["proposal"]["too_broad"] is True
+        approve(client, run_id)
+        view, run = wait(client, rid, run_id)
+    finally:
+        client.__exit__(None, None, None)
+    assert run["pause_reason"] == "vocabulary_too_broad", run
+    assert approval_of(view, run_id)["status"] != "approved" and not openalex.searches

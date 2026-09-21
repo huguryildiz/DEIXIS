@@ -482,7 +482,7 @@ class ResearchFlow:
         step = self.store.step(run_id, "vocabulary", "code:vocabulary")
         if step["status"] == "succeeded":
             stored = step["output"]
-            return self._searchable(run_id, stored["vocabulary"], stored["queries"])
+            return self._proposed(run_id, stored["vocabulary"], stored["queries"])
         try:
             extraction = question_words.extract(scope["question"], scope.get("language_hint"), scope.get("key_terms"))
         except ValueError as exc:
@@ -499,6 +499,14 @@ class ResearchFlow:
         self.store.finish_step(step["id"], "succeeded", output={
             "vocabulary": built, "queries": queries, "query_compiler": query_compiler.BLOCKS_VERSION})
         # The counts are stored before the run stops, so resuming re-reads them instead of paying for them again.
+        return self._proposed(run_id, built, queries)
+
+    def _proposed(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """A vocabulary that cannot be searched stops an unattended run here. A run that asks for the approval takes
+        it to the user instead: removing or adding a term is how it becomes searchable, and `_approval` checks what
+        the user approved before anything is frozen."""
+        if self.deps.settings.protocol_approval == "ask":
+            return built, queries
         return self._searchable(run_id, built, queries)
 
     async def _vocabulary_labels(self, run: dict[str, Any], scope: dict[str, Any],
@@ -619,6 +627,12 @@ class ResearchFlow:
 
         earlier = next((row for row in self.store.approvals_of(rid)
                         if row["output"]["asked_for"] == asked_for), None)
+        # An earlier approval covers the criterion only when this run took it back from the protocol that approval
+        # froze. One the model proposed for this run — the earlier run's model was down, so the user approved none —
+        # has been seen by nobody, and the user is asked again (SW15.3).
+        proposed_now = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("origin") == "model"
+        if criterion is not None and proposed_now:
+            earlier = None
         if output["submitted"] is not None:
             edits, source, by = output["submitted"], "submitted", "user"
         elif earlier is not None:

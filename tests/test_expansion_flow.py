@@ -99,7 +99,8 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None):
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setitem(CONNECTORS, "openalex", replace(CONNECTORS["openalex"], max_results=PAGE))
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow),
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow,
+                               protocol_approval="as_proposed"),
                       adapters={"fake": adapter or DeadAdapter()},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
                       extra_hosts=("testserver",), trusted_clients=("testclient",))
@@ -251,7 +252,9 @@ def test_an_accepted_phrase_freezes_a_second_revision_and_leaves_the_first_alone
             app.state.store.scope(rid, 1), app.state.store.run(run_id)["budget"], None,
             first["queries"] + stored["queries"], app.state.package.package_hash,
             Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw"),
-            vocabulary=first["vocabulary"], expansion=stored["expansion"])
+            vocabulary=first["vocabulary"], expansion=stored["expansion"],
+            # The approval is an input of the body like the vocabulary, so the rebuild is given it too (slice 08a).
+            approval=app.state.store.approval_step(run_id)["output"]["approval"])
     finally:
         client.__exit__(None, None, None)
     assert [(row["protocol_revision"], row["reason"]) for row in frozen] == [(1, None), (2, "data_expansion")]

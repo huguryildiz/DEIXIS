@@ -7,6 +7,8 @@ from typing import Any
 
 from deixis.documents import embeddings, pdf
 from deixis.domain.rules import effective_reviewer, result_applicability
+from deixis.workflow import approval as approval_rules
+from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state, equations_to_check
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
@@ -14,6 +16,51 @@ from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
 
 # What the transcript reports from a search plan; the rest of the stored output stays out of the view.
 PLAN_FIELDS = ("question_interpretation", "search_rationale", "scope_boundaries", "concepts")
+# What the approval card shows of a vocabulary. The probes stay out: they are large, and the screen shows a term's
+# own counts, which are already in the term row.
+APPROVAL_VOCABULARY_FIELDS = ("claim_words", "exclusion_words", "outcome_terms", "gate_count", "too_broad")
+
+
+def _approval_side(vocabulary: dict[str, Any] | None, criterion: dict[str, Any] | None,
+                   queries: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
+    """One side of the approval — what was proposed, or what was approved — as the screen reads it (slice 08a)."""
+    if vocabulary is None:
+        return None
+    origins = approval_rules.block_origins(vocabulary)
+    side = {
+        "terms": [{field: term[field] for field in vocabulary_rules.TERM_FIELDS}
+                  | {"block_origin": origins.get(term["phrase"], "rule")} for term in vocabulary["terms"]],
+        **{field: vocabulary[field] for field in APPROVAL_VOCABULARY_FIELDS},
+        "criterion": criterion,
+        # Whether a criterion was built at all: without one the screen offers to write it or to go on without it.
+        "criterion_available": criterion is not None,
+        "sought_term_in_criterion": (criterion or {}).get("sought_term_in_criterion"),
+    }
+    if queries is not None:
+        # The compiled text of every query this run will send, by provider and nothing else.
+        side["queries"] = [{"provider_id": q["provider_id"], "query_text": q["query_text"]} for q in queries]
+    return side
+
+
+def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
+    """What this run asked the user to approve and what came of it, or None when it asked nothing (SW2.6)."""
+    step = store.approval_step(run_id)
+    if step is None or not step["output"]:
+        return None
+    output = step["output"]
+    approved = output.get("approved")
+    record = output.get("approval") or {}
+    return {
+        "status": "approved" if step["status"] == "succeeded" else
+                  "submitted" if output.get("submitted") is not None else "waiting",
+        "approved_by": record.get("approved_by"),
+        "edited": record.get("edited"),
+        "proposal_hash": output["proposal_hash"],
+        # Both sides stay on the screen after the approval: the user can see what was proposed and what changed.
+        "proposal": _approval_side(output["proposal"]["vocabulary"], output["proposal"]["criterion"]),
+        "approved": _approval_side(approved["vocabulary"], approved["criterion"], approved["queries"]) if approved else None,
+        "skipped_edits": output.get("skipped_edits") or [],
+    }
 
 
 def _json(value: str | None) -> Any:
@@ -97,6 +144,8 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         run["plan"] = ({k: output["result"][k] for k in PLAN_FIELDS}
                        | {"queries": output["result"].get("queries", output.get("queries", []))}) if output else None
         # Screening runs in batches; each batch's note is its own line, timed by its step.
+        # What this run asked the user to approve before it froze its protocol; None for a legacy run (slice 08a).
+        run["approval"] = approval_view(store, run["id"])
         run["screening_notes"] = [
             {"step_id": r["id"], "text": note} for r in store.conn.execute(
                 "SELECT id, output_json FROM run_steps WHERE run_id = ? AND kind = 'model:screening' AND status = 'succeeded'"

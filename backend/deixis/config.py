@@ -26,6 +26,10 @@ class Settings:
     model_concurrency: int = 6
     query_strategy: str = "legacy"
     search_workflow: str = "legacy"
+    # Whether an sw discovery run stops for the user before it freezes its protocol (SW2.6, slice 08a). `ask` is the
+    # product's behavior; `as_proposed` approves the proposal without stopping, for a measurement or a test that
+    # needs a run nobody attends, and says so in the protocol body rather than looking like a user's approval.
+    protocol_approval: str = "ask"
 
     @property
     def db_path(self) -> Path:
@@ -88,6 +92,9 @@ def load_settings() -> Settings:
     search_workflow = os.environ.get("DEIXIS_SEARCH_WORKFLOW", "legacy")
     if search_workflow not in ("legacy", "sw"):
         raise ValueError("DEIXIS_SEARCH_WORKFLOW must be legacy or sw")
+    protocol_approval = os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "ask")
+    if protocol_approval not in ("ask", "as_proposed"):
+        raise ValueError("DEIXIS_PROTOCOL_APPROVAL must be ask or as_proposed")
     return Settings(
         data_dir=default_data_dir(),
         host=os.environ.get("DEIXIS_HOST", "127.0.0.1"),
@@ -95,4 +102,5 @@ def load_settings() -> Settings:
         model_concurrency=max(1, int(os.environ.get("DEIXIS_MODEL_CONCURRENCY", "6") or "6")),
         query_strategy=query_strategy,
         search_workflow=search_workflow,
+        protocol_approval=protocol_approval,
     )

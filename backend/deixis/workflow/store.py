@@ -721,6 +721,51 @@ class Store:
         with transaction(self.conn):
             self.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?", (dumps(output), step_id))
 
+    def approval_step(self, run_id: str) -> dict[str, Any] | None:
+        """This run's protocol approval step with its whole stored output, or None (slice 08a).
+
+        Read on its own and not through `run_steps`: the proposal holds every probe the vocabulary step read, which
+        is neither small enough nor the screen's business.
+        """
+        row = self.conn.execute(
+            "SELECT * FROM run_steps WHERE run_id = ? AND operation_key = 'protocol_approval'", (run_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        step = dict(row)
+        step["output"] = json.loads(step.pop("output_json")) if step["output_json"] else None
+        return step
+
+    def approvals_of(self, research_id: str) -> list[dict[str, Any]]:
+        """Every succeeded protocol approval of this research, newest run first (slice 08a)."""
+        rows = self.conn.execute(
+            "SELECT s.id, s.run_id, s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id"
+            " WHERE r.research_id = ? AND s.operation_key = 'protocol_approval' AND s.status = 'succeeded'"
+            " AND s.output_json IS NOT NULL ORDER BY r.created_at DESC, s.rowid DESC", (research_id,)
+        ).fetchall()
+        return [{"id": row["id"], "run_id": row["run_id"], "output": json.loads(row["output_json"])} for row in rows]
+
+    def submit_approval(self, run_id: str, edits: dict[str, Any]) -> dict[str, Any]:
+        """Store the user's corrections and queue the run in one transaction (slice 08a).
+
+        Nothing is probed, compiled or frozen here: the worker does that when it picks the run up, so a slow count
+        request cannot hold the request open or leave the run queued with half of the work done.
+        """
+        with transaction(self.conn):
+            row = self.conn.execute(
+                "SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = 'protocol_approval'",
+                (run_id,)).fetchone()
+            if row is None or not row["output_json"]:
+                raise RevisionConflict("This run has no protocol approval to answer")
+            research_id = self.conn.execute("SELECT research_id FROM runs WHERE id = ?", (run_id,)).fetchone()[0]
+            self.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?",
+                              (dumps(json.loads(row["output_json"]) | {"submitted": edits}), row["id"]))
+            self.conn.execute(
+                "UPDATE runs SET status = 'queued', pause_reason = NULL, error_json = NULL, updated_at = ?,"
+                " version = version + 1 WHERE id = ?", (now(), run_id))
+            self._event(research_id, "run_resumed", {"status": "queued", "pause_reason": None}, run_id)
+        return self.run(run_id)
+
     def run_steps(self, run_id: str) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT id, operation_key, kind, status, attempt, delivery_class, error_code, error_json, output_json, started_at, finished_at"

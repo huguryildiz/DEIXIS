@@ -143,9 +143,9 @@ def run_with_proposals(tmp_path, monkeypatch, question=EXERCISE, **body):
 def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tmp_path, monkeypatch):
     rid, run, openalex, adapter = run_with_proposals(tmp_path, monkeypatch)
     keys = steps_of(run)
-    assert keys[:9] == ["vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
-                        "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
-                        "protocol"]
+    assert keys[:10] == ["vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
+                         "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
+                         "protocol_approval", "protocol"]
     # Every provider search was opened after the protocol step, which already held the criterion.
     searches = [i for i, key in enumerate(keys) if key.startswith("search:")]
     assert searches and min(searches) > keys.index("protocol")

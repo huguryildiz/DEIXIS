@@ -60,7 +60,8 @@ def app_for(tmp_path, monkeypatch, handler, adapter, workflow="sw"):
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow),
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow,
+                               protocol_approval="as_proposed"),
                       adapters={"fake": adapter},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
                       extra_hosts=("testserver",), trusted_clients=("testclient",))
@@ -112,10 +113,12 @@ def test_an_sw_discovery_searches_while_every_model_call_fails(tmp_path, monkeyp
     assert searched["provider_search:openalex"] == "succeeded", run["steps"]
     assert openalex.counts and openalex.searches
     # The vocabulary step opens first and the optional block labelling of slice 04d runs inside it; the criterion
-    # proposal of slice 06 follows, and the protocol is frozen next, still before any search.
-    assert [s["operation_key"] for s in run["steps"]][:9] == [
+    # proposal of slice 06 follows, the approval step of slice 08a closes without stopping in this setup, and the
+    # protocol is frozen next, still before any search.
+    assert [s["operation_key"] for s in run["steps"]][:10] == [
         "vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
-        "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3", "protocol"]
+        "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
+        "protocol_approval", "protocol"]
     assert run["status"] == "paused" and run["pause_reason"] == "model_call_failed", run
     assert view["counts"]["unique"] == 1
     # No step input was ever built for a search plan: the words came from the question.
@@ -203,9 +206,10 @@ def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_secon
     assert body["code_version"].endswith("deixis.query_compiler.v4.blocks")
 
     stored = store.latest_step_output(rid, "vocabulary", 1)
-    again = protocol.build_protocol(store.scope(rid, 1), store.run(store.conn.execute(
-        "SELECT id FROM runs WHERE research_id = ?", (rid,)).fetchone()[0])["budget"], None, stored["queries"],
-        body["skill_package_hash"], Settings(data_dir=None, search_workflow="sw"), vocabulary=stored["vocabulary"])
+    run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ?", (rid,)).fetchone()[0]
+    again = protocol.build_protocol(store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"],
+        body["skill_package_hash"], Settings(data_dir=None, search_workflow="sw"), vocabulary=stored["vocabulary"],
+        approval=store.approval_step(run_id)["output"]["approval"])
     assert sha256_hex(again) == rows[0]["body_sha256"]
 
 

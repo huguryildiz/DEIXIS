@@ -103,22 +103,32 @@ def apply_labels(extraction: Extraction, runs: list[dict[str, str]]) -> tuple[Ex
     return labelled, records
 
 
-async def build_vocabulary(extraction: Extraction, count: Callable[[str], Awaitable[int | None]]) -> dict[str, Any]:
+async def build_vocabulary(extraction: Extraction, count: Callable[[str], Awaitable[int | None]],
+                           known: dict[str, int | None] | None = None) -> dict[str, Any]:
     """Probe the extraction's setting and task phrases and decide the form each one enters the query in.
 
     The probe order is fixed so that two runs of the same question spend the budget on the same terms: the setting
     block then the task block, each in the order the question gave, phrases before their words, gate queries last.
+
+    `known` holds counts a proposal of this same run already read (slice 08a): a query answered from it is recorded
+    as the probe it was and asks nothing, and it spends none of the budget, so the requests a correction is allowed
+    go to the terms the correction added.
     """
     origin = "key_terms" if extraction.block_assignment == "user" else "question"
+    known = known or {}
     probes: list[dict[str, Any]] = []
-    skipped = 0
+    skipped = asked = 0
 
     async def probe(query: str) -> int | None:
         """One count request, or nothing once the budget is spent. An unspent answer is never invented."""
-        nonlocal skipped
-        if len(probes) >= MAX_PROBES:
+        nonlocal skipped, asked
+        if query in known:
+            probes.append({"query": query, "count": known[query]})
+            return known[query]
+        if asked >= MAX_PROBES:
             skipped += 1
             return None
+        asked += 1
         value = await count(query)
         probes.append({"query": query, "count": value})
         return value
@@ -126,8 +136,9 @@ async def build_vocabulary(extraction: Extraction, count: Callable[[str], Awaita
     terms: list[dict[str, Any]] = []
     for block in GATE_BLOCKS:
         for phrase in extraction.blocks[block]:
-            terms.append({"phrase": phrase, "block": block, "origin": origin, "root": phrase, "in_query": "phrase",
-                          "phrase_count": None, "root_count": None, "and_only": False, "dropped": None})
+            terms.append({"phrase": phrase, "block": block, "origin": extraction.origins.get(phrase, origin),
+                          "root": phrase, "in_query": "phrase", "phrase_count": None, "root_count": None,
+                          "and_only": False, "dropped": None})
     words_of = {term["phrase"]: _distinctive(term["phrase"]) for term in terms}
 
     for term in terms:

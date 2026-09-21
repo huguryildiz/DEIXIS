@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -67,9 +68,19 @@ PDFS = {
 }
 
 
+# What a count probe of the sw workflow is told every phrase is worth: enough for no term to drop and few enough
+# for the gate never to be narrowed. SYNTHETIC, like everything else here.
+PROBE_COUNT = 800
+
+
 def openalex(request: httpx.Request) -> httpx.Response:
-    if '"rate limit"' in request.url.params.get("search.title_and_abstract", ""):
+    params = request.url.params
+    if '"rate limit"' in params.get("search.title_and_abstract", ""):
         return httpx.Response(429, headers={"retry-after": "60"})
+    if params.get("per_page") == "1" and params.get("select") == "id":
+        # A count-only request reads `meta.count` and no record; answering it with the whole fixture list would
+        # make every phrase worth the same handful of works (slice 04a).
+        return httpx.Response(200, json={"meta": {"count": PROBE_COUNT}, "results": []})
     return httpx.Response(200, json={"meta": {"count": len(WORKS)}, "results": WORKS})
 
 
@@ -151,7 +162,11 @@ def main() -> None:
     if args.write_replacement_pdf:
         args.write_replacement_pdf.write_bytes(make_pdf(["SYNTHETIC replacement scan: release scheduling by bisection, full page."]))
         return
-    settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1)
+    # The acceptance run of cases A to G leaves both unset and gets exactly the server it always had; the sw
+    # approval case of slice 08b starts a second server with them (DEIXIS_SEARCH_WORKFLOW, DEIXIS_PROTOCOL_APPROVAL).
+    settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1,
+                        search_workflow=os.environ.get("DEIXIS_SEARCH_WORKFLOW", "legacy"),
+                        protocol_approval=os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "ask"))
     app = create_app(settings, adapters={"codex": ScriptedCodex()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(openalex)), fetcher=fetch)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", timeout_graceful_shutdown=1)

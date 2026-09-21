@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from deixis.domain.vocabulary_words import (CUE_WORDS, ENGLISH_FUNCTION_WORDS, GENERAL_WORDS, MAX_CUE_WORDS,
                                             QUESTION_FRAMES)
@@ -43,6 +43,9 @@ class Extraction:
     claim_words: list[str]  # method-position phrases: never queried (SW1.3)
     exclusion_words: list[str]
     block_assignment: str  # "rule" | "user"
+    # Where each phrase came from, when they did not all come from the same place: the user's approval adds phrases
+    # of its own beside the question's (slice 08a). Empty means every phrase shares the extraction's one origin.
+    origins: dict[str, str] = field(default_factory=dict)
 
 
 def words(text: str) -> list[str]:

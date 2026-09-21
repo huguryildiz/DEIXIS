@@ -35,6 +35,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                    vocabulary: dict[str, Any] | None = None,
                    expansion: dict[str, Any] | None = None,
                    criterion: dict[str, Any] | None = None,
+                   approval: dict[str, Any] | None = None,
                    embedding_model: str | None = None) -> dict[str, Any]:
     """The body a research freezes. `vocabulary` is the sw workflow's code vocabulary step output (SW2).
 
@@ -44,8 +45,10 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     `criterion` is what three proposals agreed on (SW15.2); without one the four criterion fields stay null, which
     is what a `legacy` body and a run whose model was unreachable both have. `embedding_model` is the semantic search
     model the research was configured with when it froze this body; the flow reads it, because this function sees no
-    store. It says which signals were configured, never which of them really ran — that is in the ranking step's own
-    output — so a research whose embedding failed keeps the body it froze.
+    store; it says which signals were configured, never which of them really ran — that is in the ranking step's own
+    output — so a research whose embedding failed keeps the body it froze. `approval` is how the vocabulary and the
+    criterion below were agreed (slice 08a): who approved them, whether they were corrected and what the user was
+    asked about. A body without one is a `legacy` body or one frozen before that step existed.
     """
     # Imported here: flow loads this module, and the thresholds are read from their one definition rather than repeated.
     from deixis.documents.pdf import CHUNK_CHARS
@@ -55,15 +58,16 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     from deixis.workflow.expansion import THRESHOLDS as EXPANSION_THRESHOLDS
     from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS, title_words
     from deixis.workflow.ranking import THRESHOLDS as RANKING_THRESHOLDS
+    from deixis.workflow.approval import block_origins
     from deixis.workflow.vocabulary import GATE_BLOCKS, THRESHOLDS as VOCABULARY_THRESHOLDS
 
     queried = [t for t in vocabulary["terms"] if not t["dropped"]] if vocabulary else []
     # The words this research reads a title for a survey with, and the ones its own question took away (SW5.1).
     kept_words, dropped_words = title_words(vocabulary) if vocabulary else ((), ())
-    # Who put each phrase in its block: the code rule, the model's labelling step (SW17.6) or the user's key terms.
+    # Who put each phrase in its block: the code rule, the model's labelling step (SW17.6), the user's key terms or
+    # the user's own correction at the approval step (SW2.6).
     default_origin = "user" if vocabulary and vocabulary["block_assignment"] == "user" else "rule"
-    block_origin = {record["phrase"]: record["origin"]
-                    for record in (vocabulary or {}).get("labelling", {}).get("phrases", [])}
+    block_origin = block_origins(vocabulary) if vocabulary else {}
 
     # A code vocabulary's queries came from the block compiler, so the body names that compiler, not the plan one.
     compiler_version = (query_compiler.BLOCKS_VERSION if vocabulary else
@@ -84,6 +88,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "cue_phrases": criterion["cue_phrases"] if criterion else None,
         "exclusion_title_words": criterion["exclusion_title_words"] if criterion else None,
         **({"criterion_origin": {name: criterion[name] for name in CRITERION_ORIGIN_FIELDS}} if criterion else {}),
+        # How this vocabulary and criterion were agreed before the freeze (SW2.6, SW15.3).
+        **({"approval": approval} if approval else {}),
         # The blocks a code vocabulary gated the search with, each holding the form of its terms that was queried.
         "concept_blocks": ({block: [t["root"] if t["in_query"] == "root" else t["phrase"]
                                     for t in queried if t["block"] == block] for block in GATE_BLOCKS}

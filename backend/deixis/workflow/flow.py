@@ -151,16 +151,19 @@ class Page:
 def extra_page_requests(queries: list[dict[str, Any]]) -> int:
     """Requests a paged run may send beyond `max_provider_requests`, derived from the read limit alone.
 
-    Every query is allowed the pages its provider needs to reach the read limit (or its own reachable depth); the one
-    request the unpaged budget already holds for that query is taken off.
+    Every query is allowed the pages its provider needs to reach the read limit (or its own reachable depth), and
+    every page the bounded retries it may need: a retry is counted as a request, and the unpaged allowance holds one
+    run's worth of them, which a read of many pages that each succeeded on a retry would use up; the run would then
+    pause with `budget_exhausted` on every resume. The one request the unpaged budget already holds for each query
+    is taken off.
     """
+    per_page = 1 + MAX_RATE_LIMIT_RETRIES + MAX_TRANSIENT_NETWORK_RETRIES
     allowed = 0
     for query in queries:
         connector = CONNECTORS[query["provider_id"]]
-        if connector.paging == "single_page":
-            allowed += 1
-            continue
-        allowed += math.ceil(min(SW_READ_LIMIT, connector.max_reachable or SW_READ_LIMIT) / connector.max_results)
+        pages = 1 if connector.paging == "single_page" else math.ceil(
+            min(SW_READ_LIMIT, connector.max_reachable or SW_READ_LIMIT) / connector.max_results)
+        allowed += pages * per_page
     return max(0, allowed - len(queries))
 
 
@@ -170,8 +173,10 @@ def _stop_reason(connector: Connector, outcome: SearchOutcome, ok: bool, read_to
         return "page_failed"
     if connector.paging == "single_page":
         return "single_page"
-    if outcome.next_cursor is None:
-        return "exhausted"  # a short page, or none at all: the provider has no more, so no page repeats forever
+    if outcome.next_cursor is None or not outcome.records:
+        # The provider has no more. An empty page ends the read even when it carries a cursor: the read total would
+        # not grow, and the query would ask for empty pages until its request allowance ran out.
+        return "exhausted"
     if read_total >= SW_READ_LIMIT:
         return "read_limit"
     if connector.max_reachable is not None and read_total >= connector.max_reachable:

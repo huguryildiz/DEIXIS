@@ -405,3 +405,41 @@ def test_a_legacy_research_sends_one_request_and_stores_no_page(tmp_path, monkey
     assert [rows[0][k] for k in ("page_number", "read_limit", "read_total", "stop_reason", "unread_count")] == [None] * 5
     assert not [s for s in run["steps"] if ":page:" in s["operation_key"]]
     assert view["counts"]["unread"] == 0
+
+
+class RateLimitedOnce(PagedProviders):
+    """Every page answers 429 once and then serves: the read succeeds, and each page cost two requests."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.refused = set()
+
+    def __call__(self, request):
+        params = request.url.params
+        page = (request.url.host, params.get("cursor") or params.get("offset"))
+        counting = params.get("per_page") == "1" and params.get("select") == "id"
+        if request.url.host in ("api.openalex.org", "api.crossref.org") and not counting and page not in self.refused:
+            self.refused.add(page)
+            return httpx.Response(429, text="SYNTHETIC rate limit", headers={"retry-after": "0"})
+        return super().__call__(request)
+
+
+def test_pages_that_each_needed_a_rate_limit_retry_do_not_exhaust_the_request_allowance(tmp_path, monkeypatch):
+    """A retry is a request too. The allowance holds the retries every page may need, not one run's worth of them:
+    otherwise a long read that succeeded on every page pauses with `budget_exhausted` and resuming pauses it again."""
+    monkeypatch.setattr(flow, "SW_READ_LIMIT", 200)
+    providers = RateLimitedOnce(openalex_total=200, crossref_total=200)
+    client = client_of(app_for(tmp_path, monkeypatch, providers))
+    try:
+        rid, run_id, view, run = discover(client)
+    finally:
+        client.__exit__(None, None, None)
+    assert run["pause_reason"] == "model_call_failed", run  # it read everything and stopped at screening
+    assert rows_of(view)[-1]["stop_reason"] and rows_of(view, "crossref")[-1]["stop_reason"]
+    assert sum(r["result_count"] for r in rows_of(view)) == 200 and sum(r["result_count"] for r in rows_of(view, "crossref")) == 200
+
+
+def test_an_empty_page_that_still_carries_a_cursor_ends_the_read():
+    from deixis.providers.common import SearchOutcome
+    empty = SearchOutcome("zero_results", None, "SYNTHETIC", "keyless", records=[], next_cursor="SYNTHETIC-cursor")
+    assert flow._stop_reason(CONNECTORS["openalex"], empty, True, 40) == "exhausted"

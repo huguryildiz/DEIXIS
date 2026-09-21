@@ -346,9 +346,13 @@ def external_links(store: Store, run: dict[str, Any]) -> dict[str, Any]:
     if step["status"] == "succeeded":
         return step["output"]
     store.start_step(step["id"])
+    # Only the abstracts a lookup gave: a search stores its payload under its step too, and the abstracts it brought
+    # were linked when they were found. Without the origin this would read every record of the run a second time.
+    origins = tuple(ABSTRACT_ORIGINS.values())
     filled = [row[0] for row in store.conn.execute(
         "SELECT DISTINCT p.source_version_id FROM passages p JOIN run_steps s ON p.payload_ref = s.id || '.json'"
-        " WHERE s.run_id = ? AND p.kind = 'abstract' ORDER BY p.source_version_id", (run_id,))]
+        f" WHERE s.run_id = ? AND p.kind = 'abstract' AND p.abstract_origin IN ({', '.join('?' * len(origins))})"
+        " ORDER BY p.source_version_id", (run_id, *origins))]
     with transaction(store.conn):
         if filled:
             links.link_records(store, rid, filled)
@@ -430,8 +434,9 @@ def _wanted_decision(store: Store, decisions: DecisionStore, research_id: str, r
         # Left outside this run's request limit, or every answer failed: a later discovery run asks again.
         return "no_abstract", None
     current = decisions.current(research_id, row["source_version_id"], "abstract")
-    if current is not None and current["reason_code"] in ("no_abstract", "abstract_not_found"):
-        # The abstract arrived from a second source after the row was written; the row must stop saying it has none.
+    if current is not None and current["reason_code"] in ("no_abstract", "abstract_not_found", "survey_title_word"):
+        # The row no longer holds: the abstract arrived after it was written, or the question was revised and the
+        # title word is now its subject. Left standing, a survey row would keep the record away from screening.
         return "abstract_not_proposed", None
     return None, None
 
@@ -458,21 +463,25 @@ def held_from_screening(store: Store, research_id: str, scope_revision: int) -> 
     which is a title-word survey, because a flag on one version never drops the work. A held record stays `pending`,
     is not hidden and is not deleted: the user may include it.
     """
-    decisions = DecisionStore(store)
-    heads = set(store.work_heads(research_id).values())
+    # Read once: asking for every head's versions and their decisions took a second on 2,000 candidates, on the
+    # thread the API answers from, and almost no head is a survey.
+    surveys = {row[0] for row in store.conn.execute(
+        "SELECT source_version_id FROM stage_decisions WHERE research_id = ? AND stage = 'abstract'"
+        " AND superseded_at IS NULL AND reason_code = 'survey_title_word'", (research_id,))}
     held = set()
     for row in _records(store, research_id, scope_revision):
         svid = row["source_version_id"]
-        if svid not in heads:
+        if not row["head"]:
             continue
         if not row["has_abstract"]:
             held.add(svid)
+            continue
+        if svid not in surveys:
             continue
         versions = [r[0] for r in store.conn.execute(
             "SELECT m.source_version_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
             " WHERE m.research_id = ? AND m.removed_at IS NULL AND v.work_id = ?",
             (research_id, row["work_id"]))]
-        if versions and all((current := decisions.current(research_id, version, "abstract"))
-                            and current["reason_code"] == "survey_title_word" for version in versions):
+        if versions and all(version in surveys for version in versions):
             held.add(svid)
     return held

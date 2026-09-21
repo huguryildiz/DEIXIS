@@ -229,6 +229,21 @@ def test_semantic_scholar_fills_one_abstract_and_crossref_the_one_it_did_not(tmp
     assert sources.lookups == ["10.1/b"]  # the record Semantic Scholar answered is not asked again
 
 
+def test_only_an_abstract_a_second_source_gave_is_read_into_the_links_again(tmp_path, monkeypatch):
+    """A search stores its payload under its step too; its abstracts were linked when they were found."""
+    sources = Sources(works=[work(1, doi="10.1/a"), work(2, abstract=ABSTRACT, doi="10.1/b"),
+                             work(3, abstract=ABSTRACT, doi="10.1/c")],
+                      s2={"10.1/a": paper(abstract=ABSTRACT, doi="10.1/a")})
+    app = app_for(tmp_path, monkeypatch, sources)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        links = step_output(app.state.store, run_id, "external_links")
+    finally:
+        client.__exit__(None, None, None)
+    assert links["abstracts_reread"] == 1
+
+
 def test_a_source_that_is_rate_limited_on_every_attempt_leaves_the_work_to_the_other(tmp_path, monkeypatch):
     """Acceptance 2: the run does not stop, does not pause, and Crossref is still asked (D18)."""
     sources = Sources(works=[work(1, doi="10.1/a")], s2_status=429,
@@ -443,6 +458,32 @@ def test_a_second_run_of_the_same_scope_writes_no_second_flag_and_no_second_deci
     finally:
         client.__exit__(None, None, None)
     assert before == after == (1, 2) and open_rows == 2
+
+
+def test_a_revised_question_that_uses_the_title_word_takes_the_survey_decision_back(tmp_path, monkeypatch):
+    """The earlier revision's decision must not keep the record away from screening once the word is the subject."""
+    sources = Sources(works=[work(1, title=SURVEY_TITLE, abstract=ABSTRACT, doi="10.1/a")])
+    app = app_for(tmp_path, monkeypatch, sources)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        store = app.state.store
+        svid = records_of(store, rid)["W1"]
+        first = decision_of(store, rid, svid)
+        client.post(f"/api/researches/{rid}/scope", json={
+            "question": "How does survey length affect response rates in sensor network user studies?",
+            "expected_version": view["research"]["version"]})
+        second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        wait(client, rid, second)
+        protocol = store.current_protocol(rid, store.research(rid)["current_scope_revision"])
+        later = decision_of(store, rid, svid)
+        screened = _screened_records(store, second)
+    finally:
+        client.__exit__(None, None, None)
+    assert first["reason_code"] == "survey_title_word"
+    assert "survey" in protocol["body"]["survey"]["dropped_title_words"]
+    assert later["reason_code"] == "abstract_not_proposed"
+    assert svid in screened
 
 
 def test_an_abstract_that_arrived_from_a_second_source_corrects_the_decision_it_was_written_under(tmp_path, monkeypatch):

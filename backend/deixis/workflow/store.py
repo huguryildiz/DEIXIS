@@ -106,6 +106,7 @@ class SeedUnavailable(Exception):
 class Store:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+        self._columns: dict[str, set[str]] = {}
 
     # ---- events -----------------------------------------------------------------
     def _event(self, research_id: str, type_: str, payload: dict[str, Any], run_id: str | None = None) -> int:
@@ -800,9 +801,34 @@ class Store:
                                       (record.cited_by_count, now(), svid))
             else:
                 svid, wid = self._insert_provider_record(provider, record, payload_path)
+            self._store_author_keywords(svid, record)
             for other in record.other_versions:
                 self._insert_other_version(provider, record, wid, other, payload_path)
         return svid, existing is None
+
+    def _store_author_keywords(self, svid: str, record: Any) -> None:
+        """Fill the record's author keywords while the column is empty, as a missing abstract is filled.
+
+        One provider's list is never merged into another's: a keyword list belongs to the record the provider
+        described, and the first list read stands. Historical migration tests run today's code against a schema
+        from before 0042, where the column does not exist yet (`step` does the same for 0037).
+        """
+        if not record.author_keywords or not self._has_column("source_versions", "author_keywords_json"):
+            return
+        self.conn.execute(
+            "UPDATE source_versions SET author_keywords_json = ? WHERE id = ? AND author_keywords_json IS NULL",
+            (dumps(record.author_keywords), svid),
+        )
+
+    def _has_column(self, table: str, column: str) -> bool:
+        """Whether this database has already been migrated far enough to hold the column. Only a present column is
+        remembered, so a store whose database is migrated further still sees it."""
+        if column in self._columns.setdefault(table, set()):
+            return True
+        if any(row[1] == column for row in self.conn.execute(f"PRAGMA table_info({table})")):
+            self._columns[table].add(column)
+            return True
+        return False
 
     def other_version_ids(self, provider: str, record: Any) -> list[str]:
         return [self.find_source_by_identifier(f"{provider}_version", f"{record.provider_record_id}:{o.version_label}")

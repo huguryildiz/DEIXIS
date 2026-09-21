@@ -36,7 +36,12 @@ PUBMED_XML = """<?xml version="1.0"?>
 <Abstract><AbstractText Label="BACKGROUND">We schedule release times.</AbstractText><AbstractText Label="RESULTS">It works.</AbstractText></Abstract>
 <AuthorList><Author><ForeName>A.</ForeName><LastName>Author</LastName></Author><Author><CollectiveName>Synthetic Group</CollectiveName></Author></AuthorList>
 <PublicationTypeList><PublicationType>Journal Article</PublicationType></PublicationTypeList>
-</Article></MedlineCitation><PubmedData><PublicationStatus>ppublish</PublicationStatus><ArticleIdList>
+</Article>
+<MeshHeadingList><MeshHeading><DescriptorName UI="D001">Indexer Heading</DescriptorName></MeshHeading></MeshHeadingList>
+<KeywordList Owner="NOTNLM"><Keyword MajorTopicYN="N">release scheduling</Keyword><Keyword>  molecular channel  </Keyword>
+<Keyword>release scheduling</Keyword><Keyword> </Keyword></KeywordList>
+<KeywordList><Keyword>Indexer Keyword</Keyword></KeywordList>
+</MedlineCitation><PubmedData><PublicationStatus>ppublish</PublicationStatus><ArticleIdList>
 <ArticleId IdType="pubmed">12345678</ArticleId><ArticleId IdType="doi">10.1109/SYNTH.2021.1</ArticleId>
 </ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"""
 
@@ -55,6 +60,8 @@ SUCCESS = {
         "article_number": "123", "doi": DOI, "title": "SYNTHETIC <inline-formula>release</inline-formula> scheduling",
         "authors": {"authors": [{"full_name": "A. Author"}]}, "publication_year": 2021, "publication_title": "Synthetic Transactions",
         "content_type": "Journals", "abstract": "We schedule release times.", "html_url": "https://ieeexplore.ieee.org/document/123/",
+        "index_terms": {"author_terms": {"terms": ["release scheduling", "  molecular channel  ", "release scheduling", " "]},
+                        "ieee_terms": {"terms": ["Indexer Term"]}},
         "pdf_url": "https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=123", "access_type": "LOCKED"}]},
     "scopus": {"search-results": {"opensearch:totalResults": "3", "entry": [{
         "dc:identifier": "SCOPUS_ID:555", "eid": "2-s2.0-555", "dc:title": "SYNTHETIC release scheduling", "dc:creator": "Author A.",
@@ -174,6 +181,9 @@ def test_pubmed_record_uses_esearch_then_efetch_and_maps_abstract():
     assert record.authors == ["A. Author", "Synthetic Group"]
     assert record.abstract == "BACKGROUND: We schedule release times.\n\nRESULTS: It works."
     assert record.abstract_origin == pubmed.ABSTRACT_ORIGIN
+    # The `NOTNLM` list is the authors' own, trimmed and without repeats; the MeSH headings and a keyword list
+    # with no owner (the DTD's default owner is NLM) are the indexer's and stay out.
+    assert record.author_keywords == ["release scheduling", "molecular channel"]
     assert (record.volume, record.issue, record.pages) == ("12", "3", "10-19")
     assert record.landing_url == "https://pubmed.ncbi.nlm.nih.gov/12345678/" and record.oa_pdf_url is None
 
@@ -204,6 +214,13 @@ def test_ieee_record_redacts_key_and_attaches_no_pdf():
     assert SECRET not in outcome.request_description and SECRET not in json.dumps(outcome.raw_payload)
     assert (record.provider_record_id, record.title, record.oa_pdf_url) == ("123", "SYNTHETIC release scheduling", None)
     assert record.abstract_origin == ieee_xplore.ABSTRACT_ORIGIN and record.version_label == "publishedVersion"
+    # `author_terms` are the authors' own; IEEE's own `ieee_terms` are the indexer's and stay out.
+    assert record.author_keywords == ["release scheduling", "molecular channel"]
+
+
+def test_a_provider_that_names_no_author_keywords_gives_an_empty_list():
+    outcome, _ = run("openalex", lambda r: ok_response("openalex"))
+    assert outcome.records[0].author_keywords == []
 
 
 def test_ieee_over_quota_403_is_a_rate_limit():

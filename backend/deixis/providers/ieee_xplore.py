@@ -18,7 +18,8 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send
+from deixis.providers.common import (ProviderRecord, SearchOutcome, keywords, next_offset, normalize_doi,
+                                     page_offset, send)
 
 PROVIDER_ID = "ieee_xplore"
 SEARCH_URL = "https://ieeexploreapi.ieee.org/api/v1/search/articles"
@@ -54,6 +55,8 @@ def _record(article: dict[str, Any]) -> ProviderRecord:
         abstract_origin=ABSTRACT_ORIGIN if abstract else None,
         identifiers={"ieee_article_number": number} | ({"doi": doi} if doi else {}),
         raw=article,
+        # `index_terms.author_terms` are the authors' own keywords; `ieee_terms` are IEEE's controlled vocabulary.
+        author_keywords=keywords(((article.get("index_terms") or {}).get("author_terms") or {}).get("terms")),
     )
 
 

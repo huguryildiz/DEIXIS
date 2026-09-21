@@ -19,11 +19,13 @@ from typing import Any, Callable
 from deixis.config import Settings
 from deixis.documents.pdf import chunk_page
 from deixis.domain.canonical import canonical_rows, sha256_hex
+from deixis.domain.expansion import candidates as phrase_candidates
 from deixis.domain.vocabulary import extract
 from deixis.providers.common import ProviderRecord
 from deixis.providers.query_compiler import compile_block_queries, compile_queries
 from deixis.storage import db
 from deixis.workflow.decisions import DecisionStore
+from deixis.workflow.expansion import expand
 from deixis.workflow.flow import answer_source_order, fuse_rankings
 from deixis.workflow.protocol import build_protocol
 from deixis.workflow.store import Store
@@ -216,6 +218,36 @@ def stage_code_vocabulary(rows: list[dict[str, Any]]) -> Any:
     return {"vocabulary": vocabulary, "queries": canonical_rows(queries, "provider_id")}
 
 
+EXPANSION_VOCABULARY = {
+    "terms": [
+        {"phrase": "wireless sensor networks", "block": "setting", "origin": "question", "root": "wireless",
+         "in_query": "root", "phrase_count": 900, "root_count": 900, "and_only": False, "dropped": None},
+        {"phrase": "packet size", "block": "task", "origin": "question", "root": "packet", "in_query": "root",
+         "phrase_count": 700, "root_count": 700, "and_only": False, "dropped": None},
+    ],
+    "claim_words": ["integer programming"], "exclusion_words": ["surveys"],
+}
+# Fixed SYNTHETIC counts: "duty cycle" is used in the field, "sensor node" is not used enough of the time.
+EXPANSION_COUNTS = {'"duty cycle"': 400, '"duty cycle" AND (wireless)': 120,
+                    '"cycle scheduling"': 300, '"cycle scheduling" AND (wireless)': 90,
+                    '"sensor node"': 5_000, '"sensor node" AND (wireless)': 30}
+
+
+def stage_expansion(rows: list[dict[str, Any]]) -> Any:
+    """The candidate phrases of a first round and the field probe's verdict on each (SW2.4).
+
+    The records carry no order of their own — they are what the providers happened to return — so neither their
+    order nor a set's iteration order may reach the candidate list, the probe order or the accepted terms.
+    """
+    async def count(query: str) -> int | None:
+        return EXPANSION_COUNTS.get(query)  # an unlisted query is unknown, which refuses its phrase
+
+    found = phrase_candidates(rows, ["wireless", "packet"], EXPANSION_VOCABULARY["claim_words"])
+    return {"candidates": [{"phrase": c.phrase, "document_frequency": c.document_frequency,
+                            "sources": list(c.sources)} for c in found],
+            "expansion": asyncio.run(expand(EXPANSION_VOCABULARY, found, count))}
+
+
 def stage_build_protocol(rows: list[dict[str, Any]]) -> Any:
     scope = SCOPE | {"providers": [row["id"] for row in rows]}
     return build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
@@ -232,6 +264,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "work_outcome": stage_work_outcome,
     "link_records": stage_link_records,
     "code_vocabulary": stage_code_vocabulary,
+    "expansion": stage_expansion,
 }
 
 ROWS: dict[str, list[dict[str, Any]]] = {
@@ -241,6 +274,20 @@ ROWS: dict[str, list[dict[str, Any]]] = {
     "answer_source_order": [{"id": f"svr_{i}", "text": "SYNTHETIC molecule release schedule"} for i in range(6)],
     "build_protocol": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed")],
     "code_vocabulary": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed", "scopus")],
+    # Five records of four works: two versions of one work, so a phrase both of them hold is counted once. The
+    # titles are SYNTHETIC and hold phrases the question's own terms do not cover.
+    "expansion": [
+        {"work_id": "wrk_one", "title": "SYNTHETIC duty cycle scheduling in a sensor node",
+         "author_keywords": ["duty cycle", "energy harvesting"]},
+        {"work_id": "wrk_one", "title": "SYNTHETIC duty cycle scheduling in a sensor node (preprint)",
+         "author_keywords": ["duty cycle"]},
+        {"work_id": "wrk_two", "title": "SYNTHETIC cycle scheduling of a sensor node under integer programming",
+         "author_keywords": []},
+        {"work_id": "wrk_three", "title": "SYNTHETIC duty cycle scheduling for a sensor node",
+         "author_keywords": ["duty cycle"]},
+        {"work_id": "wrk_four", "title": "SYNTHETIC duty cycle policy of a sensor node",
+         "author_keywords": ["energy harvesting"]},
+    ],
     # Four works: one still a candidate on the abstract stage, one whose two versions disagree on the full text, one
     # the user decided, and one whose two versions reached the same outcome, so the version named for the work must
     # not be the one decided first. SYNTHETIC decisions; they show merge behavior, not screening quality.

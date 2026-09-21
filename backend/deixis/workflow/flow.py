@@ -25,7 +25,7 @@ import httpx
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, math_reader, ocr, pdf
-from deixis.domain import canonical, contracts, phrasebank, vocabulary as question_words
+from deixis.domain import canonical, contracts, expansion as phrase_candidates, phrasebank, vocabulary as question_words
 from deixis.domain.rules import (MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES, SCREENING_BATCH,
                                  SW_READ_LIMIT, after_invalid_output, effective_reviewer, schema_repairs, step_model)
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
@@ -37,6 +37,7 @@ from deixis.providers.common import FIRST_PAGE, MAX_RATE_LIMIT_RETRIES, SearchOu
 from deixis.providers.registry import CONNECTORS, Connector
 from deixis.storage.db import dumps, new_id, now
 from deixis.workflow.concurrency import ModelCallLimiter
+from deixis.workflow import expansion as expansion_rules
 from deixis.workflow import protocol
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state
@@ -334,6 +335,16 @@ class ResearchFlow:
                 failure = await self._search(run, index, query, per_query, retry_failed) or failure
         if failure and not searched():
             self._pause(run_id, *failure)
+        if scope.get("search_workflow") == "sw":
+            # A second arm that only adds: phrases the first round's own records offered, each kept by a count
+            # probe (SW2.4). The first round's query is not sent again.
+            more = await self._expansion(run, scope, vocabulary, queries)
+            extra_requests = extra_page_requests(queries + more)  # the allowance covers every query the run reads
+            for index, query in enumerate(more, start=len(queries)):
+                self._checkpoint(run_id, revision)
+                # A failed second-round search is recorded and left there: this run already has a search that
+                # succeeded, so nothing here can pause it (D18).
+                await self._search_pages(run, index, query, per_query, retry_failed, extra_requests)
 
         self._checkpoint(run_id, revision)
         self.store.update_run(run_id, stage="screening")
@@ -620,6 +631,58 @@ class ResearchFlow:
             if output.get("stop_reason") or not output.get("next_cursor"):
                 return failure
             cursor, number = output["next_cursor"], number + 1
+
+    async def _expansion(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                         queries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The second round's queries, taken from the first round's own records by code (SW2.4, slice 04b).
+
+        No model is called: the candidate phrases are the authors' keywords and the titles' repeated n-grams, and a
+        count probe decides which of them the field really uses. A step that already succeeded returns its stored
+        queries, so a resumed run sends no count request and reads no page twice, and the counts are stored before
+        the run can stop.
+        """
+        run_id, rid, revision, budget = run["id"], run["research_id"], run["scope_revision"], run["budget"]
+        step = self.store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")
+        if step["status"] == "succeeded":
+            result, more = step["output"]["expansion"], step["output"]["queries"]
+        else:
+            found = phrase_candidates.candidates(
+                expansion_rules.first_round_records(self.store, rid, revision),
+                [expansion_rules.queried_form(term) for term in expansion_rules.queried_terms(vocabulary)],
+                [*vocabulary["claim_words"], *vocabulary["exclusion_words"]])
+            self.store.start_step(step["id"])
+            result = await expansion_rules.expand(vocabulary, found, self._count_probe(scope))
+            more = query_compiler.compile_block_queries(
+                expansion_rules.second_round_vocabulary(vocabulary, result["terms"]),
+                scope["providers"], budget["max_provider_requests"]) if result["terms"] else []
+            # What each term had brought in by the time the expansion ended: one dated photograph, never a number
+            # the research keeps as its own (the live figure is derived by `term_yields`).
+            result["yield_at_expansion"] = expansion_rules.count_yields(
+                self.store, rid, revision, expansion_rules.term_rows(vocabulary["terms"], result))
+            self.store.finish_step(step["id"], "succeeded", output={
+                "expansion": result, "queries": more, "query_compiler": query_compiler.BLOCKS_VERSION})
+        self._checkpoint(run_id, revision)
+        if more:
+            self._freeze_expansion(run, scope, vocabulary, queries + more, result)
+        return more
+
+    def _freeze_expansion(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                          queries: list[dict[str, Any]], expansion: dict[str, Any]) -> None:
+        """Freeze the protocol again, before the second round's first provider request.
+
+        The first record is never edited: a query the research did not have when it started is a new revision with
+        its reason (SW14.2). With no accepted term there is no second revision at all.
+        """
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        step = self.store.step(run_id, "protocol_expansion", "protocol:expansion")
+        if step["status"] == "succeeded":
+            return
+        self.store.start_step(step["id"])
+        record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
+            scope, run["budget"], None, queries, self.deps.package.package_hash, self.deps.settings,
+            vocabulary=vocabulary, expansion=expansion), reason="data_expansion")
+        self.store.finish_step(step["id"], "succeeded",
+                               output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
 
     # ---- answer ---------------------------------------------------------------------
     async def _answer(self, run: dict[str, Any], scope: dict[str, Any]) -> None:

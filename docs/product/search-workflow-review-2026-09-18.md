@@ -25,7 +25,7 @@ Measurement evidence (untracked): `.local/quantum-work-adjudication-2026-09-18/`
 
 ## SW2 — Search keywords come from code first; the model is a conditional expansion step
 
-**Status:** accepted as design direction in the workflow review with the owner; points 1, 2, 3 and 7 implemented for the `sw` workflow on 2026-09-21 ([D73](../decisions.md), slice 04a) and not measured; points 4, 5 and 6 not implemented. Point 2's block assignment is no longer code's alone: SW17 narrows point 5 with a second, phrase-bounded model step that proposes no terms ([D74](../decisions.md), slice 04d), and point 6's user correction still stands above it. **Date:** 2026-09-18.
+**Status:** accepted as design direction in the workflow review with the owner; points 1, 2, 3 and 7 implemented for the `sw` workflow on 2026-09-21 ([D73](../decisions.md), slice 04a) and not measured; point 4 implemented on 2026-09-21 ([D76](../decisions.md), slice 04b) as a second search round taken from the first round's author keywords and title n-grams and kept by a count probe, not measured beyond one dry run; points 5 and 6 not implemented. Point 2's block assignment is no longer code's alone: SW17 narrows point 5 with a second, phrase-bounded model step that proposes no terms ([D74](../decisions.md), slice 04d), and point 6's user correction still stands above it. **Date:** 2026-09-18.
 
 **Context:** First question of the workflow review after SW1: who determines the search keywords derived from the user's question. Code alone cannot know synonyms that are absent from the question; a model alone is not repeatable (SW1 measured an 11% answer change on identical input), can invent plausible terms the field does not use, and tends to put the claim under test into the query.
 

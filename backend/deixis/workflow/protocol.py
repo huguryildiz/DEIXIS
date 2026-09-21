@@ -27,16 +27,19 @@ def _model(role: tuple[str, str | None, str | None] | None) -> dict[str, Any] | 
 
 def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str, Any] | None,
                    queries: list[dict[str, Any]], skill_package_hash: str, settings: Settings,
-                   vocabulary: dict[str, Any] | None = None) -> dict[str, Any]:
+                   vocabulary: dict[str, Any] | None = None,
+                   expansion: dict[str, Any] | None = None) -> dict[str, Any]:
     """The body a research freezes. `vocabulary` is the sw workflow's code vocabulary step output (SW2).
 
     Its counts are the ones the first run read; they change in the literature over time and are never re-probed, so
-    the body keeps the numbers that actually decided this research's query.
+    the body keeps the numbers that actually decided this research's query. `expansion` is the step output of the
+    second arm (SW2.4) and is given only for the revision that opened it, so a body without one is what it was.
     """
     # Imported here: flow loads this module, and the thresholds are read from their one definition rather than repeated.
     from deixis.documents.pdf import CHUNK_CHARS
     from deixis.workflow.flow import (FORMULATION_SCORE_THRESHOLD, MAX_ABSTRACT_CHARS, MAX_PASSAGES_PER_SOURCE,
                                       PDF_PAGES_PER_SOURCE, RRF_K)
+    from deixis.workflow.expansion import THRESHOLDS as EXPANSION_THRESHOLDS
     from deixis.workflow.vocabulary import GATE_BLOCKS, THRESHOLDS as VOCABULARY_THRESHOLDS
 
     queried = [t for t in vocabulary["terms"] if not t["dropped"]] if vocabulary else []
@@ -76,11 +79,14 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                          "in_query": t["in_query"], "phrase_count": t["phrase_count"], "root_count": t["root_count"],
                          "and_only": t["and_only"], "dropped": t["dropped"]} for t in vocabulary["terms"]]
                        if vocabulary else None),
+        # The second arm's own record: every candidate phrase with its two counts and why it was kept or refused.
+        **({"expansion": {"skipped": expansion["skipped"], "candidates": expansion["candidates"],
+                          "terms": list(expansion["terms"])}} if expansion else {}),
         "compiled_queries": [{"provider_id": q["provider_id"], "query_text": q["query_text"],
                               **({"results": q["results"]} if q.get("results") is not None else {})}
                              for q in queries],
         "providers": sorted(scope["providers"]),
-        "arms": ["keyword_search"],
+        "arms": ["keyword_search", "data_expansion"] if expansion else ["keyword_search"],
         "signals": [],  # record-level ranking signals arrive in slice 07
         "thresholds": {
             "screening_batch": SCREENING_BATCH,
@@ -95,6 +101,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             **({"record_identity": THRESHOLDS,
                 "search_read": {"read_limit_per_query": SW_READ_LIMIT}} if scope.get("search_workflow") == "sw" else {}),
             **({"vocabulary": VOCABULARY_THRESHOLDS} if vocabulary else {}),
+            **({"expansion": EXPANSION_THRESHOLDS} if expansion else {}),
         },
         "rule_table_version": "legacy",
         "budget": budget,

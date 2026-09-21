@@ -21,7 +21,8 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send, year_of
+from deixis.providers.common import (ProviderRecord, SearchOutcome, keywords, next_offset, normalize_doi,
+                                     page_offset, send, year_of)
 
 PROVIDER_ID = "pubmed"
 BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
@@ -105,6 +106,11 @@ def _record(node: ET.Element) -> ProviderRecord:
         abstract_origin=ABSTRACT_ORIGIN if abstract else None,
         identifiers=identifiers,
         raw=raw,
+        # Author keywords are the `NOTNLM` keyword lists of the citation. `MeshHeadingList` is NLM's controlled
+        # vocabulary, and a `KeywordList` without an owner is NLM's too: the DTD's default for `Owner` is `NLM`
+        # (pubmed_190101.dtd, read 2026-09-21), and `NLM-AUTO`, `NASA`, `PIP`, `KIE` and `HHS` are other indexers.
+        author_keywords=keywords(_text(word) for group in citation.findall("KeywordList")
+                                 if group.get("Owner") == "NOTNLM" for word in group.findall("Keyword")),
         volume=_text(article.find("Journal/JournalIssue/Volume")),
         issue=_text(article.find("Journal/JournalIssue/Issue")),
         pages=pages,

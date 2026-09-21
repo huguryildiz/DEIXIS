@@ -45,6 +45,11 @@ class Extraction:
     block_assignment: str  # "rule" | "user"
 
 
+def words(text: str) -> list[str]:
+    """The words of a text, lower case: the one word shape every module reads a question or a title with."""
+    return [word.lower() for word in _WORD.findall(text)]
+
+
 def detect_language(question: str, language_hint: str | None) -> str:
     """The hint decides when there is one; otherwise the question is English unless something says it is not.
 

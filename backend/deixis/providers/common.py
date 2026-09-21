@@ -56,6 +56,9 @@ class ProviderRecord:
     volume: str | None = None
     issue: str | None = None
     pages: str | None = None
+    # Only what the authors themselves wrote: an indexer's controlled terms are the indexer's vocabulary, not the
+    # field's own words, and slice 04b widens a search from the field's words (SW2.4).
+    author_keywords: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -92,6 +95,16 @@ def next_offset(offset: int, read: int, requested: int, provider_total: int | No
     if read < requested or (provider_total is not None and offset + read >= provider_total):
         return None
     return str(offset + read)
+
+
+def keywords(values: Any) -> list[str]:
+    """An author keyword list as it is stored: trimmed, without empties or repeats, in the provider's order."""
+    kept: dict[str, str] = {}
+    for value in values or []:
+        text = " ".join(str(value).split()) if value is not None else ""
+        if text:
+            kept.setdefault(text.casefold(), text)
+    return list(kept.values())
 
 
 def normalize_doi(value: str | None) -> str | None:

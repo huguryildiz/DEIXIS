@@ -145,7 +145,10 @@ class PagedProviders:
         params = request.url.params
         if request.url.host == "api.openalex.org":
             if params.get("per_page") == "1" and params.get("select") == "id":
-                return httpx.Response(200, json={"meta": {"count": 40}, "results": []})
+                # Count probes. The number is below the field-probe threshold of slice 04b, so the expansion
+                # accepts no phrase here and these tests stay about the paging of one round; the second round has
+                # its own tests in test_expansion_flow.py.
+                return httpx.Response(200, json={"meta": {"count": 8}, "results": []})
             cursor, size = params.get("cursor"), int(params["per_page"])
             start = 0 if cursor in (None, "*") else int(cursor)
             self.openalex.append((start, size))

@@ -93,7 +93,7 @@ Düzeltme yapıldı (21 Eylül 2026, `.local/sw-criterion-prompt-fix-2026-09-21/
 
 **07 · Kayıt düzeyinde sıralama** — SW7 (tümü), SW8.1–2. Kur. Önkoşul: 02, 04.
 Kapsam: soru + dağarcıkla BM25; başlıkta blok kapsaması; atıf grafiği benzerliği (OpenAlex `referenced_works`, bibliyografik eşleşme + doğrudan atıf); yalnızca doğrulanmış ya da kullanıcı tohumlarıyla TF-IDF; RRF (k = 60), eşitlikte kalıcı kimlik; sinyal başına sıra ve "sinyal vardı mı" saklanır; eksik sinyal sonda; referans listesi olmayan kayıt oranı raporlanır; gömme beşinci sinyal ve kurtarma kolu (birleşik ilk 200 dışında, gömme ilk 50 içinde → "gömme kolundan" etiketiyle öne). Mevcut `_source_similarity` yeniden kullanılır.
-Kabul: sıra kayıt silmez; gömme kapalıyken dört sinyal değişmeden koşar.
+Kabul: sıra kayıt silmez; gömme kapalıyken dört sinyal değişmeden koşar. Ayrıntı: [sw-slice07-record-ranking.md](sw-slice07-record-ranking.md).
 
 **08 · Protokol onay adımı (arayüz)** — SW2.5–6, SW15.3, SW14.2, SW2.1 (alan). Kur. Önkoşul: 04, 06. Önce [.impeccable.md](../../.impeccable.md).
 Kapsam: koşu "onay bekliyor" durumunda durur; dağarcık (her terimin kökeni: soru, veri, model), bloklar, ölçüt, parçalar ve ifadeler tek ekranda gösterilir, düzeltilir, dondurulur; değişiklik gerekçeli yeni protokol revizyonu açar; aynı araştırmada model yeniden sorulmaz; ilk tur zayıfsa ya da kullanıcı isterse model terim listesi önerir (sorgu değil), terimler aynı sayım sınamasından geçer.

@@ -651,8 +651,10 @@ def test_a_run_paused_between_two_screening_batches_screens_the_next_places_of_t
         client.__exit__(None, None, None)
     assert run["status"] == "completed"
     # The stored plan is what the resumed run read, unchanged, and every batch was read twice and only twice.
+    # The batches are compared without their order: the calls go out concurrently, so the one the dropped
+    # connection cost is re-sent on resume, after batches that were already in flight when the run paused.
     assert resumed["batches"] == plan["batches"]
-    assert read == [batch for batch in planned for _ in range(2)]
+    assert sorted(read) == sorted(batch for batch in planned for _ in range(2))
 
 
 def test_a_legacy_run_paused_between_two_screening_batches_screens_every_candidate_when_it_resumes(tmp_path, monkeypatch):

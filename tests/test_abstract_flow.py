@@ -67,14 +67,14 @@ async def no_fetch(url):
     return FetchResult("http_error", final_url=url, http_status=404)
 
 
-def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None):
+def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None, concurrency=6):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
     return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow,
-                               protocol_approval="as_proposed"),
+                               protocol_approval="as_proposed", model_concurrency=concurrency),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
                       extra_hosts=("testserver",), trusted_clients=("testclient",))

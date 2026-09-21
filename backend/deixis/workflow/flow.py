@@ -220,6 +220,14 @@ class _FillJob:
 
 
 @dataclass
+class _AbstractJob:
+    key: str
+    number: int               # the batch's place in the frozen read plan
+    run_no: int               # 1 or 2: the two independent reads of that batch (K3)
+    rows: list[dict[str, Any]]
+
+
+@dataclass
 class FlowDeps:
     settings: Settings
     store: Store
@@ -771,34 +779,75 @@ class ResearchFlow:
         The plan is frozen in the code step's output: a resumed run reads it back instead of deriving it again,
         because "the works still needing a model" is a different list by then and the batch keys would move to
         other records (the bug slice 07's review found).
+
+        The (batch, run) calls go out through the run's shared limiter, in the one submission loop table fill uses,
+        and a batch is closed on the event loop as soon as both of its runs are back: which order the answers
+        arrive in does not reach the decisions, because the batches hold no work in common and what a pair of runs
+        means is read from that pair alone (Task 5).
         """
         run_id, revision = run["id"], run["scope_revision"]
         plan = self._abstract_code_stage(run, scope, vocabulary, order)
         batches, runs = plan["batches"], plan["runs"]
         by_svid = {c["source_version_id"]: c for c in self.store.candidates(run["research_id"])}
+        spent_before = self.store.run(run_id)["usage"].get("model_calls", 0)
         unread: list[str] = []
-        for number, batch in enumerate(batches):
-            self._checkpoint(run_id, revision)
-            if not self._model_calls_left(run, runs):
-                # The budget stopped short of this batch. Its records are unread, which is a state the workflow
-                # already has, so the run finishes rather than pausing on something a later run will pick up.
-                unread = [svid for later in batches[number:] for svid in later]
-                break
-            rows = [by_svid[svid] for svid in batch if svid in by_svid]
-            outputs = [await self._abstract_call(run, scope, number, run_no, rows) for run_no in range(1, runs + 1)]
-            self._checkpoint(run_id, revision)
-            self._close_abstract_batch(run, number, rows, outputs, runs)
-        if unread:
+        submitted = 0
+        collected: dict[int, dict[int, dict[str, Any] | None]] = {}
+        rows_of: dict[int, list[dict[str, Any]]] = {}
+        closed: set[int] = set()
+
+        def jobs() -> Iterator[_AbstractJob]:
+            """The (batch, run) calls in plan order, up to the batch the budget no longer holds whole."""
+            nonlocal submitted
+            for number, batch in enumerate(batches):
+                if not self._model_calls_left(run, runs, submitted, spent_before):
+                    # The budget stopped short of this batch. Its records are unread, which is a state the workflow
+                    # already has, so the run finishes rather than pausing on something a later run will pick up.
+                    unread.extend(svid for later in batches[number:] for svid in later)
+                    return
+                rows_of[number] = [by_svid[svid] for svid in batch if svid in by_svid]
+                for run_no in range(1, runs + 1):
+                    submitted += 1
+                    yield _AbstractJob(f"abstract_screening:{number}:{run_no}", number, run_no, rows_of[number])
+
+        async def call(job: _AbstractJob) -> dict[str, Any] | None:
+            return await self._abstract_call(run, scope, job.number, job.run_no, job.rows, self.deps.limiter)
+
+        def close_ready(completed: list[tuple[dict[str, Any] | None, _AbstractJob]]) -> None:
+            """Close every batch both of whose runs have come back, on the event loop, one short transaction each."""
+            for output, job in completed:
+                collected.setdefault(job.number, {})[job.run_no] = output
+            for number in sorted(collected):
+                if number in closed or len(collected[number]) < runs:
+                    continue
+                self._checkpoint(run_id, revision)
+                closed.add(number)
+                self._close_abstract_batch(run, number, rows_of[number],
+                                           [collected[number][run_no] for run_no in range(1, runs + 1)], runs)
+
+        stop = await self._send_through_limiter(run, jobs(), call, close_ready)
+        if unread and stop is None:
             step_id = self.store.step(run_id, "abstract_stage", "code:abstract_stage")["id"]
             self._write_abstract_codes(run, step_id, [(svid, "abstract_not_read") for svid in unread])
+        if stop is not None:
+            raise stop
 
-    def _model_calls_left(self, run: dict[str, Any], wanted: int) -> bool:
-        """Whether the run's model-call budget still holds a whole batch. A batch is read twice or not at all."""
+    def _model_calls_left(self, run: dict[str, Any], wanted: int, submitted: int = 0,
+                          before: int | None = None) -> bool:
+        """Whether the run's model-call budget still holds a whole batch. A batch is read twice or not at all.
+
+        `usage` counts a call from the moment it opens its model session, so a call handed to the limiter that has
+        not got that far is not in it yet. A concurrent sender passes how many calls it has submitted since the
+        run's spent count was `before`, and the larger of the two is charged: no submission takes the run past its
+        budget, and a batch whose two calls no longer fit is not half-sent.
+        """
         spent = self.store.run(run["id"])["usage"].get("model_calls", 0)
+        if before is not None:
+            spent = before + max(spent - before, submitted)
         return spent + wanted <= run["budget"]["max_model_calls"]
 
     async def _abstract_call(self, run: dict[str, Any], scope: dict[str, Any], number: int, run_no: int,
-                             rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+                             rows: list[dict[str, Any]], limiter: ModelCallLimiter | None = None) -> dict[str, Any] | None:
         """One run of one batch; None when the model's output did not validate.
 
         An invalid output does not stop the run and is not repaired: its records stay `abstract_not_proposed` and
@@ -810,7 +859,7 @@ class ResearchFlow:
         if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
             return None
         output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
-                                        screening_target={"runs": ABSTRACT_RUNS, "run": run_no})
+                                        screening_target={"runs": ABSTRACT_RUNS, "run": run_no}, limiter=limiter)
         return None if output.get("invalid") else output
 
     def _abstract_code_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
@@ -1559,8 +1608,33 @@ class ResearchFlow:
         tables = TableStore(self.store)
         await self._read_equations(run, [planned["source_version_id"] for planned in target["sources"]])
         limiter = self.deps.limiter
-        job_iter = self._fill_jobs(run, tables, target)
-        pending: dict[asyncio.Task[dict[str, Any] | None], _FillJob] = {}
+
+        async def call(job: _FillJob) -> dict[str, Any] | None:
+            return await self._extraction(run, scope, job.key, job.svid, job.columns, MAX_FILL_PASSAGES, limiter)
+
+        def apply(completed: list[tuple[dict[str, Any] | None, _FillJob]]) -> None:
+            for output, job in completed:
+                if output is not None and not self._fill_stopped(run_id, run["scope_revision"]):
+                    self._save_cells(run, output, job.cell_versions, recheck=False)
+
+        stop = await self._send_through_limiter(run, self._fill_jobs(run, tables, target), call, apply)
+        if stop is not None:
+            raise stop
+
+    async def _send_through_limiter(self, run: dict[str, Any], jobs: Iterator[Any],
+                                    call: Callable[[Any], Awaitable[Any]],
+                                    applied: Callable[[list[tuple[Any, Any]]], None]) -> RunStopped | None:
+        """Send `jobs` through the run's shared limiter, applying each round of results as they come back.
+
+        The one submission loop table fill and the abstract stage both use (D37, D81). At most the limiter's
+        current limit are in flight, the same operation key is never sent twice concurrently, and a checkpoint runs
+        before each submission. Once something stops the run — a pause or cancel found at a checkpoint, or a call
+        that recorded a pause of its own — no more are submitted, but the calls already in flight finish and record
+        their steps; their results are not applied, and the stop is returned for the caller to raise after whatever
+        it still owes the run. An unexpected exception is raised once every call in flight has returned.
+        """
+        run_id, limiter = run["id"], self.deps.limiter
+        pending: dict[asyncio.Task[Any], Any] = {}
         stop: RunStopped | None = None
         failure: Exception | None = None
 
@@ -1569,22 +1643,18 @@ class ResearchFlow:
             while stop is None and failure is None and len(pending) < limiter.limit:
                 try:
                     self._checkpoint(run_id, run["scope_revision"])
-                    job = next(job_iter, None)
+                    job = next(jobs, None)
                 except RunStopped as exc:
                     stop = exc
                     return
                 if job is None:
                     return
-
-                async def call(job: _FillJob = job) -> dict[str, Any] | None:
-                    return await self._extraction(run, scope, job.key, job.svid, job.columns, MAX_FILL_PASSAGES, limiter)
-
-                pending[asyncio.ensure_future(limiter.run(job.key, call))] = job
+                pending[asyncio.ensure_future(limiter.run(job.key, lambda job=job: call(job)))] = job
 
         submit_more()
         while pending:
             done, _ = await asyncio.wait(pending.keys(), return_when=asyncio.FIRST_COMPLETED)
-            completed: list[tuple[dict[str, Any] | None, _FillJob]] = []
+            completed: list[tuple[Any, Any]] = []
             for task in done:
                 job = pending.pop(task)
                 try:
@@ -1595,15 +1665,15 @@ class ResearchFlow:
                     failure = failure or exc
                 else:
                     completed.append((output, job))
-            if failure is None:
-                for output, job in completed:
-                    if output is not None and not self._fill_stopped(run_id, run["scope_revision"]):
-                        self._save_cells(run, output, job.cell_versions, recheck=False)
+            if failure is None and stop is None:
+                try:
+                    applied(completed)
+                except RunStopped as exc:
+                    stop = exc
             submit_more()
         if failure is not None:
             raise failure
-        if stop is not None:
-            raise stop
+        return stop
 
     def _fill_jobs(self, run: dict[str, Any], tables: TableStore, target: dict[str, Any]) -> Iterator[_FillJob]:
         """Yield pending source and column jobs in table order, writing no-text cells as each source is reached."""

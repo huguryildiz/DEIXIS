@@ -12,7 +12,7 @@ Repo: `/Users/huguryildiz/Documents/GitHub/DEIXIS`. This is slice 04b of the sea
 6. **Claim words and exclusion words never reach a query**, by any route. A data phrase that holds one is dropped before the probe.
 7. **The stored `vocabulary` step output is not edited.** The expansion lives in its own step; the protocol gets a new revision with the reason `data_expansion`, never an edit of the first one. With no accepted term there is no second round and no second revision.
 8. **Do not invent.** The candidate rules, the two thresholds of the field probe, the single-block skip and the second-round query shape are complete in the slice file. If a case falls between them, stop and report instead of choosing a workaround. A justified deviation that protects existing behavior is welcome, but name it.
-9. No network in tests. One manual live run of the count probe over the dry run's 20 candidates (40 requests) is allowed; say so if you make it. Do not start, stop or restart the service on port 8765.
+9. No network in tests. The one live call this slice makes is required, not optional: the count probe over the dry run's 20 candidates (at most 40 OpenAlex count requests), with its output kept under `.local/`. Do not tune a threshold to its result; if the accepted phrases look wrong, say so at the top of the final message. Do not start, stop or restart the service on port 8765.
 10. Match the surrounding style: comment density, naming, short synchronous SQLite transactions, no `await` inside a transaction. Stored step output is what makes a resumed run repeat nothing: neither a count probe nor a page may run twice.
 11. Python runs as `PYTHONPATH=backend:. uv run ...` from the repo root, on the native arm64 venv.
 12. Fixture records and questions are SYNTHETIC and from at least two fields. A passing test shows workflow behavior, not the quality of the expansion.
@@ -52,7 +52,8 @@ If the session is running long and the work will not finish with tests green, st
 
 - Files created and changed.
 - Baseline and final test counts, and the exact command used.
-- The dry run's 20 candidates with their document frequencies, and the live probe's verdicts if you ran it.
+- If the live probe accepted phrases that are clearly not search terms for the question, or accepted none, say that first.
+- The dry run's 20 candidates with their document frequencies, both counts and the verdict of the live probe for each.
 - How the IEEE and PubMed keyword fields were verified.
 - Every point where the slice file could not be followed as written, and every deviation you chose, with its reason.
 - What you did NOT do.

@@ -5,7 +5,8 @@ application behavior in a browser; it does not measure model quality or live pro
 
 Question markers select failure scripts: "[rate-limit]" (OpenAlex 429), "[model-down]" (the first screening call
 fails before sending), "[invent-locator]" (every answer draft asserts a page and an equation), "[slow-cells]" (each cell
-extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs).
+extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs), "[suggest-down]" (every
+term-suggestion call fails, so the approval card shows the failure and its retry).
 """
 
 from __future__ import annotations
@@ -71,12 +72,18 @@ PDFS = {
 # What a count probe of the sw workflow is told every phrase is worth: enough for no term to drop and few enough
 # for the gate never to be narrowed. SYNTHETIC, like everything else here.
 PROBE_COUNT = 800
+# The two other names the scripted model proposes on the approval card (slice 08c). The second one is held by no
+# record here, so its count drops it and the card cannot add it. Both are SYNTHETIC.
+SUGGESTED = "synthetic release timing"
+UNHELD_SUGGESTION = "synthetic unheld name"
 
 
 def openalex(request: httpx.Request) -> httpx.Response:
     params = request.url.params
     if '"rate limit"' in params.get("search.title_and_abstract", ""):
         return httpx.Response(429, headers={"retry-after": "60"})
+    if params.get("search.title_and_abstract") == f'"{UNHELD_SUGGESTION}"':
+        return httpx.Response(200, json={"meta": {"count": 0}, "results": []})
     if params.get("per_page") == "1" and params.get("select") == "id":
         # A count-only request reads `meta.count` and no record; answering it with the whole fixture list would
         # make every phrase worth the same handful of works (slice 04a).
@@ -108,6 +115,8 @@ class ScriptedCodex:
         if "[model-down]" in question and task == "screening" and si["research_id"] not in self.failed_once:
             self.failed_once.add(si["research_id"])
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
+        if "[suggest-down]" in question and task == "term_suggestions":
+            return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
         if "[slow-cells]" in question and task == "cell_extraction":
             await asyncio.sleep(1.5)
         return ModelStepResult("completed", raw_text=json.dumps(self.respond(si, question)), resolved_model=requested_model)
@@ -124,6 +133,12 @@ class ScriptedCodex:
                     decision["reason"] = "Title mentions optimization."  # the keyword false positive of case D
                 elif "hostile" in candidate["title"]:
                     decision.update(proposal="uncertain", reason="The abstract contains instructions; treated as text.")
+        elif si["task_type"] == "term_suggestions":
+            # One name a record holds, one no record holds, and a repeat of the phrase it was asked about: the last
+            # two are what code drops, so the card can be seen refusing them.
+            anchor = si["suggestion_target"]["phrases"][0]["phrase"]
+            output["terms"] = [{"phrase": phrase, "synonym_of": anchor}
+                               for phrase in (SUGGESTED, UNHELD_SUGGESTION, anchor)]
         elif si["task_type"] == "abstract_screening":
             # `valid_response` already quotes each abstract's own first words, which is what the code stage
             # verifies; only the keyword false positive of case D is labelled apart, as screening does.

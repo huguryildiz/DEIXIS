@@ -56,6 +56,7 @@
         "research_title",
         "vocabulary_labels",
         "criterion_proposal",
+        "term_suggestions",
         "abstract_screening",
         "report_plan",
         "report_section",
@@ -573,6 +574,72 @@
               }
             }
           }
+        }
+      }
+    },
+    "suggestion_target": {
+      "type": "object",
+      "description": "term_suggestions steps only: the question, the searched phrases of the approval's proposal with the records that hold each one, and the phrases the search keeps out deliberately. The step proposes other names for the given phrases and may name no other phrase in synonym_of.",
+      "additionalProperties": false,
+      "required": [
+        "question_text",
+        "phrases",
+        "avoid",
+        "max_terms"
+      ],
+      "properties": {
+        "question_text": {
+          "type": "string"
+        },
+        "phrases": {
+          "type": "array",
+          "maxItems": 40,
+          "description": "Every phrase of the two searched blocks, in the order the vocabulary was built in, dropped ones included: a phrase no record holds is the one the field most likely calls something else.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "phrase",
+              "block",
+              "records"
+            ],
+            "properties": {
+              "phrase": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "block": {
+                "type": "string",
+                "description": "The searched block the phrase sits in. A proposed name inherits it; the step does not choose a block.",
+                "enum": [
+                  "setting",
+                  "task"
+                ]
+              },
+              "records": {
+                "anyOf": [
+                  { "type": "integer", "minimum": 0 },
+                  { "type": "null" }
+                ],
+                "description": "Indexed records holding the phrase. Null was not counted, which is not zero."
+              }
+            }
+          }
+        },
+        "avoid": {
+          "type": "array",
+          "maxItems": 60,
+          "description": "The proposal's other phrases (claim words, exclusion words, outcome terms). They are out of the query deliberately (SW1.3); a proposal carrying one is dropped by code.",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "max_terms": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },

@@ -29,7 +29,7 @@ from deixis.workflow.decisions import DecisionStore
 from deixis.workflow import links
 from deixis.workflow.expansion import expand
 from deixis.workflow.flow import answer_source_order, fuse_rankings
-from deixis.workflow import abstract_stage, ranking
+from deixis.workflow import abstract_stage, ranking, suggestions
 from deixis.workflow.protocol import build_protocol
 from deixis.workflow.store import Store
 from deixis.workflow.approval import apply_criterion, canonical_edits, edited_extraction
@@ -464,6 +464,30 @@ def stage_abstract_stage(rows: list[dict[str, Any]]) -> Any:
             "plan": plan, "combined": combined}
 
 
+def stage_term_suggestions(rows: list[dict[str, Any]]) -> Any:
+    """The card rows the model's proposed names become, and the counts they carry over (slice 08c, SW14.6).
+
+    The rows are one model's `terms` list, which carries no order of its own: the order it happened to write them
+    in must reach neither the screened list nor the known counts the approval reuses. The vocabulary they are
+    screened against is the corrected one of `stage_protocol_approval`, so the two stages agree on what "already
+    present" means.
+    """
+    async def count(query: str) -> int | None:
+        return APPROVAL_COUNTS.get(query, VOCABULARY_COUNTS.get(query, 6_000))
+
+    labelled, _ = apply_labels(extract(VOCABULARY_QUESTION), VOCABULARY_LABEL_RUNS)
+    proposal = asyncio.run(build_vocabulary(labelled, count))
+    screened = suggestions.screen(proposal, [{"phrase": row["phrase"], "synonym_of": row["synonym_of"]}
+                                             for row in rows])
+    read = {row["phrase"]: row["count"] for row in rows}
+    for row in screened:
+        # The flow counts exactly the rows code did not drop; each proposal's count travels with it, not with its
+        # place in the list.
+        row["phrase_count"] = None if row["dropped"] else read[row["phrase"]]
+    return {"target": suggestions.target(VOCABULARY_QUESTION, proposal), "rows": screened,
+            "known": suggestions.known_counts(screened), "model": sorted(suggestions.model_phrases(screened))}
+
+
 def stage_build_protocol(rows: list[dict[str, Any]]) -> Any:
     scope = SCOPE | {"providers": [row["id"] for row in rows]}
     return build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
@@ -484,6 +508,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "survey_flags": stage_survey_flags,
     "criterion": stage_criterion,
     "protocol_approval": stage_protocol_approval,
+    "term_suggestions": stage_term_suggestions,
     "record_ranking": stage_record_ranking,
     "abstract_stage": stage_abstract_stage,
 }
@@ -500,6 +525,19 @@ ROWS: dict[str, list[dict[str, Any]]] = {
     # the order the operations arrive in may reach the approved vocabulary or its queries.
     "protocol_approval": ([{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed", "scopus")]
                           + [{"edit": index} for index in range(4)]),
+    # The names one model proposed on the approval card. The list carries no order of its own, and it holds every
+    # row code drops: a repeat, a phrase the proposal already has, one carrying a claim phrase, one carrying an
+    # exclusion phrase, and one over the word bound. `count` is what the flow would have read for the row.
+    "term_suggestions": [
+        {"phrase": "wsn", "synonym_of": "wireless sensor networks", "count": 60_000},
+        {"phrase": "payload length", "synonym_of": "packet size", "count": 8_000},
+        {"phrase": "frame size", "synonym_of": "packet size", "count": 5_000},
+        {"phrase": "payload length", "synonym_of": "packet size", "count": 8_000},
+        {"phrase": "integer programming of payload length", "synonym_of": "packet size", "count": 40},
+        {"phrase": "energy consumption", "synonym_of": "packet size", "count": 40_000},
+        {"phrase": "one two three four five six seven", "synonym_of": "wireless sensor networks", "count": 5},
+        {"phrase": "surveys of payload length", "synonym_of": "packet size", "count": 60},
+    ],
     # Five records of four works: two versions of one work, so a phrase both of them hold is counted once. The
     # titles are SYNTHETIC and hold phrases the question's own terms do not cover.
     "expansion": [

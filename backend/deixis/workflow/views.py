@@ -8,6 +8,7 @@ from typing import Any
 from deixis.documents import embeddings, pdf
 from deixis.domain.rules import effective_reviewer, result_applicability
 from deixis.workflow import approval as approval_rules
+from deixis.workflow import suggestions as suggestions_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state, equations_to_check
 from deixis.workflow.report.store import ReportStore
@@ -19,6 +20,8 @@ PLAN_FIELDS = ("question_interpretation", "search_rationale", "scope_boundaries"
 # What the approval card shows of a vocabulary. The probes stay out: they are large, and the screen shows a term's
 # own counts, which are already in the term row.
 APPROVAL_VOCABULARY_FIELDS = ("claim_words", "exclusion_words", "outcome_terms", "gate_count", "too_broad")
+# What the card reads of one proposed name (slice 08c). `phrase_count` null was not counted, which is not zero.
+SUGGESTION_FIELDS = ("phrase", "synonym_of", "block", "phrase_count", "dropped")
 
 
 def _approval_side(vocabulary: dict[str, Any] | None, criterion: dict[str, Any] | None,
@@ -42,6 +45,36 @@ def _approval_side(vocabulary: dict[str, Any] | None, criterion: dict[str, Any] 
     return side
 
 
+def _suggestions_side(store: Store, run_id: str, step: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
+    """What the model was asked for on this card, and what came of it (slice 08c, SW2.5).
+
+    The list stays on the card after the approval, so which proposals were added and which were not can still be
+    read. `available` says whether the route would take a request, and `unavailable_reason` why not; a card that is
+    waiting for the worker is `requested` and offers no button.
+    """
+    steps = store.suggestion_steps(run_id)
+    requests = output.get("suggestion_requests") or 0
+    carried = output.get("carried_suggestions") or {}
+    ready = [row for row in steps if (row["output"] or {}).get("status") == "ready"]
+    terms = ready[-1]["output"]["terms"] if ready else carried.get("terms") or []
+    answered = {row["operation_key"] for row in steps if row["status"] == "succeeded"}
+    working = bool(requests) and f"term_suggestions:{requests}" not in answered
+    failure = next((row["output"]["failure"] for row in reversed(steps)
+                    if (row["output"] or {}).get("status") == "failed"), None)
+    status = ("requested" if working else "ready" if terms else "failed" if failure else "none")
+    reason = ("no_anchor_phrases" if not suggestions_rules.anchors(output["proposal"]["vocabulary"])
+              else "already_suggested" if terms else None)
+    return {
+        "status": status,
+        # The card shows the button only while it is editable, so the run's own status is not read here.
+        "available": step["status"] != "succeeded" and reason is None and not working,
+        "unavailable_reason": reason,
+        "failure": failure if status == "failed" else None,
+        "carried": not ready and bool(terms),
+        "terms": [{field: row[field] for field in SUGGESTION_FIELDS} for row in terms],
+    }
+
+
 def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
     """What this run asked the user to approve and what came of it, or None when it asked nothing (SW2.6)."""
     step = store.approval_step(run_id)
@@ -60,6 +93,7 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
         "proposal": _approval_side(output["proposal"]["vocabulary"], output["proposal"]["criterion"]),
         "approved": _approval_side(approved["vocabulary"], approved["criterion"], approved["queries"]) if approved else None,
         "skipped_edits": output.get("skipped_edits") or [],
+        "suggestions": _suggestions_side(store, run_id, step, output),
     }
 
 

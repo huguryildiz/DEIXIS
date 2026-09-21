@@ -32,7 +32,7 @@ from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import skill
 from deixis.workflow import abstract_stage
-from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS,
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SUGGESTION_CALLS,
                                  TEST_EFFORT_BUDGETS, RevisionConflict)
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
@@ -43,6 +43,7 @@ from deixis.providers import zotero
 from deixis.providers.registry import CONNECTORS, available_providers
 from deixis.storage import db
 from deixis.workflow import approval as approval_rules
+from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import bibliography
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.equations import EquationService, equation_state, equations_to_check
@@ -821,8 +822,10 @@ def create_app(
             # The criterion proposal before the first search (D78) and the abstract stage's two runs over the
             # works the read limit reaches (D81) are given on top of the preset, so the preset itself — which a
             # legacy run and an answer run read — is what it always was (slice 06 review).
-            extra = CRITERION_CALLS + abstract_stage.model_calls(ABSTRACT_READ_LIMIT[scope["effort"]],
-                                                                 ABSTRACT_BATCH, ABSTRACT_RUNS)
+            # SUGGESTION_CALLS is the one term-suggestion call the user may ask for on the approval card (D82); a
+            # run that never asks spends none of it.
+            extra = CRITERION_CALLS + SUGGESTION_CALLS + abstract_stage.model_calls(
+                ABSTRACT_READ_LIMIT[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
             budget = budget | {"max_model_calls": budget["max_model_calls"] + extra}
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
@@ -857,6 +860,36 @@ def create_app(
         if errors := approval_rules.check_edits(step["output"]["proposal"], edits):
             raise HTTPException(422, {"errors": errors})
         run = store.submit_approval(run_id, edits)
+        request.app.state.worker.wake()
+        return run
+
+    @app.post("/api/runs/{run_id}/term-suggestions")
+    async def suggest_terms(run_id: str, request: Request) -> dict[str, Any]:
+        """Ask a model for other names of the terms on the approval card (SW2.5, slice 08c).
+
+        Declared before the generic run action, like `protocol-approval`. The route validates, counts the request
+        and queues the run; the model call and every count request are sent by the worker. Nothing the model
+        proposes enters a query here or later unless the user adds it in their correction.
+        """
+        store = store_of(request)
+        run = store.run(run_id)
+        store.research(run["research_id"])
+        step = store.approval_step(run_id)
+        if step is None or not step["output"]:
+            raise HTTPException(409, "This run has not proposed a protocol to suggest terms for")
+        if step["status"] == "succeeded":
+            # The protocol is frozen and its searches ran under it; a change is a new scope revision.
+            raise HTTPException(409, "This run's protocol is already approved; revise the scope to change it")
+        if run["status"] != "paused" or run["pause_reason"] not in APPROVABLE_PAUSES:
+            raise HTTPException(409, f"Cannot ask for terms on a run in status {run['status']}")
+        if not suggestion_rules.anchors(step["output"]["proposal"]["vocabulary"]):
+            # With no searched term there is nothing to be another name for; the way out is a term or key terms.
+            raise HTTPException(409, "This proposal has no searched term to suggest other names for")
+        answered = any((row["output"] or {}).get("status") == "ready" for row in store.suggestion_steps(run_id))
+        if answered or step["output"].get("carried_suggestions"):
+            # SW2.6: the model is not asked twice for the same thing. Only a failed request may be repeated.
+            raise HTTPException(409, "This card already has the model's suggestions")
+        run = store.request_term_suggestions(run_id)
         request.app.state.worker.wake()
         return run
 

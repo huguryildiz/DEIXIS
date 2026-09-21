@@ -745,6 +745,42 @@ class Store:
         ).fetchall()
         return [{"id": row["id"], "run_id": row["run_id"], "output": json.loads(row["output_json"])} for row in rows]
 
+    def suggestion_steps(self, run_id: str) -> list[dict[str, Any]]:
+        """This run's term-suggestion code steps, oldest first, with their stored rows (slice 08c).
+
+        Read on its own rather than through `run_steps`, like the approval step: the rows carry every proposal with
+        its count and its drop reason, which is the card's business and not the transcript's.
+        """
+        rows = self.conn.execute(
+            "SELECT id, operation_key, status, output_json FROM run_steps WHERE run_id = ?"
+            " AND kind = 'code:term_suggestions' ORDER BY rowid", (run_id,)).fetchall()
+        return [{"id": row["id"], "operation_key": row["operation_key"], "status": row["status"],
+                 "output": json.loads(row["output_json"]) if row["output_json"] else None} for row in rows]
+
+    def request_term_suggestions(self, run_id: str) -> dict[str, Any]:
+        """Count the user's request for other names and queue the run in one transaction (slice 08c).
+
+        Nothing is asked of a model and nothing is counted here: the worker does both, so a slow model call cannot
+        hold the request open or leave the run queued with half of the work done. The number is the request's own
+        step key, so a repeat after a failure opens a new step instead of reopening the failed one.
+        """
+        with transaction(self.conn):
+            row = self.conn.execute(
+                "SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = 'protocol_approval'",
+                (run_id,)).fetchone()
+            if row is None or not row["output_json"]:
+                raise RevisionConflict("This run has no protocol approval to ask about")
+            research_id = self.conn.execute("SELECT research_id FROM runs WHERE id = ?", (run_id,)).fetchone()[0]
+            output = json.loads(row["output_json"])
+            requests = (output.get("suggestion_requests") or 0) + 1
+            self.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?",
+                              (dumps(output | {"suggestion_requests": requests}), row["id"]))
+            self.conn.execute(
+                "UPDATE runs SET status = 'queued', pause_reason = NULL, error_json = NULL, updated_at = ?,"
+                " version = version + 1 WHERE id = ?", (now(), run_id))
+            self._event(research_id, "run_resumed", {"status": "queued", "pause_reason": None}, run_id)
+        return self.run(run_id)
+
     def submit_approval(self, run_id: str, edits: dict[str, Any]) -> dict[str, Any]:
         """Store the user's corrections and queue the run in one transaction (slice 08a).
 

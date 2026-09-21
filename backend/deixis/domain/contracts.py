@@ -37,6 +37,7 @@ SCHEMA_FILES = {
     "ResearchTitle": "research-title.schema.json",
     "VocabularyLabels": "vocabulary-labels.schema.json",
     "CriterionProposal": "criterion-proposal.schema.json",
+    "TermSuggestions": "term-suggestions.schema.json",
     "AbstractScreening": "abstract-screening.schema.json",
     "StepInput": "step-input.schema.json",
     "ReportPlanDraft": "report-plan.schema.json",
@@ -55,6 +56,7 @@ SCHEMA_VERSIONS = {
     "ResearchTitle": "deixis.research_title.v1",
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
     "CriterionProposal": "deixis.criterion_proposal.v1",
+    "TermSuggestions": "deixis.term_suggestions.v1",
     "AbstractScreening": "deixis.abstract_screening.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
     "ReportSectionDraft": "deixis.report_section_draft.v1",
@@ -73,6 +75,7 @@ TASK_OUTPUTS = {
     "research_title": ("ResearchTitle",),
     "vocabulary_labels": ("VocabularyLabels",),
     "criterion_proposal": ("CriterionProposal",),
+    "term_suggestions": ("TermSuggestions",),
     "abstract_screening": ("AbstractScreening",),
     "report_plan": ("ReportPlanDraft",),
     "report_section": ("ReportSectionDraft",),
@@ -82,6 +85,9 @@ TASK_OUTPUTS = {
 EXTRACTION_TASKS = ("cell_extraction", "table_columns")
 # The block-labelling step sorts a phrase list code extracted; it carries a vocabulary_target instead (SW17.1).
 VOCABULARY_TASKS = ("vocabulary_labels",)
+# The term-suggestion step is given the searched phrases of the approval's proposal and proposes other names for
+# them; it carries a suggestion_target (SW2.5, slice 08c).
+SUGGESTION_TASKS = ("term_suggestions",)
 # The abstract stage asks the same batch twice and tells each call which of the two runs it is (slice 09, K3).
 SCREENING_TARGET_TASKS = ("abstract_screening",)
 GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
@@ -257,6 +263,16 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
             issues.append(Issue("duplicate_vocabulary_phrase", "/vocabulary_target/phrases", "phrase must be unique"))
         if sorted(set(allow.get("phrases", []))) != sorted(set(phrases)):
             issues.append(Issue("phrase_allowlist_mismatch", "/allowlist/phrases", "the allowlist is the phrase list"))
+    suggestion_target = step_input.get("suggestion_target")
+    if (suggestion_target is not None) != (step_input["task_type"] in SUGGESTION_TASKS):
+        issues.append(Issue("suggestion_target_mismatch", "/suggestion_target", step_input["task_type"]))
+    elif suggestion_target is not None:
+        # The anchors are the allowlist: a proposed name may be another name for one of these phrases and no other.
+        anchors = [entry["phrase"] for entry in suggestion_target["phrases"]]
+        if len(set(anchors)) != len(anchors):
+            issues.append(Issue("duplicate_vocabulary_phrase", "/suggestion_target/phrases", "phrase must be unique"))
+        if sorted(set(allow.get("phrases", []))) != sorted(set(anchors)):
+            issues.append(Issue("phrase_allowlist_mismatch", "/allowlist/phrases", "the allowlist is the phrase list"))
     screening_target = step_input.get("screening_target")
     if (screening_target is not None) != (step_input["task_type"] in SCREENING_TARGET_TASKS):
         issues.append(Issue("screening_target_mismatch", "/screening_target", step_input["task_type"]))
@@ -376,6 +392,8 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         _check_vocabulary_labels(allow, result, report)
     elif output_type == "CriterionProposal":
         _check_criterion_proposal(result, report)
+    elif output_type == "TermSuggestions":
+        _check_term_suggestions(allow, result, report)
     elif output_type == "AbstractScreening":
         _check_abstract_screening(allow, result, report)
     elif output_type == "ReportPlanDraft":
@@ -802,6 +820,19 @@ def _check_criterion_proposal(draft: dict[str, Any], report: ValidationReport) -
             seen[normalized] += 1
         for normalized in sorted(p for p, count in seen.items() if count > 1):
             report.issues.append(Issue("duplicate_criterion_phrase", f"/parts/{index}/phrases", normalized))
+
+
+def _check_term_suggestions(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
+    """A proposed name must say which given phrase it is another name for, and nothing else is an error (SW2.5).
+
+    The one error is a `synonym_of` outside the allowlist: without a given phrase behind it a proposal has no block
+    and no anchor, and code would have to invent both. Everything else code settles and records instead —
+    `workflow.suggestions.screen` drops a repeated, already present, too long, claim-carrying or exclusion-carrying
+    proposal with its reason, and the user never sees a query it entered.
+    """
+    for index, term in enumerate(draft["terms"]):
+        if term["synonym_of"] not in allow.get("phrases", set()):
+            report.issues.append(Issue("phrase_not_in_allowlist", f"/terms/{index}/synonym_of", term["synonym_of"]))
 
 
 def _check_abstract_screening(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:

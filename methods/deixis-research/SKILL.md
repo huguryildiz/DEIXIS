@@ -58,6 +58,11 @@ For `criterion_proposal`, read
 question alone, what a paper must contain to be included, and name the words an
 author of such a paper would write.
 
+For `term_suggestions`, read
+[term suggestions](references/term-suggestions.md): the user asked for other
+names of the search phrases the application already holds; you propose a term
+list, never a query, and you choose no block.
+
 For `cell_extraction` and `table_columns`, read
 [evidence table](references/evidence-table.md): you answer evidence table
 columns for one source, or suggest columns, and do not answer the question.

@@ -52,6 +52,10 @@ const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT
 const card = (page: Page) => page.locator('.approval-card')
 const block = (page: Page, name: string) => page.locator('.approval-block', { has: page.getByText(name, { exact: true }) })
 const termRow = (page: Page, phrase: string) => page.locator('.approval-term', { has: page.locator('.approval-phrase', { hasText: phrase }) })
+const suggestions = (page: Page) => block(page, 'Other names for these terms')
+// Scoped rows: once the model has proposed names, a phrase can be in both a searched block and the proposals list.
+const suggestionRow = (page: Page, phrase: string) => suggestions(page).locator('.approval-term', { has: page.locator('.approval-phrase', { hasText: phrase }) })
+const blockRow = (page: Page, name: string, phrase: string) => block(page, name).locator('.approval-term', { has: page.locator('.approval-phrase', { hasText: phrase }) })
 
 async function startResearch(page: Page, server: SwFixtureServer, question: string) {
   await page.goto(server.url())
@@ -131,6 +135,37 @@ test.describe.serial('H: the protocol approval of an sw discovery run', () => {
     await card(page).getByLabel('Criterion').fill('SYNTHETIC: the paper reports a measured release schedule of its own.')
   })
 
+  test('the model is asked for other names and the draft correction survives the round trip', async () => {
+    await card(page).getByRole('button', { name: 'Ask the model for other names' }).click()
+    // The proposals arrive after one model call and one count request per proposal code did not drop.
+    await expect(suggestions(page)).toContainText('another name for', { timeout: 60_000 })
+    await expect(suggestionRow(page, 'synthetic release timing')).toContainText('800 records hold this name')
+    await expect(suggestionRow(page, 'synthetic release timing')).toContainText('suggested by the model')
+    // The draft correction is where it was, and nothing has been searched.
+    await expect(page.locator('.approval-summary')).toContainText('1 term removed · 1 term added · 1 term moved · criterion corrected')
+    await expect(blockRow(page, 'Claim under test', 'relay networks')).toContainText('moved by you')
+    await expect(page.locator('.chat-step', { hasText: 'Provider searches' })).toContainText('Waiting')
+    await shot(page, 'H-suggestions-ready-desktop')
+  })
+
+  test('a proposal no record holds and a repeated one are faded with their reason and cannot be added', async () => {
+    const unheld = suggestionRow(page, 'synthetic unheld name')
+    await expect(unheld).toContainText('cannot be added: no record holds it')
+    await expect(unheld.getByRole('button', { name: 'Add' })).toHaveCount(0)
+    const repeated = suggestionRow(page, 'relay networks')
+    await expect(repeated).toContainText('cannot be added: already one of the terms above')
+    await expect(repeated.getByRole('button', { name: 'Add' })).toHaveCount(0)
+    // The button is gone: the model is asked once per question.
+    await expect(card(page).getByRole('button', { name: 'Ask the model for other names' })).toHaveCount(0)
+  })
+
+  test('an added proposal joins the draft and the change summary counts it apart', async () => {
+    await suggestionRow(page, 'synthetic release timing').getByRole('button', { name: 'Add' }).click()
+    await expect(block(page, 'Setting')).toContainText('synthetic release timing')
+    await expect(page.locator('.approval-summary')).toContainText('2 terms added · 1 of them proposed by the model')
+    await expect(suggestions(page)).toContainText('added to the Setting block above')
+  })
+
   test('approving sends the corrected protocol and the run searches with it', async () => {
     await card(page).getByRole('button', { name: 'Approve and search' }).click()
     // The card says "approved" only once the view does; the run then searches. (The "correction recorded" toast is
@@ -156,6 +191,36 @@ test.describe.serial('H: the protocol approval of an sw discovery run', () => {
     await shot(page, 'H-approval-approved-desktop')
   })
 
+  test('the approved summary badges the added proposal and lists the ones that were not added', async () => {
+    const diff = page.locator('.approval-diff')
+    const addedGroup = diff.locator('.approval-diff-group', { hasText: /^Added terms/ })
+    await expect(addedGroup.locator('li', { hasText: 'synthetic release timing' })).toContainText('suggested by the model')
+    await expect(addedGroup.locator('li', { hasText: 'molecular communication' })).toContainText('added by you')
+    const open = diff.locator('.approval-diff-group', { hasText: /^Proposed, not added/ })
+    await expect(open).toContainText('synthetic unheld name')
+    await expect(open).toContainText('dropped: no record holds it')
+    await shot(page, 'H-suggestions-approved-desktop')
+  })
+
+  test('a failed request shows its reason and a retry, and the run can be approved without proposals', async ({ browser }) => {
+    const down = await browser.newPage()
+    try {
+      await startResearch(down, server, `${QUESTION} [suggest-down]`)
+      await expect(card(down)).toBeVisible({ timeout: 60_000 })
+      await card(down).getByRole('button', { name: 'Ask the model for other names' }).click()
+      await expect(suggestions(down)).toContainText('The model call did not complete', { timeout: 60_000 })
+      await expect(suggestions(down).getByRole('button', { name: 'Try again' })).toBeVisible()
+      await shot(down, 'H-suggestions-failed-desktop')
+      await down.getByRole('button', { name: 'Use dark theme' }).click()
+      await shot(down, 'H-suggestions-failed-desktop-dark')
+      await down.setViewportSize({ width: 390, height: 844 })
+      await shot(down, 'H-suggestions-failed-mobile-dark')
+      // Nothing was proposed, so approving is still one click.
+      await card(down).getByRole('button', { name: 'Approve and search' }).click()
+      await expect(down.locator('.approval-card.is-approved')).toBeVisible({ timeout: 60_000 })
+    } finally { await down.close() }
+  })
+
   test('the waiting card reads in dark theme and at 390 px', async ({ browser }) => {
     const narrow = await browser.newPage({ viewport: { width: 390, height: 844 } })
     try {
@@ -164,8 +229,13 @@ test.describe.serial('H: the protocol approval of an sw discovery run', () => {
       await shot(narrow, 'H-approval-waiting-mobile')
       await narrow.getByRole('button', { name: 'Use dark theme' }).click()
       await shot(narrow, 'H-approval-waiting-mobile-dark')
+      // The proposals list in the theme and the width it is hardest to read in.
+      await card(narrow).getByRole('button', { name: 'Ask the model for other names' }).click()
+      await expect(suggestions(narrow)).toContainText('another name for', { timeout: 60_000 })
+      await shot(narrow, 'H-suggestions-ready-mobile-dark')
       await narrow.setViewportSize({ width: 1280, height: 900 })
       await shot(narrow, 'H-approval-waiting-desktop-dark')
+      await shot(narrow, 'H-suggestions-ready-desktop-dark')
     } finally { await narrow.close() }
   })
 

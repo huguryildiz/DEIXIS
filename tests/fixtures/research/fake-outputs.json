@@ -1065,6 +1065,83 @@
      }
     ]
    }
+  },
+  {
+   "name": "term_suggestions_valid",
+   "step_input": "G_term_suggestions",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.term_suggestions.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "terms": [
+     {
+      "phrase": "subsynchronous resonance mitigation",
+      "synonym_of": "subsynchronous oscillation damping"
+     },
+     {
+      "phrase": "wind farm interconnection",
+      "synonym_of": "wind integrated transmission grid"
+     }
+    ]
+   }
+  },
+  {
+   "name": "term_suggestions_empty_terms",
+   "step_input": "G_term_suggestions",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.term_suggestions.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "terms": []
+   }
+  },
+  {
+   "name": "term_suggestions_unknown_anchor",
+   "step_input": "G_term_suggestions",
+   "expect_ok": false,
+   "expect_codes": [
+    "phrase_not_in_allowlist"
+   ],
+   "output": {
+    "schema_version": "deixis.term_suggestions.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "terms": [
+     {
+      "phrase": "series capacitor bypass",
+      "synonym_of": "series compensated line"
+     }
+    ]
+   }
+  },
+  {
+   "name": "term_suggestions_repeats_given_and_avoided_phrases",
+   "step_input": "G_term_suggestions",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.term_suggestions.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "terms": [
+     {
+      "phrase": "wind integrated transmission grid",
+      "synonym_of": "wind integrated transmission grid"
+     },
+     {
+      "phrase": "damping ratio",
+      "synonym_of": "subsynchronous oscillation damping"
+     }
+    ]
+   }
   }
  ]
 }

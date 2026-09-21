@@ -88,6 +88,12 @@ def valid_response(si: dict[str, Any]) -> str:
             ],
             "exclusion_title_words": ["tutorial", "roadmap"],
         })
+    if task == "term_suggestions":
+        # SYNTHETIC and field-independent: one other name for the first anchor of the target, so a flow test gets a
+        # proposal whose text says nothing about any field and nothing about model behavior.
+        given = si["suggestion_target"]["phrases"]
+        return json.dumps(envelope(si, "deixis.term_suggestions.v1") | {
+            "terms": [{"phrase": "synthetic other name", "synonym_of": given[0]["phrase"]}] if given else []})
     if task == "report_plan":
         passage_ids = si["allowlist"]["passage_ids"]
         column_ids = si["allowlist"]["column_ids"]

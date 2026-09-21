@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/term-suggestions.schema.json",
+  "title": "TermSuggestions",
+  "description": "Other names the literature uses for the search phrases the application already holds (SW2.5). Asked only when the user presses the button on the approval card, once, with no repair. Each entry names the given phrase it is another name for; the block comes from that phrase and is derived by code. There is no rationale field and no block field: free text cannot be checked, and a proposed name enters nothing until the count probe keeps it and the user adds it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "terms"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "deixis.term_suggestions.v1" },
+    "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
+    "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
+    "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "terms": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 12,
+      "description": "The proposed names. An empty list is a valid answer: the given phrases may already be the usual names.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["phrase", "synonym_of"],
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "The proposed name, 1 to 6 words, lower case, as it appears in the running text of a paper."
+          },
+          "synonym_of": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "One of the given phrases, copied exactly: the phrase this name is another name for."
+          }
+        }
+      }
+    }
+  }
+}

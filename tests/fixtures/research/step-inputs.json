@@ -1788,5 +1788,92 @@
    "requested_model": null
   },
   "created_at": "2026-09-21T12:00:00Z"
+ },
+ "G_term_suggestions": {
+  "step_input_id": "sti_SYNTHE0001",
+  "research_id": "res_SYNTHE0001",
+  "run_id": "run_SYNTHE0001",
+  "step_id": "stp_SYNTHE0001",
+  "task_type": "term_suggestions",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "skill_files": [
+   "SKILL.md",
+   "references/term-suggestions.md"
+  ],
+  "output_schema_versions": [
+   "deixis.term_suggestions.v1"
+  ],
+  "question": {
+   "text": "SYNTHETIC: which supplementary controllers have been tested for damping subsynchronous oscillation in wind-integrated transmission grids, and what damping ratio did each one report?",
+   "language_hint": "en"
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "search_plan",
+    "screening",
+    "grounded_answer"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [
+   "openalex"
+  ],
+  "candidates": [],
+  "sources": [],
+  "passages": [],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [],
+   "passage_ids": [],
+   "phrases": [
+    "wind integrated transmission grid",
+    "subsynchronous oscillation damping",
+    "supplementary damping controller"
+   ]
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 10,
+   "max_schema_repairs": 0,
+   "max_provider_requests": 3
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": null
+  },
+  "created_at": "2026-09-21T12:00:00Z",
+  "suggestion_target": {
+   "question_text": "SYNTHETIC: which supplementary controllers have been tested for damping subsynchronous oscillation in wind-integrated transmission grids, and what damping ratio did each one report?",
+   "phrases": [
+    {
+     "phrase": "wind integrated transmission grid",
+     "block": "setting",
+     "records": 120
+    },
+    {
+     "phrase": "subsynchronous oscillation damping",
+     "block": "task",
+     "records": 0
+    },
+    {
+     "phrase": "supplementary damping controller",
+     "block": "task",
+     "records": null
+    }
+   ],
+   "avoid": [
+    "we propose",
+    "survey",
+    "damping ratio"
+   ],
+   "max_terms": 12
+  }
  }
 }

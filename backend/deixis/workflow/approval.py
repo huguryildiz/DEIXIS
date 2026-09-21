@@ -216,12 +216,18 @@ def applicable(vocabulary: dict[str, Any], term_edits: list[dict[str, Any]]) -> 
     return kept, skipped
 
 
-def edited_extraction(vocabulary: dict[str, Any], term_edits: list[dict[str, Any]]) -> Extraction:
+def edited_extraction(vocabulary: dict[str, Any], term_edits: list[dict[str, Any]],
+                      model_phrases: frozenset[str] | set[str] = frozenset()) -> Extraction:
     """The corrected phrases as an `Extraction`, so one code path builds every vocabulary.
 
     The corrected vocabulary is never patched into the proposal's term dictionaries: it is rebuilt from here by
     `vocabulary.build_vocabulary`, which is what decides the root or phrase form, the AND-only mark, the gate
     narrowing and `too_broad`. Patching would give a corrected vocabulary those decisions took no part in.
+
+    `model_phrases` are this approval's stored suggestions (slice 08c). A phrase the user added carries the term
+    origin `model` when it is one of them and `user` otherwise; the origin is derived here, on the server, and is
+    never read from the `add` operation, whose shape did not change. The block origin stays `user` either way: it
+    was the user who put the phrase in that block. With no suggestions the result is byte for byte what it was.
     """
     operations = {edit["phrase"]: edit for edit in canonical_edits(term_edits)}
     rows: list[dict[str, str]] = []
@@ -233,7 +239,8 @@ def edited_extraction(vocabulary: dict[str, Any], term_edits: list[dict[str, Any
             rows.append(row | {"block": edit["block"]})
     # Added phrases come last, in their canonical order, so the probe order of an approval does not follow the order
     # the user happened to type them in.
-    rows += [{"phrase": edit["phrase"], "block": edit["block"], "origin": "user"}
+    rows += [{"phrase": edit["phrase"], "block": edit["block"],
+              "origin": "model" if edit["phrase"] in model_phrases else "user"}
              for edit in operations.values() if edit["op"] == "add"]
     return Extraction(
         language=vocabulary["language"],

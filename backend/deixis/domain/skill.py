@@ -27,6 +27,7 @@ RUNTIME_FILES = {
     "research_title": ("SKILL.md", "references/research-title.md"),
     "vocabulary_labels": ("SKILL.md", "references/vocabulary-labels.md"),
     "criterion_proposal": ("SKILL.md", "references/criterion-proposal.md"),
+    "term_suggestions": ("SKILL.md", "references/term-suggestions.md"),
     "abstract_screening": ("SKILL.md", "references/abstract-screening.md"),
     "report_plan": ("SKILL.md", "references/report.md"),
     "report_section": ("SKILL.md", "references/report.md", "references/source-grounded-answer.md", PHRASEBANK),

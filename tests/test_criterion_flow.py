@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from deixis.domain.canonical import sha256_hex
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS,
-                                 TEST_EFFORT_BUDGETS)
+                                 SUGGESTION_CALLS, TEST_EFFORT_BUDGETS)
 from deixis.workflow.abstract_stage import model_calls
 from deixis.models.adapter import ModelStepResult
 from deixis.workflow.criterion import PROPOSAL_RUNS
@@ -163,11 +163,12 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     # The known defect's trace: a record only, read by nothing in this slice.
     assert body["criterion_origin"]["sought_term_in_criterion"] is True
     assert body["thresholds"]["criterion"] == {"proposal_runs": 3, "proposal_majority": 2}
-    # An sw discovery run is given the criterion's three calls, and since slice 09 the abstract stage's own, on
-    # top of its preset; the preset a legacy run and an answer run read is untouched.
+    # An sw discovery run is given the criterion's three calls, the abstract stage's own (slice 09) and the one
+    # term suggestion the user may ask for (slice 08c), on top of its preset; the preset a legacy run and an answer
+    # run read is untouched.
     presets = {preset.max_model_calls for preset in TEST_EFFORT_BUDGETS.values()}
     abstract_calls = model_calls(ABSTRACT_READ_LIMIT["quick"], ABSTRACT_BATCH, ABSTRACT_RUNS)
-    assert body["budget"]["max_model_calls"] - CRITERION_CALLS - abstract_calls in presets
+    assert body["budget"]["max_model_calls"] - CRITERION_CALLS - SUGGESTION_CALLS - abstract_calls in presets
 
 
 def test_the_criterion_decides_nothing_and_selects_nothing_in_this_slice(tmp_path, monkeypatch):

@@ -47,7 +47,8 @@ function phaseOf(kind: string): PhaseKey | null {
   if (kind === 'model:search_plan') return 'plan'
   // An sw run plans its search in code and asks the user before it searches; those steps are its plan phase, so the
   // phase does not read "waiting" while the run has counted its terms and is waiting for the user.
-  if (['code:vocabulary', 'model:vocabulary_labels', 'model:criterion_proposal', 'code:criterion', 'code:protocol_approval'].includes(kind)) return 'plan'
+  if (['code:vocabulary', 'model:vocabulary_labels', 'model:criterion_proposal', 'code:criterion', 'code:protocol_approval',
+       'code:term_suggestions', 'model:term_suggestions'].includes(kind)) return 'plan'
   if (kind.startsWith('provider_search')) return 'search'
   if (kind === 'model:screening') return 'screen'
   // An sw run screens abstracts in two steps: code classifies every record, then the model proposes.

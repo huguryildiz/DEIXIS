@@ -69,7 +69,9 @@ export type ApprovalTerm = {
   phrase: string; block: ApprovalBlock
   // Who supplied the phrase (the question, the user's key terms, the user's own correction) and who put it in its
   // block (the code rule, the model's labelling step, the user).
-  origin: 'question' | 'key_terms' | 'user'; block_origin: 'rule' | 'model' | 'user'
+  // 'model': the user added a name the model proposed for another term on this card (D82). The origin is derived
+  // on the server from the stored proposals; the correction the browser sends never names it.
+  origin: 'question' | 'key_terms' | 'user' | 'model'; block_origin: 'rule' | 'model' | 'user'
   // The form the phrase enters the query in, and what each form was counted at. A null count was not read.
   root: string; in_query: 'root' | 'phrase'; phrase_count: number | null; root_count: number | null
   // and_only: the form is too frequent to stand alone. dropped: why the phrase left the query, e.g. 'zero_results'.
@@ -108,6 +110,25 @@ export type RunApproval = {
   proposal: ApprovalSide; approved: ApprovalSide | null
   // Operations of an earlier approval this run could not apply, because the phrase is no longer in the proposal.
   skipped_edits: { op: string; phrase: string; block?: string; reason?: string }[]
+  // Other names the user asked a model for, and what came of it (D82).
+  suggestions: ApprovalSuggestions
+}
+// One name the model proposed for a term of the card. `phrase_count` is how many records hold it; null was not
+// counted, which is not zero. `dropped` says why it cannot enter the query, and a dropped row cannot be added.
+export type SuggestedTerm = {
+  phrase: string; synonym_of: string; block: ApprovalBlock
+  phrase_count: number | null; dropped: string | null
+}
+export type ApprovalSuggestions = {
+  // none: nothing was asked. requested: the run is asking a model. ready: the list is on record. failed: the
+  // request did not complete and may be repeated.
+  status: 'none' | 'requested' | 'ready' | 'failed'
+  // Whether the run would take a request now, and why it would not.
+  available: boolean; unavailable_reason: null | 'no_anchor_phrases' | 'already_suggested'
+  failure: string | null
+  // Whether this list came from an earlier approval of the same question rather than from a request of this run.
+  carried: boolean
+  terms: SuggestedTerm[]
 }
 export type SearchRun = {
   id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string
@@ -479,6 +500,9 @@ export const api = {
   // Approve or correct the protocol an sw discovery run stopped for; the run is queued again (D80).
   approveProtocol: (runId: string, edits: ProtocolEdits) =>
     request<Run>(`/api/runs/${runId}/protocol-approval`, json('POST', edits)),
+  // Ask the model for other names of the terms on the card. Nothing it proposes is searched until the user adds
+  // it in their correction (D82).
+  suggestTerms: (runId: string) => request<Run>(`/api/runs/${runId}/term-suggestions`, { method: 'POST' }),
   passage: (id: string, passageId: string) => request<Passage>(`/api/researches/${id}/passages/${passageId}`),
   assetText: (id: string, assetId: string) => request<AssetText>(`/api/researches/${id}/assets/${assetId}/text`),
   assetFigures: (id: string, assetId: string) => request<{ figures: AssetFigure[] }>(`/api/researches/${id}/assets/${assetId}/figures`),

@@ -76,13 +76,31 @@ export const blockNotes: Record<ApprovalBlock, string> = {
   exclusion: 'Not searched. Kept with the protocol; in this version no record is kept out by them yet.',
 }
 // Who supplied a phrase, and who put it in its block. Both are shown, because they answer different questions.
-const termOrigins: Record<string, string> = { question: 'from the question', key_terms: 'from your key terms', user: 'added by you' }
+const termOrigins: Record<string, string> = {
+  question: 'from the question', key_terms: 'from your key terms', user: 'added by you',
+  // The model proposed the name; it is in the search because the user added it (D82).
+  model: 'suggested by the model',
+}
 const blockOrigins: Record<string, string> = { rule: 'block by rule', model: 'block by the model', user: 'block by you' }
 export const termOriginText = (origin: string) => t(termOrigins[origin] ?? origin)
 export const blockOriginText = (origin: string) => t(blockOrigins[origin] ?? origin)
 // Why a phrase left the query. It stays on record with its reason rather than disappearing.
-const dropReasons: Record<string, string> = { zero_results: 'no record holds it' }
+const dropReasons: Record<string, string> = {
+  zero_results: 'no record holds it',
+  // Why a proposed name cannot enter the search (D82).
+  already_present: 'already one of the terms above',
+  contains_claim_word: 'contains a word of the claim under test',
+  contains_exclusion_word: 'contains an excluded word',
+  too_long: 'longer than six words',
+  duplicate: 'proposed twice',
+}
 export const dropReasonText = (reason: string) => t(dropReasons[reason] ?? reason)
+// Why the model cannot be asked for other names right now.
+const suggestionBlockers: Record<string, string> = {
+  no_anchor_phrases: 'There is no searched term to ask about. Add a term to the setting or task block first.',
+  already_suggested: 'The model has already been asked for this question; its proposals are below.',
+}
+export const suggestionBlockerText = (reason: string | null) => (reason ? t(suggestionBlockers[reason] ?? reason) : '')
 const approvedByNames: Record<string, string> = {
   user: 'You approved these search terms and this criterion.',
   setting: 'Approved as proposed by the unattended setting, not by a person.',
@@ -112,6 +130,8 @@ export const localToolIcon = (id: string) => (id === 'gemini_cli' ? 'gemini' : i
 export const stepLabel = (kind: string, key: string) => {
   if (kind === 'model:search_plan') return t('Search plan (model)')
   if (kind === 'model:screening') return t('Screening proposal (model)')
+  if (kind === 'code:term_suggestions') return t('Other names for the search terms (code)')
+  if (kind === 'model:term_suggestions') return t('Other names for the search terms (model)')
   if (kind === 'code:abstract_stage') return t('Abstract screening (code)')
   if (kind === 'model:abstract_screening') return t('Abstract screening proposal (model)')
   if (kind === 'model:grounded_answer') return t('Source-linked answer (model)')

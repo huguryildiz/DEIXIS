@@ -49,7 +49,12 @@ ABSTRACT_QUOTE_MIN_CHARS = 12
 # 2026-09-21 (D78): an sw discovery run is given CRITERION_CALLS on top of its preset for the criterion proposal it
 # makes before the first search (api/app.py), so its room for screening is what it was. The presets themselves are
 # unchanged: a legacy run and an answer run propose no criterion and keep the budget they always had.
+# 2026-09-21 (D82): the same holds for the one term-suggestion call an `sw` discovery run may make, and only when
+# the user asks for it on the approval card (SW2.5). Hand-picked and not measured: how many of at most
+# MAX_SUGGESTED_TERMS proposals survive the count probe, and how many of those are really other names, is unknown.
 CRITERION_CALLS = 3
+SUGGESTION_CALLS = 1
+MAX_SUGGESTED_TERMS = 12
 TEST_EFFORT_BUDGETS = {
     "quick": EffortBudget(max_model_calls=6, max_provider_requests=3, max_candidates=20,
                           max_answer_passages=16, results_per_query=10),
@@ -82,12 +87,14 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
     return "current"
 
 
-LITERATURE_TASKS = ("search_plan", "screening", "vocabulary_labels", "criterion_proposal", "abstract_screening")
+LITERATURE_TASKS = ("search_plan", "screening", "vocabulary_labels", "criterion_proposal", "term_suggestions",
+                    "abstract_screening")
 # A repair would let the step name a phrase the question does not hold and then take it back. The block labelling
 # gets one attempt: an output that invents, drops or repeats a phrase is rejected and the rule stands (SW17.1). An
 # abstract screening batch gets one too, because an invalid output costs nothing: its records stay
-# `abstract_not_proposed` and a later discovery run reads them (slice 09).
-NO_REPAIR_TASKS = ("vocabulary_labels", "abstract_screening")
+# `abstract_not_proposed` and a later discovery run reads them (slice 09). A term suggestion gets one because the
+# user is waiting in front of the card and the repeat is their own button (SW2.5, slice 08c).
+NO_REPAIR_TASKS = ("vocabulary_labels", "term_suggestions", "abstract_screening")
 
 
 def step_model(scope: dict[str, Any], task_type: str) -> tuple[str, str | None, str | None]:

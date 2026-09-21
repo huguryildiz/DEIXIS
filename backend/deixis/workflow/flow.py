@@ -45,6 +45,7 @@ from deixis.workflow import expansion as expansion_rules
 from deixis.workflow import lookups
 from deixis.workflow import protocol
 from deixis.workflow import ranking as ranking_rules
+from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
 from deixis.workflow.equations import equation_state
@@ -622,19 +623,32 @@ class ResearchFlow:
             return approved["vocabulary"], approved["queries"], approved["criterion"], step["output"]["approval"]
         asked_for = {"question": scope["question"], "steering": scope.get("steering"),
                      "key_terms": scope.get("key_terms")}
+        # The newest approval this research closed for the same question, steering and key terms. It is both what a
+        # correction is reapplied from and what a re-asked card takes its suggestions back from.
+        earlier = next((row for row in self.store.approvals_of(rid)
+                        if row["output"]["asked_for"] == asked_for), None)
         output = step["output"]
         if output is None:
             failures = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("failures", [])
             output = {"proposal": {"vocabulary": vocabulary, "queries": queries, "criterion": criterion,
                                    "criterion_failures": failures},
                       "proposal_hash": approval_rules.proposal_hash(vocabulary, criterion),
-                      "asked_for": asked_for, "submitted": None}
+                      "asked_for": asked_for, "submitted": None, "suggestion_requests": 0}
+            # The model is not asked twice for the same thing (SW2.6): an earlier approval's suggestions are carried
+            # over, so a card the user is shown again for the same question has them without a new call.
+            if carried := (earlier or {}).get("output", {}).get("suggestions"):
+                output["carried_suggestions"] = {"terms": carried, "from_step_id": earlier["id"]}
             # Written before the run can stop, and never started: a step that is still `pending` is not half-finished
             # work the worker's recovery has to guess about.
             self.store.set_step_output(step["id"], output)
 
-        earlier = next((row for row in self.store.approvals_of(rid)
-                        if row["output"]["asked_for"] == asked_for), None)
+        requests = output.get("suggestion_requests") or 0
+        if requests and self.store.step(run_id, f"term_suggestions:{requests}",
+                                        "code:term_suggestions")["status"] != "succeeded":
+            # The user pressed the button. The model runs here, in the worker, and the run comes back to the card in
+            # every case: a run that asked for other names never approves on the submission it asked from.
+            await self._term_suggestions(run, scope, vocabulary, requests)
+            self._pause(run_id, "protocol_approval_needed", {"proposal_hash": output["proposal_hash"]})
         # An earlier approval covers the criterion only when this run took it back from the protocol that approval
         # froze. One the model proposed for this run — the earlier run's model was down, so the user approved none —
         # has been seen by nobody, and the user is asked again (SW15.3).
@@ -656,9 +670,13 @@ class ResearchFlow:
             self._pause(run_id, "protocol_approval_needed", {"proposal_hash": output["proposal_hash"]})
 
         self._checkpoint(run_id, revision)
+        # What this approval proposed, whether it asked for it or carried it from the approval before. A phrase the
+        # user adds from this list carries the origin `model`, and its count is not read a second time (slice 08c).
+        proposals, from_step = self._suggested(run_id, output)
         # The network work of an approval happens here, in the worker, and only for the terms the user added.
         built, compiled, kept, skipped = await self._approved_vocabulary(
-            run, scope, vocabulary, queries, edits.get("terms") or [], reapply=source == "earlier")
+            run, scope, vocabulary, queries, edits.get("terms") or [], reapply=source == "earlier",
+            proposals=proposals)
         agreed = approval_rules.apply_criterion(criterion, edits.get("criterion"))
         record = {
             "mode": self.deps.settings.protocol_approval, "approved_by": by,
@@ -668,6 +686,16 @@ class ResearchFlow:
             "exclusion_word_in_question": approval_rules.exclusion_words_in_question(scope["question"], agreed),
             **({"note": edits["note"]} if edits.get("note") else {}),
             **({"earlier_approval_step_id": earlier["id"]} if source == "earlier" else {}),
+            # Only a run that asked, or one that carried an earlier answer, says anything about suggestions here:
+            # the body of a run that asked for none is what it was before this slice.
+            **({"suggestions": {
+                "requests": requests, "proposed": len(proposals),
+                "dropped": sum(1 for row in proposals if row["dropped"]),
+                # Terms of the approved vocabulary the model proposed and the user really added.
+                "accepted": sum(1 for term in built["terms"] if term["origin"] == "model"),
+                "step_input_id": from_step,
+                "carried_from_step_id": (output.get("carried_suggestions") or {}).get("from_step_id"),
+            }} if requests or output.get("carried_suggestions") else {}),
         }
         # A correction that empties the vocabulary or makes it too broad stops the run with the step still open, so
         # the user can send another one; an approval is never closed on a search that cannot run.
@@ -678,11 +706,67 @@ class ResearchFlow:
             "edits": {"terms": approval_rules.canonical_edits(edits.get("terms") or []),
                       "criterion": edits.get("criterion"), "note": edits.get("note")},
             "approved": {"vocabulary": built, "queries": compiled, "criterion": agreed},
+            # What was proposed stays with the closed approval, so a later run of this question can carry it and a
+            # reader can still see which proposals were added and which were not (SW14.2).
+            "suggestions": proposals or None,
             "approval": record, "skipped_edits": skipped})
         return built, compiled, agreed, record
 
+    def _suggested(self, run_id: str, output: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
+        """This approval's own proposed names, and the StepInput they came from (slice 08c).
+
+        The newest ready request wins; with none, the list an earlier approval of the same question left behind is
+        used, which is also what a reapplied correction's `model` origins must be read against. A failed request
+        contributes nothing and leaves an earlier list in place.
+        """
+        ready = [step for step in self.store.suggestion_steps(run_id)
+                 if (step["output"] or {}).get("status") == "ready"]
+        if ready:
+            return ready[-1]["output"]["terms"], ready[-1]["output"]["step_input_id"]
+        return (output.get("carried_suggestions") or {}).get("terms") or [], None
+
+    async def _term_suggestions(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                                number: int) -> None:
+        """Ask a model for other names of the searched phrases, and count every name it proposed (SW2.5).
+
+        One optional call, no repair: a failed request is recorded as failed and the card offers to try again, so a
+        resumed run never calls the model a second time for the same request. Nothing proposed enters the vocabulary
+        or a query here — the rows are stored, the user decides — and the counts are written with the step, so a run
+        resumed after this point reads them back instead of paying for them again.
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        step = self.store.step(run_id, f"term_suggestions:{number}", "code:term_suggestions")
+        self.store.start_step(step["id"])
+        self._checkpoint(run_id, revision)
+        try:
+            output = await self._model_step(run, scope, f"term_suggestion:{number}", "term_suggestions",
+                                            optional=True,
+                                            suggestion_target=suggestion_rules.target(scope["question"], vocabulary))
+        except OptionalStepFailed as failure:
+            self.store.finish_step(step["id"], "succeeded",
+                                   output={"status": "failed", "failure": failure.reason, "terms": []})
+            return
+        if output.get("invalid"):
+            # Not repaired and not half-used: a proposal whose anchor is not one of the given phrases has no block.
+            self.store.finish_step(step["id"], "succeeded",
+                                   output={"status": "failed", "failure": "invalid_model_output", "terms": []})
+            return
+        rows = suggestion_rules.screen(vocabulary, output["result"]["terms"])
+        self._checkpoint(run_id, revision)
+        probe = self._count_probe(scope)
+        for row in rows:
+            if row["dropped"]:
+                continue  # a phrase that cannot enter the query is not worth a request
+            row["phrase_count"] = await probe(query_compiler.quoted(row["phrase"]))
+            if row["phrase_count"] == 0:
+                row["dropped"] = "zero_results"
+        self.store.finish_step(step["id"], "succeeded", output={
+            "status": "ready", "terms": rows, "step_input_id": output["step_input_id"]})
+        self._checkpoint(run_id, revision)
+
     async def _approved_vocabulary(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                                   queries: list[dict[str, Any]], term_edits: list[dict[str, Any]], reapply: bool
+                                   queries: list[dict[str, Any]], term_edits: list[dict[str, Any]], reapply: bool,
+                                   proposals: list[dict[str, Any]] | None = None
                                    ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         """The vocabulary and queries the run searches with, rebuilt through the one code path that builds them.
 
@@ -695,9 +779,13 @@ class ResearchFlow:
         kept, skipped = approval_rules.applicable(vocabulary, term_edits) if reapply else (term_edits, [])
         if not kept:
             return vocabulary, queries, [], skipped
-        extraction = approval_rules.edited_extraction(vocabulary, kept)
+        proposals = proposals or []
+        extraction = approval_rules.edited_extraction(
+            vocabulary, kept, model_phrases=suggestion_rules.model_phrases(proposals))
         built = await vocabulary_rules.build_vocabulary(
-            extraction, self._count_probe(scope), known={p["query"]: p["count"] for p in vocabulary["probes"]})
+            extraction, self._count_probe(scope),
+            # The counts of this run's own probes and of the proposals it counted: an added name is not asked again.
+            known={p["query"]: p["count"] for p in vocabulary["probes"]} | suggestion_rules.known_counts(proposals))
         # What the labelling runs said stays on record; the user's own operations are written beside it, and
         # `block_origins` reads both, so a phrase the user placed keeps `user` wherever its block is shown.
         built["labelling"] = vocabulary.get("labelling")
@@ -1814,7 +1902,8 @@ class ResearchFlow:
                     extraction_target: dict[str, Any] | None = None,
                     report_target: dict[str, Any] | None = None,
                     vocabulary_target: dict[str, Any] | None = None,
-                    screening_target: dict[str, Any] | None = None) -> dict[str, Any]:
+                    screening_target: dict[str, Any] | None = None,
+                    suggestion_target: dict[str, Any] | None = None) -> dict[str, Any]:
         candidates = []
         for c in candidate_rows:
             source = self.store.source(c["source_version_id"])
@@ -1853,11 +1942,17 @@ class ResearchFlow:
             target["vocabulary_target"] = vocabulary_target
         if screening_target is not None:
             target["screening_target"] = screening_target
+        if suggestion_target is not None:
+            target["suggestion_target"] = suggestion_target
         allowlist = {"candidate_ids": [c["candidate_id"] for c in candidates], "source_ids": [s["source_id"] for s in sources],
                      "passage_ids": [p["passage_id"] for p in passages]}
         if vocabulary_target is not None:
             # The allowlist for this step is the phrase list itself: it may label those phrases and name no other.
             allowlist["phrases"] = [entry["phrase"] for entry in vocabulary_target["phrases"]]
+        if suggestion_target is not None:
+            # The same rule for the suggestion step: a proposed name may be another name for one of these phrases
+            # and for no other phrase (slice 08c).
+            allowlist["phrases"] = [entry["phrase"] for entry in suggestion_target["phrases"]]
         if task_type in contracts.REPORT_TASKS:
             report = report_target or {}
             cells, gaps = report.get("cells", []), report.get("gap_candidates", [])
@@ -1917,6 +2012,7 @@ class ResearchFlow:
                           optional: bool = False, extraction_target: dict[str, Any] | None = None,
                           report_target: dict[str, Any] | None = None, vocabulary_target: dict[str, Any] | None = None,
                           screening_target: dict[str, Any] | None = None,
+                          suggestion_target: dict[str, Any] | None = None,
                           limiter: ModelCallLimiter | None = None) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run."""
@@ -1948,7 +2044,7 @@ class ResearchFlow:
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
                                        claims or [], model, extraction_target, report_target, vocabulary_target,
-                                       screening_target)
+                                       screening_target, suggestion_target)
             if issues := contracts.check_step_input(payload):
                 self.store.finish_step(step["id"], "failed", error_code="step_input_invalid", error=[vars(i) for i in issues])
                 halt("step_input_invalid", fail=True)

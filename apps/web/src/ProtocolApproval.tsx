@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, CornerUpLeft, Plus, X } from 'lucide-react'
-import { ApiError, api, type ApprovalBlock, type ApprovalCriterion, type ApprovalSide, type ApprovalTerm, type ProtocolEdits, type Run, type RunApproval, type TermEdit } from './api'
-import { approvedByText, blockLabels, blockNotes, blockOriginText, dropReasonText, termOriginText } from './labels'
+import { ChevronDown, ChevronRight, CornerUpLeft, Plus, RotateCcw, X } from 'lucide-react'
+import { ApiError, api, type ApprovalBlock, type ApprovalCriterion, type ApprovalSide, type ApprovalSuggestions, type ApprovalTerm, type ProtocolEdits, type Run, type RunApproval, type SuggestedTerm, type TermEdit } from './api'
+import { approvedByText, blockLabels, blockNotes, blockOriginText, dropReasonText, pauseReasonText, suggestionBlockerText, termOriginText } from './labels'
 import { t, uiLocale } from './i18n'
 import { Notice } from './Notice'
 import { Button } from '@/components/ui/button'
@@ -53,13 +53,18 @@ export function ProtocolApproval({ run, approval, onApproved }: {
   // A correction that emptied the vocabulary comes back paused with the submission still stored: the card opens
   // again so the user can send another one. It is locked only while the run is actually applying a submission.
   const checking = approval.status === 'submitted' && run.status !== 'paused'
-  const editable = approval.status !== 'approved' && !checking
+  // The run is asking a model for other names. The card locks exactly as it does for a submission, and the draft
+  // corrections stay in `PendingCard`: the component is not unmounted, only made read-only.
+  const working = approval.suggestions.status === 'requested'
+  const editable = approval.status !== 'approved' && !checking && !working
   if (approval.status === 'approved') return <ApprovedSummary approval={approval} />
-  return <PendingCard run={run} approval={approval} editable={editable} checking={checking} onApproved={onApproved} />
+  return <PendingCard run={run} approval={approval} editable={editable} checking={checking} working={working}
+    onApproved={onApproved} />
 }
 
-function PendingCard({ run, approval, editable, checking, onApproved }: {
-  run: Run; approval: RunApproval; editable: boolean; checking: boolean; onApproved: () => void | Promise<void>
+function PendingCard({ run, approval, editable, checking, working, onApproved }: {
+  run: Run; approval: RunApproval; editable: boolean; checking: boolean; working: boolean
+  onApproved: () => void | Promise<void>
 }) {
   const proposal = approval.proposal
   const [ops, setOps] = useState<TermEdit[]>([])
@@ -81,9 +86,14 @@ function PendingCard({ run, approval, editable, checking, onApproved }: {
   })
   const added = (block: ApprovalBlock) => ops.filter(op => op.op === 'add' && op.block === block)
 
+  // The names the model proposed on this card, by phrase. A draft `add` of one of them shows the count that was
+  // already read and the `model` origin the server will derive; the correction itself says nothing about origin.
+  const suggested = new Map(approval.suggestions.terms.map(row => [row.phrase, row]))
+
   const moved = ops.filter(op => op.op === 'move').length
   const removed = ops.filter(op => op.op === 'remove').length
   const addedCount = ops.filter(op => op.op === 'add').length
+  const addedProposals = ops.filter(op => op.op === 'add' && suggested.has(op.phrase)).length
   const criterionEdited = criterion !== null
   const changed = ops.length > 0 || criterionEdited
 
@@ -104,6 +114,18 @@ function PendingCard({ run, approval, editable, checking, onApproved }: {
     setNote('')
     setErrors([])
     setAddError(null)
+  }
+
+  async function ask() {
+    setBusy(true)
+    setErrors([])
+    try {
+      // The route only records the request; the run asks the model and counts every proposal in the worker.
+      await api.suggestTerms(run.id)
+      await onApproved()
+    } catch (e) {
+      setErrors([e instanceof Error ? e.message : String(e)])
+    } finally { setBusy(false) }
   }
 
   async function submit() {
@@ -184,8 +206,11 @@ function PendingCard({ run, approval, editable, checking, onApproved }: {
             <div className="approval-term-main">
               <span className="approval-phrase" dir="auto">{op.phrase}</span>
               <span className="approval-term-facts">
-                <span className="approval-count">{t('will be counted after approval')}</span>
-                <span className="approval-badge">{termOriginText('user')}</span>
+                {/* A proposal the model made was already counted; a phrase the user typed is counted on approval. */}
+                <span className="approval-count">{suggested.has(op.phrase)
+                  ? <Records count={suggested.get(op.phrase)!.phrase_count} />
+                  : t('will be counted after approval')}</span>
+                <span className="approval-badge">{termOriginText(suggested.has(op.phrase) ? 'model' : 'user')}</span>
                 <span className="approval-badge">{blockOriginText('user')}</span>
               </span>
             </div>
@@ -200,6 +225,11 @@ function PendingCard({ run, approval, editable, checking, onApproved }: {
       </div>)}
     </div>
 
+    <SuggestionSection suggestions={approval.suggestions} editable={editable} working={working} busy={busy}
+      drafted={new Set(ops.filter(op => op.op === 'add').map(op => op.phrase))}
+      onAdd={row => setOps([...without(row.phrase), { op: 'add', phrase: row.phrase, block: row.block }])}
+      onUndo={phrase => setOp(phrase, null)} onAsk={() => void ask()} />
+
     <CriterionSection criterion={proposal.criterion} available={proposal.criterion_available}
       sought={proposal.sought_term_in_criterion} draft={criterion} now={criterionNow} editable={editable}
       onEdit={editCriterion} onWriteOwn={() => setCriterion(draftOf(null))} onUndo={() => setCriterion(null)} />
@@ -213,10 +243,13 @@ function PendingCard({ run, approval, editable, checking, onApproved }: {
       <p className="approval-summary" role="status">{changed
         ? [removed && t(removed === 1 ? '{n} term removed' : '{n} terms removed', { n: removed }),
            addedCount && t(addedCount === 1 ? '{n} term added' : '{n} terms added', { n: addedCount }),
+           // Counted apart: how many of the added terms are names the model proposed.
+           addedProposals && t(addedProposals === 1 ? '{n} of them proposed by the model' : '{n} of them proposed by the model', { n: addedProposals }),
            moved && t(moved === 1 ? '{n} term moved' : '{n} terms moved', { n: moved }),
            criterionEdited && t('criterion corrected')].filter(Boolean).join(' · ')
         : t('No change: the proposal is approved as it stands.')}</p>
       {checking && <p className="approval-checking" role="status">{t('Your correction was sent. The terms you added are being counted against the literature; this card opens again if they cannot be searched.')}</p>}
+      {working && <p className="approval-checking" role="status">{t('The model is proposing other names and each one is being counted. Your draft corrections are kept.')}</p>}
       {/* Announced whenever anything was refused, so a fault shown only beside its row is still spoken once. */}
       {errors.length > 0 && <div className="approval-errors" role="alert">
         <p>{t('The correction was not applied. Nothing was sent to a provider.')}</p>
@@ -242,6 +275,84 @@ function TermFacts({ term, block }: { term: ApprovalTerm | null; block: Approval
     {term.and_only && <span className="approval-badge">{t('too frequent alone; only combined')}</span>}
     {term.dropped && <span className="approval-badge is-dropped">{t('dropped: {reason}', { reason: dropReasonText(term.dropped) })}</span>}
   </>
+}
+
+// How many records hold a phrase. A count that was not read says so; it is never shown as 0, which would mean the
+// opposite, and a count is never called a verification: it says the name exists in the literature, nothing more.
+function Records({ count }: { count: number | null }) {
+  return <>{count === null ? t('not counted')
+    : t('{n} records hold this name', { n: count.toLocaleString(uiLocale()) })}</>
+}
+
+// Other names the user asked a model for (D82). Nothing here is in the search: a row enters the draft only when
+// the user adds it, and a row code dropped cannot be added at all.
+function SuggestionSection({ suggestions, editable, working, busy, drafted, onAdd, onUndo, onAsk }: {
+  suggestions: ApprovalSuggestions; editable: boolean; working: boolean; busy: boolean
+  drafted: Set<string>; onAdd: (row: SuggestedTerm) => void; onUndo: (phrase: string) => void; onAsk: () => void
+}) {
+  const open = suggestions.terms.filter(row => !drafted.has(row.phrase))
+  return <div className="approval-block">
+    <div className="approval-block-head">
+      <strong>{t('Other names for these terms')}</strong>
+      <small>{t('A model can propose names the literature uses for the same things. Nothing it proposes is searched unless you add it.')}</small>
+    </div>
+
+    {suggestions.status === 'ready' && <ul className="approval-terms" aria-live="polite">
+      {open.map(row => <li key={`${row.synonym_of}:${row.phrase}`}
+        className={`approval-term${row.dropped ? ' is-dropped' : ''}`}>
+        <div className="approval-term-main">
+          <span className="approval-phrase" dir="auto">{row.phrase}</span>
+          <span className="approval-term-facts">
+            <span className="approval-count">{t('another name for “{anchor}”', { anchor: row.synonym_of })}</span>
+            {!row.dropped && <span className="approval-count"><Records count={row.phrase_count} /></span>}
+            <span className="approval-badge">{termOriginText('model')}</span>
+            <span className="approval-badge">{t('would enter the {block} block', { block: t(blockLabels[row.block]) })}</span>
+            {row.dropped && <span className="approval-badge is-dropped">{t('cannot be added: {reason}', { reason: dropReasonText(row.dropped) })}</span>}
+          </span>
+        </div>
+        {editable && !row.dropped && <div className="approval-term-actions">
+          <Button variant="outline" size="sm" onClick={() => onAdd(row)}><Plus size={13} />{t('Add')}</Button>
+        </div>}
+      </li>)}
+      {suggestions.terms.filter(row => drafted.has(row.phrase)).map(row =>
+        <li key={`drafted:${row.phrase}`} className="approval-term">
+          <div className="approval-term-main">
+            <span className="approval-phrase" dir="auto">{row.phrase}</span>
+            <span className="approval-term-facts">
+              <span className="approval-count">{t('added to the {block} block above', { block: t(blockLabels[row.block]) })}</span>
+              <span className="approval-badge is-changed">{t('added by you')}</span>
+            </span>
+          </div>
+          {editable && <div className="approval-term-actions">
+            <Button variant="ghost" size="sm" onClick={() => onUndo(row.phrase)}><CornerUpLeft size={13} />{t('Undo')}</Button>
+          </div>}
+        </li>)}
+      {!suggestions.terms.length && <li className="approval-term is-empty"><span>{t('The model proposed no new name.')}</span></li>}
+    </ul>}
+
+    {suggestions.carried && suggestions.status === 'ready'
+      && <p className="approval-hint">{t('These are the proposals from when this question was asked before; the model was not asked again.')}</p>}
+
+    {suggestions.status === 'failed' && <>
+      <p className="approval-hint" role="status">{pauseReasonText(suggestions.failure)}</p>
+      {editable && <div className="approval-actions">
+        <Button variant="outline" size="sm" disabled={busy} onClick={onAsk}><RotateCcw size={13} />{t('Try again')}</Button>
+      </div>}
+    </>}
+
+    {/* Only one way in at a time: the retry above belongs to a failed request, the button below to a card that has
+        not asked yet, and a card waiting for the worker offers neither. */}
+    {(suggestions.status === 'requested' || working)
+      && <p className="approval-hint" role="status">{t('The model is proposing other names; each one is being counted.')}</p>}
+    {suggestions.status === 'none' && (suggestions.available
+      ? editable && <div className="approval-actions">
+          <Button variant="outline" size="sm" disabled={busy} onClick={onAsk}>{t('Ask the model for other names')}</Button>
+          <span className="approval-hint">{t('One request per question. Each proposal is counted against the literature, and none enters the search unless you add it.')}</span>
+        </div>
+      : suggestions.unavailable_reason
+        ? <p className="approval-hint">{suggestionBlockerText(suggestions.unavailable_reason)}</p>
+        : null)}
+  </div>
 }
 
 function AddTerm({ block, onAdd, error }: { block: ApprovalBlock; onAdd: (text: string) => void; error: string | null }) {
@@ -385,6 +496,8 @@ function ApprovedSummary({ approval }: { approval: RunApproval }) {
   const fresh = after.filter(row => !beforeAt.has(norm(row.phrase)))
   const movedRows = after.filter(row => beforeAt.has(norm(row.phrase)) && beforeAt.get(norm(row.phrase)) !== row.block)
   const criterionChanged = JSON.stringify(approval.proposal.criterion?.criterion ?? null) !== JSON.stringify(approved?.criterion?.criterion ?? null)
+  // Proposals that are not in the approved vocabulary: the user left them, or code had dropped them.
+  const notAdded = approval.suggestions.terms.filter(row => !afterAt.has(norm(row.phrase)))
 
   return <section className="approval-card is-approved">
     <button type="button" className="approval-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -394,8 +507,18 @@ function ApprovedSummary({ approval }: { approval: RunApproval }) {
     </button>
     {open && <div className="approval-diff">
       <DiffList title={t('Removed terms')} rows={gone} />
-      <DiffList title={t('Added terms')} rows={fresh} />
+      {/* The badge says which of the added terms the model proposed and the user took (D82). */}
+      <DiffList title={t('Added terms')} rows={fresh} origin />
       <DiffList title={t('Moved terms')} rows={movedRows} from={beforeAt} />
+      {notAdded.length > 0 && <div className="approval-diff-group">
+        <strong>{t('Proposed, not added')}</strong>
+        <p className="approval-hint">{t('The model proposed these other names; they were not added, so nothing was searched for them.')}</p>
+        <ul>{notAdded.map(row => <li key={`open:${row.phrase}`}>
+          <span dir="auto">{row.phrase}</span>
+          <small>{row.dropped ? t('dropped: {reason}', { reason: dropReasonText(row.dropped) })
+            : t('another name for “{anchor}”', { anchor: row.synonym_of })}</small>
+        </li>)}</ul>
+      </div>}
       {criterionChanged && <div className="approval-diff-group">
         <strong>{t('Criterion')}</strong>
         <p className="approval-readonly"><small>{t('Proposed')}</small> {approval.proposal.criterion?.criterion ?? t('none')}</p>
@@ -416,7 +539,9 @@ function ApprovedSummary({ approval }: { approval: RunApproval }) {
   </section>
 }
 
-function DiffList({ title, rows, from }: { title: string; rows: Row[]; from?: Map<string, ApprovalBlock> }) {
+function DiffList({ title, rows, from, origin }: {
+  title: string; rows: Row[]; from?: Map<string, ApprovalBlock>; origin?: boolean
+}) {
   if (!rows.length) return null
   return <div className="approval-diff-group">
     <strong>{title}</strong>
@@ -424,6 +549,7 @@ function DiffList({ title, rows, from }: { title: string; rows: Row[]; from?: Ma
       <span dir="auto">{row.phrase}</span>
       <small>{from ? t('{before} → {after}', { before: t(blockLabels[from.get(norm(row.phrase))!]), after: t(blockLabels[row.block]) })
         : t(blockLabels[row.block])}</small>
+      {origin && row.term && <span className="approval-badge">{termOriginText(row.term.origin)}</span>}
     </li>)}</ul>
   </div>
 }

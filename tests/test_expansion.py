@@ -324,3 +324,22 @@ def test_the_yield_rows_are_the_terms_the_frozen_protocol_names(store):
         ("wireless sensor networks", "question", "setting"), ("packet size", "question", "task"),
         ("duty cycle", "data", "task")]
     assert [row["records"] for row in rows] == [1, 0, 1]
+
+
+def test_a_later_run_does_not_learn_from_the_records_an_earlier_expansion_brought_in(store):
+    """A second discovery run of the same scope reads the same candidate pool. Were the expansion arm's own records
+    in it, each run would learn from what the last one added and the search would drift away from the question."""
+    from deixis.workflow.expansion import first_round_records
+    rid = research_with_records(store, [candidate_record(1, "SYNTHETIC first round record")])
+    run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ?", (rid,)).fetchone()["id"]
+    expansion = store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")
+    store.finish_step(expansion["id"], "succeeded", output={
+        "expansion": {"terms": ["SYNTHETIC phrase"]}, "queries": [{"provider_id": "openalex", "query_text": "second round q"}]})
+    step = store.step(run_id, "search:1", "provider_search:openalex")
+    store.record_search(dict(
+        research_id=rid, run_id=run_id, step_id=step["id"], scope_revision=1, provider="openalex",
+        query_text="second round q", request_description="GET test", access_mode="keyless", status="completed",
+        delivery_class=None, result_count=1, provider_total=1, page_limit=25, error_json=None, raw_payload_path=None,
+    ), "openalex", [candidate_record(2, "SYNTHETIC record only the expansion arm found")], None, step["id"], "succeeded",
+        step_output={"status": "completed"})
+    assert [r["title"] for r in first_round_records(store, rid, 1)] == ["SYNTHETIC first round record"]

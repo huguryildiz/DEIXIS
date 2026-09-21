@@ -118,7 +118,7 @@ def count_yields(store: Any, research_id: str, scope_revision: int,
     Inclusion changes whenever the user decides, so this is derived when it is asked for and never stored as a
     research's own number; the expansion step keeps one dated snapshot of the record counts and nothing else.
     """
-    works: dict[str, list[list[str]]] = {}
+    works: dict[str, list[str]] = {}
     included: set[str] = set()
     for row in store.conn.execute(
         "SELECT v.work_id AS work_id, v.title AS title, v.author_keywords_json AS keywords, s.state AS state,"
@@ -129,14 +129,16 @@ def count_yields(store: Any, research_id: str, scope_revision: int,
     ):
         text = " ".join(filter(None, [row["title"], row["abstract"], *json.loads(row["keywords"] or "[]")]))
         # A work is one row here however many versions of it were found, as it is one row in the candidate list.
-        works.setdefault(row["work_id"], []).append(words(text))
+        works.setdefault(row["work_id"], []).append(f" {' '.join(words(text))} ")
         if row["state"] == "included":
             included.add(row["work_id"])
     yields = []
     for row in rows:
-        form = words(row["form"])
+        # Matched at word boundaries on the padded text: one substring search a version, where comparing token
+        # windows took over a second for a few thousand candidates on the thread the API also answers from.
+        form = f" {' '.join(words(row['form']))} "
         holding = {work for work, versions in works.items()
-                   if any(_holds(tokens, form) for tokens in versions)} if form else set()
+                   if any(form in text for text in versions)} if form.strip() else set()
         yields.append(row | {"records": len(holding), "included": len(holding & included)})
     return yields
 
@@ -152,18 +154,27 @@ def term_yields(store: Any, research_id: str, scope_revision: int) -> list[dict[
 
 
 def first_round_records(store: Any, research_id: str, scope_revision: int) -> list[dict[str, Any]]:
-    """The work heads among this scope revision's candidates, with the text the candidate phrases come from."""
+    """The work heads among this scope revision's candidates, with the text the candidate phrases come from.
+
+    A record that only an expansion arm found is left out. A later discovery run of the same scope reads the same
+    pool, and were those records in it, each run would learn from what the last one added and the search would
+    drift away from the question. A record the question's own query also found keeps the search run that found it
+    first, so it stays.
+    """
     heads = set(store.work_heads(research_id).values())
+    second_round = {(query["provider_id"], query["query_text"])
+                    for row in store.conn.execute(
+                        "SELECT s.output_json AS output FROM run_steps s JOIN runs r ON r.id = s.run_id"
+                        " WHERE r.research_id = ? AND s.operation_key = 'vocabulary_expansion' AND s.status = 'succeeded'",
+                        (research_id,))
+                    for query in (json.loads(row["output"] or "{}").get("queries") or [])}
     return [{"work_id": row["work_id"], "title": row["title"],
              "author_keywords": json.loads(row["keywords"] or "[]")}
             for row in store.conn.execute(
                 "SELECT c.source_version_id AS svid, v.work_id AS work_id, v.title AS title,"
-                " v.author_keywords_json AS keywords FROM candidates c"
-                " JOIN source_versions v ON v.id = c.source_version_id"
+                " v.author_keywords_json AS keywords, sr.provider AS provider, sr.query_text AS query_text"
+                " FROM candidates c JOIN source_versions v ON v.id = c.source_version_id"
+                " LEFT JOIN search_runs sr ON sr.id = c.search_run_id"
                 " WHERE c.research_id = ? AND c.scope_revision = ? ORDER BY c.rank, c.created_at",
                 (research_id, scope_revision))
-            if row["svid"] in heads]
-
-
-def _holds(tokens: list[str], form: list[str]) -> bool:
-    return any(tokens[start:start + len(form)] == form for start in range(len(tokens) - len(form) + 1))
+            if row["svid"] in heads and (row["provider"], row["query_text"]) not in second_round]

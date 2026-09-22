@@ -1714,8 +1714,9 @@ class ResearchFlow:
         is written on the run (`_checkpoint`) only once the works in flight have finished. Each work writes its own
         decision as it ends, so a run that already read as paused while works were still writing would let the
         user revise the question under decisions that are still arriving. A pause therefore reads as paused when
-        nothing is left in flight, as it did when the works were fetched one by one. A work's own checkpoint
-        (`_fetch_work_text`) still stops that work where it stands, and the others finish.
+        nothing is left in flight, as it did when the works were fetched one by one. A work's own stop check
+        (`_stop_work_if_requested` in `_fetch_work_text`) stops that work where it stands without writing the
+        pause either, and the others finish.
         """
         run_id, revision = run["id"], run["scope_revision"]
         works = iter(heads)
@@ -1752,6 +1753,12 @@ class ResearchFlow:
         run = self.store.run(run_id)
         return (run["status"] in ("pause_requested", "cancelled")
                 or self.store.research(run["research_id"])["current_scope_revision"] != revision)
+
+    def _stop_work_if_requested(self, run: dict[str, Any]) -> None:
+        """Stop this work where it stands when a stop is requested, leaving the pause for `_fetch_works` to write once
+        the works in flight beside it have finished (the same stop `_checkpoint` writes; slice 13e review)."""
+        if self._stop_requested(run["id"], run["scope_revision"]):
+            raise RunStopped
 
     def _fulltext_plan(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
         """Freeze which works this run fetches, and write the code of the works whose text is already here.
@@ -1873,7 +1880,7 @@ class ResearchFlow:
         else:
             for other in self.store.work_versions(rid, head):
                 if not self.store.has_pdf_text(other):
-                    self._checkpoint(run_id)
+                    self._stop_work_if_requested(run)
                     await self._acquire_pdf(run, other, 0, None)
                 if self.store.has_pdf_text(other):
                     route = "work_version"
@@ -1886,7 +1893,7 @@ class ResearchFlow:
         # earlier run is asked again here, or the work would be planned by every later run and settled by none.
         if route is None and normalize_doi(source["doi"]) and (
                 not self.store.pdf_discoveries(rid, head) or self._unanswered_lookups(rid, head)):
-            self._checkpoint(run_id)
+            self._stop_work_if_requested(run)
             found = await self._find_other_copy(run, source, other_versions=True)
             opened = found.get("lookup_version_id")
             if opened and self.store.has_pdf_text(opened):
@@ -2969,9 +2976,12 @@ class ResearchFlow:
                 self.store.complete_model_step(session, recorded, step["id"], final, error_code=f"model_{result.status}",
                                                error=result.error, delivery_class=result.delivery_class)
                 self._checkpoint(run_id)
-                if task_type in TIMEOUT_RETRIED_TASKS and not timeout_resent and turn_timed_out(result):
+                if (task_type in TIMEOUT_RETRIED_TASKS and not timeout_resent and turn_timed_out(result)
+                        and self.store.run(run_id)["usage"].get("model_calls", 0) < run["budget"]["max_model_calls"]):
                     # The step stays closed as `outcome_unknown` with this attempt on it, and is opened again for
-                    # one more send of the same input; a second timeout pauses the run as the first used to.
+                    # one more send of the same input; a second timeout pauses the run as the first used to. With
+                    # no call left in the budget the step is not opened again: the resend would only be closed as
+                    # `budget_exhausted`, hiding that a call was sent whose outcome is unknown.
                     timeout_resent = True
                     self.store.start_step(step["id"])
                     continue

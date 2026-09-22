@@ -830,3 +830,24 @@ def test_a_grounded_answer_cut_off_once_pauses_the_run_as_before(tmp_path, monke
         client.__exit__(None, None, None)
     assert (answer["status"], answer["pause_reason"]) == ("paused", "model_call_failed")
     assert len(calls) == 1
+
+
+def test_a_reading_call_cut_off_with_no_call_left_in_the_budget_is_not_sent_again(tmp_path, monkeypatch):
+    """Budget 2 for one work: run 1 and run 2 use it up, run 2 times out. The step stays `outcome_unknown` and the run
+    pauses as it did before slice 13e; it is not reopened only to be closed as `budget_exhausted`."""
+    monkeypatch.setattr(adjudication, "read_budget", budget_of(2, 1))
+    works, fetcher = papers(1)
+    adapter = FakeAdapter(valid_response, fail=turn_timeout("fulltext_adjudication", 1))
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        step = app.state.store.conn.execute(
+            "SELECT status, error_code, attempt FROM run_steps WHERE run_id = ? AND kind = 'model:fulltext_adjudication'"
+            " AND operation_key LIKE '%:2'", (reading["id"],)).fetchone()
+    finally:
+        client.__exit__(None, None, None)
+    assert (reading["status"], reading["pause_reason"]) == ("paused", "model_call_failed")
+    assert (step["status"], step["error_code"], step["attempt"]) == ("outcome_unknown", "model_failed", 1)
+    assert len(adj_calls(adapter, reading["id"])) == 2

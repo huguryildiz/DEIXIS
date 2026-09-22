@@ -1085,6 +1085,9 @@ class ResearchFlow:
         stale_key = decisions.staleness_key(rid)
         written: dict[str, int] = {}
         touched: set[str] = set()
+        # Which work each record belongs to, read in one statement: asking per record was one query per write
+        # and every one of them on the thread the API answers from (slice 13d).
+        work_of = self.store.work_ids([svid for svid, _ in writes])
         for svid, code in writes:
             held = decisions.current(rid, svid, "abstract")
             if held is not None and held["decided_by"] == "human":
@@ -1096,9 +1099,8 @@ class ResearchFlow:
             except HumanDecisionStands:
                 continue
             written[code] = written.get(code, 0) + 1
-            touched.add(self.store.source(svid)["work_id"])
-        for work_id in sorted(touched):
-            decisions.derive_selection(rid, work_id)
+            touched.add(work_of[svid])
+        decisions.derive_selections(rid, sorted(touched))
         return dict(sorted(written.items()))
 
     def _close_abstract_batch(self, run: dict[str, Any], number: int, rows: list[dict[str, Any]],

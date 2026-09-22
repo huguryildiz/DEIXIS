@@ -564,3 +564,142 @@ def test_the_run_budget_holds_the_abstract_stage_s_calls_on_top_of_the_preset(tm
     preset = TEST_EFFORT_BUDGETS[effort].max_model_calls
     # Slice 08c adds the one term-suggestion call the user may ask for; the preset itself is still untouched.
     assert run["budget"]["max_model_calls"] == preset + CRITERION_CALLS + SUGGESTION_CALLS + calls
+
+
+# ---- slice 13d: the reads behind the stage are batched and the rows it writes do not move ---------
+
+ARTIFACT_DOI = "10.5281/zenodo.900001"
+SURVEY_TITLE = "SYNTHETIC survey of irrigation scheduling in greenhouse tomato production"
+ARTIFACT_TITLE = "SYNTHETIC dataset for irrigation scheduling in greenhouse tomato production"
+REVISED = "How does irrigation scheduling affect marketable yield in vertical farms?"
+
+
+def names_of(store, rid):
+    """A stable name for every record of the research: its OpenAlex identifier, and for a version opened for a
+    lookup, the identifier of its work's record with the version label."""
+    openalex = records_of(store, rid)
+    of_work = {store.source(svid)["work_id"]: key for key, svid in openalex.items()}
+    by_svid = {svid: key for key, svid in openalex.items()}
+    return {row["id"]: by_svid.get(row["id"], f"{of_work.get(row['work_id'], '?')}:{row['version_label']}")
+            for row in store.conn.execute(
+                "SELECT v.id, v.work_id, v.version_label FROM corpus_memberships m"
+                " JOIN source_versions v ON v.id = m.source_version_id WHERE m.research_id = ?", (rid,))}
+
+
+def stage_snapshot(store, rid, run_id):
+    """The stage's output and every decision and selection row the research holds, by record name.
+
+    Identifiers and timestamps are left out: they differ between two runs of the same fixture anyway. What must
+    not move is which record carries which decision and selection, under which question revision, and which of
+    them is closed. The rows are sorted: the order two batches of the abstract stage close in is the order their
+    model calls came back in, which is not this stage's to decide (D81).
+    """
+
+    def ordered(rows):
+        return sorted(rows, key=lambda row: tuple("" if value is None else str(value) for value in row))
+
+    names = names_of(store, rid)
+    decisions = [(names.get(row["source_version_id"]), row["stage"], row["outcome"], row["reason_code"],
+                  row["decided_by"], row["scope_revision"], row["superseded_at"] is not None)
+                 for row in store.conn.execute(
+                     "SELECT * FROM stage_decisions WHERE research_id = ? ORDER BY created_at, rowid", (rid,))]
+    selections = [(names.get(row["source_version_id"]), row["state"], row["origin"], row["version"])
+                  for row in store.conn.execute(
+                      "SELECT * FROM selections WHERE research_id = ? ORDER BY source_version_id", (rid,))]
+    history = [(names.get(row["source_version_id"]), row["old_state"], row["new_state"], row["origin"], row["reason"])
+               for row in store.conn.execute(
+                   "SELECT * FROM selection_history WHERE research_id = ? ORDER BY id", (rid,))]
+    output = step_output(store, run_id, "abstract_stage")
+    output["batches"] = [[names.get(svid) for svid in batch] for batch in output["batches"]]
+    return {"output": output,
+            "decisions": ordered(decisions), "selections": ordered(selections), "history": ordered(history),
+            "selection_revision": store.selection_revision(rid)}
+
+
+# What the stage wrote before its reads were batched, captured on the unchanged code (slice 13d, Task 2).
+STAGE_ROWS_BEFORE_13D = {
+    "output": {"decisions": {"artifact_of_paper": 1, "both_blocks_missing": 1}, "limit": 40, "batch": 20, "runs": 2,
+               "batches": [["W1", "W2"]], "not_read": 0, "works_needing_model": 2},
+    "decisions": [
+        ("W1", "abstract", "candidate", "blocks_in_title", "code", 1, True),
+        ("W1", "abstract", "candidate", "runs_agree_candidate", "model_agreement", 2, False),
+        ("W2", "abstract", "candidate", "runs_agree_candidate", "model_agreement", 1, True),
+        ("W2", "abstract", "candidate", "runs_agree_candidate", "model_agreement", 2, False),
+        ("W3", "abstract", "out_of_scope", "both_blocks_missing", "code", 1, True),
+        ("W3", "abstract", "out_of_scope", "both_blocks_missing", "code", 2, False),
+        ("W4", "abstract", "unresolved", "survey_title_word", "code", 1, False),
+        ("W5", "abstract", "candidate", "blocks_in_title", "code", 1, True),
+        ("W5", "abstract", "out_of_scope", "artifact_of_paper", "code", 2, False),
+        ("W6", "abstract", "candidate", "runs_agree_candidate", "model_agreement", 1, False),
+        ("W6", "fulltext", "include", "human_include", "human", 1, False),
+    ],
+    "selections": [
+        ("W1", "pending", "code_rule", 2), ("W2", "pending", "code_rule", 2),
+        ("W2:acceptedVersion", "pending", "default", 1), ("W3", "excluded", "code_rule", 2),
+        ("W4", "pending", "default", 1), ("W5", "excluded", "code_rule", 3), ("W6", "included", "user", 3),
+    ],
+    "history": [
+        ("W1", None, "pending", "default", None),
+        ("W1", "pending", "pending", "code_rule", "blocks_in_title"),
+        ("W2", None, "pending", "default", None),
+        ("W2", "pending", "pending", "code_rule", "runs_agree_candidate"),
+        ("W2:acceptedVersion", None, "pending", "default", None),
+        ("W3", None, "pending", "default", None),
+        ("W3", "pending", "excluded", "code_rule", "both_blocks_missing"),
+        ("W4", None, "pending", "default", None),
+        ("W5", None, "pending", "default", None),
+        ("W5", "pending", "excluded", "code_rule", "artifact_of_paper"),
+        ("W5", "pending", "pending", "code_rule", "blocks_in_title"),
+        ("W6", None, "pending", "default", None),
+        ("W6", "pending", "included", "user", "SYNTHETIC: the user's own call"),
+        ("W6", "pending", "pending", "code_rule", "runs_agree_candidate"),
+    ],
+    "selection_revision": 1,
+}
+
+
+def test_the_stage_writes_the_same_rows_when_its_reads_are_batched(tmp_path, monkeypatch):
+    """Slice 13d: the stage reads the research in a few statements instead of a few per record, and writes its
+    decisions and selections in one transaction. Nothing it writes may move.
+
+    The pool holds the cases whose reads the batch has to keep apart: works with several versions, an artifact
+    attached to a paper by an open link, a survey title word, a record the user decided, and decisions a revised
+    question left stale. SYNTHETIC records from two fields; passing shows the rows are the ones the unbatched
+    stage wrote, not that the screening is right.
+    """
+    from deixis.storage import db as storage_db
+
+    pool = Pool([work(1, ON_TOPIC, ON_ABSTRACT), work(2), work(3, OFF_TOPIC, OFF_ABSTRACT),
+                 work(4, SURVEY_TITLE, ON_ABSTRACT), work(5, ARTIFACT_TITLE, ON_ABSTRACT, doi=ARTIFACT_DOI),
+                 work(6)])
+    app = app_for(tmp_path, monkeypatch, pool)
+    client = client_of(app)
+    try:
+        rid, first_run, view, run = discover(client)
+        store = app.state.store
+        svids = records_of(store, rid)
+        # A second version of one work, so the stage reads a work with more than one record.
+        store.open_lookup_version(rid, svids["W2"], "acceptedVersion", None)
+        # The artifact is this paper's data, by a link nobody undid.
+        with storage_db.transaction(store.conn):
+            store.conn.execute(
+                "INSERT INTO record_links (id, source_version_id, other_source_version_id, link_kind, rule, source,"
+                " author_agreement, merged, created_at) VALUES ('lnk_synthetic', ?, ?, 'artifact_of', 'title_prefix',"
+                " 'text', 'agree', 0, '2026-09-22T00:00:00.000+00:00')",
+                tuple(sorted((svids["W5"], svids["W1"]))))
+        # A decision only the user may take back, and a selection the user set: neither is written over.
+        DecisionStore(store).record(rid, svids["W6"], "human_include")
+        source = next(s for s in view["sources"] if s["source_version_id"] == svids["W6"])
+        client.patch(f"/api/researches/{rid}/selections/{svids['W6']}",
+                     json={"state": "included", "expected_version": source["selection"]["version"],
+                           "reason": "SYNTHETIC: the user's own call"})
+        # A revised question: every decision made under the first one is now stale and is written again.
+        client.post(f"/api/researches/{rid}/scope",
+                    json={"question": REVISED, "expected_version": client.get(f"/api/researches/{rid}")
+                          .json()["research"]["version"]})
+        second_run, view, run = rerun(client, rid)
+        snapshot = stage_snapshot(store, rid, second_run)
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed"
+    assert snapshot == STAGE_ROWS_BEFORE_13D

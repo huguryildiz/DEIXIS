@@ -1408,6 +1408,15 @@ class Store:
         row = self.conn.execute("SELECT source_key FROM works WHERE id = ?", (work_id,)).fetchone()
         return row[0] if row else None
 
+    def work_ids(self, svids: list[str]) -> dict[str, str]:
+        """The work each of these records belongs to, a few hundred at a statement rather than one each."""
+        found: dict[str, str] = {}
+        for start in range(0, len(svids), 500):
+            chunk = svids[start:start + 500]
+            found.update({row[0]: row[1] for row in self.conn.execute(
+                f"SELECT id, work_id FROM source_versions WHERE id IN ({', '.join('?' * len(chunk))})", chunk)})
+        return found
+
     def source(self, svid: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT * FROM source_versions WHERE id = ?", (svid,)).fetchone()
         if row is None:

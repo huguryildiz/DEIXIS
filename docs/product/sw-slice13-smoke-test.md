@@ -1,6 +1,6 @@
 # SW dilim 13 — Uçtan uca duman testi: koşu planı
 
-**Tarih:** 22 Eylül 2026. **Durum:** yazıldı, koşulmadı. **Ana dosya:** [sw-status.md](sw-status.md). **Ana plan:** [sw-implementation-plan.md](sw-implementation-plan.md) (§2 kuralları geçerlidir; kural 7'nin ikinci istisnası bu dilimdir). **Önkoşul:** 01–12 (hepsi kapandı). **Tür:** Duman. **Koşan:** Fable · high. **İnceleme:** yok; sonuç kaydı sahibe gider.
+**Tarih:** 22 Eylül 2026. **Durum:** koşuldu (dört koşu; sonuç `.local/sw-smoke-2026-09-22/result.md` ve `result-run4.md`). **Ana dosya:** [sw-status.md](sw-status.md). **Ana plan:** [sw-implementation-plan.md](sw-implementation-plan.md) (§2 kuralları geçerlidir; kural 7'nin ikinci istisnası bu dilimdir). **Önkoşul:** 01–12 (hepsi kapandı). **Tür:** Duman. **Koşan:** Fable · high. **İnceleme:** yok; sonuç kaydı sahibe gider.
 
 **Sahibin kararları (22 Eylül 2026, plan sohbeti; sahip sorulan üç seçeneğe cevap vermedi, plan önerilen varsayılanları alır ve sahip başlamadan değiştirebilir):**
 

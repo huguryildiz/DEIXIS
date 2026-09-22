@@ -413,6 +413,9 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
             Issue("schema_invalid", "/" + "/".join(map(str, err.absolute_path)), err.message)
         )
     if report.issues:
+        # A step gets one repair, so the first report names what the rules would reject as well as what the schema
+        # does; a draft whose shape the rules cannot read is reported on its schema errors alone (slice 13a, run 5).
+        _semantic_checks_best_effort(step_input, data, report)
         return report
 
     outputs = TASK_OUTPUTS[task_type]
@@ -433,7 +436,40 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
             report.issues.append(
                 Issue("envelope_mismatch", f"/{name}", f"expected {step_input[name]!r}, got {result[name]!r}")
             )
+    _semantic_checks(step_input, output_type, result, report)
+    return report
 
+
+def _semantic_checks_best_effort(step_input: dict[str, Any], data: Any, report: ValidationReport) -> None:
+    """The rule checks on a draft the schema already rejected: what they can read, they report; what they cannot
+    (a missing field, a wrong type) ends the pass without a trace, because the schema issue already says it."""
+    if not isinstance(data, dict):
+        return
+    outputs = TASK_OUTPUTS[step_input["task_type"]]
+    if len(outputs) == 1:
+        output_type, result = outputs[0], data
+    else:
+        present = [o for o in outputs if isinstance(data.get(WRAPPER_KEYS[o]), dict)]
+        if len(present) != 1:
+            return
+        output_type, result = present[0], data[WRAPPER_KEYS[present[0]]]
+    probe = ValidationReport()
+    try:
+        _semantic_checks(step_input, output_type, result, probe)
+    except (KeyError, TypeError, AttributeError, IndexError, ValueError):
+        return
+    # Only breaches on another branch than a schema error: a rule that trips over the same field the schema already
+    # rejected (a value too long, a list too short) would say the same thing twice.
+    flagged = [i.path for i in report.issues]
+
+    def elsewhere(path: str) -> bool:
+        return path != "$" and not any(path == f or path.startswith(f + "/") or f.startswith(path + "/") for f in flagged)
+
+    report.issues.extend(i for i in probe.issues if elsewhere(i.path))
+    report.warnings.extend(w for w in probe.warnings if elsewhere(w.path))
+
+
+def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[str, Any], report: ValidationReport) -> None:
     allow = {k: set(v) for k, v in step_input["allowlist"].items()}
     if output_type == "SearchPlan":
         _check_search_plan(step_input, result, report)
@@ -471,7 +507,6 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         _check_report_phrase_repair(step_input, result, report)
     elif output_type == "ReportReview":
         _check_report_review(step_input, result, report)
-    return report
 
 
 @cache

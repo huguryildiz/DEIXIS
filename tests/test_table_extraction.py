@@ -141,7 +141,9 @@ def test_a_model_cannot_write_a_person_or_system_state(state):
     draft = cell_draft(si)
     draft["cells"][3]["state"] = state
     report = contracts.validate_model_output(si, draft)
-    assert report.codes() == ["schema_invalid"] and report.issues[0].path == "/cells/3/state"
+    # The value rule may trip on the same cell and is then reported with the schema error, so one repair sees both.
+    assert report.issues[0].code == "schema_invalid" and report.issues[0].path == "/cells/3/state"
+    assert set(report.codes()) <= {"schema_invalid", "invalid_cell_value"}
 
 
 def test_cell_steps_show_short_handles_that_map_back_to_records():

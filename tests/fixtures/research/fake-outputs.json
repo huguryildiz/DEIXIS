@@ -305,6 +305,7 @@
    "step_input": "A_answer",
    "expect_ok": false,
    "expect_codes": [
+    "missing_citation_anchor",
     "schema_invalid"
    ],
    "output": {
@@ -337,6 +338,7 @@
    "step_input": "A_answer",
    "expect_ok": false,
    "expect_codes": [
+    "missing_citation_anchor",
     "schema_invalid"
    ],
    "output": {

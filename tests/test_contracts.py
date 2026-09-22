@@ -234,6 +234,24 @@ def test_answer_title_has_a_strict_fifteen_word_ceiling():
     assert contracts.validate_model_output(STEP_INPUTS["A_answer"], draft).ok
 
 
+def test_a_schema_error_does_not_hide_the_semantic_issues_a_repair_must_also_fix():
+    """One repair is all a step gets, so the first report must name every issue: the schema error and the rule
+    breaches behind it. Slice 13a's fifth smoke run lost its answer to a section too long, then a title too long."""
+    draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    draft["claims"][0]["section"] = "s" * 121
+    draft["title"] = " ".join(f"word{n}" for n in range(16))
+    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], draft)
+    assert not report.ok
+    assert "schema_invalid" in report.codes() and "answer_title_too_long" in report.codes()
+    assert [i.code for i in report.issues][0] == "schema_invalid"  # the shape first, then the rules
+
+
+def test_semantic_checks_on_a_schema_invalid_draft_never_raise():
+    draft = {"title": " ".join(f"word{n}" for n in range(16))}  # nothing else the answer checks expect
+    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], draft)
+    assert not report.ok and "schema_invalid" in report.codes()
+
+
 def test_research_title_rejects_long_titles_and_verbatim_question():
     si = {"question": {"text": "What is the effect of X on Y?"}}
     report = contracts.ValidationReport()

@@ -112,3 +112,30 @@ def test_a_stored_query_for_a_connector_that_is_no_longer_searched_is_skipped_an
     assert "crossref" not in [s["provider"] for s in view["search_runs"]]
     assert [(s["provider"], s["status"]) for s in view["search_runs"]][-2:] == [
         ("openalex", "completed"), ("biorxiv", "completed")]
+
+
+def test_a_crossref_search_step_that_already_failed_keeps_its_failure_when_the_run_is_resumed(tmp_path, monkeypatch):
+    """The skip closes an open step only: a search that ended before the connector's role changed is history, and a
+    resumed run does not rewrite it as cancelled (slice 13b review)."""
+    down = {"openalex": True}
+
+    def handler(request):
+        return httpx.Response(503) if down["openalex"] else routed(request)
+
+    def store_a_failed_crossref_step(store, run_id):
+        step = store.step(run_id, "search_plan", "model:search_plan")
+        step["output"]["queries"] = step["output"]["queries"] + [
+            {"provider_id": "crossref", "query_text": "diffusion channel scheduling", "rationale": "SYNTHETIC"}]
+        store.set_step_output(step["id"], step["output"])
+        index = len(step["output"]["queries"]) - 1
+        failed = store.step(run_id, f"search:{index}", "provider_search:crossref")
+        store.start_step(failed["id"])
+        store.finish_step(failed["id"], "failed", error_code="http_error", error={"http_status": 503})
+        down["openalex"] = False
+
+    view, run = discover(tmp_path, monkeypatch, handler, FakeAdapter(two_provider_plan),
+                         before_resume=store_a_failed_crossref_step)
+    assert run["status"] == "completed", run
+    crossref = [(s["status"], s["error_code"]) for s in run["steps"] if s["kind"] == "provider_search:crossref"]
+    assert crossref == [("failed", "http_error")]
+    assert "crossref" not in [s["provider"] for s in view["search_runs"]]

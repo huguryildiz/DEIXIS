@@ -9,7 +9,7 @@ export type Scope = {
   seed_mode: 'question_only' | 'uploaded_seed'; seed_status: 'question_only' | 'missing' | 'ready' | 'stale'
   seed: { source_version_id: string; asset_id: string; asset_sha256: string; extraction_version: string
     title: string; title_basis: string; page_count: number | null; text_pages: number; passage_count: number } | null
-  providers: string[]; effort: Effort; model_connection: string; requested_model: string | null; reasoning_effort: string | null
+  providers: string[]; search_providers: string[]; effort: Effort; model_connection: string; requested_model: string | null; reasoning_effort: string | null
   // null literature model: the research model runs the search steps (researches created before model roles).
   literature_model: string | null; literature_reasoning_effort: string | null
   review_mode: ReviewMode; review_model: string | null; review_reasoning_effort: string | null

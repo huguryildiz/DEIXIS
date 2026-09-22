@@ -19,6 +19,7 @@ from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTR
 from deixis.domain.survey import THRESHOLDS as SURVEY_THRESHOLDS
 from deixis.domain.survey_words import ABSTRACT_SELF_DESCRIPTIONS as SURVEY_PATTERNS
 from deixis.providers import query_compiler
+from deixis.providers.registry import CONNECTORS
 
 PROTOCOL_SCHEMA = "deixis.protocol.v1"
 # What the criterion body says about where it came from. It is kept out of `decisions.CRITERION_FIELDS` on purpose:
@@ -114,7 +115,12 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "compiled_queries": [{"provider_id": q["provider_id"], "query_text": q["query_text"],
                               **({"results": q["results"]} if q.get("results") is not None else {})}
                              for q in queries],
-        "providers": sorted(scope["providers"]),
+        # The databases searched, which is what the record reports (PRISMA-S item 1); a connector kept in scope only
+        # to verify a known DOI is named apart so that it is not read as a searched source (D87). A `legacy` body
+        # keeps the list it always had, digest and all.
+        **({"providers": sorted(p for p in scope["providers"] if CONNECTORS[p].searchable),
+            "verification_providers": sorted(p for p in scope["providers"] if not CONNECTORS[p].searchable)}
+           if scope.get("search_workflow") == "sw" else {"providers": sorted(scope["providers"])}),
         "arms": ["keyword_search", "data_expansion"] if expansion else ["keyword_search"],
         # How this research decides a record describes itself as a survey. A `legacy` body carries none of it.
         **({"survey": {"title_words": list(kept_words), "dropped_title_words": list(dropped_words),

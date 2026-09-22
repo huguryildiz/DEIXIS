@@ -105,7 +105,9 @@ def test_build_protocol_is_repeatable_and_reads_its_thresholds_from_their_defini
     assert protocol.build_protocol(scope | {"search_workflow": "legacy"}, {"max_candidates": 20}, plan, queries,
                                    "pkg_hash", settings)["thresholds"]["formulation_score_threshold"] == flow.FORMULATION_SCORE_THRESHOLD
     assert body["thresholds"]["criterion_passages"] == criterion_passages.THRESHOLDS
-    assert body["providers"] == ["crossref", "openalex"] and body["arms"] == ["keyword_search"]
+    # Crossref is in the scope for DOI verification and is not a searched database (D87, slice 13b review).
+    assert body["providers"] == ["openalex"] and body["verification_providers"] == ["crossref"]
+    assert body["arms"] == ["keyword_search"]
     assert body["compiled_queries"] == [{"provider_id": "openalex", "query_text": "diffusion channel", "results": 25}]
     assert body["vocabulary"] == plan["concepts"] and body["inclusion_criterion"] is None
     assert protocol.build_protocol(scope, {}, None, [], "pkg_hash", settings)["vocabulary"] is None
@@ -159,9 +161,11 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
                                   "quote_min_chars": FULLTEXT_QUOTE_MIN_CHARS}}
     # The survey word lists (slice 05) and the ranking signals (slice 07) are the only other sw-only fields of the
     # body; a legacy body carries no survey block and an empty signal list, exactly as it did before slice 07.
+    # `verification_providers` (D87, slice 13b review) is sw-only too: a legacy body keeps its digest.
     rest = lambda body: {k: v for k, v in body.items()
-                         if k not in ("thresholds", "search_workflow", "survey", "signals")}
+                         if k not in ("thresholds", "search_workflow", "survey", "signals", "verification_providers")}
     assert "survey" not in legacy and legacy["signals"] == [] and rest(sw) == rest(legacy)
+    assert "verification_providers" not in legacy and sw["verification_providers"] == []
     assert [signal["signal"] for signal in sw["signals"]] == list(RANKING_SIGNALS)
     assert sw["signals"][-1] == {"signal": "embedding", "model": None, "rescue": True}
 

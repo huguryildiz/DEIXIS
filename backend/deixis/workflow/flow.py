@@ -1185,7 +1185,7 @@ class ResearchFlow:
         if connector.searchable:
             return False
         step = self.store.step(run["id"], f"search:{index}", f"provider_search:{connector.provider_id}")
-        if step["status"] not in ("succeeded", "cancelled"):
+        if step["status"] in ("pending", "running"):  # a step that already ended keeps its ending on a resumed run
             self.store.finish_step(step["id"], "cancelled", output={"status": "skipped", "result_count": 0},
                                    error_code="provider_not_searchable")
         return True

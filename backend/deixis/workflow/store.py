@@ -1686,6 +1686,34 @@ class Store:
             return head
         return next((svid for svid in self.work_versions(research_id, head) if self.has_pdf_text(svid)), head)
 
+    def answer_versions(self, research_id: str) -> dict[str, str]:
+        """`answer_version` for every head of the research at once, in three statements rather than three per work.
+
+        The research view calls this: one query per work blocked the event loop for 30 s on a 7,000-work research
+        (slice 13's smoke run), long enough for a model connection's health check to time out and pause the run.
+        Same rule and same order as `answer_version` and `work_versions` (D48).
+        """
+        heads = self.work_heads(research_id)
+        if not heads:
+            return {}
+        with_text = {r[0] for r in self.conn.execute(
+            "SELECT DISTINCT p.source_version_id FROM passages p JOIN corpus_memberships m ON m.source_version_id = p.source_version_id"
+            " WHERE m.research_id = ? AND m.removed_at IS NULL AND p.kind = 'pdf_page' AND EXISTS"
+            " (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL AND a.extraction_version IS p.extraction_version)",
+            (research_id,)
+        )}
+        versions: dict[str, list[str]] = {}
+        for row in self.conn.execute(
+            "SELECT v.id, v.work_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+            " WHERE m.research_id = ? AND m.removed_at IS NULL"
+            " ORDER BY EXISTS (SELECT 1 FROM source_assets a WHERE a.source_version_id = v.id AND a.removed_at IS NULL) DESC, m.created_at",
+            (research_id,)
+        ):
+            versions.setdefault(row["work_id"], []).append(row["id"])
+        return {head: head if head in with_text
+                else next((svid for svid in versions.get(wid, []) if svid != head and svid in with_text), head)
+                for wid, head in heads.items()}
+
     def has_pdf_text(self, svid: str) -> bool:
         return any(p["kind"] == "pdf_page" for p in self.passages_for(svid))
 

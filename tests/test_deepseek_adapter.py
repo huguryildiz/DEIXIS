@@ -49,3 +49,29 @@ def test_run_step_sends_json_mode_and_requested_effort(monkeypatch):
     body = sent[0]
     assert body["model"] == "deepseek-v4-pro" and body["reasoning_effort"] == "max"
     assert body["response_format"] == {"type": "json_object"} and "tools" not in body
+
+
+def test_health_tries_again_once_after_a_transport_error(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if len(calls) == 1:
+            raise httpx.ConnectTimeout("timed out", request=request)
+        return httpx.Response(200, json={"object": "list", "data": [{"id": "deepseek-v4-flash"}]})
+
+    status = asyncio.run(adapter(handler).health(refresh=True))
+    assert status["ready"] is True and calls == ["/models", "/models"]
+
+
+def test_health_reports_the_second_transport_error(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        raise httpx.ConnectTimeout("timed out", request=request)
+
+    status = asyncio.run(adapter(handler).health(refresh=True))
+    assert status["ready"] is False and status["reason"] == "DeepSeek API unreachable: ConnectTimeout" and len(calls) == 2

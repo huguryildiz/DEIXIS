@@ -361,12 +361,13 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     # A work has one record, its head: a published record, else the first (D46, D48). Another candidate of the same work
     # (a preprint screened before its published record joined the work) is shown as another version of the head.
     heads = store.work_heads(research_id)
+    reads_version = store.answer_versions(research_id)
     for s in sources:
         if s["version_role"] == "record" and heads.get(s["work_id"]) != s["source_version_id"]:
             s["version_role"] = "other_version"
         # The version whose text an answer reads when it is not the head itself (D48).
         s["answer_reads_version_id"] = None
-        if s["version_role"] == "record" and (reads := store.answer_version(research_id, s["source_version_id"])) != s["source_version_id"]:
+        if s["version_role"] == "record" and (reads := reads_version.get(s["source_version_id"], s["source_version_id"])) != s["source_version_id"]:
             s["answer_reads_version_id"] = reads
 
     # Other versions follow the record of their work and share its question revision.

@@ -84,3 +84,18 @@ def test_truncated_rejected_and_lost_answers_are_not_completed(monkeypatch):
 
     lost = asyncio.run(adapter(timeout).run_step("b", "d", "m", {}, "gemini-3.8-flash"))
     assert (lost.status, lost.delivery_class) == ("failed", "after_send_unknown")
+
+
+def test_health_tries_again_once_after_a_transport_error(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(gemini.shutil, "which", lambda name: None)
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if len(calls) == 1:
+            raise httpx.ConnectTimeout("timed out", request=request)
+        return httpx.Response(200, json=MODELS)
+
+    status = asyncio.run(adapter(handler).health(refresh=True))
+    assert status["ready"] is True and len(calls) == 2

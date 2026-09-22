@@ -77,12 +77,17 @@ class GeminiAdapter:
         if not key:
             status["reason"] = f"Add a Gemini API key in Settings or set {KEY_ENV} in .env to use the Gemini API"
             return status
-        try:
-            response = await self._http().get(f"{API_URL}/models", params={"pageSize": 1000},
-                                              headers={"x-goog-api-key": key}, timeout=20)
-        except httpx.HTTPError as exc:
-            status["reason"] = f"Gemini API unreachable: {type(exc).__name__}"
-            return status
+        # A second try after a transport error: the first can expire while something else holds the event loop, and
+        # one failed check pauses the whole run.
+        for attempt in range(2):
+            try:
+                response = await self._http().get(f"{API_URL}/models", params={"pageSize": 1000},
+                                                  headers={"x-goog-api-key": key}, timeout=20)
+                break
+            except httpx.HTTPError as exc:
+                if attempt:
+                    status["reason"] = f"Gemini API unreachable: {type(exc).__name__}"
+                    return status
         if response.status_code != 200:
             status["reason"] = f"Gemini API answered HTTP {response.status_code}: {error_message(response)}"
             return status

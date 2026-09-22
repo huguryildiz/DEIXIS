@@ -99,7 +99,8 @@ test('connections separate planned models from configured scholarly access', asy
     await page.getByRole('button', { name: 'Close' }).click()
     const configured = page.getByRole('button', { name: 'OpenAlex API key configured' })
     await expect(configured).toHaveClass(/is-ready/)
-    await expect(page.getByRole('button', { name: 'Crossref No API key required' })).not.toHaveClass(/is-ready/)
+    // Crossref carries its role on the tile: it is a verification source, not one a search is sent to (D87).
+    await expect(page.getByRole('button', { name: 'Crossref Metadata verification · No API key required' })).not.toHaveClass(/is-ready/)
     await shot(page, 'connections-key-configured-desktop')
     await planned.locator('summary').click()
     await expect(planned).toHaveAttribute('open', '')

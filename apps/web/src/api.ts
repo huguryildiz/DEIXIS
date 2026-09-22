@@ -264,7 +264,7 @@ export type ModelHealth = {
   account_type?: string | null; plan_type?: string | null; models?: ModelOption[]
   isolation?: { instruction_sources: number; live_mcp_servers: string[] }
 }
-export type Connections = { models: Record<string, ModelHealth>; providers: { id: string; implemented: boolean; access_mode: string | null; supplementary?: boolean; note: string }[] }
+export type Connections = { models: Record<string, ModelHealth>; providers: { id: string; implemented: boolean; access_mode: string | null; supplementary?: boolean; role?: string; note: string }[] }
 export type Keychain = { available: boolean; name: string | null }
 export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'dotenv' | 'environment' | null; testable: boolean }
 export type Credentials = { keychain: Keychain; keys: KeyEntry[] }

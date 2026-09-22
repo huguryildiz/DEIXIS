@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from deixis.providers import query_rules
+from deixis.providers.registry import CONNECTORS
 
 VERSION = "deixis.query_compiler.v2"
 COMPACT_VERSION = "deixis.query_compiler.v3.compact_openalex_v1"
@@ -31,6 +32,15 @@ BOOLEAN_OPERATORS = ("AND", "OR", "NOT", "ANDNOT")
 COMPACT_STOPWORDS = {"a", "an", "and", "are", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the", "to", "with"}
 ROLE_NAMES = {"mechanism": "mechanism", "method": "method", "outcome": "outcome", "context": "context",
               "adjacent_field": "adjacent field"}
+
+
+def _searchable(providers: list[str]) -> list[str]:
+    """The given providers a query may go to, once each and in the order they arrived.
+
+    A connector that is only asked about a record whose DOI is already known is dropped here rather than by each
+    caller, so no caller names a provider and a research whose scope still holds one compiles no query for it (D87).
+    """
+    return [p for p in dict.fromkeys(providers) if CONNECTORS[p].searchable]
 
 
 def _terms(concept: dict[str, Any]) -> list[str]:
@@ -138,7 +148,7 @@ def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[st
         return []
     rationale = "Concept blocks: " + " AND ".join(names)
     queries: list[dict[str, Any]] = []
-    for provider in dict.fromkeys(enabled_providers):
+    for provider in _searchable(enabled_providers):
         if len(queries) >= limit:
             break
         if (fitted := _fit_blocks(provider, groups)) is None:
@@ -184,7 +194,8 @@ def compile_queries(plan: dict[str, Any], enabled_providers: list[str], limit: i
     families = [(c, terms) for c in ([c for c in others if c["role"] != "adjacent_field"] or others)
                 if (terms := [t for t in _terms(c) if t.lower() not in known])]
     families = families or [(None, [])]
-    providers = [p for p in dict.fromkeys(plan["providers"]) if p in enabled_providers]
+    enabled = set(_searchable(enabled_providers))
+    providers = [p for p in dict.fromkeys(plan["providers"]) if p in enabled]
     queries: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     if core_depth and limit > 0 and "openalex" in providers and (text := _fit("openalex", core_terms, [])):

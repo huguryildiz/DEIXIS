@@ -10,8 +10,10 @@ import re
 import pytest
 
 from deixis.providers import query_compiler, query_rules
+from deixis.providers.registry import CONNECTORS
 
-ALL_PROVIDERS = list(query_rules.NAMES)
+# Every provider a query may be sent to; a connector that is only asked about a known DOI compiles no query (D87).
+ALL_PROVIDERS = [p for p in query_rules.NAMES if CONNECTORS[p].searchable]
 CORE = {"label": "dolanıklık yönlendirmesi", "role": "core", "synonyms": ["entanglement routing", "entanglement distribution", "quantum routing"]}
 ROUTING = [
     CORE,
@@ -63,9 +65,10 @@ def test_queries_pair_the_core_group_with_one_family_in_each_provider_syntax():
                                          '(abs:decoherence OR abs:"quantum memory decoherence" OR abs:"memory lifetime" OR abs:"entanglement decay")')
     assert queries[("scopus", method)].startswith('TITLE-ABS-KEY(("entanglement routing" OR "entanglement distribution") AND (')
     assert queries[("pubmed", decay)].startswith('("entanglement routing"[Title/Abstract] OR "entanglement distribution"[Title/Abstract]) AND ')
-    assert queries[("crossref", method)] == "entanglement routing mixed-integer linear programming"
+    assert queries[("semantic_scholar", method)] == "entanglement routing mixed-integer linear programming"
+    # SerpApi gets one query, and which family it pairs with follows the round robin over families and providers.
     assert [text for (provider, _), text in queries.items() if provider == "serpapi"] == [
-        '"entanglement routing" "multi-commodity flow" OR "multi-commodity routing" OR "multicommodity flow"']
+        '"entanglement routing" "mixed-integer linear programming" OR "integer linear programming" OR MIP OR ILP']
 
 
 def test_queries_alternate_over_families_and_providers_within_the_budget():

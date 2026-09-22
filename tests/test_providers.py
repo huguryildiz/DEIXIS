@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from deixis.providers import arxiv, biorxiv, common, core, crossref, ieee_xplore, openalex, pubmed, scopus, semantic_scholar, serpapi
-from deixis.providers.registry import CONNECTORS, available_providers
+from deixis.providers.registry import CONNECTORS, available_providers, configured_providers, verification_providers
 
 SECRET = "SECRET-KEY-VALUE"
 DOI = "10.1109/SYNTH.2021.1"
@@ -397,7 +397,10 @@ def test_available_providers_follow_configured_keys(monkeypatch):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
-    assert available_providers() == ["openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv", "pubmed"]
+    assert available_providers() == ["openalex", "semantic_scholar", "arxiv", "biorxiv", "pubmed"]
+    # Crossref has the access it needs and stays in a research's scope, but no query is sent to it (D87).
+    assert verification_providers() == ["crossref"]
+    assert configured_providers() == ["openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv", "pubmed"]
     assert CONNECTORS["scopus"].access_mode() == "not_configured"
     monkeypatch.setenv("IEEE_API_KEY", SECRET)
     assert available_providers()[-1] == "ieee_xplore" and CONNECTORS["ieee_xplore"].access_mode() == "api_key"

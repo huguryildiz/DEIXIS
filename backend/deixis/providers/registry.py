@@ -3,6 +3,10 @@
 Order is the order providers are listed to the model and in the UI. A connector whose key is required but not
 configured is listed as `not_configured` and not enabled for new researches. Key values are read from the environment
 at call time and never stored.
+
+A connector has one of two roles: a searched source, or a verification source that is only asked about a record whose
+DOI is already known (D87). `searchable` carries that, and it is the only thing any caller reads to decide whether a
+query may go there.
 """
 
 from __future__ import annotations
@@ -23,6 +27,10 @@ class Connector:
     key_env: str | None = None
     key_required: bool = False
     supplementary: bool = False  # adds coverage beside direct providers; never used in place of one
+    # Whether a query may be sent here at all. A connector that is not searchable still answers about a record whose
+    # DOI is already known — its metadata, its links — and is never asked to find records (D87). The queries are
+    # compiled from this flag alone, so neither the flow nor the compiler names a provider (slice 05).
+    searchable: bool = True
     # How an sw query reads its pages (slice 04c): a provider-issued `cursor`, a record `offset`, or one page only.
     paging: str = "offset"
     max_reachable: int | None = None  # the deepest record the provider serves, when that is below the read limit
@@ -45,7 +53,7 @@ CONNECTORS = {c.provider_id: c for c in (
               sw_options={"reference_count": True, "references": True}),
     # Semantic Scholar serves `offset + limit` up to 1,000 and refuses a deeper page.
     Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000),
-    Connector("crossref", crossref.search, crossref.MAX_RESULTS),
+    Connector("crossref", crossref.search, crossref.MAX_RESULTS, searchable=False),  # verification only (D87)
     # arXiv asks for three seconds between requests and refused consecutive ones on 2026-09-15 (D18).
     Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS, page_gap=3.0),
     Connector("biorxiv", biorxiv.search, biorxiv.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor"),  # searched through OpenAlex
@@ -58,5 +66,25 @@ CONNECTORS = {c.provider_id: c for c in (
 )}
 
 
+def _configured(searchable: bool | None = None) -> list[str]:
+    return [pid for pid, c in CONNECTORS.items()
+            if c.access_mode() != "not_configured" and (searchable is None or c.searchable == searchable)]
+
+
 def available_providers() -> list[str]:
-    return [pid for pid, c in CONNECTORS.items() if c.access_mode() != "not_configured"]
+    """The providers a search may be sent to, in display order."""
+    return _configured(searchable=True)
+
+
+def verification_providers() -> list[str]:
+    """Configured connectors that are never searched: they answer about a record whose DOI is already known (D87)."""
+    return _configured(searchable=False)
+
+
+def configured_providers() -> list[str]:
+    """Every connector with the access it needs, searched or not: what a new research holds in its scope."""
+    return _configured()
+
+
+def provider_role(connector: Connector) -> str:
+    return "search" if connector.searchable else "verification"

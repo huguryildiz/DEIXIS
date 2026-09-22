@@ -400,6 +400,8 @@ class ResearchFlow:
         extra_requests = extra_page_requests(queries) if scope.get("search_workflow") == "sw" else 0
         for index, query in enumerate(queries):
             self._checkpoint(run_id, revision)
+            if self._skip_unsearchable(run, index, query):
+                continue
             if scope.get("search_workflow") == "sw":
                 failure = await self._search_pages(run, index, query, per_query, retry_failed, extra_requests) or failure
             else:
@@ -413,6 +415,8 @@ class ResearchFlow:
             extra_requests = extra_page_requests(queries + more)  # the allowance covers every query the run reads
             for index, query in enumerate(more, start=len(queries)):
                 self._checkpoint(run_id, revision)
+                if self._skip_unsearchable(run, index, query):
+                    continue
                 # A failed second-round search is recorded and left there: this run already has a search that
                 # succeeded, so nothing here can pause it (D18).
                 await self._search_pages(run, index, query, per_query, retry_failed, extra_requests)
@@ -1161,6 +1165,22 @@ class ResearchFlow:
         self.store.save_source_similarities(rid, revision, embedder.stored_model,
                                             {svid: embeddings.similarity(query, v) for svid, v in zip(missing, vectors)})
         self.store.finish_step(step["id"], "succeeded", output={"model": embedder.stored_model, "sources": len(missing)})
+
+    def _skip_unsearchable(self, run: dict[str, Any], index: int, query: dict[str, Any]) -> bool:
+        """Whether this query names a connector no query goes to, and the step that records the skip (D87).
+
+        A plan stored before the connector's role changed keeps the query it named; the request is not sent, the step
+        says why, and the rest of the run goes on exactly as it does past a failed search (D18). Nothing is written
+        to `search_runs`, so the record counts and the earlier searches of the research stand untouched.
+        """
+        connector = CONNECTORS[query["provider_id"]]
+        if connector.searchable:
+            return False
+        step = self.store.step(run["id"], f"search:{index}", f"provider_search:{connector.provider_id}")
+        if step["status"] not in ("succeeded", "cancelled"):
+            self.store.finish_step(step["id"], "cancelled", output={"status": "skipped", "result_count": 0},
+                                   error_code="provider_not_searchable")
+        return True
 
     async def _search(self, run: dict[str, Any], index: int, query: dict[str, Any], per_query: int,
                       retry_failed: bool = True, page: Page | None = None) -> tuple[str, dict[str, Any]] | None:
@@ -2742,7 +2762,10 @@ class ResearchFlow:
             "output_schema_versions": [contracts.SCHEMA_VERSIONS[o] for o in contracts.TASK_OUTPUTS[task_type]],
             "question": {"text": scope["question"], "language_hint": language},
             "user_steering": [scope["steering"]] if scope.get("steering") else [],
-            "capabilities": CAPABILITIES, "enabled_providers": scope["providers"],
+            # The providers a query may go to. A verification connector stays in the research's scope for the records
+            # whose DOI is already known, and is never offered to the model as a place to search (D87).
+            "capabilities": CAPABILITIES,
+            "enabled_providers": [p for p in scope["providers"] if CONNECTORS[p].searchable],
             "candidates": candidates, "sources": sources, "passages": passages,
             "allowlist": allowlist,
             "human_corrections": [],

@@ -8,7 +8,7 @@ import { ConnectionIcon } from './connectionIcons'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t } from './i18n'
-import { connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames, reasoningLabel } from './labels'
+import { connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
 import { Notice } from './Notice'
 
 const providerNames: Record<string, string> = {
@@ -379,7 +379,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
   const keyModels = availableModels.filter(([, m]) => m.key_configured !== undefined)
   const modelCard = ([id, m]: (typeof modelEntries)[number]) => <ConnectionTile key={id} icon={<ConnectionIcon id={id} />} name={modelNames[id] ?? id} ok={m.ready} status={m.ready ? t('Ready') : m.signed_in === false && m.installed ? t('Not signed in') : m.installed === false ? t('Not installed') : t('Not connected')} active={isActive('model', id)} onClick={() => show({ kind: 'model', id })} />
   const toolCard = (tool: LocalTool) => <ConnectionTile key={tool.id} icon={<ConnectionIcon id={localToolIcon(tool.id)} />} name={tool.name || localToolNames[tool.id] || tool.id} ok={tool.installed} status={t(tool.job?.status === 'running' ? 'Installing…' : tool.installed ? 'Installed' : 'Not installed')} active={isActive('local-tool', tool.id)} onClick={() => show({ kind: 'local-tool', id: tool.id })} />
-  const providerCard = (p: Connections['providers'][number]) => <ConnectionTile key={p.id} icon={<ConnectionIcon id={p.id} />} name={providerNames[p.id] ?? p.id} ok={p.access_mode === 'api_key'} status={providerStatus(p.access_mode)} active={isActive('provider', p.id)} onClick={() => show({ kind: 'provider', id: p.id })} />
+  const providerCard = (p: Connections['providers'][number]) => <ConnectionTile key={p.id} icon={<ConnectionIcon id={p.id} />} name={providerNames[p.id] ?? p.id} ok={p.access_mode === 'api_key'} status={p.role === 'verification' ? `${providerRole(p.role)} · ${providerStatus(p.access_mode)}` : providerStatus(p.access_mode)} active={isActive('provider', p.id)} onClick={() => show({ kind: 'provider', id: p.id })} />
   const keylessProviders = (data?.providers ?? []).filter(p => !providerKeyEnv[p.id])
   const keyProviders = (data?.providers ?? []).filter(p => providerKeyEnv[p.id])
 
@@ -538,7 +538,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
           {provider && <>
             {hasProviderAccessMode(provider.access_mode) && <span className={`status-chip ${provider.access_mode === 'keyless' ? 'is-configured' : ''}`}>{providerStatus(provider.access_mode)}</span>}
             <p className="source-byline">{provider.note}</p>
-            <div className="connection-checks">{check(t('Access mode'), provider.access_mode ? t(provider.access_mode) : t('none'))}</div>
+            <div className="connection-checks">{check(t('Used for'), providerRole(provider.role))}{check(t('Access mode'), provider.access_mode ? t(provider.access_mode) : t('none'))}</div>
             {credentials && providerKeyEnv[provider.id] && <KeyPanel env={providerKeyEnv[provider.id]} entry={credentials.keys.find(k => k.env === providerKeyEnv[provider.id])} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
           </>}
           {!localTool && selected?.kind !== 'equation-reader' && selected?.kind !== 'ocr-tool' && selected?.kind !== 'api-key' && <Button variant="outline" className="connection-recheck" onClick={recheck} disabled={busy || refreshingModel === selected?.id}><RefreshCw size={14} />{t(provider ? (busy ? 'Refreshing…' : 'Refresh configuration') : (refreshingModel === selected?.id ? 'Checking…' : 'Check again'))}</Button>}

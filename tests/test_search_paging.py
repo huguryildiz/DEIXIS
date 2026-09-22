@@ -193,8 +193,11 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None):
             monkeypatch.delenv(connector.key_env, raising=False)
     # Small pages keep the fixtures small. Paging is the same at 20 records a page as at 200; what a provider's real
     # page size and reachable depth are is checked against its documentation in tests/test_providers.py.
+    # Crossref stands in for an offset-paged provider here and is made searchable for that: the product no longer
+    # sends it a query (D87), and that is what tests/test_provider_roles.py is for.
     for provider, size in (("openalex", 20), ("crossref", 10)):
-        monkeypatch.setitem(CONNECTORS, provider, replace(CONNECTORS[provider], max_results=size))
+        monkeypatch.setitem(CONNECTORS, provider,
+                            replace(CONNECTORS[provider], max_results=size, searchable=True))
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
     return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow,
                                protocol_approval="as_proposed", fulltext_fetch="off"),

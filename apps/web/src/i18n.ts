@@ -1054,6 +1054,9 @@ const tr: Record<string, string> = {
   'API key (DEEPSEEK_API_KEY)': 'API anahtarı (DEEPSEEK_API_KEY)',
   'default': 'varsayılan',
   'Access mode': 'Erişim modu',
+  'Used for': 'Kullanım',
+  'Record search': 'Kayıt arama',
+  'Metadata verification': 'Künye doğrulama',
   'Check again': 'Yeniden denetle',
 
   // Settings · Connections

@@ -129,6 +129,9 @@ export const isPlannedModel = (reason?: string | null) => reason === 'Adapter no
 export const localToolNames: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex CLI', gemini_cli: 'Gemini CLI', ollama: 'Ollama', lm_studio: 'LM Studio', zotero: 'Zotero' }
 export const localToolIcon = (id: string) => (id === 'gemini_cli' ? 'gemini' : id)
 
+// What a scholarly source is used for: searched for records, or asked what a record whose DOI is known is (D87).
+export const providerRole = (role: string | undefined) => t(role === 'verification' ? 'Metadata verification' : 'Record search')
+
 export const stepLabel = (kind: string, key: string) => {
   if (kind === 'model:search_plan') return t('Search plan (model)')
   if (kind === 'model:screening') return t('Screening proposal (model)')

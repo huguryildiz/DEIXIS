@@ -12,6 +12,7 @@ import pytest
 
 from deixis.domain import vocabulary, vocabulary_words
 from deixis.providers import openalex, query_compiler, query_rules
+from deixis.providers.registry import CONNECTORS
 from deixis.workflow.vocabulary import MANAGEABLE_TOTAL, MAX_PROBES, VERY_LARGE_COUNT, build_vocabulary
 
 NETWORKS = "What is the throughput of relay selection in wireless sensor networks?"
@@ -277,7 +278,7 @@ def test_two_blocks_compile_to_one_or_group_per_block_joined_by_and():
 
 def test_each_provider_gets_one_query_in_its_own_syntax_and_all_pass_the_rules():
     _, built = built_for(PACKET, default=10)
-    providers = list(query_rules.NAMES)
+    providers = [p for p in query_rules.NAMES if CONNECTORS[p].searchable]
     queries = query_compiler.compile_block_queries(built, providers, 100)
     assert [q["provider_id"] for q in queries] == providers
     for query in queries:
@@ -288,12 +289,12 @@ def test_each_provider_gets_one_query_in_its_own_syntax_and_all_pass_the_rules()
     assert by_provider["pubmed"] == "(energy[Title/Abstract] OR wireless[Title/Abstract]) AND packet[Title/Abstract]"
     assert by_provider["arxiv"] == "(abs:energy OR abs:wireless) AND abs:packet"
     assert by_provider["scopus"] == "TITLE-ABS-KEY((energy OR wireless) AND packet)"
-    assert by_provider["crossref"] == "energy packet" and by_provider["serpapi"] == "energy packet"
+    assert by_provider["semantic_scholar"] == "energy packet" and by_provider["serpapi"] == "energy packet"
 
 
 def test_a_budget_limits_how_many_providers_are_queried_and_serpapi_gets_one_query():
     _, built = built_for(PACKET, default=10)
-    queries = query_compiler.compile_block_queries(built, ["serpapi", "openalex", "crossref"], 2)
+    queries = query_compiler.compile_block_queries(built, ["serpapi", "openalex", "arxiv"], 2)
     assert [q["provider_id"] for q in queries] == ["serpapi", "openalex"]
 
 

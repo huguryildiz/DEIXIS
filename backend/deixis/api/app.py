@@ -41,7 +41,7 @@ from deixis.models.deepseek import DeepSeekAdapter
 from deixis.models.gemini import GeminiAdapter
 from deixis.providers import scopus
 from deixis.providers import zotero
-from deixis.providers.registry import CONNECTORS, available_providers
+from deixis.providers.registry import CONNECTORS, configured_providers, provider_role
 from deixis.storage import db
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import adjudication, fulltext
@@ -456,7 +456,7 @@ def create_app(
             "models": models,
             "providers": [
                 {"id": p, "implemented": True, "access_mode": c.access_mode(), "supplementary": c.supplementary,
-                 "key_env": c.key_env,
+                 "key_env": c.key_env, "role": provider_role(c),
                  "note": f"Add the key in Settings or set {c.key_env} in .env to enable it." if c.access_mode() == "not_configured"
                  else "Access and quota are recorded per request; not verified in advance."}
                 for p, c in CONNECTORS.items()
@@ -592,8 +592,9 @@ def create_app(
             await check_role(review_connection, body.review_model, body.review_reasoning_effort)
         elif body.review_model is not None or body.review_reasoning_effort is not None or body.review_connection is not None:
             raise HTTPException(422, f"A review model is only kept with review_mode 'custom', not '{body.review_mode}'")
-        # Every connector with the access it needs is enabled; the model picks which of them to query.
-        providers = available_providers() if body.source_scope != "attached" else []
+        # Every connector with the access it needs is in scope; the model picks which of the searchable ones to
+        # query, and a verification connector stays in scope for the records whose DOI is already known (D87).
+        providers = configured_providers() if body.source_scope != "attached" else []
         store = store_of(request)
         rid = store.create_research(body.question, body.source_scope, body.effort, providers,
                                     body.model_connection, body.requested_model, body.language_hint, body.reasoning_effort,

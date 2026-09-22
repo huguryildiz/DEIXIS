@@ -14,7 +14,7 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 ## D87 — Search academic sources through OpenAlex and Semantic Scholar; Crossref verifies a DOI's metadata and links but is no longer searched
 
-**Status:** accepted; not implemented (slice 13b). **Date:** 2026-09-22.
+**Status:** accepted; implemented (slice 13b, 2026-09-22). **Date:** 2026-09-22.
 
 **Context:** Crossref is the DOI registry: the widest bibliographic index, but abstracts are optional deposits and its search ranks loosely (2.8 million "matches" for the smoke run's query). On the slice 13 smoke run (third run, `quick`) Crossref's two queries returned 4,000 records, 3,438 works found by no other provider; 1,977 of those had no abstract at all and every one was sent to Semantic Scholar's abstract lookup, where 8 of 21 batches waited 40–88 s on rate limits (705 s in total). Asking Crossref itself for abstracts filled 0 of 200. After the code stage, of the 3,438 Crossref-only works 51 were `candidate`, 1,797 `no_abstract`, 1,115 `both_blocks_missing`, 154 `abstract_not_found`. OpenAlex, which is built on Crossref's records plus other sources and carries abstracts, returned 3,921 records in 131 s with no rate limiting; 2,399 of its 2,665 own works had an abstract. Whether the 51 Crossref-only candidates would have been found through OpenAlex with the same query was not checked.
 

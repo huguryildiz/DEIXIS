@@ -1,4 +1,8 @@
-"""Discovery across several providers through the API: dispatch, DOI merge and request accounting (mocked HTTP)."""
+"""Discovery across several providers through the API: dispatch, DOI merge and request accounting (mocked HTTP).
+
+The two planned providers are OpenAlex and bioRxiv, which OpenAlex serves under a source filter: both answer on the
+same mocked host, and a provider that is only asked about a known DOI is not planned at all (D87).
+"""
 
 import json
 import time
@@ -9,28 +13,35 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents.fetch import FetchResult
-from deixis.providers.registry import CONNECTORS
+from deixis.providers import biorxiv as biorxiv_module
+from deixis.providers.registry import CONNECTORS, available_providers
 from fakes import FakeAdapter, valid_response
 
-OPENALEX = {"meta": {"count": 1}, "results": [{
-    "id": "https://openalex.org/W1", "doi": "https://doi.org/10.1/a", "display_name": "SYNTHETIC diffusion channel scheduling",
-    "publication_year": 2021, "type": "article", "authorships": [], "abstract_inverted_index": {"We": [0], "schedule.": [1]}}]}
-CROSSREF = {"message": {"total-results": 2, "items": [
-    {"DOI": "10.1/A", "title": ["SYNTHETIC diffusion channel scheduling"], "type": "journal-article", "URL": "https://doi.org/10.1/a"},
-    {"DOI": "10.1/b", "title": ["SYNTHETIC relay energy budget"], "type": "journal-article", "URL": "https://doi.org/10.1/b"},
-]}}
+def work(number, doi, title):
+    return {"id": f"https://openalex.org/W{number}", "doi": f"https://doi.org/{doi}", "display_name": title,
+            "publication_year": 2021, "type": "article", "authorships": [],
+            "abstract_inverted_index": {"We": [0], "schedule.": [1]}}
+
+
+OPENALEX = {"meta": {"count": 1}, "results": [work(1, "10.1/a", "SYNTHETIC diffusion channel scheduling")]}
+# bioRxiv is searched through OpenAlex under its own source filter, so the two connectors answer separately. The first
+# record is the same work with its DOI in upper case, which merges into one source.
+BIORXIV = {"meta": {"count": 2}, "results": [work(2, "10.1/A", "SYNTHETIC diffusion channel scheduling"),
+                                             work(3, "10.1/b", "SYNTHETIC relay energy budget")]}
 
 
 def routed(request):
-    payload = {"api.openalex.org": OPENALEX, "api.crossref.org": CROSSREF}.get(request.url.host)
-    return httpx.Response(200, json=payload) if payload else httpx.Response(404)
+    if request.url.host != "api.openalex.org":
+        return httpx.Response(404)
+    biorxiv = biorxiv_module.SOURCE_ID in (request.url.params.get("filter") or "")
+    return httpx.Response(200, json=BIORXIV if biorxiv else OPENALEX)
 
 
 def two_provider_plan(si):
     if si["task_type"] != "search_plan":
         return valid_response(si)
     output = json.loads(valid_response(si))
-    output["search_plan"].update(providers=["openalex", "crossref"], concepts=[
+    output["search_plan"].update(providers=["openalex", "biorxiv"], concepts=[
         {"label": "diffusion channel", "role": "core", "synonyms": ["diffusion channel"]},
         {"label": "scheduling", "role": "method", "synonyms": ["scheduling"]}])
     return json.dumps(output)
@@ -81,39 +92,42 @@ def test_discovery_searches_each_planned_provider_and_merges_by_doi(tmp_path, mo
     view, run = discover(tmp_path, monkeypatch, routed, adapter)
     assert run["status"] == "completed", run
     assert view["scope"]["providers"] == ["openalex", "semantic_scholar", "crossref", "arxiv", "biorxiv", "pubmed"]
-    assert adapter.calls[0]["enabled_providers"] == view["scope"]["providers"]
-    assert [(s["provider"], s["result_count"]) for s in view["search_runs"]] == [("openalex", 1), ("crossref", 2)]
-    assert [s["kind"] for s in run["steps"] if s["operation_key"].startswith("search:")] == ["provider_search:openalex", "provider_search:crossref"]
+    # Crossref is in the scope for the records whose DOI is already known, and is not offered as a place to search.
+    assert "crossref" in view["scope"]["providers"]
+    assert adapter.calls[0]["enabled_providers"] == available_providers() == [
+        p for p in view["scope"]["providers"] if p != "crossref"]
+    assert [(s["provider"], s["result_count"]) for s in view["search_runs"]] == [("openalex", 1), ("biorxiv", 2)]
+    assert [s["kind"] for s in run["steps"] if s["operation_key"].startswith("search:")] == ["provider_search:openalex", "provider_search:biorxiv"]
     assert run["usage"]["provider_requests"] == 2 and view["counts"]["unique"] == 2
     merged = next(s for s in view["sources"] if s["doi"] == "10.1/a")
-    assert merged["provider_records"] == ["crossref", "openalex"] and merged["suspected_duplicates"] == []
+    assert merged["provider_records"] == ["biorxiv", "openalex"] and merged["suspected_duplicates"] == []
 
 
 def test_a_failed_provider_search_is_kept_and_the_other_searches_go_on(tmp_path, monkeypatch):
-    def crossref_limited(request):
-        if request.url.host == "api.crossref.org":
+    def biorxiv_limited(request):
+        if biorxiv_module.SOURCE_ID in (request.url.params.get("filter") or ""):
             return httpx.Response(429, headers={"retry-after": "60"})
         return routed(request)
 
-    view, run = discover(tmp_path, monkeypatch, crossref_limited, FakeAdapter(two_provider_plan))
+    view, run = discover(tmp_path, monkeypatch, biorxiv_limited, FakeAdapter(two_provider_plan))
     assert (run["status"], run["pause_reason"]) == ("completed", None), run
-    assert [(s["provider"], s["status"]) for s in view["search_runs"]] == [("openalex", "completed"), ("crossref", "rate_limited")]
+    assert [(s["provider"], s["status"]) for s in view["search_runs"]] == [("openalex", "completed"), ("biorxiv", "rate_limited")]
     assert [s["status"] for s in run["steps"] if s["operation_key"].startswith("search:")] == ["succeeded", "failed"]
     assert view["counts"]["unique"] == 1 and any(s["operation_key"] == "screening" for s in run["steps"])
 
 
 def test_failed_provider_searches_can_be_retried_without_repeating_the_plan(tmp_path, monkeypatch):
-    attempts = {"crossref": 0}
+    attempts = {"biorxiv": 0}
 
-    def crossref_once(request):
-        if request.url.host == "api.crossref.org":
-            attempts["crossref"] += 1
-            if attempts["crossref"] == 1:
+    def biorxiv_once(request):
+        if biorxiv_module.SOURCE_ID in (request.url.params.get("filter") or ""):
+            attempts["biorxiv"] += 1
+            if attempts["biorxiv"] == 1:
                 return httpx.Response(429, headers={"retry-after": "60"})
         return routed(request)
 
     adapter = FakeAdapter(two_provider_plan)
-    view, run = discover(tmp_path, monkeypatch, crossref_once, adapter, retry_failed=True)
+    view, run = discover(tmp_path, monkeypatch, biorxiv_once, adapter, retry_failed=True)
     assert run["status"] == "completed", run
     assert [s["status"] for s in view["search_runs"]] == ["completed", "rate_limited", "completed"]
     assert [c["task_type"] for c in adapter.calls].count("search_plan") == 1
@@ -122,8 +136,8 @@ def test_failed_provider_searches_can_be_retried_without_repeating_the_plan(tmp_
 def test_compiled_queries_are_stored_with_the_plan_and_a_resumed_run_searches_them_again(tmp_path, monkeypatch):
     down = {"openalex": True}
 
-    def handler(request):  # Crossref stays down, OpenAlex answers once the run is resumed
-        if request.url.host == "api.crossref.org" or down["openalex"]:
+    def handler(request):  # bioRxiv stays down, OpenAlex answers once the run is resumed
+        if biorxiv_module.SOURCE_ID in (request.url.params.get("filter") or "") or down["openalex"]:
             return httpx.Response(503)
         return routed(request)
 
@@ -131,7 +145,7 @@ def test_compiled_queries_are_stored_with_the_plan_and_a_resumed_run_searches_th
         # Stands in for a compiler change between pause and resume: the stored queries, not a new compilation, are searched.
         step = store.step(run_id, "search_plan", "model:search_plan")
         assert step["output"]["query_compiler"] == "deixis.query_compiler.v2"
-        assert [q["query_text"] for q in step["output"]["queries"]] == ['"diffusion channel" AND scheduling', "diffusion channel scheduling"]
+        assert [q["query_text"] for q in step["output"]["queries"]] == ['"diffusion channel" AND scheduling'] * 2
         step["output"]["queries"] = step["output"]["queries"][:1]
         store.set_step_output(step["id"], step["output"])
         down["openalex"] = False

@@ -371,11 +371,17 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             s["answer_reads_version_id"] = reads
 
     # Other versions follow the record of their work and share its question revision.
+    others: dict[str, list[dict[str, Any]]] = {}
+    for s in sources:
+        if s["version_role"] == "other_version":
+            others.setdefault(s["work_id"], []).append(s)
     ordered: list[dict[str, Any]] = []
     for record in (s for s in sources if s["version_role"] == "record"):
         ordered.append(record)
+        # Grouped once rather than scanned per record: the nested scan was 2.2 s of the view's 7.2 s on the
+        # smoke run's 7,769-source research (slice 13d).
         ordered += [s | {"found_in_revision": record["found_in_revision"], "applicability": record["applicability"]}
-                    for s in sources if s["version_role"] == "other_version" and s["work_id"] == record["work_id"]]
+                    for s in others.get(record["work_id"], ())]
     placed = {s["source_version_id"] for s in ordered}
     sources = ordered + [s for s in sources if s["source_version_id"] not in placed]
 

@@ -204,7 +204,29 @@ class DecisionStore:
         return None if row is None else self.ranking_order(row["id"])
 
     # ---- from the decisions of a work's versions to one selection ----------------------
-    def work_outcome(self, research_id: str, work_id: str) -> dict[str, Any]:
+    def facts(self, research_id: str, work_id: str | None = None) -> dict[str, Any]:
+        """Everything `work_outcome` reads, for one work or for the whole research, in three statements.
+
+        `work_heads` walks every record of the research, so asking it once per work was 173 s of the 203 s an
+        abstract stage spent on a 4,700-work research (slice 13d's profile). A caller with many works reads this
+        once and hands it to every `work_outcome` call.
+        """
+        open_decisions: dict[str, list[dict[str, Any]]] = {}
+        for row in self.conn.execute(
+            "SELECT d.*, v.work_id AS in_work FROM stage_decisions d"
+            " JOIN corpus_memberships m ON m.research_id = d.research_id"
+            " AND m.source_version_id = d.source_version_id AND m.removed_at IS NULL"
+            " JOIN source_versions v ON v.id = d.source_version_id"
+            " WHERE d.research_id = ? AND d.superseded_at IS NULL"
+            f"{' AND v.work_id = ?' if work_id is not None else ''} ORDER BY d.created_at, d.rowid",
+            (research_id,) if work_id is None else (research_id, work_id),
+        ):
+            decision = dict(row)
+            open_decisions.setdefault(decision.pop("in_work"), []).append(decision)
+        return {"heads": self.store.work_heads(research_id), "decisions": open_decisions,
+                "stale_key": self.staleness_key(research_id)}
+
+    def work_outcome(self, research_id: str, work_id: str, facts: dict[str, Any] | None = None) -> dict[str, Any]:
         """What this research decided about the work, over every version of it still in the research (SW9.4, SW1.7).
 
         The full-text stage answers when any version reached it. The user's decision answers before any other; two
@@ -213,20 +235,13 @@ class DecisionStore:
         versions carry the winning outcome, the work's head is named, else the smallest identifier, never the one
         that happened to be decided first.
         """
-        head = self.store.work_heads(research_id).get(work_id)
+        facts = self.facts(research_id, work_id) if facts is None else facts
+        head = facts["heads"].get(work_id)
 
         def named(rows: list[dict[str, Any]]) -> dict[str, Any]:
             return min(rows, key=lambda d: (d["source_version_id"] != head, d["source_version_id"]))
 
-        versions = [r[0] for r in self.conn.execute(
-            "SELECT m.source_version_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
-            " WHERE m.research_id = ? AND m.removed_at IS NULL AND v.work_id = ?", (research_id, work_id),
-        )]
-        decisions = [dict(row) for row in self.conn.execute(
-            f"SELECT * FROM stage_decisions WHERE research_id = ? AND superseded_at IS NULL"
-            f" AND source_version_id IN ({', '.join('?' * len(versions))}) ORDER BY created_at, rowid",
-            (research_id, *versions),
-        )] if versions else []
+        decisions = facts["decisions"].get(work_id, [])
 
         fulltext = [d for d in decisions if d["stage"] == "fulltext"]
         if fulltext:
@@ -235,8 +250,7 @@ class DecisionStore:
                 return _outcome(human[-1])  # the user's newest stands, stale or not (SW11.7)
             # A stale code decision no longer speaks for the work: the abstract outcome does (slice 12). A fresh
             # full-text decision still answers first, and two versions at opposite fresh decisions stay unresolved.
-            key = self.staleness_key(research_id)
-            fresh = [d for d in fulltext if not self.is_stale(d, key)]
+            fresh = [d for d in fulltext if not self.is_stale(d, facts["stale_key"])]
             if fresh:
                 outcomes = {d["outcome"] for d in fresh}
                 if {"include", "criterion_not_met"} <= outcomes:
@@ -262,35 +276,57 @@ class DecisionStore:
         Only a research on the `sw` workflow derives selections, and a selection the user set is never changed
         (AGENTS.md, User Authority). Nothing is written when the state is already the derived one.
         """
-        if self.store.scope(research_id)["search_workflow"] != "sw":
-            return None
-        head = self.store.work_heads(research_id).get(work_id)
-        if head is None:
-            return None
-        outcome = self.work_outcome(research_id, work_id)
-        if not outcome:
-            return None
-        state = SELECTION_STATE[outcome["outcome"]]
-        with transaction(self.conn):
-            current = self.conn.execute(
-                "SELECT * FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, head)
-            ).fetchone()
+        return self.derive_selections(research_id, [work_id]).get(work_id)
+
+    def derive_selections(self, research_id: str, work_ids: list[str]) -> dict[str, str]:
+        """`derive_selection` for several distinct works at once; returns the state written for each one written.
+
+        The same rule and the same rows as one call per work, in the same order: what the research holds is read
+        once instead of four statements per work, and the rows go in one transaction rather than one each. The
+        whole batch carries one timestamp, which is what a single write would have given it anyway.
+        """
+        if not work_ids or self.store.scope(research_id)["search_workflow"] != "sw":
+            return {}
+        facts = self.facts(research_id, work_ids[0] if len(work_ids) == 1 else None)
+        selections = {row["source_version_id"]: dict(row) for row in self.conn.execute(
+            "SELECT * FROM selections WHERE research_id = ?", (research_id,))}
+        written: dict[str, str] = {}
+        updates: list[tuple[Any, ...]] = []
+        history: list[tuple[Any, ...]] = []
+        bumps = 0
+        ts = now()
+        for work_id in work_ids:
+            head = facts["heads"].get(work_id)
+            if head is None:
+                continue
+            outcome = self.work_outcome(research_id, work_id, facts)
+            if not outcome:
+                continue
+            state = SELECTION_STATE[outcome["outcome"]]
+            current = selections.get(head)
             if current is None or current["origin"] == "user":
-                return None
+                continue
             if current["state"] == state and current["origin"] == "code_rule":
-                return None
-            ts = now()
-            self.conn.execute(
+                continue
+            updates.append((state, ts, research_id, head))
+            history.append((research_id, head, current["state"], state, outcome["reason_code"], ts))
+            bumps += current["state"] != state and "included" in (current["state"], state)
+            written[work_id] = state
+        if not updates:
+            return written
+        with transaction(self.conn):
+            self.conn.executemany(
                 "UPDATE selections SET state = ?, origin = 'code_rule', version = version + 1, updated_at = ?"
-                " WHERE research_id = ? AND source_version_id = ?", (state, ts, research_id, head),
+                " WHERE research_id = ? AND source_version_id = ?", updates,
             )
-            self.conn.execute(
+            self.conn.executemany(
                 "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, reason,"
-                " created_at) VALUES (?, ?, ?, ?, 'code_rule', ?, ?)",
-                (research_id, head, current["state"], state, outcome["reason_code"], ts),
+                " created_at) VALUES (?, ?, ?, ?, 'code_rule', ?, ?)", history,
             )
-            self.store._bump_selection_revision(research_id, current["state"], state)
-        return state
+            if bumps:
+                self.conn.execute("UPDATE researches SET selection_revision = selection_revision + ? WHERE id = ?",
+                                  (bumps, research_id))
+        return written
 
 
 def _outcome(decision: dict[str, Any]) -> dict[str, Any]:

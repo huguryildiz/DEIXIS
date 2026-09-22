@@ -1,5 +1,9 @@
 # Task: offline read-limit cut — would a smaller per-query read limit change what the model reads and what is included?
 
+**On hold (2026-09-23):** run this only after `sw-vocabulary-experiment-prompt.md` and the slice that follows it.
+The second round's query of these runs had lost its task block, so most of the pool this cuts is off topic; cut
+the pools the corrected queries produce instead.
+
 Repo: `/Users/huguryildiz/Documents/GitHub/DEIXIS`. A measurement, not a slice: no product code changes, no commit
 of results until the owner says "uygun". Implementer: Opus · high. Written 2026-09-23 at the end of the slice 13f
 conversation.

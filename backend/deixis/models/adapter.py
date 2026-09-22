@@ -70,6 +70,7 @@ def is_rate_limited(result: ModelStepResult) -> bool:
 
 class ModelAdapter(Protocol):
     connection: str
+    enforces_schema: bool
 
     async def health(self, refresh: bool = False) -> dict[str, Any]: ...
 
@@ -83,6 +84,7 @@ class ModelAdapter(Protocol):
 
 class CodexAdapter:
     connection = "codex"
+    enforces_schema = True
 
     def __init__(self, codex_home: Path, workspace: Path, turn_timeout: float = 300.0):
         self.codex_home = codex_home

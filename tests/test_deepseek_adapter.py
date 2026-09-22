@@ -75,3 +75,25 @@ def test_health_reports_the_second_transport_error(monkeypatch):
 
     status = asyncio.run(adapter(handler).health(refresh=True))
     assert status["ready"] is False and status["reason"] == "DeepSeek API unreachable: ConnectTimeout" and len(calls) == 2
+
+
+def test_run_step_includes_the_output_schema_in_the_system_message(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "id": "chat-1", "model": "deepseek-v4-flash", "usage": {"total_tokens": 5},
+            "choices": [{"finish_reason": "stop", "message": {"content": '{"ok": true}'}}],
+        })
+
+    schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}
+    asyncio.run(adapter(handler).run_step("BASE", "DEV", "MSG", schema, "deepseek-v4-flash"))
+    system = sent[0]["messages"][0]["content"]
+    assert '"ok"' in system and '"boolean"' in system
+    assert "The output must match this JSON schema exactly" in system
+
+
+def test_enforces_schema_is_false():
+    assert deepseek.DeepSeekAdapter().enforces_schema is False

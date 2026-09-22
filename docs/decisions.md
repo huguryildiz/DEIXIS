@@ -24,7 +24,7 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 ## D86 — A model connection that cannot enforce the output schema is still usable: the step shows it the schema and a skeleton, code normalises a recorded alias table before validation, and repair no longer empties the run's budget
 
-**Status:** accepted; not implemented (slice 13a). **Date:** 2026-09-22.
+**Status:** accepted; implemented (slice 13a). **Date:** 2026-09-22.
 
 **Context:** The user picks the model connection, and DEIXIS must work with the one they picked. Codex, Claude and Gemini receive the output schema through their APIs and cannot return JSON that violates it. DeepSeek's API offers only a "valid JSON" mode (a `json_schema` response format was refused with HTTP 400 on 2026-09-22), and the DeepSeek adapter does not even show the model the schema it receives: `run_step` takes `output_schema` and ignores it, so the model knows the field names only from the method file's prose. On the fourth slice 13 smoke run (`deepseek-flash`, `quick`) the full-text reading step got 34 invalid outputs out of 40 calls (`name` / `verdict` for `part` / `label`, or no `passage_id`), the repair attempts consumed the run's whole call budget and the run paused `budget_exhausted` with 1 work read; the answer step wrote `C1` where the schema requires `c1`, twice, and the answer was stored as an unverified draft. Everything up to those steps ran.
 

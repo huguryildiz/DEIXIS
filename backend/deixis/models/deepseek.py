@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any
@@ -28,6 +29,7 @@ def error_message(response: httpx.Response) -> str:
 
 class DeepSeekAdapter:
     connection = "deepseek"
+    enforces_schema = False
 
     def __init__(self, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):
         self._client = client
@@ -88,10 +90,16 @@ class DeepSeekAdapter:
         if not key or not requested_model:
             return ModelStepResult("unavailable", error=f"{KEY_ENV} is not set" if not key else "no model requested",
                                    delivery_class="before_send")
+        schema_text = json.dumps(output_schema, indent=2)
+        system = (
+            f"{base}\n\n{developer}\n\n"
+            f"The output must match this JSON schema exactly:\n{schema_text}\n\n"
+            "Return only a JSON object."
+        )
         body: dict[str, Any] = {
             "model": requested_model,
             "messages": [
-                {"role": "system", "content": f"{base}\n\n{developer}\n\nReturn only a JSON object."},
+                {"role": "system", "content": system},
                 {"role": "user", "content": message},
             ],
             "response_format": {"type": "json_object"},

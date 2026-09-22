@@ -50,6 +50,7 @@ def error_message(response: httpx.Response) -> str:
 
 class GeminiAdapter:
     connection = "gemini"
+    enforces_schema = True
 
     def __init__(self, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):
         self._client = client

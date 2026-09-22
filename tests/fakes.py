@@ -163,7 +163,8 @@ class FakeAdapter:
     def __init__(self, responder: Callable[[dict[str, Any]], str] = valid_response, ready: bool = True,
                  resolved_model: str | None = None, models: list[str] | None = None, efforts: list[str] | None = None,
                  delay: float = 0.0, before: Callable[[dict[str, Any]], None] | None = None,
-                 fail: Callable[[dict[str, Any]], "ModelStepResult | None"] | None = None):
+                 fail: Callable[[dict[str, Any]], "ModelStepResult | None"] | None = None,
+                 enforces_schema: bool = True):
         self.responder = responder
         self.ready = ready
         self.resolved_model = resolved_model  # None: answer with the requested model, as a correct connection does
@@ -172,6 +173,7 @@ class FakeAdapter:
         self.delay = delay
         self.before = before
         self.fail = fail
+        self.enforces_schema = enforces_schema
         self.calls: list[dict[str, Any]] = []
         self.sent_efforts: list[str | None] = []
         self.sent: list[tuple[str, str | None, str | None]] = []  # (task type, requested model, reasoning effort) per call

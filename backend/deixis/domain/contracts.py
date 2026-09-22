@@ -106,6 +106,47 @@ WRAPPER_KEYS = {
 COMMON_REF_PREFIX = "common.schema.json#/$defs/"
 ENVELOPE_FIELDS = ("step_input_id", "scope_revision", "skill_package_hash")
 
+OUTPUT_ALIASES: dict[str, dict[str, dict[str, str]]] = {
+    "fulltext_adjudication": {
+        "parts": {"name": "part", "verdict": "label", "status": "label"},
+    },
+    "abstract_screening": {
+        "records": {"verdict": "label"},
+    },
+    "grounded_answer": {
+        "claims": {"claim_label": "lower"},
+        "citation_anchors": {"claim_label": "lower"},
+    },
+    "answer_review": {
+        "claims": {"claim_label": "lower"},
+        "citation_anchors": {"claim_label": "lower"},
+    },
+}
+
+
+def normalise_output(task_type: str, draft: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    changes: list[dict[str, str]] = []
+    aliases = OUTPUT_ALIASES.get(task_type)
+    if not aliases:
+        return draft, changes
+    for array_key, field_map in aliases.items():
+        items = draft.get(array_key)
+        if not isinstance(items, list):
+            continue
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            for source, target in field_map.items():
+                if target == "lower":
+                    if source in item and isinstance(item[source], str) and item[source] != item[source].lower():
+                        item[source] = item[source].lower()
+                        changes.append({"path": f"/{array_key}/{index}/{source}", "lowered_to": item[source]})
+                else:
+                    if source in item and target not in item:
+                        item[target] = item.pop(source)
+                        changes.append({"path": f"/{array_key}/{index}/{source}", "renamed_to": target})
+    return draft, changes
+
 
 @cache
 def load_schema(name: str) -> dict[str, Any]:

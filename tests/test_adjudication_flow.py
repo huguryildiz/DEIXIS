@@ -437,7 +437,7 @@ def test_a_fresh_decision_is_not_reread_until_the_question_is_revised(tmp_path, 
 
 
 def test_a_work_past_the_limit_is_not_reached_and_the_next_run_reads_it(tmp_path, monkeypatch):
-    monkeypatch.setattr(adjudication, "read_budget", budget_of(2, 1))
+    monkeypatch.setattr(adjudication, "read_budget", budget_of(4, 1))
     works, fetcher = papers(2)
     adapter = FakeAdapter(valid_response)
     app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
@@ -448,7 +448,7 @@ def test_a_work_past_the_limit_is_not_reached_and_the_next_run_reads_it(tmp_path
         store = app.state.store
         summary = step_output(store, first["id"], "adjudication_summary")
         codes = {key: fulltext_code(store, rid, svid) for key, svid in records_of(store, rid).items()}
-        monkeypatch.setattr(adjudication, "read_budget", budget_of(4, 2))
+        monkeypatch.setattr(adjudication, "read_budget", budget_of(8, 2))
         second = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
         _, again = wait(client, rid, second)
         later = {key: fulltext_code(store, rid, svid) for key, svid in records_of(store, rid).items()}
@@ -463,7 +463,7 @@ def test_a_work_past_the_limit_is_not_reached_and_the_next_run_reads_it(tmp_path
 
 def test_a_paused_run_whose_plan_is_exactly_the_limit_finishes_without_repeating_a_call(tmp_path, monkeypatch):
     """The plan is as long as the limit. A resumed run finishes it and repeats no call; the summary matches."""
-    monkeypatch.setattr(adjudication, "read_budget", budget_of(4, 2))
+    monkeypatch.setattr(adjudication, "read_budget", budget_of(8, 2))
     works, fetcher = papers(2)
 
     def uninterrupted():
@@ -511,7 +511,7 @@ def test_a_paused_run_whose_plan_is_exactly_the_limit_finishes_without_repeating
 
 
 def test_a_repair_leaves_the_last_work_not_reached_and_no_work_is_half_sent(tmp_path, monkeypatch):
-    monkeypatch.setattr(adjudication, "read_budget", budget_of(3, 2))
+    monkeypatch.setattr(adjudication, "read_budget", budget_of(5, 2))
     works, fetcher = papers(2)
     state = {"bad": True}
 

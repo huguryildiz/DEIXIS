@@ -925,13 +925,14 @@ class ResearchFlow:
         def jobs() -> Iterator[_AbstractJob]:
             """The (batch, run) calls in plan order, up to the batch the budget no longer holds whole."""
             nonlocal submitted
+            repair_factor = 1 + schema_repairs("abstract_screening")
             for number, batch in enumerate(batches):
                 # A call whose step is already stored is read back and costs nothing, so a resumed run charges the
                 # budget only for the calls it still has to make; counting the stored ones too left paid-for
                 # answers unused and later batches unread while the budget still held them.
                 owed = [run_no for run_no in range(1, runs + 1)
                         if f"abstract_screening:{number}:{run_no}" not in answered]
-                if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
+                if owed and not self._model_calls_left(run, len(owed) * repair_factor, submitted, spent_before):
                     # The budget stopped short of this batch. Its records are unread, which is a state the workflow
                     # already has, so the run finishes rather than pausing on something a later run will pick up.
                     unread.extend(svid for later in batches[number:] for svid in later)
@@ -1966,19 +1967,18 @@ class ResearchFlow:
 
         def jobs() -> Iterator[_AdjudicationJob]:
             nonlocal submitted
+            repair_factor = 1 + schema_repairs("fulltext_adjudication")
             for item in works:
                 head, read_version = item["head"], item["read_version"]
                 if not self._adjudication_member(run["research_id"], head, read_version):
                     continue
                 owed = [run_no for run_no in range(1, FULLTEXT_RUNS + 1)
                         if f"fulltext_adjudication:{head}:{run_no}" not in answered]
-                if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
+                if owed and not self._model_calls_left(run, len(owed) * repair_factor, submitted, spent_before):
                     return
                 for run_no in range(1, FULLTEXT_RUNS + 1):
                     still_owed = run_no in owed
-                    if still_owed and not self._model_calls_left(run, 1, submitted, spent_before):
-                        # A repair on an earlier call of this work used the room this call needed. The run
-                        # finishes; this work is not given a decision from one run.
+                    if still_owed and not self._model_calls_left(run, repair_factor, submitted, spent_before):
                         return
                     submitted += still_owed
                     yield _AdjudicationJob(f"fulltext_adjudication:{head}:{run_no}", head, read_version, run_no)
@@ -2827,6 +2827,8 @@ class ResearchFlow:
             developer = prompt.developer_instructions(
                 self.deps.package, task_type, phrasebank.frames_language(payload), sections=sections,
             )
+            if not adapter.enforces_schema:
+                developer = developer + "\n\n" + prompt.schema_appendix(task_type, schema)
             # Answer, review and cell steps show short handles; the stored StepInput keeps the record IDs they map back to.
             shown = contracts.with_citation_handles(payload) if task_type in HANDLE_TASKS else payload
             if repair_issues is None:
@@ -2860,6 +2862,9 @@ class ResearchFlow:
             output_text = result.raw_text or ""
             if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication"):
                 output_text = contracts.resolve_citation_handles(payload, output_text)
+            normalised_changes: list[dict[str, str]] = []
+            if isinstance(output_text, dict):
+                output_text, normalised_changes = contracts.normalise_output(task_type, output_text)
             report = contracts.validate_model_output(payload, output_text)
             salvage: list[contracts.Issue] = []
             if (not report.ok and task_type == "grounded_answer" and isinstance(output_text, dict)
@@ -2872,7 +2877,8 @@ class ResearchFlow:
                 else:
                     salvage = []
             warnings = [vars(w) for w in salvage + report.warnings]
-            recorded["validation_json"] = {"ok": report.ok, "issues": [vars(i) for i in report.issues], "warnings": warnings}
+            recorded["validation_json"] = {"ok": report.ok, "issues": [vars(i) for i in report.issues], "warnings": warnings,
+                                         "normalised": normalised_changes}
             if report.ok:
                 if task_type == "grounded_answer":
                     report.result = contracts.name_sources_in_prose(payload, report.result)

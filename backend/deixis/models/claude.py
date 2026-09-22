@@ -31,6 +31,7 @@ from deixis.models.adapter import ModelStepResult
 
 class ClaudeCodeAdapter:
     connection = "claude"
+    enforces_schema = True
 
     def __init__(self, workspace: Path, turn_timeout: float = 300.0):
         self.workspace = workspace

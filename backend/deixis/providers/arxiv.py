@@ -30,8 +30,9 @@ MAX_RESULTS = 100
 MIN_INTERVAL_SECONDS = 3.0
 UNSTATED_RATE_LIMIT_WAIT = 15.0  # the second bounded retry waits 30 s when Retry-After is absent
 MAX_RATE_LIMIT_WAIT = 30.0  # do not block a run for an unbounded provider-supplied delay
-# arXiv answers a too-frequent request with 406, not 429 (measured 2026-09-22: every arXiv search of three
-# discovery runs died at once, while the same URL answered 200 from another client minutes later).
+# arXiv sometimes answers 406 with an empty body; every search of the 2026-09-22 measurement runs got it while curl got
+# 200 for the same URL in the same second, and a minute later this client got 200 too. The cause is not known; reading
+# 406 as a rate limit only gives the bounded retries a second chance at it (D88).
 RATE_LIMIT_STATUSES = (429, 406)
 NS = {"a": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom",
       "opensearch": "http://a9.com/-/spec/opensearch/1.1/"}

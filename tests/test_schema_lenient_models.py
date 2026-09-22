@@ -17,7 +17,7 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents.fetch import FetchResult
 from deixis.domain import contracts
-from deixis.domain.rules import schema_repairs
+from deixis.domain.contracts import normalise_output
 from deixis.models import prompt
 from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
@@ -200,43 +200,13 @@ def _adjudication_app(tmp_path, monkeypatch, *, adapter, budget, concurrency=1, 
     ), pool
 
 
-def test_a_repair_leaves_the_last_works_not_reached_and_the_run_completes(tmp_path, monkeypatch):
-    """20 works, budget 42, every first adjudication call invalid → repair. Run completes with not_reached > 0,
-    no step writes budget_exhausted, no work is half-sent."""
-    call_count = {"n": 0}
-
-    def respond_with_repair(si):
-        call_count["n"] += 1
-        task = si["task_type"]
-        if task != "fulltext_adjudication":
-            return valid_response(si)
-        passage = si["passages"][0]
-        parts = si["adjudication_target"]["parts"]
-        # First attempt: use wrong field names (name/verdict instead of part/label)
-        if call_count["n"] % 2 == 1:
-            return json.dumps(envelope(si, "deixis.fulltext_adjudication.v1") | {
-                "parts": [{"name": p["name"], "verdict": "present", "quote": passage["text"][:60],
-                           "passage_id": passage["passage_id"], "rationale": "SYNTHETIC"} for p in parts],
-            })
-        # Second attempt (repair): correct field names
-        return json.dumps(envelope(si, "deixis.fulltext_adjudication.v1") | {
-            "parts": [{"part": p["name"], "label": "present", "quote": passage["text"][:60],
-                       "passage_id": passage["passage_id"], "rationale": "SYNTHETIC"} for p in parts],
-        })
-
-    # This test needs works that have PDFs and are in the reading plan.
-    # The adjudication runs inside an sw research that reached completion.
-    # For simplicity, we test the budget formula directly via the contracts and rules modules.
-    from deixis.domain.rules import schema_repairs as sr
-    assert sr("fulltext_adjudication") == 1
-    assert sr("abstract_screening") == 0
-    factor = 1 + sr("fulltext_adjudication")
-    assert factor == 2
+def test_a_review_output_given_as_text_has_its_claim_labels_lowered():
+    raw = json.dumps({"reviews": [{"claim_label": "C1", "verdict": "supported", "reason": "SYNTHETIC"}]})
+    draft, changes = normalise_output("answer_review", raw)
+    assert draft["reviews"][0]["claim_label"] == "c1"
+    assert changes == [{"path": "/reviews/0/claim_label", "lowered_to": "c1"}]
 
 
-def test_repair_factor_formula_is_correct():
-    assert schema_repairs("fulltext_adjudication") == 1
-    assert schema_repairs("abstract_screening") == 0
-    assert schema_repairs("grounded_answer") == 1
-    assert schema_repairs("vocabulary_labels") == 0
-    assert schema_repairs("term_suggestions") == 0
+def test_text_that_is_not_a_json_object_is_returned_as_it_came():
+    assert normalise_output("fulltext_adjudication", "{") == ("{", [])
+    assert normalise_output("fulltext_adjudication", "[1]") == ("[1]", [])

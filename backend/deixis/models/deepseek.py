@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import time
 from typing import Any
@@ -90,12 +89,9 @@ class DeepSeekAdapter:
         if not key or not requested_model:
             return ModelStepResult("unavailable", error=f"{KEY_ENV} is not set" if not key else "no model requested",
                                    delivery_class="before_send")
-        schema_text = json.dumps(output_schema, indent=2)
-        system = (
-            f"{base}\n\n{developer}\n\n"
-            f"The output must match this JSON schema exactly:\n{schema_text}\n\n"
-            "Return only a JSON object."
-        )
+        # The schema reaches the model through the developer instructions the step stores (the appendix a
+        # non-enforcing adapter is given, D86); a second copy here would be text the stored StepInput never shows.
+        system = f"{base}\n\n{developer}\n\nReturn only a JSON object."
         body: dict[str, Any] = {
             "model": requested_model,
             "messages": [

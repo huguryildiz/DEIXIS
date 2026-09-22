@@ -77,7 +77,7 @@ def test_health_reports_the_second_transport_error(monkeypatch):
     assert status["ready"] is False and status["reason"] == "DeepSeek API unreachable: ConnectTimeout" and len(calls) == 2
 
 
-def test_run_step_includes_the_output_schema_in_the_system_message(monkeypatch):
+def test_run_step_sends_the_developer_text_as_given_and_no_schema_copy(monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
     sent = []
 
@@ -90,9 +90,9 @@ def test_run_step_includes_the_output_schema_in_the_system_message(monkeypatch):
 
     schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}
     asyncio.run(adapter(handler).run_step("BASE", "DEV", "MSG", schema, "deepseek-v4-flash"))
+    # The schema the model sees is the appendix in the developer text the step stores; the adapter adds no copy.
     system = sent[0]["messages"][0]["content"]
-    assert '"ok"' in system and '"boolean"' in system
-    assert "The output must match this JSON schema exactly" in system
+    assert system == "BASE\n\nDEV\n\nReturn only a JSON object."
 
 
 def test_enforces_schema_is_false():

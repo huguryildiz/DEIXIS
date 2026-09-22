@@ -925,14 +925,13 @@ class ResearchFlow:
         def jobs() -> Iterator[_AbstractJob]:
             """The (batch, run) calls in plan order, up to the batch the budget no longer holds whole."""
             nonlocal submitted
-            repair_factor = 1 + schema_repairs("abstract_screening")
             for number, batch in enumerate(batches):
                 # A call whose step is already stored is read back and costs nothing, so a resumed run charges the
                 # budget only for the calls it still has to make; counting the stored ones too left paid-for
                 # answers unused and later batches unread while the budget still held them.
                 owed = [run_no for run_no in range(1, runs + 1)
                         if f"abstract_screening:{number}:{run_no}" not in answered]
-                if owed and not self._model_calls_left(run, len(owed) * repair_factor, submitted, spent_before):
+                if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
                     # The budget stopped short of this batch. Its records are unread, which is a state the workflow
                     # already has, so the run finishes rather than pausing on something a later run will pick up.
                     unread.extend(svid for later in batches[number:] for svid in later)
@@ -991,7 +990,8 @@ class ResearchFlow:
         if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
             return None
         output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
-                                        screening_target={"runs": ABSTRACT_RUNS, "run": run_no}, limiter=limiter)
+                                        screening_target={"runs": ABSTRACT_RUNS, "run": run_no}, limiter=limiter,
+                                        budget_short="skip")
         return None if output.get("invalid") else output
 
     def _abstract_code_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
@@ -1967,18 +1967,19 @@ class ResearchFlow:
 
         def jobs() -> Iterator[_AdjudicationJob]:
             nonlocal submitted
-            repair_factor = 1 + schema_repairs("fulltext_adjudication")
             for item in works:
                 head, read_version = item["head"], item["read_version"]
                 if not self._adjudication_member(run["research_id"], head, read_version):
                     continue
                 owed = [run_no for run_no in range(1, FULLTEXT_RUNS + 1)
                         if f"fulltext_adjudication:{head}:{run_no}" not in answered]
-                if owed and not self._model_calls_left(run, len(owed) * repair_factor, submitted, spent_before):
+                if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
                     return
                 for run_no in range(1, FULLTEXT_RUNS + 1):
                     still_owed = run_no in owed
-                    if still_owed and not self._model_calls_left(run, repair_factor, submitted, spent_before):
+                    if still_owed and not self._model_calls_left(run, 1, submitted, spent_before):
+                        # A repair on an earlier call of this work used the room this call needed. The run
+                        # finishes; this work is not given a decision from one run.
                         return
                     submitted += still_owed
                     yield _AdjudicationJob(f"fulltext_adjudication:{head}:{run_no}", head, read_version, run_no)
@@ -2083,7 +2084,8 @@ class ResearchFlow:
         target = {"source_id": job.read_version, "criterion": plan["criterion"]["criterion"],
                   "parts": plan["criterion"]["parts"], "runs": FULLTEXT_RUNS, "run": job.run_no}
         output = await self._model_step(run, scope, job.key, "fulltext_adjudication", source_ids=[job.read_version],
-                                        passage_rows=passages, adjudication_target=target, limiter=limiter)
+                                        passage_rows=passages, adjudication_target=target, limiter=limiter,
+                                        budget_short="skip")
         return None if output.get("invalid") else output
 
     def _adjudication_passages(self, research_id: str, scope: dict[str, Any], criterion: dict[str, Any],
@@ -2785,9 +2787,11 @@ class ResearchFlow:
                           screening_target: dict[str, Any] | None = None,
                           suggestion_target: dict[str, Any] | None = None,
                           adjudication_target: dict[str, Any] | None = None,
-                          limiter: ModelCallLimiter | None = None) -> dict[str, Any]:
+                          limiter: ModelCallLimiter | None = None, budget_short: str = "pause") -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
-        pausing or failing the run; a user pause or cancel still stops the run."""
+        pausing or failing the run; a user pause or cancel still stops the run. `budget_short="skip"` is the sw
+        stages' rule (D86): a call the budget no longer holds is closed and returned as invalid instead of pausing
+        the run, because those stages count what the budget did not reach and a later run reads it."""
         run_id, rid = run["id"], run["research_id"]
         step = self.store.step(run_id, operation_key, f"model:{task_type}")
         if step["status"] == "succeeded":
@@ -2812,6 +2816,18 @@ class ResearchFlow:
         max_repairs = schema_repairs(task_type)
         for attempt in range(max_repairs + 1):
             if self.store.run(run_id)["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"]:
+                if attempt and budget_short == "skip":
+                    # A repair the budget no longer holds is skipped (D86): the invalid answer stands for this run,
+                    # as an unrepaired one does, and the run goes on to what it can still afford.
+                    self.store.finish_step(step["id"], "failed", output={"step_input_id": payload["step_input_id"]},
+                                           error_code="invalid_model_output", error=repair_issues)
+                    return {"invalid": True, "raw_output": result.raw_text, "issues": repair_issues,
+                            "step_input_id": payload["step_input_id"], "repair_skipped": "budget_exhausted"}
+                if budget_short == "skip":
+                    # A concurrent sender checked the room before this call and a repair in flight took it. The
+                    # work is not reached: no decision is written for it and the run finishes rather than pausing.
+                    self.store.finish_step(step["id"], "failed", error_code="budget_exhausted")
+                    return {"invalid": True, "issues": [], "step_input_id": None, "not_reached": True}
                 self.store.finish_step(step["id"], "failed", error_code="budget_exhausted")
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
@@ -2862,9 +2878,8 @@ class ResearchFlow:
             output_text = result.raw_text or ""
             if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication"):
                 output_text = contracts.resolve_citation_handles(payload, output_text)
-            normalised_changes: list[dict[str, str]] = []
-            if isinstance(output_text, dict):
-                output_text, normalised_changes = contracts.normalise_output(task_type, output_text)
+            # Field names from the alias table are put right before validation and the renames recorded (D86).
+            output_text, normalised_changes = contracts.normalise_output(task_type, output_text)
             report = contracts.validate_model_output(payload, output_text)
             salvage: list[contracts.Issue] = []
             if (not report.ok and task_type == "grounded_answer" and isinstance(output_text, dict)

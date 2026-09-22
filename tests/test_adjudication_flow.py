@@ -437,7 +437,7 @@ def test_a_fresh_decision_is_not_reread_until_the_question_is_revised(tmp_path, 
 
 
 def test_a_work_past_the_limit_is_not_reached_and_the_next_run_reads_it(tmp_path, monkeypatch):
-    monkeypatch.setattr(adjudication, "read_budget", budget_of(4, 1))
+    monkeypatch.setattr(adjudication, "read_budget", budget_of(2, 1))
     works, fetcher = papers(2)
     adapter = FakeAdapter(valid_response)
     app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
@@ -448,7 +448,7 @@ def test_a_work_past_the_limit_is_not_reached_and_the_next_run_reads_it(tmp_path
         store = app.state.store
         summary = step_output(store, first["id"], "adjudication_summary")
         codes = {key: fulltext_code(store, rid, svid) for key, svid in records_of(store, rid).items()}
-        monkeypatch.setattr(adjudication, "read_budget", budget_of(8, 2))
+        monkeypatch.setattr(adjudication, "read_budget", budget_of(4, 2))
         second = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
         _, again = wait(client, rid, second)
         later = {key: fulltext_code(store, rid, svid) for key, svid in records_of(store, rid).items()}
@@ -463,7 +463,7 @@ def test_a_work_past_the_limit_is_not_reached_and_the_next_run_reads_it(tmp_path
 
 def test_a_paused_run_whose_plan_is_exactly_the_limit_finishes_without_repeating_a_call(tmp_path, monkeypatch):
     """The plan is as long as the limit. A resumed run finishes it and repeats no call; the summary matches."""
-    monkeypatch.setattr(adjudication, "read_budget", budget_of(8, 2))
+    monkeypatch.setattr(adjudication, "read_budget", budget_of(4, 2))
     works, fetcher = papers(2)
 
     def uninterrupted():
@@ -511,7 +511,7 @@ def test_a_paused_run_whose_plan_is_exactly_the_limit_finishes_without_repeating
 
 
 def test_a_repair_leaves_the_last_work_not_reached_and_no_work_is_half_sent(tmp_path, monkeypatch):
-    monkeypatch.setattr(adjudication, "read_budget", budget_of(5, 2))
+    monkeypatch.setattr(adjudication, "read_budget", budget_of(3, 2))
     works, fetcher = papers(2)
     state = {"bad": True}
 
@@ -701,3 +701,37 @@ def test_discovery_fetch_and_answer_runs_do_not_open_a_reading_step(tmp_path, mo
     assert reading["status"] == "completed"
     assert not any("adjudication" in kind for kind in discovery_kinds | fetch_kinds | answer_kinds)
     assert "model:grounded_answer" in answer_kinds and answered["status"] == "completed"
+
+
+def test_a_repair_the_budget_no_longer_holds_is_skipped_and_the_run_completes(tmp_path, monkeypatch):
+    """One work, budget 3, both first calls invalid: the first repair fits, the second does not. The second call is
+    closed `invalid_model_output`, the run is `completed` (not `budget_exhausted`), and the work gets no decision."""
+    monkeypatch.setattr(adjudication, "read_budget", budget_of(3, 1))
+    works, fetcher = papers(1)
+    bad = {1, 2}
+
+    def responder(si):
+        if si["task_type"] == "fulltext_adjudication" and si["adjudication_target"]["run"] in bad:
+            bad.discard(si["adjudication_target"]["run"])
+            return "{"
+        return valid_response(si)
+
+    adapter = FakeAdapter(responder)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter, concurrency=1)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        summary = step_output(store, reading["id"], "adjudication_summary")
+        steps = sorted((row["status"], row["error_code"]) for row in store.conn.execute(
+            "SELECT status, error_code FROM run_steps WHERE run_id = ? AND kind = 'model:fulltext_adjudication'",
+            (reading["id"],)).fetchall())
+        heads = [c["source_version_id"] for c in store.candidates(rid)]
+        decided = [fulltext_code(store, rid, svid) for svid in heads]
+    finally:
+        client.__exit__(None, None, None)
+    assert reading["status"] == "completed" and reading["pause_reason"] is None
+    assert steps == [("failed", "invalid_model_output"), ("succeeded", None)]
+    assert summary["model_calls"] == 3
+    assert all(code in (None, "not_read_yet") for code in decided)

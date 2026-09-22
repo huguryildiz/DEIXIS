@@ -118,14 +118,26 @@ OUTPUT_ALIASES: dict[str, dict[str, dict[str, str]]] = {
         "citation_anchors": {"claim_label": "lower"},
     },
     "answer_review": {
-        "claims": {"claim_label": "lower"},
-        "citation_anchors": {"claim_label": "lower"},
+        "reviews": {"claim_label": "lower"},
     },
 }
 
 
-def normalise_output(task_type: str, draft: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, str]]]:
+def normalise_output(task_type: str, draft: str | dict[str, Any]) -> tuple[str | dict[str, Any], list[dict[str, str]]]:
+    """Rename the fields of OUTPUT_ALIASES and lower-case claim labels, and say what changed (D86).
+
+    Names only: a value, a missing field or an unknown identifier is left for validation. A target already present
+    is not overwritten. Text that is not a JSON object is returned as it came.
+    """
     changes: list[dict[str, str]] = []
+    if isinstance(draft, str):
+        try:
+            parsed = json.loads(draft)
+        except json.JSONDecodeError:
+            return draft, changes
+        if not isinstance(parsed, dict):
+            return draft, changes
+        draft = parsed
     aliases = OUTPUT_ALIASES.get(task_type)
     if not aliases:
         return draft, changes

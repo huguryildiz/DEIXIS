@@ -32,7 +32,7 @@ from urllib.parse import quote
 import httpx
 
 from deixis.providers import crossref, semantic_scholar
-from deixis.providers.common import SearchOutcome, normalize_doi, send
+from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi, send
 
 S2_BATCH_URL = "https://api.semanticscholar.org/graph/v1/paper/batch"
 S2_LOOKUP_FIELDS = "externalIds,abstract,referenceCount"
@@ -61,12 +61,14 @@ def s2_identifier(doi: str) -> str:
     return f"DOI:{doi}"
 
 
-async def semantic_scholar_batch(client: httpx.AsyncClient, dois: list[str],
-                                 api_key: str | None = None) -> tuple[dict[str, LookupAnswer], SearchOutcome]:
+async def semantic_scholar_batch(client: httpx.AsyncClient, dois: list[str], api_key: str | None = None,
+                                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
+                                 ) -> tuple[dict[str, LookupAnswer], SearchOutcome]:
     """Ask Semantic Scholar about these DOIs in one request; every DOI comes back with an answer.
 
     One request carries the whole batch, so one failure leaves every record in it `failed` and the next source is
-    asked about all of them. Its retries are inside `outcome.retries` and are requests the caller counts.
+    asked about all of them. Its retries are inside `outcome.retries` and are requests the caller counts; how many
+    it may make is the caller's effort (D88), down to none.
     """
     ids = [s2_identifier(doi) for doi in dois]
     headers = {"x-api-key": api_key} if api_key else {}
@@ -75,7 +77,7 @@ async def semantic_scholar_batch(client: httpx.AsyncClient, dois: list[str],
     response, outcome = await send(client, S2_BATCH_URL, {"fields": S2_LOOKUP_FIELDS}, headers, description,
                                    access_mode, semantic_scholar.RATE_LIMIT_HEADERS, (api_key,),
                                    unstated_wait=semantic_scholar.UNSTATED_RATE_LIMIT_WAIT,
-                                   json_body={"ids": ids})
+                                   max_rate_limit_retries=max_rate_limit_retries, json_body={"ids": ids})
     if response is None:
         return _all_failed(dois), outcome
     try:

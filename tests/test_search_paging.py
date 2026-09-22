@@ -232,6 +232,11 @@ def client_of(app):
     return client
 
 
+def read_limit(records):
+    """The same read limit for every effort, so a test that is about paging is not about the effort's number."""
+    return {"quick": records, "standard": records, "detailed": records}
+
+
 def rows_of(view, provider="openalex"):
     return [s for s in view["search_runs"] if s["provider"] == provider]
 
@@ -258,7 +263,7 @@ def test_a_query_whose_provider_holds_less_than_the_limit_is_read_whole(tmp_path
 
 
 def test_a_query_stops_at_the_read_limit_and_counts_what_it_did_not_read(tmp_path, monkeypatch):
-    monkeypatch.setattr(flow, "SW_READ_LIMIT", 30)
+    monkeypatch.setattr(flow, "SW_READ_LIMIT", read_limit(30))
     providers = PagedProviders(openalex_total=45)
     app = app_for(tmp_path, monkeypatch, providers)
     client = client_of(app)
@@ -323,7 +328,7 @@ def test_a_failed_page_stops_its_query_only_and_is_retried_on_request(tmp_path, 
 
 def test_semantic_scholar_stops_at_the_thousand_records_it_serves(tmp_path, monkeypatch):
     """The read stops at the provider's own reachable depth and says how many records it left behind."""
-    monkeypatch.setattr(flow, "SW_READ_LIMIT", 2000)
+    monkeypatch.setattr(flow, "SW_READ_LIMIT", read_limit(2000))
     served = []
 
     def handler(request):
@@ -392,7 +397,7 @@ def _without_total(providers):
 
 def test_a_paged_run_may_send_more_requests_than_max_provider_requests(tmp_path, monkeypatch):
     """The page allowance is derived from the read limit; the run does not stop with `budget_exhausted`."""
-    monkeypatch.setattr(flow, "SW_READ_LIMIT", 80)
+    monkeypatch.setattr(flow, "SW_READ_LIMIT", read_limit(80))
     providers = PagedProviders(openalex_total=200)
     client = client_of(app_for(tmp_path, monkeypatch, providers))
     try:
@@ -449,12 +454,15 @@ class RateLimitedOnce(PagedProviders):
 
 def test_pages_that_each_needed_a_rate_limit_retry_do_not_exhaust_the_request_allowance(tmp_path, monkeypatch):
     """A retry is a request too. The allowance holds the retries every page may need, not one run's worth of them:
-    otherwise a long read that succeeded on every page pauses with `budget_exhausted` and resuming pauses it again."""
-    monkeypatch.setattr(flow, "SW_READ_LIMIT", 200)
+    otherwise a long read that succeeded on every page pauses with `budget_exhausted` and resuming pauses it again.
+
+    The effort is `standard`, because `quick` waits out no rate limit at all (D88) and would end each read on the
+    first 429 instead of retrying it."""
+    monkeypatch.setattr(flow, "SW_READ_LIMIT", read_limit(200))
     providers = RateLimitedOnce(openalex_total=200, crossref_total=200)
     client = client_of(app_for(tmp_path, monkeypatch, providers))
     try:
-        rid, run_id, view, run = discover(client)
+        rid, run_id, view, run = discover(client, effort="standard")
     finally:
         client.__exit__(None, None, None)
     assert reached_screening(run)  # it read everything and went on to the abstract stage
@@ -465,4 +473,4 @@ def test_pages_that_each_needed_a_rate_limit_retry_do_not_exhaust_the_request_al
 def test_an_empty_page_that_still_carries_a_cursor_ends_the_read():
     from deixis.providers.common import SearchOutcome
     empty = SearchOutcome("zero_results", None, "SYNTHETIC", "keyless", records=[], next_cursor="SYNTHETIC-cursor")
-    assert flow._stop_reason(CONNECTORS["openalex"], empty, True, 40) == "exhausted"
+    assert flow._stop_reason(CONNECTORS["openalex"], empty, True, 40, 400) == "exhausted"

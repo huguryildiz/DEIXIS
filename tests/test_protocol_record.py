@@ -114,7 +114,7 @@ def test_build_protocol_is_repeatable_and_reads_its_thresholds_from_their_defini
 def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     """The identity rule and the page read limit run on `sw` researches alone, so a legacy body is what it was."""
     from deixis.domain.record_identity import THRESHOLDS
-    from deixis.domain.rules import SW_READ_LIMIT
+    from deixis.domain.rules import PROVIDER_WAIT, SW_READ_LIMIT
     from deixis.domain.survey import THRESHOLDS as SURVEY_THRESHOLDS
     from deixis.workflow import protocol
     from deixis.workflow.criterion import THRESHOLDS as CRITERION_THRESHOLDS
@@ -139,9 +139,12 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     # approved cue phrases and no longer applies this threshold (slice 11, D84).
     assert "formulation_score_threshold" in legacy["thresholds"] and "formulation_score_threshold" not in sw["thresholds"]
     assert sw["thresholds"]["record_identity"] == THRESHOLDS
-    assert sw["thresholds"]["search_read"] == {"read_limit_per_query": SW_READ_LIMIT}
+    # This research's own effort, both figures (D88, slice 13c).
+    assert sw["thresholds"]["search_read"] == {"read_limit_per_query": SW_READ_LIMIT["quick"],
+                                               "rate_limit_retries": PROVIDER_WAIT["quick"]}
     assert sw["thresholds"] == {k: v for k, v in legacy["thresholds"].items() if k != "formulation_score_threshold"} | {
-        "record_identity": THRESHOLDS, "search_read": {"read_limit_per_query": SW_READ_LIMIT},
+        "record_identity": THRESHOLDS,
+        "search_read": {"read_limit_per_query": SW_READ_LIMIT["quick"], "rate_limit_retries": PROVIDER_WAIT["quick"]},
         "criterion_passages": CRITERION_PASSAGE_THRESHOLDS,
         "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS,
         "ranking": RANKING_THRESHOLDS,

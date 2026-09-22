@@ -20,7 +20,8 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send
+from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, ProviderRecord, SearchOutcome, next_offset,
+                                     normalize_doi, page_offset, send)
 
 PROVIDER_ID = "crossref"
 WORKS_URL = "https://api.crossref.org/works"
@@ -73,7 +74,8 @@ def record_from_item(item: dict[str, Any]) -> ProviderRecord:
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None,
+                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
     rows = min(limit, MAX_RESULTS)
     params: dict[str, Any] = {"query": query, "rows": rows, "select": SELECT, "filter": TYPES}
     if contact_email:
@@ -85,7 +87,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         params["offset"] = offset
     description = (f"GET {WORKS_URL} query={query!r} rows={rows}"
                    + (f" offset={offset}" if cursor is not None else "") + f" filter={TYPES} access=keyless")
-    response, outcome = await send(client, WORKS_URL, params, {}, description, "keyless", RATE_LIMIT_HEADERS)
+    response, outcome = await send(client, WORKS_URL, params, {}, description, "keyless", RATE_LIMIT_HEADERS,
+                                   max_rate_limit_retries=max_rate_limit_retries)
     if response is None:
         return outcome
     try:

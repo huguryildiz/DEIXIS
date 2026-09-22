@@ -4,7 +4,8 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 ## D88 — Bound what an effort collects, not how long it runs: per-query read limits and provider waiting by effort, with 5 / 10 / 15 minute targets measured afterwards
 
-**Status:** accepted; not implemented (slice 13c). **Date:** 2026-09-22.
+**Status:** accepted; implemented 2026-09-22 (slice 13c), except the timeout wait, which is unchanged: only the
+rate-limit wait is by effort. Durations not measured. **Date:** 2026-09-22.
 
 **Context:** The owner wants a `quick` research to finish in about 5 minutes, `standard` in 10 and `detailed` in 15. Today no effort has a time bound and the three efforts collect the same amount: every `sw` query is paged to `SW_READ_LIMIT` (2,000 records) whatever the effort; the efforts differ only in how many works the model reads afterwards (40 / 100 / 300 abstracts, 20 / 50 / 150 full texts). On the slice 13 smoke run (`quick`, one topic) discovery took 28 minutes: about 20 of them in providers, of which 12 in Semantic Scholar's rate-limited abstract lookups for records Crossref had returned without abstracts, and 3 in the code stage. Model calls took under 3 minutes.
 

@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, normalize_doi, send, year_of
+from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, ProviderRecord, SearchOutcome, normalize_doi, send, year_of
 
 PROVIDER_ID = "serpapi"
 SEARCH_URL = "https://serpapi.com/search.json"
@@ -54,7 +54,8 @@ def _record(result: dict[str, Any]) -> ProviderRecord:
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None,
+                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
     # `cursor` is accepted and ignored: SerpApi pages, but every page is a paid search and this is a supplementary
     # source (D13), so one page is read and `next_cursor` stays None.
     del cursor
@@ -62,7 +63,7 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     params = {"engine": "google_scholar", "q": query, "num": count, "hl": "en", "api_key": api_key or ""}
     description = f"GET {SEARCH_URL} engine=google_scholar q={query!r} num={count} access=api_key"
     response, outcome = await send(client, SEARCH_URL, params, {}, description, "api_key", (), (api_key,), timeout=60.0,
-                                   retry_rate_limit=False)
+                                   retry_rate_limit=False, max_rate_limit_retries=max_rate_limit_retries)
     if response is None:
         return outcome
     try:

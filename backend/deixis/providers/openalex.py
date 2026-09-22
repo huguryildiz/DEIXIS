@@ -18,7 +18,8 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import OtherVersion, ProviderRecord, SearchOutcome, normalize_doi, send
+from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, OtherVersion, ProviderRecord, SearchOutcome,
+                                     normalize_doi, send)
 
 __all__ = ["OtherVersion", "ProviderRecord", "SearchOutcome", "count_works", "normalize_doi", "reconstruct_abstract",
            "search_works"]
@@ -114,6 +115,7 @@ async def search_works(
     cursor: str | None = None,
     reference_count: bool = False,
     references: bool = False,
+    max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
 ) -> SearchOutcome:
     per_page = min(per_page, MAX_RESULTS)
     select = SELECT + "".join(f",{field}" for field, asked in
@@ -131,7 +133,8 @@ async def search_works(
     description = (f"GET {WORKS_URL} {SEARCH_PARAM}={query!r}" + (f" filter={works_filter}" if works_filter else "")
                    + f" per_page={per_page}" + (f" cursor={cursor}" if cursor is not None else "")
                    + f" access={access_mode}")
-    response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,))
+    response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
+                                   (api_key,), max_rate_limit_retries=max_rate_limit_retries)
     if response is None:
         return outcome
     try:

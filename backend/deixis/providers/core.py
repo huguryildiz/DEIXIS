@@ -24,7 +24,8 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send, year_of
+from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, ProviderRecord, SearchOutcome, next_offset,
+                                     normalize_doi, page_offset, send, year_of)
 
 PROVIDER_ID = "core"
 SEARCH_URL = "https://api.core.ac.uk/v3/search/works/"
@@ -66,7 +67,8 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None,
+                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
     count = min(limit, MAX_RESULTS)
     offset = page_offset(cursor)
     params: dict[str, Any] = {"q": query, "limit": count}
@@ -75,7 +77,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     headers = {"Authorization": f"Bearer {api_key or ''}"}
     description = (f"GET {SEARCH_URL} q={query!r} limit={count}"
                    + (f" offset={offset}" if cursor is not None else "") + " access=api_key")
-    response, outcome = await send(client, SEARCH_URL, params, headers, description, "api_key", RATE_HEADERS, (api_key,))
+    response, outcome = await send(client, SEARCH_URL, params, headers, description, "api_key", RATE_HEADERS, (api_key,),
+                                   max_rate_limit_retries=max_rate_limit_retries)
     if response is None:
         return outcome
     try:

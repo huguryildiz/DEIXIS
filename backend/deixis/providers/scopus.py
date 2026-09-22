@@ -21,7 +21,8 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send, year_of
+from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, ProviderRecord, SearchOutcome, next_offset,
+                                     normalize_doi, page_offset, send, year_of)
 
 PROVIDER_ID = "scopus"
 SEARCH_URL = "https://api.elsevier.com/content/search/scopus"
@@ -78,7 +79,8 @@ async def complete_view_entitled(client: httpx.AsyncClient, api_key: str) -> boo
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None,
+                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
     count = min(limit, MAX_RESULTS)
     offset = page_offset(cursor)
     params: dict[str, Any] = {"query": query, "count": count, "view": "STANDARD", "sort": "relevancy"}
@@ -87,7 +89,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     headers = {"X-ELS-APIKey": api_key or "", "Accept": "application/json"}
     description = (f"GET {SEARCH_URL} query={query!r} count={count}"
                    + (f" start={offset}" if cursor is not None else "") + " view=STANDARD sort=relevancy access=api_key")
-    response, outcome = await send(client, SEARCH_URL, params, headers, description, "api_key", RATE_LIMIT_HEADERS, (api_key,))
+    response, outcome = await send(client, SEARCH_URL, params, headers, description, "api_key", RATE_LIMIT_HEADERS,
+                                   (api_key,), max_rate_limit_retries=max_rate_limit_retries)
     if response is None:
         return outcome
     try:

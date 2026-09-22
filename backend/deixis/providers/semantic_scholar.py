@@ -18,7 +18,8 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send
+from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, ProviderRecord, SearchOutcome, next_offset,
+                                     normalize_doi, page_offset, send)
 
 PROVIDER_ID = "semantic_scholar"
 SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -55,7 +56,8 @@ def _record(paper: dict[str, Any]) -> ProviderRecord:
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None,
+                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
     count = min(limit, MAX_RESULTS)
     params: dict[str, Any] = {"query": query, "limit": count, "fields": FIELDS}
     offset = page_offset(cursor)
@@ -66,7 +68,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     description = (f"GET {SEARCH_URL} query={query!r} limit={count}"
                    + (f" offset={offset}" if cursor is not None else "") + f" access={access_mode}")
     response, outcome = await send(client, SEARCH_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,),
-                                   unstated_wait=UNSTATED_RATE_LIMIT_WAIT)
+                                   unstated_wait=UNSTATED_RATE_LIMIT_WAIT,
+                                   max_rate_limit_retries=max_rate_limit_retries)
     if response is None:
         return outcome
     try:

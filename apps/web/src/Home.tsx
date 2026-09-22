@@ -22,9 +22,9 @@ export const scopeOptions: Record<SourceScope, { icon: LucideIcon; detail: strin
   attached_and_academic: { icon: Layers, detail: 'Search scholarly providers using a selected PDF and your question' },
 }
 export const effortOptions: Record<Effort, { icon: LucideIcon; detail: string }> = {
-  quick: { icon: Zap, detail: 'Up to 3 searches of 10 results, 20 candidates, 16 passages' },
-  standard: { icon: Gauge, detail: 'Up to 8 searches (the core search 100 results, the others 25), 250 candidates, 48 passages' },
-  detailed: { icon: Telescope, detail: 'Up to 12 searches (the core search 100 results, the others 25), 300 candidates, 80 passages' },
+  quick: { icon: Zap, detail: 'Up to 3 searches of 400 results, 20 candidates, 16 passages' },
+  standard: { icon: Gauge, detail: 'Up to 8 searches (the core search 100 results, the others 1,000), 250 candidates, 48 passages' },
+  detailed: { icon: Telescope, detail: 'Up to 12 searches (the core search 100 results, the others 2,000), 300 candidates, 80 passages' },
 }
 
 export function Option({ icon: Icon, title, detail }: { icon: LucideIcon; title: string; detail?: ReactNode }) {

@@ -252,13 +252,17 @@ def test_only_an_abstract_a_second_source_gave_is_read_into_the_links_again(tmp_
 
 
 def test_a_source_that_is_rate_limited_on_every_attempt_leaves_the_work_to_the_other(tmp_path, monkeypatch):
-    """Acceptance 2: the run does not stop, does not pause, and Crossref is still asked (D18)."""
+    """Acceptance 2: the run does not stop, does not pause, and Crossref is still asked (D18).
+
+    The effort is `detailed`, which waits out the same number of 429s this test was written for; how many each
+    effort waits out is D88's own question and tests/test_effort_limits.py's.
+    """
     sources = Sources(works=[work(1, doi="10.1/a")], s2_status=429,
                       crossref={"10.1/a": {"abstract": "<jats:p>We measure SYNTHETIC relay energy.</jats:p>"}})
     app = app_for(tmp_path, monkeypatch, sources)
     client = client_of(app)
     try:
-        rid, run_id, view, run = discover(client)
+        rid, run_id, view, run = discover(client, effort="detailed")
         store = app.state.store
         svid = records_of(store, rid)["W1"]
         filled = abstract_of(store, svid)
@@ -296,7 +300,7 @@ def test_the_lookup_requests_have_their_own_counter_and_never_touch_the_search_a
     app = app_for(tmp_path, monkeypatch, sources)
     client = client_of(app)
     try:
-        rid, run_id, view, run = discover(client)
+        rid, run_id, view, run = discover(client, effort="detailed")  # the effort that waits out both 429s (D88)
         usage = app.state.store.run(run_id)["usage"]
         searches = len([s for s in run["steps"] if s["kind"].startswith("provider_search")])
     finally:

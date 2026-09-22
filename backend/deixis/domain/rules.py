@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
+
 MAX_SCHEMA_REPAIRS = 1
 MAX_RATE_LIMIT_MODEL_RETRIES = 2  # extra resends after a rate-limited response, before the call halts as today
 MAX_ACTIVE_MODEL_CALLS = 1
@@ -24,9 +26,18 @@ class EffortBudget:
     core_depth: int = 0
 
 
-# How many records one sw query reads across its pages. Hand-picked: above the 1,369-record first round SW7 ranked,
-# below the vocabulary step's MANAGEABLE_TOTAL. It never drops a record that was read; what it leaves unread is counted.
-SW_READ_LIMIT = 2_000
+# How many records one sw query reads across its pages, by effort (D88, slice 13c). `detailed` keeps the number
+# slice 04c picked by hand — above the 1,369-record first round SW7 ranked, below the vocabulary step's
+# MANAGEABLE_TOTAL — and the two lighter efforts were picked by hand beside it; none of the three was measured.
+# The limit never drops a record that was read; what it leaves unread is counted (`unread_count`).
+SW_READ_LIMIT = {"quick": 400, "standard": 1_000, "detailed": 2_000}
+
+# How many times a paged sw read or an sw abstract lookup batch waits out a provider's 429, by effort (D88).
+# `quick` does not wait at all: the rate-limited page or batch ends that read there, its records stay `unread` /
+# `abstract_not_found` and are counted, and the run goes on. `detailed` waits as much as it always did. The waiting
+# is bounded by count, never by a clock: no effort stops a run at a time (D88). The `legacy` workflow and the
+# Crossref lookup path do not read this at all and send what they always sent.
+PROVIDER_WAIT = {"quick": 0, "standard": 1, "detailed": MAX_RATE_LIMIT_RETRIES}
 
 # Screening proposals are requested for at most this many candidates per model call.
 SCREENING_BATCH = 40

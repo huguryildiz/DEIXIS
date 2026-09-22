@@ -26,6 +26,7 @@ import httpx
 from deixis.config import Settings
 from deixis.domain import survey
 from deixis.domain.record_identity import record_kind
+from deixis.domain.rules import PROVIDER_WAIT
 from deixis.providers import lookup
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
 from deixis.providers.registry import CONNECTORS
@@ -73,6 +74,19 @@ def answered(store: Store, source_version_id: str, provider: str) -> bool:
     """Whether a source has already answered about this record. A `failed` row is not an answer."""
     return store.conn.execute(
         "SELECT 1 FROM record_lookups WHERE source_version_id = ? AND provider = ? AND status IN ('found', 'not_found')",
+        (source_version_id, provider),
+    ).fetchone() is not None
+
+
+def asked_out(store: Store, source_version_id: str, provider: str) -> bool:
+    """Whether this source is done with this record for an effort that does not wait on a rate limit (D88).
+
+    A `failed` row — a refused batch, a timeout — counts here, because a `quick` run does not ask that source again:
+    what it left is `abstract_not_found`, not a `no_abstract` that promises a retry this run will never make. A later
+    discovery run still asks, because `answered` goes on reading a failed row as no answer.
+    """
+    return store.conn.execute(
+        "SELECT 1 FROM record_lookups WHERE source_version_id = ? AND provider = ?",
         (source_version_id, provider),
     ).fetchone() is not None
 
@@ -237,11 +251,14 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     library already has an answer for is passed over, so a run resumed mid-chunk carries on where it stopped.
     """
     run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+    # How many 429s one batch waits out is this research's effort (D88). `quick` waits for none: the refused batch
+    # is recorded with its status, its records stay without an abstract, and the next batch is still sent.
+    waits = PROVIDER_WAIT[scope["effort"]]
     plan = _code_step(store, run_id, "lookup_plan:semantic_scholar", "code:lookup_plan",
                       lambda: plan_semantic_scholar(store, rid, revision, scope, words, limit))
     for number, batch in enumerate(plan["batches"]):
         checkpoint()
-        await _semantic_scholar_step(store, http, settings, run, number, batch)
+        await _semantic_scholar_step(store, http, settings, run, number, batch, waits)
     plan_cr = _code_step(store, run_id, "lookup_plan:crossref", "code:lookup_plan",
                          lambda: plan_crossref(store, rid, revision, scope, words, len(plan["batches"]), limit))
     for number, chunk in enumerate(plan_cr["chunks"]):
@@ -262,8 +279,12 @@ def _code_step(store: Store, run_id: str, key: str, kind: str, build: Callable[[
 
 
 async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
-                                 number: int, batch: list[dict[str, Any]]) -> None:
-    """One batch request. The whole batch shares one request, so one failure leaves every record in it `failed`."""
+                                 number: int, batch: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES) -> None:
+    """One batch request. The whole batch shares one request, so one failure leaves every record in it `failed`.
+
+    `waits` is how many 429s this effort waits out (D88); it is written on the step, so a skipped wait is on the
+    record of the run and not silent.
+    """
     step = store.step(run["id"], f"record_lookup:semantic_scholar:{number}", "provider_lookup:semantic_scholar")
     if step["status"] == "succeeded":
         return
@@ -274,14 +295,16 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
         return
     connector = CONNECTORS["semantic_scholar"]
     store.add_usage(run["id"], "lookup_requests")
-    answers, outcome = await lookup.semantic_scholar_batch(http, [row["doi"] for row in asking], connector.api_key())
+    answers, outcome = await lookup.semantic_scholar_batch(http, [row["doi"] for row in asking], connector.api_key(),
+                                                           max_rate_limit_retries=waits)
     if outcome.retries:
         store.add_usage(run["id"], "lookup_requests", outcome.retries)
     payload_ref = _write_payload(settings, step["id"], outcome.raw_payload)
     added = [store_answer(store, row["source_version_id"], "semantic_scholar", answers[row["doi"]], step["id"],
                           payload_ref) for row in asking]
     # The step succeeded whatever the source answered: a failure is an answer stored on the record, not a broken run.
-    store.finish_step(step["id"], "succeeded", output=_counts(added, asked=len(asking), status=outcome.status))
+    store.finish_step(step["id"], "succeeded",
+                      output=_counts(added, asked=len(asking), status=outcome.status) | {"rate_limit_retries": waits})
 
 
 async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
@@ -428,7 +451,10 @@ def _wanted_decision(store: Store, decisions: DecisionStore, research_id: str, r
         if not row["doi"]:
             return "abstract_not_found", "no_doi"
         asked = [source for source in SOURCES if in_scope(scope, source)]
-        if all(answered(store, row["source_version_id"], source) for source in asked):
+        # An effort that does not wait on a rate limit does not ask again in this run either, so a refused batch is
+        # as final here as an answer without an abstract (D88).
+        settled = answered if PROVIDER_WAIT[scope["effort"]] else asked_out
+        if all(settled(store, row["source_version_id"], source) for source in asked):
             # Either every source in scope answered without an abstract, or no source is in scope to ask.
             return "abstract_not_found", ", ".join(asked) or "no_source_in_scope"
         # Left outside this run's request limit, or every answer failed: a later discovery run asks again.

@@ -13,7 +13,7 @@ from __future__ import annotations
 import httpx
 
 from deixis.providers import openalex
-from deixis.providers.common import SearchOutcome
+from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome
 
 PROVIDER_ID = "biorxiv"
 SOURCE_ID = "S4306402567"
@@ -22,6 +22,7 @@ MAX_RESULTS = openalex.MAX_RESULTS
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None,
+                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
     return await openalex.search_works(client, query, limit, api_key, contact_email, works_filter=WORKS_FILTER,
-                                       cursor=cursor)
+                                       cursor=cursor, max_rate_limit_retries=max_rate_limit_retries)

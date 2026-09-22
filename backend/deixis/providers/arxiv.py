@@ -20,7 +20,8 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import ProviderRecord, SearchOutcome, next_offset, normalize_doi, page_offset, send
+from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, ProviderRecord, SearchOutcome, next_offset,
+                                     normalize_doi, page_offset, send)
 
 PROVIDER_ID = "arxiv"
 QUERY_URL = "https://export.arxiv.org/api/query"
@@ -71,7 +72,8 @@ def _record(entry: ET.Element) -> ProviderRecord:
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None,
+                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
     global _last_request
     count = min(limit, MAX_RESULTS)
     offset = page_offset(cursor)  # the unpaged request already starts at 0
@@ -83,7 +85,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         if wait > 0:
             await asyncio.sleep(wait)
         response, outcome = await send(client, QUERY_URL, params, {}, description, "keyless",
-                                       unstated_wait=UNSTATED_RATE_LIMIT_WAIT, max_retry_wait=MAX_RATE_LIMIT_WAIT)
+                                       unstated_wait=UNSTATED_RATE_LIMIT_WAIT, max_retry_wait=MAX_RATE_LIMIT_WAIT,
+                                       max_rate_limit_retries=max_rate_limit_retries)
         _last_request = time.monotonic()
     if response is None:
         return outcome

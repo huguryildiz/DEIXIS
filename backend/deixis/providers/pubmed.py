@@ -21,8 +21,8 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.common import (ProviderRecord, SearchOutcome, keywords, next_offset, normalize_doi,
-                                     page_offset, send, year_of)
+from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, ProviderRecord, SearchOutcome, keywords, next_offset,
+                                     normalize_doi, page_offset, send, year_of)
 
 PROVIDER_ID = "pubmed"
 BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
@@ -123,7 +123,8 @@ def records_from_xml(value: str) -> list[ProviderRecord]:
 
 
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
-                 contact_email: str | None = None, cursor: str | None = None) -> SearchOutcome:
+                 contact_email: str | None = None, cursor: str | None = None,
+                 max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
     count = min(limit, MAX_RESULTS)
     offset = page_offset(cursor)
     common: dict[str, Any] = {"db": "pubmed", "tool": "DEIXIS"}
@@ -139,6 +140,7 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         esearch["retstart"] = offset  # ESearch reaches record 9,999; the read limit stops well before that
     response, outcome = await send(
         client, SEARCH_URL, common | esearch, {}, search_description, access_mode, RATE_LIMIT_HEADERS, (api_key,),
+        max_rate_limit_retries=max_rate_limit_retries,
     )
     if response is None:
         return outcome
@@ -161,6 +163,7 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     fetched, fetch_outcome = await send(
         client, FETCH_URL, common | {"id": ",".join(ids), "retmode": "xml"}, {},
         fetch_description, access_mode, RATE_LIMIT_HEADERS, (api_key,),
+        max_rate_limit_retries=max_rate_limit_retries,
     )
     outcome.request_description = f"{search_description}; {fetch_description}"
     outcome.retries += fetch_outcome.retries

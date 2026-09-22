@@ -137,15 +137,17 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                access_mode: str, rate_headers: tuple[str, ...] = (), secrets: tuple[str | None, ...] = (),
                timeout: float = 30.0, retry_rate_limit: bool = True, unstated_wait: float = 3.0,
                max_retry_wait: float = MAX_RETRY_WAIT_SECONDS,
+               max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
                json_body: Any = None) -> tuple[httpx.Response | None, SearchOutcome]:
     """One GET, or a POST when `json_body` is given, with bounded retries on 429.
 
     Returns the 200 response, or None with the classified failure outcome.
 
-    A 429 is retried at most MAX_RATE_LIMIT_RETRIES times when the provider's wait is short or unstated (then
+    A 429 is retried at most `max_rate_limit_retries` times when the provider's wait is short or unstated (then
     `unstated_wait` seconds times the retry number, bounded by `max_retry_wait`); each retry is a
-    separate request and is counted by the caller through `outcome.retries`. Another 4xx means the provider rejected the
-    request; a 5xx leaves it unknown whether the request was processed.
+    separate request and is counted by the caller through `outcome.retries`. The caller's own effort may lower that
+    count, down to not waiting at all (D88); the default is what every caller sent before there was a parameter.
+    Another 4xx means the provider rejected the request; a 5xx leaves it unknown whether the request was processed.
     """
     retries = 0
     while True:
@@ -172,7 +174,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                     retries=retries)
         if response.status_code == 429:
             wait = _retry_wait(response.headers.get("retry-after"), retries, unstated_wait, max_retry_wait)
-            if retry_rate_limit and retries < MAX_RATE_LIMIT_RETRIES and wait is not None:
+            if retry_rate_limit and retries < max_rate_limit_retries and wait is not None:
                 retries += 1
                 await asyncio.sleep(wait)
                 continue

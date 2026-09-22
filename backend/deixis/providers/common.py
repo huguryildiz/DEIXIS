@@ -138,6 +138,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                timeout: float = 30.0, retry_rate_limit: bool = True, unstated_wait: float = 3.0,
                max_retry_wait: float = MAX_RETRY_WAIT_SECONDS,
                max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
+               rate_limit_statuses: tuple[int, ...] = (429,),
                json_body: Any = None) -> tuple[httpx.Response | None, SearchOutcome]:
     """One GET, or a POST when `json_body` is given, with bounded retries on 429.
 
@@ -148,6 +149,10 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
     separate request and is counted by the caller through `outcome.retries`. The caller's own effort may lower that
     count, down to not waiting at all (D88); the default is what every caller sent before there was a parameter.
     Another 4xx means the provider rejected the request; a 5xx leaves it unknown whether the request was processed.
+
+    `rate_limit_statuses` is which statuses read as a rate limit. It is 429 everywhere but arXiv, which answers a
+    too-frequent request with 406 (measured 2026-09-22): without this its searches die on the first refusal and no
+    effort's waiting rule (D88) ever applies to them.
     """
     retries = 0
     while True:
@@ -172,14 +177,15 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
         rate = {h: response.headers[h] for h in (*rate_headers, "retry-after") if h in response.headers}
         base = dict(request_description=description, access_mode=access_mode, http_status=response.status_code, rate_limit=rate,
                     retries=retries)
-        if response.status_code == 429:
+        if response.status_code in rate_limit_statuses:
             wait = _retry_wait(response.headers.get("retry-after"), retries, unstated_wait, max_retry_wait)
             if retry_rate_limit and retries < max_rate_limit_retries and wait is not None:
                 retries += 1
                 await asyncio.sleep(wait)
                 continue
             return None, SearchOutcome("rate_limited", "rejected_not_executed", **base,
-                                       error=redact(response.text[:300], *secrets) or "429 Too Many Requests")
+                                       error=redact(response.text[:300], *secrets)
+                                       or f"{response.status_code} Too Many Requests")
         if response.status_code in (401, 403):
             status = "entitlement_missing" if access_mode == "api_key" else "auth_required"
             return None, SearchOutcome(status, "rejected_not_executed", **base, error=redact(response.text[:300], *secrets))

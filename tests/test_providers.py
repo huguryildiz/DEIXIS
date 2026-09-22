@@ -346,6 +346,20 @@ def test_short_rate_limit_is_retried_and_counted(provider, no_waits):
     assert no_waits[-2:] == [15.0 if provider in ("semantic_scholar", "arxiv") else 3.0, 2.0]
 
 
+def test_arxiv_406_is_a_rate_limit_and_is_retried(no_waits):
+    """arXiv answers a too-frequent request with 406, not 429; measured live on 2026-09-22 when every arXiv
+    search of three discovery runs died at once. Only arXiv reads 406 this way."""
+    outcome, seen = run("arxiv", lambda r: httpx.Response(406))
+    assert (outcome.status, outcome.delivery_class, outcome.retries, len(seen)) == ("rate_limited", "rejected_not_executed", 2, 3)
+    assert no_waits[-2:] == [15.0, 30.0]
+
+
+@pytest.mark.parametrize("provider", [p for p in ALL if p != "arxiv"])
+def test_406_stays_a_plain_failure_for_every_other_provider(provider):
+    outcome, seen = run(provider, lambda r: httpx.Response(406), key=key_for(provider))
+    assert (outcome.status, outcome.delivery_class, len(seen)) == ("failed", "rejected_not_executed", 1)
+
+
 def test_arxiv_rate_limit_without_retry_after_uses_bounded_15_and_30_second_backoff(no_waits):
     outcome, seen = run("arxiv", lambda r: httpx.Response(429))
     assert (outcome.status, outcome.retries, len(seen)) == ("rate_limited", 2, 3)

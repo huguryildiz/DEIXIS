@@ -30,6 +30,9 @@ MAX_RESULTS = 100
 MIN_INTERVAL_SECONDS = 3.0
 UNSTATED_RATE_LIMIT_WAIT = 15.0  # the second bounded retry waits 30 s when Retry-After is absent
 MAX_RATE_LIMIT_WAIT = 30.0  # do not block a run for an unbounded provider-supplied delay
+# arXiv answers a too-frequent request with 406, not 429 (measured 2026-09-22: every arXiv search of three
+# discovery runs died at once, while the same URL answered 200 from another client minutes later).
+RATE_LIMIT_STATUSES = (429, 406)
 NS = {"a": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom",
       "opensearch": "http://a9.com/-/spec/opensearch/1.1/"}
 
@@ -86,7 +89,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
             await asyncio.sleep(wait)
         response, outcome = await send(client, QUERY_URL, params, {}, description, "keyless",
                                        unstated_wait=UNSTATED_RATE_LIMIT_WAIT, max_retry_wait=MAX_RATE_LIMIT_WAIT,
-                                       max_rate_limit_retries=max_rate_limit_retries)
+                                       max_rate_limit_retries=max_rate_limit_retries,
+                                       rate_limit_statuses=RATE_LIMIT_STATUSES)
         _last_request = time.monotonic()
     if response is None:
         return outcome

@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlsplit
 
 from deixis.providers import arxiv, biorxiv, core, crossref, ieee_xplore, openalex, pubmed, scopus, semantic_scholar, serpapi
 from deixis.providers.common import SearchOutcome
@@ -38,6 +39,9 @@ class Connector:
     # Extra arguments an sw paged read passes to `search`, so a legacy request stays byte for byte what it was and
     # the flow never names a provider to decide what to ask for (slice 05).
     sw_options: dict[str, Any] = field(default_factory=dict)
+    # The host name a search request goes to, taken from the URL the module sends it to. Two connectors that share one
+    # are read one request at a time between them (D89): bioRxiv is searched through OpenAlex.
+    host: str = ""
 
     def api_key(self) -> str | None:
         return (os.environ.get(self.key_env) or None) if self.key_env else None
@@ -48,21 +52,30 @@ class Connector:
         return "not_configured" if self.key_required else "keyless"
 
 
+def _host(url: str) -> str:
+    return urlsplit(url).hostname or ""
+
+
 CONNECTORS = {c.provider_id: c for c in (
     Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",
-              sw_options={"reference_count": True, "references": True}),
+              sw_options={"reference_count": True, "references": True}, host=_host(openalex.WORKS_URL)),
     # Semantic Scholar serves `offset + limit` up to 1,000 and refuses a deeper page.
-    Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000),
-    Connector("crossref", crossref.search, crossref.MAX_RESULTS, searchable=False),  # verification only (D87)
+    Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000,
+              host=_host(semantic_scholar.SEARCH_URL)),
+    Connector("crossref", crossref.search, crossref.MAX_RESULTS, searchable=False,  # verification only (D87)
+              host=_host(crossref.WORKS_URL)),
     # arXiv asks for three seconds between requests and refused consecutive ones on 2026-09-15 (D18).
-    Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS, page_gap=3.0),
-    Connector("biorxiv", biorxiv.search, biorxiv.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor"),  # searched through OpenAlex
-    Connector("pubmed", pubmed.search, pubmed.MAX_RESULTS, "NCBI_API_KEY"),
-    Connector("ieee_xplore", ieee_xplore.search, ieee_xplore.MAX_RESULTS, "IEEE_API_KEY", key_required=True),
-    Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True),
-    Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True),
+    Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS, page_gap=3.0, host=_host(arxiv.QUERY_URL)),
+    Connector("biorxiv", biorxiv.search, biorxiv.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",  # searched through OpenAlex
+              host=_host(openalex.WORKS_URL)),
+    Connector("pubmed", pubmed.search, pubmed.MAX_RESULTS, "NCBI_API_KEY", host=_host(pubmed.BASE_URL)),
+    Connector("ieee_xplore", ieee_xplore.search, ieee_xplore.MAX_RESULTS, "IEEE_API_KEY", key_required=True,
+              host=_host(ieee_xplore.SEARCH_URL)),
+    Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,
+              host=_host(scopus.SEARCH_URL)),
+    Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True, host=_host(core.SEARCH_URL)),
     Connector("serpapi", serpapi.search, serpapi.MAX_RESULTS, "SERPAPI_API_KEY", key_required=True, supplementary=True,
-              paging="single_page"),
+              paging="single_page", host=_host(serpapi.SEARCH_URL)),
 )}
 
 

@@ -2,6 +2,61 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D89 — Split the request allowance per sw query before the read starts, read discovery searches on several hosts at once, and write what they read in query order
+
+**Status:** accepted; implemented 2026-09-22 (slice 13f). The wall-clock gain is not measured. **Date:** 2026-09-22.
+
+**Context:** After slice 13e the provider searches of discovery are the largest item of a run (`standard`: about 6.5
+of its 13.6 discovery minutes), because the queries were read one after another: 1.5 to 1.9 requests in flight on
+average. 13e left the search parallelism out: before each page `_search` compared the run's shared request counter
+with a run-wide allowance and paused the whole run with `budget_exhausted` when it was reached. Read in parallel,
+which query spent the counter first would depend on which host answered first, so the same input could pause at a
+different page.
+
+**Decision:** (1) Every sw query gets its own request allowance before its read starts, `page_allowance(query,
+effort, budget)`: the pages its provider needs to reach the effort's read limit (or the provider's own reachable
+depth), times the requests one page may take (`1 + PROVIDER_WAIT[effort] + MAX_TRANSIENT_NETWORK_RETRIES`), plus
+the run's `retry_provider_requests`, which a "search again" action raises by one per failed search and which every
+query gets alike. Nothing in it reads another query's count. (2) Each query's requests are counted under
+`usage["query_requests"]["search:<index>"]`, written in the same transaction as the run's `provider_requests`, so a
+resumed run finds them. The run's own counter and what the user sees are unchanged. (3) A query that has spent its
+share ends its own read: the page after which no request is left carries `stop_reason: "budget_exhausted"` and its
+`unread_count`; when the share is already spent before a page is asked (a run resumed after a crash, or asked to
+search again), that page's step is closed `cancelled` with `error_code: "budget_exhausted"` and no request is sent.
+The run no longer pauses with `budget_exhausted` in the sw search stage, and the other queries go on. D18 is
+unchanged: a run pauses only when no search of its first round succeeded. (4) A round's queries are grouped by the
+host their requests go to (`Connector.host`, taken from the URL each module sends to; bioRxiv shares OpenAlex's
+host). A host is asked one request at a time, its queries and pages in query and page order; at most
+`SEARCH_PARALLEL_HOSTS = 4` hosts are read at once, whatever the effort. Page gaps, arXiv's interval, the Semantic
+Scholar gate and the effort's 429 waiting run inside each host's task, as before. (5) A host's task writes nothing
+but request counts. The pages are written by the round itself, in query order: a query's pages are written once its
+read has ended and every query before it has been written, each page's step, search run and records in one
+transaction. With no query at its allowance the rows, records, versions, candidates, work heads, step outputs and
+events are those the one-by-one read wrote, in the same order (`tests/fixtures/search_parallelism/`, recorded on the
+sequential code). A page's step carries the request's own start and end, not the time it was written. The
+expansion round starts after the first round is written. (6) A stop is looked at before each request and written
+once the requests in flight have finished; every page read is written, in query order, and a resumed run goes on
+from the stored cursors without asking a page twice (owner's choice, 2026-09-22). A page read but not written when
+the process dies has no step, and is asked again.
+
+**Deviation from the run-wide allowance:** the shares add up to the old run allowance minus `max_provider_requests
++ MAX_TRANSIENT_NETWORK_RETRIES + MAX_RATE_LIMIT_RETRIES − n`, n the queries the run reads (plus `(n − 1) ×
+retry_provider_requests` after a retry action). With at most `max_provider_requests` queries per round, the sum is
+4 to 6 requests below the old allowance for `quick` (3 per round), 4 to 11 below for `standard` (8), 4 to 15 below
+for `detailed` (12) when only the first round reads, and at most 1 below, 4 above and 8 above when both rounds read
+all their queries. An OpenAlex query's own share is 6, 20 and 50 requests by effort, so the difference is small, and
+no measured run reached the old allowance.
+
+**Limits:** The wall-clock gain, whether 4 hosts is the right bound, and whether four providers at once draw more
+429 or 406 answers are not measured (the third run of the 13ö measurement does). Whether a query's share ever runs
+out on a real run is not known. A run paused in the middle of a round and then resumed can write the queries in
+another order than an uninterrupted run: the pages of a later query read before the pause are written before the
+rest of an earlier, half-read query. The records, pages and unread counts are the same, but when two providers
+return the same DOI, which provider's record first creates that version can differ (the chosen trade: no page is
+asked twice). The legacy workflow is unchanged: one request per query, one after another, against the run-wide
+allowance. The per-query count sits inside `usage_json` as a map, while the web client types `usage` as numbers
+only; the client reads only `model_calls` and `provider_requests`.
+
 ## D88 — Bound what an effort collects, not how long it runs: per-query read limits and provider waiting by effort, with 5 / 10 / 15 minute targets measured afterwards
 
 **Status:** accepted; implemented 2026-09-22 (slice 13c), except the timeout wait, which is unchanged: only the

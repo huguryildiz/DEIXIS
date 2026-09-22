@@ -650,11 +650,19 @@ class Store:
             self._event(run["research_id"], "run_retry_failed_searches", {"failed_searches": int(failed)}, run_id)
         return self.run(run_id)
 
-    def add_usage(self, run_id: str, key: str, amount: int = 1) -> dict[str, Any]:
+    def add_usage(self, run_id: str, key: str, amount: int = 1, query: str | None = None) -> dict[str, Any]:
+        """Count `amount` against the run, and against one sw query's own count too when `query` names it.
+
+        The query's count (`usage["query_requests"][query]`, keyed by the query's first step key) is written in the
+        same transaction as the run's, so the two never disagree, and a resumed run finds it (D89).
+        """
         with transaction(self.conn):
             run = self.run(run_id)
             usage = run["usage"]
             usage[key] = usage.get(key, 0) + amount
+            if query is not None:
+                counts = usage.setdefault("query_requests", {})
+                counts[query] = counts.get(query, 0) + amount
             self.conn.execute("UPDATE runs SET usage_json = ?, updated_at = ? WHERE id = ?", (dumps(usage), now(), run_id))
         return usage
 
@@ -683,7 +691,18 @@ class Store:
         step["output"] = json.loads(step.pop("output_json")) if step["output_json"] else None
         return step
 
-    def start_step(self, step_id: str) -> None:
+    def existing_step(self, run_id: str, operation_key: str) -> dict[str, Any] | None:
+        """The step with this key, or None; unlike `step`, nothing is written when there is none."""
+        row = self.conn.execute(
+            "SELECT * FROM run_steps WHERE run_id = ? AND operation_key = ?", (run_id, operation_key)).fetchone()
+        if row is None:
+            return None
+        step = dict(row)
+        step["output"] = json.loads(step.pop("output_json")) if step["output_json"] else None
+        return step
+
+    def start_step(self, step_id: str, started_at: str | None = None) -> None:
+        """`started_at` is when the work really started, for a step written after it ended (a search page, D89)."""
         with transaction(self.conn):
             row = self.conn.execute(
                 "SELECT s.*, r.research_id FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE s.id = ?", (step_id,)
@@ -691,7 +710,7 @@ class Store:
             self.conn.execute(
                 "UPDATE run_steps SET status = 'running', attempt = attempt + 1, started_at = ?, finished_at = NULL,"
                 " error_code = NULL, error_json = NULL, delivery_class = NULL WHERE id = ?",
-                (now(), step_id),
+                (started_at or now(), step_id),
             )
             self._event(row["research_id"], "step_started", {"step_id": step_id, "kind": row["kind"], "operation_key": row["operation_key"]}, row["run_id"])
 
@@ -703,6 +722,7 @@ class Store:
         error_code: str | None = None,
         error: Any = None,
         delivery_class: str | None = None,
+        finished_at: str | None = None,
     ) -> None:
         with transaction(self.conn):
             row = self.conn.execute(
@@ -711,7 +731,7 @@ class Store:
             self.conn.execute(
                 "UPDATE run_steps SET status = ?, output_json = ?, error_code = ?, error_json = ?, delivery_class = ?, finished_at = ? WHERE id = ?",
                 (status, dumps(output) if output is not None else None, error_code,
-                 dumps(error) if error is not None else None, delivery_class, now(), step_id),
+                 dumps(error) if error is not None else None, delivery_class, finished_at or now(), step_id),
             )
             self._event(
                 row["research_id"], "step_finished",

@@ -39,6 +39,11 @@ SW_READ_LIMIT = {"quick": 400, "standard": 1_000, "detailed": 2_000}
 # Crossref lookup path do not read this at all and send what they always sent.
 PROVIDER_WAIT = {"quick": 0, "standard": 1, "detailed": MAX_RATE_LIMIT_RETRIES}
 
+# How many hosts one round of sw discovery searches reads at once (D89, slice 13f). A host is asked one request at a
+# time whatever this is; the number bounds the hosts, not the requests to one of them, and is the same for every
+# effort. Hand-picked, not measured: whether four providers at once draws more 429s than one at a time is not known.
+SEARCH_PARALLEL_HOSTS = 4
+
 # Screening proposals are requested for at most this many candidates per model call.
 SCREENING_BATCH = 40
 

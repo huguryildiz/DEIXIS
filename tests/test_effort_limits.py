@@ -89,11 +89,12 @@ def test_a_deeper_effort_reads_further_into_the_same_query(tmp_path, monkeypatch
 
 def test_the_page_request_allowance_shrinks_with_the_effort():
     """The allowance is derived from the effort's own read limit and its own waiting, and from nothing else."""
-    queries = [{"provider_id": "openalex"}]
-    allowances = {effort: flow.extra_page_requests(queries, effort) for effort in SW_READ_LIMIT}
+    query = {"provider_id": "openalex"}
+    allowances = {effort: flow.page_allowance(query, effort, {}) for effort in SW_READ_LIMIT}
     # openalex serves 200 records a page: quick reads 2 pages at 1 + 0 + 2 requests each, standard 5 at 1 + 1 + 2,
-    # detailed 10 at 1 + 2 + 2; each query's own first request is already in the unpaged budget.
-    assert allowances == {"quick": 2 * 3 - 1, "standard": 5 * 4 - 1, "detailed": 10 * 5 - 1}
+    # detailed 10 at 1 + 2 + 2. The allowance is the query's own (D89); a retry action adds what it adds to the run.
+    assert allowances == {"quick": 2 * 3, "standard": 5 * 4, "detailed": 10 * 5}
+    assert flow.page_allowance(query, "quick", {"retry_provider_requests": 2}) == 2 * 3 + 2
     assert allowances["quick"] < allowances["standard"] < allowances["detailed"]
 
 

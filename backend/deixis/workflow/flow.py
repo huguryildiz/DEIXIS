@@ -29,8 +29,8 @@ from deixis.domain import canonical, contracts, expansion as phrase_candidates, 
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
                                  FULLTEXT_RUNS, MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES,
-                                 PROVIDER_WAIT, SCREENING_BATCH, SW_READ_LIMIT, after_invalid_output, effective_reviewer,
-                                 schema_repairs, step_model)
+                                 PROVIDER_WAIT, SCREENING_BATCH, SEARCH_PARALLEL_HOSTS, SW_READ_LIMIT,
+                                 after_invalid_output, effective_reviewer, schema_repairs, step_model)
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt
@@ -38,7 +38,7 @@ from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
 from deixis.providers import openalex, query_compiler
 from deixis.providers.common import FIRST_PAGE, MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi
 from deixis.providers.registry import CONNECTORS, Connector
-from deixis.storage.db import dumps, new_id, now
+from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import abstract_stage
 from deixis.workflow import adjudication
@@ -196,30 +196,52 @@ class Page:
     cursor: str              # FIRST_PAGE or the previous page's next_cursor
     read_before: int         # records this query read on earlier pages
     known_total: int | None  # the provider total an earlier page reported
-    extra_requests: int      # requests the read limit allows this run beyond max_provider_requests
     read_limit: int          # records this effort reads per query (D88)
     rate_limit_retries: int  # times this effort waits out a 429 on this page (D88); 0 ends the read instead
+    query_key: str           # the query's first step key, which its own request count is kept under (D89)
+    allowance: int           # requests this query may send in this run (`page_allowance`, D89)
 
 
-def extra_page_requests(queries: list[dict[str, Any]], effort: str) -> int:
-    """Requests a paged run may send beyond `max_provider_requests`, derived from the read limit alone.
+def page_allowance(query: dict[str, Any], effort: str, budget: dict[str, Any]) -> int:
+    """Requests one sw query may send, derived before its read starts from the query and the run alone (D89).
 
-    Every query is allowed the pages its provider needs to reach the read limit (or its own reachable depth), and
-    every page the bounded retries it may need: a retry is counted as a request, and the unpaged allowance holds one
-    run's worth of them, which a read of many pages that each succeeded on a retry would use up; the run would then
-    pause with `budget_exhausted` on every resume. The one request the unpaged budget already holds for each query
-    is taken off. Both figures are this research's effort (D88), so a lighter effort has a smaller allowance: it
-    reads fewer records per query and waits out fewer 429s.
+    The query is allowed the pages its provider needs to reach the read limit (or its own reachable depth), and every
+    page the bounded retries it may need: a retry is counted as a request. What a retry action adds to the run
+    (`retry_provider_requests`, one per failed search it retries) is added to every query's share alike, so the page
+    it sends again has room. Nothing here reads another query's count, so the share does not depend on which host
+    answered first. Both figures are this research's effort (D88): a lighter effort reads fewer records per query
+    and waits out fewer 429s.
     """
     read_limit = SW_READ_LIMIT[effort]
     per_page = 1 + PROVIDER_WAIT[effort] + MAX_TRANSIENT_NETWORK_RETRIES
-    allowed = 0
-    for query in queries:
-        connector = CONNECTORS[query["provider_id"]]
-        pages = 1 if connector.paging == "single_page" else math.ceil(
-            min(read_limit, connector.max_reachable or read_limit) / connector.max_results)
-        allowed += pages * per_page
-    return max(0, allowed - len(queries))
+    connector = CONNECTORS[query["provider_id"]]
+    pages = 1 if connector.paging == "single_page" else math.ceil(
+        min(read_limit, connector.max_reachable or read_limit) / connector.max_results)
+    return pages * per_page + budget.get("retry_provider_requests", 0)
+
+
+@dataclass
+class _PageRead:
+    """One page a host's task read, held until every query before its own has been written (D89)."""
+
+    key: str                 # the page's step key
+    page: Page
+    outcome: SearchOutcome
+    limit: int               # records asked for
+    stop_reason: str | None  # decided when the page arrived
+    started_at: str          # the request's own clock, which its step carries
+    finished_at: str
+
+
+@dataclass
+class _QueryRead:
+    """What one sw query read in this round, in page order, and whether its read has ended (D89)."""
+
+    index: int
+    query: dict[str, Any]
+    pages: list[_PageRead] = field(default_factory=list)
+    allowance_ended: str | None = None  # the step key of a page not asked because the query's share was spent
+    ended: bool = False
 
 
 def _stop_reason(connector: Connector, outcome: SearchOutcome, ok: bool, read_total: int, read_limit: int) -> str | None:
@@ -416,15 +438,14 @@ class ResearchFlow:
         failure = None
         # An sw query is read page by page up to this effort's read limit; a legacy query reads its one page as it always has.
         effort = scope["effort"]
-        extra_requests = extra_page_requests(queries, effort) if scope.get("search_workflow") == "sw" else 0
-        for index, query in enumerate(queries):
+        if scope.get("search_workflow") == "sw":
             self._checkpoint(run_id, revision)
-            if self._skip_unsearchable(run, index, query):
-                continue
-            if scope.get("search_workflow") == "sw":
-                failure = await self._search_pages(run, index, query, per_query, retry_failed, extra_requests,
-                                                  effort) or failure
-            else:
+            failure = await self._search_round(run, list(enumerate(queries)), retry_failed, effort)
+        else:
+            for index, query in enumerate(queries):
+                self._checkpoint(run_id, revision)
+                if self._skip_unsearchable(run, index, query):
+                    continue
                 failure = await self._search(run, index, query, per_query, retry_failed) or failure
         if failure and not searched():
             self._pause(run_id, *failure)
@@ -432,14 +453,10 @@ class ResearchFlow:
             # A second arm that only adds: phrases the first round's own records offered, each kept by a count
             # probe (SW2.4). The first round's query is not sent again.
             more = await self._expansion(run, scope, vocabulary, queries, criterion, approval)
-            extra_requests = extra_page_requests(queries + more, effort)  # the allowance covers every query the run reads
-            for index, query in enumerate(more, start=len(queries)):
-                self._checkpoint(run_id, revision)
-                if self._skip_unsearchable(run, index, query):
-                    continue
-                # A failed second-round search is recorded and left there: this run already has a search that
-                # succeeded, so nothing here can pause it (D18).
-                await self._search_pages(run, index, query, per_query, retry_failed, extra_requests, effort)
+            # A failed second-round search is recorded and left there: this run already has a search that succeeded,
+            # so nothing here can pause it (D18). The round starts only once the first is written: the expansion
+            # read the first round's records.
+            await self._search_round(run, list(enumerate(more, start=len(queries))), retry_failed, effort)
 
         if scope.get("search_workflow") == "sw":
             # Both rounds are done and nothing here feeds the search: a second source is asked for the abstracts
@@ -1205,49 +1222,60 @@ class ResearchFlow:
         return True
 
     async def _search(self, run: dict[str, Any], index: int, query: dict[str, Any], per_query: int,
-                      retry_failed: bool = True, page: Page | None = None) -> tuple[str, dict[str, Any]] | None:
-        """Run one provider query, or one page of it. A failure is recorded and returned as (pause reason, detail).
+                      retry_failed: bool = True) -> tuple[str, dict[str, Any]] | None:
+        """Run one legacy provider query: one unpaged request, as the legacy workflow has always sent it.
 
-        Without a `page` this is the unpaged search the legacy workflow has always run: same request, same step key,
-        no page columns.
+        A failure is recorded and returned as (pause reason, detail). The sw workflow reads its queries through
+        `_search_round` instead.
         """
-        run_id, rid = run["id"], run["research_id"]
+        run_id = run["id"]
         connector = CONNECTORS[query["provider_id"]]
-        provider = connector.provider_id
-        key = f"search:{index}" if page is None or page.number == 0 else f"search:{index}:page:{page.number}"
-        step = self.store.step(run_id, key, f"provider_search:{provider}")
+        step = self.store.step(run_id, f"search:{index}", f"provider_search:{connector.provider_id}")
         if step["status"] == "succeeded" or (step["status"] in ("failed", "outcome_unknown") and not retry_failed):
             return None
         # Bounded network and rate-limit retries are requests too and count against the same allowance.
         allowance = (run["budget"]["max_provider_requests"] + run["budget"].get("retry_provider_requests", 0)
-                     + MAX_TRANSIENT_NETWORK_RETRIES + MAX_RATE_LIMIT_RETRIES
-                     + (page.extra_requests if page else 0))
+                     + MAX_TRANSIENT_NETWORK_RETRIES + MAX_RATE_LIMIT_RETRIES)
         if self.store.run(run_id)["usage"].get("provider_requests", 0) >= allowance:
             self._pause(run_id, "budget_exhausted", {"limit": "provider_requests"})
         self.store.start_step(step["id"])
-        settings = self.deps.settings
         limit = min(query.get("results") or per_query, connector.max_results)  # a deep core query carries its own depth
-        if page is not None:
-            # A paged read is bounded by the read limit, not by results_per_query, and its last page asks only for
-            # what is left of that limit.
-            ceiling = min(page.read_limit, connector.max_reachable or page.read_limit)
-            limit = min(connector.max_results, ceiling - page.read_before)
+        outcome = await self._send_search(run_id, connector, query, limit)
+        return self._record_search(run, step, query, outcome, limit)
+
+    async def _send_search(self, run_id: str, connector: Connector, query: dict[str, Any], limit: int,
+                           page: Page | None = None) -> SearchOutcome:
+        """Send one search request, with its bounded retries, counting each against the run and, for an sw page,
+        against the query's own count too (D89). Nothing but the counts is written here."""
+        query_key = page.query_key if page else None
         attempts = 0
         while True:
-            self.store.add_usage(run_id, "provider_requests")
+            self.store.add_usage(run_id, "provider_requests", query=query_key)
             # A paged read is the sw workflow's, and only it asks for the extra fields the connector names; the
             # unpaged legacy request keeps the parameters it has always sent.
             outcome = await connector.search(self.deps.http, query["query_text"], limit, connector.api_key(),
-                                             settings.contact_email,
+                                             self.deps.settings.contact_email,
                                              **({"cursor": page.cursor, "max_rate_limit_retries": page.rate_limit_retries,
                                                  **connector.sw_options} if page else {}))
             if outcome.retries:
-                self.store.add_usage(run_id, "provider_requests", outcome.retries)
+                self.store.add_usage(run_id, "provider_requests", outcome.retries, query=query_key)
             if outcome.status == "failed" and outcome.delivery_class == "before_send" and attempts < MAX_TRANSIENT_NETWORK_RETRIES:
                 attempts += 1
                 await asyncio.sleep(1.5 * attempts)
                 continue
-            break
+            return outcome
+
+    def _record_search(self, run: dict[str, Any], step: dict[str, Any], query: dict[str, Any], outcome: SearchOutcome,
+                       limit: int, page: Page | None = None, stop_reason: str | None = None,
+                       finished_at: str | None = None) -> tuple[str, dict[str, Any]] | None:
+        """Write one answered request: its payload, its search run, its records and its step's ending together.
+
+        For an sw page, `stop_reason` is the one the read decided when the page arrived (`_read_query`).
+        A failure is returned as (pause reason, detail).
+        """
+        run_id, rid = run["id"], run["research_id"]
+        settings = self.deps.settings
+        provider = CONNECTORS[query["provider_id"]].provider_id
         payload_path = payload_digest = None
         if outcome.raw_payload is not None:
             settings.payloads_dir.mkdir(parents=True, exist_ok=True)
@@ -1266,10 +1294,9 @@ class ResearchFlow:
             raw_payload_path=payload_path, payload_sha256=payload_digest,
         )
         ok = outcome.status in ("completed", "zero_results")
-        stop_reason = read_total = None
+        read_total = None
         if page is not None:
             read_total = page.read_before + len(outcome.records)
-            stop_reason = _stop_reason(connector, outcome, ok, read_total, page.read_limit)
             # The total a later page did not repeat is the one an earlier page reported; unknown stays NULL, not zero.
             total = outcome.provider_total if outcome.provider_total is not None else page.known_total
             search_fields |= dict(
@@ -1282,48 +1309,184 @@ class ResearchFlow:
                 output |= {"page": page.number, "next_cursor": outcome.next_cursor, "read_total": read_total,
                            "provider_total": outcome.provider_total, "stop_reason": stop_reason}
             self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], "succeeded",
-                                     step_output=output, first_rank=page.read_before if page else 0)
+                                     step_output=output, first_rank=page.read_before if page else 0,
+                                     finished_at=finished_at)
             return None
         final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
         self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], final,
                                  error_code=outcome.status, error={"error": outcome.error, "http_status": outcome.http_status},
-                                 delivery_class=outcome.delivery_class, first_rank=page.read_before if page else 0)
+                                 delivery_class=outcome.delivery_class, first_rank=page.read_before if page else 0,
+                                 finished_at=finished_at)
         return f"provider_{outcome.status}", {"provider": provider, "http_status": outcome.http_status,
                                               "retry_after": outcome.rate_limit.get("retry-after")}
 
-    async def _search_pages(self, run: dict[str, Any], index: int, query: dict[str, Any], per_query: int,
-                            retry_failed: bool, extra_requests: int,
-                            effort: str) -> tuple[str, dict[str, Any]] | None:
-        """Read one sw query page by page up to this effort's read limit, counting what it leaves unread (04c, D88).
+    def _query_requests(self, run_id: str, query_key: str) -> int:
+        """Requests this sw query has sent in this run, retries included (D89)."""
+        return self.store.run(run_id)["usage"].get("query_requests", {}).get(query_key, 0)
 
-        The next page's cursor comes from the previous page's stored step output, so a resumed run asks for no page
-        twice. A failed page ends this query's read in this run; the pages it already read, and every other query,
-        stand (D18). A run pauses only when no search of it succeeded, which `_discovery` still decides.
+    async def _search_round(self, run: dict[str, Any], queries: list[tuple[int, dict[str, Any]]], retry_failed: bool,
+                            effort: str) -> tuple[str, dict[str, Any]] | None:
+        """Read one round of sw queries, hosts side by side, and write what they read in query order (D89, slice 13f).
+
+        The queries are grouped by the host their requests go to, in the order of each host's first query. A host's
+        queries and pages are read one at a time, in query and page order, and at most `SEARCH_PARALLEL_HOSTS` hosts
+        are read at once; the pacing each connector already has (its gap between pages, arXiv's interval, the
+        Semantic Scholar gate, the effort's 429 waiting) runs inside its host's task, unchanged. A host's task writes
+        nothing but request counts. What it reads is held until every query before it has been written, and the
+        pages are then written here, in query order and page order: the same rows, records, outputs and events, in
+        the same order, as reading the queries one by one wrote. The one thing that differs is the clock of each
+        page's step, which is the request's own.
+
+        A stop (a pause, a cancellation, a newer question revision) is looked at before each request and written
+        only after the requests in flight have finished: every page read is written, in query order, so a half-read
+        query goes on from its stored cursor when the run is resumed and no page is asked twice. A page read but not
+        written when the process dies has no step at all, and a resumed run asks for it again.
+
+        A failed page is recorded and ends its own query's read (D18); the failure returned is the last one in query
+        order, as the one-by-one loop returned it.
         """
         run_id, revision = run["id"], run["scope_revision"]
-        connector = CONNECTORS[query["provider_id"]]
-        cursor, read, number, known_total = FIRST_PAGE, 0, 0, None
+        reads = [_QueryRead(index, query) for index, query in queries]
+        hosts: dict[str, list[_QueryRead]] = {}
+        for read in reads:
+            connector = CONNECTORS[read.query["provider_id"]]
+            if connector.searchable:
+                hosts.setdefault(connector.host, []).append(read)
+        waiting = iter(hosts.values())
+        pending: set[asyncio.Future[bool]] = set()
+        progress = asyncio.Event()
+        stopping = False
+        error: BaseException | None = None
+        written = 0
+        failure = None
+
+        def write(ended_only: bool) -> None:
+            nonlocal written, failure
+            while written < len(reads):
+                read = reads[written]
+                if self._skip_unsearchable(run, read.index, read.query):
+                    pass
+                elif ended_only and not read.ended:
+                    return
+                else:
+                    failure = self._write_query(run, read) or failure
+                written += 1
+
         while True:
-            self._checkpoint(run_id, revision)
-            key = f"search:{index}" if number == 0 else f"search:{index}:page:{number}"
-            step = self.store.step(run_id, key, f"provider_search:{connector.provider_id}")
-            asked = not (step["status"] == "succeeded"
-                         or (step["status"] in ("failed", "outcome_unknown") and not retry_failed))
-            if asked and number and connector.page_gap:
+            while not stopping and error is None and len(pending) < SEARCH_PARALLEL_HOSTS:
+                group = next(waiting, None)
+                if group is None:
+                    break
+                pending.add(asyncio.ensure_future(self._read_host(run, group, retry_failed, effort, progress)))
+            if not pending:
+                break
+            woken = asyncio.ensure_future(progress.wait())
+            done, _ = await asyncio.wait(pending | {woken}, return_when=asyncio.FIRST_COMPLETED)
+            woken.cancel()
+            progress.clear()
+            for task in done - {woken}:
+                pending.discard(task)
+                try:
+                    stopping = task.result() or stopping
+                except Exception as exc:
+                    error = error or exc
+            if error is None:
+                write(ended_only=True)
+        if error is not None:
+            raise error
+        write(ended_only=False)  # after a stop: the pages of queries it left half read, in query order
+        self._checkpoint(run_id, revision)
+        if stopping:
+            # The stop was taken back before it was written (a resume of a pause still being requested): read on,
+            # from the pages just written.
+            return await self._search_round(run, queries, retry_failed, effort) or failure
+        return failure
+
+    async def _read_host(self, run: dict[str, Any], group: list[_QueryRead], retry_failed: bool, effort: str,
+                         progress: asyncio.Event) -> bool:
+        """Read one host's queries in query order; True when a stop ended the reading before the last of them."""
+        for read in group:
+            if await self._read_query(run, read, retry_failed, effort):
+                return True
+            read.ended = True
+            progress.set()
+        return False
+
+    async def _read_query(self, run: dict[str, Any], read: _QueryRead, retry_failed: bool, effort: str) -> bool:
+        """Read one sw query page by page up to this effort's read limit, holding each page for `_write_query`.
+
+        A page whose step already ended is not asked again: its stored output gives the next cursor, as it always
+        did (04c). A failed page ends the query's read (D18); so does a page after which the query has no request
+        left of its own share (`budget_exhausted`, D89). True when a stop was requested before a page was sent.
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        connector = CONNECTORS[read.query["provider_id"]]
+        query_key = f"search:{read.index}"
+        allowance = page_allowance(read.query, effort, run["budget"])
+        cursor, before, number, known_total = FIRST_PAGE, 0, 0, None
+        while True:
+            key = query_key if number == 0 else f"{query_key}:page:{number}"
+            step = self.store.existing_step(run_id, key)
+            status = step["status"] if step else "pending"
+            if status == "succeeded" or (status in ("failed", "outcome_unknown") and not retry_failed):
+                output = (step["output"] or {}) if status == "succeeded" else {}
+                if status != "succeeded" or output.get("stop_reason") or not output.get("next_cursor"):
+                    return False
+                before = output.get("read_total", before)
+                if output.get("provider_total") is not None:
+                    known_total = output["provider_total"]
+                cursor, number = output["next_cursor"], number + 1
+                continue
+            if self._stop_requested(run_id, revision):
+                return True
+            if self._query_requests(run_id, query_key) >= allowance:
+                # Only a query resumed after its last page was read, or one asked to search again, reaches this:
+                # nothing is sent, and the step of the page it would have asked for says why (D89).
+                read.allowance_ended = key
+                return False
+            if number and connector.page_gap:
                 await asyncio.sleep(connector.page_gap)  # only before a page that is really requested
-            failure = await self._search(run, index, query, per_query, retry_failed,
-                                         page=Page(number, cursor, read, known_total, extra_requests,
-                                                   SW_READ_LIMIT[effort], PROVIDER_WAIT[effort]))
-            step = self.store.step(run_id, key, f"provider_search:{connector.provider_id}")
-            if step["status"] != "succeeded":
-                return failure
-            output = step["output"] or {}
-            read = output.get("read_total", read)
-            if output.get("provider_total") is not None:
-                known_total = output["provider_total"]
-            if output.get("stop_reason") or not output.get("next_cursor"):
-                return failure
-            cursor, number = output["next_cursor"], number + 1
+            page = Page(number, cursor, before, known_total, SW_READ_LIMIT[effort], PROVIDER_WAIT[effort], query_key,
+                        allowance)
+            # A paged read is bounded by the read limit, not by results_per_query, and its last page asks only for
+            # what is left of that limit.
+            ceiling = min(page.read_limit, connector.max_reachable or page.read_limit)
+            limit = min(connector.max_results, ceiling - page.read_before)
+            started = now()
+            outcome = await self._send_search(run_id, connector, read.query, limit, page)
+            ok = outcome.status in ("completed", "zero_results")
+            read_total = before + len(outcome.records)
+            stop_reason = _stop_reason(connector, outcome, ok, read_total, page.read_limit)
+            if stop_reason is None and self._query_requests(run_id, query_key) >= allowance:
+                stop_reason = "budget_exhausted"  # the next page would need a request the query no longer has (D89)
+            read.pages.append(_PageRead(key, page, outcome, limit, stop_reason, started, now()))
+            if stop_reason:
+                return False
+            before = read_total
+            if outcome.provider_total is not None:
+                known_total = outcome.provider_total
+            cursor, number = outcome.next_cursor, number + 1
+
+    def _write_query(self, run: dict[str, Any], read: _QueryRead) -> tuple[str, dict[str, Any]] | None:
+        """Write the pages one query read, in page order; each page's step, search run and records in one transaction.
+
+        A page's step is opened, started and ended together, so no search step is ever left `running` while its
+        request is on the network, and none can end up `outcome_unknown` without having been written.
+        """
+        kind = f"provider_search:{CONNECTORS[read.query['provider_id']].provider_id}"
+        failure = None
+        for held in read.pages:
+            with transaction(self.store.conn):
+                step = self.store.step(run["id"], held.key, kind)
+                self.store.start_step(step["id"], started_at=held.started_at)
+                failure = self._record_search(run, step, read.query, held.outcome, held.limit, held.page,
+                                              held.stop_reason, held.finished_at) or failure
+        if read.allowance_ended is not None:
+            step = self.store.step(run["id"], read.allowance_ended, kind)
+            if step["status"] != "cancelled":  # a resumed run finds it already closed and writes nothing again
+                self.store.finish_step(step["id"], "cancelled", error_code="budget_exhausted", output={
+                    "status": "skipped", "result_count": 0, "stop_reason": "budget_exhausted"})
+        return failure
 
     async def _expansion(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                          queries: list[dict[str, Any]], criterion: dict[str, Any] | None = None,

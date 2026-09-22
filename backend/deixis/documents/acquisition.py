@@ -65,7 +65,8 @@ async def unpaywall_lookup(client: httpx.AsyncClient, doi: str, source_version: 
     if not contact_email:
         return Lookup("auth_required", [], error_code="missing_contact_email")
     try:
-        response = await client.get(f"{UNPAYWALL_URL}/{quote(doi, safe='')}", params={"email": contact_email}, timeout=30)
+        async with fetch.host_gate(UNPAYWALL_URL):  # one request per host at a time (slice 13e)
+            response = await client.get(f"{UNPAYWALL_URL}/{quote(doi, safe='')}", params={"email": contact_email}, timeout=30)
     except httpx.TimeoutException:
         return Lookup("timeout", [], error_code="timeout")
     except httpx.HTTPError as exc:
@@ -101,7 +102,8 @@ async def openalex_lookup(client: httpx.AsyncClient, doi: str, source_version: s
         params["mailto"] = contact_email
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     try:
-        response = await client.get(f"{OPENALEX_URL}/https://doi.org/{quote(doi, safe='/')}", params=params, headers=headers, timeout=30)
+        async with fetch.host_gate(OPENALEX_URL):  # one request per host at a time (slice 13e)
+            response = await client.get(f"{OPENALEX_URL}/https://doi.org/{quote(doi, safe='/')}", params=params, headers=headers, timeout=30)
     except httpx.TimeoutException:
         return Lookup("timeout", [], error_code="timeout")
     except httpx.HTTPError as exc:
@@ -134,7 +136,8 @@ async def crossref_lookup(client: httpx.AsyncClient, doi: str, source_version: s
                           contact_email: str | None = None) -> Lookup:
     params = {"mailto": contact_email} if contact_email else {}
     try:
-        response = await client.get(f"{CROSSREF_URL}/{quote(doi, safe='')}", params=params, timeout=30)
+        async with fetch.host_gate(CROSSREF_URL):  # one request per host at a time (slice 13e)
+            response = await client.get(f"{CROSSREF_URL}/{quote(doi, safe='')}", params=params, timeout=30)
     except httpx.TimeoutException:
         return Lookup("timeout", [], error_code="timeout")
     except httpx.HTTPError as exc:
@@ -173,8 +176,9 @@ async def core_lookup(client: httpx.AsyncClient, doi: str, api_key: str | None) 
     if not api_key:
         return Lookup("auth_required", [], error_code="missing_core_key")
     try:
-        response = await client.get(core.SEARCH_URL, params={"q": f'doi:"{doi}"', "limit": 10},
-                                    headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
+        async with fetch.host_gate(core.SEARCH_URL):  # one request per host at a time (slice 13e)
+            response = await client.get(core.SEARCH_URL, params={"q": f'doi:"{doi}"', "limit": 10},
+                                        headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
     except httpx.TimeoutException:
         return Lookup("timeout", [], error_code="timeout")
     except httpx.HTTPError as exc:

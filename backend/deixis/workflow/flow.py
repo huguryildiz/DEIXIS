@@ -93,6 +93,9 @@ STOPWORDS = set(
     "ve bir bu şu hangi mı mi mu mü midir var yok daha çok".split()
 )
 RATE_LIMIT_BACKOFF_SECONDS = 1.5  # matches the provider search retry backoff in providers/common.py
+# The batch stages in which one call that outlived the adapter's turn limit is sent once more instead of pausing the
+# stage (slice 13e): there one slow call stopped every other call of the stage. Elsewhere a call is the stage.
+TIMEOUT_RETRIED_TASKS = ("abstract_screening", "fulltext_adjudication")
 # A route that did not answer, so the work it was tried for is decided by no code and is tried again (SW10, D35).
 UNANSWERED_FETCH_CODES = ("fetch_timeout", "fetch_failed")
 UNANSWERED_LOOKUP_STATUSES = ("timeout", "rate_limited", "failed")
@@ -160,6 +163,17 @@ def _sought_terms(vocabulary: dict[str, Any]) -> list[str]:
 def _criterion_result(output: dict[str, Any]) -> dict[str, Any] | None:
     """The stored criterion step output read back as the value the protocol is built from."""
     return output["criterion"] | {"origin": output["origin"]} if output["criterion"] else None
+
+
+def turn_timed_out(result: ModelStepResult) -> bool:
+    """Whether a failed call is one the adapter's turn limit cut off after it was sent.
+
+    Read the way the Codex adapter reports it: a turn that outlived its limit comes back `failed`, with the turn's
+    own status `client_timeout` as its error, and may have been delivered. The other adapters word their turn
+    limits differently and are not recognised here; their timeouts pause the stage as before (slice 13e).
+    """
+    return (result.status == "failed" and result.error == "client_timeout"
+            and result.delivery_class == "after_send_unknown")
 
 
 class RunStopped(Exception):
@@ -1681,18 +1695,63 @@ class ResearchFlow:
         the first step's output, so a resumed run finishes the same list instead of one that moved under it, and a
         work whose step is already stored is skipped without touching any counter (slice 09's review, lesson 1).
 
-        The works are fetched one after another on purpose: the run's limiter is sized for model calls, and six
-        parallel downloads to one publisher or one preprint server are not acceptable. How long a sequential run
-        takes was not measured (slice 24).
+        Up to `fulltext.FULLTEXT_FETCH_PARALLEL` works are fetched at once (slice 13e), bounded here and not by the
+        run's limiter, which is sized for model calls. No host is asked two things at once (`fetch.host_gate`), so
+        works fetched side by side never arrive at one publisher together. Nothing one work writes is read by
+        another, so which of them finishes first changes no decision.
         """
         run_id, revision = run["id"], run["scope_revision"]
         self._checkpoint(run_id, revision)
         self.store.update_run(run_id, stage="inspection")
         plan = self._fulltext_plan(run, scope)
-        for head in plan["works"]:
-            self._checkpoint(run_id, revision)
-            await self._fulltext_work(run, head)
+        await self._fetch_works(run, plan["works"])
         self._fulltext_summary(run, plan)
+
+    async def _fetch_works(self, run: dict[str, Any], heads: list[str]) -> None:
+        """Send the planned works to `_fulltext_work`, at most `FULLTEXT_FETCH_PARALLEL` in flight, in plan order.
+
+        `_send_through_limiter`'s loop, with one difference: the stop is looked at before each work is sent, but it
+        is written on the run (`_checkpoint`) only once the works in flight have finished. Each work writes its own
+        decision as it ends, so a run that already read as paused while works were still writing would let the
+        user revise the question under decisions that are still arriving. A pause therefore reads as paused when
+        nothing is left in flight, as it did when the works were fetched one by one. A work's own checkpoint
+        (`_fetch_work_text`) still stops that work where it stands, and the others finish.
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        works = iter(heads)
+        pending: set[asyncio.Task[None]] = set()
+        stopping, stopped, failure = False, None, None
+        while True:
+            while not stopping and failure is None and len(pending) < fulltext.FULLTEXT_FETCH_PARALLEL:
+                if self._stop_requested(run_id, revision):
+                    stopping = True
+                    break
+                head = next(works, None)
+                if head is None:
+                    break
+                pending.add(asyncio.ensure_future(self._fulltext_work(run, head)))
+            if not pending:
+                break
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                try:
+                    task.result()
+                except RunStopped as exc:
+                    stopping, stopped = True, stopped or exc
+                except Exception as exc:  # _fulltext_work closes its own step on any other failure
+                    failure = failure or exc
+        if failure is not None:
+            raise failure
+        self._checkpoint(run_id, revision)
+        if stopped is not None:
+            raise stopped
+
+    def _stop_requested(self, run_id: str, revision: int) -> bool:
+        """Whether `_checkpoint` would stop the run now, without writing the stop: a pause, a cancellation or a newer
+        question revision."""
+        run = self.store.run(run_id)
+        return (run["status"] in ("pause_requested", "cancelled")
+                or self.store.research(run["research_id"])["current_scope_revision"] != revision)
 
     def _fulltext_plan(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
         """Freeze which works this run fetches, and write the code of the works whose text is already here.
@@ -2851,15 +2910,19 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         repair_issues: list[dict[str, Any]] | None = None
         max_repairs = schema_repairs(task_type)
-        for attempt in range(max_repairs + 1):
+        # `attempt` numbers every call this step sends; `repairs` counts only the schema repairs among them, so the
+        # one resend after a turn timeout (slice 13e) takes nothing from the repairs the step is allowed.
+        attempt, repairs, timeout_resent = -1, 0, False
+        while True:
+            attempt += 1
             if self.store.run(run_id)["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"]:
-                if attempt and budget_short == "skip":
+                if repair_issues is not None and budget_short == "skip":
                     # A repair the budget no longer holds is skipped (D86): the invalid answer stands for this run,
                     # as an unrepaired one does, and the run goes on to what it can still afford.
-                    self.store.finish_step(step["id"], "failed", output={"step_input_id": payload["step_input_id"]},
+                    self.store.finish_step(step["id"], "failed", output={"step_input_id": invalid_input},
                                            error_code="invalid_model_output", error=repair_issues)
-                    return {"invalid": True, "raw_output": result.raw_text, "issues": repair_issues,
-                            "step_input_id": payload["step_input_id"], "repair_skipped": "budget_exhausted"}
+                    return {"invalid": True, "raw_output": invalid_raw, "issues": repair_issues,
+                            "step_input_id": invalid_input, "repair_skipped": "budget_exhausted"}
                 if budget_short == "skip":
                     # A concurrent sender checked the room before this call and a repair in flight took it. The
                     # work is not reached: no decision is written for it and the run finishes rather than pausing.
@@ -2906,6 +2969,12 @@ class ResearchFlow:
                 self.store.complete_model_step(session, recorded, step["id"], final, error_code=f"model_{result.status}",
                                                error=result.error, delivery_class=result.delivery_class)
                 self._checkpoint(run_id)
+                if task_type in TIMEOUT_RETRIED_TASKS and not timeout_resent and turn_timed_out(result):
+                    # The step stays closed as `outcome_unknown` with this attempt on it, and is opened again for
+                    # one more send of the same input; a second timeout pauses the run as the first used to.
+                    timeout_resent = True
+                    self.store.start_step(step["id"])
+                    continue
                 halt("model_call_failed", {"status": result.status, "error": result.error})
             if not requested_model or (result.resolved_model != requested_model and not result.requested_model_verified):
                 # Output from any model other than the one chosen for this step's role is recorded but never used.
@@ -2920,7 +2989,7 @@ class ResearchFlow:
             report = contracts.validate_model_output(payload, output_text)
             salvage: list[contracts.Issue] = []
             if (not report.ok and task_type == "grounded_answer" and isinstance(output_text, dict)
-                    and after_invalid_output(attempt, max_repairs) == "store_unverified_draft"):
+                    and after_invalid_output(repairs, max_repairs) == "store_unverified_draft"):
                 # The repair did not fix the draft: drop only citations that lack a quote before giving up on it.
                 salvaged, salvage = contracts.salvage_answer_draft(payload, json.loads(json.dumps(output_text)))
                 retry = contracts.validate_model_output(payload, salvaged) if salvage else report
@@ -2939,9 +3008,10 @@ class ResearchFlow:
                 self.store.complete_model_step(session, recorded, step["id"], "succeeded", output=output)
                 return output
             repair_issues = [vars(i) for i in report.issues]
-            if after_invalid_output(attempt, max_repairs) == "store_unverified_draft":
+            invalid_raw, invalid_input = result.raw_text, payload["step_input_id"]
+            if after_invalid_output(repairs, max_repairs) == "store_unverified_draft":
                 self.store.complete_model_step(session, recorded, step["id"], "failed", output={"step_input_id": payload["step_input_id"]},
                                                error_code="invalid_model_output", error=repair_issues)
                 return {"invalid": True, "raw_output": result.raw_text, "issues": repair_issues, "step_input_id": payload["step_input_id"]}
+            repairs += 1
             self.store.finish_model_session(session, **recorded)
-        raise AssertionError("unreachable")

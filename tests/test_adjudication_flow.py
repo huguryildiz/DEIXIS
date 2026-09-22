@@ -735,3 +735,98 @@ def test_a_repair_the_budget_no_longer_holds_is_skipped_and_the_run_completes(tm
     assert steps == [("failed", "invalid_model_output"), ("succeeded", None)]
     assert summary["model_calls"] == 3
     assert all(code in (None, "not_read_yet") for code in decided)
+
+
+# ---- a reading call the adapter's turn limit cut off (slice 13e) --------------------------------
+
+def turn_timeout(task, times):
+    """The Codex adapter's answer when a turn outlives its limit: `failed`, `client_timeout`, maybe delivered."""
+    left = {"n": times}
+
+    def fail(si):
+        if si["task_type"] == task and left["n"] and si.get("adjudication_target", {}).get("run", 2) == 2:
+            left["n"] -= 1
+            return ModelStepResult("failed", error="client_timeout", delivery_class="after_send_unknown")
+        return None
+    return fail
+
+
+def test_a_reading_call_cut_off_once_by_the_turn_limit_is_sent_again_and_the_run_completes(tmp_path, monkeypatch):
+    """One `client_timeout` does not stop the reading run: the same step is sent once more, as a second attempt."""
+    works, fetcher = papers(1)
+    adapter = FakeAdapter(valid_response, fail=turn_timeout("fulltext_adjudication", 1))
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        head = records_of(store, rid)["W1"]
+        step = store.conn.execute(
+            "SELECT id, status, attempt FROM run_steps WHERE run_id = ? AND kind = 'model:fulltext_adjudication'"
+            " AND operation_key LIKE '%:2'", (reading["id"],)).fetchone()
+        inputs = [row["attempt"] for row in store.conn.execute(
+            "SELECT attempt FROM step_inputs WHERE step_id = ? ORDER BY rowid", (step["id"],))]
+        sessions = [row["status"] for row in store.conn.execute(
+            "SELECT status FROM model_sessions WHERE step_id = ? ORDER BY rowid", (step["id"],))]
+        code = fulltext_code(store, rid, head)
+    finally:
+        client.__exit__(None, None, None)
+    assert reading["status"] == "completed" and reading["pause_reason"] is None
+    assert step["status"] == "succeeded" and step["attempt"] == 2
+    assert inputs == [0, 1] and len(sessions) == 2
+    # Both sends are counted: run 1, and run 2 twice.
+    assert reading["usage"]["model_calls"] == 3 and len(adj_calls(adapter, reading["id"])) == 3
+    assert code == "all_parts_verified"
+
+
+def test_a_reading_call_cut_off_twice_pauses_the_run_as_before(tmp_path, monkeypatch):
+    works, fetcher = papers(1)
+    adapter = FakeAdapter(valid_response, fail=turn_timeout("fulltext_adjudication", 2))
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        step = app.state.store.conn.execute(
+            "SELECT status, error_code, attempt FROM run_steps WHERE run_id = ? AND kind = 'model:fulltext_adjudication'"
+            " AND operation_key LIKE '%:2'", (reading["id"],)).fetchone()
+    finally:
+        client.__exit__(None, None, None)
+    assert (reading["status"], reading["pause_reason"]) == ("paused", "model_call_failed")
+    assert (step["status"], step["error_code"], step["attempt"]) == ("outcome_unknown", "model_failed", 2)
+    assert len(adj_calls(adapter, reading["id"])) == 3
+
+
+def test_an_abstract_screening_call_cut_off_once_is_sent_again(tmp_path, monkeypatch):
+    """The abstract stage's batch calls are the other place one slow call stopped a whole stage."""
+    works, fetcher = papers(1)
+    adapter = FakeAdapter(valid_response, fail=turn_timeout("abstract_screening", 1))
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, discovery = discover(client)
+        attempts = sorted(row["attempt"] for row in app.state.store.conn.execute(
+            "SELECT attempt FROM run_steps WHERE run_id = ? AND kind = 'model:abstract_screening'", (discovery["id"],)))
+    finally:
+        client.__exit__(None, None, None)
+    assert discovery["status"] == "completed"
+    assert attempts[-1] == 2 and attempts.count(2) == 1
+
+
+def test_a_grounded_answer_cut_off_once_pauses_the_run_as_before(tmp_path, monkeypatch):
+    """Outside the two batch stages one call is the whole stage, and the first `client_timeout` stops it."""
+    works, fetcher = papers(1)
+    adapter = FakeAdapter(valid_response, fail=turn_timeout("grounded_answer", 1))
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        wait_kind(client, rid, "fulltext_adjudication")
+        answer_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()["id"]
+        _, answer = wait(client, rid, answer_id)
+        calls = [call for call in adapter.calls if call["task_type"] == "grounded_answer"]
+    finally:
+        client.__exit__(None, None, None)
+    assert (answer["status"], answer["pause_reason"]) == ("paused", "model_call_failed")
+    assert len(calls) == 1

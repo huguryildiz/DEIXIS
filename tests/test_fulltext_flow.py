@@ -667,9 +667,11 @@ def test_a_question_revision_cancels_the_run_and_makes_its_decisions_stale(tmp_p
 
 def test_an_answer_run_waits_for_the_retrieval_run_and_is_free_once_it_is_paused(tmp_path, monkeypatch):
     """One worker, one active run per research: the way out of a long retrieval is to pause it (open point)."""
-    monkeypatch.setattr(fulltext, "FULLTEXT_WORK_LIMIT", dict(fulltext.FULLTEXT_WORK_LIMIT, quick=3))
-    fetcher = Fetcher({f"https://example.org/w{n}.pdf": ok() for n in (1, 2, 3)})
-    app = app_for(tmp_path, monkeypatch, Transport([work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in (1, 2, 3)]),
+    # More works than are fetched at once (slice 13e), so the resumed run still has works of its own to fetch.
+    numbers = range(1, fulltext.FULLTEXT_FETCH_PARALLEL + 3)
+    monkeypatch.setattr(fulltext, "FULLTEXT_WORK_LIMIT", dict(fulltext.FULLTEXT_WORK_LIMIT, quick=len(numbers)))
+    fetcher = Fetcher({f"https://example.org/w{n}.pdf": ok() for n in numbers})
+    app = app_for(tmp_path, monkeypatch, Transport([work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in numbers]),
                   fetcher)
     fetcher.hook = paused_after(app, 1)
     client = client_of(app)

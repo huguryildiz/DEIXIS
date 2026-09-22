@@ -5,6 +5,9 @@ addresses. The connection is made to the address that was checked (the host name
 is kept for the Host header and TLS verification), so a second DNS answer cannot
 redirect it (DNS rebinding). Proxy settings from the environment are ignored,
 because a proxy would make the connection itself.
+
+A host is asked one request at a time (`host_gate`): the full-text retrieval run fetches several works at once
+(slice 13e), and they must not arrive at one publisher side by side.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
+import weakref
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -35,6 +39,22 @@ class FetchResult:
 
 class BlockedUrl(Exception):
     pass
+
+
+# One lock per host name, held while a request to that host is in flight. Kept per event loop because an asyncio
+# lock belongs to the loop it was first used on: the app runs one loop, so this is process-wide there, and a test
+# that starts a second app gets its own locks instead of another loop's.
+_host_gates: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]]" = weakref.WeakKeyDictionary()
+
+
+def host_gate(url: str) -> asyncio.Lock:
+    """The lock a request to this URL's host holds while it is in flight, so one host is asked one thing at a time.
+
+    Every request the retrieval run makes goes through it: an open link and each hop of its redirects here, and the
+    DOI lookups in `acquisition`. A hop to another host takes that host's lock after the first one's is released.
+    """
+    gates = _host_gates.setdefault(asyncio.get_running_loop(), {})
+    return gates.setdefault((urlsplit(url).hostname or "").lower(), asyncio.Lock())
 
 
 async def _resolve(host: str, port: int) -> list[str]:
@@ -89,34 +109,36 @@ async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None) -> FetchR
     try:
         current = url
         for _ in range(MAX_REDIRECTS + 1):
-            try:
-                address = await check_public_url(current)
-            except BlockedUrl as exc:
-                return FetchResult("blocked_url", final_url=current, error=str(exc))
-            target, headers, extensions = _pinned_request(current, address)
-            async with client.stream("GET", target, headers=headers, extensions=extensions, follow_redirects=False) as response:
-                if response.is_redirect:
-                    location = response.headers.get("location")
-                    if not location:
-                        return FetchResult("http_error", final_url=current, http_status=response.status_code, error="redirect without location")
-                    current = urljoin(current, location)
-                    continue
-                if response.status_code != 200:
-                    return FetchResult("http_error", final_url=current, http_status=response.status_code)
-                declared = response.headers.get("content-length")
-                if declared and declared.isdigit() and int(declared) > MAX_BYTES:
-                    return FetchResult("too_large", final_url=current, http_status=200)
-                chunks, size = [], 0
-                async for chunk in response.aiter_bytes():
-                    size += len(chunk)
-                    if size > MAX_BYTES:
+            # One request to a host at a time; a redirect to another host takes that host's lock after this one.
+            async with host_gate(current):
+                try:
+                    address = await check_public_url(current)
+                except BlockedUrl as exc:
+                    return FetchResult("blocked_url", final_url=current, error=str(exc))
+                target, headers, extensions = _pinned_request(current, address)
+                async with client.stream("GET", target, headers=headers, extensions=extensions, follow_redirects=False) as response:
+                    if response.is_redirect:
+                        location = response.headers.get("location")
+                        if not location:
+                            return FetchResult("http_error", final_url=current, http_status=response.status_code, error="redirect without location")
+                        current = urljoin(current, location)
+                        continue
+                    if response.status_code != 200:
+                        return FetchResult("http_error", final_url=current, http_status=response.status_code)
+                    declared = response.headers.get("content-length")
+                    if declared and declared.isdigit() and int(declared) > MAX_BYTES:
                         return FetchResult("too_large", final_url=current, http_status=200)
-                    chunks.append(chunk)
-                data = b"".join(chunks)
-                media_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
-                if not data.startswith(b"%PDF-"):
-                    return FetchResult("not_pdf", final_url=current, media_type=media_type, http_status=200)
-                return FetchResult("ok", data=data, final_url=current, media_type="application/pdf", http_status=200)
+                    chunks, size = [], 0
+                    async for chunk in response.aiter_bytes():
+                        size += len(chunk)
+                        if size > MAX_BYTES:
+                            return FetchResult("too_large", final_url=current, http_status=200)
+                        chunks.append(chunk)
+                    data = b"".join(chunks)
+                    media_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+                    if not data.startswith(b"%PDF-"):
+                        return FetchResult("not_pdf", final_url=current, media_type=media_type, http_status=200)
+                    return FetchResult("ok", data=data, final_url=current, media_type="application/pdf", http_status=200)
         return FetchResult("http_error", final_url=current, error="too many redirects")
     except httpx.TimeoutException as exc:
         return FetchResult("timeout", final_url=url, error=type(exc).__name__)

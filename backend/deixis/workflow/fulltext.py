@@ -27,6 +27,10 @@ from deixis.domain.rules import FULLTEXT_WORK_LIMIT
 OWNED_CODES = ("not_read_yet", "text_unreadable", "no_fulltext")
 # Which group of the retrieval order a work belongs to; the order of the tuple is the order they are fetched in.
 GROUPS = ("user", "candidate", "unresolved")
+# How many works one retrieval run fetches at once (slice 13e). Each host is still asked one request at a time
+# (`documents.fetch.host_gate`), so this bounds the hosts in flight, not the requests to one publisher. The same for
+# every effort; whether 4 is the right number was not measured.
+FULLTEXT_FETCH_PARALLEL = 4
 
 
 def fetch_budget(effort: str) -> dict[str, Any]:

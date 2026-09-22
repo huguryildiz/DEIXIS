@@ -27,7 +27,7 @@ from deixis.config import Settings
 from deixis.domain import survey
 from deixis.domain.record_identity import record_kind
 from deixis.domain.rules import PROVIDER_WAIT
-from deixis.providers import lookup
+from deixis.providers import lookup, scopus
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, now, transaction
@@ -41,7 +41,10 @@ THRESHOLDS = {"max_requests": MAX_LOOKUP_REQUESTS, "crossref_chunk": CROSSREF_CH
               # Retries are requests too; this is the most one run can send before the structural retry bound stops it.
               "max_requests_with_retries": MAX_LOOKUP_REQUESTS * (1 + MAX_RATE_LIMIT_RETRIES)}
 
-ABSTRACT_ORIGINS = {"semantic_scholar": "lookup_semantic_scholar", "crossref": "lookup_crossref_jats"}
+ABSTRACT_ORIGINS = {"semantic_scholar": "lookup_semantic_scholar", "crossref": "lookup_crossref_jats",
+                    "scopus": "lookup_scopus"}
+# The sources whose answers settle a record's missing abstract. Scopus is asked after them and only on an
+# institutional network (D91), so a record it could not be asked about is not left waiting for it.
 SOURCES = ("semantic_scholar", "crossref")
 # The abstract-stage codes this step owns. Another step's code (slice 09's) is never replaced by one of these.
 OWNED_CODES = ("survey_title_word", "abstract_not_found", "no_abstract", "abstract_not_proposed")
@@ -171,6 +174,23 @@ def plan_crossref(store: Store, research_id: str, scope_revision: int, scope: di
             "outside_limit": len(outside), "skipped": None}
 
 
+def plan_scopus(store: Store, research_id: str, scope_revision: int, words: tuple[str, ...], spent: int,
+                limit: int = MAX_LOOKUP_REQUESTS) -> dict[str, Any]:
+    """Who Scopus is asked about: the records Semantic Scholar and Crossref left without an abstract (D91).
+
+    The caller has already checked that this run's network is entitled to the complete view; `spent` counts that
+    check with the requests of the two sources before it, so all three stay within one limit.
+    """
+    wanted = [{"source_version_id": row["source_version_id"], "doi": row["doi"]}
+              for row in _records(store, research_id, scope_revision)
+              if _wanted(row, words) == "abstract" and not row["has_abstract"]
+              and not answered(store, row["source_version_id"], "scopus")]
+    allowed = max(0, limit - spent)
+    asked, outside = wanted[:allowed], wanted[allowed:]
+    return {"chunks": [asked[start:start + CROSSREF_CHUNK] for start in range(0, len(asked), CROSSREF_CHUNK)],
+            "outside_limit": len(outside), "skipped": None}
+
+
 # ---- storing one answer -------------------------------------------------------------------------
 
 
@@ -265,6 +285,12 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
         checkpoint()
         await _crossref_step(store, http, settings, run, number, chunk)
     checkpoint()
+    spent = len(plan["batches"]) + sum(len(chunk) for chunk in plan_cr["chunks"])
+    plan_sc = await _scopus_plan(store, http, run, scope, words, spent, limit)
+    for number, chunk in enumerate(plan_sc["chunks"]):
+        checkpoint()
+        await _scopus_step(store, http, settings, run, number, chunk, waits)
+    checkpoint()
 
 
 def _code_step(store: Store, run_id: str, key: str, kind: str, build: Callable[[], dict[str, Any]]) -> dict[str, Any]:
@@ -331,6 +357,57 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
             payload_ref = _write_payload(settings, step["id"], payloads)
         added.append(store_answer(store, row["source_version_id"], "crossref", answer, step["id"], payload_ref))
     store.finish_step(step["id"], "succeeded", output=_counts(added, asked=asked))
+
+
+async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any], scope: dict[str, Any],
+                       words: tuple[str, ...], spent: int, limit: int) -> dict[str, Any]:
+    """The Scopus plan, after one access check of this run's network (D91); a resumed run reads the stored plan.
+
+    Scopus gives abstracts only in the complete view, which Elsevier entitles by the caller's IP range. Without it
+    the step is `skipped` with its reason and no record is asked about; the check itself is one request, counted.
+    A research without Scopus in its scope, or without its key, opens no step at all: its run is the one it was
+    before Scopus became an abstract source.
+    """
+    if not in_scope(scope, "scopus"):
+        return {"chunks": [], "outside_limit": 0, "skipped": "out_of_scope"}
+    step = store.step(run["id"], "lookup_plan:scopus", "code:lookup_plan")
+    if step["status"] == "succeeded":
+        return step["output"]
+    store.start_step(step["id"])
+    store.add_usage(run["id"], "lookup_requests")
+    entitled = await scopus.complete_view_entitled(http, CONNECTORS["scopus"].api_key() or "")
+    if entitled is True:
+        output = plan_scopus(store, run["research_id"], run["scope_revision"], words, spent + 1, limit)
+    else:
+        output = {"chunks": [], "outside_limit": 0,
+                  "skipped": "no_institutional_access" if entitled is False else "access_unknown"}
+    store.finish_step(step["id"], "succeeded", output=output)
+    return output
+
+
+async def _scopus_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
+                       number: int, chunk: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES) -> None:
+    """One chunk of single-DOI Scopus requests; each answer is written before the next request is sent."""
+    step = store.step(run["id"], f"record_lookup:scopus:{number}", "provider_lookup:scopus")
+    if step["status"] == "succeeded":
+        return
+    store.start_step(step["id"])
+    added, asked, payloads = [], 0, {}
+    api_key = CONNECTORS["scopus"].api_key() or ""
+    for row in chunk:
+        if answered(store, row["source_version_id"], "scopus") or _has_abstract(store, row["source_version_id"]):
+            continue
+        asked += 1
+        store.add_usage(run["id"], "lookup_requests")
+        answer, outcome = await lookup.scopus_abstract(http, row["doi"], api_key, max_rate_limit_retries=waits)
+        if outcome.retries:
+            store.add_usage(run["id"], "lookup_requests", outcome.retries)
+        payload_ref = None
+        if outcome.raw_payload is not None:
+            payloads[row["doi"]] = outcome.raw_payload
+            payload_ref = _write_payload(settings, step["id"], payloads)
+        added.append(store_answer(store, row["source_version_id"], "scopus", answer, step["id"], payload_ref))
+    store.finish_step(step["id"], "succeeded", output=_counts(added, asked=asked) | {"rate_limit_retries": waits})
 
 
 def _counts(added: list[dict[str, int]], asked: int, status: str | None = None) -> dict[str, Any]:

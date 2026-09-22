@@ -12,7 +12,7 @@ from deixis.workflow import suggestions as suggestions_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state, equations_to_check
 from deixis.workflow.report.store import ReportStore
-from deixis.providers.registry import CONNECTORS
+from deixis.providers.registry import search_providers
 from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
 
 
@@ -169,8 +169,9 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
                                                       "extraction_version", "title", "title_basis", "page_count", "text_pages")}
                           | {"passage_count": len(seed["passages"])} if seed else None)
     scope_view["seed_status"] = store.seed_status(research_id, scope)
-    # The providers a query may go to; a verification connector in the scope is not one (D87).
-    scope_view["search_providers"] = [p for p in scope["providers"] if CONNECTORS[p].searchable]
+    # The providers a query may go to; a verification connector in the scope is not one (D87), nor Scopus in an sw
+    # research (D91).
+    scope_view["search_providers"] = search_providers(scope["providers"], scope.get("search_workflow"))
 
     runs = []
     for row in conn.execute("SELECT id FROM runs WHERE research_id = ? ORDER BY created_at DESC LIMIT 10", (research_id,)):

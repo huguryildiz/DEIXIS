@@ -280,7 +280,8 @@ def test_each_provider_gets_one_query_in_its_own_syntax_and_all_pass_the_rules()
     _, built = built_for(PACKET, default=10)
     providers = [p for p in query_rules.NAMES if CONNECTORS[p].searchable]
     queries = query_compiler.compile_block_queries(built, providers, 100)
-    assert [q["provider_id"] for q in queries] == providers
+    # Scopus is searched by a legacy research only (D91); an sw vocabulary compiles it no query.
+    assert [q["provider_id"] for q in queries] == [p for p in providers if p != "scopus"]
     for query in queries:
         assert query_rules.query_issues(query["provider_id"], query["query_text"]) == [], query
         assert len(query["query_text"]) <= query_compiler.MAX_QUERY_CHARS
@@ -288,7 +289,6 @@ def test_each_provider_gets_one_query_in_its_own_syntax_and_all_pass_the_rules()
     by_provider = {q["provider_id"]: q["query_text"] for q in queries}
     assert by_provider["pubmed"] == "(energy[Title/Abstract] OR wireless[Title/Abstract]) AND packet[Title/Abstract]"
     assert by_provider["arxiv"] == "(abs:energy OR abs:wireless) AND abs:packet"
-    assert by_provider["scopus"] == "TITLE-ABS-KEY((energy OR wireless) AND packet)"
     assert by_provider["semantic_scholar"] == "energy packet" and by_provider["serpapi"] == "energy packet"
 
 
@@ -314,9 +314,10 @@ def test_a_block_too_long_for_a_provider_is_trimmed_from_its_end_and_the_dropped
     _, built = built_for("Kuantum?", default=10, key_terms=f"{', '.join(alphas)}; {', '.join(betas)}")
     (query,) = query_compiler.compile_block_queries(built, ["openalex"], 8)
     assert query_rules.query_issues("openalex", query["query_text"]) == []
-    # The last block is trimmed first and each block keeps at least its first term.
-    assert query["query_text"] == "(alphaone OR alphatwo OR alphathree OR alphafour OR alphafive) AND betaone"
-    assert query["dropped_terms"] == ["alphasix", "betatwo", "betathree"]
+    # The block with the most terms is trimmed first, from its end, and each block keeps at least its first term
+    # (D90; before slice 13g the last block went first and this was 5 + 1).
+    assert query["query_text"] == "(alphaone OR alphatwo OR alphathree) AND (betaone OR betatwo OR betathree)"
+    assert query["dropped_terms"] == ["alphafour", "alphafive", "alphasix"]
 
 
 def test_a_single_block_vocabulary_gives_a_single_group_query():

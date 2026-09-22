@@ -7,6 +7,8 @@ is `Connector.searchable` alone, so neither the flow nor the query compiler name
 Records and questions are SYNTHETIC and every provider is mocked: passing shows workflow behavior, not recall.
 """
 
+from dataclasses import replace
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -139,3 +141,66 @@ def test_a_crossref_search_step_that_already_failed_keeps_its_failure_when_the_r
     crossref = [(s["status"], s["error_code"]) for s in run["steps"] if s["kind"] == "provider_search:crossref"]
     assert crossref == [("failed", "http_error")]
     assert "crossref" not in [s["provider"] for s in view["search_runs"]]
+
+
+# ---- slice 13g Task 4: Scopus leaves the sw search and stays a legacy search source (D91) ----------------------
+
+
+def test_an_sw_vocabulary_compiles_no_scopus_query_and_a_legacy_plan_still_does():
+    vocabulary = {"terms": [
+        {"phrase": phrase, "block": block, "origin": "question", "root": phrase, "in_query": "phrase",
+         "phrase_count": 10, "root_count": None, "and_only": False, "dropped": None}
+        for phrase, block in (("tidal wetlands", "setting"), ("sediment accretion", "task"))]}
+    sw = query_compiler.compile_block_queries(vocabulary, ["openalex", "scopus", "semantic_scholar"], 100)
+    assert [q["provider_id"] for q in sw] == ["openalex", "semantic_scholar"]
+    plan = {"concepts": [{"label": "diffusion channel", "role": "core", "synonyms": ["diffusion channel"]},
+                         {"label": "scheduling", "role": "method", "synonyms": ["scheduling"]}],
+            "providers": ["openalex", "scopus"]}
+    legacy = query_compiler.compile_queries(plan, ["openalex", "scopus"], 100)
+    assert [(q["provider_id"], q["query_text"]) for q in legacy] == [
+        ("openalex", '"diffusion channel" AND scheduling'),
+        ("scopus", 'TITLE-ABS-KEY("diffusion channel" AND scheduling)')]
+    assert CONNECTORS["scopus"].searchable and not CONNECTORS["scopus"].sw_searchable
+
+
+class ElsevierAndOpenAlex(CountingOpenAlex):
+    """OpenAlex as `CountingOpenAlex` serves it, and Scopus refusing the complete view: no institutional network."""
+
+    def __init__(self):
+        super().__init__()
+        self.elsevier = []
+
+    def __call__(self, request):
+        if request.url.host == "api.elsevier.com":
+            self.elsevier.append(dict(request.url.params))
+            return httpx.Response(401, json={"service-error": {"status": {"statusCode": "AUTHORIZATION_ERROR"}}})
+        return super().__call__(request)
+
+
+def test_an_sw_research_with_scopus_configured_neither_searches_it_nor_names_it_a_searched_source(tmp_path, monkeypatch):
+    sources = ElsevierAndOpenAlex()
+    app = app_for(tmp_path, monkeypatch, sources, DeadAdapter())
+    monkeypatch.setenv("SCOPUS_API_KEY", "SYNTHETIC-scopus-key")
+    with TestClient(app) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        rid, run_id = start(client, QUESTION)
+        view, run = wait(client, rid, run_id)
+        store = client.app.state.store
+        compiled = store.step(run_id, "vocabulary", "code:vocabulary")["output"]["queries"]
+        body = store.current_protocol(rid, 1)["body"]
+    assert "scopus" in view["scope"]["providers"]  # in scope, for the abstract lookup
+    assert "scopus" not in view["scope"]["search_providers"]
+    assert "scopus" not in [q["provider_id"] for q in compiled]
+    assert "scopus" not in [s["provider"] for s in view["search_runs"]]
+    assert "scopus" not in body["providers"] and "scopus" in body["verification_providers"]
+    # The only Scopus request is the one access check of the lookup plan; no search went there.
+    assert [params.get("view") for params in sources.elsevier] == ["COMPLETE"]
+
+
+def test_a_legacy_research_offers_scopus_to_the_model_as_it_always_did(tmp_path, monkeypatch):
+    adapter = FakeAdapter(two_provider_plan)
+    # `discover` clears every key, so Scopus is made keyless here to be in the scope of the new research.
+    monkeypatch.setitem(CONNECTORS, "scopus", replace(CONNECTORS["scopus"], key_env=None, key_required=False))
+    view, run = discover(tmp_path, monkeypatch, routed, adapter)
+    assert "scopus" in view["scope"]["providers"] and "scopus" in view["scope"]["search_providers"]
+    assert "scopus" in adapter.calls[0]["enabled_providers"]

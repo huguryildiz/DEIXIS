@@ -146,3 +146,43 @@ def test_compact_strategy_falls_back_when_a_short_query_is_invalid_and_rejects_u
     assert compact == legacy
     with pytest.raises(ValueError, match="Unknown query compiler strategy"):
         query_compiler.compile_queries(plan(), ALL_PROVIDERS, 4, strategy="unregistered")
+
+
+# ---- slice 13g Task 1: the fitting takes terms from the block that has the most (D90) -----------------------
+# SYNTHETIC block terms from two fields; only their number and order matter to the fitting.
+
+
+def _blocks(setting: list[str], task: list[str]) -> dict:
+    def term(phrase: str, block: str) -> dict:
+        return {"phrase": phrase, "block": block, "origin": "question", "root": phrase, "in_query": "phrase",
+                "phrase_count": 10, "root_count": None, "and_only": False, "dropped": None}
+    return {"terms": [term(p, "setting") for p in setting] + [term(p, "task") for p in task]}
+
+
+NETWORK_SETTING = ["body area networks", "wearable sensors", "implant links", "on-body channels", "medical telemetry"]
+NETWORK_TASK = ["frame length", "payload", "duty cycle", "retransmission"]
+SOIL_SETTING = ["arid soils", "saline soils"]
+SOIL_TASK = ["nitrogen uptake", "root depth", "irrigation timing", "biochar", "mulching", "cover crops", "tillage",
+             "leaf area"]
+
+
+def test_an_unbalanced_list_loses_terms_from_the_longer_block_first():
+    (query,) = query_compiler.compile_block_queries(_blocks(NETWORK_SETTING, NETWORK_TASK), ["openalex"], 8)
+    # 5 + 4 terms fit OpenAlex's five operators as 3 + 3; the old order cut the task block to one term (5 + 1).
+    assert query["query_text"] == ('("body area networks" OR "wearable sensors" OR "implant links") AND '
+                                   '("frame length" OR payload OR "duty cycle")')
+    assert query["dropped_terms"] == ["on-body channels", "medical telemetry", "retransmission"]
+
+
+def test_a_short_setting_block_keeps_its_terms_and_the_task_block_is_cut_to_fit():
+    (query,) = query_compiler.compile_block_queries(_blocks(SOIL_SETTING, SOIL_TASK), ["openalex"], 8)
+    # 2 + 8 gives 2 + 4, the same as the old order.
+    assert query["query_text"] == ('("arid soils" OR "saline soils") AND '
+                                   '("nitrogen uptake" OR "root depth" OR "irrigation timing" OR biochar)')
+    assert query["dropped_terms"] == ["mulching", "cover crops", "tillage", "leaf area"]
+
+
+def test_on_a_tie_the_last_block_loses_a_term_first():
+    (query,) = query_compiler.compile_block_queries(_blocks(NETWORK_SETTING[:4], NETWORK_TASK), ["openalex"], 8)
+    # 4 + 4: the task block goes first on the tie, then the setting block: 3 + 3.
+    assert query["dropped_terms"] == ["on-body channels", "retransmission"]

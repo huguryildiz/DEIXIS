@@ -20,8 +20,9 @@ from __future__ import annotations
 import json
 from typing import Any, Awaitable, Callable
 
-from deixis.domain.expansion import MAX_PROBED_PHRASES, MIN_DOCUMENT_FREQUENCY, Candidate
+from deixis.domain.expansion import MAX_PROBED_PHRASES, MIN_DOCUMENT_FREQUENCY, Candidate, stem
 from deixis.domain.vocabulary import words
+from deixis.domain.vocabulary_words import GENERAL_WORDS
 from deixis.providers.query_compiler import quoted
 from deixis.workflow.vocabulary import GATE_BLOCKS, _or_group
 
@@ -90,16 +91,48 @@ async def expand(vocabulary: dict[str, Any], found: list[Candidate],
     return {"skipped": None, "candidates": rows, "terms": accepted, "probes": probes}
 
 
-def second_round_vocabulary(vocabulary: dict[str, Any], terms: list[str]) -> dict[str, Any]:
-    """The vocabulary the second round's queries are compiled from: the same setting block, a task block of the
-    accepted phrases alone.
+def _stems(text: str) -> set[str]:
+    return {stem(word) for word in words(text) if word not in GENERAL_WORDS}
 
-    The second round is the arm that only adds: the first round's query is not sent again, so its records are not
-    read a second time and what the expansion brought in is counted on its own search rows.
+
+def second_round_vocabulary(vocabulary: dict[str, Any], terms: list[str],
+                            first_queries: list[dict[str, Any]]) -> dict[str, Any]:
+    """The vocabulary the second round's queries are compiled from, and where each accepted phrase went (D90).
+
+    An accepted phrase that shares a word other than a general one with a setting term (a final `s` aside) is a
+    setting synonym; every other one is a task addition. The field probe accepts setting synonyms by its nature,
+    since they occur with the setting block, and giving them the task block's place searched the setting twice and
+    the task not at all. So:
+
+    - with a setting synonym: the synonyms as the setting block AND the first round's task block with the additions;
+      the synonyms are cut to as many as the first round's OpenAlex query kept of its own setting block, so the
+      fitting does not take the task block's terms to make room for them;
+    - with task additions only: the first round's setting block AND the additions alone;
+    - with neither: no terms, and no second round.
+
+    Both forms are the arm that only adds: the first round's query is not sent again, so its records are not read a
+    second time and what the expansion brought in is counted on its own search rows.
     """
-    task = [{"phrase": phrase, "block": TASK_BLOCK, "origin": "data", "root": phrase, "in_query": "phrase",
-             "phrase_count": None, "root_count": None, "and_only": False, "dropped": None} for phrase in terms]
-    return {"terms": [dict(term) for term in queried_terms(vocabulary, SETTING_BLOCK)] + task}
+    setting_terms, task_terms = queried_terms(vocabulary, SETTING_BLOCK), queried_terms(vocabulary, TASK_BLOCK)
+    setting_words = set().union(*(_stems(term["phrase"]) | _stems(queried_form(term)) for term in setting_terms))
+    synonyms = [phrase for phrase in terms if _stems(phrase) & setting_words]
+    additions = [phrase for phrase in terms if phrase not in synonyms]
+    first = next((query for query in first_queries if query["provider_id"] == "openalex"), None)
+    # Without a first-round OpenAlex query to read the width from, the setting block as the vocabulary holds it.
+    width = sum(1 for term in setting_terms if first is None or queried_form(term) not in first["dropped_terms"])
+
+    def added(phrase: str, block: str) -> dict[str, Any]:
+        return {"phrase": phrase, "block": block, "origin": "data", "root": phrase, "in_query": "phrase",
+                "phrase_count": None, "root_count": None, "and_only": False, "dropped": None}
+
+    if synonyms:
+        built = ([added(phrase, SETTING_BLOCK) for phrase in synonyms[:max(width, 1)]]
+                 + [dict(term) for term in task_terms] + [added(phrase, TASK_BLOCK) for phrase in additions])
+    elif additions:
+        built = [dict(term) for term in setting_terms] + [added(phrase, TASK_BLOCK) for phrase in additions]
+    else:
+        built = []
+    return {"terms": built, "setting_synonyms": synonyms, "task_additions": additions, "setting_width": width}
 
 
 # ---- what each term brought in ---------------------------------------------------------

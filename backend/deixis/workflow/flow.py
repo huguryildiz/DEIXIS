@@ -37,7 +37,7 @@ from deixis.models import prompt
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
 from deixis.providers import openalex, query_compiler
 from deixis.providers.common import FIRST_PAGE, MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi
-from deixis.providers.registry import CONNECTORS, Connector
+from deixis.providers.registry import CONNECTORS, Connector, search_providers
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import abstract_stage
@@ -1509,9 +1509,11 @@ class ResearchFlow:
                 [*vocabulary["claim_words"], *vocabulary["exclusion_words"]])
             self.store.start_step(step["id"])
             result = await expansion_rules.expand(vocabulary, found, self._count_probe(scope))
+            second = expansion_rules.second_round_vocabulary(vocabulary, result["terms"], queries)
+            # Where each accepted phrase went (D90); the protocol body keeps the compiled queries, not this.
+            result["second_round"] = {key: second[key] for key in ("setting_synonyms", "task_additions", "setting_width")}
             more = query_compiler.compile_block_queries(
-                expansion_rules.second_round_vocabulary(vocabulary, result["terms"]),
-                scope["providers"], budget["max_provider_requests"]) if result["terms"] else []
+                second, scope["providers"], budget["max_provider_requests"]) if second["terms"] else []
             # What each term had brought in by the time the expansion ended: one dated photograph, never a number
             # the research keeps as its own (the live figure is derived by `term_yields`).
             result["yield_at_expansion"] = expansion_rules.count_yields(
@@ -3008,7 +3010,7 @@ class ResearchFlow:
             # The providers a query may go to. A verification connector stays in the research's scope for the records
             # whose DOI is already known, and is never offered to the model as a place to search (D87).
             "capabilities": CAPABILITIES,
-            "enabled_providers": [p for p in scope["providers"] if CONNECTORS[p].searchable],
+            "enabled_providers": search_providers(scope["providers"], scope.get("search_workflow")),
             "candidates": candidates, "sources": sources, "passages": passages,
             "allowlist": allowlist,
             "human_corrections": [],

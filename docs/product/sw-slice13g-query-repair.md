@@ -6,6 +6,8 @@
 **Uygulayan:** Opus · high. **İnceleme:** tam (Fable); arama sorgusu neyin bulunacağını belirler, kanıtın en başıdır.
 **Plan:** Opus, 23 Eylül 2026 (13f sohbeti).
 
+**Uygulama notu (23 Eylül 2026):** Task 3 yazıldı, ilk canlı kabulü bozdu ve sahip kararıyla çıkarıldı; uygulanan Task 1, 2, 4 (D90, D91). Scopus `searchable=False` yerine yeni `sw_searchable=False` alanıyla çıktı, çünkü `searchable` legacy'yi de etkiliyordu. Ayrıntı [sw-status.md](sw-status.md) satır 13g.
+
 **Goal:** Sözcük deneyi üç alanda (kuantum ağları, paket boyutu, yenidoğan sepsisi) bugünkü sorgu kurma kuralının
 üç hatasını gösterdi ve modelin kendi yazdığı listenin koddan iyi olmadığını ölçtü (kuantumda 31 doğru eserin 9'u
 karşı 18'i, paket konusunda 0 karşı 1). Bu dilim kodun listesini tutar ve üç hatayı düzeltir; Scopus'u aramadan

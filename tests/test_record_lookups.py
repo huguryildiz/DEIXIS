@@ -532,3 +532,39 @@ def test_purging_a_source_takes_its_reference_rows(store):
     store.remove_sources(rid, [gone], None)
     assert store.purge_sources(rid, [gone])[0] == [gone]
     assert reference_rows(store, gone) == [] and reference_rows(store, kept) == ["W8"]
+
+
+# ---- slice 13g Task 4: the Scopus client (D91) ------------------------------------------------------------------
+# Answers shaped after `providers/scopus.py`'s notes: an entry list under `search-results`, the abstract as
+# `dc:description` in the complete view, an empty set as one entry holding `error`, 401 without entitlement.
+
+
+def scopus(handler):
+    seen = []
+
+    def record(request):
+        seen.append(request)
+        return handler(request)
+
+    async def ask():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(record)) as client:
+            return await lookup.scopus_abstract(client, DOI, "SYNTHETIC-scopus-key")
+    return (*asyncio.run(ask()), seen)
+
+
+def test_scopus_is_asked_for_one_doi_in_the_complete_view_and_its_description_is_the_abstract():
+    answer, outcome, seen = scopus(lambda request: httpx.Response(200, json={"search-results": {
+        "opensearch:totalResults": "1", "entry": [{"prism:doi": DOI, "dc:description": f" {ABSTRACT} "}]}}))
+    assert (answer.status, answer.abstract, outcome.status) == ("found", ABSTRACT, "completed")
+    (request,) = seen
+    assert request.url.params["query"] == f"DOI({DOI})" and request.url.params["view"] == "COMPLETE"
+    assert request.headers["X-ELS-APIKey"] == "SYNTHETIC-scopus-key"
+    assert "SYNTHETIC-scopus-key" not in outcome.request_description
+
+
+def test_an_empty_scopus_result_set_is_not_found_and_a_refused_view_is_failed():
+    empty, outcome, _ = scopus(lambda request: httpx.Response(200, json={"search-results": {
+        "opensearch:totalResults": "0", "entry": [{"@_fa": "true", "error": "Result set was empty"}]}}))
+    assert (empty.status, outcome.status) == ("not_found", "zero_results")
+    refused, _, _ = scopus(lambda request: httpx.Response(401, json={"service-error": {}}))
+    assert refused.status == "failed"

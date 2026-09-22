@@ -348,3 +348,25 @@ def test_a_legacy_research_opens_no_expansion_step(tmp_path, monkeypatch):
     assert "vocabulary_expansion" not in keys and "protocol_expansion" not in keys
     assert [row["protocol_revision"] for row in frozen] == [1]
     assert frozen[0]["body"]["arms"] == ["keyword_search"] and "expansion" not in frozen[0]["body"]
+
+
+def test_a_setting_synonym_takes_the_setting_blocks_place_and_the_task_block_stays(tmp_path, monkeypatch):
+    """Slice 13g (D90): the first round's records repeat "sensor node", which shares a word with the setting block;
+    the second round searches it as the setting block and keeps the task block, with "duty cycle" added to it."""
+    synonym = "sensor node"
+    field = Field(counts={PHRASE_PROBE: 100, FIELD_PROBE: 40, f'"{synonym}"': 100,
+                          f'"{synonym}" AND (energy OR wireless)': 40})
+    app = app_for(tmp_path, monkeypatch, field)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        stored = step_output(app.state.store, run_id, "vocabulary_expansion")
+        first = step_output(app.state.store, run_id, "vocabulary")
+    finally:
+        client.__exit__(None, None, None)
+    assert set(stored["expansion"]["terms"]) == {ACCEPTED, synonym}
+    assert stored["expansion"]["second_round"] == {"setting_synonyms": [synonym], "task_additions": [ACCEPTED],
+                                                   "setting_width": 2}
+    (second,) = [q["query_text"] for q in stored["queries"] if q["provider_id"] == "openalex"]
+    assert second == f'"{synonym}" AND (packet OR "{ACCEPTED}")'
+    assert second not in [q["query_text"] for q in first["queries"]]

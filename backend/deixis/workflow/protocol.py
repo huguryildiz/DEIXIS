@@ -19,7 +19,7 @@ from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTR
 from deixis.domain.survey import THRESHOLDS as SURVEY_THRESHOLDS
 from deixis.domain.survey_words import ABSTRACT_SELF_DESCRIPTIONS as SURVEY_PATTERNS
 from deixis.providers import query_compiler
-from deixis.providers.registry import CONNECTORS
+from deixis.providers.registry import search_providers
 
 PROTOCOL_SCHEMA = "deixis.protocol.v1"
 # What the criterion body says about where it came from. It is kept out of `decisions.CRITERION_FIELDS` on purpose:
@@ -73,6 +73,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     # the user's own correction at the approval step (SW2.6).
     default_origin = "user" if vocabulary and vocabulary["block_assignment"] == "user" else "rule"
     block_origin = block_origins(vocabulary) if vocabulary else {}
+    searched = search_providers(scope["providers"], scope.get("search_workflow"))
 
     # A code vocabulary's queries came from the block compiler, so the body names that compiler, not the plan one.
     compiler_version = (query_compiler.BLOCKS_VERSION if vocabulary else
@@ -117,9 +118,9 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                              for q in queries],
         # The databases searched, which is what the record reports (PRISMA-S item 1); a connector kept in scope only
         # to verify a known DOI is named apart so that it is not read as a searched source (D87). A `legacy` body
-        # keeps the list it always had, digest and all.
-        **({"providers": sorted(p for p in scope["providers"] if CONNECTORS[p].searchable),
-            "verification_providers": sorted(p for p in scope["providers"] if not CONNECTORS[p].searchable)}
+        # keeps the list it always had, digest and all. Scopus is not searched by an sw research (D91).
+        **({"providers": sorted(searched),
+            "verification_providers": sorted(p for p in scope["providers"] if p not in searched)}
            if scope.get("search_workflow") == "sw" else {"providers": sorted(scope["providers"])}),
         "arms": ["keyword_search", "data_expansion"] if expansion else ["keyword_search"],
         # How this research decides a record describes itself as a survey. A `legacy` body carries none of it.

@@ -32,6 +32,10 @@ class Connector:
     # DOI is already known — its metadata, its links — and is never asked to find records (D87). The queries are
     # compiled from this flag alone, so neither the flow nor the compiler names a provider (slice 05).
     searchable: bool = True
+    # Whether an sw research sends a query here. Scopus is searched by a legacy research and, in an sw research, is
+    # only the last abstract source, and only on an institutional network (D91). A query an sw run already stored is
+    # still read: `searchable` alone decides that, so a resumed run searches the queries its protocol names.
+    sw_searchable: bool = True
     # How an sw query reads its pages (slice 04c): a provider-issued `cursor`, a record `offset`, or one page only.
     paging: str = "offset"
     max_reachable: int | None = None  # the deepest record the provider serves, when that is below the read limit
@@ -72,7 +76,7 @@ CONNECTORS = {c.provider_id: c for c in (
     Connector("ieee_xplore", ieee_xplore.search, ieee_xplore.MAX_RESULTS, "IEEE_API_KEY", key_required=True,
               host=_host(ieee_xplore.SEARCH_URL)),
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,
-              host=_host(scopus.SEARCH_URL)),
+              sw_searchable=False, host=_host(scopus.SEARCH_URL)),  # sw: last abstract source only (D91)
     Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True, host=_host(core.SEARCH_URL)),
     Connector("serpapi", serpapi.search, serpapi.MAX_RESULTS, "SERPAPI_API_KEY", key_required=True, supplementary=True,
               paging="single_page", host=_host(serpapi.SEARCH_URL)),
@@ -97,6 +101,11 @@ def verification_providers() -> list[str]:
 def configured_providers() -> list[str]:
     """Every connector with the access it needs, searched or not: what a new research holds in its scope."""
     return _configured()
+
+
+def search_providers(providers: list[str], workflow: str | None) -> list[str]:
+    """The given providers a new query of this workflow may go to, in the order given (D87, D91)."""
+    return [p for p in providers if CONNECTORS[p].searchable and (workflow != "sw" or CONNECTORS[p].sw_searchable)]
 
 
 def provider_role(connector: Connector) -> str:

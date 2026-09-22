@@ -17,6 +17,10 @@ Endpoints verified against the provider documentation on 2026-09-21:
   `message`, `reference-count` is an integer, `relation` maps a relation type to a list of `{id, id-type,
   asserted-by}`, and a DOI that does not exist answers 404.
 
+- Scopus Search API, `GET /content/search/scopus` with `query=DOI(<doi>)` and `view=COMPLETE`: the complete view
+  carries the abstract as `dc:description` and is entitled by the caller's IP range (`scopus.complete_view_entitled`);
+  an empty result set is one entry holding an `error` field (`providers/scopus.py`).
+
 Every Semantic Scholar request goes through the shared `send`, so the process-wide one-request gate of D67 and the
 bounded 429 retries apply here exactly as they do to a search. A failed lookup is an answer like any other: it is
 recorded and the run goes on (D18).
@@ -31,7 +35,7 @@ from urllib.parse import quote
 
 import httpx
 
-from deixis.providers import crossref, semantic_scholar
+from deixis.providers import crossref, scopus, semantic_scholar
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi, send
 
 S2_BATCH_URL = "https://api.semanticscholar.org/graph/v1/paper/batch"
@@ -143,6 +147,28 @@ async def crossref_work(client: httpx.AsyncClient, doi: str,
         linked_dois=_relation_dois(relation, IS_PREPRINT_OF, doi),
         has_preprint=_relation_dois(relation, HAS_PREPRINT, doi),
     ), outcome
+
+
+async def scopus_abstract(client: httpx.AsyncClient, doi: str, api_key: str,
+                          max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> tuple[LookupAnswer, SearchOutcome]:
+    """Ask Scopus for one DOI's abstract in the complete view (D91). An empty result set is `not_found`."""
+    params = {"query": f"DOI({doi})", "count": 1, "view": "COMPLETE"}
+    description = f"GET {scopus.SEARCH_URL} query=DOI(<doi>) doi={doi!r} view=COMPLETE access=api_key"
+    response, outcome = await send(client, scopus.SEARCH_URL, params,
+                                   {"X-ELS-APIKey": api_key, "Accept": "application/json"}, description, "api_key",
+                                   scopus.RATE_LIMIT_HEADERS, (api_key,), max_rate_limit_retries=max_rate_limit_retries)
+    if response is None:
+        return LookupAnswer("failed"), outcome
+    try:
+        entries = [entry for entry in response.json()["search-results"].get("entry") or [] if "error" not in entry]
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
+        outcome.status, outcome.error = "parse_error", str(exc)[:300]
+        return LookupAnswer("failed"), outcome
+    outcome.status = "completed" if entries else "zero_results"
+    outcome.raw_payload = response.json()
+    if not entries:
+        return LookupAnswer("not_found"), outcome
+    return LookupAnswer("found", abstract=(entries[0].get("dc:description") or "").strip() or None), outcome
 
 
 def _relation_dois(relation: dict[str, Any], kind: str, doi: str) -> list[str]:

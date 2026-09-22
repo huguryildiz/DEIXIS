@@ -7,8 +7,10 @@ really used in the field is decided by the count probe in `workflow/expansion.py
 on its own.
 
 Two lists never become a candidate, whatever their frequency: a phrase that holds a term the first query already
-searched (it would widen nothing), and a phrase that holds a claim or exclusion word (SW1.3). No word list of this
-module's own exists; the stop words are the ones the question was read with.
+searched (it would widen nothing), and a phrase that holds a claim or exclusion word (SW1.3). Both are matched with a
+final `s` taken off every word, because OpenAlex counts a singular and its plural as one term and "quantum network"
+would otherwise search again what "quantum networks" already found (D90). No word list of this module's own exists;
+the stop words are the ones the question was read with.
 """
 
 from __future__ import annotations
@@ -99,8 +101,14 @@ def _keyword_phrases(keywords: Iterable[str]) -> set[str]:
     return phrases
 
 
+def stem(word: str) -> str:
+    """The word without a final plural `s`; a word of three letters or fewer keeps it. A rule, not a stemmer."""
+    return word[:-1] if word.endswith("s") and len(word) > MIN_WORD_LETTERS else word
+
+
 def _holds_any(phrase: str, blocked: list[list[str]]) -> bool:
-    """Whether the phrase holds one of the blocked word sequences whole, at a word boundary."""
-    tokens = words(phrase)
+    """Whether the phrase holds one of the blocked word sequences whole, at a word boundary, singular or plural."""
+    tokens = [stem(word) for word in words(phrase)]
+    stems = [[stem(word) for word in block] for block in blocked]
     return any(tokens[start:start + len(block)] == block
-               for block in blocked for start in range(len(tokens) - len(block) + 1))
+               for block in stems for start in range(len(tokens) - len(block) + 1))

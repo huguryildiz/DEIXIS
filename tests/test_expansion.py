@@ -195,10 +195,72 @@ def test_no_more_than_the_maximum_terms_are_accepted_and_the_rest_are_not_probed
     assert len(seen) == 2 * MAX_EXPANSION_TERMS
 
 
-def test_the_second_round_vocabulary_keeps_the_setting_block_and_replaces_the_task_block():
-    built = second_round_vocabulary(vocabulary(), ["duty cycle"])
+def test_a_task_addition_alone_is_searched_with_the_first_rounds_setting_block():
+    built = second_round_vocabulary(vocabulary(), ["duty cycle"], [])
     assert [(term["phrase"], term["block"], term["in_query"]) for term in built["terms"]] == [
         ("sensor network", "setting", "phrase"), ("duty cycle", "task", "phrase")]
+    assert (built["setting_synonyms"], built["task_additions"]) == ([], ["duty cycle"])
+
+
+# ---- slice 13g Task 2: the second round only adds and keeps its task block (D90) -----------------------------
+# SYNTHETIC vocabularies from two fields: sensor networks and molecular communication.
+
+
+def test_the_singular_or_plural_of_a_queried_term_is_not_a_candidate():
+    titles = ["Relay placement in a sensor network testbed", "Sensor network relay placement study",
+              "On relay placement for the sensor network"]
+    found = candidates(records(titles), ["sensor networks"], [])
+    assert "relay placement" in phrases(found)
+    assert not any("sensor network" in phrase for phrase in phrases(found))
+    found = candidates(records(["Diffusion channels of molecular receivers"] * 3), ["diffusion channel"], [])
+    assert not any("diffusion channel" in phrase for phrase in phrases(found))
+
+
+def test_a_phrase_sharing_a_setting_word_goes_to_the_setting_block_and_the_task_block_stays():
+    base = vocabulary(setting=("wireless sensor networks",), task=("packet size", "payload"))
+    built = second_round_vocabulary(base, ["sensor nodes", "duty cycle"], [])
+    assert (built["setting_synonyms"], built["task_additions"]) == (["sensor nodes"], ["duty cycle"])
+    assert [(term["phrase"], term["block"]) for term in built["terms"]] == [
+        ("sensor nodes", "setting"), ("packet size", "task"), ("payload", "task"), ("duty cycle", "task")]
+
+
+def test_a_shared_general_word_does_not_make_a_setting_synonym():
+    base = vocabulary(setting=("molecular communication applications",), task=("release scheduling",))
+    built = second_round_vocabulary(base, ["receiver applications"], [])
+    assert (built["setting_synonyms"], built["task_additions"]) == ([], ["receiver applications"])
+
+
+@pytest.mark.parametrize("accepted, expected", [
+    # only setting synonyms: the new setting block, as wide as the first round's, with the first round's task block
+    (["molecular channels", "molecular receivers"], '"molecular channels" AND "release scheduling"'),
+    # only task additions: the first round's setting block with the additions alone
+    (["absorbing receiver"], '"molecular communication" AND "absorbing receiver"'),
+    # both: the new setting block with the first round's task block and the additions
+    (["molecular channels", "absorbing receiver"],
+     '"molecular channels" AND ("release scheduling" OR "absorbing receiver")'),
+])
+def test_each_second_round_form_compiles_its_own_query_and_never_the_first_rounds(accepted, expected):
+    from deixis.providers.query_compiler import compile_block_queries
+    base = vocabulary(setting=("molecular communication",), task=("release scheduling",))
+    first = compile_block_queries(base, ["openalex"], 8)
+    (query,) = compile_block_queries(second_round_vocabulary(base, accepted, first), ["openalex"], 8)
+    assert query["query_text"] == expected
+    assert query["query_text"] != first[0]["query_text"]
+
+
+def test_the_new_setting_block_is_cut_to_the_width_the_first_rounds_openalex_query_gave_it():
+    base = vocabulary(setting=("wireless sensor networks", "sensor fields"), task=("packet size",))
+    first = [{"provider_id": "openalex", "query_text": "SYNTHETIC", "dropped_terms": ["sensor fields"]},
+             {"provider_id": "arxiv", "query_text": "SYNTHETIC", "dropped_terms": []}]
+    built = second_round_vocabulary(base, ["sensor nodes", "sensor arrays", "wireless links"], first)
+    assert built["setting_synonyms"] == ["sensor nodes", "sensor arrays", "wireless links"]
+    assert built["setting_width"] == 1
+    assert [term["phrase"] for term in built["terms"] if term["block"] == "setting"] == ["sensor nodes"]
+
+
+def test_with_no_accepted_phrase_there_is_no_second_round_vocabulary():
+    built = second_round_vocabulary(vocabulary(), [], [])
+    assert built["terms"] == [] and built["setting_synonyms"] == [] and built["task_additions"] == []
 
 
 # ---- the stored column ----------------------------------------------------------------

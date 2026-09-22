@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from deixis.providers import query_rules
-from deixis.providers.registry import CONNECTORS
+from deixis.providers.registry import search_providers
 
 VERSION = "deixis.query_compiler.v2"
 COMPACT_VERSION = "deixis.query_compiler.v3.compact_openalex_v1"
@@ -34,13 +34,14 @@ ROLE_NAMES = {"mechanism": "mechanism", "method": "method", "outcome": "outcome"
               "adjacent_field": "adjacent field"}
 
 
-def _searchable(providers: list[str]) -> list[str]:
+def _searchable(providers: list[str], workflow: str | None = None) -> list[str]:
     """The given providers a query may go to, once each and in the order they arrived.
 
     A connector that is only asked about a record whose DOI is already known is dropped here rather than by each
     caller, so no caller names a provider and a research whose scope still holds one compiles no query for it (D87).
+    An sw vocabulary also leaves out a connector that only a legacy research searches (D91).
     """
-    return [p for p in dict.fromkeys(providers) if CONNECTORS[p].searchable]
+    return search_providers(list(dict.fromkeys(providers)), workflow)
 
 
 def _terms(concept: dict[str, Any]) -> list[str]:
@@ -113,8 +114,10 @@ def _compact_openalex(core_term: str, family_term: str) -> str | None:
 def _fit_blocks(provider: str, groups: list[list[str]]) -> tuple[str, list[str]] | None:
     """One query holding as many leading terms of each block as the provider's rules allow, with what was dropped.
 
-    Terms go from the end of the last block first, then the one before it, and every block keeps at least one term:
-    a block that lost all of its terms would widen the query into another question (SW2.7).
+    A term goes from the end of the block that still holds the most terms, the last such block on a tie, and every
+    block keeps at least one term: a block that lost all of its terms would widen the query into another question
+    (SW2.7). Taking from the last block first cut a long task block to one term while the setting block kept five
+    (D90).
     """
     counts = [len(group) for group in groups]
     while True:
@@ -122,12 +125,9 @@ def _fit_blocks(provider: str, groups: list[list[str]]) -> tuple[str, list[str]]
         text = _render(provider, kept[0], kept[1] if len(kept) > 1 else [])
         if len(text) <= MAX_QUERY_CHARS and not query_rules.query_issues(provider, text):
             return text, [term for group, count in zip(groups, counts) for term in group[count:]]
-        for position in range(len(counts) - 1, -1, -1):
-            if counts[position] > 1:
-                counts[position] -= 1
-                break
-        else:
+        if max(counts) <= 1:
             return None
+        counts[max(range(len(counts)), key=lambda position: (counts[position], position))] -= 1
 
 
 def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[str], limit: int) -> list[dict[str, Any]]:
@@ -148,7 +148,7 @@ def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[st
         return []
     rationale = "Concept blocks: " + " AND ".join(names)
     queries: list[dict[str, Any]] = []
-    for provider in _searchable(enabled_providers):
+    for provider in _searchable(enabled_providers, "sw"):
         if len(queries) >= limit:
             break
         if (fitted := _fit_blocks(provider, groups)) is None:

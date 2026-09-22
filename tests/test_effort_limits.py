@@ -92,8 +92,9 @@ def test_the_page_request_allowance_shrinks_with_the_effort():
     query = {"provider_id": "openalex"}
     allowances = {effort: flow.page_allowance(query, effort, {}) for effort in SW_READ_LIMIT}
     # openalex serves 200 records a page: quick reads 2 pages at 1 + 0 + 2 requests each, standard 5 at 1 + 1 + 2,
-    # detailed 10 at 1 + 2 + 2. The allowance is the query's own (D89); a retry action adds what it adds to the run.
-    assert allowances == {"quick": 2 * 3, "standard": 5 * 4, "detailed": 10 * 5}
+    # detailed 5 at 1 + 2 + 2 (10 pages before D90 lowered its read limit to 1,000). The allowance is the query's own
+    # (D89); a retry action adds what it adds to the run.
+    assert allowances == {"quick": 2 * 3, "standard": 5 * 4, "detailed": 5 * 5}
     assert flow.page_allowance(query, "quick", {"retry_provider_requests": 2}) == 2 * 3 + 2
     assert allowances["quick"] < allowances["standard"] < allowances["detailed"]
 
@@ -234,5 +235,5 @@ def test_the_protocol_record_carries_this_research_s_own_search_read_figures():
         body = protocol.build_protocol(scope | {"effort": effort}, {}, None, [], "pkg_hash", settings)
         assert body["thresholds"]["search_read"] == {"read_limit_per_query": SW_READ_LIMIT[effort],
                                                      "rate_limit_retries": PROVIDER_WAIT[effort]}, effort
-    assert SW_READ_LIMIT == {"quick": 400, "standard": 1_000, "detailed": 2_000}
+    assert SW_READ_LIMIT == {"quick": 400, "standard": 1_000, "detailed": 1_000}  # detailed was 2,000 before D90
     assert PROVIDER_WAIT == {"quick": 0, "standard": 1, "detailed": common.MAX_RATE_LIMIT_RETRIES}

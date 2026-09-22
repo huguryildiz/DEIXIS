@@ -2,6 +2,78 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D90 — Repair the sw search query: fit two blocks evenly, let the second round only add and keep its task block, and read 1,000 records per `detailed` query
+
+**Status:** accepted; implemented 2026-09-23 (slice 13g, Tasks 1 and 2 and the `detailed` limit of Task 4). Task 3
+of the slice (two code bounds on the block labelling) was implemented, failed the live acceptance and was removed by
+the owner. **Date:** 2026-09-23.
+
+**Context:** The vocabulary experiment (`.local/sw-vocabulary-experiment-2026-09-23/`) found three faults in how the sw
+query is built. `_fit_blocks` fitted OpenAlex's five operators by dropping terms from the last block first, so a long
+task block fell to one term (`(5 setting terms) AND "optimization models"`, 12 records). The second round replaced the
+task block with the accepted phrases, and the field probe accepts setting synonyms by its nature, so the second query
+was `(setting) AND (setting synonyms)`: 166,353 records and no verified work on the packet-size question, 12,559 on
+the quantum one. And "quantum network" stayed a candidate beside the queried "quantum networks", which OpenAlex counts
+as one term. The experiment's arm C (setting synonyms to the setting block, task block kept) found 4 of the 4 findable
+works on the packet-size question.
+
+**Decision:** (1) `_fit_blocks` drops a term from the end of the block that holds the most terms, the last such block
+on a tie; every block keeps at least one term. 5 + 4 terms become 3 + 3 (were 5 + 1); 2 + 8 stays 2 + 4. (2) A
+candidate phrase that holds a queried, claim or exclusion word sequence with a final `s` taken off every word is not a
+candidate (`domain/expansion.stem`). (3) `second_round_vocabulary(vocabulary, terms, first_queries)` sorts each
+accepted phrase: a phrase sharing a non-general word (plural `s` aside) with a setting term is a setting synonym, every
+other one a task addition. With a setting synonym the second round searches `(synonyms) AND (first round's task terms
+OR additions)`, the synonyms cut to as many as the first round's OpenAlex query kept of its setting block; with task
+additions only, `(first round's setting block) AND (additions)`; with neither, no second round. Neither form sends the
+first round's query again. Where each phrase went is stored in the expansion step's output as `second_round`; the
+protocol body is unchanged (its `compiled_queries` carry the result). The count thresholds of the field probe are
+unchanged. (4) `SW_READ_LIMIT["detailed"]` falls from 2,000 to 1,000 records per query; `quick` 400 and `standard`
+1,000 are unchanged.
+
+**Acceptance (2026-09-23, `.local/sw-slice13g-acceptance-2026-09-23b/`, 170 OpenAlex requests, labels read from the
+experiment's library):** first and second round together, first 2,000 records of each: quantum 20 verified works
+(threshold 19), packet size 4 (threshold 4); the second round's count fell from 12,559 to 583 and from 166,353 to
+1,176; on neonatal sepsis from 2,344 to 482. The first run with Task 3 (`…-2026-09-23/`) failed: quantum 15, packet 0.
+Its head-phrase bound kept "mathematical optimization models" first in the task block and the 2 + 4 fitting dropped
+"routing" (first round 18 → 13 works); its compare bound put "channel" back in the task block, where as an OR term it
+opened the query just the same (37,018 records).
+
+**Limits:** Three questions, one run each; the packet-size answer list is weak (6 works from model labels, 2 not
+findable with the question's words) and sepsis has none. The count thresholds still refuse task words ("resource
+allocation", 140 of 213,947). There is no "read the setting block alone when it is small enough" rule: today's broken
+second round did that by accident on the quantum question and found 6 works that carry no task word in their abstract
+(24 against the new 20). The labelling still puts "channel" and "error model" in the setting block of the packet-size
+question, and its first round still finds 1 of 6 works; the owner's next step is a measured arm in which the model
+writes the query (2026-09-23). Halving `detailed`'s read cost one verified work per round in OpenAlex's order on the
+quantum question; its effect on what the model reads and includes is not measured, nor is the wall clock. A run
+resumed after this change reads its stored queries, but a `detailed` read still in progress stops at 1,000. English
+questions only. `ranking.query_vocabulary` still ranks every accepted phrase in the task block.
+
+## D91 — Scopus leaves the sw search and becomes the last abstract source, asked only on an institutional network
+
+**Status:** accepted; implemented 2026-09-23 (slice 13g, Task 4). **Date:** 2026-09-23.
+
+**Context:** In the 2026-09-22b measurement Scopus alone made 80 page requests of the `standard` run's provider search.
+Scopus's search view (`STANDARD`) carries no abstract; the complete view does, and Elsevier entitles it by the caller's
+IP range (a campus network or university VPN, `scopus.complete_view_entitled`).
+
+**Decision:** A new connector field `sw_searchable` (Scopus: `False`) and `registry.search_providers(providers,
+workflow)` decide where a new sw query may go: the block compiler, the sw protocol's `providers` /
+`verification_providers`, the research view's `search_providers` and the StepInput's `enabled_providers` read it.
+`searchable` is unchanged, so a legacy research searches Scopus as it did (`compile_queries` output is byte for byte
+the same) and an sw run resumed with a stored Scopus query still reads it. In the lookup stage Scopus comes after
+Semantic Scholar and Crossref: `lookup_plan:scopus` spends one request on the access check; without entitlement the
+plan is `skipped: no_institutional_access` (or `access_unknown`) and no DOI is sent; with it, only the records the
+first two sources left without an abstract are asked, one `view=COMPLETE` request per DOI (`query=DOI(<doi>)`), the
+check and the requests counted within `MAX_LOOKUP_REQUESTS`, answers written as D77's (`record_lookups`,
+`abstract_origin = "lookup_scopus"`). A research without Scopus in its scope or without its key opens no Scopus step.
+`record_lookups` accepts `scopus` (migration 0048). Whether a record's abstract is settled is still decided by the
+first two sources only, so a record Scopus could not be asked about is not left waiting for it.
+
+**Limits:** Scopus's contribution to the search was measured on one topic (18 September). How many abstracts it fills
+on an institutional network is not measured. The connection view still reports Scopus's role as `search`, which is
+true for a legacy research only.
+
 ## D89 — Split the request allowance per sw query before the read starts, read discovery searches on several hosts at once, and write what they read in query order
 
 **Status:** accepted; implemented 2026-09-22 (slice 13f). The wall-clock gain is not measured. **Date:** 2026-09-22.

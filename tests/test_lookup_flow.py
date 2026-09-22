@@ -606,3 +606,101 @@ def _screened_records(store, run_id):
     marks = ", ".join("?" * len(sent))
     return {r[0] for r in store.conn.execute(
         f"SELECT source_version_id FROM candidates WHERE id IN ({marks})", tuple(sorted(sent)))}
+
+
+# ---- slice 13g Task 4: Scopus is the last abstract source, on an institutional network only (D91) ---------------
+
+
+class WithScopus(Sources):
+    """`Sources`, and Scopus answering the complete view when `entitled` (a campus network or VPN) and 401 when not.
+
+    `scopus` maps a DOI to the abstract Scopus holds for it; a DOI it does not name is an empty result set.
+    """
+
+    def __init__(self, works, entitled, scopus=None, **answers):
+        super().__init__(works, **answers)
+        self.entitled, self.scopus, self.elsevier = entitled, scopus or {}, []
+
+    def __call__(self, request):
+        if request.url.host != "api.elsevier.com":
+            return super().__call__(request)
+        params = request.url.params
+        self.elsevier.append(params.get("query"))
+        if params.get("view") != "COMPLETE" or not self.entitled:
+            return httpx.Response(401, json={"service-error": {"status": {"statusCode": "AUTHORIZATION_ERROR"}}})
+        query = params["query"]
+        doi = query[len("DOI("):-1].lower() if query.startswith("DOI(") else None
+        entry = ([{"dc:identifier": f"SCOPUS_ID:{doi}", "prism:doi": doi, "dc:title": "SYNTHETIC",
+                   "dc:description": self.scopus[doi]}] if doi in self.scopus else [{"error": "Result set was empty"}])
+        return httpx.Response(200, json={"search-results": {
+            "opensearch:totalResults": str(len(entry) if doi in self.scopus else 0), "entry": entry}})
+
+
+def scopus_app(tmp_path, monkeypatch, sources):
+    app = app_for(tmp_path, monkeypatch, sources)
+    monkeypatch.setenv("SCOPUS_API_KEY", "SYNTHETIC-scopus-key")
+    return app
+
+
+THREE = [work(1, doi="10.1/a"), work(2, doi="10.1/b"), work(3, doi="10.1/c")]
+S2_ANSWERS = {"10.1/a": paper(abstract=ABSTRACT, doi="10.1/a"), "10.1/b": paper(doi="10.1/b"),
+              "10.1/c": paper(doi="10.1/c")}
+CROSSREF_ANSWERS = {"10.1/b": {"abstract": "<jats:p>We measure SYNTHETIC relay energy.</jats:p>"}}
+SCOPUS_ABSTRACT = "We model SYNTHETIC molecular release timing at an absorbing receiver."
+
+
+def test_without_institutional_access_the_scopus_step_is_skipped_and_asks_about_no_record(tmp_path, monkeypatch):
+    sources = WithScopus(THREE, entitled=False, s2=S2_ANSWERS, crossref=CROSSREF_ANSWERS,
+                         scopus={"10.1/c": SCOPUS_ABSTRACT})
+    app = scopus_app(tmp_path, monkeypatch, sources)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        store = app.state.store
+        plan = step_output(store, run_id, "lookup_plan:scopus")
+        third = abstract_of(store, records_of(store, rid)["W3"])
+    finally:
+        client.__exit__(None, None, None)
+    assert plan == {"chunks": [], "outside_limit": 0, "skipped": "no_institutional_access"}
+    assert sources.elsevier == ["TITLE(optimization)"]  # the access check alone; no DOI was sent
+    assert third is None
+    assert not [s for s in run["steps"] if s["operation_key"].startswith("record_lookup:scopus")]
+
+
+def test_on_an_institutional_network_scopus_is_asked_only_what_the_first_two_sources_left(tmp_path, monkeypatch):
+    sources = WithScopus(THREE, entitled=True, s2=S2_ANSWERS, crossref=CROSSREF_ANSWERS,
+                         scopus={"10.1/c": SCOPUS_ABSTRACT})
+    app = scopus_app(tmp_path, monkeypatch, sources)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        store = app.state.store
+        by_id = records_of(store, rid)
+        third = abstract_of(store, by_id["W3"])
+        plan = step_output(store, run_id, "lookup_plan:scopus")
+        asked = step_output(store, run_id, "record_lookup:scopus:0")
+        answered = [dict(row) for row in store.conn.execute(
+            "SELECT source_version_id, status FROM record_lookups WHERE provider = 'scopus'")]
+        usage = store.run(run_id)["usage"]
+    finally:
+        client.__exit__(None, None, None)
+    assert sources.elsevier == ["TITLE(optimization)", "DOI(10.1/c)"]
+    assert plan["skipped"] is None and [[row["doi"] for row in chunk] for chunk in plan["chunks"]] == [["10.1/c"]]
+    assert third["text"] == SCOPUS_ABSTRACT and third["abstract_origin"] == "lookup_scopus"
+    assert (asked["asked"], asked["abstracts_filled"]) == (1, 1)
+    assert answered == [{"source_version_id": by_id["W3"], "status": "found"}]
+    # One Semantic Scholar batch, one Crossref request (for b; c was not in Crossref's answers either), the access
+    # check and one Scopus request.
+    assert sources.lookups == ["10.1/b", "10.1/c"]
+    assert usage["lookup_requests"] == 1 + 2 + 1 + 1
+
+
+def test_without_a_scopus_key_scopus_is_out_of_scope_opens_no_step_and_is_sent_nothing(tmp_path, monkeypatch):
+    sources = WithScopus(THREE, entitled=True, s2=S2_ANSWERS, crossref=CROSSREF_ANSWERS)
+    app = app_for(tmp_path, monkeypatch, sources)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+    finally:
+        client.__exit__(None, None, None)
+    assert not [s for s in run["steps"] if "scopus" in s["operation_key"]] and sources.elsevier == []

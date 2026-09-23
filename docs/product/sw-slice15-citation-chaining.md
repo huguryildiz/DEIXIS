@@ -1,9 +1,8 @@
 # SW dilim 15 — Atıf zinciri
 
-**Tarih:** 23 Eylül 2026. **Durum:** plan yazıldı; altı karar Claude ile `gpt-6-sol` · medium arasında ortak karara bağlandı, sahip onayı bekliyor. **Ana dosya:**
+**Tarih:** 23 Eylül 2026. **Durum:** dosya hazır; altı karar Claude ile `gpt-6-sol` · medium arasında ortak karara bağlandı, sahip 23 Eylül 2026'da uygulamaya geçilmesini istedi. **Prompt:** [sw-slice15-prompt.md](sw-slice15-prompt.md). **Ana dosya:**
 [sw-status.md](sw-status.md). **Karar:** D95 (dilim yazar). **Önkoşul:** 14a (kapandı, `8f86f54`, D94). **Tür:** Kur.
-**Uygulayan:** Opus · high (satırdaki gibi; yeni istekler, yeni adımlar, planın dördüncü grubu). **İnceleme:** satırda
-toplu; tam öneriyorum (Sol · high), çünkü dilim kütüphaneye kayıt ekliyor ve tam metin planına grup ekliyor.
+**Uygulayan:** Opus · high (satırdaki gibi; yeni istekler, yeni adımlar, planın dördüncü grubu). **İnceleme:** tam (Sol · high), çünkü dilim kütüphaneye kayıt ekliyor ve tam metin planına grup ekliyor.
 **Plan:** Opus · high, 23 Eylül 2026 (prompt Fable · high diyordu; bu oturum Opus'ta koştu). **Yeniden oynatma:**
 `.local/sw-slice15-chain-replay-2026-09-23/` (`protocol.md`, `result.md`, betikler, `cache/`).
 

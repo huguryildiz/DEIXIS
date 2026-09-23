@@ -1,6 +1,8 @@
 # SW dilim 16 — İnsan kuyruğu (arka uç)
 
-**Tarih:** 24 Eylül 2026. **Durum:** plan yazıldı, sahip onayı bekliyor. **Plan promptu:**
+**Tarih:** 24 Eylül 2026. **Durum:** dosya hazır. Yedi karar önerildiği gibi kabul edildi, beşinci cevap ("PDF doğru,
+model okusun") dahil: sahip "`gpt-6-sol` · medium onaylarsa OK" dedi, medium üçüncü turda yedi kararı da onayladı
+(`sol-approval3.md`). **Prompt:** [sw-slice16-prompt.md](sw-slice16-prompt.md). **Plan promptu:**
 [sw-slice16-plan-prompt.md](sw-slice16-plan-prompt.md). **Ana dosya:** [sw-status.md](sw-status.md). **Karar:** D96
 (dilim yazar). **Önkoşul:** 12 (kapandı, D85); 15 kapandı (D95). **Tür:** Kur. **Uygulayan:** Opus · high.
 **İnceleme:** tam (karar sessizce kanıtı bozabilir: kullanıcının kararı seçimlere, okuma planına ve özet okumasına
@@ -8,7 +10,10 @@ dokunur). **Plan:** Opus 5.5 · high, 24 Eylül 2026 (prompt Fable · high diyor
 **Ölçüm:** `.local/sw-slice16-queue-measure-2026-09-24/` (`protocol.md`, `result.md`, `table.md`, betikler).
 **İkinci görüş:** `gpt-6-sol` · high, salt okunur (`sol-review.md`; testleri koşamadı). Sol yedi kararın ikisine
 katıldı, beşine itiraz etti. İtirazların hepsi aşağıya işlendi (karar 1, 3, 4, 5, 7 ve Task 2, 4); sıra kararında
-(5) Sol'un önerisi alındı.
+(5) Sol'un önerisi alındı. Sahip "`gpt-6-sol` · medium onaylarsa OK" dedi (24 Eylül 2026). Medium incelemesi
+(`sol-approval.md`) "değişikliklerle onay" verdi, istediği değişiklikler de işlendi: kuyrukta görünürlük, jetonun
+baş kaydı / üyeliği / nedeni / dosyayı taşıması, baş kaydı değişince seçim bağı, uçuştaki çağrının iki ucu, PDF
+onayının geri alma kolu, 74 satır ifadesi, K8'de sebebin gösterilmesi.
 
 **Goal:** SW11.4–7, 11.10–11 ve 11.13'ün arka ucunu kurar. Dilim 12'den beri beş neden kodu (ve
 `pdf_identity_unconfirmed`) işleri `human_queue`'ya yolluyor, ama onları okuyan bir şey yok. Bu dilimden sonra kod
@@ -38,7 +43,8 @@ Ekran yok (dilim 17). Keşif, getirme ve okuma sonuçları değişmez.
    distribution", "distribution task"). Modelin önerdiği ölçüt, SW15.1'e aykırı olarak, 7 kuantum koşusunun 5'inde
    böyle bir parça taşıyor. O zaman formülasyon içermeyen her konu makalesi `partial` olur ve `criterion_absent` yerine
    kuyruğa düşer. Ölçütü konu parçası taşımayan iki koşunun kuyruğu 8 ve 15 satır.
-4. **Gerçek karar isteyen satır üçte bir.** Farklı eserlerden sabit bir örnek (74 eser) satır satır okundu:
+4. **Gerçek karar isteyen satır üçte bir.** Farklı eserlerden sabit bir örnek (74 okunan satır; aynı eser birden çok neden grubunda
+   olabilir) satır satır okundu:
    | neden | okunan | gerçek soru | cevap belli "hayır" | cevap belli "evet" | yanlış PDF |
    |---|---:|---:|---:|---:|---:|
    | `part_without_evidence` | 25 | 9 | 16 | 0 | 0 |
@@ -106,12 +112,13 @@ Ekran yok (dilim 17). Keşif, getirme ve okuma sonuçları değişmez.
    - `human_not_sure` ve `human_pdf_wrong` yalnız aşama kararını yazar. Seçimi `derive_selection` `pending` türetir.
    - Geri alma: `undo_human` (dilim 02) insan kararını kapatır, önceki kod kararını kendi revizyonu ve özetleriyle
      geri getirir. Seçim yalnız bu kararın yazdığı seçim hâlâ yerindeyse bırakılır. Sol'un bulgusu: "son değişiklik"
-     tahmin edilmez, bağ saklanır. Migration `0051` `stage_decisions`'a iki sütun ekler: `selection_head` ve
-     `selection_version` (kararın yazdığı seçim satırının baş kaydı ve sürüm numarası). Geri almada o baş kaydın
-     seçimi hâlâ o sürümdeyse `origin` `code_rule` olur ve `derive_selection` yeniden türetir. Kaynak listesinden
-     yapılan her değişiklik, aynı duruma olsa da, sürümü artırır ve kazanır. Baş kayıt değiştiyse
-     (`_settle_work_head` kullanıcının seçimini yeni başa taşır) seçime dokunulmaz, bunu son ileti ve yanıt söyler.
-     Satır kuyruğa geri döner.
+     tahmin edilmez, bağ saklanır. Migration `0051` yeni bir tablo açar: `human_selection_links (decision_id,
+     head, selection_version, created_at)`, yalnız eklenir (kararlar düzenlenmez kuralı, D71). Karar seçimi
+     yazınca bir satır eklenir. `_settle_work_head` kuyruğun yazdığı bir seçimi yeni baş kayda kopyalarsa (bağın
+     gösterdiği baş ve sürüm hâlâ yerindeyse) aynı karar için yeni başı ve yeni sürümü taşıyan bir satır daha ekler.
+     Kararın geçerli bağı en son satırıdır. Geri almada bu bağın baş kaydının seçimi hâlâ o sürümdeyse `origin`
+     `code_rule` olur ve `derive_selection` yeniden türetir. Kaynak listesinden yapılan her değişiklik, aynı duruma
+     olsa da, sürümü artırır ve kazanır; seçime dokunulmaz. Satır kuyruğa geri döner.
    - Kimlik satırı için beşinci cevap önerilir: **"PDF doğru, model okusun"**. 8 kimlik satırının 8'inde PDF doğru;
      bu cevap olmadan kişi dahil etme kararını PDF'i kendisi okuyarak vermek zorunda kalır. Bu bir dahil etme kararı
      değildir: model okur. SW11.7'nin "bir daha sorulmaz" kuralı dahil etme kararına aittir. Sol'un bulgusu üzerine
@@ -122,11 +129,16 @@ Ekran yok (dilim 17). Keşif, getirme ve okuma sonuçları değişmez.
      - `_user_supplied_pdf` onaylı dosyayı da muaf sayar. `pdf_identity_unconfirmed` kararı kodla, `not_read_yet`
        ile kapanır. Notu makine okunur: `pdf_confirmed:<asset_id>`. Bu, adım dışında yazılan tek kod kararıdır
        (`step_id` NULL), sebebi nottan ve dosyanın işaretinden okunur.
-     - Geri alma yalnız güncel karar hâlâ o `not_read_yet` ise: işaret silinir, `pdf_identity_unconfirmed` kodla
-       yeniden yazılır. Okumadan sonra geri alma yok, kişi eser hakkında karar verir.
+     - Onay ve geri alınması birer olay yazar (`pdf_identity_confirmed`, `pdf_identity_revoked`, dosya kimliğiyle),
+       işaretle aynı işlemde.
+     - Geri alma `undo` ucunun ayrı koludur, çünkü güncel karar insan değil kod kararıdır: güncel karar notu
+       `pdf_confirmed:<asset_id>` olan `not_read_yet` ise, o dosya hâlâ okunan sürümün güncel dosyasıysa ve
+       işaretliyse işaret silinir, `pdf_identity_unconfirmed` kodla yeniden yazılır. Sınır: onaydan sonra o işin bir
+       `model:fulltext_adjudication` adımı açıldıysa okuma başlamıştır; geri alma 409 döner, kişi eser hakkında karar
+       verir.
      - Okuma koşusunu bu dilim kendiliğinden başlatmaz.
 
-     Seçenek: beşinci cevap olmadan kurmak (migration `0051` yine gelir, yalnız iki `stage_decisions` sütunuyla). O
+     Seçenek: beşinci cevap olmadan kurmak (migration `0051` yine gelir, yalnız bağ tablosuyla). O
      zaman 8 satırın her biri kişinin PDF'i okumasını ister.
    - **Model bir daha sorulmaz.** Getirme ve okuma planı bunu bugün `fulltext.group_of` ile sağlıyor. İki açık yer
      var:
@@ -137,8 +149,13 @@ Ekran yok (dilim 17). Keşif, getirme ve okuma sonuçları değişmez.
      - **Uçuştaki koşu** (Sol'un bulgusu): okuma koşusu planını dondurur ve işleri gönderirken insan kararına yeniden
        bakmaz (`flow.py` `_fulltext_adjudication` `jobs()` / `call()`). Kişi koşu sürerken karar verirse model yine
        çağrılır. Dilim gönderim anında denetim ekler: işin herhangi bir sürümünde insan tam metin kararı varsa çağrı
-       yapılmaz, iş özette `human_decided` sayılır, bütçeye yazılmaz. Özet okumasında da parti gönderilmeden önce
-       kararlı kayıtlar partiden çıkar; gönderilen liste StepInput'ta saklanır, plan adımı değişmez.
+       yapılmaz, iş özette `human_decided` sayılır, bütçeye yazılmaz. Medium incelemesinin eki: denetim iki uçta
+       olur. (1) Her model çağrısından hemen önce, sınırlayıcıda sırada bekledikten sonra (`_adjudication_call`'da
+       `_model_step`'ten önce). (2) Sonucu uygulamadan önce (`_close_adjudication` başında): o arada karar verilmişse
+       ne öneri ne karar yazılır, adım saklı kalır. Özet okumasında da parti gönderilmeden hemen önce kararlı
+       kayıtlar partiden çıkar; gönderilen liste StepInput'ta saklanır, plan adımı değişmez. Partiden çıkan kayda o
+       partinin sonucu hiçbir özet kararı (`abstract_not_proposed` dahil) yazmaz. Parti boş kalırsa çağrı yapılmaz,
+       adım çağrısız kapanır.
    - `human_not_sure` ve `human_pdf_wrong` eserleri kuyruğa kendiliğinden dönmez: kodun sonraki adımı `none` ya da
      `waiting_for_pdf`'tir, `human_queue` değil (SW11.11). `human_pdf_wrong` iş PDF bekleyenler listesine (dilim
      18) düşer. Dilim 18'in bu işi kullanıcının PDF'iyle yeniden açma yolu o dilimin işidir; `group_of` insan kararlı
@@ -147,7 +164,8 @@ Ekran yok (dilim 17). Keşif, getirme ve okuma sonuçları değişmez.
    ölçüt özetiyle saklanır (D71). Soru ya da ölçüt değişince:
    - açık kod satırları kuyruktan çıkar: eskimiş kod kararı `work_outcome`'da konuşmuyor (D85.6), iş özet sonucuna
      döner, sonraki okuma koşusu yeni ölçütle okur;
-   - eskimiş insan kararı sayılmaya devam eder (yanıt, seçim), kuyruğun sonunda ayrı bir tür olarak listelenir:
+   - eskimiş insan kararı sayılmaya devam eder (yanıt, seçim), kuyruğun sonunda ayrı bir tür olarak listelenir
+     (seçimin kullanıcıya ait olması bu satırı gizlemez; bkz. Task 1):
      `look_again`, "eski ölçütle verildi, yeniden bak";
    - aynı cevabı yeniden vermek taze bir karar yazar (`record` protokol özeti değişince yeni satır açıyor), başka
      cevap vermek eskisini kapatır.
@@ -189,11 +207,19 @@ Ekran yok (dilim 17). Keşif, getirme ve okuma sonuçları değişmez.
      kayıt → 422.
    - **`row_token`** (Sol'un bulgusu: tek karar kimliği yetmiyor). Satır sunulurken hesaplanır, cevapta sunucu
      yeniden hesaplar, tutmazsa 409. İçeriği: araştırmanın güncel revizyonu, ölçüt özeti, eserin bütün sürümlerinin
-     güncel tam metin kararlarının kimlikleri (sıralı), baş kaydın seçim sürümü, kimlik satırında okunan sürümün güncel
-     dosya kimliği. Böylece arada gelen revizyon, okuma koşusunun yazdığı karar, kaynak listesinden seçim değişikliği ya
-     da dosya değişikliği cevabı düşürür.
-   - `POST /api/researches/{rid}/queue/{source_version_id}/undo` gövde `{"row_token"}` → 409, güncel karar o insan
-     kararı değilse ya da jeton tutmazsa.
+     güncel tam metin kararlarının kimlikleri (sıralı), satırın neden kodu, işin baş kaydının kimliği ve seçim sürümü,
+     satırın sürümünün araştırmaya etkin üyeliği, okunan sürümün güncel dosya kimliği (her satırda, yalnız kimlik
+     satırında değil). Jeton yazma işleminin **içinde** yeniden hesaplanır. Böylece arada gelen revizyon, okuma
+     koşusunun yazdığı karar, baş kaydı değişimi, kaynak listesinden seçim değişikliği, kaynağın çıkarılması ya da
+     dosya değişikliği cevabı düşürür.
+   - `POST /api/researches/{rid}/queue/{source_version_id}/undo` gövde `{"row_token"}`. Geri alınabilen iki durum var:
+     güncel karar bir insan kararıdır, ya da güncel karar notu `pdf_confirmed:<asset_id>` olan kod kararı
+     `not_read_yet`'tir (PDF onayı, karar 3'teki kol). Başka her durumda, jeton tutmazsa ya da PDF onayından sonra
+     okuma başladıysa 409.
+   - **Geri almanın jetonu.** Karar ucu her cevapta, satır kuyruktan çıksa da, o sürümün güncel durumu için yeni bir
+     `undo_token` döndürür (`row_token` ile aynı içerik, kararın yazdığı durumdan). Sonradan geri almak için ayrıca
+     `GET /api/researches/{rid}/queue/{source_version_id}` kuyrukta olmayan bir sürüm için de satırı `null`, ama
+     `decision` (güncel karar: kod, karar veren, eski mi, geri alınabilir mi) ve `undo_token` döndürür.
    - `research_view.counts`'a `queue` ve `look_again`. Maliyet: `facts` bir kez. Dilim 13d'nin ölçtüğü 3.000 eserlik
      görünüme eklenen süre son iletide yazılır.
 
@@ -207,9 +233,10 @@ Ekran yok (dilim 17). Keşif, getirme ve okuma sonuçları değişmez.
   `sha256:7d4e238c3e9feebd451c77fb997aff717a3617008bd4165be56f9fba46bf6fca` kalır. Yeni neden kodu yok. Dört insan kodu
   dilim 02'den beri tabloda. Tek şema değişikliği migration `0051` (karar 3). Başlamadan kontrol: son migration
   `0050`, son karar D95.
-- **Kullanıcı üstündür.** Kod ve model insan kararını ezmez (`HumanDecisionStands`). Seçimi kullanıcının verdiği
-  (`origin = 'user'`) işin satırı kuyrukta yer almaz: kişi kararını kaynak listesinden vermiş. Sayısı `counts`'ta
-  ayrıca yazılır.
+- **Kullanıcı üstündür.** Kod ve model insan kararını ezmez (`HumanDecisionStands`). Seçimi kullanıcının kaynak
+  listesinden verdiği (`origin = 'user'` ve geçerli bir `human_selection_links` bağı yok) işin açık satırı kuyrukta
+  yer almaz. Sayısı `counts`'ta ayrıca yazılır. Kuyruğun kendi yazdığı seçim satırı gizlemez; eskimiş insan kararı
+  seçim kimin olursa olsun `look_again` olarak listelenir.
 - **Okumak adım açmaz** (Ders C). Kuyruk uç noktaları ve görünüm `store.step` çağırmaz, `pending` adım bırakmaz,
   hiçbir şey yazmaz.
 - **Tek işlem, içinde `await` yok.** Karar, seçim, geçmiş ve olay (`stage_decision_recorded`) aynı kısa işlemde
@@ -223,8 +250,9 @@ Ekran yok (dilim 17). Keşif, getirme ve okuma sonuçları değişmez.
 ## Task 1: kuyruk görünümü (`workflow/queue.py`)
 
 - `queue_rows(store, rid) -> {"rows", "counts"}`: `DecisionStore.facts` bir kez; her iş için `work_outcome`. Satır:
-  sonucun kodu `human_queue`'ya gidiyor ya da `versions_disagree`; baş kaydın seçimi `origin = 'user'` değil. Ayrı
-  tür olarak eskimiş insan kararları (`look_again`). Her satır tek bir anlık görüntüden türetilir (tek okuma
+  sonucun kodu `human_queue`'ya gidiyor ya da `versions_disagree`; baş kaydın seçimi kaynak listesinden verilmiş
+  bir kullanıcı seçimi değil (Global constraints). Ayrı tür olarak eskimiş insan kararları (`look_again`), seçimin
+  kökeninden bağımsız. Her satır tek bir anlık görüntüden türetilir (tek okuma
   işlemi) ve `row_token`'ını taşır.
 - `kind`: `include_quote_unverified` → `confirm_quote`; `fulltext_runs_disagree` → `choose_run`;
   `versions_disagree` → `choose_version`; `pdf_identity_unconfirmed` → `confirm_pdf`; `part_without_evidence` →
@@ -240,20 +268,21 @@ Ekran yok (dilim 17). Keşif, getirme ve okuma sonuçları değişmez.
 
 ## Task 2: karar ve geri alma
 
-- Migration `0051_human_queue.sql`: `stage_decisions.selection_head TEXT`, `stage_decisions.selection_version
-  INTEGER`; beşinci cevap kabul edilirse `source_assets.identity_confirmed_at TEXT`. Eski satırlar NULL kalır.
-- `queue.decide(store, rid, svid, decision, note, row_token)`: jetonu yeniden hesaplar (tutmazsa 409), sonra tek
-  işlemde insan kodu → seçim (`include` / `criterion_not_met`) → `selection_head` / `selection_version` → geçmiş →
-  olay. `record`'a insan kodu yazarken bu iki sütunu dolduran bir yol eklenir; kod kararları için NULL kalır.
-- `queue.undo(store, rid, svid, row_token)`: `undo_human` ve karar 3'teki seçim bırakma kuralı. Yeni
-  `store.release_user_selection(rid, head, expected_version)` yalnız seçim o sürümdeyse yazar, sonra
-  `derive_selection`.
+- Migration `0051_human_queue.sql`: tablo `human_selection_links (decision_id REFERENCES stage_decisions(id), head,
+  selection_version, created_at)`, silme tetikleyicisi `stage_decisions`'ınki gibi (yalnız araştırma silme izniyle);
+  beşinci cevap kabul edilirse `source_assets.identity_confirmed_at TEXT`.
+- `queue.decide(store, rid, svid, decision, note, row_token)`: tek işlemde jetonu yeniden hesaplar (tutmazsa 409),
+  sonra insan kodu → seçim (`include` / `criterion_not_met`) → bağ satırı → geçmiş → olay.
+- `queue.undo(store, rid, svid, row_token)`: insan kararı için `undo_human` ve karar 3'teki seçim bırakma kuralı;
+  PDF onayı için karar 3'teki ayrı kol. Yeni `store.release_user_selection(rid, head, expected_version)` yalnız
+  seçim o sürümdeyse yazar, sonra `derive_selection`.
+- `store._settle_work_head`: kuyruğun yazdığı seçimi yeni başa kopyalarken bağ satırı ekler (karar 3).
 - `pdf_confirmed` (karar 3 kabul edilirse): `flow._user_supplied_pdf` onaylı dosyayı muaf sayar; kimlik kodu
-  `not_read_yet` ile (not `pdf_confirmed:<asset_id>`) kapanır; geri alma karar 3'teki gibi.
+  `not_read_yet` ile (not `pdf_confirmed:<asset_id>`) kapanır; iki olay.
 - `abstract_stage.read_plan`'in eser satırına tam metin aşamasındaki insan kararı da gelir. Keşif ve zincir özet
   okuması aynı işlevi çağırıyor, ikisi de sınanır.
-- Uçuştaki koşu: okuma koşusunun `jobs()` / `call()` yolu ve özet aşamasının parti gönderimi, göndermeden hemen önce
-  insan kararını yeniden okur (karar 3). Okuma özetine `human_decided` sayısı eklenir.
+- Uçuştaki koşu: okuma koşusu her çağrıdan hemen önce ve sonucu uygulamadan önce, özet aşaması parti göndermeden
+  hemen önce insan kararını yeniden okur (karar 3). Okuma özetine `human_decided` sayısı eklenir.
 
 ## Task 3: API
 
@@ -283,6 +312,10 @@ Karar 7'deki dört uç nokta ve `research_view.counts`. Pydantic gövdeleri `Sel
 - `test_a_decision_on_a_non_head_version_sets_the_heads_selection_and_undo_releases_it`
 - `test_undo_leaves_a_selection_the_user_changed_since_even_to_the_same_state`
 - `test_a_work_decided_while_a_reading_run_is_in_flight_gets_no_model_call`
+- `test_a_response_that_arrives_after_the_person_decided_writes_no_proposal_and_no_decision`
+- `test_a_stale_human_include_is_listed_as_look_again_although_its_selection_is_the_users`
+- `test_undo_after_a_head_change_releases_the_copied_selection_and_keeps_a_later_list_edit`
+- `test_pdf_confirmation_undo_is_refused_once_a_reading_step_for_the_work_has_opened`
 - `test_a_record_decided_while_a_discovery_run_is_in_flight_is_left_out_of_the_next_abstract_batch`
 - `test_queue_endpoints_refuse_legacy_and_mutations_need_the_csrf_header`
 - `test_pdf_confirmed_lets_the_next_reading_run_read_the_work_and_can_be_undone_before_it_does` (karar 3 kabul
@@ -302,9 +335,11 @@ Karar 7'deki dört uç nokta ve `research_view.counts`. Pydantic gövdeleri `Sel
 - **Canlı koşu, bir tane.** Kuantum `quick`, `gpt-5.6-luna` · medium, D94 / D95 kabulünün düzeni (kendi sunucusu, boş
   veri dizini, 8765 değil, gömme `off`, onay `as_proposed`). Beklenti ilk istekten önce `protocol.md`'ye yazılır.
   Karşılaştırılan önceki koşu dilim 15'in `q1-quick-q12`'si: doğrulanmış eser havuzda / planda / okunan 22 / 11 / 7,
-  dahil 14, kuyruk 8. K8: havuz, plan, okunan her biri en çok 2 eksik. Dilim bu yollara dokunmadığı için daha büyük
-  düşüşün sebebi ancak model değişkenliği olabilir. O zaman dilim geçer, sebep ayrı iş olarak yazılır; tartışmalı
-  durumda koşu iki kez yapılır, iyisi alınır. Kuyruk, o kütüphanede `human_queue`'ya giden işlerle birebir aynı olmalı.
+  dahil 14, kuyruk 8. K8 (sahibin kuralı) geçerli: havuz, plan, okunan her biri en çok 2 eksik. Daha büyük bir düşüşte
+  sebep **koşunun kendi adımlarından gösterilir**, varsayılmaz (medium incelemesinin eki): önceki koşuyla hangi adımda
+  ayrıştığı, o adımın girdisi ve dilimin değiştirdiği yollara (insan kararı denetimleri) dokunup dokunmadığı. Sebep
+  dilimse düşer; başka bir adımsa geçer ve sebep ayrı iş olarak yazılır. Tartışmalı durumda K8'in "iki kez koş, iyisini
+  al" kuralı geçerli. Kuyruk, o kütüphanede `human_queue`'ya giden işlerle birebir aynı olmalı.
 - **Canlı kütüphanede karar turu.** Koşu bittikten sonra API'yle: bir satıra `include`, birine `criterion_not_met`,
   birine `not_sure`; birini geri al; varsa bir kimlik satırına `pdf_confirmed`. Sonra aynı kapsamda yeni bir okuma
   koşusu başlatılır. Kararlı eserler için model çağrısı 0, onaylı PDF'li eser için 2. Seçim, geçmiş ve sayılar

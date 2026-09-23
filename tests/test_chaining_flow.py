@@ -638,3 +638,120 @@ def test_a_queued_run_keeps_the_chain_read_and_room_it_was_queued_with(tmp_path,
     assert body["thresholds"]["chain"]["abstract_read"] == frozen["chain_abstract_read"]
     assert body["thresholds"]["chain"]["plan_room"] == frozen["chain_plan_room"]
     assert json.loads(fetch[0])["chain_room"] == frozen["chain_plan_room"]
+
+
+# ---- fix check findings (Sol high, 2026-09-24) ---------------------------------------------------
+
+def test_a_failed_chain_read_is_not_sent_again_on_resume(tmp_path, monkeypatch):
+    sent: list[int] = []
+
+    def fail_the_chain_read_then_pause(si):
+        if si["task_type"] == "abstract_screening" and any(CHAINED in c["title"] for c in si.get("candidates") or []):
+            sent.append(si["screening_target"]["run"])
+            store = app.state.store
+            running = store.conn.execute("SELECT id FROM runs WHERE kind = 'discovery' AND status = 'running'").fetchone()
+            if running:
+                store.update_run(running[0], status="pause_requested")
+            return ModelStepResult("failed", error="SYNTHETIC model connection dropped")
+        return None
+
+    transport = OpenAlex(keyword_pool(), citing={"W1": [work(700, CHAINED)]})
+    app = app_for(tmp_path, monkeypatch, transport, adapter=FakeAdapter(responder(), fail=fail_the_chain_read_then_pause))
+    client = client_of(app)
+    try:
+        rid, run_id, view, paused = discover(client)
+        before = list(sent)
+        client.post(f"/api/runs/{run_id}/resume")
+        view, run = wait(client, rid, run_id)
+        store = app.state.store
+        failed = [s for s in store.run_steps(run_id) if s["operation_key"].startswith("abstract_screening:chain:")]
+    finally:
+        client.__exit__(None, None, None)
+    assert (paused["status"], paused["pause_reason"]) == ("paused", "user_requested"), paused
+    # Both runs of the chain batch were sent and failed once; the resumed run reads them as answered.
+    assert sorted(before) == [1, 2] and sent == before, sent
+    assert run["status"] == "completed" and all(s["status"] == "failed" for s in failed)
+
+
+def test_a_chain_read_the_connection_was_not_ready_for_is_not_sent_on_resume(tmp_path, monkeypatch):
+    class NotReadyForTheChainRead(FakeAdapter):
+        """Ready until the chain's requests have gone out; then not ready once per call, with a user pause."""
+        armed = False
+
+        async def health(self, refresh=False):
+            if self.armed:
+                store = app.state.store
+                running = store.conn.execute(
+                    "SELECT id FROM runs WHERE kind = 'discovery' AND status = 'running'").fetchone()
+                if running:
+                    store.update_run(running[0], status="pause_requested")
+                return {"connection": "fake", "ready": False, "reason": "SYNTHETIC not ready"}
+            return await super().health(refresh)
+
+    adapter = NotReadyForTheChainRead(responder())
+
+    def arm(transport):
+        adapter.armed = True
+
+    transport = OpenAlex(keyword_pool(), citing={"W1": [work(700, CHAINED)]}, on_chain=arm)
+    app = app_for(tmp_path, monkeypatch, transport, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, run_id, view, paused = discover(client)
+        adapter.armed, transport.on_chain = False, None
+        client.post(f"/api/runs/{run_id}/resume")
+        view, run = wait(client, rid, run_id)
+        store = app.state.store
+        chain_steps = [s for s in store.run_steps(run_id) if s["operation_key"].startswith("abstract_screening:chain:")]
+        chain_calls = [si for si in adapter.calls if any(CHAINED in c["title"] for c in si.get("candidates") or [])]
+    finally:
+        client.__exit__(None, None, None)
+    assert (paused["status"], paused["pause_reason"]) == ("paused", "user_requested"), paused
+    assert run["status"] == "completed" and not chain_calls
+    assert chain_steps and all((s["status"], s["error_code"]) == ("failed", "model_connection_not_ready")
+                               for s in chain_steps), chain_steps
+
+
+def test_a_keyword_work_of_a_research_older_than_its_hits_is_not_chain_only(tmp_path, monkeypatch):
+    # W3 is a keyword work that cites W1, so the chain adds a hit to it. A research older than D93 has no keyword
+    # hits in `candidate_hits`; deleting them imitates one. W3's candidate row still names its keyword search.
+    pool = keyword_pool()
+    transport = OpenAlex(pool, citing={"W1": [pool[2], work(700, CHAINED)]})
+    app = app_for(tmp_path, monkeypatch, transport)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        store = app.state.store
+        records = records_of(store, rid)
+        store.conn.execute("DELETE FROM candidate_hits WHERE search_run_id IN"
+                           " (SELECT id FROM search_runs WHERE query_text NOT LIKE 'chain:%')")
+        store.conn.commit()
+        chain_only = store.chain_only_works(rid, 1)
+        work_of = store.work_ids([records["W3"], records["W700"]])
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed", run
+    assert work_of[records["W700"]] in chain_only and work_of[records["W3"]] not in chain_only
+
+
+def test_a_chained_work_a_later_keyword_search_finds_leaves_the_chain_group(tmp_path, monkeypatch):
+    chained_work = work(700, CHAINED)
+    transport = OpenAlex(keyword_pool(), citing={"W1": [chained_work]})
+    app = app_for(tmp_path, monkeypatch, transport)
+    client = client_of(app)
+    try:
+        rid, first, view, run = discover(client)
+        flow = app.state.worker.flow
+        w700 = records_of(app.state.store, rid)["W700"]
+        assert w700 in flow._chain_state(rid, 1)[0]
+        # The second run does not chain (the setting changed) and its keyword search returns W700.
+        object.__setattr__(flow.deps.settings, "citation_chaining", "off")
+        transport.works = keyword_pool() + [chained_work]
+        second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        view, run = wait(client, rid, second)
+        chained, order, chain_order = flow._chain_state(rid, 1)
+        grouped = {w["head"]: w.get("chained") for w in flow._fulltext_works(rid, chained)}
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed", run
+    assert w700 not in chained and grouped.get(w700) is not True

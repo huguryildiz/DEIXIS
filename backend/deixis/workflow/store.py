@@ -1678,12 +1678,19 @@ class Store:
 
     def chain_only_works(self, research_id: str, scope_revision: int) -> set[str]:
         """The works of this question revision that only citation chaining found (D95): each has a hit from a chain
-        request and no version with a hit from any other search. Empty for a research that never chained."""
+        request and no version with a hit from any other search. Empty for a research that never chained.
+
+        A research older than D93 has no keyword hits in `candidate_hits`, so the search a candidate row names counts
+        as a hit too: a keyword work the chain later reached is still a keyword work."""
         found: dict[str, bool] = {}
         for row in self.conn.execute(
             "SELECT v.work_id, sr.query_text LIKE 'chain:%' AS chained FROM candidate_hits h"
             " JOIN search_runs sr ON sr.id = h.search_run_id JOIN source_versions v ON v.id = h.source_version_id"
-            " WHERE h.research_id = ? AND h.scope_revision = ?", (research_id, scope_revision)):
+            " WHERE h.research_id = ? AND h.scope_revision = ?"
+            " UNION ALL SELECT v.work_id, sr.query_text LIKE 'chain:%' FROM candidates c"
+            " JOIN search_runs sr ON sr.id = c.search_run_id JOIN source_versions v ON v.id = c.source_version_id"
+            " WHERE c.research_id = ? AND c.scope_revision = ?",
+            (research_id, scope_revision, research_id, scope_revision)):
             found[row["work_id"]] = found.get(row["work_id"], True) and bool(row["chained"])
         return {work_id for work_id, only in found.items() if only}
 

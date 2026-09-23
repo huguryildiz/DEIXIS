@@ -1232,9 +1232,13 @@ class ResearchFlow:
         closed: set[int] = set()
 
         # Read, not opened: a batch the budget never reaches must not be left with a pending step of its own.
+        # The chain's read is optional (D95): a call of it that failed is answered too, and reads as nothing, so a
+        # resumed run does not send and charge it again.
         answered = {s["operation_key"] for s in self.store.run_steps(run_id)
                     if s["kind"] == "model:abstract_screening"
-                    and (s["status"] == "succeeded" or s["error_code"] == "invalid_model_output")}
+                    and (s["status"] == "succeeded" or s["error_code"] == "invalid_model_output"
+                         or (chain is not None and s["operation_key"].startswith(f"{prefix}:")
+                             and s["status"] in ("failed", "outcome_unknown")))}
 
         def jobs() -> Iterator[_AbstractJob]:
             """The (batch, run) calls in plan order, up to the batch the budget no longer holds whole."""
@@ -1302,15 +1306,22 @@ class ResearchFlow:
         `_extraction` uses), so an unusable answer is paid for once.
         """
         key = f"{prefix}:{number}:{run_no}"
+        optional = prefix != "abstract_screening"
         step = self.store.step(run["id"], key, "model:abstract_screening")
         if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
+            return None
+        if optional and step["status"] in ("failed", "outcome_unknown"):
             return None
         try:
             # The chain's read is optional (D95): a failed call is recorded and its works stay unread, the run goes on.
             output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
                                             screening_target={"runs": ABSTRACT_RUNS, "run": run_no}, limiter=limiter,
-                                            budget_short="skip", optional=prefix != "abstract_screening")
-        except OptionalStepFailed:
+                                            budget_short="skip", optional=optional)
+        except OptionalStepFailed as failure:
+            # A call stopped before it was sent (no connection, or one not ready) is closed as failed here, so a
+            # resumed run reads it as answered like any other failed chain call.
+            if self.store.step(run["id"], key, "model:abstract_screening")["status"] in ("pending", "running"):
+                self.store.finish_step(step["id"], "failed", error_code=failure.reason, error=failure.detail)
             return None
         return None if output.get("invalid") else output
 
@@ -2609,10 +2620,9 @@ class ResearchFlow:
         if stored is None:
             return set(), order, []
         # Every work only a chain found under this revision, an earlier discovery run's too: none is a keyword work.
+        # The stored list is not merged in: a work it names that a later keyword search found is a keyword work now.
         heads = self.store.work_heads(research_id)
-        chained = set(stored.get("chained") or []) | {heads[work_id] for work_id
-                                                       in self.store.chain_only_works(research_id, revision)
-                                                       if work_id in heads}
+        chained = {heads[work_id] for work_id in self.store.chain_only_works(research_id, revision) if work_id in heads}
         return chained, self._current_heads(research_id, order), decisions.latest_chain_ranking(research_id, revision)
 
     def _current_heads(self, research_id: str, order: list[str]) -> list[str]:

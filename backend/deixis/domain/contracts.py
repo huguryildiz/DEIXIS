@@ -38,6 +38,7 @@ SCHEMA_FILES = {
     "VocabularyLabels": "vocabulary-labels.schema.json",
     "CriterionProposal": "criterion-proposal.schema.json",
     "TermSuggestions": "term-suggestions.schema.json",
+    "SearchQuery": "search-query.schema.json",
     "AbstractScreening": "abstract-screening.schema.json",
     "FulltextAdjudication": "fulltext-adjudication.schema.json",
     "StepInput": "step-input.schema.json",
@@ -58,6 +59,7 @@ SCHEMA_VERSIONS = {
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
     "CriterionProposal": "deixis.criterion_proposal.v1",
     "TermSuggestions": "deixis.term_suggestions.v1",
+    "SearchQuery": "deixis.search_query.v1",
     "AbstractScreening": "deixis.abstract_screening.v1",
     "FulltextAdjudication": "deixis.fulltext_adjudication.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
@@ -78,6 +80,7 @@ TASK_OUTPUTS = {
     "vocabulary_labels": ("VocabularyLabels",),
     "criterion_proposal": ("CriterionProposal",),
     "term_suggestions": ("TermSuggestions",),
+    "search_query": ("SearchQuery",),
     "abstract_screening": ("AbstractScreening",),
     "fulltext_adjudication": ("FulltextAdjudication",),
     "report_plan": ("ReportPlanDraft",),
@@ -493,6 +496,8 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_criterion_proposal(result, report)
     elif output_type == "TermSuggestions":
         _check_term_suggestions(allow, result, report)
+    elif output_type == "SearchQuery":
+        _check_search_query(result, report)
     elif output_type == "AbstractScreening":
         _check_abstract_screening(allow, result, report)
     elif output_type == "FulltextAdjudication":
@@ -933,6 +938,43 @@ def _check_term_suggestions(allow: dict[str, set[str]], draft: dict[str, Any], r
     for index, term in enumerate(draft["terms"]):
         if term["synonym_of"] not in allow.get("phrases", set()):
             report.issues.append(Issue("phrase_not_in_allowlist", f"/terms/{index}/synonym_of", term["synonym_of"]))
+
+
+SEARCH_QUERY_MAX_TERMS = 6  # chosen terms of both blocks together (D92)
+SEARCH_QUERY_MAX_WORDS = 4
+# Characters and operator words that belong to a query, not to a term; code writes every operator itself.
+QUERY_SYNTAX = re.compile(r'["()\[\]{}*?:]|\b(?:AND|OR|NOT)\b')
+
+
+def _check_search_query(draft: dict[str, Any], report: ValidationReport) -> None:
+    """The bounds code enforces on a model-written query (D92): at most six chosen terms, both blocks filled, no term
+    twice, and no term that carries query syntax or runs past four words. Each is an error, and the step gets one
+    repair. What a term finds is not checked here: that is a count, read by code after the answer is accepted."""
+    chosen = [(block, index, term["term"]) for block in ("setting", "task")
+              for index, term in enumerate(draft[block])]
+    if len(chosen) > SEARCH_QUERY_MAX_TERMS:
+        report.issues.append(Issue("too_many_query_terms", "/",
+                                   f"{len(chosen)} chosen terms; at most {SEARCH_QUERY_MAX_TERMS} in total"))
+    for block in ("setting", "task"):
+        if not draft[block]:
+            report.issues.append(Issue("empty_query_block", f"/{block}", "the block holds no term"))
+    listed = chosen + [(f"{block}_backup", index, term["term"]) for block in ("setting", "task")
+                       for index, term in enumerate(draft[f"{block}_backup"])]
+    seen: dict[str, str] = {}
+    for block, index, term in listed:
+        path = f"/{block}/{index}/term"
+        normalized = normalize_phrase(term)
+        if not normalized:
+            report.issues.append(Issue("query_term_empty", path, term))
+            continue
+        if QUERY_SYNTAX.search(term):
+            report.issues.append(Issue("query_syntax_in_term", path, term))
+        if len(normalized.split()) > SEARCH_QUERY_MAX_WORDS:
+            report.issues.append(Issue("query_term_too_long", path, term))
+        if normalized in seen:
+            report.issues.append(Issue("duplicate_query_term", path, f"{term!r} is also {seen[normalized]}"))
+        else:
+            seen[normalized] = path
 
 
 def _check_abstract_screening(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:

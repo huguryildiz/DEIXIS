@@ -1996,5 +1996,61 @@
    "requested_model": null
   },
   "created_at": "2026-09-22T00:00:00Z"
+ },
+ "H_search_query": {
+  "step_input_id": "sti_SYNTHE0002",
+  "research_id": "res_SYNTHE0001",
+  "run_id": "run_SYNTHE0001",
+  "step_id": "stp_SYNTHE0001",
+  "task_type": "search_query",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "skill_files": [
+   "SKILL.md",
+   "references/search-query.md"
+  ],
+  "output_schema_versions": [
+   "deixis.search_query.v1"
+  ],
+  "question": {
+   "text": "SYNTHETIC: which supplementary controllers have been tested for damping subsynchronous oscillation in wind-integrated transmission grids, and what damping ratio did each one report?",
+   "language_hint": "en"
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "search_plan",
+    "screening",
+    "grounded_answer"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [
+   "openalex"
+  ],
+  "candidates": [],
+  "sources": [],
+  "passages": [],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [],
+   "passage_ids": []
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 10,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 3
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": null
+  },
+  "created_at": "2026-09-23T12:00:00Z"
  }
 }

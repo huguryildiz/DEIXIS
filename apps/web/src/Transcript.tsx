@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, Check, ChevronDown, ChevronRight, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert } from 'lucide-react'
 import type { ResearchView, Run, Verdict } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
-import { connectionName, fetchReasonText, pauseReasonText, providerName, runStatusLabels, stepLabel, verdictLabels } from './labels'
+import { connectionName, fetchReasonText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { ProtocolApproval } from './ProtocolApproval'
 import { ModelName } from './ModelName'
@@ -94,13 +94,15 @@ function totalTokens(usage: unknown): number | null {
   return typeof total === 'number' ? total : null
 }
 
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onProtocolApproved, onGiveKeyTerms }: {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onProtocolApproved, onGiveKeyTerms, onChooseCodeQuery }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   // The approval card sends its own correction; this only refreshes the view once the backend has taken it.
   onProtocolApproved?: () => void | Promise<void>
   // The way out of a `key_terms_needed` stop: the revision form below, on its key-terms field.
   onGiveKeyTerms?: () => void
+  // The way on after the model could not write the query: search with the code's query alone (D92).
+  onChooseCodeQuery?: (run: Run) => Promise<void>
 }) {
   const runs = [...view.runs].reverse()  // the view lists the newest run first
   const active = runs.some(r => ACTIVE.has(r.status))
@@ -123,7 +125,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   return <>
   <div className="chat-question"><p dir="auto">{view.scope.question}</p></div>
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
-    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onProtocolApproved={onProtocolApproved} onGiveKeyTerms={onGiveKeyTerms}>
+    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onProtocolApproved={onProtocolApproved} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
     {!runs.length && <div className="chat-say"><Sparkles size={18} strokeWidth={1.6} aria-hidden /><p>{emptyText}</p></div>}
@@ -133,10 +135,11 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onProtocolApproved, onGiveKeyTerms, children }: {
+function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onProtocolApproved, onGiveKeyTerms, onChooseCodeQuery, children }: {
   run: Run; view: ResearchView; now: number; latest: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
-  onProtocolApproved?: () => void | Promise<void>; onGiveKeyTerms?: () => void; children: ReactNode
+  onProtocolApproved?: () => void | Promise<void>; onGiveKeyTerms?: () => void
+  onChooseCodeQuery?: (run: Run) => Promise<void>; children: ReactNode
 }) {
   const active = ACTIVE.has(run.status)
   const [open, setOpen] = useState<boolean | null>(null)
@@ -481,6 +484,11 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
       {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
       {/* Code does not translate a question, so this stop is answered in the revision form and nowhere else (SW2.1). */}
       {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
+      {/* Resume asks the model once more while a try is left; this button never asks it again (D92). */}
+      {run.pause_reason === 'search_query_failed' && <>
+        {searchQueryTriesLeft(run) === 0 && <p>{t('The model has had its second try.')}</p>}
+        {onChooseCodeQuery && <Button variant="outline" size="sm" onClick={() => void onChooseCodeQuery(run)}>{t('Search with the query built from the question’s words')}</Button>}
+      </>}
     </div>}
     {/* What this run would search with, before it searches: the user corrects it here and approves it (D80). */}
     {run.approval && <ProtocolApproval run={run} approval={run.approval} onApproved={() => onProtocolApproved?.()} />}

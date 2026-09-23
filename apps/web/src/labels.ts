@@ -60,8 +60,11 @@ const pauseReasons: Record<string, string> = {
   key_terms_needed: 'DEIXIS reads search terms from an English question and does not translate. Revise the question in English, or give the English key terms below.',
   vocabulary_empty: 'No term is left that a provider query could be built from. Add a term below, or move one back into the setting or task block.',
   vocabulary_too_broad: 'Every remaining term is too frequent to search on its own, and they are all in one block. Add a term to the other block, or replace one with a narrower phrase.',
+  search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.',
 }
 export const pauseReasonText = (reason: string | null) => (reason ? t(pauseReasons[reason] ?? reason) : '')
+// How many more times resuming may ask the model to write the query; the pause carries it (D92).
+export const searchQueryTriesLeft = (run: { error: unknown }) => (run.error as { retries_left?: number } | null)?.retries_left ?? 1
 
 // ---- the protocol approval card (D80) ----
 // The five blocks a term can sit in, and what each one does with it.
@@ -80,8 +83,18 @@ const termOrigins: Record<string, string> = {
   question: 'from the question', key_terms: 'from your key terms', user: 'added by you',
   // The model proposed the name; it is in the search because the user added it (D82).
   model: 'suggested by the model',
+  // The model that wrote this run's query chose it (D92).
+  search_query: 'written by the model',
 }
-const blockOrigins: Record<string, string> = { rule: 'block by rule', model: 'block by the model', user: 'block by you' }
+const blockOrigins: Record<string, string> = { rule: 'block by rule', model: 'block by the model', user: 'block by you', search_query: 'block by the model' }
+// What the model said a term of its query names (D92). Shown, never used by a rule.
+const termKinds: Record<string, string> = { topic: 'topic', method: 'method', population: 'population', other: 'other' }
+export const termKindText = (kind: string) => t(termKinds[kind] ?? kind)
+const queryWarnings: Record<string, string> = {
+  no_records_with_other_block: 'no record holds it together with the other block',
+  count_unknown: 'its count could not be read',
+}
+export const queryWarningText = (warning: string) => t(queryWarnings[warning] ?? warning)
 export const termOriginText = (origin: string) => t(termOrigins[origin] ?? origin)
 export const blockOriginText = (origin: string) => t(blockOrigins[origin] ?? origin)
 // Why a phrase left the query. It stays on record with its reason rather than disappearing.

@@ -329,6 +329,6 @@ def test_the_frozen_protocol_names_the_origin_of_every_block_and_is_the_same_on_
     criterion = _criterion_result(store.latest_step_output(rid, "criterion", 1))
     again = protocol.build_protocol(
         store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"], body["skill_package_hash"],
-        Settings(data_dir=None, search_workflow="sw"), vocabulary=stored["vocabulary"], criterion=criterion,
+        Settings(data_dir=None, search_workflow="sw", search_query="code"), vocabulary=stored["vocabulary"], criterion=criterion,
         approval=store.approval_step(run_id)["output"]["approval"])
     assert sha256_hex(again) == row["body_sha256"]

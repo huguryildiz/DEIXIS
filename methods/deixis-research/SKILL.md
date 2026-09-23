@@ -68,6 +68,11 @@ For `term_suggestions`, read
 names of the search phrases the application already holds; you propose a term
 list, never a query, and you choose no block.
 
+For `search_query`, read
+[search query](references/search-query.md): you choose the terms of the two
+blocks the keyword search is built from, with backups; the application counts
+them and writes the query.
+
 For `cell_extraction` and `table_columns`, read
 [evidence table](references/evidence-table.md): you answer evidence table
 columns for one source, or suggest columns, and do not answer the question.

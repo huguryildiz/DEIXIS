@@ -41,9 +41,40 @@ def _approval_side(vocabulary: dict[str, Any] | None, criterion: dict[str, Any] 
         "sought_term_in_criterion": (criterion or {}).get("sought_term_in_criterion"),
     }
     if queries is not None:
-        # The compiled text of every query this run will send, by provider and nothing else.
-        side["queries"] = [{"provider_id": q["provider_id"], "query_text": q["query_text"]} for q in queries]
+        # The compiled text of every query this run will send, by provider and, beside a model-written query, by
+        # which vocabulary wrote it (D92).
+        side["queries"] = [{"provider_id": q["provider_id"], "query_text": q["query_text"],
+                            **({"origin": q["origin"]} if q.get("origin") else {})} for q in queries]
+    if (record := vocabulary.get("search_query")) is not None:
+        side["search_query"] = _search_query_side(vocabulary, record)
     return side
+
+
+def _search_query_side(vocabulary: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
+    """What the card shows of a model-written query (D92): each term's kind, reason and two counts, the backups that
+    replaced a term, the warnings, and the code's query offered beside it. A failed model whose user chose the code's
+    query alone says only that."""
+    if record["status"] != "ready":
+        return {"status": record["status"], "choice": record.get("choice"),
+                "attempts": [{"attempt": a["attempt"], "reason": a["reason"]} for a in record.get("attempts") or []]}
+    counts = {c["phrase"]: c for c in record["checks"]}  # a phrase counted again after a correction: the last count
+    code = vocabulary["code_query"]
+    return {
+        "status": "ready",
+        "terms": [{"phrase": phrase, **meta, "with_other_block": (counts.get(phrase) or {}).get("with_other_block")}
+                  for phrase, meta in record["meta"].items()],
+        "warnings": record["warnings"],
+        "backups_left": record["backups_left"],
+        "code_query": {
+            "searched": code["searched"],
+            # A code query that could not be searched on its own is shown, but the switch cannot turn it on.
+            "available": bool(code["queries"]) and not code["vocabulary"]["too_broad"],
+            "terms": [{"phrase": t["phrase"], "block": t["block"],
+                       "form": t["root"] if t["in_query"] == "root" else t["phrase"]}
+                      for t in code["vocabulary"]["terms"] if not t["dropped"]],
+            "queries": [{"provider_id": q["provider_id"], "query_text": q["query_text"]} for q in code["queries"]],
+        },
+    }
 
 
 def _suggestions_side(store: Store, run_id: str, step: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
@@ -95,7 +126,10 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
         "edited": record.get("edited"),
         "proposal_hash": output["proposal_hash"],
         # Both sides stay on the screen after the approval: the user can see what was proposed and what changed.
-        "proposal": _approval_side(output["proposal"]["vocabulary"], output["proposal"]["criterion"]),
+        "proposal": _approval_side(output["proposal"]["vocabulary"], output["proposal"]["criterion"],
+                                   # A model-written proposal shows its compiled queries before the approval (D92).
+                                   output["proposal"]["queries"]
+                                   if output["proposal"]["vocabulary"]["block_assignment"] == "search_query" else None),
         "approved": _approval_side(approved["vocabulary"], approved["criterion"], approved["queries"]) if approved else None,
         "skipped_edits": output.get("skipped_edits") or [],
         "suggestions": _suggestions_side(store, run_id, step, output),

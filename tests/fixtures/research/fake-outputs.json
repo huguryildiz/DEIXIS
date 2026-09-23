@@ -1265,6 +1265,259 @@
      }
     ]
    }
+  },
+  {
+   "name": "search_query_valid",
+   "step_input": "H_search_query",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.search_query.v1",
+    "step_input_id": "sti_SYNTHE0002",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [
+     {
+      "term": "wind integrated transmission grid",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "wind farm",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     }
+    ],
+    "task": [
+     {
+      "term": "subsynchronous oscillation",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "damping controller",
+      "kind": "method",
+      "why": "SYNTHETIC reason"
+     }
+    ],
+    "setting_backup": [
+     {
+      "term": "wind power plant"
+     }
+    ],
+    "task_backup": [
+     {
+      "term": "subsynchronous resonance"
+     }
+    ]
+   }
+  },
+  {
+   "name": "search_query_too_many_terms",
+   "step_input": "H_search_query",
+   "expect_ok": false,
+   "expect_codes": [
+    "too_many_query_terms"
+   ],
+   "output": {
+    "schema_version": "deixis.search_query.v1",
+    "step_input_id": "sti_SYNTHE0002",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [
+     {
+      "term": "wind integrated transmission grid",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "wind farm",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     }
+    ],
+    "task": [
+     {
+      "term": "subsynchronous oscillation",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "damping controller",
+      "kind": "method",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "power system stabilizer",
+      "kind": "method",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "series compensation",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "torsional interaction",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     }
+    ],
+    "setting_backup": [
+     {
+      "term": "wind power plant"
+     }
+    ],
+    "task_backup": [
+     {
+      "term": "subsynchronous resonance"
+     }
+    ]
+   }
+  },
+  {
+   "name": "search_query_term_twice",
+   "step_input": "H_search_query",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_query_term"
+   ],
+   "output": {
+    "schema_version": "deixis.search_query.v1",
+    "step_input_id": "sti_SYNTHE0002",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [
+     {
+      "term": "wind integrated transmission grid",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "wind farm",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     }
+    ],
+    "task": [
+     {
+      "term": "subsynchronous oscillation",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "damping controller",
+      "kind": "method",
+      "why": "SYNTHETIC reason"
+     }
+    ],
+    "setting_backup": [
+     {
+      "term": "wind power plant"
+     }
+    ],
+    "task_backup": [
+     {
+      "term": "Wind Farm"
+     }
+    ]
+   }
+  },
+  {
+   "name": "search_query_syntax_in_term",
+   "step_input": "H_search_query",
+   "expect_ok": false,
+   "expect_codes": [
+    "query_syntax_in_term"
+   ],
+   "output": {
+    "schema_version": "deixis.search_query.v1",
+    "step_input_id": "sti_SYNTHE0002",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [
+     {
+      "term": "\"wind farm\"",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "grid AND wind",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     }
+    ],
+    "task": [
+     {
+      "term": "subsynchronous oscillation",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "damping controller",
+      "kind": "method",
+      "why": "SYNTHETIC reason"
+     }
+    ],
+    "setting_backup": [
+     {
+      "term": "wind power plant"
+     }
+    ],
+    "task_backup": [
+     {
+      "term": "subsynchronous resonance"
+     }
+    ]
+   }
+  },
+  {
+   "name": "search_query_term_too_long",
+   "step_input": "H_search_query",
+   "expect_ok": false,
+   "expect_codes": [
+    "query_term_too_long"
+   ],
+   "output": {
+    "schema_version": "deixis.search_query.v1",
+    "step_input_id": "sti_SYNTHE0002",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [
+     {
+      "term": "wind integrated transmission grid",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "wind farm",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     }
+    ],
+    "task": [
+     {
+      "term": "damping of subsynchronous oscillation modes",
+      "kind": "topic",
+      "why": "SYNTHETIC reason"
+     },
+     {
+      "term": "damping controller",
+      "kind": "method",
+      "why": "SYNTHETIC reason"
+     }
+    ],
+    "setting_backup": [
+     {
+      "term": "wind power plant"
+     }
+    ],
+    "task_backup": [
+     {
+      "term": "subsynchronous resonance"
+     }
+    ]
+   }
   }
  ]
 }

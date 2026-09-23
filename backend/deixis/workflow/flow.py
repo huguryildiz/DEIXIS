@@ -50,6 +50,7 @@ from deixis.workflow import fulltext
 from deixis.workflow import lookups
 from deixis.workflow import protocol
 from deixis.workflow import ranking as ranking_rules
+from deixis.workflow import search_query as search_query_rules
 from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
@@ -156,8 +157,8 @@ def _sought_terms(vocabulary: dict[str, Any]) -> list[str]:
 
     Both forms are given because a term enters the query as one of them and the criterion may write either.
     """
-    return [form for term in vocabulary["terms"] if term["block"] == "task" and not term["dropped"]
-            for form in (term["phrase"], term["root"])]
+    return [form for term in vocabulary["terms"] + search_query_rules.code_terms(vocabulary)
+            if term["block"] == "task" and not term["dropped"] for form in (term["phrase"], term["root"])]
 
 
 def _criterion_result(output: dict[str, Any]) -> dict[str, Any] | None:
@@ -380,6 +381,9 @@ class ResearchFlow:
             # The sw workflow takes the first search's words from the question by code, so no model runs before the
             # search and a broken model connection does not stop it (SW2.3). Screening still goes to the model.
             vocabulary, queries = await self._vocabulary(run, scope)
+            # A model writes the query from the question and the code's query is searched beside it (D92). With the
+            # setting on `code`, or with the user's own key terms, the code's query stands alone as it did in 13g.
+            vocabulary, queries = await self._search_query(run, scope, vocabulary, queries)
             # The criterion is proposed before the protocol is frozen, so the body this research searches under
             # already carries it. It orders nothing and decides nothing yet (SW15.4 is slice 11).
             criterion = await self._criterion(run, scope, vocabulary)
@@ -561,7 +565,7 @@ class ResearchFlow:
         step = self.store.step(run_id, "vocabulary", "code:vocabulary")
         if step["status"] == "succeeded":
             stored = step["output"]
-            return self._proposed(run_id, stored["vocabulary"], stored["queries"])
+            return self._code_proposed(run_id, stored["vocabulary"], stored["queries"])
         try:
             extraction = question_words.extract(scope["question"], scope.get("language_hint"), scope.get("key_terms"))
         except ValueError as exc:
@@ -578,6 +582,82 @@ class ResearchFlow:
         self.store.finish_step(step["id"], "succeeded", output={
             "vocabulary": built, "queries": queries, "query_compiler": query_compiler.BLOCKS_VERSION})
         # The counts are stored before the run stops, so resuming re-reads them instead of paying for them again.
+        return self._code_proposed(run_id, built, queries)
+
+    def _code_proposed(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]
+                       ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """The code vocabulary as the step left it. Where a model writes the query, a code query that cannot be
+        searched does not stop the run here: it is left out beside the model's, or stops the run later if the user
+        chooses it alone (D92)."""
+        if self.deps.settings.search_query == "model":
+            return built, queries
+        return self._proposed(run_id, built, queries)
+
+    async def _search_query(self, run: dict[str, Any], scope: dict[str, Any], code_vocabulary: dict[str, Any],
+                            code_queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """The model-written query and the code's beside it, or the code's alone where no model writes one (D92).
+
+        One call per scope revision, with the one repair `_model_step` allows; nothing is voted on. A call that fails,
+        or an answer that leaves a block with no term after the counts, stops the run with `search_query_failed`: the
+        code's query is never searched in its place without the user saying so. Resuming asks the model once more
+        (`ATTEMPTS`); the user's other way out is to search with the code's query alone, which the route writes on
+        this step. A step that already succeeded returns its stored vocabulary and queries, so a resumed run calls
+        no model and reads no count twice.
+        """
+        if self.deps.settings.search_query != "model":
+            return code_vocabulary, code_queries
+        run_id, revision = run["id"], run["scope_revision"]
+        step = self.store.step(run_id, "search_query", "code:search_query")
+        if step["status"] == "succeeded":
+            stored = step["output"]
+            return self._proposed(run_id, stored["vocabulary"], stored["queries"])
+        if code_vocabulary["block_assignment"] == "user":
+            # The user's own key terms are above any proposal (SW2.6): the model is not asked to write another.
+            self.store.start_step(step["id"])
+            self.store.finish_step(step["id"], "succeeded", output={
+                "status": "skipped", "reason": "user_key_terms", "vocabulary": code_vocabulary, "queries": code_queries})
+            return self._proposed(run_id, code_vocabulary, code_queries)
+        output = step["output"] or {"attempts": [], "choice": None}
+        if output.get("choice") == "code_only":
+            # The user chose the code's query after the model's failed; the vocabulary says so wherever it is read.
+            chosen = code_vocabulary | {"search_query": {"status": "failed", "choice": "code_only",
+                                                         "attempts": output["attempts"]}}
+            self.store.start_step(step["id"])
+            self.store.finish_step(step["id"], "succeeded", output=output | {
+                "status": "code_only", "vocabulary": chosen, "queries": code_queries})
+            return self._proposed(run_id, chosen, code_queries)
+        attempt = len(output["attempts"]) + 1
+        if attempt > search_query_rules.ATTEMPTS:
+            self._pause(run_id, "search_query_failed", {"attempts": output["attempts"], "retries_left": 0})
+        self._checkpoint(run_id, revision)
+        failure: dict[str, Any] | None = None
+        try:
+            answer = await self._model_step(run, scope, f"search_query:{attempt}", "search_query", optional=True)
+        except OptionalStepFailed as exc:
+            failure = {"reason": exc.reason, "detail": exc.detail}
+        else:
+            if answer.get("invalid"):
+                failure = {"reason": "invalid_model_output", "detail": answer["issues"]}
+        self._checkpoint(run_id, revision)
+        if failure is None:
+            checked = await search_query_rules.check(answer["result"], self._count_probe(scope))
+            if not checked["searchable"]:
+                failure = {"reason": "no_searchable_term", "detail": checked["checks"]}
+        if failure is not None:
+            # Written on the step, which is never started: a step still `pending` is not half-finished work.
+            output["attempts"].append({"attempt": attempt, **failure})
+            self.store.set_step_output(step["id"], output)
+            self._pause(run_id, "search_query_failed", {
+                "reason": failure["reason"], "retries_left": search_query_rules.ATTEMPTS - attempt})
+        record = {"status": "ready", "attempts": output["attempts"] + [{"attempt": attempt, "reason": None}],
+                  "step_input_id": answer["step_input_id"], "resolved_model": answer["resolved_model"],
+                  "answer": answer["result"]}
+        built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, record)
+        queries = search_query_rules.compile_queries(built, scope["providers"], run["budget"]["max_provider_requests"])
+        self.store.start_step(step["id"])
+        self.store.finish_step(step["id"], "succeeded", output=output | {
+            "status": "ready", "vocabulary": built, "queries": queries,
+            "query_compiler": query_compiler.BLOCKS_VERSION})
         return self._proposed(run_id, built, queries)
 
     def _proposed(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -734,7 +814,8 @@ class ResearchFlow:
             # Only the term operations are reapplied. The criterion this run holds already came back from the
             # protocol the earlier approval froze, so correcting it a second time would rewrite what was agreed.
             done = earlier["output"]["edits"]
-            edits, source, by = {"terms": done["terms"], "criterion": None, "note": done.get("note")}, "earlier", "earlier_approval"
+            edits, source, by = ({"terms": done["terms"], "criterion": None, "note": done.get("note"),
+                                  "code_query": done.get("code_query")}, "earlier", "earlier_approval")
         elif self.deps.settings.protocol_approval == "as_proposed":
             # A run nobody attends: the proposal is approved as it stands and the protocol says so by name, so a body
             # approved by a setting is never read as a body a user approved.
@@ -749,11 +830,14 @@ class ResearchFlow:
         # The network work of an approval happens here, in the worker, and only for the terms the user added.
         built, compiled, kept, skipped = await self._approved_vocabulary(
             run, scope, vocabulary, queries, edits.get("terms") or [], reapply=source == "earlier",
-            proposals=proposals)
+            proposals=proposals, code_query=edits.get("code_query"))
         agreed = approval_rules.apply_criterion(criterion, edits.get("criterion"))
+        # Switching the code's query off beside a model-written one is a correction too (D92).
+        code_off = (search_query_rules.is_model_written(built) and vocabulary["code_query"]["searched"]
+                    and not built["code_query"]["searched"])
         record = {
             "mode": self.deps.settings.protocol_approval, "approved_by": by,
-            "edited": bool(kept or edits.get("criterion")),
+            "edited": bool(kept or edits.get("criterion") or code_off),
             "proposal_hash": output["proposal_hash"], "term_edits": len(kept),
             "criterion_edited": edits.get("criterion") is not None,
             "exclusion_word_in_question": approval_rules.exclusion_words_in_question(scope["question"], agreed),
@@ -777,7 +861,8 @@ class ResearchFlow:
             # What the user sent, not what this run could apply: a later run reapplies the whole correction against
             # its own phrases and decides for itself which operations still have something to act on.
             "edits": {"terms": approval_rules.canonical_edits(edits.get("terms") or []),
-                      "criterion": edits.get("criterion"), "note": edits.get("note")},
+                      "criterion": edits.get("criterion"), "note": edits.get("note"),
+                      **({"code_query": edits["code_query"]} if edits.get("code_query") is not None else {})},
             "approved": {"vocabulary": built, "queries": compiled, "criterion": agreed},
             # What was proposed stays with the closed approval, so a later run of this question can carry it and a
             # reader can still see which proposals were added and which were not (SW14.2).
@@ -839,7 +924,7 @@ class ResearchFlow:
 
     async def _approved_vocabulary(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                                    queries: list[dict[str, Any]], term_edits: list[dict[str, Any]], reapply: bool,
-                                   proposals: list[dict[str, Any]] | None = None
+                                   proposals: list[dict[str, Any]] | None = None, code_query: bool | None = None
                                    ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         """The vocabulary and queries the run searches with, rebuilt through the one code path that builds them.
 
@@ -850,6 +935,17 @@ class ResearchFlow:
         it, so only a phrase the user added is really probed.
         """
         kept, skipped = approval_rules.applicable(vocabulary, term_edits) if reapply else (term_edits, [])
+        if search_query_rules.is_model_written(vocabulary):
+            # The model's terms are corrected as whole phrases and the code's query is only switched on or off; the
+            # code vocabulary's forms are not applied to what the model wrote (D92).
+            if not kept and (code_query is None or code_query == vocabulary["code_query"]["searched"]):
+                return vocabulary, queries, [], skipped
+            built = await search_query_rules.rebuild(
+                vocabulary, kept, code_query if vocabulary["code_query"]["searched"] else None,
+                self._count_probe(scope), suggestion_rules.model_phrases(proposals or []))
+            compiled = search_query_rules.compile_queries(built, scope["providers"],
+                                                          run["budget"]["max_provider_requests"])
+            return built, compiled, built["user_edits"], skipped
         if not kept:
             return vocabulary, queries, [], skipped
         proposals = proposals or []
@@ -1503,13 +1599,19 @@ class ResearchFlow:
         if step["status"] == "succeeded":
             result, more = step["output"]["expansion"], step["output"]["queries"]
         else:
+            # The second round grows from the model's own query where one was written, as it was measured: the
+            # code's query beside it has no second round, and its records are not what the candidates are read from
+            # (D92). A vocabulary with no origin marks reads every first-round record, as before.
+            own = search_query_rules.model_queries(queries)
             found = phrase_candidates.candidates(
-                expansion_rules.first_round_records(self.store, rid, revision),
+                expansion_rules.first_round_records(
+                    self.store, rid, revision,
+                    {(q["provider_id"], q["query_text"]) for q in own} if len(own) < len(queries) else None),
                 [expansion_rules.queried_form(term) for term in expansion_rules.queried_terms(vocabulary)],
                 [*vocabulary["claim_words"], *vocabulary["exclusion_words"]])
             self.store.start_step(step["id"])
             result = await expansion_rules.expand(vocabulary, found, self._count_probe(scope))
-            second = expansion_rules.second_round_vocabulary(vocabulary, result["terms"], queries)
+            second = expansion_rules.second_round_vocabulary(vocabulary, result["terms"], own)
             # Where each accepted phrase went (D90); the protocol body keeps the compiled queries, not this.
             result["second_round"] = {key: second[key] for key in ("setting_synonyms", "task_additions", "setting_width")}
             more = query_compiler.compile_block_queries(

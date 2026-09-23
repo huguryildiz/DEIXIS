@@ -60,7 +60,7 @@ def app_for(tmp_path, monkeypatch, handler, adapter, workflow="sw"):
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow,
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
                                protocol_approval="as_proposed", fulltext_fetch="off"),
                       adapters={"fake": adapter},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -219,7 +219,7 @@ def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_secon
     stored = store.latest_step_output(rid, "vocabulary", 1)
     run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ?", (rid,)).fetchone()[0]
     again = protocol.build_protocol(store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"],
-        body["skill_package_hash"], Settings(data_dir=None, search_workflow="sw"), vocabulary=stored["vocabulary"],
+        body["skill_package_hash"], Settings(data_dir=None, search_workflow="sw", search_query="code"), vocabulary=stored["vocabulary"],
         approval=store.approval_step(run_id)["output"]["approval"])
     assert sha256_hex(again) == rows[0]["body_sha256"]
 

@@ -60,8 +60,8 @@ def question_forms(vocabulary: dict[str, Any] | None) -> list[str]:
     """
     if not vocabulary:
         return []
-    from deixis.workflow.expansion import queried_form, queried_terms  # expansion reads no lookup
-    return ([queried_form(term) for term in queried_terms(vocabulary)]
+    from deixis.workflow.expansion import queried_form, searched_terms  # expansion reads no lookup
+    return ([queried_form(term) for term in searched_terms(vocabulary)]
             + list(vocabulary.get("claim_words") or []) + list(vocabulary.get("exclusion_words") or []))
 
 

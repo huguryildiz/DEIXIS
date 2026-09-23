@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, CornerUpLeft, Plus, RotateCcw, X } from 'lucide-react'
-import { ApiError, api, type ApprovalBlock, type ApprovalCriterion, type ApprovalSide, type ApprovalSuggestions, type ApprovalTerm, type ProtocolEdits, type Run, type RunApproval, type SuggestedTerm, type TermEdit } from './api'
-import { approvedByText, blockLabels, blockNotes, blockOriginText, dropReasonText, pauseReasonText, suggestionBlockerText, termOriginText } from './labels'
+import { ApiError, api, type ApprovalBlock, type ApprovalCriterion, type ApprovalSide, type ApprovalSuggestions, type ApprovalTerm, type ProtocolEdits, type Run, type RunApproval, type SearchQuerySide, type SuggestedTerm, type TermEdit } from './api'
+import { approvedByText, blockLabels, blockNotes, blockOriginText, dropReasonText, pauseReasonText, providerName, queryWarningText, suggestionBlockerText, termKindText, termOriginText } from './labels'
 import { t, uiLocale } from './i18n'
 import { Notice } from './Notice'
 import { Button } from '@/components/ui/button'
@@ -73,6 +73,11 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
   const [errors, setErrors] = useState<string[]>([])
   const [addError, setAddError] = useState<{ block: ApprovalBlock; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  // The code's query beside a model-written one (D92): null keeps the proposal's choice, a boolean is the user's.
+  const [codeQuery, setCodeQuery] = useState<boolean | null>(null)
+  const written = proposal.search_query?.status === 'ready' ? proposal.search_query : null
+  const codeOn = written ? (codeQuery ?? written.code_query.searched) : false
+  const codeChanged = written !== null && codeQuery !== null && codeQuery !== written.code_query.searched
 
   const rows = rowsOf(proposal)
   const known = new Set(rows.map(row => norm(row.phrase)))
@@ -95,7 +100,7 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
   const addedCount = ops.filter(op => op.op === 'add').length
   const addedProposals = ops.filter(op => op.op === 'add' && suggested.has(op.phrase)).length
   const criterionEdited = criterion !== null
-  const changed = ops.length > 0 || criterionEdited
+  const changed = ops.length > 0 || criterionEdited || codeChanged
 
   function addTerm(block: ApprovalBlock, text: string) {
     const phrase = norm(text)
@@ -111,6 +116,7 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
   function undoAll() {
     setOps([])
     setCriterion(null)
+    setCodeQuery(null)
     setNote('')
     setErrors([])
     setAddError(null)
@@ -138,6 +144,7 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
         cue_phrases: criterion.cue_phrases, exclusion_title_words: criterion.exclusion_title_words,
       },
       note: note.trim() || null,
+      ...(codeChanged ? { code_query: codeQuery } : {}),
     }
     try {
       await api.approveProtocol(run.id, edits)
@@ -163,6 +170,8 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
       <p>{t('Nothing has been sent to a provider yet, except counts of how many records hold each term. Correct what is wrong, then approve.')}</p>
     </div>
 
+    {written && <Notice tone="info">{t('A model wrote these search terms from the question. The counts, the backups and the warnings are the application’s own checks; the query built from the question’s words is offered below.')}</Notice>}
+    {proposal.search_query?.status === 'failed' && <Notice tone="attention">{t('The model could not write the search query. You chose the query DEIXIS built from the question’s words.')}</Notice>}
     {proposal.too_broad && <Notice tone="attention">{t('Every term that would be searched is too frequent to stand alone. You can still approve; the run will stop again and say so.')}</Notice>}
     {!proposal.terms.some(term => !term.dropped) && <Notice tone="attention">{t('No term is left to build a provider query from. Add one below, or move one back into the setting or task block.')}</Notice>}
 
@@ -181,6 +190,7 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
                 <span className="approval-phrase" dir="auto">{row.phrase}</span>
                 <span className="approval-term-facts">
                   <TermFacts term={row.term} block={row.block} />
+                  {row.term && written && <WrittenFacts side={written} phrase={row.phrase} />}
                   {/* The view records an origin only for the two searched blocks; a side-list phrase claims none. */}
                   {row.term && <span className="approval-badge">{termOriginText(row.term.origin)}</span>}
                   {(row.term || op?.op === 'move') && <span className="approval-badge">{blockOriginText(op?.op === 'move' ? 'user' : row.term!.block_origin)}</span>}
@@ -225,6 +235,9 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
       </div>)}
     </div>
 
+    {written && <QuerySection side={written} queries={proposal.queries ?? []} on={codeOn} editable={editable}
+      onChange={on => setCodeQuery(on === written.code_query.searched ? null : on)} />}
+
     <SuggestionSection suggestions={approval.suggestions} editable={editable} working={working} busy={busy}
       drafted={new Set(ops.filter(op => op.op === 'add').map(op => op.phrase))}
       onAdd={row => setOps([...without(row.phrase), { op: 'add', phrase: row.phrase, block: row.block }])}
@@ -246,6 +259,7 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
            // Counted apart: how many of the added terms are names the model proposed.
            addedProposals && t(addedProposals === 1 ? '{n} of them proposed by the model' : '{n} of them proposed by the model', { n: addedProposals }),
            moved && t(moved === 1 ? '{n} term moved' : '{n} terms moved', { n: moved }),
+           codeChanged && t(codeOn ? 'the code’s query switched on' : 'the code’s query switched off'),
            criterionEdited && t('criterion corrected')].filter(Boolean).join(' · ')
         : t('No change: the proposal is approved as it stands.')}</p>
       {checking && <p className="approval-checking" role="status">{t('Your correction was sent. The terms you added are being counted against the literature; this card opens again if they cannot be searched.')}</p>}
@@ -275,6 +289,50 @@ function TermFacts({ term, block }: { term: ApprovalTerm | null; block: Approval
     {term.and_only && <span className="approval-badge">{t('too frequent alone; only combined')}</span>}
     {term.dropped && <span className="approval-badge is-dropped">{t('dropped: {reason}', { reason: dropReasonText(term.dropped) })}</span>}
   </>
+}
+
+// What the model said about one of its terms, and what code found when it counted the term with the other block
+// (D92). The kind and the reason are the model's words and decide nothing; a warning is code's and removes nothing.
+function WrittenFacts({ side, phrase }: { side: Extract<SearchQuerySide, { status: 'ready' }>; phrase: string }) {
+  const meta = side.terms.find(term => term.phrase === phrase)
+  const warnings = side.warnings.filter(warning => warning.phrase === phrase)
+  if (!meta && !warnings.length) return null
+  return <>
+    {meta?.kind && <span className="approval-badge" title={meta.why ?? undefined}>{termKindText(meta.kind)}</span>}
+    {meta?.backup_for && <span className="approval-badge">{t('backup for “{phrase}”', { phrase: meta.backup_for })}</span>}
+    {meta?.with_other_block != null && <span className="approval-count">{t('{n} with the other block', { n: meta.with_other_block.toLocaleString(uiLocale()) })}</span>}
+    {warnings.map(warning => <span key={warning.warning} className="approval-badge is-dropped">{queryWarningText(warning.warning)}</span>)}
+    {meta?.why && <span className="approval-why" dir="auto">{meta.why}</span>}
+  </>
+}
+
+// The queries the run would send: the model's, and beside it the query code built from the question's words, which
+// the user may switch off (D92). The code's terms are shown, not edited.
+function QuerySection({ side, queries, on, editable, onChange }: {
+  side: Extract<SearchQuerySide, { status: 'ready' }>; queries: { provider_id: string; query_text: string; origin?: string }[]
+  on: boolean; editable: boolean; onChange: (on: boolean) => void
+}) {
+  const code = side.code_query
+  const byOrigin = (origin: string) => queries.filter(query => query.origin === origin)
+  return <div className="approval-queries">
+    <div className="approval-block-head">
+      <strong>{t('Queries')}</strong>
+      <small>{t('Each provider is searched with the model’s query and, when it is switched on, the query built from the question’s words.')}</small>
+    </div>
+    <div className="approval-query-group">
+      <span className="approval-field-label">{t('The model’s query')}</span>
+      <ul>{byOrigin('model').map(query => <li key={`model:${query.provider_id}`}><small>{providerName(query.provider_id)}</small> <code>{query.query_text}</code></li>)}</ul>
+    </div>
+    <div className={`approval-query-group${on ? '' : ' is-off'}`}>
+      <label className="approval-switch">
+        <input type="checkbox" checked={on} disabled={!editable || !code.available} onChange={e => onChange(e.target.checked)} />
+        <span>{t('Also search with the query built from the question’s words')}</span>
+      </label>
+      {!code.available && <p className="approval-hint">{t('That query cannot be searched on its own: none was compiled, or every term was too frequent.')}</p>}
+      <p className="approval-hint">{t('Its terms: {terms}', { terms: code.terms.map(term => `${term.form} (${t(blockLabels[term.block])})`).join(', ') || t('none') })}</p>
+      <ul>{code.queries.map(query => <li key={`code:${query.provider_id}`}><small>{providerName(query.provider_id)}</small> <code>{query.query_text}</code></li>)}</ul>
+    </div>
+  </div>
 }
 
 // How many records hold a phrase. A count that was not read says so; it is never shown as 0, which would mean the
@@ -535,7 +593,8 @@ function ApprovedSummary({ approval }: { approval: RunApproval }) {
       </div>}
       {approved?.queries?.length ? <div className="approval-diff-group">
         <strong>{t('Queries sent')}</strong>
-        <ul>{approved.queries.map(query => <li key={`${query.provider_id}:${query.query_text}`}><code>{query.query_text}</code></li>)}</ul>
+        <ul>{approved.queries.map(query => <li key={`${query.provider_id}:${query.query_text}`}>
+          {query.origin && <small>{t(query.origin === 'model' ? 'model' : 'from the question’s words')}</small>} <code>{query.query_text}</code></li>)}</ul>
       </div> : null}
     </div>}
   </section>

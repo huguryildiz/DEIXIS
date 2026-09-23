@@ -85,8 +85,12 @@ FULLTEXT_QUOTE_MIN_CHARS = 12
 # 2026-09-21 (D82): the same holds for the one term-suggestion call an `sw` discovery run may make, and only when
 # the user asks for it on the approval card (SW2.5). Hand-picked and not measured: how many of at most
 # MAX_SUGGESTED_TERMS proposals survive the count probe, and how many of those are really other names, is unknown.
+# 2026-09-23 (D92): the model-written search query (slice 13h) gets SEARCH_QUERY_CALLS on top as well: its call and
+# one repair, and once more after the user asks for a second try. Only a run whose settings let a model write the query
+# is given them.
 CRITERION_CALLS = 3
 SUGGESTION_CALLS = 1
+SEARCH_QUERY_CALLS = 4
 MAX_SUGGESTED_TERMS = 12
 TEST_EFFORT_BUDGETS = {
     "quick": EffortBudget(max_model_calls=6, max_provider_requests=3, max_candidates=20,
@@ -122,7 +126,7 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
 
 # `fulltext_adjudication` uses the literature model, as abstract screening does. The slice names no other model
 # for the reading step.
-LITERATURE_TASKS = ("search_plan", "screening", "vocabulary_labels", "criterion_proposal", "term_suggestions",
+LITERATURE_TASKS = ("search_plan", "screening", "vocabulary_labels", "criterion_proposal", "term_suggestions", "search_query",
                     "abstract_screening", "fulltext_adjudication")
 # A repair would let the step name a phrase the question does not hold and then take it back. The block labelling
 # gets one attempt: an output that invents, drops or repeats a phrase is rejected and the rule stands (SW17.1). An

@@ -57,6 +57,7 @@
         "vocabulary_labels",
         "criterion_proposal",
         "term_suggestions",
+        "search_query",
         "abstract_screening",
         "fulltext_adjudication",
         "report_plan",

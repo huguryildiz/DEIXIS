@@ -105,6 +105,11 @@
    "deixis_file": "references/fulltext-adjudication.md",
    "derived_from": [],
    "change": "Written for DEIXIS on 2026-09-22 (D85, slice 12), not adapted from upstream text. One job: for each part of one inclusion criterion, label the shown passages of one paper present, absent or unclear, and when present copy one continuous quote from one shown passage. Inclusion is not decided here. The text was copied from the slice unchanged. Not measured: this wording was tried against no model; the first trial is the slice 13 smoke test."
+  },
+  {
+   "deixis_file": "references/search-query.md",
+   "derived_from": [],
+   "change": "Written for DEIXIS on 2026-09-23 (D92, slice 13h), not adapted from upstream text. One job: choose at most six terms for the setting and task blocks of the keyword query, each with a kind and a short why, and up to three backups per block; code counts them and writes the query. The rules are the second model-query measurement's prompt (.local/sw-model-query-experiment-2026-09-24/prompt_p2.md) with the step envelope added. Measured: gpt-5.6-luna, three calls on each of three questions, OpenAlex order only; not measured on other models, other fields or the product's StepInput message."
   }
  ],
  "phrasebank": {

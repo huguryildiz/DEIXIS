@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/search-query.schema.json",
+  "title": "SearchQuery",
+  "description": "The keyword query of an sw discovery run, written by a model from the question alone (D92, slice 13h): terms for the setting block and the task block, at most 6 in total, and up to 3 backup terms per block. Asked once per scope revision, with at most one repair. Code counts every term, puts a backup in place of a term no record holds, and compiles the query; the model writes no operator and no query text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "setting",
+    "task",
+    "setting_backup",
+    "task_backup"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "deixis.search_query.v1"
+    },
+    "step_input_id": {
+      "$ref": "common.schema.json#/$defs/step_input_id"
+    },
+    "scope_revision": {
+      "$ref": "common.schema.json#/$defs/scope_revision"
+    },
+    "skill_package_hash": {
+      "$ref": "common.schema.json#/$defs/skill_package_hash"
+    },
+    "setting": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term",
+          "kind",
+          "why"
+        ],
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "1 to 4 words, no quotation marks, parentheses or Boolean operators."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "topic",
+              "method",
+              "population",
+              "other"
+            ]
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "At most 8 words. Shown to the user; never read by a rule."
+          }
+        }
+      },
+      "description": "Where the work happens: the field, system, population or material."
+    },
+    "task": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term",
+          "kind",
+          "why"
+        ],
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "1 to 4 words, no quotation marks, parentheses or Boolean operators."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "topic",
+              "method",
+              "population",
+              "other"
+            ]
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "At most 8 words. Shown to the user; never read by a rule."
+          }
+        }
+      },
+      "description": "What is looked for in that field; at least one term names the topic or the work done."
+    },
+    "setting_backup": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 3,
+      "description": "Used in order when a chosen term of the same block finds no record.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term"
+        ],
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        }
+      }
+    },
+    "task_backup": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 3,
+      "description": "Used in order when a chosen term of the same block finds no record.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term"
+        ],
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        }
+      }
+    }
+  }
+}

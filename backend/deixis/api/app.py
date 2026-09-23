@@ -33,8 +33,8 @@ from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import skill
 from deixis.workflow import abstract_stage
-from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SUGGESTION_CALLS,
-                                 TEST_EFFORT_BUDGETS, RevisionConflict)
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
+                                 SUGGESTION_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict)
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
 from deixis.models.deepseek import DeepSeekAdapter
@@ -151,6 +151,8 @@ class ProtocolApprovalSubmission(BaseModel):
     terms: list[dict[str, Any]] = Field(default_factory=list)
     criterion: dict[str, Any] | None = None
     note: str | None = None
+    # Whether the code's own query is searched beside a model-written one (D92); null leaves the proposal's choice.
+    code_query: Any = None
 
 
 class ResearchTitleChange(BaseModel):
@@ -808,6 +810,8 @@ def create_app(
             # run that never asks spends none of it.
             extra = CRITERION_CALLS + SUGGESTION_CALLS + abstract_stage.model_calls(
                 ABSTRACT_READ_LIMIT[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
+            # The model-written query and its repair and retry (D92); a run on the code's query alone makes no call.
+            extra += SEARCH_QUERY_CALLS if settings.search_query == "model" else 0
             budget = budget | {"max_model_calls": budget["max_model_calls"] + extra}
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
@@ -886,6 +890,22 @@ def create_app(
         request.app.state.worker.wake()
         return run
 
+    @app.post("/api/runs/{run_id}/search-query-choice")
+    async def choose_code_query(run_id: str, request: Request) -> dict[str, Any]:
+        """Search with the code's query alone after the model could not write one (D92).
+
+        Declared before the generic run action, like `protocol-approval`. The other way out of the same pause is
+        `resume`, which asks the model once more while an attempt is left.
+        """
+        store = store_of(request)
+        run = store.run(run_id)
+        store.research(run["research_id"])
+        if run["status"] != "paused" or run["pause_reason"] != "search_query_failed":
+            raise HTTPException(409, f"Cannot choose the code's query on a run in status {run['status']}")
+        run = store.choose_code_query(run_id)
+        request.app.state.worker.wake()
+        return run
+
     @app.post("/api/runs/{run_id}/{action}")
     async def control_run(run_id: str, action: Literal["pause", "resume", "cancel", "retry_failed"], request: Request) -> dict[str, Any]:
         store = store_of(request)
@@ -902,6 +922,10 @@ def create_app(
         elif action == "resume" and status == "paused" and run["pause_reason"] == "protocol_approval_needed":
             # There is no resuming past the approval: the run would freeze a protocol the user never saw (SW2.6).
             raise HTTPException(409, "Approve or correct the proposed protocol before resuming this run")
+        elif (action == "resume" and status == "paused" and run["pause_reason"] == "search_query_failed"
+              and not (run.get("error") or {}).get("retries_left", 1)):
+            # The model was asked as many times as a run allows; the way on is the code's query or a new revision.
+            raise HTTPException(409, "The model has had its second try; search with the code's query or revise the scope")
         elif action == "resume" and status == "paused":
             run = store.update_run(run_id, event="run_resumed", status="queued", pause_reason=None, error_json=None)
             worker.wake()

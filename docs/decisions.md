@@ -2,6 +2,72 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D92 — A model writes the sw search query once per scope revision, and the code's own query is searched beside it
+
+**Status:** accepted; implemented 2026-09-23 (slice 13h). **Date:** 2026-09-23.
+
+**Context:** After slice 13g the owner decided that the model should write the query, not the code rule. Two
+measurements with `gpt-5.6-luna` on the vocabulary experiment's three questions settled how
+(`.local/sw-model-query-experiment-2026-09-23/`, `…-2026-09-24/result.md`). With the revised prompt (a topic term in
+every task block, method names only beside one), the model's query alone found 17, 19 and 19 of the quantum question's
+31 verified works over three separate calls (rule, fixed before running: at least 18 on every call) and 4 of the
+packet-size question's findable 4 on every call. The model's query and the 13g code query together, each read to 1,000
+records, found 23 and 4 on every call (rule: at least 20 and 4). The two queries find different works: the model's
+brought 5 works the code's missed on every call, the code's 6 to 9 the model's missed.
+
+**Decision:** (1) A new model step `search_query` (`references/search-query.md`, contract
+`contracts/research/search-query.schema.json`, `deixis.search_query.v1`, a literature task) returns at most six terms
+for the setting and task blocks, each with a `kind` (topic, method, population, other) and a short `why`, and up to
+three backups per block. The StepInput carries the question alone, not the code's word list. One call per scope
+revision, stored with its StepInput, and one schema repair; nothing is voted on. The contract's checks refuse more
+than six terms, an empty block, a term given twice and a term with query syntax or more than four words. (2) Code
+counts every chosen term alone and with the other block's chosen terms (at most 24 count requests). A term no record
+holds alone is replaced by the next backup of its block; a term that finds nothing with the other block stays and
+carries a warning; no count removes a term for being large (the one-million rule does not apply). Every term enters
+the query as its whole phrase. (3) The proposal's vocabulary holds the model's terms (`block_assignment` and origin
+`search_query`), the question's claim, exclusion and outcome phrases, and the 13g code vocabulary whole under
+`code_query`. The first round sends, per provider, the model's query and then the code's, cut to
+`max_provider_requests`, so the OpenAlex pair survives every effort; each query carries `origin` (`model` or `code`),
+and a code query identical to the model's is not sent twice. Each query reads the effort's `SW_READ_LIMIT` with its own
+D89 share, so the round's request allowance grows with the second query. The second round is built from the model's
+terms, and its candidates come from the model query's own records; the code's query has no second round. What orders
+and closes records (ranking blocks, the abstract stage's code rules, the survey title words, the criterion's sought
+terms) reads both queries' terms. (4) A failed call, a second invalid answer, or an answer left with an empty block
+after the counts stops the run with `search_query_failed`; the code's query is never searched in its place unless the
+user chooses it. Resuming asks the model once more (two attempts); `POST /api/runs/{id}/search-query-choice` searches
+with the code's query alone. The user's own key terms skip the step. (5) The approval card shows the model's terms with
+their kind, reason, two counts, backups and warnings, the compiled queries, and the code's query with a switch that is on
+by default; term corrections act on the model's terms as whole phrases, and switching the code's query off is a
+correction (`edits.code_query`). (6) A run is given `SEARCH_QUERY_CALLS` (4) on top of its preset. (7) The setting
+`search_query` (`DEIXIS_SEARCH_QUERY`) is `model` in the product; `code` keeps 13g's query alone with no model call, for
+tests and measurements. `legacy` is unchanged.
+
+**Protocol body (version note):** `deixis.protocol.v1` gains, for a model-written query only, `search_query`: status,
+the prompt (`files`, whose text the body's `skill_package_hash` covers, and `schema_version`), the model, attempts,
+`step_input_id`, `resolved_model`, the model's answer, every count and warning, each term's kind and reason,
+`code_query_searched` and the code's `code_concept_blocks`; `compiled_queries` entries gain `origin`; `thresholds` gain
+`search_query`. A run whose model failed and whose user chose the code's query records `search_query` with status
+`failed`, its attempts and `choice: code_only`. A body without these fields was frozen before this decision or by a run
+on the `code` setting; the fields' absence means they did not exist then. `concept_blocks` and `vocabulary` describe the
+model's terms. `skill_package_hash` changed from `sha256:b35b4f4960276c535452847693f76ea973f5e5a2417d51bf93527b9b82bb5e7c`
+to `sha256:7d4e238c3e9feebd451c77fb997aff717a3617008bd4165be56f9fba46bf6fca`.
+
+**Acceptance (2026-09-23, `.local/sw-slice13h-acceptance-2026-09-23/`):** the product's `_search_query` step on fresh
+copies of the 13g acceptance library, three separate calls per question (9 calls, all valid on the first answer),
+447 OpenAlex requests (all 200). Model and code first rounds and the model's second round, first 1,000 records each:
+quantum 23, 23, 23 verified works (threshold 20); packet size 4, 4, 4 (threshold 4). The model's first round alone
+found 19, 19 and 20 quantum works and 4, 4, 4 packet works.
+
+**Limits:** One model and three questions; the packet-size answer list is weak (6 works from model labels, 2 not
+findable with the question's words) and sepsis has none; only OpenAlex order was counted, not what the model later reads
+or includes, and OpenAlex's search and count were the only provider behavior tried. Wall clock and the cost of the
+second first-round query were not measured; `quick` and `standard` with two queries were not measured. The automatic
+backup for a term that finds nothing with the other block was not measured and is only a warning. `kind` is unstable
+across calls. On the packet-size question the second round, built from the model's terms by the 13g rule, added "data
+aggregation" and "routing protocol" and grew to 6,858–21,511 records with no verified work; its candidates come from the
+model query's titles only, and a candidate list drawn from both queries' records was not run. The acceptance read titles
+only for the candidates, where the product also reads author keywords.
+
 ## D90 — Repair the sw search query: fit two blocks evenly, let the second round only add and keep its task block, and read 1,000 records per `detailed` query
 
 **Status:** accepted; implemented 2026-09-23 (slice 13g, Tasks 1 and 2 and the `detailed` limit of Task 4). Task 3

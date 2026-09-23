@@ -110,7 +110,7 @@ def _app(tmp_path, monkeypatch, workflow):
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow,
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
                                fulltext_fetch="off", fulltext_adjudication="off"),
                       adapters={"fake": FakeAdapter()}, extra_hosts=("testserver",),
                       trusted_clients=("testclient",), start_worker=False)

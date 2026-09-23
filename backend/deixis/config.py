@@ -38,6 +38,10 @@ class Settings:
     # `auto` is the product's behavior; `off` leaves the fetched works at `not_read_yet`, for a measurement or a
     # test that needs no second model run. A `legacy` research queues nothing either way.
     fulltext_adjudication: str = "auto"
+    # Who writes an sw discovery run's keyword query (D92, slice 13h). `model` is the product's behavior: a model
+    # writes it once per scope revision and the code's own query is searched beside it. `code` is the query of
+    # slice 13g alone, with no model call, for a measurement or a test that needs the code path only.
+    search_query: str = "model"
 
     @property
     def db_path(self) -> Path:
@@ -109,6 +113,9 @@ def load_settings() -> Settings:
     fulltext_adjudication = os.environ.get("DEIXIS_FULLTEXT_ADJUDICATION", "auto")
     if fulltext_adjudication not in ("auto", "off"):
         raise ValueError("DEIXIS_FULLTEXT_ADJUDICATION must be auto or off")
+    search_query = os.environ.get("DEIXIS_SEARCH_QUERY", "model")
+    if search_query not in ("model", "code"):
+        raise ValueError("DEIXIS_SEARCH_QUERY must be model or code")
     return Settings(
         data_dir=default_data_dir(),
         host=os.environ.get("DEIXIS_HOST", "127.0.0.1"),
@@ -119,4 +126,5 @@ def load_settings() -> Settings:
         protocol_approval=protocol_approval,
         fulltext_fetch=fulltext_fetch,
         fulltext_adjudication=fulltext_adjudication,
+        search_query=search_query,
     )

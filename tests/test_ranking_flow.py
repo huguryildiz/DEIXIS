@@ -115,7 +115,7 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None, embeddi
     else:
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow,
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
                                protocol_approval="as_proposed", fulltext_fetch="off"),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -457,7 +457,7 @@ def test_changing_the_embedding_setting_makes_no_decision_stale(tmp_path, monkey
     rid = store.create_research("SYNTHETIC question?", "academic", "quick", ["openalex"], "fake", "m", "en",
                                 search_workflow="sw")
     scope = store.scope(rid)
-    settings = Settings(data_dir=tmp_path / "data", search_workflow="sw")
+    settings = Settings(data_dir=tmp_path / "data", search_workflow="sw", search_query="code")
     criterion = {"criterion": "SYNTHETIC: the paper states a model.", "parts": [], "cue_phrases": [],
                  "exclusion_title_words": [], "origin": "consensus", "base_run": 1, "runs_ok": 3,
                  "dropped_exclusion_title_words": [], "sought_term_in_criterion": True}

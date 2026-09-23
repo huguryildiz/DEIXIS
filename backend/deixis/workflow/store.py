@@ -835,6 +835,26 @@ class Store:
             self._event(research_id, "run_resumed", {"status": "queued", "pause_reason": None}, run_id)
         return self.run(run_id)
 
+    def choose_code_query(self, run_id: str) -> dict[str, Any]:
+        """Search with the code's query alone after the model's failed, and queue the run, in one transaction (D92).
+
+        Written on the model-query step, which the worker reads when it picks the run up; nothing is compiled here.
+        """
+        with transaction(self.conn):
+            row = self.conn.execute(
+                "SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = 'search_query'",
+                (run_id,)).fetchone()
+            if row is None or not row["output_json"]:
+                raise RevisionConflict("This run has no failed model query to replace")
+            research_id = self.conn.execute("SELECT research_id FROM runs WHERE id = ?", (run_id,)).fetchone()[0]
+            self.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?",
+                              (dumps(json.loads(row["output_json"]) | {"choice": "code_only"}), row["id"]))
+            self.conn.execute(
+                "UPDATE runs SET status = 'queued', pause_reason = NULL, error_json = NULL, updated_at = ?,"
+                " version = version + 1 WHERE id = ?", (now(), run_id))
+            self._event(research_id, "run_resumed", {"status": "queued", "pause_reason": None}, run_id)
+        return self.run(run_id)
+
     def run_steps(self, run_id: str) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT id, operation_key, kind, status, attempt, delivery_class, error_code, error_json, output_json, started_at, finished_at"

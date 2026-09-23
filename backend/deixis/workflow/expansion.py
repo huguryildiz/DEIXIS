@@ -43,6 +43,17 @@ def queried_terms(vocabulary: dict[str, Any], block: str | None = None) -> list[
     return [term for term in vocabulary["terms"] if not term["dropped"] and (block is None or term["block"] == block)]
 
 
+def searched_terms(vocabulary: dict[str, Any], block: str | None = None) -> list[dict[str, Any]]:
+    """The terms every first-round query searched with: the vocabulary's own and, where the code's query was searched
+    beside a model-written one, the code's too (D92). What orders and closes records reads these; the second round
+    reads `queried_terms`, the model's alone."""
+    code = vocabulary.get("code_query") or {}
+    extra = queried_terms(code["vocabulary"], block) if code.get("searched") else []
+    own = queried_terms(vocabulary, block)
+    forms = {queried_form(term) for term in own}
+    return own + [term for term in extra if queried_form(term) not in forms]
+
+
 def queried_form(term: dict[str, Any]) -> str:
     """The form of the term that really entered the query: its root word, or the whole phrase."""
     return term["root"] if term["in_query"] == "root" else term["phrase"]
@@ -186,8 +197,12 @@ def term_yields(store: Any, research_id: str, scope_revision: int) -> list[dict[
     return count_yields(store, research_id, scope_revision, term_rows(terms, body.get("expansion")))
 
 
-def first_round_records(store: Any, research_id: str, scope_revision: int) -> list[dict[str, Any]]:
+def first_round_records(store: Any, research_id: str, scope_revision: int,
+                        only: set[tuple[str, str]] | None = None) -> list[dict[str, Any]]:
     """The work heads among this scope revision's candidates, with the text the candidate phrases come from.
+
+    `only` names the (provider, query text) pairs whose records count; a record kept by another query is left out.
+    A model-written query's second round reads its own records alone (D92); None reads every first-round record.
 
     A record that only an expansion arm found is left out. A later discovery run of the same scope reads the same
     pool, and were those records in it, each run would learn from what the last one added and the search would
@@ -210,4 +225,5 @@ def first_round_records(store: Any, research_id: str, scope_revision: int) -> li
                 " LEFT JOIN search_runs sr ON sr.id = c.search_run_id"
                 " WHERE c.research_id = ? AND c.scope_revision = ? ORDER BY c.rank, c.created_at",
                 (research_id, scope_revision))
-            if row["svid"] in heads and (row["provider"], row["query_text"]) not in second_round]
+            if row["svid"] in heads and (row["provider"], row["query_text"]) not in second_round
+            and (only is None or (row["provider"], row["query_text"]) in only)]

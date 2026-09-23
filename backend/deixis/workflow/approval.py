@@ -57,8 +57,9 @@ def proposal_blocks(vocabulary: dict[str, Any]) -> dict[str, str]:
 
 
 def block_origins(vocabulary: dict[str, Any]) -> dict[str, str]:
-    """Who put each phrase in its block: the code rule, the model's labelling step or the user (SW17.6, SW2.6)."""
-    default = "user" if vocabulary["block_assignment"] == "user" else "rule"
+    """Who put each phrase in its block: the code rule, the model's labelling step, the model that wrote the query
+    (D92) or the user (SW17.6, SW2.6)."""
+    default = {"user": "user", "search_query": "search_query"}.get(vocabulary["block_assignment"], "rule")
     origins = {row["phrase"]: default for row in proposal_rows(vocabulary)}
     origins |= {record["phrase"]: record["origin"]
                 for record in (vocabulary.get("labelling") or {}).get("phrases", [])}
@@ -131,6 +132,11 @@ def check_edits(proposal: dict[str, Any], edits: dict[str, Any]) -> list[str]:
         if operation == "add" and phrase in known:
             errors.append(f"The term {phrase!r} is already in the {known[phrase]} block")
     errors += _criterion_errors(edits.get("criterion"))
+    code_query = edits.get("code_query")
+    if code_query is not None and (not isinstance(code_query, bool)
+                                   or proposal["vocabulary"]["block_assignment"] != "search_query"):
+        # The switch exists only on a card whose query a model wrote; the code's query is then offered beside it (D92).
+        errors.append("The code query switch is a true or false answer on a card whose query a model wrote")
     note = edits.get("note")
     if note is not None and (not isinstance(note, str) or len(note) > MAX_NOTE_CHARS):
         errors.append(f"The note is longer than {MAX_NOTE_CHARS} characters")

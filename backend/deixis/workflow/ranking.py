@@ -315,17 +315,20 @@ def verified_seeds(store: Any, research_id: str, scope: dict[str, Any]) -> list[
 def query_vocabulary(scope: dict[str, Any], vocabulary: dict[str, Any],
                      expansion_terms: list[str]) -> tuple[set[str], dict[str, list[str]]]:
     """The words BM25 reads and the block forms the block signal reads: the question and every queried term."""
-    from deixis.workflow.expansion import TASK_BLOCK, queried_form, queried_terms, term_rows
+    from deixis.workflow.expansion import TASK_BLOCK, queried_form, searched_terms, term_rows
     from deixis.workflow.vocabulary import GATE_BLOCKS
 
     query_words = set(words(scope["question"]))
-    for row in term_rows(vocabulary["terms"], {"terms": list(expansion_terms)}):
+    # The code's query searched beside a model-written one counts as queried here: its records are in the pool (D92).
+    code = vocabulary.get("code_query") or {}
+    searched = vocabulary["terms"] + (code["vocabulary"]["terms"] if code.get("searched") else [])
+    for row in term_rows(searched, {"terms": list(expansion_terms)}):
         query_words |= set(words(row["phrase"])) | set(words(row["form"]))
     # An outcome term is not searched but does order: the question's own are in its words already, one the user added
     # at the approval is not, and the card tells the user it orders the records.
     for phrase in vocabulary.get("outcome_terms") or []:
         query_words |= set(words(phrase))
-    blocks = {block: [queried_form(term) for term in queried_terms(vocabulary, block)] for block in GATE_BLOCKS}
+    blocks = {block: [queried_form(term) for term in searched_terms(vocabulary, block)] for block in GATE_BLOCKS}
     # The second round's accepted phrases were searched as the task block, so that is where they rank (slice 04b).
     blocks[TASK_BLOCK] = blocks[TASK_BLOCK] + list(expansion_terms)
     return query_words, blocks

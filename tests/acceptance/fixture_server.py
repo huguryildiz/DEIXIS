@@ -6,7 +6,8 @@ application behavior in a browser; it does not measure model quality or live pro
 Question markers select failure scripts: "[rate-limit]" (OpenAlex 429), "[model-down]" (the first screening call
 fails before sending), "[invent-locator]" (every answer draft asserts a page and an equation), "[slow-cells]" (each cell
 extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs), "[suggest-down]" (every
-term-suggestion call fails, so the approval card shows the failure and its retry).
+term-suggestion call fails, so the approval card shows the failure and its retry), "[query-down]" (every call that
+writes the search query fails, so the run stops for the model query, D92).
 """
 
 from __future__ import annotations
@@ -101,6 +102,7 @@ class ScriptedCodex:
     """Registered as the "codex" connection so the unchanged UI can drive it."""
 
     connection = "codex"
+    enforces_schema = True  # as the real Codex adapter does (D86); the flow reads it before every model step
 
     def __init__(self) -> None:
         self.failed_once: set[str] = set()
@@ -116,6 +118,8 @@ class ScriptedCodex:
             self.failed_once.add(si["research_id"])
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
         if "[suggest-down]" in question and task == "term_suggestions":
+            return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
+        if "[query-down]" in question and task == "search_query":
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
         if "[slow-cells]" in question and task == "cell_extraction":
             await asyncio.sleep(1.5)
@@ -139,6 +143,12 @@ class ScriptedCodex:
             anchor = si["suggestion_target"]["phrases"][0]["phrase"]
             output["terms"] = [{"phrase": phrase, "synonym_of": anchor}
                                for phrase in (SUGGESTED, UNHELD_SUGGESTION, anchor)]
+        elif si["task_type"] == "search_query":
+            # A query in the fixture's own words (D92): two topic terms and a method term, one backup per block.
+            output |= {"setting": [{"term": "relay networks", "kind": "topic", "why": "SYNTHETIC: where the work happens"}],
+                       "task": [{"term": "molecule release", "kind": "topic", "why": "SYNTHETIC: the process studied"},
+                                {"term": "bisection search", "kind": "method", "why": "SYNTHETIC: the method named"}],
+                       "setting_backup": [{"term": "molecular relays"}], "task_backup": [{"term": "release timing"}]}
         elif si["task_type"] == "abstract_screening":
             # `valid_response` already quotes each abstract's own first words, which is what the code stage
             # verifies; only the keyword false positive of case D is labelled apart, as screening does.
@@ -188,6 +198,9 @@ def main() -> None:
     settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1,
                         search_workflow=os.environ.get("DEIXIS_SEARCH_WORKFLOW", "legacy"),
                         protocol_approval=os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "ask"),
+                        # Cases A–H keep the code's query alone, as they always had it; case I asks for the
+                        # model-written query of D92.
+                        search_query=os.environ.get("DEIXIS_SEARCH_QUERY", "code"),
                         # Case H reads the approval card of one discovery run; the retrieval run that would follow
                         # it (D83) is not part of the case and would open a second run under it.
                         fulltext_fetch="off", fulltext_adjudication="off")

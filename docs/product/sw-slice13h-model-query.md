@@ -1,10 +1,12 @@
 # SW dilim 13h — Arama sorgusunu model yazar, kodun sorgusu yanında aranır
 
-**Tarih:** 23 Eylül 2026. **Durum:** dosya hazır. **Ana dosya:** [sw-status.md](sw-status.md). **Karar:** D92 (dilim
+**Tarih:** 23 Eylül 2026. **Durum:** uygulandı, inceleme bekliyor. **Ana dosya:** [sw-status.md](sw-status.md). **Karar:** D92 (dilim
 yazar). **Önkoşul:** 13g (uygulandı), iki model sorgusu ölçümü (`.local/sw-model-query-experiment-2026-09-23/`,
 `.local/sw-model-query-experiment-2026-09-24/result.md`). **Tür:** Kur. **Uygulayan:** Opus · high. **İnceleme:** tam
 (Fable); sorgu neyin bulunacağını belirler, kanıtın en başıdır. **Plan:** Opus, 23 Eylül 2026. Dilim 14 (kaynak
 yönlendirme) ayrı iş olarak kalıyor.
+
+**Uygulama notu (23 Eylül 2026):** Task 1–6 uygulandı, kabul tuttu (kuantum 23 × 3, paket 4 × 3). Sapmalar ve ölçülmeyenler [sw-status.md](sw-status.md) satır 13h ve D92'de.
 
 **Goal:** Sahip 23 Eylül'de sorguyu modelin yazmasına karar verdi. İkinci ölçümün kuralı önceden sabitlendi ve sonuç şu
 oldu: yalnız model üç çağrının birinde kuantum sorusunda 17 eser buldu (sınır 18). Model ile kod aynı okuma bütçesinde

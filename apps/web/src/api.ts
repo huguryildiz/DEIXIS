@@ -71,7 +71,8 @@ export type ApprovalTerm = {
   // block (the code rule, the model's labelling step, the user).
   // 'model': the user added a name the model proposed for another term on this card (D82). The origin is derived
   // on the server from the stored proposals; the correction the browser sends never names it.
-  origin: 'question' | 'key_terms' | 'user' | 'model'; block_origin: 'rule' | 'model' | 'user'
+  // 'search_query': the model that wrote this run's query chose it (D92); its block origin is the same.
+  origin: 'question' | 'key_terms' | 'user' | 'model' | 'search_query'; block_origin: 'rule' | 'model' | 'user' | 'search_query'
   // The form the phrase enters the query in, and what each form was counted at. A null count was not read.
   root: string; in_query: 'root' | 'phrase'; phrase_count: number | null; root_count: number | null
   // and_only: the form is too frequent to stand alone. dropped: why the phrase left the query, e.g. 'zero_results'.
@@ -92,9 +93,30 @@ export type ApprovalSide = {
   claim_words: string[]; exclusion_words: string[]; outcome_terms: string[]
   gate_count: number | null; too_broad: boolean
   criterion: ApprovalCriterion | null; criterion_available: boolean; sought_term_in_criterion: boolean | null
-  // Only the approved side carries them: the compiled text of every query the run will send.
-  queries?: { provider_id: string; query_text: string }[]
+  // The approved side carries them, and a proposal whose query a model wrote (D92): the compiled text of every query
+  // the run will send, and which vocabulary wrote each one.
+  queries?: { provider_id: string; query_text: string; origin?: 'model' | 'code' }[]
+  // Present when a model wrote the query, or was asked to and failed (D92).
+  search_query?: SearchQuerySide
 }
+// What the card shows of a model-written query (D92). The counts and warnings are code's checks; `kind` and `why`
+// are the model's own words about a term and decide nothing.
+export type SearchQueryTerm = {
+  phrase: string; kind: 'topic' | 'method' | 'population' | 'other' | null; why: string | null
+  // The term this backup took the place of, when a chosen term held no record.
+  backup_for: string | null
+  // Records holding the term together with the other block's chosen terms; null was not counted.
+  with_other_block: number | null
+}
+export type SearchQuerySide =
+  | { status: 'ready'; terms: SearchQueryTerm[]
+      warnings: { phrase: string; block: string; warning: 'no_records_with_other_block' | 'count_unknown' }[]
+      backups_left: Record<'setting' | 'task', string[]>
+      // The query code built from the question's words (slice 13g), offered beside the model's.
+      code_query: { searched: boolean; available: boolean
+                    terms: { phrase: string; block: 'setting' | 'task'; form: string }[]
+                    queries: { provider_id: string; query_text: string }[] } }
+  | { status: 'failed'; choice: 'code_only' | null; attempts: { attempt: number; reason: string | null }[] }
 export type TermEdit = { op: 'remove' | 'move' | 'add'; phrase: string; block?: ApprovalBlock }
 // What the user sends back. An empty package approves the proposal as it stands; a criterion given replaces the
 // proposed one whole (slice 08a).
@@ -102,6 +124,8 @@ export type ProtocolEdits = {
   terms: TermEdit[]
   criterion: { criterion: string; parts: CriterionPart[]; cue_phrases: { phrase: string; part: string | null }[]; exclusion_title_words: string[] } | null
   note: string | null
+  // Whether the code's query is searched beside a model-written one; null leaves the proposal's choice (D92).
+  code_query?: boolean | null
 }
 export type RunApproval = {
   // waiting: the card is editable. submitted: the correction was sent and is being applied. approved: it is frozen.
@@ -503,6 +527,8 @@ export const api = {
   // Ask the model for other names of the terms on the card. Nothing it proposes is searched until the user adds
   // it in their correction (D82).
   suggestTerms: (runId: string) => request<Run>(`/api/runs/${runId}/term-suggestions`, { method: 'POST' }),
+  // After the model could not write the query: search with the code's query alone (D92).
+  chooseCodeQuery: (runId: string) => request<Run>(`/api/runs/${runId}/search-query-choice`, { method: 'POST' }),
   passage: (id: string, passageId: string) => request<Passage>(`/api/researches/${id}/passages/${passageId}`),
   assetText: (id: string, assetId: string) => request<AssetText>(`/api/researches/${id}/assets/${assetId}/text`),
   assetFigures: (id: string, assetId: string) => request<{ figures: AssetFigure[] }>(`/api/researches/${id}/assets/${assetId}/figures`),

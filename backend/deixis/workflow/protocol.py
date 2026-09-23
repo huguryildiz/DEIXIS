@@ -34,6 +34,36 @@ def _model(role: tuple[str, str | None, str | None] | None) -> dict[str, Any] | 
     return {"connection": connection, "model": model, "reasoning_effort": reasoning_effort}
 
 
+def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any]) -> dict[str, Any]:
+    """What the model-written query step left (D92): the prompt it was asked with, its answer, the counts that decided
+    the query, and whether the code's query was searched beside it. A run whose model failed and whose user chose the
+    code's query alone says that instead."""
+    from deixis.domain.contracts import SCHEMA_VERSIONS
+    from deixis.domain.skill import RUNTIME_FILES
+    from deixis.workflow.expansion import queried_form, queried_terms
+
+    record = vocabulary["search_query"]
+    body = {
+        "status": record["status"],
+        # The prompt version: its method files, whose text `skill_package_hash` above covers, and the answer's schema.
+        "prompt": {"files": list(RUNTIME_FILES["search_query"]), "schema_version": SCHEMA_VERSIONS["SearchQuery"]},
+        "model": _model(step_model(scope, "search_query")),
+        "attempts": record["attempts"],
+    }
+    if record["status"] != "ready":
+        return body | {"choice": record.get("choice"), "code_query_searched": True}
+    code = vocabulary["code_query"]
+    return body | {
+        "step_input_id": record["step_input_id"], "resolved_model": record["resolved_model"],
+        "answer": record["answer"], "checks": record["checks"], "warnings": record["warnings"],
+        "terms": record["meta"],
+        "code_query_searched": code["searched"],
+        # The code's own blocks as they were compiled (slice 13g), whether or not the user left them switched on.
+        "code_concept_blocks": {block: [queried_form(t) for t in queried_terms(code["vocabulary"], block)]
+                                for block in ("setting", "task")},
+    }
+
+
 def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str, Any] | None,
                    queries: list[dict[str, Any]], skill_package_hash: str, settings: Settings,
                    vocabulary: dict[str, Any] | None = None,
@@ -65,6 +95,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     from deixis.workflow.ranking import THRESHOLDS as RANKING_THRESHOLDS
     from deixis.workflow.approval import block_origins
     from deixis.workflow.vocabulary import GATE_BLOCKS, THRESHOLDS as VOCABULARY_THRESHOLDS
+    from deixis.workflow.search_query import THRESHOLDS as SEARCH_QUERY_THRESHOLDS
 
     queried = [t for t in vocabulary["terms"] if not t["dropped"]] if vocabulary else []
     # The words this research reads a title for a survey with, and the ones its own question took away (SW5.1).
@@ -96,6 +127,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         **({"criterion_origin": {name: criterion[name] for name in CRITERION_ORIGIN_FIELDS}} if criterion else {}),
         # How this vocabulary and criterion were agreed before the freeze (SW2.6, SW15.3).
         **({"approval": approval} if approval else {}),
+        # Who wrote the query and what came of it, when a model wrote it (D92). A body without it is 13g's.
+        **({"search_query": _search_query(scope, vocabulary)} if vocabulary and vocabulary.get("search_query") else {}),
         # The blocks a code vocabulary gated the search with, each holding the form of its terms that was queried.
         "concept_blocks": ({block: [t["root"] if t["in_query"] == "root" else t["phrase"]
                                     for t in queried if t["block"] == block] for block in GATE_BLOCKS}
@@ -114,7 +147,9 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         **({"expansion": {"skipped": expansion["skipped"], "candidates": expansion["candidates"],
                           "terms": list(expansion["terms"])}} if expansion else {}),
         "compiled_queries": [{"provider_id": q["provider_id"], "query_text": q["query_text"],
-                              **({"results": q["results"]} if q.get("results") is not None else {})}
+                              **({"results": q["results"]} if q.get("results") is not None else {}),
+                              # Which vocabulary wrote the query: the model's or the code's beside it (D92).
+                              **({"origin": q["origin"]} if q.get("origin") else {})}
                              for q in queries],
         # The databases searched, which is what the record reports (PRISMA-S item 1); a connector kept in scope only
         # to verify a known DOI is named apart so that it is not read as a searched source (D87). A `legacy` body
@@ -169,6 +204,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                                           "quote_min_chars": FULLTEXT_QUOTE_MIN_CHARS}}
                if scope.get("search_workflow") == "sw" else {}),
             **({"vocabulary": VOCABULARY_THRESHOLDS} if vocabulary else {}),
+            **({"search_query": SEARCH_QUERY_THRESHOLDS}
+               if vocabulary and (vocabulary.get("search_query") or {}).get("status") == "ready" else {}),
             **({"expansion": EXPANSION_THRESHOLDS} if expansion else {}),
         },
         "rule_table_version": "legacy",

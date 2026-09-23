@@ -149,7 +149,7 @@ def test_the_budget_of_a_retrieval_run_calls_no_model_and_sends_no_search():
     for effort, limit in FULLTEXT_WORK_LIMIT.items():
         assert fulltext.fetch_budget(effort) == {"max_model_calls": 0, "max_provider_requests": 0,
                                                  "max_fulltext_works": limit}
-    assert [FULLTEXT_WORK_LIMIT[e] for e in ("quick", "standard", "detailed")] == [40, 100, 300]
+    assert [FULLTEXT_WORK_LIMIT[e] for e in ("quick", "standard", "detailed")] == [80, 100, 300]  # quick was 40 before D94
 
 
 # ---- the identity check (Task 3) ---------------------------------------------------------------

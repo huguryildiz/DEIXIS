@@ -2,6 +2,47 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D94 — Keep the full-text order, and give quick twice the full-text room: fetch 80 works, read 40
+
+**Status:** accepted; implemented 2026-09-23 (slice 14a). **Date:** 2026-09-23.
+
+**Context:** In the third D88 measurement (`.local/sw-measure-2026-09-24/`) 13 / 17 / 21 of the 31 verified quantum
+works passed the abstract stage, but only 1 / 7 / 17 were read in full text. The status row read this as a fault of the
+inspection order (D79) that the full-text plan (D83) takes the head of. A model-free replay of the plan on eleven stored
+libraries (`.local/sw-slice14a-order-replay-2026-09-23/`: the three measurement libraries, where the replay reproduced
+the stored plan exactly, slice 14's six quantum acceptance libraries and two packet-size `detailed` libraries) found:
+the code signals place the verified works well ahead of the other candidates, and today's order finds about twice what
+a random order inside the same groups would. What keeps them out is room: `quick` had 234–348 eligible works for 40
+places, `standard` 520–816 for 100, most of them candidates by the title rule (`blocks_in_title`) that no model read.
+Five order candidates fixed before their numbers were seen (abstract candidates first, which is today's order; model-kept,
+then unsure, then code-only; model-kept first; BM25 alone) and three tried afterwards (model-kept works as TF-IDF and
+graph seeds; two tierings) did not beat today's order consistently; the tiered ones lost 3 to 10 works in `standard`
+and `detailed`. Doubling the plan limit took `quick` from 16 to 28 verified works in the plan over three runs and
+`standard` from 28 to 45; `detailed` already took 60 of its 66.
+
+**Decision:** The order is unchanged: D79's fused inspection order and D83's groups stay as they are. `quick`'s
+full-text limits double: `FULLTEXT_WORK_LIMIT["quick"]` 40 → 80 works fetched and `FULLTEXT_READ_LIMIT["quick"]` 20 → 40
+works read (80 model calls), the read limit kept at half the fetch limit because fewer than half the fetched works yield a
+PDF. `standard` (100 / 50) and `detailed` (300 / 150) are unchanged: `standard` is already over its 15-minute target and
+`detailed` already reaches almost every eligible verified work. A run keeps the budget it was queued with, so a run
+queued before this change finishes with 40 / 20. Live acceptance under K8 (`.local/sw-slice14a-acceptance-2026-09-23/`,
+Luna · medium, one run per question): quantum `quick` 9.8 minutes end to end (target 10; the third measurement 7.5),
+fetch 0.5 → 1.4 and reading 1.2 → 2.1 minutes; 8 verified works in the plan (7 in places 1–40, 1 in 41–80), 4 read,
+2 cited (third measurement 1, 1, 1); packet-size `quick` 8.4 minutes.
+
+**Limits:** The replay shows only that none of the orders tried beat today's on these libraries and that the plan limit
+moved the count; it does not show the order is right in general or that the limit is the only loss. Two topics: quantum
+in three libraries per effort, packet size only in two `detailed` libraries, where no order and no doubled limit reached
+its one eligible verified work (place 1,216 and 1,663). The truth is two incomplete lists (31 quantum works, 4 packet
+works from earlier pools); relevant works outside them are not counted. The replay counts works entering the plan, not
+PDFs found, works read or works cited. The embedding signal and TF-IDF with user seeds ran in none of the libraries and
+were not tried. The abstract stage's own read limit (the same order's head; 2–13 verified works never read) and the
+`blocks_in_title` rule that fills the candidate groups are left as they are. The live acceptance is one run per question:
+the limit's own share in it is one verified work in places 41–80 (read, not cited); the rise from 1 to 4 read against
+the third measurement is mostly that run's own order and PDFs, and the time difference is two separate runs, not a
+paired comparison. Only 21 of 80 planned works had a PDF, so the read limit of 40 did not bind. `quick` now sits just
+under its 10-minute target; a slower discovery would push it over. `standard` and `detailed` were not run.
+
 ## D93 — Route the sw search to its sources from one field distribution, search Semantic Scholar through its bulk endpoint, and count what each source brought
 
 **Status:** accepted; implemented 2026-09-23 (slice 14). **Date:** 2026-09-23.

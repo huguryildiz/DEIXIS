@@ -9,8 +9,9 @@ high diyordu; bu oturum Opus'ta koştu). **Yeniden oynatma:**
 
 **Goal:** Üçüncü D88 ölçümünde özet aşamasını geçen 13 / 17 / 21 doğrulanmış kuantum eserinden yalnız 1 / 7 / 17'si
 tam metinde okundu. Satır 14a bunu sıranın kusuru saydı: tam metin planı inceleme sırasının başını alıyor, doğrulanmış
-eserler sınırın gerisinde kalıyor. Bu dilim önce sırayı modelsiz yeniden oynattı. Sonuç: sıra kusurlu değil, sınır dar.
-Dilim sıra kuralını değiştirmez, yalnız `quick`'in iki tam metin sınırını iki katına çıkarır (karar 2).
+eserler sınırın gerisinde kalıyor. Bu dilim önce sırayı modelsiz yeniden oynattı. Sonuç: denenen sıralardan hiçbiri bugünkünü bu
+kütüphanelerde tutarlı biçimde geçmedi; ölçülen kazancı yalnız plan sınırını büyütmek verdi. Kayıp yalnız sınırdan da
+gelmiyor: özet aşamasının okuma kesimi, `blocks_in_title`, PDF bulunabilirliği ve paket sorusu açık kalıyor. Dilim sıra kuralını değiştirmez, yalnız `quick`'in iki tam metin sınırını iki katına çıkarır (karar 2).
 
 ## Elimizdeki sayılar
 
@@ -22,7 +23,7 @@ Hepsi yeniden oynatmadan, on bir kütüphaneden: kuantumda üçüncü ölçüm (
    yaklaşık iki katını buluyor: planda `quick` 16 / 8,2, `standard` 28 / 14,0, `detailed` 60 / 40,9 (üç koşunun
    toplamı). On bir kütüphanenin hiçbirinde TF-IDF koşmadı (kullanıcı tohumu yok) ve gömme kapalıydı.
 2. **Özet aşamasının kararı sıraya zaten ulaşıyor**, grup düzeyinde: kullanıcının dahil ettikleri → `candidate` →
-   `unresolved` + `fulltext_fetch` (D83). Promptun ilk adayı ("dahil edilenler önce, sonra sıra") bugünkü planın aynısı.
+   `unresolved` + `fulltext_fetch` (D83). Promptun ilk adayı ("dahil edilenler önce, sonra sıra") on bir kütüphanede bugünkü planla aynı sonucu verdi.
 3. **Plana aday olan eser, planın aldığından çok fazla.** `quick`'te 40 yere 234–348, `standard`'da 100 yere 520–816,
    `detailed`'da 300 yere 676–797 eser. Adayların çoğunu model okumadı: başlığında iki blok da geçen eser kod kuralıyla
    (`blocks_in_title`) aday oluyor, m3 `quick`'te 246 adayın 215'i. 31 eserlik listeye göre modelin tuttukları

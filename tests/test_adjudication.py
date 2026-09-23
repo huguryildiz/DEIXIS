@@ -77,7 +77,7 @@ def library(tmp_path):
 
 # ---- task 1 -----------------------------------------------------------------------------------
 @pytest.mark.parametrize(("effort", "calls", "works_n"), [
-    ("quick", 40, 20), ("standard", 100, 50), ("detailed", 300, 150),
+    ("quick", 80, 40), ("standard", 100, 50), ("detailed", 300, 150),
 ])
 def test_the_read_budget_is_two_calls_for_each_work_the_limit_reaches(effort, calls, works_n):
     assert adjudication.read_budget(effort) == {

@@ -565,6 +565,32 @@ def test_a_run_paused_in_the_middle_finishes_the_whole_plan_when_it_is_resumed(t
                        "not_reached": 0, "identity": {"unconfirmed": 3}, "routes": {"record_link": 3}}
 
 
+def test_a_resumed_run_keeps_the_limit_it_was_queued_with_after_the_effort_limit_changes(tmp_path, monkeypatch):
+    """D94 raised quick's limit; a run queued before that finishes with the room it was given, not the new one."""
+    monkeypatch.setattr(fulltext, "FULLTEXT_WORK_LIMIT", dict(fulltext.FULLTEXT_WORK_LIMIT, quick=2))
+    urls = {f"https://example.org/w{n}.pdf": ok() for n in (1, 2, 3)}
+    works = [work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in (1, 2, 3)]
+    fetcher = Fetcher(urls)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher)
+    fetcher.hook = paused_after(app, 1)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, paused = wait_for_retrieval(client, rid)
+        assert paused["status"] == "paused", paused
+        monkeypatch.setattr(fulltext, "FULLTEXT_WORK_LIMIT", dict(fulltext.FULLTEXT_WORK_LIMIT, quick=3))
+        fetcher.hook = None
+        client.post(f"/api/runs/{paused['id']}/resume")
+        _, resumed = wait(client, rid, paused["id"])
+        plan = step_output(app.state.store, resumed["id"], "fulltext_plan")
+    finally:
+        client.__exit__(None, None, None)
+    assert resumed["status"] == "completed"
+    assert resumed["budget"]["max_fulltext_works"] == 2
+    assert plan["limit"] == 2 and len(plan["works"]) == 2 and plan["not_reached"] == 1
+    assert len(fetcher.calls) == 2
+
+
 def test_an_uninterrupted_run_of_the_same_plan_reports_the_same_numbers(tmp_path, monkeypatch):
     monkeypatch.setattr(fulltext, "FULLTEXT_WORK_LIMIT", dict(fulltext.FULLTEXT_WORK_LIMIT, quick=3))
     urls = {f"https://example.org/w{n}.pdf": ok() for n in (1, 2, 3)}

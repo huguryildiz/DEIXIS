@@ -82,12 +82,17 @@ ABSTRACT_QUOTE_MIN_CHARS = 12
 # five seconds and five requests on one machine and one network. Neither the limit nor the time it implies was
 # measured in the product. A work outside the limit is not dropped: it is counted as not reached and the next
 # retrieval run starts from it.
-FULLTEXT_WORK_LIMIT = {"quick": 40, "standard": 100, "detailed": 300}
+# 2026-09-23 (D94, slice 14a): quick 40 -> 80. A model-free replay of the plan on eleven stored libraries
+# (.local/sw-slice14a-order-replay-2026-09-23) found the limit, not the order, keeps verified works out: quick had
+# 234-348 eligible works for 40 places, and doubling the limit put 28 instead of 16 verified quantum works in the
+# plan over three runs. One topic; the time it costs is measured by the slice's live acceptance, not here.
+FULLTEXT_WORK_LIMIT = {"quick": 80, "standard": 100, "detailed": 300}
 
 # How many works one full-text reading run sends to the model, by effort (D85, slice 12). Hand-picked and not
 # measured. Each work is read twice, so the model-call budget is twice this. A work outside the limit is not
 # dropped: it is counted as not reached and the next reading run starts from it.
-FULLTEXT_READ_LIMIT = {"quick": 20, "standard": 50, "detailed": 150}
+# 2026-09-23 (D94): quick 20 -> 40, kept at half the fetch limit because fewer than half the fetched works get a PDF.
+FULLTEXT_READ_LIMIT = {"quick": 40, "standard": 50, "detailed": 150}
 FULLTEXT_RUNS = 2
 FULLTEXT_PASSAGES_PER_CALL = 12
 FULLTEXT_CRITERION_PASSAGES = 8

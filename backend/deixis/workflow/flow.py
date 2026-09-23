@@ -640,7 +640,15 @@ class ResearchFlow:
                 failure = {"reason": "invalid_model_output", "detail": answer["issues"]}
         self._checkpoint(run_id, revision)
         if failure is None:
-            checked = await search_query_rules.check(answer["result"], self._count_probe(scope))
+            # The counts are written on the step as soon as they are read, so a worker that dies before the step
+            # closes reads them back instead of asking OpenAlex again (the model step itself is already stored).
+            stored = output.get("checked")
+            if stored is not None and stored["attempt"] == attempt:
+                checked = stored["result"]
+            else:
+                checked = await search_query_rules.check(answer["result"], self._count_probe(scope))
+                output["checked"] = {"attempt": attempt, "result": checked}
+                self.store.set_step_output(step["id"], output)
             if not checked["searchable"]:
                 failure = {"reason": "no_searchable_term", "detail": checked["checks"]}
         if failure is not None:
@@ -651,6 +659,9 @@ class ResearchFlow:
                 "reason": failure["reason"], "retries_left": search_query_rules.ATTEMPTS - attempt})
         record = {"status": "ready", "attempts": output["attempts"] + [{"attempt": attempt, "reason": None}],
                   "step_input_id": answer["step_input_id"], "resolved_model": answer["resolved_model"],
+                  # The package the model was sent, from its stored StepInput: the body is frozen later, perhaps
+                  # under a newer package, and must not credit the answer to that one.
+                  "skill_package_hash": self.store.step_input_payload(answer["step_input_id"])["skill_package_hash"],
                   "answer": answer["result"]}
         built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, record)
         queries = search_query_rules.compile_queries(built, scope["providers"], run["budget"]["max_provider_requests"])

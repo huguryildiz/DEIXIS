@@ -43,9 +43,11 @@ correction (`edits.code_query`). (6) A run is given `SEARCH_QUERY_CALLS` (4) on 
 tests and measurements. `legacy` is unchanged.
 
 **Protocol body (version note):** `deixis.protocol.v1` gains, for a model-written query only, `search_query`: status,
-the prompt (`files`, whose text the body's `skill_package_hash` covers, and `schema_version`), the model, attempts,
-`step_input_id`, `resolved_model`, the model's answer, every count and warning, each term's kind and reason,
-`code_query_searched` and the code's `code_concept_blocks`; `compiled_queries` entries gain `origin`; `thresholds` gain
+the prompt (`files`, `schema_version` and the `skill_package_hash` of the StepInput the model was sent, which can
+differ from the body's own when the package changed before approval), the model, attempts, `step_input_id`,
+`resolved_model`, the model's answer, every count and warning, each term's kind and reason, `code_query_searched` (a
+code-origin query is among `compiled_queries`), `code_query_switched_on` (the card's switch, which the request limit or
+an identical model query can leave with nothing to send) and the code's `code_concept_blocks`; `compiled_queries` entries gain `origin`; `thresholds` gain
 `search_query`. A run whose model failed and whose user chose the code's query records `search_query` with status
 `failed`, its attempts and `choice: code_only`. A body without these fields was frozen before this decision or by a run
 on the `code` setting; the fields' absence means they did not exist then. `concept_blocks` and `vocabulary` describe the

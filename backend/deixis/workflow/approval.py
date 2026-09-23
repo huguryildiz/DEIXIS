@@ -137,6 +137,9 @@ def check_edits(proposal: dict[str, Any], edits: dict[str, Any]) -> list[str]:
                                    or proposal["vocabulary"]["block_assignment"] != "search_query"):
         # The switch exists only on a card whose query a model wrote; the code's query is then offered beside it (D92).
         errors.append("The code query switch is a true or false answer on a card whose query a model wrote")
+    elif code_query is True and not proposal["vocabulary"]["code_query"]["searched"]:
+        # A code query that could not be searched was never offered; turning it on would be a choice nobody applies.
+        errors.append("The code's query cannot be searched on its own, so it cannot be switched on")
     note = edits.get("note")
     if note is not None and (not isinstance(note, str) or len(note) > MAX_NOTE_CHARS):
         errors.append(f"The note is longer than {MAX_NOTE_CHARS} characters")

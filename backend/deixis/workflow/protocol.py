@@ -34,7 +34,7 @@ def _model(role: tuple[str, str | None, str | None] | None) -> dict[str, Any] | 
     return {"connection": connection, "model": model, "reasoning_effort": reasoning_effort}
 
 
-def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any]) -> dict[str, Any]:
+def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
     """What the model-written query step left (D92): the prompt it was asked with, its answer, the counts that decided
     the query, and whether the code's query was searched beside it. A run whose model failed and whose user chose the
     code's query alone says that instead."""
@@ -53,11 +53,15 @@ def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any]) -> dict[str
     if record["status"] != "ready":
         return body | {"choice": record.get("choice"), "code_query_searched": True}
     code = vocabulary["code_query"]
+    body["prompt"]["skill_package_hash"] = record["skill_package_hash"]  # the StepInput's, not the freeze's
     return body | {
         "step_input_id": record["step_input_id"], "resolved_model": record["resolved_model"],
         "answer": record["answer"], "checks": record["checks"], "warnings": record["warnings"],
         "terms": record["meta"],
-        "code_query_searched": code["searched"],
+        # Whether a code-origin query is really among the compiled ones: the switch can be on while the request
+        # limit or an identical model query left none of the code's queries to send.
+        "code_query_searched": any(q.get("origin") == "code" for q in queries),
+        "code_query_switched_on": code["searched"],
         # The code's own blocks as they were compiled (slice 13g), whether or not the user left them switched on.
         "code_concept_blocks": {block: [queried_form(t) for t in queried_terms(code["vocabulary"], block)]
                                 for block in ("setting", "task")},
@@ -128,7 +132,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         # How this vocabulary and criterion were agreed before the freeze (SW2.6, SW15.3).
         **({"approval": approval} if approval else {}),
         # Who wrote the query and what came of it, when a model wrote it (D92). A body without it is 13g's.
-        **({"search_query": _search_query(scope, vocabulary)} if vocabulary and vocabulary.get("search_query") else {}),
+        **({"search_query": _search_query(scope, vocabulary, queries)}
+           if vocabulary and vocabulary.get("search_query") else {}),
         # The blocks a code vocabulary gated the search with, each holding the form of its terms that was queried.
         "concept_blocks": ({block: [t["root"] if t["in_query"] == "root" else t["phrase"]
                                     for t in queried if t["block"] == block] for block in GATE_BLOCKS}

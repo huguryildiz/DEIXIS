@@ -206,6 +206,28 @@ def test_a_correction_acts_on_the_model_terms_counts_what_it_adds_and_can_switch
                                                             "freight corridor", "delay"}
 
 
+def test_the_code_query_cannot_be_switched_on_where_it_could_not_be_searched():
+    from deixis.workflow import approval
+
+    errors = approval.check_edits({"vocabulary": proposal(too_broad=True)}, {"code_query": True})
+    assert errors == ["The code's query cannot be searched on its own, so it cannot be switched on"]
+    assert approval.check_edits({"vocabulary": proposal(too_broad=True)}, {"code_query": False}) == []
+
+
+def test_the_protocol_says_the_code_query_was_searched_only_when_one_of_its_queries_was_compiled():
+    from deixis.workflow.protocol import _search_query as protocol_block
+
+    built = proposal()
+    built["search_query"] |= {"skill_package_hash": "sha256:x"}
+    scope = {"model_connection": "fake", "requested_model": "fake-model"}
+    kept = search_query.compile_queries(built, ["openalex", "semantic_scholar"], 4)
+    cut = search_query.compile_queries(built, ["openalex", "semantic_scholar"], 1)
+    assert protocol_block(scope, built, kept)["code_query_searched"] is True
+    # The switch was on, but the request limit left only the model's query to send.
+    block = protocol_block(scope, built, cut)
+    assert block["code_query_searched"] is False and block["code_query_switched_on"] is True
+
+
 # ---- the run around it ---------------------------------------------------------------------------------------
 
 QUESTION = "SYNTHETIC: which scheduling methods have been proposed for rail freight timetables?"
@@ -304,8 +326,10 @@ def test_the_model_writes_the_query_and_the_code_query_is_searched_beside_it(tmp
     assert next(q["query_text"] for q in stored["queries"] if q["origin"] == "code") in openalex.searches
     body = protocol_body(client, rid)
     assert body["search_query"]["status"] == "ready" and body["search_query"]["code_query_searched"] is True
+    # The prompt version is the one the model was sent, read from its StepInput and not from the package at freeze.
     assert body["search_query"]["prompt"] == {"files": ["SKILL.md", "references/search-query.md"],
-                                              "schema_version": "deixis.search_query.v1"}
+                                              "schema_version": "deixis.search_query.v1",
+                                              "skill_package_hash": calls(adapter)[0]["skill_package_hash"]}
     assert body["search_query"]["answer"]["setting"][0]["term"] == "synthetic setting"
     assert {q.get("origin") for q in body["compiled_queries"]} == {"model", "code"}
     assert body["concept_blocks"] == {"setting": ["synthetic setting"], "task": ["synthetic task"]}
@@ -471,3 +495,37 @@ def test_the_code_setting_makes_no_model_query_step(tmp_path, monkeypatch):
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id)
     assert not calls(adapter) and "search_query" not in [s["operation_key"] for s in run["steps"]]
+
+
+def test_a_worker_that_dies_after_the_counts_reads_them_back_and_asks_nothing_twice(tmp_path, monkeypatch):
+    from deixis.storage import db
+    from deixis.workflow import flow as flow_module
+
+    build = flow_module.search_query_rules.vocabulary
+    died = []
+
+    def dies_once(*args):
+        if not died:
+            died.append(True)
+            raise RuntimeError("SYNTHETIC crash after the counts")
+        return build(*args)
+
+    monkeypatch.setattr(flow_module.search_query_rules, "vocabulary", dies_once)
+    first, adapter = OpenAlex(), FakeAdapter()
+    client = client_for(tmp_path, monkeypatch, first, adapter)
+    rid, run_id = start(client)
+    wait(client, rid, run_id, ("failed",))
+    probes = step_output(client, run_id, "search_query")["checked"]["result"]["probes"]
+    client.__exit__(None, None, None)
+    assert probes and len(calls(adapter)) == 1
+    conn = db.connect(tmp_path / "data" / "library.sqlite")
+    conn.execute("UPDATE runs SET status = 'running' WHERE id = ?", (run_id,))  # the worker died mid-step
+    conn.close()
+
+    second, adapter = OpenAlex(), FakeAdapter()
+    client = client_for(tmp_path, monkeypatch, second, adapter)
+    assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
+    _, run = wait(client, rid, run_id, ("completed", "failed"))
+    assert run["status"] == "completed", run
+    assert not calls(adapter)
+    assert not {p["query"] for p in probes} & set(second.counts)

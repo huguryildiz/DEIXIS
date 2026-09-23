@@ -1,6 +1,6 @@
 # SW dilim 14a — Tam metin sırası
 
-**Tarih:** 23 Eylül 2026. **Durum:** plan; aşağıdaki kararlar sahibin onayını bekliyor. **Ana dosya:**
+**Tarih:** 23 Eylül 2026. **Durum:** plan; aşağıdaki altı karar önerildiği gibi sahip tarafından onaylandı (23 Eylül 2026). **Ana dosya:**
 [sw-status.md](sw-status.md). **Karar:** D94 (dilim yazar). **Önkoşul:** 14 (kapandı, `9b57756`, D93).
 **Tür:** Kur. **Uygulayan:** Opus · medium öneriyorum (satırda Opus · high yazıyor; karar 2 onaylanırsa iş iki sabit ve
 testleri). **İnceleme:** toplu öneriyorum (satırda tam, Fable). **Plan:** Opus · high, 23 Eylül 2026 (prompt Fable ·
@@ -53,7 +53,7 @@ Hepsi yeniden oynatmadan, on bir kütüphaneden: kuantumda üçüncü ölçüm (
 7. **Süre** (m3, `quick`): getirme 0,5 dk (40 iş), tam metin okuma 1,2 dk (22 çağrı), toplam 7,5 dk; hedef 10 dk.
    `standard` 17,9 dk (hedef 15), `detailed` 39,7 dk (hedef 20).
 
-## Sahibin vereceği kararlar
+## Sahibin onayladığı kararlar (23 Eylül 2026)
 
 1. **Sıra kuralı değişmez.** Önerim: D79'un sırası ve D83'ün grupları olduğu gibi kalsın. Gerekçe: beş sabit adaydan
    ve sonradan denenen üç sıradan hiçbiri üç kuantum koşusunda A'yı tutarlı biçimde geçmedi. C, D ve E

@@ -36,6 +36,8 @@ def test_seeds_are_deduplicated_at_work_level_before_the_count():
             "c": row("c", work="wrk_a", title="another title"), "d": row("d", title="SYNTHETIC pallet loading")}
     assert chaining.code_seeds(["a", "b", "c", "d"], rows, set(), limit=2) == ["a", "d"]
     assert chaining.code_seeds(["a", "b", "c", "d"], rows, set(), limit=15) == ["a", "d"]
+    # A head whose title is a user seed's is that seed under another record, not a code seed of its own.
+    assert chaining.code_seeds(["a", "d"], rows, set(), user_titles={chaining.norm_title("SYNTHETIC pallet loading")}) == ["a"]
 
 
 def test_a_seed_without_an_openalex_id_gets_backward_links_only():

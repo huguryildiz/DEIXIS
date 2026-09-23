@@ -49,7 +49,8 @@ def policy(budget: dict[str, Any], effort: str) -> dict[str, Any] | None:
             "seed_order": "bm25_blocks_fused", "directions": list(DIRECTIONS), "source": SOURCE,
             "citing_cap": CHAIN_CITING_CAP, "backward_batch": CHAIN_BACKWARD_BATCH,
             "request_limit": budget["max_chain_requests"], "filter": FILTER,
-            "abstract_read": CHAIN_ABSTRACT_READ[effort], "plan_room": CHAIN_PLAN_ROOM[effort]}
+            "abstract_read": budget.get("chain_abstract_read", CHAIN_ABSTRACT_READ[effort]),
+            "plan_room": budget.get("chain_plan_room", CHAIN_PLAN_ROOM[effort])}
 
 
 def enabled(budget: dict[str, Any]) -> bool:
@@ -62,14 +63,17 @@ def norm_title(title: str | None) -> str:
 
 
 def code_seeds(order: list[str], rows: dict[str, dict[str, Any]], user_works: set[str],
-               limit: int = CHAIN_SEEDS) -> list[str]:
+               limit: int = CHAIN_SEEDS, user_titles: set[str] = frozenset()) -> list[str]:
     """The first `limit` distinct works of the BM25-and-blocks order that are not the user's own seeds.
 
     `rows` is the keyword pool by head (`work_id`, `title`). A head whose work or normalised title an earlier head
     already holds is the same seed and is skipped before it is counted, so the list is `limit` works long whenever
-    the pool holds that many; a user seed is apart and never shortens it (decision 2).
+    the pool holds that many; a user seed is apart and never shortens it (decision 2). The title rule is wider than
+    SW6's merge on purpose (D95): two records of one paper that the record path left apart, a preprint server's copy
+    and the journal's, would otherwise spend two seeds on the same references; a head whose title is a user seed's
+    is that seed.
     """
-    seen: set[str] = set()
+    seen: set[str] = {f"title:{title}" for title in user_titles}
     chosen: list[str] = []
     for head in order:
         row = rows.get(head)
@@ -93,7 +97,8 @@ def seed_list(order: list[str], rows: dict[str, dict[str, Any]], user: list[dict
     the ranking are not read: `rank_records` fills them up to fifteen together with the user's, so they are shorter
     than fifteen exactly when the user has seeds of their own (decision 2, Sol's finding).
     """
-    code = code_seeds(order, rows, {row["work_id"] for row in user}, limit)
+    code = code_seeds(order, rows, {row["work_id"] for row in user}, limit,
+                      {norm_title(row.get("title")) for row in user if row.get("title")})
     return ([{"source_version_id": head, "kind": "code"} for head in code]
             + [{"source_version_id": row["id"], "kind": "user"} for row in user])
 

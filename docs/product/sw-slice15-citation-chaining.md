@@ -13,6 +13,10 @@ plan kazanmıyor, çünkü D94'ün bulduğu darboğaz yer. Zincire ayrıca yer a
 sözcük eserlerine vermek de hemen hemen aynı kazancı veriyor. Bu yüzden dilim zinciri kendi özet okuması ve plan
 içindeki kendi yeriyle kurar (karar 4). Asıl getirisi, anahtar sözcüğün hiç bulamadığı eserlerle tavanı yükseltmesi.
 
+> **Uygulama notu (24 Eylül 2026):** bu dosyadaki `CHAIN_PLAN_ROOM` 20 / 25 / 25, kabulün iki başarısız denemesinden
+> sonra, sonuç görüldükten sonra ve `gpt-6-sol` · medium ile ortak kararla 12 / 12 / 12 oldu (D95,
+> `.local/sw-slice15-acceptance-2026-09-23/`). Kabul bu değere aittir, aşağıdaki 20 / 25 / 25 tasarımına değil.
+
 ## Elimizdeki sayılar
 
 Hepsi yeniden oynatmadan: on üç kütüphane (kuantum on, paket üç), 407 OpenAlex isteği (başarısız 0, ortanca 0,41 sn),

@@ -347,16 +347,19 @@ def query_vocabulary(scope: dict[str, Any], vocabulary: dict[str, Any],
 def pool_rows(store: Any, research_id: str, revision: int) -> tuple[dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]],
                                                                     list[dict[str, Any]]]:
     """Every version of the research, its versions by work, and the pool the ranking reads: one row per work head the
-    search offered, the records slice 05 holds back from screening included."""
+    search offered, the records slice 05 holds back from screening included. A work only an earlier run's citation
+    chaining found is not a keyword record and stays out (D95)."""
     heads = set(store.work_heads(research_id).values())
     versions = _versions(store, research_id)
+    chained = store.chain_only_works(research_id, revision)
     by_work: dict[str, list[dict[str, Any]]] = {}
     for version in versions.values():
         by_work.setdefault(version["work_id"], []).append(version)
     pool = [_work_row(candidate["source_version_id"], by_work[versions[candidate["source_version_id"]]["work_id"]])
             for candidate in store.candidates(research_id, revision)
             if candidate["origin"] != "user" and candidate["source_version_id"] in heads
-            and candidate["source_version_id"] in versions]
+            and candidate["source_version_id"] in versions
+            and versions[candidate["source_version_id"]]["work_id"] not in chained]
     return versions, by_work, pool
 
 

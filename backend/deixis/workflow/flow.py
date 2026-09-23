@@ -1305,9 +1305,13 @@ class ResearchFlow:
         step = self.store.step(run["id"], key, "model:abstract_screening")
         if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
             return None
-        output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
-                                        screening_target={"runs": ABSTRACT_RUNS, "run": run_no}, limiter=limiter,
-                                        budget_short="skip")
+        try:
+            # The chain's read is optional (D95): a failed call is recorded and its works stay unread, the run goes on.
+            output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
+                                            screening_target={"runs": ABSTRACT_RUNS, "run": run_no}, limiter=limiter,
+                                            budget_short="skip", optional=prefix != "abstract_screening")
+        except OptionalStepFailed:
+            return None
         return None if output.get("invalid") else output
 
     def _abstract_code_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
@@ -1342,11 +1346,15 @@ class ResearchFlow:
 
         works, writes = [], []
         chained = set(chain) if chain is not None else None
+        # The keyword stage leaves out what only an earlier run's chain found (D95); the chain reads its own.
+        chain_only = self.store.chain_only_works(rid, revision) if chain is None else set()
         for candidate in self.store.candidates(rid, revision):
             svid = candidate["source_version_id"]
             if candidate["origin"] == "user" or svid not in versions or heads.get(versions[svid]["work_id"]) != svid:
                 continue
             if chained is not None and svid not in chained:
+                continue
+            if versions[svid]["work_id"] in chain_only:
                 continue
             rows = []
             for version in sorted(by_work[versions[svid]["work_id"]], key=lambda v: v["id"]):
@@ -1362,7 +1370,8 @@ class ResearchFlow:
                              "decided_by": held["decided_by"] if held else None, "stale": stale})
             works.append({"work_id": versions[svid]["work_id"], "head": svid, "versions": rows})
 
-        limit = (CHAIN_ABSTRACT_READ if chain is not None else ABSTRACT_READ_LIMIT)[scope["effort"]]
+        limit = (run["budget"].get("chain_abstract_read", CHAIN_ABSTRACT_READ[scope["effort"]]) if chain is not None
+                 else ABSTRACT_READ_LIMIT[scope["effort"]])
         plan = abstract_stage.read_plan(order, works, limit, ABSTRACT_BATCH)
         writes += [(svid, "abstract_not_read") for svid in plan["not_read"]]
         written = self._write_abstract_codes(run, step["id"], writes)
@@ -1543,7 +1552,8 @@ class ResearchFlow:
             cursor, read, page = FIRST_PAGE, 0, 1
             while cursor is not None and read < CHAIN_CITING_CAP:
                 done = await self._chain_request(run, scope, f"chain:forward:{work_id}:{page}", "forward", forms,
-                                                 of, cites=work_id, cursor=cursor, page=page)
+                                                 of, cites=work_id, cursor=cursor, page=page,
+                                                 per_page=min(CHAIN_CITING_PAGE, CHAIN_CITING_CAP - read))
                 if done is None:
                     break
                 cursor, read, page = done.get("next_cursor"), read + done.get("returned", 0), page + 1
@@ -1551,7 +1561,7 @@ class ResearchFlow:
     async def _chain_request(self, run: dict[str, Any], scope: dict[str, Any], key: str, direction: str,
                              forms: dict[str, list[str]], links: list[Any], *, batch: list[str] | None = None,
                              cites: str | None = None, cursor: str | None = None,
-                             page: int | None = None) -> dict[str, Any] | None:
+                             page: int | None = None, per_page: int = CHAIN_CITING_PAGE) -> dict[str, Any] | None:
         """One chain request: sent once, its passing records written through the search's record path with their
         links, in one transaction. Returns the step's output, or None when nothing more should follow it (the
         request failed, was not sent, or the chain's request limit is spent)."""
@@ -1566,13 +1576,15 @@ class ResearchFlow:
             return None  # counted `not_reached` by the summary
         self.store.start_step(step["id"])
         connector = CONNECTORS["openalex"]
-        retries = PROVIDER_WAIT[scope["effort"]]
         attempts = 0
         while True:
             self.store.add_usage(run_id, "chain_requests")
+            # The provider's own rate-limit retries are requests too: they get only what the chain's limit leaves.
+            left = run["budget"]["max_chain_requests"] - self.store.run(run_id)["usage"].get("chain_requests", 0)
+            retries = max(0, min(PROVIDER_WAIT[scope["effort"]], left))
             async with fetch_module.host_gate(openalex.WORKS_URL):
                 if cites is not None:
-                    outcome = await openalex.citing_works(self.deps.http, cites, cursor or FIRST_PAGE, CHAIN_CITING_PAGE,
+                    outcome = await openalex.citing_works(self.deps.http, cites, cursor or FIRST_PAGE, per_page,
                                                           connector.api_key(), self.deps.settings.contact_email, retries)
                 else:
                     outcome = await openalex.works_by_ids(self.deps.http, batch or [], connector.api_key(),
@@ -1585,11 +1597,13 @@ class ResearchFlow:
                 await asyncio.sleep(1.5 * attempts)
                 continue
             break
-        self._record_chain(run, step, key, direction, outcome, forms, links, cites=cites, page=page)
+        self._record_chain(run, step, key, direction, outcome, forms, links, cites=cites, page=page, batch=batch,
+                           per_page=per_page)
         return self.store.step(run_id, key, chaining.STEP_KIND)["output"] if outcome.status in ("completed", "zero_results") else None
 
     def _record_chain(self, run: dict[str, Any], step: dict[str, Any], key: str, direction: str, outcome: SearchOutcome,
-                      forms: dict[str, list[str]], links: list[Any], *, cites: str | None, page: int | None) -> None:
+                      forms: dict[str, list[str]], links: list[Any], *, cites: str | None, page: int | None,
+                      batch: list[str] | None = None, per_page: int = CHAIN_CITING_PAGE) -> None:
         """Write one answered chain request: the filter runs first, and only the records that pass are written, as a
         search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is kept, passing
         or not, in `chain_links`."""
@@ -1608,7 +1622,7 @@ class ResearchFlow:
             query_text=key.rpartition(":")[0] if cites is not None else key,
             request_description=f"citation chaining, {direction}: {outcome.request_description}",
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
-            result_count=len(passed), provider_total=outcome.provider_total, page_limit=CHAIN_CITING_PAGE,
+            result_count=len(passed), provider_total=outcome.provider_total, page_limit=per_page,
             error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit,
                               "returned": len(outcome.records), "passed_filter": len(passed)}),
             raw_payload_path=payload_path, payload_sha256=payload_digest,
@@ -1617,6 +1631,11 @@ class ResearchFlow:
         output = {"status": outcome.status, "direction": direction, "returned": len(outcome.records),
                   "passed_filter": len(passed), "next_cursor": outcome.next_cursor if cites is not None else None,
                   "provider_total": outcome.provider_total}
+        if cites is None:
+            # A reference OpenAlex did not return has no record to link and no title to filter: it is named here, and
+            # the summary counts it, rather than stored as a link that failed the filter.
+            answered = {record.provider_record_id for record in outcome.records}
+            output["unresolved"] = sorted(set(batch or []) - answered)
         with transaction(self.store.conn):
             if ok:
                 # A chained record ranks after every keyword record: a record a keyword query already found keeps the
@@ -1743,6 +1762,9 @@ class ResearchFlow:
                          "not_reached_batches": len(seeds.get("backward_batches") or [])
                          - sum(s["operation_key"].startswith("chain:backward:") for s in sent),
                          "not_reached_seeds": len(forward_seeds - reached)},
+            "unresolved_links": sum(len(json.loads(row[0] or "{}").get("unresolved") or []) for row in self.store.conn.execute(
+                "SELECT output_json FROM run_steps WHERE run_id = ? AND kind = ? AND operation_key LIKE 'chain:backward:%'",
+                (run_id, chaining.STEP_KIND))),
             "links": filtered.get("links") or {}, "passed_filter": filtered.get("passed_filter", 0),
             "failed_filter": filtered.get("failed_filter", 0), "in_keyword_pool": filtered.get("in_keyword_pool", 0),
             "new_works": len(chained),
@@ -2586,8 +2608,12 @@ class ResearchFlow:
         order = decisions.latest_ranking(research_id, revision) or []
         if stored is None:
             return set(), order, []
-        return (set(stored.get("chained") or []), self._current_heads(research_id, order),
-                decisions.latest_chain_ranking(research_id, revision))
+        # Every work only a chain found under this revision, an earlier discovery run's too: none is a keyword work.
+        heads = self.store.work_heads(research_id)
+        chained = set(stored.get("chained") or []) | {heads[work_id] for work_id
+                                                       in self.store.chain_only_works(research_id, revision)
+                                                       if work_id in heads}
+        return chained, self._current_heads(research_id, order), decisions.latest_chain_ranking(research_id, revision)
 
     def _current_heads(self, research_id: str, order: list[str]) -> list[str]:
         """These records as the heads of their works now, in the same order, each work once (D95)."""
@@ -3161,6 +3187,8 @@ class ResearchFlow:
             return
         rid, revision = run["research_id"], run["scope_revision"]
         budget = fulltext.fetch_budget(scope["effort"])
+        if "chain_plan_room" in run["budget"]:
+            budget["chain_room"] = run["budget"]["chain_plan_room"]  # the room this discovery run was queued with
         chained, order, chain_order = self._chain_state(rid, revision)
         plan = fulltext.fetch_plan(self._fulltext_works(rid, chained), order, budget["max_fulltext_works"],
                                    chain_order, budget["chain_room"])

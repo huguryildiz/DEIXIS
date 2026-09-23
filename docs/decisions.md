@@ -17,14 +17,22 @@ room of their own brings them in. Six choices were settled jointly by Claude and
 BM25-and-blocks order that are not user seeds, deduplicated at work level, plus every work the user named or uploaded.
 OpenAlex is asked for their references (the stored reference lists; unknown ids in batches of 100) and the works citing
 them (`cites:`, 200 per page, at most 400 per seed). A linked work is recorded only if a setting or task form of the
-approved vocabulary stands in its title or abstract (title alone without an abstract); every link is kept in
-`chain_links`. The records go through the search's record path (D46, SW6); a record that joins a keyword work is not a
-chained work, and the keyword order is read by work so such a join cannot move a keyword work. The chained works get a
+approved vocabulary stands in its title or abstract (title alone without an abstract); every link OpenAlex answers
+is kept in `chain_links`, and a reference it does not return is named in its request step and counted
+(`unresolved_links`). Seeds are distinct by work and by normalised title, wider than SW6's merge on purpose so that two
+unmerged records of one paper do not take two seeds; a head with a user seed's title is that seed. The records go
+through the search's record path (D46, SW6); a record that joins a keyword work is not a chained work, and the keyword
+order is read by work so such a join cannot move a keyword work. A work only a chain found stays out of the keyword
+ranking and the keyword abstract read of every later discovery run of the same revision, and in the chain group of
+the plan. The chained works get a
 ranking step of their own, their own abstract read (20 / 50 / 50 works by effort, `abstract_screening:chain:…`, same
 contract and prompt) and a fourth full-text group after the three keyword groups with 12 places in every effort
-(`CHAIN_PLAN_ROOM`); the full-text read takes them after the keyword order. The chain has its own request limit (40);
-reaching it or a failed request never pauses the run. The setting `DEIXIS_CITATION_CHAINING` (`auto` | `off`, default
-`auto`) is frozen into the discovery budget; the protocol body carries the policy. No second ring, no survey seeds, no
+(`CHAIN_PLAN_ROOM`); the full-text read takes them after the keyword order. The chain has its own request limit (40), which the provider's
+rate-limit retries count toward and cannot pass; reaching it, a failed request or a failed model call of the chain's
+read never pauses the run (the read's works stay unread). The setting `DEIXIS_CITATION_CHAINING` (`auto` | `off`,
+default `auto` from the environment; the `Settings` object alone defaults to `off` so tests and scripts do not chain)
+is frozen into the discovery budget with the chain's read and plan room; the protocol body and the retrieval run the
+discovery run queues read them from there. No second ring, no survey seeds, no
 Semantic Scholar graph.
 
 Live acceptance under K8 (`.local/sw-slice15-acceptance-2026-09-23/`, `codex` / `gpt-5.6-luna` · medium, each run on
@@ -45,6 +53,11 @@ text in quantum `quick` (g036, also cited) and in `detailed` (g087); none in `st
 The two room changes (25 → 12 after attempt 1, 20 → 12 after attempt 2) were made after the results were seen, agreed
 with `gpt-6-sol` · medium (`sol-decision.md`, `sol-decision-2.md`); 12 is the smallest room that kept the chained
 verified works read in attempt 1 (places 4, 8 and 12).
+
+The full review (`gpt-6-sol` · high, 2026-09-24) accepted it with fixes; the fixes above (a chain read failure does not
+pause, a later run keeps earlier chained works out of the keyword path, the request limit holds through retries, the
+read and room are frozen in the budget, unresolved references are counted, the last citing page asks only for what
+the 400 cap leaves, a user seed's title blocks a code seed) came after the live acceptance and were tested offline only.
 
 **Limits:** End to end the runs are far over the 10 / 15 / 20-minute targets: quantum `quick` 12.9–14.0 min, packet
 `quick` 13.8–14.1, `standard` 20.8, `detailed` 41.8; the chain's share is 1.3–2.1 min and most of the rest is outside

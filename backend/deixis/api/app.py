@@ -33,7 +33,7 @@ from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import skill
 from deixis.workflow import abstract_stage
-from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ,
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ, CHAIN_PLAN_ROOM,
                                  CHAIN_REQUEST_LIMIT, CRITERION_CALLS, SEARCH_QUERY_CALLS,
                                  SUGGESTION_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict)
 from deixis.models.adapter import CodexAdapter, ModelAdapter
@@ -818,7 +818,10 @@ def create_app(
             chain: dict[str, Any] = {"citation_chaining": settings.citation_chaining}
             if settings.citation_chaining == "auto":
                 extra += abstract_stage.model_calls(CHAIN_ABSTRACT_READ[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
-                chain["max_chain_requests"] = CHAIN_REQUEST_LIMIT
+                # The chain's read and plan room are frozen with it, so a run keeps the policy it was queued with.
+                chain |= {"max_chain_requests": CHAIN_REQUEST_LIMIT,
+                          "chain_abstract_read": CHAIN_ABSTRACT_READ[scope["effort"]],
+                          "chain_plan_room": CHAIN_PLAN_ROOM[scope["effort"]]}
             budget = budget | {"max_model_calls": budget["max_model_calls"] + extra} | chain
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.

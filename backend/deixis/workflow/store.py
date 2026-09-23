@@ -1676,6 +1676,17 @@ class Store:
                     joined += 1
         return joined
 
+    def chain_only_works(self, research_id: str, scope_revision: int) -> set[str]:
+        """The works of this question revision that only citation chaining found (D95): each has a hit from a chain
+        request and no version with a hit from any other search. Empty for a research that never chained."""
+        found: dict[str, bool] = {}
+        for row in self.conn.execute(
+            "SELECT v.work_id, sr.query_text LIKE 'chain:%' AS chained FROM candidate_hits h"
+            " JOIN search_runs sr ON sr.id = h.search_run_id JOIN source_versions v ON v.id = h.source_version_id"
+            " WHERE h.research_id = ? AND h.scope_revision = ?", (research_id, scope_revision)):
+            found[row["work_id"]] = found.get(row["work_id"], True) and bool(row["chained"])
+        return {work_id for work_id, only in found.items() if only}
+
     def work_heads(self, research_id: str, include_removed: bool = False) -> dict[str, str]:
         """The record that heads each work in the research: a published record, else the first record (D46, D48).
 

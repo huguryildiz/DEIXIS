@@ -55,10 +55,11 @@ class OpenAlex:
     recorded, so a test can ask what was sent and what a resumed run sent again.
     """
 
-    def __init__(self, works, citing=None, by_id=None, fail_cites=(), on_chain=None):
+    def __init__(self, works, citing=None, by_id=None, fail_cites=(), on_chain=None, limited_cites=()):
         self.works, self.citing, self.by_id = works, citing or {}, by_id or {}
-        self.fail_cites, self.on_chain = set(fail_cites), on_chain
+        self.fail_cites, self.on_chain, self.limited_cites = set(fail_cites), on_chain, set(limited_cites)
         self.chain: list[tuple] = []
+        self.pages: list[int] = []
 
     def __call__(self, request):
         if request.url.host != "api.openalex.org":
@@ -72,7 +73,10 @@ class OpenAlex:
                 self.on_chain(self)
             if wid in self.fail_cites:
                 return httpx.Response(500, text="SYNTHETIC server error")
+            if wid in self.limited_cites:
+                return httpx.Response(429, headers={"Retry-After": "0"}, text="SYNTHETIC rate limit")
             works, size = self.citing.get(wid, []), int(params["per_page"])
+            self.pages.append(size)
             start = 0 if cursor in (None, "*") else int(cursor)
             end = min(start + size, len(works))
             return httpx.Response(200, json={"meta": {"count": len(works),
@@ -455,18 +459,20 @@ CHAINED = "SYNTHETIC irrigation scheduling of a chained crop"
 
 
 def test_a_resumed_run_asks_openalex_nothing_again(tmp_path, monkeypatch):
-    failed: list = []
+    paused_once: list = []
 
-    def fail_the_chain_read_once(si):
+    def pause_during_the_chain_read(si):
         chained = any(CHAINED in c["title"] for c in si.get("candidates") or [])
-        if si["task_type"] == "abstract_screening" and chained and not failed:
-            failed.append(si)
-            return ModelStepResult("failed", error="SYNTHETIC model connection dropped")
+        if si["task_type"] == "abstract_screening" and chained and not paused_once:
+            paused_once.append(si)
+            store = app.state.store
+            running = store.conn.execute("SELECT id FROM runs WHERE kind = 'discovery' AND status = 'running'").fetchone()
+            store.update_run(running[0], status="pause_requested")
         return None
 
     transport = OpenAlex(keyword_pool(), citing={"W1": [work(700, CHAINED)], "W3": [work(703, CHAINED)]},
                          by_id={"W900": work(900, CHAINED)})
-    app = app_for(tmp_path, monkeypatch, transport, adapter=FakeAdapter(responder(), fail=fail_the_chain_read_once))
+    app = app_for(tmp_path, monkeypatch, transport, adapter=FakeAdapter(responder(), fail=pause_during_the_chain_read))
     client = client_of(app)
     try:
         rid, run_id, view, paused = discover(client)
@@ -480,7 +486,7 @@ def test_a_resumed_run_asks_openalex_nothing_again(tmp_path, monkeypatch):
         seeds_after = step_output(store, run_id, "chain_seeds")
     finally:
         client.__exit__(None, None, None)
-    assert (paused["status"], paused["pause_reason"]) == ("paused", "model_call_failed"), paused
+    assert (paused["status"], paused["pause_reason"]) == ("paused", "user_requested"), paused
     assert run["status"] == "completed" and transport.chain == sent and again == links
     assert seeds_after == seeds
     assert {codes["W700"], codes["W703"], codes["W900"]} == {"runs_agree_candidate"}
@@ -513,3 +519,122 @@ def test_chain_links_are_written_once_on_resume(tmp_path, monkeypatch):
     assert rows == len(links) == len({(r["seed_source_version_id"], r["linked_openalex_id"], r["direction"])
                                       for r in links})
     assert {"W700", "W702", "W703", "W900", "W901"} <= {row["linked_openalex_id"] for row in links}
+
+
+# ---- review findings (Sol high, 2026-09-24) ------------------------------------------------------
+
+def test_a_failed_chain_read_is_recorded_and_the_run_goes_on(tmp_path, monkeypatch):
+    def fail_the_chain_read(si):
+        if si["task_type"] == "abstract_screening" and any(CHAINED in c["title"] for c in si.get("candidates") or []):
+            return ModelStepResult("failed", error="SYNTHETIC model connection dropped")
+        return None
+
+    transport = OpenAlex(keyword_pool(), citing={"W1": [work(700, CHAINED)]})
+    app = app_for(tmp_path, monkeypatch, transport, adapter=FakeAdapter(responder(), fail=fail_the_chain_read))
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        store = app.state.store
+        summary = step_output(store, run_id, "chain_summary")
+        codes = codes_of(store, rid)
+        failed = [s for s in store.run_steps(run_id) if s["operation_key"].startswith("abstract_screening:chain:")]
+    finally:
+        client.__exit__(None, None, None)
+    # The chain never pauses the run: the failed read is recorded, the work stays unresolved and the run completes.
+    assert run["status"] == "completed" and run["pause_reason"] is None, run
+    assert failed and all(s["status"] == "failed" for s in failed)
+    assert summary["new_works"] == 1 and codes["W700"] not in ("runs_agree_candidate", "runs_agree_out_of_scope")
+
+
+def test_a_second_discovery_run_keeps_the_earlier_chained_works_out_of_the_keyword_path(tmp_path, monkeypatch):
+    transport = OpenAlex(keyword_pool(), citing={"W1": [work(700, CHAINED)]})
+    app = app_for(tmp_path, monkeypatch, transport)
+    client = client_of(app)
+    try:
+        rid, first, view, run = discover(client)
+        store = app.state.store
+        chained = records_of(store, rid)["W700"]
+        second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        view, run = wait(client, rid, second)
+        ranked = {row[0] for row in store.conn.execute(
+            "SELECT source_version_id FROM record_signal_ranks WHERE ranking_step_id = ?",
+            (store.step(second, "ranking", "code:ranking")["id"],))}
+        keyword_read = {svid for batch in step_output(store, second, "abstract_stage")["batches"] for svid in batch}
+        chained_again = step_output(store, second, "chain_filter")["chained"]
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed", run
+    # The first run's chained work is not a keyword record of the second run; the second chain finds it again.
+    assert chained not in ranked and chained not in keyword_read and chained in chained_again
+
+
+def test_the_request_limit_holds_through_rate_limit_retries(tmp_path, monkeypatch):
+    monkeypatch.setattr("deixis.api.app.CHAIN_REQUEST_LIMIT", 3)
+    transport = OpenAlex(keyword_pool(), limited_cites={f"W{n}" for n in range(1, 6)})
+    app = app_for(tmp_path, monkeypatch, transport)
+    client = client_of(app)
+    try:
+        # `detailed` retries a rate-limited request inside the provider call; `quick` does not.
+        rid, run_id, view, run = discover(client, effort="detailed")
+    finally:
+        client.__exit__(None, None, None)
+    forward = [entry for entry in transport.chain if entry[0] == "forward"]
+    assert run["status"] == "completed" and run["pause_reason"] is None
+    assert len(transport.chain) <= 3 and run["usage"]["chain_requests"] <= 3 and forward
+
+
+def test_a_backward_id_openalex_does_not_return_is_counted_unresolved(tmp_path, monkeypatch):
+    transport = OpenAlex(keyword_pool(), by_id={"W900": work(900), "W902": work(902)})
+    app = app_for(tmp_path, monkeypatch, transport)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        store = app.state.store
+        batch = step_output(store, run_id, "chain:backward:0")
+        summary = step_output(store, run_id, "chain_summary")
+    finally:
+        client.__exit__(None, None, None)
+    assert batch["unresolved"] == ["W901"] and summary["unresolved_links"] == 1
+
+
+def test_the_last_citing_page_asks_only_for_what_the_cap_leaves(tmp_path, monkeypatch):
+    monkeypatch.setattr("deixis.workflow.flow.CHAIN_CITING_CAP", 3)
+    monkeypatch.setattr("deixis.workflow.flow.CHAIN_CITING_PAGE", 2)
+    transport = OpenAlex(keyword_pool(), citing={"W1": [work(700 + n) for n in range(5)]})
+    app = app_for(tmp_path, monkeypatch, transport)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        records = records_of(app.state.store, rid)
+    finally:
+        client.__exit__(None, None, None)
+    w1 = [entry for entry in transport.chain if entry[:2] == ("forward", "W1")]
+    assert len(w1) == 2 and transport.pages[:2] == [2, 1]
+    assert {"W700", "W701", "W702"} <= set(records) and not {"W703", "W704"} & set(records)
+
+
+def test_a_queued_run_keeps_the_chain_read_and_room_it_was_queued_with(tmp_path, monkeypatch):
+    many = [work(700 + n, abstract=f"{IRRIGATION_ABSTRACT} Plot {n}.") for n in range(6)]
+    transport = OpenAlex(keyword_pool(), citing={"W1": many})
+    app = app_for(tmp_path, monkeypatch, transport, fetch="auto")
+    client = client_of(app)
+    try:
+        payload = {"question": QUESTION, "model_connection": "fake", "requested_model": "fake-model", "effort": "quick"}
+        rid = client.post("/api/researches", json=payload).json()["research"]["id"]
+        run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        store = app.state.store
+        frozen = store.run(run_id)["budget"]
+        view, run = wait(client, rid, run_id)
+        body = store.current_protocol(rid, 1)["body"]
+        deadline = time.time() + 30
+        while time.time() < deadline and not store.conn.execute(
+                "SELECT 1 FROM runs WHERE research_id = ? AND kind = 'fulltext_fetch'", (rid,)).fetchone():
+            time.sleep(0.05)
+        fetch = store.conn.execute("SELECT budget_json FROM runs WHERE research_id = ? AND kind = 'fulltext_fetch'",
+                                   (rid,)).fetchone()
+    finally:
+        client.__exit__(None, None, None)
+    assert frozen["chain_abstract_read"] == CHAIN_ABSTRACT_READ["quick"] and "chain_plan_room" in frozen
+    assert body["thresholds"]["chain"]["abstract_read"] == frozen["chain_abstract_read"]
+    assert body["thresholds"]["chain"]["plan_room"] == frozen["chain_plan_room"]
+    assert json.loads(fetch[0])["chain_room"] == frozen["chain_plan_room"]

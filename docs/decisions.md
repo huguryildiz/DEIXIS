@@ -144,7 +144,8 @@ true for a legacy research only.
 
 ## D89 — Split the request allowance per sw query before the read starts, read discovery searches on several hosts at once, and write what they read in query order
 
-**Status:** accepted; implemented 2026-09-22 (slice 13f). The wall-clock gain is not measured. **Date:** 2026-09-22.
+**Status:** accepted; implemented 2026-09-22 (slice 13f). Measured together with 13g and 13h on 2026-09-23 (D88):
+`standard`'s provider searches 6.7 → 3.5 min, the part due to 13f alone not separated. **Date:** 2026-09-22.
 
 **Context:** After slice 13e the provider searches of discovery are the largest item of a run (`standard`: about 6.5
 of its 13.6 discovery minutes), because the queries were read one after another: 1.5 to 1.9 requests in flight on
@@ -200,8 +201,9 @@ only; the client reads only `model_calls` and `provider_requests`.
 ## D88 — Bound what an effort collects, not how long it runs: per-query read limits and provider waiting by effort, with 5 / 10 / 15 minute targets measured afterwards
 
 **Status:** accepted; implemented 2026-09-22 (slice 13c), except the timeout wait, which is unchanged: only the
-rate-limit wait is by effort. **Measured 2026-09-22** (below), and **re-measured after slice 13e** the same day; the
-targets were not met and the constants have not been adjusted yet. **Targets revised by the owner (2026-09-22):**
+rate-limit wait is by effort. **Measured 2026-09-22** (below), **re-measured after slice 13e** the same day and
+**after slices 13f, 13g and 13h on 2026-09-23**; `quick` now meets its revised target, `standard` and `detailed` do not,
+and the constants have not been adjusted. **Targets revised by the owner (2026-09-22):**
 `quick` at most 10 min, `standard` 15, `detailed` 20. **Date:** 2026-09-22.
 
 **Context:** The owner wants a `quick` research to finish in about 5 minutes, `standard` in 10 and `detailed` in 15. Today no effort has a time bound and the three efforts collect the same amount: every `sw` query is paged to `SW_READ_LIMIT` (2,000 records) whatever the effort; the efforts differ only in how many works the model reads afterwards (40 / 100 / 300 abstracts, 20 / 50 / 150 full texts). On the slice 13 smoke run (`quick`, one topic) discovery took 28 minutes: about 20 of them in providers, of which 12 in Semantic Scholar's rate-limited abstract lookups for records Crossref had returned without abstracts, and 3 in the code stage. Model calls took under 3 minutes.
@@ -225,6 +227,18 @@ What the measurement changes: the collection limits did their job — provider w
 Retrieval is no longer the cost: `code:fulltext_work` now runs at parallelism about 3.8 (was 1.0), and the retrieval stage fell from 8.1 to 2.2 min (`standard`) and from 16.4 to 7.4 min (`detailed`, with twice as many PDFs downloaded). PDF text extraction is a small part of it (0.5 s median per PDF, and it runs in parallel threads). Discovery is now the largest item and did not change (`standard` 13.6 min: protocol proposal about 3, provider searches about 6.5 with Scopus alone making 80 page requests and providers overlapping only 1.5–1.9 at a time, abstract lookups about 2, abstract screening about 2); search parallelism was left out of 13e by the owner. Roughly 15 of `standard`'s 26 minutes are model calls. In `detailed` one reading call hit the Codex turn limit after 307 s, was resent once and succeeded; the run did not pause. The two campaigns did not see the same input: the same question collected a different number of records and found a different number of PDFs (`quick` 720 vs 1,027 records, `detailed` 117 vs 58 PDFs), so the reading-stage durations also carry a difference in work.
 
 Two findings. **arXiv still returned nothing:** all six arXiv searches failed, now as `rate_limited`, so the `(429, 406)` retry did not recover it; the cause is still unknown. **The answer repair path does fire, and the first measurement misread it:** in all three new answer runs, and on re-reading the first campaign's database in all three of its Luna answer runs too, the first draft failed rule checks (`missing_citation_anchor`, `duplicate_citation_anchor`) and the single repair round produced a valid draft; the answer run's two model calls were answer + repair, not answer + review. No schema error occurred, so the part slice 13a added (schema and rule errors reported together) is still **ölçülmedi** with Luna. The repair round is about half of the answer stage (46–134 s).
+
+**Re-measured after slices 13f, 13g and 13h (2026-09-23, 01:37–02:42 UTC, `.local/sw-measure-2026-09-24/`):** same topic, same three efforts back to back, same model and settings, `DEIXIS_SEARCH_QUERY=model`, commit `3ecb1ed`, constants unchanged; frozen expectation in `protocol.md` there, details in `docs/product/sw-measure-2026-09-22.md`.
+
+| effort | revised target | after 13e (`8fa06b4`) | after 13f–13h (`3ecb1ed`) |
+|---|---|---|---|
+| `quick` | ≤ 10 min | 9.1 min | **7.5 min** |
+| `standard` | 15 min | 26.2 min | **17.9 min** |
+| `detailed` | 20 min | 45.7 min | **39.7 min** |
+
+Discovery shrank the most (`standard` 13.6 → 8.7 min, provider searches 6.7 → 3.5 min). The model's `search_query` step (D92) took 11–17 s plus about 3 s of counts, and none of the three calls needed a repair. In `detailed` the search stage is still 8.7 min because Semantic Scholar is read on one host at about 19 s per page (24 page steps, 44 requests), and retrieval (9.1 min, 139 PDFs) plus reading (10.8 min, 244 calls) alone exceed its target. arXiv again returned nothing (7 of 7 searches `rate_limited`); the answer's repair round again ran in all three runs.
+
+This run also counted the 31 verified quantum works (`positives("q1")`) through the stages, in each effort's own library: in the pool 19 / 25 / 30, kept by the abstract stage 13 / 17 / 21, read in full text 1 / 7 / 17, cited in the answer **1 / 5 / 7** (`quick` / `standard` / `detailed`). The loss is after the search: the full-text plan reads the head of the inspection order (40 / 100 / 300 works) and most kept verified works sit behind it (`quick`: one of 13 in the first 40, the rest at places 46–181 of 246). Re-read with the same script, the 13e run shows the same pattern (`standard`: 24 in the pool, 1 read), so this is not new. The model's and the code's queries found different works (`standard`: 11 only on the model's side, 3 only on the code's, 11 both). The owner decided the same day that Semantic Scholar leaves the sw search like Scopus (D91) and stays an abstract lookup source: the three verified works it alone returned never passed the abstract stage. That change is a separate slice and not in the code yet.
 
 **Evidence and limits:** The figures come from one `quick` run on one topic (`.local/sw-smoke-2026-09-22/result.md`); the per-effort limits and the wait rule are hand-picked; the measurement above is one run per effort on one topic, with the three efforts run back to back from one network, so the spread and any rate-limit carry-over between them are **not measured**, and label, phrasing and answer quality are not measured either. The targets may not be met by collection limits alone: the code stage (slice 13d) and Crossref (D87) are the other two known costs. The abstract read limits (D81), full-text limits (D83, D85) and the model-call budgets are unchanged. `legacy` researches are unchanged.
 

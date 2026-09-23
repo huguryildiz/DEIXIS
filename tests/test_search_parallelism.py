@@ -570,3 +570,88 @@ def test_each_connector_names_the_host_its_requests_go_to():
         assert seen and set(seen) == {connector.host}, connector.provider_id
     assert CONNECTORS["biorxiv"].host == CONNECTORS["openalex"].host
     assert len({c.host for c in CONNECTORS.values()}) == len(CONNECTORS) - 1
+
+
+# ---- review of 2026-09-23 (gpt-6-sol high) -----------------------------------------------------------------------
+
+
+def test_a_first_round_whose_every_share_was_spent_before_it_asked_pauses_instead_of_going_on(tmp_path, monkeypatch):
+    """D18: with no successful search the run pauses, also when no search failed because every query's share was
+    already spent (a run resumed after a crash). Asked to search again, the retry adds to every share and reads."""
+    small_allowances(monkeypatch, {text: 0 for _, text in FIRST_ROUND})
+    hosts = Hosts()
+    session = Session(tmp_path, monkeypatch, hosts)
+    try:
+        session.discover()
+        assert (session.run["status"], session.run["pause_reason"]) == ("paused", "budget_exhausted"), session.run
+        assert hosts.log == [] and "vocabulary_expansion" not in {s["operation_key"] for s in session.run["steps"]}
+        session.control("retry_failed")
+        assert "abstract_stage" in {s["operation_key"] for s in session.run["steps"]}, session.run
+        assert hosts.requests("api.openalex.org")
+    finally:
+        session.close()
+
+
+def test_a_query_resumed_past_a_lowered_read_limit_asks_for_nothing_more(tmp_path, monkeypatch):
+    """A query read 20 records and was paused mid-read; the read limit is then lowered below what it has read (13g
+    halved `detailed`). Resumed, it ends its read where it stands instead of asking for a page of minus records."""
+    gate = threading.Event()
+    hosts = Hosts(hold={("SYNTHETIC packet size energy", 10): gate})
+    session = Session(tmp_path, monkeypatch, hosts).start()
+    try:
+        deadline = time.time() + 10
+        while ("SYNTHETIC packet size energy", 10) not in hosts.waiting:
+            assert time.time() < deadline
+            time.sleep(0.01)
+        assert session.client.post(f"/api/runs/{session.run_id}/pause").status_code == 200
+        gate.set()
+        session.view, session.run = wait(session.client, session.rid, session.run_id)
+        assert session.run["pause_reason"] == "user_requested", session.run
+        monkeypatch.setattr(flow, "SW_READ_LIMIT", read_limit(15))
+        asked = len([p for p in hosts.requests("api.openalex.org") if p[1] == "SYNTHETIC packet size energy"])
+        session.control("resume")
+        assert "abstract_stage" in {s["operation_key"] for s in session.run["steps"]}, session.run
+        assert len([p for p in hosts.requests("api.openalex.org") if p[1] == "SYNTHETIC packet size energy"]) == asked
+    finally:
+        session.close()
+
+
+def test_a_pause_asked_while_a_query_waits_out_its_page_gap_sends_no_further_page(tmp_path, monkeypatch):
+    """The stop is looked at again after the gap between two pages, not only before it (arXiv waits 3 s there)."""
+    hosts = Hosts()
+    session = Session(tmp_path, monkeypatch, hosts)
+    monkeypatch.setitem(CONNECTORS, "openalex", replace(CONNECTORS["openalex"], page_gap=0.6))
+    session.start()
+    try:
+        deadline = time.time() + 10
+        while not any(e.get("query") == "SYNTHETIC packet size energy" for e in hosts.log):
+            assert time.time() < deadline
+            time.sleep(0.005)
+        assert session.client.post(f"/api/runs/{session.run_id}/pause").status_code == 200
+        session.view, session.run = wait(session.client, session.rid, session.run_id)
+        assert session.run["pause_reason"] == "user_requested", session.run
+        assert [p for p in hosts.requests("api.openalex.org") if p[1] == "SYNTHETIC packet size energy"] == [
+            ("openalex", "SYNTHETIC packet size energy", 0)]
+    finally:
+        session.close()
+
+
+def test_an_error_on_one_host_still_writes_what_the_other_hosts_had_read(tmp_path, monkeypatch):
+    """Semantic Scholar's connector raises while OpenAlex is still reading: the run fails, but the pages OpenAlex
+    read are written in query order, and OpenAlex is asked for nothing after the error."""
+    session = Session(tmp_path, monkeypatch, Hosts(delay={"api.openalex.org": 0.15}))
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("SYNTHETIC parser bug")
+
+    monkeypatch.setitem(CONNECTORS, "semantic_scholar", replace(CONNECTORS["semantic_scholar"], search=broken))
+    try:
+        session.discover()
+        assert session.run["status"] == "failed", session.run
+        order = {text: index for index, (_, text) in enumerate(FIRST_ROUND)}
+        written = [(r[0], order[r[1]]) for r in session.store.conn.execute(
+            "SELECT provider, query_text FROM search_runs WHERE research_id = ? ORDER BY rowid", (session.rid,))]
+        assert ("openalex", 0) in written and "semantic_scholar" not in {p for p, _ in written}
+        assert [i for _, i in written] == sorted(i for _, i in written)
+    finally:
+        session.close()

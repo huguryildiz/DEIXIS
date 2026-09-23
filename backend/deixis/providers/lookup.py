@@ -168,7 +168,15 @@ async def scopus_abstract(client: httpx.AsyncClient, doi: str, api_key: str,
     outcome.raw_payload = response.json()
     if not entries:
         return LookupAnswer("not_found"), outcome
-    return LookupAnswer("found", abstract=(entries[0].get("dc:description") or "").strip() or None), outcome
+    # The abstract is written to the record that was asked about, so only an entry naming that DOI may give it; an
+    # answer about another DOI is not this record's (review of 13g, 2026-09-23).
+    asked = normalize_doi(doi)
+    mine = [entry for entry in entries if normalize_doi(entry.get("prism:doi")) == asked]
+    if not mine:
+        outcome.error = "answer names another DOI: " + ", ".join(
+            str(entry.get("prism:doi")) for entry in entries[:3])[:300]
+        return LookupAnswer("not_found"), outcome
+    return LookupAnswer("found", abstract=(mine[0].get("dc:description") or "").strip() or None), outcome
 
 
 def _relation_dois(relation: dict[str, Any], kind: str, doi: str) -> list[str]:

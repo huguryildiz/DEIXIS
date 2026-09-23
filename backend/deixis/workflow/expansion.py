@@ -47,8 +47,9 @@ def searched_terms(vocabulary: dict[str, Any], block: str | None = None) -> list
     """The terms every first-round query searched with: the vocabulary's own and, where the code's query was searched
     beside a model-written one, the code's too (D92). What orders and closes records reads these; the second round
     reads `queried_terms`, the model's alone."""
-    code = vocabulary.get("code_query") or {}
-    extra = queried_terms(code["vocabulary"], block) if code.get("searched") else []
+    from deixis.workflow.search_query import code_searched  # search_query compiles through query_compiler, not here
+
+    extra = queried_terms(vocabulary["code_query"]["vocabulary"], block) if code_searched(vocabulary) else []
     own = queried_terms(vocabulary, block)
     forms = {queried_form(term) for term in own}
     return own + [term for term in extra if queried_form(term) not in forms]
@@ -146,13 +147,40 @@ def second_round_vocabulary(vocabulary: dict[str, Any], terms: list[str],
     return {"terms": built, "setting_synonyms": synonyms, "task_additions": additions, "setting_width": width}
 
 
+def searched_additions(result: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """The accepted phrases that really entered a second-round query, by the block they were searched in.
+
+    An accepted phrase is not always searched: setting synonyms are cut to the first round's setting width, and a
+    provider's fitting may drop more. What orders records and what the yields count reads this, not the accepted
+    list (review of 13g, 2026-09-23). A phrase counts as searched when at least one second-round query kept it.
+    """
+    second = result.get("second_round") or {}
+    if not queries:
+        return {SETTING_BLOCK: [], TASK_BLOCK: []}
+    synonyms = list(second.get("setting_synonyms") or [])
+    width = max(second.get("setting_width") or 0, 1)
+    kept = lambda phrase: any(phrase not in (query.get("dropped_terms") or []) for query in queries)
+    return {SETTING_BLOCK: [phrase for phrase in synonyms[:width] if kept(phrase)],
+            TASK_BLOCK: [phrase for phrase in second.get("task_additions") or [] if kept(phrase)]}
+
+
+def expansion_blocks(expansion: dict[str, Any] | None) -> dict[str, list[str]]:
+    """The second round's searched phrases by block; an expansion stored before they were recorded (13g) had its
+    accepted phrases read as task terms, and still is."""
+    expansion = expansion or {}
+    if "searched" in expansion:
+        return {SETTING_BLOCK: list(expansion["searched"].get(SETTING_BLOCK) or []),
+                TASK_BLOCK: list(expansion["searched"].get(TASK_BLOCK) or [])}
+    return {SETTING_BLOCK: [], TASK_BLOCK: list(expansion.get("terms") or [])}
+
+
 # ---- what each term brought in ---------------------------------------------------------
 def term_rows(terms: list[dict[str, Any]], expansion: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Every phrase that entered a query of this research, with the form it entered as."""
     rows = [{"phrase": term["phrase"], "form": queried_form(term), "origin": term["origin"], "block": term["block"]}
             for term in terms if not term["dropped"]]
-    return rows + [{"phrase": phrase, "form": phrase, "origin": "data", "block": TASK_BLOCK}
-                   for phrase in (expansion or {}).get("terms", [])]
+    return rows + [{"phrase": phrase, "form": phrase, "origin": "data", "block": block}
+                   for block, phrases in expansion_blocks(expansion).items() for phrase in phrases]
 
 
 def count_yields(store: Any, research_id: str, scope_revision: int,

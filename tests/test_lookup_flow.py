@@ -18,6 +18,7 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents.fetch import FetchResult
 from deixis.models.adapter import ModelStepResult
+from deixis.workflow import lookups
 from deixis.providers import common
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.decisions import DecisionStore
@@ -704,3 +705,23 @@ def test_without_a_scopus_key_scopus_is_out_of_scope_opens_no_step_and_is_sent_n
     finally:
         client.__exit__(None, None, None)
     assert not [s for s in run["steps"] if "scopus" in s["operation_key"]] and sources.elsevier == []
+
+
+def test_with_no_lookup_request_left_scopus_is_skipped_without_its_access_check(tmp_path, monkeypatch):
+    """Review of 13g (2026-09-23): the access check is a request too, so it is not sent past the run's lookup
+    limit; the plan says why Scopus was not asked."""
+    monkeypatch.setattr(lookups.ask_second_sources, "__defaults__", (1,))
+    sources = WithScopus(THREE, entitled=True, s2=S2_ANSWERS, crossref=CROSSREF_ANSWERS,
+                         scopus={"10.1/c": SCOPUS_ABSTRACT})
+    app = scopus_app(tmp_path, monkeypatch, sources)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        plan = step_output(app.state.store, run_id, "lookup_plan:scopus")
+        usage = app.state.store.run(run_id)["usage"]
+    finally:
+        client.__exit__(None, None, None)
+    assert sources.elsevier == []
+    # b and c are left without an abstract: the one request went to Semantic Scholar, none to Crossref.
+    assert plan["skipped"] == "request_limit" and plan["chunks"] == [] and plan["outside_limit"] == 2
+    assert usage["lookup_requests"] == 1

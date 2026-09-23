@@ -260,11 +260,11 @@ async def no_fetch(url):
     return FetchResult("http_error", final_url=url, http_status=404)
 
 
-def client_for(tmp_path, monkeypatch, handler, adapter, approval="as_proposed"):
+def client_for(tmp_path, monkeypatch, handler, adapter, approval="as_proposed", setting="model"):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw", search_query="model",
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw", search_query=setting,
                               protocol_approval=approval, fulltext_fetch="off"),
                      adapters={"fake": adapter}, http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
                      fetcher=no_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
@@ -529,3 +529,117 @@ def test_a_worker_that_dies_after_the_counts_reads_them_back_and_asks_nothing_tw
     assert run["status"] == "completed", run
     assert not calls(adapter)
     assert not {p["query"] for p in probes} & set(second.counts)
+
+
+# ---- review of 2026-09-23 (gpt-6-sol high) -----------------------------------------------------------------------
+
+
+def test_a_second_discovery_run_of_the_same_question_revision_reuses_the_query_and_asks_no_model(tmp_path, monkeypatch):
+    """D92 is one call per scope revision: a second discovery run reads the query the first one wrote, so an earlier
+    approval is never applied to a query the user did not see."""
+    openalex, adapter = OpenAlex(), FakeAdapter()
+    client = client_for(tmp_path, monkeypatch, openalex, adapter)
+    rid, run_id = start(client)
+    _, run = wait(client, rid, run_id)
+    assert run["status"] == "completed", run
+    again = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"})
+    assert again.status_code == 202, again.text
+    second = again.json()["id"]
+    _, run = wait(client, rid, second, ("completed", "failed", "paused"))
+    assert run["status"] == "completed", run
+    assert len(calls(adapter)) == 1
+    first_out, second_out = step_output(client, run_id, "search_query"), step_output(client, second, "search_query")
+    assert second_out["queries"] == first_out["queries"] and second_out["reused_from_run"] == run_id
+
+
+def test_a_run_stopped_for_the_model_resumes_on_the_model_even_when_the_setting_became_code(tmp_path, monkeypatch):
+    """D92 has no silent fallback: the run records the query it was started with, and a service restarted with
+    `search_query=code` does not turn its resume into a search with the code's query."""
+    from deixis.storage import db
+
+    failing = lambda: FakeAdapter(fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
+                                  if si["task_type"] == "search_query" else None)
+    openalex = OpenAlex()
+    client = client_for(tmp_path, monkeypatch, openalex, failing())
+    rid, run_id = start(client)
+    _, run = wait(client, rid, run_id)
+    assert run["pause_reason"] == "search_query_failed"
+    client.__exit__(None, None, None)
+    adapter = failing()
+    client = client_for(tmp_path, monkeypatch, openalex, adapter, setting="code")
+    assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
+    time.sleep(0.1)
+    _, run = wait(client, rid, run_id)
+    assert (run["status"], run["pause_reason"]) == ("paused", "search_query_failed"), run
+    assert len(calls(adapter)) == 1 and not openalex.searches
+
+
+def test_a_failed_call_whose_attempt_was_not_written_is_counted_not_sent_again(tmp_path, monkeypatch):
+    """The model step stores its failure before the outer step writes the attempt; a worker that died between the
+    two resumes with the next attempt, and the two-attempt bound holds."""
+    openalex = OpenAlex()
+    adapter = FakeAdapter(fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
+                          if si["task_type"] == "search_query" else None)
+    client = client_for(tmp_path, monkeypatch, openalex, adapter)
+    rid, run_id = start(client)
+    wait(client, rid, run_id)
+    store = client.app.state.store
+    # The window the review found: the model step's failure is stored, the outer step's attempt is not.
+    store.conn.execute("UPDATE run_steps SET output_json = ? WHERE run_id = ? AND operation_key = 'search_query'",
+                       (json.dumps({"attempts": [], "choice": None}), run_id))
+    assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
+    time.sleep(0.1)
+    _, run = wait(client, rid, run_id)
+    assert run["pause_reason"] == "search_query_failed" and run["error"]["retries_left"] == 0, run
+    assert len(calls(adapter)) == 2
+    assert [a["attempt"] for a in step_output(client, run_id, "search_query")["attempts"]] == [1, 2]
+
+
+def test_a_count_with_the_other_block_is_read_with_the_terms_that_block_is_searched_with():
+    """A task term swapped for its backup: the setting term is counted with the backup, not with the dropped term,
+    so its warning (or its absence) describes the query that is really sent."""
+    count, asked = counter({'"coral transplant"': 0, '"degraded reefs" AND ("coral transplant")': 0})
+    checked = asyncio.run(search_query.check(
+        answer(["degraded reefs"], ["coral transplant"], task_backup=["coral gardening"]), count))
+    assert checked["warnings"] == []
+    assert '"degraded reefs" AND ("coral gardening")' in asked
+    setting = next(c for c in checked["checks"] if c["phrase"] == "degraded reefs")
+    assert setting["with_other_block"] == 50
+
+
+def test_a_correction_recounts_a_kept_term_whose_other_block_changed():
+    built = proposal(answer(["rail freight"], ["timetable"]), counts={'"rail freight" AND (timetable)': 0})
+    assert [w["phrase"] for w in built["search_query"]["warnings"]] == ["rail freight"]
+    count, asked = counter({})
+    rebuilt = asyncio.run(search_query.rebuild(built, [
+        {"op": "remove", "phrase": "timetable"}, {"op": "add", "phrase": "crew scheduling", "block": "task"}],
+        None, count))
+    assert rebuilt["search_query"]["warnings"] == []
+    assert '"rail freight" AND ("crew scheduling")' in asked
+
+
+def test_code_terms_order_and_close_records_only_when_a_code_query_was_really_compiled():
+    """The switch on, but the request limit left only the model's queries: the code's terms were not searched and
+    do not enter ranking, the abstract rules or the second round's blocks."""
+    built = proposal()
+    cut = search_query.with_compiled(built, search_query.compile_queries(built, ["openalex", "semantic_scholar"], 1))
+    kept = search_query.with_compiled(built, search_query.compile_queries(built, ["openalex", "semantic_scholar"], 4))
+    assert search_query.code_terms(cut) == [] and search_query.code_terms(kept)
+    assert [t["phrase"] for t in searched_terms(cut, "setting")] == ["rail freight"]
+    assert cut["code_query"]["searched"] is True  # the switch the user sees is unchanged
+
+
+def test_a_failed_attempt_records_the_step_input_and_package_its_call_was_sent(tmp_path, monkeypatch):
+    """The protocol of a run searched with the code's query after the model failed names, for each failed call,
+    the StepInput and the package it was sent, as a ready answer does."""
+    adapter = FakeAdapter(fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
+                          if si["task_type"] == "search_query" else None)
+    client = client_for(tmp_path, monkeypatch, OpenAlex(), adapter)
+    rid, run_id = start(client)
+    wait(client, rid, run_id)
+    assert client.post(f"/api/runs/{run_id}/search-query-choice").status_code == 200
+    _, run = wait(client, rid, run_id, ("completed", "failed"))
+    assert run["status"] == "completed", run
+    (attempt,) = protocol_body(client, rid)["search_query"]["attempts"]
+    assert attempt["skill_package_hash"] == calls(adapter)[0]["skill_package_hash"]
+    assert attempt["step_input_id"].startswith("sti_")

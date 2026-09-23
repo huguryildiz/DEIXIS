@@ -314,6 +314,9 @@ function QuerySection({ side, queries, on, editable, onChange }: {
 }) {
   const code = side.code_query
   const byOrigin = (origin: string) => queries.filter(query => query.origin === origin)
+  // With the switch on as proposed, only the code queries the request limit left are sent, so only those are listed.
+  const compiled = on && code.searched
+  const codeQueries = compiled ? byOrigin('code') : code.queries
   return <div className="approval-queries">
     <div className="approval-block-head">
       <strong>{t('Queries')}</strong>
@@ -330,7 +333,8 @@ function QuerySection({ side, queries, on, editable, onChange }: {
       </label>
       {!code.available && <p className="approval-hint">{t('That query cannot be searched on its own: none was compiled, or every term was too frequent.')}</p>}
       <p className="approval-hint">{t('Its terms: {terms}', { terms: code.terms.map(term => `${term.form} (${t(blockLabels[term.block])})`).join(', ') || t('none') })}</p>
-      <ul>{code.queries.map(query => <li key={`code:${query.provider_id}`}><small>{providerName(query.provider_id)}</small> <code>{query.query_text}</code></li>)}</ul>
+      {compiled && !codeQueries.length && <p className="approval-hint">{t('This search’s request limit leaves no room for it: only the model’s queries are sent.')}</p>}
+      <ul>{codeQueries.map(query => <li key={`code:${query.provider_id}`}><small>{providerName(query.provider_id)}</small> <code>{query.query_text}</code></li>)}</ul>
     </div>
   </div>
 }

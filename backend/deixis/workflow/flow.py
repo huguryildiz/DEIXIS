@@ -453,6 +453,11 @@ class ResearchFlow:
                 failure = await self._search(run, index, query, per_query, retry_failed) or failure
         if failure and not searched():
             self._pause(run_id, *failure)
+        if not searched() and self._allowance_ended_searches(run_id):
+            # No search succeeded and none failed: every query's share was spent before it asked (a run resumed after
+            # a crash). Going on would screen a round that searched nothing (D18); asked to search again, the retry
+            # adds to every query's share (review of 13f, 2026-09-23).
+            self._pause(run_id, "budget_exhausted", {"limit": "query_requests"})
         if scope.get("search_workflow") == "sw":
             # A second arm that only adds: phrases the first round's own records offered, each kept by a count
             # probe (SW2.4). The first round's query is not sent again.
@@ -602,15 +607,28 @@ class ResearchFlow:
         code's query is never searched in its place without the user saying so. Resuming asks the model once more
         (`ATTEMPTS`); the user's other way out is to search with the code's query alone, which the route writes on
         this step. A step that already succeeded returns its stored vocabulary and queries, so a resumed run calls
-        no model and reads no count twice.
+        no model and reads no count twice, and a second discovery run of the same scope revision takes the query the
+        first one wrote.
+
+        The setting is read when the step is first written: a run already stopped for the model's query stays on it
+        after the service is restarted with `search_query=code`, so its resume never searches the code's query alone.
         """
-        if self.deps.settings.search_query != "model":
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        step = self.store.existing_step(run_id, "search_query")
+        if step is None and self.deps.settings.search_query != "model":
             return code_vocabulary, code_queries
-        run_id, revision = run["id"], run["scope_revision"]
-        step = self.store.step(run_id, "search_query", "code:search_query")
+        step = step or self.store.step(run_id, "search_query", "code:search_query")
         if step["status"] == "succeeded":
             stored = step["output"]
             return self._proposed(run_id, stored["vocabulary"], stored["queries"])
+        earlier = self.store.search_query_of(rid, revision, run_id) if step["output"] is None else None
+        if earlier is not None:
+            # D92 is one call per scope revision: the query the user already saw is searched again, and the approval
+            # the earlier run closed is reapplied to that same query, never to one the user has not seen.
+            output = earlier["output"] | {"reused_from_run": earlier["output"].get("reused_from_run", earlier["run_id"])}
+            self.store.start_step(step["id"])
+            self.store.finish_step(step["id"], "succeeded", output=output)
+            return self._proposed(run_id, output["vocabulary"], output["queries"])
         if code_vocabulary["block_assignment"] == "user":
             # The user's own key terms are above any proposal (SW2.6): the model is not asked to write another.
             self.store.start_step(step["id"])
@@ -626,6 +644,14 @@ class ResearchFlow:
             self.store.finish_step(step["id"], "succeeded", output=output | {
                 "status": "code_only", "vocabulary": chosen, "queries": code_queries})
             return self._proposed(run_id, chosen, code_queries)
+        # A call whose failure its model step stored, but whose attempt the worker did not live to write here, is
+        # counted now rather than sent again: the attempt bound counts calls sent, not attempts written.
+        while ((sent := self.store.existing_step(run_id, f"search_query:{len(output['attempts']) + 1}"))
+               and sent["status"] in ("failed", "outcome_unknown")):
+            output["attempts"].append(self._query_attempt(run_id, len(output["attempts"]) + 1, {
+                "reason": sent["error_code"] or "model_call_failed",
+                "detail": json.loads(sent["error_json"]) if sent["error_json"] else None}))
+            self.store.set_step_output(step["id"], output)
         attempt = len(output["attempts"]) + 1
         if attempt > search_query_rules.ATTEMPTS:
             self._pause(run_id, "search_query_failed", {"attempts": output["attempts"], "retries_left": 0})
@@ -653,7 +679,7 @@ class ResearchFlow:
                 failure = {"reason": "no_searchable_term", "detail": checked["checks"]}
         if failure is not None:
             # Written on the step, which is never started: a step still `pending` is not half-finished work.
-            output["attempts"].append({"attempt": attempt, **failure})
+            output["attempts"].append(self._query_attempt(run_id, attempt, failure))
             self.store.set_step_output(step["id"], output)
             self._pause(run_id, "search_query_failed", {
                 "reason": failure["reason"], "retries_left": search_query_rules.ATTEMPTS - attempt})
@@ -665,11 +691,20 @@ class ResearchFlow:
                   "answer": answer["result"]}
         built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, record)
         queries = search_query_rules.compile_queries(built, scope["providers"], run["budget"]["max_provider_requests"])
+        built = search_query_rules.with_compiled(built, queries)
         self.store.start_step(step["id"])
         self.store.finish_step(step["id"], "succeeded", output=output | {
             "status": "ready", "vocabulary": built, "queries": queries,
             "query_compiler": query_compiler.BLOCKS_VERSION})
         return self._proposed(run_id, built, queries)
+
+    def _query_attempt(self, run_id: str, attempt: int, failure: dict[str, Any]) -> dict[str, Any]:
+        """A failed search_query call as the protocol keeps it: the StepInput and the package it was sent, when one
+        was sent at all (a connection that was not ready sent nothing)."""
+        call = self.store.existing_step(run_id, f"search_query:{attempt}")
+        sent = self.store.last_step_input(call["id"]) if call else None
+        return {"attempt": attempt, **failure, "step_input_id": sent["id"] if sent else None,
+                "skill_package_hash": sent["skill_package_hash"] if sent else None}
 
     def _proposed(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """A vocabulary that cannot be searched stops an unattended run here. A run that asks for the approval takes
@@ -956,7 +991,7 @@ class ResearchFlow:
                 self._count_probe(scope), suggestion_rules.model_phrases(proposals or []))
             compiled = search_query_rules.compile_queries(built, scope["providers"],
                                                           run["budget"]["max_provider_requests"])
-            return built, compiled, built["user_edits"], skipped
+            return search_query_rules.with_compiled(built, compiled), compiled, built["user_edits"], skipped
         if not kept:
             return vocabulary, queries, [], skipped
         proposals = proposals or []
@@ -1031,7 +1066,7 @@ class ResearchFlow:
             return decisions.ranking_order(step["id"])
         self.store.start_step(step["id"])
         stored = self.store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")["output"] or {}
-        terms = list((stored.get("expansion") or {}).get("terms") or [])
+        terms = expansion_rules.expansion_blocks(stored.get("expansion"))
         output = ranking_rules.rank_records(self.store, run, scope, vocabulary, terms, self._embedding_model())
         self.store.finish_step(step["id"], "succeeded", output=output)
         return decisions.ranking_order(step["id"])
@@ -1427,6 +1462,11 @@ class ResearchFlow:
         return f"provider_{outcome.status}", {"provider": provider, "http_status": outcome.http_status,
                                               "retry_after": outcome.rate_limit.get("retry-after")}
 
+    def _allowance_ended_searches(self, run_id: str) -> bool:
+        """Whether a search step of this run was closed because its query's share was spent before it asked (D89)."""
+        return any(s["kind"].startswith("provider_search") and s["status"] == "cancelled"
+                   and s["error_code"] == "budget_exhausted" for s in self.store.run_steps(run_id))
+
     def _query_requests(self, run_id: str, query_key: str) -> int:
         """Requests this sw query has sent in this run, retries included (D89)."""
         return self.store.run(run_id)["usage"].get("query_requests", {}).get(query_key, 0)
@@ -1462,6 +1502,7 @@ class ResearchFlow:
         waiting = iter(hosts.values())
         pending: set[asyncio.Future[bool]] = set()
         progress = asyncio.Event()
+        abort = asyncio.Event()  # set on an error: the other hosts stop before their next request
         stopping = False
         error: BaseException | None = None
         written = 0
@@ -1484,7 +1525,7 @@ class ResearchFlow:
                 group = next(waiting, None)
                 if group is None:
                     break
-                pending.add(asyncio.ensure_future(self._read_host(run, group, retry_failed, effort, progress)))
+                pending.add(asyncio.ensure_future(self._read_host(run, group, retry_failed, effort, progress, abort)))
             if not pending:
                 break
             woken = asyncio.ensure_future(progress.wait())
@@ -1497,11 +1538,14 @@ class ResearchFlow:
                     stopping = task.result() or stopping
                 except Exception as exc:
                     error = error or exc
+                    abort.set()
             if error is None:
                 write(ended_only=True)
+        write(ended_only=False)  # after a stop or an error: the pages of queries left half read, in query order
         if error is not None:
+            # What the other hosts had read is written first, so the requests they spent are not lost with it
+            # (review of 13f, 2026-09-23).
             raise error
-        write(ended_only=False)  # after a stop: the pages of queries it left half read, in query order
         self._checkpoint(run_id, revision)
         if stopping:
             # The stop was taken back before it was written (a resume of a pause still being requested): read on,
@@ -1510,16 +1554,17 @@ class ResearchFlow:
         return failure
 
     async def _read_host(self, run: dict[str, Any], group: list[_QueryRead], retry_failed: bool, effort: str,
-                         progress: asyncio.Event) -> bool:
+                         progress: asyncio.Event, abort: asyncio.Event | None = None) -> bool:
         """Read one host's queries in query order; True when a stop ended the reading before the last of them."""
         for read in group:
-            if await self._read_query(run, read, retry_failed, effort):
+            if await self._read_query(run, read, retry_failed, effort, abort):
                 return True
             read.ended = True
             progress.set()
         return False
 
-    async def _read_query(self, run: dict[str, Any], read: _QueryRead, retry_failed: bool, effort: str) -> bool:
+    async def _read_query(self, run: dict[str, Any], read: _QueryRead, retry_failed: bool, effort: str,
+                          abort: asyncio.Event | None = None) -> bool:
         """Read one sw query page by page up to this effort's read limit, holding each page for `_write_query`.
 
         A page whose step already ended is not asked again: its stored output gives the next cursor, as it always
@@ -1544,8 +1589,12 @@ class ResearchFlow:
                     known_total = output["provider_total"]
                 cursor, number = output["next_cursor"], number + 1
                 continue
-            if self._stop_requested(run_id, revision):
+            if (abort is not None and abort.is_set()) or self._stop_requested(run_id, revision):
                 return True
+            if before >= min(SW_READ_LIMIT[effort], connector.max_reachable or SW_READ_LIMIT[effort]):
+                # A query resumed after its read limit was lowered (13g halved `detailed`) has read what it may:
+                # asking for the rest would ask for a page of no or minus records (review of 13f and 13g, 2026-09-23).
+                return False
             if self._query_requests(run_id, query_key) >= allowance:
                 # Only a query resumed after its last page was read, or one asked to search again, reaches this:
                 # nothing is sent, and the step of the page it would have asked for says why (D89).
@@ -1553,6 +1602,8 @@ class ResearchFlow:
                 return False
             if number and connector.page_gap:
                 await asyncio.sleep(connector.page_gap)  # only before a page that is really requested
+                if (abort is not None and abort.is_set()) or self._stop_requested(run_id, revision):
+                    return True  # a stop asked during the gap (arXiv's is 3 s) sends no further page
             page = Page(number, cursor, before, known_total, SW_READ_LIMIT[effort], PROVIDER_WAIT[effort], query_key,
                         allowance)
             # A paged read is bounded by the read limit, not by results_per_query, and its last page asks only for
@@ -1627,6 +1678,7 @@ class ResearchFlow:
             result["second_round"] = {key: second[key] for key in ("setting_synonyms", "task_additions", "setting_width")}
             more = query_compiler.compile_block_queries(
                 second, scope["providers"], budget["max_provider_requests"]) if second["terms"] else []
+            result["searched"] = expansion_rules.searched_additions(result, more)
             # What each term had brought in by the time the expansion ended: one dated photograph, never a number
             # the research keeps as its own (the live figure is derived by `term_yields`).
             result["yield_at_expansion"] = expansion_rules.count_yields(

@@ -68,11 +68,20 @@ def _group(operands: list[str]) -> str:
 
 def _render(provider: str, core: list[str], family: list[str]) -> str:
     if provider in PLAIN_PROVIDERS:  # plain words: the first core term, then the first family term
-        words: dict[str, str] = {}
-        for word in " ".join([core[0], *family[:1]]).split():
-            if word not in BOOLEAN_OPERATORS:
-                words.setdefault(word.lower(), word)
-        return " ".join(list(words.values())[: query_rules.MAX_PLAIN_WORDS])
+        def words(text: str, seen: set[str]) -> list[str]:
+            kept: dict[str, str] = {}
+            for word in text.split():
+                if word not in BOOLEAN_OPERATORS and word.lower() not in seen:
+                    kept.setdefault(word.lower(), word)
+            return list(kept.values())
+
+        core_words = words(core[0], set())
+        family_words = words(family[0], {w.lower() for w in core_words}) if family else []
+        # A long core term leaves room for at least one family word, so the word cap never drops a block whole
+        # (review of 13g, 2026-09-23).
+        cap = query_rules.MAX_PLAIN_WORDS
+        family_words = family_words[: max(1, cap - len(core_words))] if family_words else []
+        return " ".join(core_words[: cap - len(family_words)] + family_words)
     if provider == "serpapi":  # Google Scholar reads no parentheses, so only the first core term stands before the OR chain
         return " ".join([quoted(core[0]), *([" OR ".join(quoted(t) for t in family)] if family else [])])
     operand = {"arxiv": lambda t: f"abs:{quoted(t)}", "pubmed": lambda t: f"{quoted(t)}[Title/Abstract]"}.get(provider, quoted)

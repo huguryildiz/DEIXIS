@@ -2,7 +2,7 @@
 
 The model chooses at most six terms for the setting and task blocks, with a kind, a short reason and up to three
 backups per block (`references/search-query.md`). Code counts every chosen term twice, alone and together with the
-other block's chosen terms. A term no record holds on its own is replaced by the next backup of its block; a term
+terms the other block is searched with. A term no record holds on its own is replaced by the next backup of its block; a term
 that finds nothing together with the other block stays and is shown as a warning, because an automatic swap there
 was not measured. No count removes a term for being large: the one-million rule of the code vocabulary does not
 apply to what the model wrote.
@@ -82,10 +82,13 @@ class _Counter:
         return value
 
 
-async def _counted(phrase: str, block: str, other: list[str], counter: _Counter) -> dict[str, Any]:
-    alone = await counter(quoted(phrase))
-    together = await counter(f"{quoted(phrase)} AND {_group(other)}") if other and alone != 0 else None
-    return {"phrase": phrase, "block": block, "alone": alone, "with_other_block": together}
+async def _with_other(phrase: str, alone: int | None, other: list[str], counter: _Counter) -> int | None:
+    """The count of a term together with the terms the other block is searched with, once no swap changes them."""
+    return await counter(f"{quoted(phrase)} AND {_group(other)}") if other and alone != 0 else None
+
+
+def _queried(terms: list[dict[str, Any]]) -> dict[str, list[str]]:
+    return {block: [t["phrase"] for t in terms if t["block"] == block and not t["dropped"]] for block in GATE_BLOCKS}
 
 
 def _warnings(row: dict[str, Any]) -> list[str]:
@@ -99,9 +102,11 @@ def _warnings(row: dict[str, Any]) -> list[str]:
 async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | None]]) -> dict[str, Any]:
     """Count the answer's chosen terms and put a backup in place of each one no record holds (D92).
 
-    Every count, every replacement and every warning is returned, so the approval card and the protocol show the
-    numbers that decided the query. A block left with no term is returned as it is: the caller treats that answer as
-    one that cannot be searched.
+    Every term is counted alone first, so every swap is made before any term is counted with the other block; the
+    count with the other block then reads the terms that block is really searched with. Every count, every
+    replacement and every warning is returned, so the approval card and the protocol show the numbers that decided
+    the query. A block left with no term is returned as it is: the caller treats that answer as one that cannot be
+    searched.
     """
     chosen, backups = answer_terms(answer)
     counter = _Counter(count)
@@ -110,15 +115,15 @@ async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | N
     terms: list[dict[str, Any]] = []
     checks: list[dict[str, Any]] = []
     for block in GATE_BLOCKS:
-        other = [row["phrase"] for row in chosen[_other(block)]]
         spare = list(backups[block])
         for row in chosen[block]:
             phrase, replaced = row["phrase"], None
             while True:
-                counted = await _counted(phrase, block, other, counter)
-                checks.append(counted | {"backup_for": replaced})
-                if counted["alone"] != 0:
-                    terms.append(_term(phrase, block, ASSIGNMENT, counted["alone"]))
+                alone = await counter(quoted(phrase))
+                checks.append({"phrase": phrase, "block": block, "alone": alone, "with_other_block": None,
+                               "backup_for": replaced})
+                if alone != 0:
+                    terms.append(_term(phrase, block, ASSIGNMENT, alone))
                     break
                 terms.append(_term(phrase, block, ASSIGNMENT, 0, "zero_results"))
                 if not spare:
@@ -126,7 +131,9 @@ async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | N
                 replaced, phrase = phrase, spare.pop(0)
                 meta[phrase] = {"kind": None, "why": None, "backup_for": replaced}
         backups[block] = spare
-    queried = {block: [t["phrase"] for t in terms if t["block"] == block and not t["dropped"]] for block in GATE_BLOCKS}
+    queried = _queried(terms)
+    for row in checks:
+        row["with_other_block"] = await _with_other(row["phrase"], row["alone"], queried[_other(row["block"])], counter)
     gate = f"{_group(queried['setting'])} AND {_group(queried['task'])}" if all(queried.values()) else None
     return {
         "terms": terms,
@@ -175,10 +182,26 @@ def is_model_written(vocabulary: dict[str, Any] | None) -> bool:
     return bool(vocabulary) and vocabulary["block_assignment"] == ASSIGNMENT
 
 
+def code_searched(vocabulary: dict[str, Any]) -> bool:
+    """Whether the code's query is really searched beside the model's: switched on, and at least one of its queries
+    compiled within the request limit (`with_compiled`). A vocabulary stored before `compiled` was written reads the
+    switch alone, as it did then."""
+    code = vocabulary.get("code_query") or {}
+    return bool(code.get("searched")) and code.get("compiled", True)
+
+
+def with_compiled(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
+    """The vocabulary with `code_query.compiled` set from the first round's compiled queries. The switch the user
+    sees (`searched`) is left as it is."""
+    if "code_query" not in vocabulary:
+        return vocabulary
+    compiled = any(query.get("origin") == "code" for query in queries)
+    return vocabulary | {"code_query": vocabulary["code_query"] | {"compiled": compiled}}
+
+
 def code_terms(vocabulary: dict[str, Any]) -> list[dict[str, Any]]:
     """The code query's terms when that query is searched beside the model's, otherwise none."""
-    code = vocabulary.get("code_query") or {}
-    return list(code["vocabulary"]["terms"]) if code.get("searched") else []
+    return list(vocabulary["code_query"]["vocabulary"]["terms"]) if code_searched(vocabulary) else []
 
 
 def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int) -> list[dict[str, Any]]:
@@ -236,26 +259,40 @@ async def rebuild(vocabulary: dict[str, Any], term_edits: list[dict[str, Any]], 
     rows +=[(edit["phrase"], edit["block"], "model" if edit["phrase"] in model_phrases else "user")
              for edit in operations.values() if edit["op"] == "add"]
     before = {term["phrase"]: term for term in vocabulary["terms"]}
-    gate = {block: [phrase for phrase, b, _ in rows if b == block] for block in GATE_BLOCKS}
     terms: list[dict[str, Any]] = []
-    warnings: list[dict[str, Any]] = []
     checks = list(vocabulary["search_query"]["checks"])
+    counted_here: list[dict[str, Any]] = []
     for phrase, block, origin in rows:
         if block not in GATE_BLOCKS:
             continue
         kept = before.get(phrase)
         if kept is not None and kept["block"] == block:
             terms.append(kept)
-            warnings += [w for w in vocabulary["search_query"]["warnings"] if w["phrase"] == phrase]
             continue
-        other = [p for p in gate[_other(block)] if p != phrase]
-        counted = await _counted(phrase, block, other, counter)
-        checks.append(counted | {"backup_for": None})
-        terms.append(_term(phrase, block, origin, counted["alone"], "zero_results" if counted["alone"] == 0 else None))
+        alone = await counter(quoted(phrase))
+        counted_here.append({"phrase": phrase, "block": block, "alone": alone, "with_other_block": None,
+                             "backup_for": None})
+        terms.append(_term(phrase, block, origin, alone, "zero_results" if alone == 0 else None))
         meta.setdefault(phrase, {"kind": None, "why": None, "backup_for": None})
-        if counted["alone"] != 0:
-            warnings += [{"phrase": phrase, "block": block, "warning": w} for w in _warnings(counted)]
-    queried = {block: [t["phrase"] for t in terms if t["block"] == block and not t["dropped"]] for block in GATE_BLOCKS}
+    # Every searched term is counted again with the other block as corrected, the kept ones too: a warning read
+    # against a block the user changed would describe a query that is no longer sent. A count already read is not
+    # asked again, and a kept term's count is written again only where it changed.
+    queried = _queried(terms)
+    last = {c["phrase"]: c for c in checks}
+    warnings: list[dict[str, Any]] = []
+    for term in terms:
+        if term["dropped"]:
+            continue
+        phrase, block = term["phrase"], term["block"]
+        row = next((c for c in counted_here if c["phrase"] == phrase), None)
+        fresh = row is not None
+        row = row or {"phrase": phrase, "block": block, "alone": term["phrase_count"], "with_other_block": None,
+                      "backup_for": None}
+        row["with_other_block"] = await _with_other(phrase, row["alone"], queried[_other(block)], counter)
+        if not fresh and (phrase not in last or last[phrase]["with_other_block"] != row["with_other_block"]):
+            counted_here.append(row)
+        warnings += [{"phrase": phrase, "block": block, "warning": w} for w in _warnings(row)]
+    checks += counted_here
     gate_query = f"{_group(queried['setting'])} AND {_group(queried['task'])}" if all(queried.values()) else None
     code = dict(vocabulary["code_query"])
     if code_query is not None:

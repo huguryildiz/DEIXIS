@@ -633,9 +633,12 @@ class Store:
             ).fetchone()
             if active:
                 raise RunInProgress(run["research_id"])
+            # A search closed because its query's share was spent before it asked is retried too: the retry adds
+            # to every query's share, which is what it lacked (D89; review of 13f, 2026-09-23).
             failed = self.conn.execute(
                 "SELECT COUNT(*) AS n FROM run_steps WHERE run_id = ? AND kind LIKE 'provider_search:%'"
-                " AND status IN ('failed', 'outcome_unknown')", (run_id,)
+                " AND (status IN ('failed', 'outcome_unknown')"
+                " OR (status = 'cancelled' AND error_code = 'budget_exhausted'))", (run_id,)
             ).fetchone()["n"]
             if not failed:
                 raise RevisionConflict("This discovery run has no failed provider searches")
@@ -759,6 +762,15 @@ class Store:
         step = dict(row)
         step["output"] = json.loads(step.pop("output_json")) if step["output_json"] else None
         return step
+
+    def search_query_of(self, research_id: str, scope_revision: int, run_id: str) -> dict[str, Any] | None:
+        """The newest succeeded model-query step of another run of this scope revision (D92), or None."""
+        row = self.conn.execute(
+            "SELECT s.run_id, s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id"
+            " WHERE r.research_id = ? AND r.scope_revision = ? AND r.id != ? AND s.operation_key = 'search_query'"
+            " AND s.status = 'succeeded' AND s.output_json IS NOT NULL ORDER BY r.created_at DESC, s.rowid DESC LIMIT 1",
+            (research_id, scope_revision, run_id)).fetchone()
+        return {"run_id": row["run_id"], "output": json.loads(row["output_json"])} if row else None
 
     def approvals_of(self, research_id: str) -> list[dict[str, Any]]:
         """Every succeeded protocol approval of this research, newest run first (slice 08a)."""
@@ -2180,6 +2192,12 @@ class Store:
     def step_input_selection_revision(self, step_input_id: str) -> int | None:
         row = self.conn.execute("SELECT selection_revision FROM step_inputs WHERE id = ?", (step_input_id,)).fetchone()
         return row["selection_revision"] if row else None
+
+    def last_step_input(self, step_id: str) -> dict[str, Any] | None:
+        """The newest StepInput a model step sent: its id and the package hash it carried."""
+        row = self.conn.execute("SELECT id, skill_package_hash FROM step_inputs WHERE step_id = ?"
+                                " ORDER BY attempt DESC, rowid DESC LIMIT 1", (step_id,)).fetchone()
+        return dict(row) if row else None
 
     def step_input_payload(self, step_input_id: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT payload_json FROM step_inputs WHERE id = ?", (step_input_id,)).fetchone()

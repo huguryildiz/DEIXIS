@@ -186,3 +186,13 @@ def test_on_a_tie_the_last_block_loses_a_term_first():
     (query,) = query_compiler.compile_block_queries(_blocks(NETWORK_SETTING[:4], NETWORK_TASK), ["openalex"], 8)
     # 4 + 4: the task block goes first on the tie, then the setting block: 3 + 3.
     assert query["dropped_terms"] == ["on-body channels", "retransmission"]
+
+
+def test_a_plain_word_query_keeps_a_word_of_each_block_when_the_setting_term_is_long():
+    """Review of 13g (2026-09-23): a setting term of eight or more words filled Semantic Scholar's word cap and the
+    task block was silently left out, with nothing in `dropped_terms`."""
+    setting = ["SYNTHETIC long wearable body area network telemetry setting phrase here"]
+    (query,) = query_compiler.compile_block_queries(_blocks(setting, ["routing"]), ["semantic_scholar"], 8)
+    words = query["query_text"].split()
+    assert "routing" in words and "SYNTHETIC" in words
+    assert len(words) <= query_compiler.query_rules.MAX_PLAIN_WORDS

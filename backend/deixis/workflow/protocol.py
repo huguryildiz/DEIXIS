@@ -150,7 +150,10 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                        if vocabulary else None),
         # The second arm's own record: every candidate phrase with its two counts and why it was kept or refused.
         **({"expansion": {"skipped": expansion["skipped"], "candidates": expansion["candidates"],
-                          "terms": list(expansion["terms"])}} if expansion else {}),
+                          "terms": list(expansion["terms"]),
+                          # The accepted phrases a second-round query really kept, by block (review of 13g).
+                          **({"searched": expansion["searched"]} if "searched" in expansion else {})}}
+           if expansion else {}),
         "compiled_queries": [{"provider_id": q["provider_id"], "query_text": q["query_text"],
                               **({"results": q["results"]} if q.get("results") is not None else {}),
                               # Which vocabulary wrote the query: the model's or the code's beside it (D92).

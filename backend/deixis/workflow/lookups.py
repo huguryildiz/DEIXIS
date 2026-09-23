@@ -374,6 +374,13 @@ async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any
     if step["status"] == "succeeded":
         return step["output"]
     store.start_step(step["id"])
+    if spent >= limit:
+        # The access check is a request too: with none left it is not sent, and the plan says why Scopus was not
+        # asked (review of 13g, 2026-09-23).
+        output = plan_scopus(store, run["research_id"], run["scope_revision"], words, spent, limit) | {
+            "skipped": "request_limit"}
+        store.finish_step(step["id"], "succeeded", output=output)
+        return output
     store.add_usage(run["id"], "lookup_requests")
     entitled = await scopus.complete_view_entitled(http, CONNECTORS["scopus"].api_key() or "")
     if entitled is True:

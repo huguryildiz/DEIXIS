@@ -405,3 +405,45 @@ def test_a_later_run_does_not_learn_from_the_records_an_earlier_expansion_brough
     ), "openalex", [candidate_record(2, "SYNTHETIC record only the expansion arm found")], None, step["id"], "succeeded",
         step_output={"status": "completed"})
     assert [r["title"] for r in first_round_records(store, rid, 1)] == ["SYNTHETIC first round record"]
+
+
+def test_a_phrase_and_its_plural_are_one_candidate():
+    """Review of 13g (2026-09-23): "quantum repeater" and "quantum repeaters" were two candidates and both were
+    accepted in the third D88 measurement; OpenAlex counts them as one term. The more frequent form stands for both,
+    and a work holding both forms counts once."""
+    records = [{"work_id": f"w{i}", "title": f"SYNTHETIC quantum repeaters for relay {i}", "author_keywords": []}
+               for i in range(3)] + [
+              {"work_id": f"v{i}", "title": f"SYNTHETIC quantum repeater design {i}", "author_keywords": []}
+               for i in range(2)] + [
+              {"work_id": "both", "title": "SYNTHETIC quantum repeater and quantum repeaters", "author_keywords": []}]
+    found = {c.phrase: c.document_frequency for c in candidates(records, [], [])
+             if "repeater" in c.phrase and len(c.phrase.split()) == 2}
+    assert found == {"quantum repeaters": 6}, found
+
+
+def test_only_the_accepted_phrases_a_second_round_query_kept_rank_and_count_and_in_their_own_block():
+    """Review of 13g (2026-09-23): six accepted phrases, two searched in the third measurement's `standard` run; the
+    rest ranked as task terms anyway. Setting synonyms beyond the width, and phrases every query dropped, are out;
+    a setting synonym ranks with the setting block."""
+    from deixis.workflow.expansion import expansion_blocks, searched_additions, term_rows
+    from deixis.workflow.ranking import query_vocabulary
+
+    result = {"terms": ["quantum internet", "quantum networking", "remote entanglement", "SYNTHETIC swap budget"],
+              "second_round": {"setting_synonyms": ["quantum internet", "quantum networking"],
+                               "task_additions": ["remote entanglement", "SYNTHETIC swap budget"], "setting_width": 1}}
+    queries = [{"provider_id": "openalex", "dropped_terms": ["SYNTHETIC swap budget"]},
+               {"provider_id": "pubmed", "dropped_terms": ["SYNTHETIC swap budget", "remote entanglement"]}]
+    searched = searched_additions(result, queries)
+    assert searched == {"setting": ["quantum internet"], "task": ["remote entanglement"]}
+    rows = term_rows([], {"searched": searched})
+    assert [(r["phrase"], r["block"]) for r in rows] == [("quantum internet", "setting"), ("remote entanglement", "task")]
+    # An expansion stored before this review reads as it did: every accepted phrase a task term.
+    assert expansion_blocks({"terms": ["a b"]}) == {"setting": [], "task": ["a b"]}
+    assert searched_additions(result, []) == {"setting": [], "task": []}
+    vocabulary = {"terms": [{"phrase": "quantum network", "block": "setting", "origin": "question", "root": "quantum network",
+                             "in_query": "phrase", "dropped": None},
+                            {"phrase": "routing", "block": "task", "origin": "question", "root": "routing",
+                             "in_query": "phrase", "dropped": None}]}
+    _, blocks = query_vocabulary({"question": "SYNTHETIC question"}, vocabulary, searched)
+    assert "quantum internet" in blocks["setting"] and "quantum internet" not in blocks["task"]
+    assert "remote entanglement" in blocks["task"] and "quantum networking" not in blocks["setting"] + blocks["task"]

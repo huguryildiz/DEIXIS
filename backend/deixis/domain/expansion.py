@@ -45,8 +45,12 @@ def candidates(records: list[dict[str, Any]], queried_forms: list[str], side_wor
     versions the list holds, so a preprint and its published record do not make a phrase look twice as common.
     """
     blocked = [words(form) for form in [*queried_forms, *side_words] if words(form)]
+    # A phrase and its plural are one candidate, as OpenAlex counts them as one term: they are counted under their
+    # shared stem, a work holding both counts once, and the more frequent form stands for both (review of 13g,
+    # 2026-09-23; D90's matching already stems the blocked terms the same way).
     frequency: Counter[str] = Counter()
     sources: dict[str, set[str]] = {}
+    forms: dict[str, Counter[str]] = {}
     for group in _by_work(records):
         found: dict[str, set[str]] = {}
         for record in group:
@@ -54,12 +58,18 @@ def candidates(records: list[dict[str, Any]], queried_forms: list[str], side_wor
                 found.setdefault(phrase, set()).add("title")
             for phrase in _keyword_phrases(record.get("author_keywords") or []):
                 found.setdefault(phrase, set()).add("author_keyword")
+        stems: dict[str, set[str]] = {}
         for phrase, where in found.items():
-            frequency[phrase] += 1
-            sources.setdefault(phrase, set()).update(where)
-    kept = [Candidate(phrase, count, tuple(s for s in SOURCE_ORDER if s in sources[phrase]))
-            for phrase, count in frequency.items()
-            if count >= MIN_DOCUMENT_FREQUENCY and not _holds_any(phrase, blocked)]
+            key = " ".join(stem(word) for word in phrase.split())
+            stems.setdefault(key, set()).update(where)
+            forms.setdefault(key, Counter())[phrase] += 1
+        for key, where in stems.items():
+            frequency[key] += 1
+            sources.setdefault(key, set()).update(where)
+    shown = {key: min(counts, key=lambda phrase: (-counts[phrase], phrase)) for key, counts in forms.items()}
+    kept = [Candidate(shown[key], count, tuple(s for s in SOURCE_ORDER if s in sources[key]))
+            for key, count in frequency.items()
+            if count >= MIN_DOCUMENT_FREQUENCY and not _holds_any(shown[key], blocked)]
     # Frequency decides, and the phrase itself breaks a tie: neither the order the records arrived in nor a set's
     # iteration order may reach the list the probe spends its requests on (SW14.6).
     return sorted(kept, key=lambda candidate: (-candidate.document_frequency, candidate.phrase))[:MAX_PROBED_PHRASES]

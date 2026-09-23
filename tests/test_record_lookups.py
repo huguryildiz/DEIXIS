@@ -568,3 +568,16 @@ def test_an_empty_scopus_result_set_is_not_found_and_a_refused_view_is_failed():
     assert (empty.status, outcome.status) == ("not_found", "zero_results")
     refused, _, _ = scopus(lambda request: httpx.Response(401, json={"service-error": {}}))
     assert refused.status == "failed"
+
+
+def test_a_scopus_answer_that_names_another_doi_is_not_taken_as_the_abstract():
+    """Review of 13g (2026-09-23): the abstract is written to the record that was asked about, so an entry naming
+    another DOI must not fill it."""
+    answer, outcome, _ = scopus(lambda request: httpx.Response(200, json={"search-results": {
+        "opensearch:totalResults": "1", "entry": [{"prism:doi": "10.9/another", "dc:description": ABSTRACT}]}}))
+    assert (answer.status, answer.abstract) == ("not_found", None)
+    assert "another" in (outcome.error or "")
+    same, _, _ = scopus(lambda request: httpx.Response(200, json={"search-results": {
+        "opensearch:totalResults": "2", "entry": [{"prism:doi": "10.9/another", "dc:description": "SYNTHETIC other"},
+                                                  {"prism:doi": DOI.upper(), "dc:description": ABSTRACT}]}}))
+    assert (same.status, same.abstract) == ("found", ABSTRACT)

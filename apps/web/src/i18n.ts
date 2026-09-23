@@ -1842,6 +1842,7 @@ const tr: Record<string, string> = {
   'The model’s query': 'Modelin sorgusu',
   'Also search with the query built from the question’s words': 'Sorunun kelimelerinden kurulan sorguyla da ara',
   'That query cannot be searched on its own: none was compiled, or every term was too frequent.': 'Bu sorgu tek başına aranamıyor: hiç sorgu kurulamadı ya da terimlerin hepsi çok sık geçiyor.',
+  'This search’s request limit leaves no room for it: only the model’s queries are sent.': 'Bu aramanın istek sınırında ona yer kalmıyor: yalnız modelin sorguları gönderilir.',
   'Its terms: {terms}': 'Terimleri: {terms}',
   'the code’s query switched on': 'sorunun kelimelerinden kurulan sorgu açıldı',
   'the code’s query switched off': 'sorunun kelimelerinden kurulan sorgu kapatıldı',

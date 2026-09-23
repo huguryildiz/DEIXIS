@@ -42,6 +42,11 @@ class Settings:
     # writes it once per scope revision and the code's own query is searched beside it. `code` is the query of
     # slice 13g alone, with no model call, for a measurement or a test that needs the code path only.
     search_query: str = "model"
+    # Whether an `sw` discovery run chains citations after its abstract stage (D95, slice 15). `auto` is the product's
+    # behavior and what `load_settings` reads when the variable is unset; `off` is this dataclass's default so a test
+    # or a script that builds its own settings sends no chain request unless it asks for one. The setting is written
+    # into a discovery run's budget when the run is queued and is frozen there for that run.
+    citation_chaining: str = "off"
 
     @property
     def db_path(self) -> Path:
@@ -116,6 +121,9 @@ def load_settings() -> Settings:
     search_query = os.environ.get("DEIXIS_SEARCH_QUERY", "model")
     if search_query not in ("model", "code"):
         raise ValueError("DEIXIS_SEARCH_QUERY must be model or code")
+    citation_chaining = os.environ.get("DEIXIS_CITATION_CHAINING", "auto")
+    if citation_chaining not in ("auto", "off"):
+        raise ValueError("DEIXIS_CITATION_CHAINING must be auto or off")
     return Settings(
         data_dir=default_data_dir(),
         host=os.environ.get("DEIXIS_HOST", "127.0.0.1"),
@@ -127,4 +135,5 @@ def load_settings() -> Settings:
         fulltext_fetch=fulltext_fetch,
         fulltext_adjudication=fulltext_adjudication,
         search_query=search_query,
+        citation_chaining=citation_chaining,
     )

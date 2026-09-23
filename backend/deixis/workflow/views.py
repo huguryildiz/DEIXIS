@@ -9,6 +9,7 @@ from typing import Any
 from deixis.documents import embeddings, pdf
 from deixis.domain.rules import SUGGESTION_CALLS, effective_reviewer, result_applicability
 from deixis.workflow import approval as approval_rules
+from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy
 from deixis.workflow import suggestions as suggestions_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state, equations_to_check
@@ -137,7 +138,15 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
         # Which sources the queries were compiled for and why (D93): the approved routing once a correction routed
         # again, else the proposal's. None for a card shown before routing existed.
         "routing": _card_routing(approved or output["proposal"], output["proposal"]),
+        # How this run will chain citations after its abstract stage: the rule and its limits, frozen in the run's
+        # budget when it was queued (D95). The real seeds are only known after the search, in the run view.
+        "chaining": _card_chaining(store, run_id),
     }
+
+
+def _card_chaining(store: Store, run_id: str) -> dict[str, Any] | None:
+    run = store.run(run_id)
+    return chain_policy(run["budget"], store.scope(run["research_id"], run["scope_revision"])["effort"])
 
 
 def _card_routing(side: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any] | None:
@@ -177,18 +186,27 @@ def source_counts(store: Store, run_id: str) -> dict[str, Any] | None:
     first = len((((card or {}).get("output") or {}).get("approved") or {}).get("queries") or []) or None
     by_round: dict[int, dict[str, set[str]]] = {}
     everywhere: dict[str, set[str]] = {}
+    # Citation chaining is not a round of a source's searches (D95): its works are counted apart, with the works no
+    # keyword search of this run found.
+    chained: set[str] = set()
     for search in searches:
+        if search["operation_key"].startswith(CHAIN_PREFIX):
+            chained |= works.get(search["id"], set())
+            continue
         index = re.match(r"search:(\d+)", search["operation_key"])
         number = 2 if first is not None and index and int(index.group(1)) >= first else 1
         found = works.get(search["id"], set())
         by_round.setdefault(number, {}).setdefault(search["provider"], set()).update(found)
         everywhere.setdefault(search["provider"], set()).update(found)
-    return {"counted": True, "rounds": [
+    counts: dict[str, Any] = {"counted": True, "rounds": [
         {"round": number, "sources": [
             {"provider_id": provider, "works": len(found),
              "only": len(found - set().union(*(w for p, w in everywhere.items() if p != provider)))}
             for provider, found in providers.items()]}
         for number, providers in sorted(by_round.items())]}
+    if any(search["operation_key"].startswith(CHAIN_PREFIX) for search in searches):
+        counts["chain"] = {"works": len(chained), "only": len(chained - set().union(*everywhere.values()))}
+    return counts
 
 
 def _json(value: str | None) -> Any:

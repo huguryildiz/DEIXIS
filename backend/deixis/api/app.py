@@ -33,7 +33,8 @@ from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import skill
 from deixis.workflow import abstract_stage
-from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ,
+                                 CHAIN_REQUEST_LIMIT, CRITERION_CALLS, SEARCH_QUERY_CALLS,
                                  SUGGESTION_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict)
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
@@ -812,7 +813,13 @@ def create_app(
                 ABSTRACT_READ_LIMIT[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
             # The model-written query and its repair and retry (D92); a run on the code's query alone makes no call.
             extra += SEARCH_QUERY_CALLS if settings.search_query == "model" else 0
-            budget = budget | {"max_model_calls": budget["max_model_calls"] + extra}
+            # Citation chaining (D95): the setting is frozen into the run here, with the chain's own abstract read and
+            # its own request limit, which is not `max_provider_requests`: running out of it ends the chain, never the run.
+            chain: dict[str, Any] = {"citation_chaining": settings.citation_chaining}
+            if settings.citation_chaining == "auto":
+                extra += abstract_stage.model_calls(CHAIN_ABSTRACT_READ[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
+                chain["max_chain_requests"] = CHAIN_REQUEST_LIMIT
+            budget = budget | {"max_model_calls": budget["max_model_calls"] + extra} | chain
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
             budget = {"max_model_calls": 2, "max_provider_requests": 0}

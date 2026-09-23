@@ -55,6 +55,8 @@ function phaseOf(kind: string): PhaseKey | null {
   if (kind === 'model:screening') return 'screen'
   // An sw run screens abstracts in two steps: code classifies every record, then the model proposes.
   if (kind === 'code:abstract_stage' || kind === 'model:abstract_screening') return 'screen'
+  // Citation chaining follows the abstract stage and reads its new works the same way, so it is part of screening (D95).
+  if (kind.startsWith('code:chain_') || kind.startsWith('provider_chain:')) return 'screen'
   if (kind === 'fetch_pdf' || kind === 'pdf_other_copy') return 'pdf'
   // A full-text retrieval run plans, fetches and totals in code; all three belong to the run's one PDF phase.
   if (kind.startsWith('code:fulltext_')) return 'pdf'
@@ -155,7 +157,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen'] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
   const reached = Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
-  const searches = view.search_runs.filter(s => s.run_id === run.id)
+  // A citation chain's requests are not searches of the question; the screening phase reports them (D95).
+  const searches = view.search_runs.filter(s => s.run_id === run.id && !s.query_text.startsWith('chain:'))
   const answer = view.answers.find(a => a.run_id === run.id)
   const started = present(steps.map(s => s.started_at))[0] ?? run.created_at
   const unknownSteps = steps.filter(s => s.status === 'outcome_unknown')
@@ -173,6 +176,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const included = view.sources.filter(s => s.selection.state === 'included')
   // The similarity step belongs to no phase of its own; the screening phase reports it.
   const similarity = steps.find(s => s.kind.startsWith('similarity:'))
+  // What the citation chain did in this run, once its summary is written (D95).
+  const chain = steps.find(s => s.kind === 'code:chain_summary' && s.status === 'succeeded')
   // A pdf_ocr run (D51): its PDF, the pages without text it found, and what became of the merged text.
   const ocrSource = run.kind === 'pdf_ocr' ? view.sources.find(s => s.source_version_id === run.target?.source_version_id) : undefined
   const ocrAsset = ocrSource?.access.assets.find(a => a.id === run.target?.asset_id)
@@ -296,12 +301,17 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
               <ConnectionIcon id={source.provider_id} />{providerName(source.provider_id)} {t('{works} works, {only} only here', { works: source.works, only: source.only })}
             </span>)}</p>)
           : <p className="chat-report-line"><span>{t('Works per source were not counted for this run')}</span></p>)
+        // What the citation chain brought, counted the same way, beside the searches rather than as a round of them.
+        const chained = counts?.counted && counts.chain ? <p className="chat-provider-totals">
+          <span>{t('Citation chaining')}</span>
+          <span><ConnectionIcon id="openalex" />{t('{works} works, {only} not found by any search', { works: counts.chain.works, only: counts.chain.only })}</span>
+        </p> : null
         // A single provider is already named on each query row below.
         const totals = perProvider.size < 2 ? null : <p className="chat-provider-totals">{[...perProvider].map(([id, { taken, total }]) => <span key={id}>
           <ConnectionIcon id={id} />{providerName(id)} {total !== null && total > taken ? t('{count} of {total}', { count: taken, total: compact(total) }) : taken}
         </span>)}</p>
-        if (!totals && !perSource) return null
-        return <>{totals}{perSource}</>
+        if (!totals && !perSource && !chained) return null
+        return <>{totals}{perSource}{chained}</>
       }
       case 'plan': {
         if (!plan) return null
@@ -330,6 +340,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
             {timed(similarity)}
           </p>}
           {lines.length > 0 && <p className="chat-report-line"><span>{lines.join(' · ')}</span></p>}
+          {chain && <ChainReport steps={steps} view={view} />}
           {run.screening_notes.map(note => <p key={note.step_id} className="chat-report-line"><span>{note.text}</span>{timed(steps.find(s => s.id === note.step_id))}</p>)}
         </>
       }
@@ -508,4 +519,40 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
     {children}
     {!children && answer && run.kind === 'answer' && <div className="answer-history-note"><span className="answer-history-icon" aria-hidden="true"><TriangleAlert size={14} /></span><span>{t('An earlier answer: {status}.', { status: t(answer.status.replaceAll('_', ' ')) })}</span></div>}
   </section>
+}
+
+// The citation chain of one discovery run (D95): what it asked, what it kept, and the seeds it started from, which
+// open under the line. Counted from the chain's own steps, so a resumed run reads the same.
+function ChainReport({ steps, view }: { steps: Step[]; view: ResearchView }) {
+  const [open, setOpen] = useState(false)
+  const chainSteps = steps.filter(s => s.kind.startsWith('code:chain_') || s.kind.startsWith('provider_chain:') || s.operation_key.startsWith('abstract_screening:chain:'))
+  const summary = steps.find(s => s.kind === 'code:chain_summary')?.output ?? {}
+  const seeds = summary.seed_list ?? []
+  const starts = present(chainSteps.map(s => s.started_at))
+  const ends = present(chainSteps.map(s => s.finished_at))
+  const seconds = starts.length && ends.length ? secondsBetween(starts[0], Date.parse(ends[ends.length - 1])) : null
+  const requests = summary.requests ?? {}
+  const titleOf = (svid: string) => view.sources.find(s => s.source_version_id === svid)?.title ?? svid
+  const line = [
+    plural(seeds.length, 'Citation chaining: {n} seed', 'Citation chaining: {n} seeds'),
+    plural(requests.sent ?? 0, '{n} request', '{n} requests'),
+    plural(summary.new_works ?? 0, '{n} new work', '{n} new works'),
+    plural(summary.read_by_model ?? 0, '{n} read by the model', '{n} read by the model'),
+    requests.failed ? plural(requests.failed, '{n} request did not complete', '{n} requests did not complete') : '',
+    requests.not_reached_seeds ? plural(requests.not_reached_seeds, '{n} seed not reached (request limit)', '{n} seeds not reached (request limit)') : '',
+  ].filter(Boolean).join(' · ')
+  return <>
+    <p className="chat-report-line">
+      <button type="button" className="chat-step-title" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span>{line}</span>{open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+      </button>
+      {seconds !== null && <time>{durationText(seconds)}</time>}
+    </p>
+    {open && <ul className="chat-list">
+      {seeds.map(seed => <li key={seed.source_version_id}>
+        <span className="chat-list-text">{titleOf(seed.source_version_id)}</span>
+        <small>{t(seed.kind === 'user' ? 'your seed' : 'ranking seed')}</small>
+      </li>)}
+    </ul>}
+  </>
 }

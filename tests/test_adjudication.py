@@ -164,6 +164,14 @@ def test_the_three_groups_are_read_in_order_inside_the_ranking():
     assert plan == {"works": ["u1", "c1", "r1"], "not_reached": []}
 
 
+def test_chained_works_are_read_after_the_keyword_order():
+    """D95: the chain's works are read in the chain's own order, after every keyword work; the limit is the same."""
+    works = [work("c1", abstract=CANDIDATE), work("r1", abstract=UNRESOLVED),
+             work("x1", abstract=CANDIDATE) | {"chained": True}, work("x2", abstract=UNRESOLVED) | {"chained": True}]
+    plan = adjudication.read_plan(works, ["r1", "c1"] + ["x2", "x1"], limit=3)
+    assert plan == {"works": ["c1", "r1", "x2"], "not_reached": ["x1"]}
+
+
 def test_a_fresh_model_decision_stays_out_and_a_stale_one_reenters():
     """`not_read_yet` is not a model decision of this stage: the work is still read."""
     fresh = work("f1", abstract=CANDIDATE, fulltext=decision("all_parts_verified"))

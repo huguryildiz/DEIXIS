@@ -477,21 +477,25 @@ def external_links(store: Store, run: dict[str, Any]) -> dict[str, Any]:
 # ---- flags and decisions ---------------------------------------------------------------------------
 
 
-def flag_and_decide(store: Store, run: dict[str, Any], scope: dict[str, Any], words: tuple[str, ...]) -> dict[str, Any]:
+def flag_and_decide(store: Store, run: dict[str, Any], scope: dict[str, Any], words: tuple[str, ...],
+                    works: set[str] | None = None, key: str = "record_flags") -> dict[str, Any]:
     """Label every candidate record and write the abstract-stage decision it asks for (SW5.4, SW9.3).
 
     A flag is stored for each of the three signals, because the seed pool of a later slice reads them; only the
     title signal asks for a decision. Nothing here writes a selection: every outcome is `unresolved`, which is what
     a `pending` selection already says, so `derive_selection` is not called.
+
+    With `works`, only the records of those works are labelled, under their own step (`key`): citation chaining
+    labels the records it brought this way, with the same rules, after the keyword records were labelled (D95).
     """
     run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
-    step = store.step(run_id, "record_flags", "code:record_flags")
+    step = store.step(run_id, key, f"code:{key}")
     if step["status"] == "succeeded":
         return step["output"]
     store.start_step(step["id"])
     decisions = DecisionStore(store)
     protocol = store.current_protocol(rid, revision)
-    rows = _records(store, rid, revision)
+    rows = [row for row in _records(store, rid, revision) if works is None or row["work_id"] in works]
     flags: dict[str, int] = {}
     written: dict[str, int] = {}
     unknown = 0
@@ -511,9 +515,10 @@ def flag_and_decide(store: Store, run: dict[str, Any], scope: dict[str, Any], wo
         if code and _should_write(decisions, rid, row["source_version_id"], code):
             decisions.record(rid, row["source_version_id"], code, step_id=step["id"], note=note)
             written[code] = written.get(code, 0) + 1
-    held = held_from_screening(store, rid, revision)
     output = {"flags": dict(sorted(flags.items())), "decisions": dict(sorted(written.items())),
-              "reference_count_unknown": unknown, "held_from_screening": len(held)}
+              "reference_count_unknown": unknown}
+    if works is None:
+        output["held_from_screening"] = len(held_from_screening(store, rid, revision))
     store.finish_step(step["id"], "succeeded", output=output)
     return output
 

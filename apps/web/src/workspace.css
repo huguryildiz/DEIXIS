@@ -289,7 +289,7 @@ button.chat-step-title svg{color:var(--muted)}
 .approval-criterion{padding:12px 16px 14px;border-bottom:1px solid color-mix(in srgb,var(--line),transparent 40%)}
 /* A model-written query (D92): the model's own note on a term, and the two queries the run would send. */
 .approval-why{flex:1 0 100%;color:var(--muted);font-size:11.5px;font-style:italic;overflow-wrap:anywhere}
-.approval-queries,.approval-routing{padding:10px 16px 12px;border-bottom:1px solid color-mix(in srgb,var(--line),transparent 40%)}
+.approval-queries,.approval-routing,.approval-chaining{padding:10px 16px 12px;border-bottom:1px solid color-mix(in srgb,var(--line),transparent 40%)}
 .approval-query-group{margin-top:10px}
 .approval-query-group ul{list-style:none;margin:4px 0 0;padding:0}
 .approval-query-group li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;padding:3px 0;border-top:1px solid color-mix(in srgb,var(--line),transparent 50%);font-size:12px}

@@ -95,6 +95,25 @@ FULLTEXT_WORK_LIMIT = {"quick": 80, "standard": 100, "detailed": 300}
 FULLTEXT_READ_LIMIT = {"quick": 40, "standard": 50, "detailed": 150}
 FULLTEXT_RUNS = 2
 FULLTEXT_PASSAGES_PER_CALL = 12
+
+# Citation chaining of an `sw` discovery run (D95, slice 15; replay in .local/sw-slice15-chain-replay-2026-09-23).
+# 2026-09-23: 15 code seeds; 25 seeds added no work to the plan in `quick` and `standard` (1 in one quantum `detailed`
+# run at 150 / 75); with 15 seeds quantum `detailed` gained 0 at 50 / 25 and at 150 / 75, and the package question
+# `detailed` 1 in one run at 150 / 75. The chain's own abstract read and its own room in the full-text plan sit on top
+# of the keyword limits above, which do not change. 15 seeds cost 17-24 requests in the replay; the request limit
+# leaves room for seeds whose citing works take two pages. Hand-picked from one topic's replay, not optimised.
+CHAIN_SEEDS = 15
+CHAIN_CITING_CAP = 400
+CHAIN_CITING_PAGE = 200
+CHAIN_BACKWARD_BATCH = 100
+CHAIN_ABSTRACT_READ = {"quick": 20, "standard": 50, "detailed": 50}
+# Plan room 25 -> 12 in standard and detailed on 2026-09-23, after the first acceptance (D95): the chain's own time was
+# 3.50 / 3.81 / 3.30 min against 3.0 with 25; 12 is the smallest room that kept the three chained verified works
+# that were read (places 4, 8 and 12). `quick` 20 -> 12 after the second acceptance: the package question's chain time
+# was 2.04 / 2.19 min against 2.0 with 20. Both changes were made after the results were seen, agreed with gpt-6-sol
+# medium (.local/sw-slice15-acceptance-2026-09-23/sol-decision*.md).
+CHAIN_PLAN_ROOM = {"quick": 12, "standard": 12, "detailed": 12}
+CHAIN_REQUEST_LIMIT = 40
 FULLTEXT_CRITERION_PASSAGES = 8
 FULLTEXT_QUOTE_MIN_CHARS = 12
 

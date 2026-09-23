@@ -266,7 +266,9 @@ def first_round_records(store: Any, research_id: str, scope_revision: int,
         hits.setdefault(row["svid"], set()).add((row["provider"], row["query_text"]))
 
     def taken(found: set[tuple[str, str]]) -> bool:
-        return any(pair not in second_round and (only is None or pair in only) for pair in found)
+        # A citation chain's request is no first-round query either (D95): a record only the chain found is not read.
+        return any(pair not in second_round and not (pair[1] or "").startswith("chain:")
+                   and (only is None or pair in only) for pair in found)
 
     return [{"work_id": row["work_id"], "title": row["title"],
              "author_keywords": json.loads(row["keywords"] or "[]")}

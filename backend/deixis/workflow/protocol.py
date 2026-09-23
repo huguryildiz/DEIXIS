@@ -104,6 +104,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     from deixis.workflow.approval import block_origins
     from deixis.workflow.vocabulary import GATE_BLOCKS, THRESHOLDS as VOCABULARY_THRESHOLDS
     from deixis.workflow.search_query import THRESHOLDS as SEARCH_QUERY_THRESHOLDS
+    from deixis.workflow.chaining import policy as chain_policy
 
     queried = [t for t in vocabulary["terms"] if not t["dropped"]] if vocabulary else []
     # The words this research reads a title for a survey with, and the ones its own question took away (SW5.1).
@@ -120,6 +121,10 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         # chosen source none (review of slice 14, 2026-09-23). The routing keeps it among the chosen, apart.
         with_query = {q["provider_id"] for q in queries}
         searched = [p for p in routing["providers"] if p in with_query]
+
+    # How this run chains citations after its abstract stage (D95), read from the budget it was queued with, so the
+    # first body and the expansion revision say the same. A `legacy` body and one queued before D95 carry none.
+    chaining = chain_policy(budget, scope["effort"]) if scope.get("search_workflow") == "sw" else None
 
     # A code vocabulary's queries came from the block compiler, so the body names that compiler, not the plan one.
     compiler_version = (query_compiler.BLOCKS_VERSION if vocabulary else
@@ -186,6 +191,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             "verification_providers": sorted(p for p in scope["providers"] if p not in in_scope)}
            if scope.get("search_workflow") == "sw" else {"providers": sorted(scope["providers"])}),
         "arms": ["keyword_search", "data_expansion"] if expansion else ["keyword_search"],
+        **({"citation_chaining": chaining} if chaining is not None else {}),
         # How this research decides a record describes itself as a survey. A `legacy` body carries none of it.
         **({"survey": {"title_words": list(kept_words), "dropped_title_words": list(dropped_words),
                        "abstract_patterns": list(SURVEY_PATTERNS)}}
@@ -235,6 +241,9 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             **({"search_query": SEARCH_QUERY_THRESHOLDS}
                if vocabulary and (vocabulary.get("search_query") or {}).get("status") == "ready" else {}),
             **({"expansion": EXPANSION_THRESHOLDS} if expansion else {}),
+            **({"chain": {key: chaining[key] for key in ("seeds", "citing_cap", "backward_batch", "request_limit",
+                                                         "abstract_read", "plan_room")}}
+               if chaining and chaining["enabled"] else {}),
         },
         "rule_table_version": "legacy",
         "budget": budget,

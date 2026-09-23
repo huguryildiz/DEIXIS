@@ -344,15 +344,10 @@ def query_vocabulary(scope: dict[str, Any], vocabulary: dict[str, Any],
     return query_words, blocks
 
 
-def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                 expansion_terms: list[str] | dict[str, list[str]], embedding_model: str | None = None) -> dict[str, Any]:
-    """Rank this revision's records and store every rank; returns the step output.
-
-    The pool is the work heads the search offered, the records slice 05 holds back from screening included: they are
-    ranked like the rest and only the screening list leaves them out. Nothing here removes a record, writes a
-    decision or changes a selection.
-    """
-    research_id, revision = run["research_id"], run["scope_revision"]
+def pool_rows(store: Any, research_id: str, revision: int) -> tuple[dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]],
+                                                                    list[dict[str, Any]]]:
+    """Every version of the research, its versions by work, and the pool the ranking reads: one row per work head the
+    search offered, the records slice 05 holds back from screening included."""
     heads = set(store.work_heads(research_id).values())
     versions = _versions(store, research_id)
     by_work: dict[str, list[dict[str, Any]]] = {}
@@ -362,11 +357,18 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             for candidate in store.candidates(research_id, revision)
             if candidate["origin"] != "user" and candidate["source_version_id"] in heads
             and candidate["source_version_id"] in versions]
-    query_words, blocks = query_vocabulary(scope, vocabulary, expansion_terms)
-    in_pool = {row["id"]: row for row in pool}
+    return versions, by_work, pool
 
-    verified = [row for svid in verified_seeds(store, research_id, scope)
-                if (row := in_pool.get(svid) or _seed_row(svid, versions)) is not None]
+
+def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_words: set[str],
+              blocks: dict[str, list[str]], embedding_model: str | None,
+              similarities: dict[str, float]) -> dict[str, Any]:
+    """The pure part of `rank_records`: every signal's ranks and the three orders, for these pool rows and seeds.
+
+    No store is read and nothing is written, so the keyword ranking and the chain's ranking (D95), which runs this
+    over the pool and the chained works together, are one computation.
+    """
+    in_pool = {row["id"]: row for row in pool}
     scores = {"bm25": bm25_scores(pool, query_words), "blocks": block_scores(pool, blocks)}
     ranks = {name: mean_ranks(score, availability(pool, name)) for name, score in scores.items()}
     # Code seeds fill the graph's seed list up to GRAPH_SEEDS, taken from the top of BM25 plus blocks (fuse.py seedsB).
@@ -383,7 +385,6 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         scores["graph"] = graph_scores(pool, graph_seeds)
     else:
         reasons["graph"] = "no_seed_with_references"
-    similarities = store.source_similarities(research_id, revision, embedding_model) if embedding_model else {}
     scored = {row["id"]: similarities[row["id"]] for row in pool if row["id"] in similarities}
     if not embedding_model:
         reasons["embedding"] = "embedding_off"
@@ -398,14 +399,44 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     fused_code = fuse(ranks, CODE_SIGNALS)
     fused = fuse(ranks, SIGNALS)
     order, rescued = inspection_order(fused, fused_code, ranks.get("embedding"))
+    return {"ranks": ranks, "fused_code": fused_code, "fused": fused, "order": order, "rescued": rescued,
+            "reasons": reasons, "graph_seeds": graph_seeds}
+
+
+def rank_rows(ranked: dict[str, Any], keep: set[str] | None = None) -> list[dict[str, Any]]:
+    """The rows a ranking step stores: every signal's rank, then the three orders. With `keep`, only those records'
+    rows, their orders renumbered among themselves (the chain's ranking stores its chained works alone, D95)."""
+    ranks = ranked["ranks"]
+    rows = [{"source_version_id": rid, "signal": name, "rank": rank, "available": available}
+            for name in SIGNALS if name in ranks for rid, (rank, available) in sorted(ranks[name].items())
+            if keep is None or rid in keep]
+    rows += [{"source_version_id": rid, "signal": name, "rank": position + 1, "available": True}
+             for name, listing in zip(ORDERS, (ranked["fused_code"], ranked["fused"], ranked["order"]))
+             for position, rid in enumerate([rid for rid in listing if keep is None or rid in keep])]
+    return rows
+
+
+def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                 expansion_terms: list[str] | dict[str, list[str]], embedding_model: str | None = None) -> dict[str, Any]:
+    """Rank this revision's records and store every rank; returns the step output.
+
+    The pool is the work heads the search offered, the records slice 05 holds back from screening included: they are
+    ranked like the rest and only the screening list leaves them out. Nothing here removes a record, writes a
+    decision or changes a selection.
+    """
+    research_id, revision = run["research_id"], run["scope_revision"]
+    versions, _, pool = pool_rows(store, research_id, revision)
+    query_words, blocks = query_vocabulary(scope, vocabulary, expansion_terms)
+    in_pool = {row["id"]: row for row in pool}
+
+    verified = [row for svid in verified_seeds(store, research_id, scope)
+                if (row := in_pool.get(svid) or _seed_row(svid, versions)) is not None]
+    similarities = store.source_similarities(research_id, revision, embedding_model) if embedding_model else {}
+    ranked = rank_pool(pool, verified, query_words, blocks, embedding_model, similarities)
+    ranks, reasons, graph_seeds = ranked["ranks"], ranked["reasons"], ranked["graph_seeds"]
 
     step = store.step(run["id"], "ranking", "code:ranking")
-    rows = [{"source_version_id": rid, "signal": name, "rank": rank, "available": available}
-            for name in SIGNALS if name in ranks for rid, (rank, available) in sorted(ranks[name].items())]
-    rows += [{"source_version_id": rid, "signal": name, "rank": position + 1, "available": True}
-             for name, listing in zip(ORDERS, (fused_code, fused, order))
-             for position, rid in enumerate(listing)]
-    DecisionStore(store).save_ranks(step["id"], research_id, rows)
+    DecisionStore(store).save_ranks(step["id"], research_id, rank_rows(ranked))
     no_references = [row["id"] for row in pool if not row["references"]]
     return {
         "pool": len(pool),
@@ -420,5 +451,5 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         "no_reference_list_share": round(len(no_references) / len(pool), 4) if pool else None,
         "no_abstract": sum(not row["abstract"] for row in pool),
         "embedding_model": embedding_model,
-        "rescued": sorted(rescued),
+        "rescued": sorted(ranked["rescued"]),
     }

@@ -28,6 +28,30 @@ _TEMPLATES = {
 }
 
 
+# Citation searching (PRISMA-S item 5), written only when a discovery run of this revision chained citations (D95).
+_CHAIN_TEMPLATES = {
+    "en": (" Citation searching followed the references and the citing works of {seeds} seed works in OpenAlex: "
+           "{requests} requests ({failed} did not complete), {new_works} new works kept by the gate-term filter, "
+           "{read} of them read at the abstract stage."),
+    "tr": (" Atıf taraması {seeds} tohum eserin referanslarını ve onlara atıf yapan eserleri OpenAlex'te izledi: "
+           "{requests} istek ({failed} tamamlanmadı), kapı terimi süzgecinin tuttuğu {new_works} yeni eser, bunların "
+           "{read} tanesi özet aşamasında okundu."),
+}
+
+
+def _chain_provenance(steps: list[dict[str, Any]], language: str) -> str:
+    summaries = [step["output"] for step in steps
+                 if step["kind"] == "code:chain_summary" and step["status"] == "succeeded" and step["output"]]
+    if not summaries:
+        return ""
+    total = {"seeds": sum(sum((out.get("seeds") or {}).get(key, 0) for key in ("code", "user")) for out in summaries),
+             "requests": sum((out.get("requests") or {}).get("sent", 0) for out in summaries),
+             "failed": sum((out.get("requests") or {}).get("failed", 0) for out in summaries),
+             "new_works": sum(out.get("new_works", 0) for out in summaries),
+             "read": sum(out.get("read_by_model", 0) for out in summaries)}
+    return _CHAIN_TEMPLATES["tr" if language.startswith("tr") else "en"].format(**total)
+
+
 def _all_steps(store: Store, research_id: str, scope_revision: int) -> list[dict[str, Any]]:
     run_ids = [row["id"] for row in store.conn.execute(
         "SELECT id FROM runs WHERE research_id = ? AND scope_revision = ? ORDER BY created_at, id",
@@ -118,7 +142,7 @@ def write_review_methodology(store: Store, reports: ReportStore, report_id: str,
         full_text_ratio=corpus["full_text"] / included if included else 0.0,
         screening_models=screening_models,
         screening_criteria=screening_criteria,
-    )
+    ) + _chain_provenance(steps, language)
     section_id = reports.create_section(report_id, "II", 2)
     reports.save_section_draft(
         section_id, None, "valid", {"text": text}, {"ok": True, "issues": []}, len(text.split())

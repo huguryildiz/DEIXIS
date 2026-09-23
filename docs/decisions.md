@@ -2,6 +2,61 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D95 — Citation chaining: 15 code seeds plus the user's, both directions through OpenAlex, its own abstract read and 12 places after the keyword plan
+
+**Status:** accepted; implemented 2026-09-23 (slice 15). **Date:** 2026-09-23.
+
+**Context:** SW3 point 6 and SW4 made citation chaining a core discovery arm, but nothing chained. A model-free replay
+on thirteen stored libraries (`.local/sw-slice15-chain-replay-2026-09-23/`, 407 OpenAlex requests) found that 15 code
+seeds reach 16 of the 52 verified quantum works missing from `quick` pools, 8 of 15 in `standard` and 0 of 11 in
+`detailed`, for 17–24 requests, but that under the D94 limits the reached works never enter the full-text plan: only
+room of their own brings them in. Six choices were settled jointly by Claude and `gpt-6-sol` · medium
+(`docs/product/sw-slice15-citation-chaining.md`).
+
+**Decision:** After the keyword abstract stage of an `sw` discovery run, code takes the first 15 distinct works of the
+BM25-and-blocks order that are not user seeds, deduplicated at work level, plus every work the user named or uploaded.
+OpenAlex is asked for their references (the stored reference lists; unknown ids in batches of 100) and the works citing
+them (`cites:`, 200 per page, at most 400 per seed). A linked work is recorded only if a setting or task form of the
+approved vocabulary stands in its title or abstract (title alone without an abstract); every link is kept in
+`chain_links`. The records go through the search's record path (D46, SW6); a record that joins a keyword work is not a
+chained work, and the keyword order is read by work so such a join cannot move a keyword work. The chained works get a
+ranking step of their own, their own abstract read (20 / 50 / 50 works by effort, `abstract_screening:chain:…`, same
+contract and prompt) and a fourth full-text group after the three keyword groups with 12 places in every effort
+(`CHAIN_PLAN_ROOM`); the full-text read takes them after the keyword order. The chain has its own request limit (40);
+reaching it or a failed request never pauses the run. The setting `DEIXIS_CITATION_CHAINING` (`auto` | `off`, default
+`auto`) is frozen into the discovery budget; the protocol body carries the policy. No second ring, no survey seeds, no
+Semantic Scholar graph.
+
+Live acceptance under K8 (`.local/sw-slice15-acceptance-2026-09-23/`, `codex` / `gpt-5.6-luna` · medium, each run on
+its own server and empty library) took three attempts, each protocol written before its first request:
+
+- Attempt 1 (`attempt1.md`, room 20 / 25 / 25) failed on the chain's own time: `standard` 3.50 and 3.81 min,
+  `detailed` 3.30 min against 3.0, the excess in fetching and reading the 25 chain works.
+- Attempt 2 (`attempt2.md`, room 20 / 12 / 12) passed `standard` (1.59) and `detailed` (1.77) but failed packet-size
+  `quick` (2.04 and 2.19 against 2.0).
+- Attempt 3 (`protocol-3.md`, room 12 / 12 / 12) passed. Quantum `quick`: 22 / 11 / 7 verified works in pool, plan and
+  read (D94 acceptance 18 / 8 / 4), chain 1.30 min, 23 requests, 202 new works, 20 read by the model. Packet `quick`:
+  pool 2, plan 0 (D94 1 / 0), chain 2.11 and 1.64 min (better of two 1.64). Quantum `standard` and `detailed` from
+  attempt 2 carried over unchanged: 28 / 12 / 11 (D88 25 / 8 / 7) and 29 / 23 / 19 (D88 30 / 19 / 17).
+
+In every one of the ten completed runs the first three groups of the fetch plan equalled a chain-off replay of the
+A order at the D94 limits. Benefit condition met: one verified work came only through the chain and was read in full
+text in quantum `quick` (g036, also cited) and in `detailed` (g087); none in `standard` or in the packet question.
+The two room changes (25 → 12 after attempt 1, 20 → 12 after attempt 2) were made after the results were seen, agreed
+with `gpt-6-sol` · medium (`sol-decision.md`, `sol-decision-2.md`); 12 is the smallest room that kept the chained
+verified works read in attempt 1 (places 4, 8 and 12).
+
+**Limits:** End to end the runs are far over the 10 / 15 / 20-minute targets: quantum `quick` 12.9–14.0 min, packet
+`quick` 13.8–14.1, `standard` 20.8, `detailed` 41.8; the chain's share is 1.3–2.1 min and most of the rest is outside
+it (fetch, read and answer run strictly after discovery; row 17a). New targets are the owner's to set. The fetch and
+read share of the chain's time is an estimate (its works' step time over the run's parallelism); the packet `quick`
+pass rests on one run whose OpenAlex requests were faster (0.45 against 0.65 min). The benefit is one work in two of
+four quantum runs, on one topic and two incomplete truth lists (31 quantum, the packet list); relevant chained works
+outside them are not counted, and in the packet question the chain brought 800–960 new works and no verified work
+into the plan. Model labels vary from run to run. The answer step failed or came out `unverified_draft` in three runs
+(Luna `client_timeout` once, duplicate citation anchors twice); the chain does not touch it. Not measured: a second
+ring, surveys as seeds, Semantic Scholar's citation graph, a third field.
+
 ## D94 — Keep the full-text order, and give quick twice the full-text room: fetch 80 works, read 40
 
 **Status:** accepted; implemented 2026-09-23 (slice 14a). **Date:** 2026-09-23.

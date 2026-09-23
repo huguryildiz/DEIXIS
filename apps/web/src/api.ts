@@ -35,7 +35,10 @@ export type Step = {
   // Only small counting/provenance outputs carry through this view; model prose remains in its own artifact view.
   output: { page_count?: number | null; passage_count?: number; model?: string; sources?: number; passages?: number; embedded?: number
     // A pdf_ocr run (D51): the pages without text it found, and whether the merged OCR text was taken into use.
-    image_pages?: number[]; blank_pages?: number[]; outcome?: 'current' | 'rejected' | 'unchanged'; rejection_reason?: string | null } | null
+    image_pages?: number[]; blank_pages?: number[]; outcome?: 'current' | 'rejected' | 'unchanged'; rejection_reason?: string | null
+    // Citation chaining (D95): what its summary counted, with the seeds it froze.
+    seed_list?: { source_version_id: string; kind: 'code' | 'user' }[]; new_works?: number; read_by_model?: number
+    requests?: { sent?: number; failed?: number; not_reached_seeds?: number } } | null
 }
 // What the search plan step reported, as the model wrote it.
 export type SearchPlan = {
@@ -66,6 +69,9 @@ export type Run = {
 export type SourceCounts = {
   counted: boolean
   rounds: { round: number; sources: { provider_id: string; works: number; only: number }[] }[]
+  // What citation chaining brought in this run, and how much of it no keyword search did (D95); absent when it
+  // sent nothing.
+  chain?: { works: number; only: number }
 }
 
 // ---- the protocol approval of an sw discovery run (D80) --------------------------------------------
@@ -145,6 +151,14 @@ export type RunApproval = {
   suggestions: ApprovalSuggestions
   // Which sources the queries were compiled for and why (D93); null for a card shown before routing existed.
   routing?: SourceRouting | null
+  // How the run chains citations after its abstract stage (D95), frozen when the run was queued; null for a run
+  // queued before D95.
+  chaining?: CitationChaining | null
+}
+// The chain rule and its limits as the run froze them (D95). The seeds themselves are known only after the search.
+export type CitationChaining = {
+  enabled: boolean; seeds?: number; citing_cap?: number; request_limit?: number; abstract_read?: number
+  plan_room?: number; directions?: string[]
 }
 // The source routing of an sw run (D93): the field distribution of the gate query and the sources it chose.
 // status read: a distribution was read; unavailable: it could not be, so every source in scope is searched;

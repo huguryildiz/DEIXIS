@@ -27,7 +27,7 @@ from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, identity, math_reader, ocr, pdf
 from deixis.domain import canonical, contracts, expansion as phrase_candidates, phrasebank, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
-                                 FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
+                                 CHAIN_ABSTRACT_READ, CHAIN_CITING_CAP, CHAIN_CITING_PAGE, FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
                                  FULLTEXT_RUNS, MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES,
                                  PROVIDER_WAIT, SCREENING_BATCH, SEARCH_PARALLEL_HOSTS, SW_READ_LIMIT,
                                  after_invalid_output, effective_reviewer, schema_repairs, step_model)
@@ -43,6 +43,7 @@ from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import abstract_stage
 from deixis.workflow import adjudication
 from deixis.workflow import approval as approval_rules
+from deixis.workflow import chaining
 from deixis.workflow import criterion as criterion_rules
 from deixis.workflow import criterion_passages
 from deixis.workflow import expansion as expansion_rules
@@ -78,6 +79,9 @@ MAX_FILL_PASSAGES = 24
 MAX_RECHECK_PASSAGES = 16
 COLUMN_FIELDS = ("name", "instruction", "answer_format", "options", "allow_multiple", "unit_hint")
 RRF_K = 60  # reciprocal rank fusion constant (D27)
+# The candidate rank a chained record is written with (D95): after every keyword record, so a record a keyword query
+# already found keeps the rank and the search its candidate row names.
+CHAIN_RANK_BASE = 1_000_000_000
 # Steps whose records are shown as short handles instead of stored identifiers, because long random IDs were
 # mis-copied (D12). The abstract stage joined them in slice 09: its batches name 20 candidates each.
 HANDLE_TASKS = ("grounded_answer", "answer_review", "cell_extraction", "abstract_screening",
@@ -491,6 +495,10 @@ class ResearchFlow:
             # open and the read limit reaches. Nothing is included from an abstract and `max_candidates` does not
             # cut here any more: what the model does not read stays `abstract_not_read` for the next run.
             await self._abstract_stage(run, scope, vocabulary, order)
+            # Citation chaining, after the keyword works were read and never before (D95). A run queued before D95,
+            # or with the setting off, has no chain in its budget and sends nothing here.
+            if chaining.enabled(budget):
+                await self._chaining(run, scope, vocabulary)
         else:
             self.store.update_run(run_id, stage="screening")
             # A record an earlier run screened goes last, as it does in the candidate order. One this run screened
@@ -1191,7 +1199,7 @@ class ResearchFlow:
 
     # ---- the abstract stage of an sw run (slice 09, SW9, SW1, SW11) ----------------------
     async def _abstract_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                              order: list[str]) -> None:
+                              order: list[str], chain: list[str] | None = None) -> None:
         """Classify every record by code, then ask the model twice about the works code left open (K3, D81).
 
         Nothing is included here: the abstract stage has no `include` outcome (SW1.2). A work is included only by
@@ -1206,9 +1214,14 @@ class ResearchFlow:
         and a batch is closed on the event loop as soon as both of its runs are back: which order the answers
         arrive in does not reach the decisions, because the batches hold no work in common and what a pair of runs
         means is read from that pair alone (Task 5).
+
+        With `chain`, the same stage reads the works citation chaining brought, and only those, in the chain's own
+        order, up to its own limit and under its own keys (`abstract_screening:chain:…`; D95). The contract, the
+        prompt and the rules are the keyword stage's: the model is not told where a work came from.
         """
         run_id, revision = run["id"], run["scope_revision"]
-        plan = self._abstract_code_stage(run, scope, vocabulary, order)
+        prefix = "abstract_screening:chain" if chain is not None else "abstract_screening"
+        plan = self._abstract_code_stage(run, scope, vocabulary, order, chain)
         batches, runs = plan["batches"], plan["runs"]
         by_svid = {c["source_version_id"]: c for c in self.store.candidates(run["research_id"])}
         spent_before = self.store.run(run_id)["usage"].get("model_calls", 0)
@@ -1231,7 +1244,7 @@ class ResearchFlow:
                 # budget only for the calls it still has to make; counting the stored ones too left paid-for
                 # answers unused and later batches unread while the budget still held them.
                 owed = [run_no for run_no in range(1, runs + 1)
-                        if f"abstract_screening:{number}:{run_no}" not in answered]
+                        if f"{prefix}:{number}:{run_no}" not in answered]
                 if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
                     # The budget stopped short of this batch. Its records are unread, which is a state the workflow
                     # already has, so the run finishes rather than pausing on something a later run will pick up.
@@ -1240,10 +1253,10 @@ class ResearchFlow:
                 rows_of[number] = [by_svid[svid] for svid in batch if svid in by_svid]
                 for run_no in range(1, runs + 1):
                     submitted += run_no in owed
-                    yield _AbstractJob(f"abstract_screening:{number}:{run_no}", number, run_no, rows_of[number])
+                    yield _AbstractJob(f"{prefix}:{number}:{run_no}", number, run_no, rows_of[number])
 
         async def call(job: _AbstractJob) -> dict[str, Any] | None:
-            return await self._abstract_call(run, scope, job.number, job.run_no, job.rows, self.deps.limiter)
+            return await self._abstract_call(run, scope, job.number, job.run_no, job.rows, self.deps.limiter, prefix)
 
         def close_ready(completed: list[tuple[dict[str, Any] | None, _AbstractJob]]) -> None:
             """Close every batch both of whose runs have come back, on the event loop, one short transaction each."""
@@ -1255,11 +1268,12 @@ class ResearchFlow:
                 self._checkpoint(run_id, revision)
                 closed.add(number)
                 self._close_abstract_batch(run, number, rows_of[number],
-                                           [collected[number][run_no] for run_no in range(1, runs + 1)], runs)
+                                           [collected[number][run_no] for run_no in range(1, runs + 1)], runs, prefix)
 
         stop = await self._send_through_limiter(run, jobs(), call, close_ready)
         if unread and stop is None:
-            step_id = self.store.step(run_id, "abstract_stage", "code:abstract_stage")["id"]
+            key = "chain_abstract_stage" if chain is not None else "abstract_stage"
+            step_id = self.store.step(run_id, key, f"code:{key}")["id"]
             self._write_abstract_codes(run, step_id, [(svid, "abstract_not_read") for svid in unread])
         if stop is not None:
             raise stop
@@ -1279,14 +1293,15 @@ class ResearchFlow:
         return spent + wanted <= run["budget"]["max_model_calls"]
 
     async def _abstract_call(self, run: dict[str, Any], scope: dict[str, Any], number: int, run_no: int,
-                             rows: list[dict[str, Any]], limiter: ModelCallLimiter | None = None) -> dict[str, Any] | None:
+                             rows: list[dict[str, Any]], limiter: ModelCallLimiter | None = None,
+                             prefix: str = "abstract_screening") -> dict[str, Any] | None:
         """One run of one batch; None when the model's output did not validate.
 
         An invalid output does not stop the run and is not repaired: its records stay `abstract_not_proposed` and
         a later discovery run reads them. A resumed run does not call the step again either (the guard
         `_extraction` uses), so an unusable answer is paid for once.
         """
-        key = f"abstract_screening:{number}:{run_no}"
+        key = f"{prefix}:{number}:{run_no}"
         step = self.store.step(run["id"], key, "model:abstract_screening")
         if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
             return None
@@ -1296,10 +1311,14 @@ class ResearchFlow:
         return None if output.get("invalid") else output
 
     def _abstract_code_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                             order: list[str]) -> dict[str, Any]:
-        """Write what code decides about every record, then freeze the read plan in this step's output."""
+                             order: list[str], chain: list[str] | None = None) -> dict[str, Any]:
+        """Write what code decides about every record, then freeze the read plan in this step's output.
+
+        With `chain`, only the chained works are classified and planned, with the chain's own read limit (D95).
+        """
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
-        step = self.store.step(run_id, "abstract_stage", "code:abstract_stage")
+        key = "chain_abstract_stage" if chain is not None else "abstract_stage"
+        step = self.store.step(run_id, key, f"code:{key}")
         if step["status"] == "succeeded":
             return step["output"]
         self.store.start_step(step["id"])
@@ -1322,9 +1341,12 @@ class ResearchFlow:
                 by_work.setdefault(version["work_id"], []).append(version)
 
         works, writes = [], []
+        chained = set(chain) if chain is not None else None
         for candidate in self.store.candidates(rid, revision):
             svid = candidate["source_version_id"]
             if candidate["origin"] == "user" or svid not in versions or heads.get(versions[svid]["work_id"]) != svid:
+                continue
+            if chained is not None and svid not in chained:
                 continue
             rows = []
             for version in sorted(by_work[versions[svid]["work_id"]], key=lambda v: v["id"]):
@@ -1340,7 +1362,7 @@ class ResearchFlow:
                              "decided_by": held["decided_by"] if held else None, "stale": stale})
             works.append({"work_id": versions[svid]["work_id"], "head": svid, "versions": rows})
 
-        limit = ABSTRACT_READ_LIMIT[scope["effort"]]
+        limit = (CHAIN_ABSTRACT_READ if chain is not None else ABSTRACT_READ_LIMIT)[scope["effort"]]
         plan = abstract_stage.read_plan(order, works, limit, ABSTRACT_BATCH)
         writes += [(svid, "abstract_not_read") for svid in plan["not_read"]]
         written = self._write_abstract_codes(run, step["id"], writes)
@@ -1405,7 +1427,8 @@ class ResearchFlow:
         return dict(sorted(written.items()))
 
     def _close_abstract_batch(self, run: dict[str, Any], number: int, rows: list[dict[str, Any]],
-                              outputs: list[dict[str, Any] | None], runs: int) -> None:
+                              outputs: list[dict[str, Any] | None], runs: int,
+                              prefix: str = "abstract_screening") -> None:
         """Store what each run proposed for each record of the batch and write the code the two of them mean.
 
         Code does this, not the model: the quote is looked for in the abstract the model was shown, and the pair of
@@ -1414,7 +1437,7 @@ class ResearchFlow:
         """
         rid = run["research_id"]
         decisions = DecisionStore(self.store)
-        steps = [self.store.step(run["id"], f"abstract_screening:{number}:{run_no}", "model:abstract_screening")["id"]
+        steps = [self.store.step(run["id"], f"{prefix}:{number}:{run_no}", "model:abstract_screening")["id"]
                  for run_no in range(1, runs + 1)]
         proposals: list[dict[str, Any]] = []
         for output in outputs:
@@ -1435,6 +1458,299 @@ class ResearchFlow:
             writes.append((svid, abstract_stage.combine(*pair)))
         # The decision is attributed to the last run's step: it is the one that made the pair readable.
         self._write_abstract_codes(run, steps[-1], writes)
+
+    # ---- citation chaining of an sw run (slice 15, D95) --------------------------------------------
+    async def _chaining(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
+        """Chain citations from the seeds the keyword ranking puts first, then read the new works on their own (D95).
+
+        Runs after the keyword abstract stage, and only on a run whose budget froze the setting `auto`: the keyword
+        ranking, its abstract read and the first three groups of the full-text plan are the same as without it. The
+        seeds, the links, the chained works and their read plan are frozen in step outputs and rows, so a resumed run
+        reads them back and asks OpenAlex nothing it already asked. A failed chain request is recorded and the others
+        go on (D18), and reaching the chain's own request limit ends the chain, never the run.
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        self._checkpoint(run_id, revision)
+        forms = self._chain_forms(run, scope, vocabulary)
+        seeds = self._chain_seeds(run, scope)
+        await self._chain_requests(run, scope, seeds, forms)
+        self._checkpoint(run_id, revision)
+        chained = self._chain_filter(run)
+        order = self._chain_ranking(run, scope, vocabulary, chained)
+        if chained:
+            works = set(self.store.work_ids(chained).values())
+            words, _ = lookups.title_words(vocabulary)
+            lookups.flag_and_decide(self.store, run, scope, words, works=works, key="chain_record_flags")
+            await self._abstract_stage(run, scope, vocabulary, order, chain=chained)
+        self._chain_summary(run)
+
+    def _chain_forms(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> dict[str, list[str]]:
+        """The two gate blocks' forms the chain's filter reads: the blocks the keyword ranking ranked with."""
+        stored = self.store.step(run["id"], "vocabulary_expansion", "code:vocabulary_expansion")["output"] or {}
+        terms = expansion_rules.expansion_blocks(stored.get("expansion"), stored.get("queries"))
+        _, blocks = ranking_rules.query_vocabulary(scope, vocabulary, terms)
+        return ranking_rules.block_forms({block: blocks.get(block) or [] for block in vocabulary_rules.GATE_BLOCKS})
+
+    def _chain_seeds(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
+        """Freeze the seeds, their identifiers and reference lists, and the backward batches (decision 2)."""
+        run_id, rid = run["id"], run["research_id"]
+        step = self.store.step(run_id, "chain_seeds", "code:chain_seeds")
+        if step["status"] == "succeeded":
+            return step["output"]
+        self.store.start_step(step["id"])
+        decisions = DecisionStore(self.store)
+        ranking_step = self.store.step(run_id, "ranking", "code:ranking")
+        pool_heads = decisions.ranking_order(ranking_step["id"])
+        order = ranking_rules.fuse(decisions.signal_ranks(ranking_step["id"], ("bm25", "blocks")), ("bm25", "blocks"))
+        versions = ranking_rules._versions(self.store, rid)
+        by_work: dict[str, list[dict[str, Any]]] = {}
+        for version in versions.values():
+            by_work.setdefault(version["work_id"], []).append(version)
+        rows = {head: ranking_rules._work_row(head, by_work[versions[head]["work_id"]])
+                for head in pool_heads if head in versions}
+        user = [row for svid in ranking_rules.verified_seeds(self.store, rid, scope)
+                if (row := rows.get(svid) or ranking_rules._seed_row(svid, versions)) is not None]
+        by_id = rows | {row["id"]: row for row in user}
+        seeds = [entry | {"openalex_ids": sorted(by_id[entry["source_version_id"]]["own_ids"]),
+                          "references": (sorted(by_id[entry["source_version_id"]]["references"])
+                                         if by_id[entry["source_version_id"]]["references"] is not None else None)}
+                 for entry in chaining.seed_list(order, rows, user)]
+        held = set().union(*[version["own_ids"] for version in versions.values()]) if versions else set()
+        output = {"seeds": seeds, "code": sum(s["kind"] == "code" for s in seeds),
+                  "user": sum(s["kind"] == "user" for s in seeds),
+                  "without_openalex_id": sum(not s["openalex_ids"] for s in seeds),
+                  "without_references": sum(not s["references"] for s in seeds),
+                  "references_held": len({ref for s in seeds for ref in s["references"] or () if ref in held}),
+                  "backward_batches": chaining.backward_batches(seeds, held)}
+        self.store.finish_step(step["id"], "succeeded", output=output)
+        return output
+
+    def _chain_requests_left(self, run: dict[str, Any]) -> bool:
+        return self.store.run(run["id"])["usage"].get("chain_requests", 0) < run["budget"]["max_chain_requests"]
+
+    async def _chain_requests(self, run: dict[str, Any], scope: dict[str, Any], seeds: dict[str, Any],
+                              forms: dict[str, list[str]]) -> None:
+        """Send the backward batches, then every seed's citing pages, one request at a time through the host gate."""
+        rows = seeds["seeds"]
+        for number, batch in enumerate(seeds["backward_batches"]):
+            links = chaining.backward_links(rows, batch)
+            await self._chain_request(run, scope, f"chain:backward:{number}", "backward", forms, links, batch=batch)
+        forward: dict[str, list[str]] = {}
+        for seed in rows:
+            for work_id in seed["openalex_ids"]:
+                forward.setdefault(work_id, []).append(seed["source_version_id"])
+        for work_id, of in forward.items():
+            cursor, read, page = FIRST_PAGE, 0, 1
+            while cursor is not None and read < CHAIN_CITING_CAP:
+                done = await self._chain_request(run, scope, f"chain:forward:{work_id}:{page}", "forward", forms,
+                                                 of, cites=work_id, cursor=cursor, page=page)
+                if done is None:
+                    break
+                cursor, read, page = done.get("next_cursor"), read + done.get("returned", 0), page + 1
+
+    async def _chain_request(self, run: dict[str, Any], scope: dict[str, Any], key: str, direction: str,
+                             forms: dict[str, list[str]], links: list[Any], *, batch: list[str] | None = None,
+                             cites: str | None = None, cursor: str | None = None,
+                             page: int | None = None) -> dict[str, Any] | None:
+        """One chain request: sent once, its passing records written through the search's record path with their
+        links, in one transaction. Returns the step's output, or None when nothing more should follow it (the
+        request failed, was not sent, or the chain's request limit is spent)."""
+        run_id = run["id"]
+        step = self.store.step(run_id, key, chaining.STEP_KIND)
+        if step["status"] == "succeeded":
+            return step["output"]
+        if step["status"] != "pending":
+            return None  # failed, or unknown after a crash: recorded, and not sent a second time (D18)
+        self._checkpoint(run_id, run["scope_revision"])
+        if not self._chain_requests_left(run):
+            return None  # counted `not_reached` by the summary
+        self.store.start_step(step["id"])
+        connector = CONNECTORS["openalex"]
+        retries = PROVIDER_WAIT[scope["effort"]]
+        attempts = 0
+        while True:
+            self.store.add_usage(run_id, "chain_requests")
+            async with fetch_module.host_gate(openalex.WORKS_URL):
+                if cites is not None:
+                    outcome = await openalex.citing_works(self.deps.http, cites, cursor or FIRST_PAGE, CHAIN_CITING_PAGE,
+                                                          connector.api_key(), self.deps.settings.contact_email, retries)
+                else:
+                    outcome = await openalex.works_by_ids(self.deps.http, batch or [], connector.api_key(),
+                                                          self.deps.settings.contact_email, retries)
+            if outcome.retries:
+                self.store.add_usage(run_id, "chain_requests", outcome.retries)
+            if (outcome.status == "failed" and outcome.delivery_class == "before_send"
+                    and attempts < MAX_TRANSIENT_NETWORK_RETRIES and self._chain_requests_left(run)):
+                attempts += 1
+                await asyncio.sleep(1.5 * attempts)
+                continue
+            break
+        self._record_chain(run, step, key, direction, outcome, forms, links, cites=cites, page=page)
+        return self.store.step(run_id, key, chaining.STEP_KIND)["output"] if outcome.status in ("completed", "zero_results") else None
+
+    def _record_chain(self, run: dict[str, Any], step: dict[str, Any], key: str, direction: str, outcome: SearchOutcome,
+                      forms: dict[str, list[str]], links: list[Any], *, cites: str | None, page: int | None) -> None:
+        """Write one answered chain request: the filter runs first, and only the records that pass are written, as a
+        search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is kept, passing
+        or not, in `chain_links`."""
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        settings = self.deps.settings
+        payload_path = payload_digest = None
+        if outcome.raw_payload is not None:
+            settings.payloads_dir.mkdir(parents=True, exist_ok=True)
+            payload_path = f"{step['id']}.json"
+            (settings.payloads_dir / payload_path).write_text(json.dumps(outcome.raw_payload), encoding="utf-8")
+            payload_digest = canonical.sha256_hex(outcome.raw_payload)
+        passed = [record for record in outcome.records if chaining.passes(forms, record.title, record.abstract)]
+        ok = outcome.status in ("completed", "zero_results")
+        search_fields = dict(
+            research_id=rid, run_id=run_id, step_id=step["id"], scope_revision=revision, provider="openalex",
+            query_text=key.rpartition(":")[0] if cites is not None else key,
+            request_description=f"citation chaining, {direction}: {outcome.request_description}",
+            access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
+            result_count=len(passed), provider_total=outcome.provider_total, page_limit=CHAIN_CITING_PAGE,
+            error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit,
+                              "returned": len(outcome.records), "passed_filter": len(passed)}),
+            raw_payload_path=payload_path, payload_sha256=payload_digest,
+            **({"page_number": page} if page is not None else {}),
+        )
+        output = {"status": outcome.status, "direction": direction, "returned": len(outcome.records),
+                  "passed_filter": len(passed), "next_cursor": outcome.next_cursor if cites is not None else None,
+                  "provider_total": outcome.provider_total}
+        with transaction(self.store.conn):
+            if ok:
+                # A chained record ranks after every keyword record: a record a keyword query already found keeps the
+                # rank and the search its candidate row names, and only gains a hit (D93's `candidate_hits`).
+                self.store.record_search(search_fields, "openalex", passed, payload_path, step["id"], "succeeded",
+                                         step_output=output, first_rank=CHAIN_RANK_BASE)
+            else:
+                final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
+                self.store.record_search(search_fields, "openalex", [], payload_path, step["id"], final,
+                                         error_code=outcome.status,
+                                         error={"error": outcome.error, "http_status": outcome.http_status},
+                                         delivery_class=outcome.delivery_class)
+                return
+            became = {record.provider_record_id: self.store.find_source_by_identifier("openalex", record.provider_record_id)
+                      for record in passed}
+            returned = {record.provider_record_id for record in outcome.records}
+            pairs = ([(seed, linked) for seed, linked in links if linked in returned] if direction == "backward"
+                     else [(seed, linked) for seed in links for linked in sorted(returned)])
+            self.store.conn.executemany(
+                "INSERT OR IGNORE INTO chain_links (research_id, scope_revision, run_id, seed_source_version_id,"
+                " linked_openalex_id, direction, passed_filter, source_version_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [(rid, revision, run_id, seed, linked, direction, int(linked in became), became.get(linked))
+                 for seed, linked in pairs])
+
+    def _chain_filter(self, run: dict[str, Any]) -> list[str]:
+        """Freeze the chained works: the heads of the records that passed, after the record path merged them, that
+        the keyword pool does not hold (slice 15, Task 3.5)."""
+        run_id, rid = run["id"], run["research_id"]
+        step = self.store.step(run_id, "chain_filter", "code:chain_filter")
+        if step["status"] == "succeeded":
+            return step["output"]["chained"]
+        self.store.start_step(step["id"])
+        linked = [dict(row) for row in self.store.conn.execute(
+            "SELECT linked_openalex_id, direction, passed_filter, source_version_id FROM chain_links WHERE run_id = ?",
+            (run_id,))]
+        written = sorted({row["source_version_id"] for row in linked if row["source_version_id"]})
+        heads = self.store.work_heads(rid)
+        work_of = self.store.work_ids(written)
+        ranked = DecisionStore(self.store).ranking_order(self.store.step(run_id, "ranking", "code:ranking")["id"])
+        # The keyword pool as it stands now, by work: a chain record the record path joined to a keyword work (a
+        # published version of a keyword preprint) can head that work, and the work is still a keyword work.
+        keyword_pool = set(self._current_heads(rid, ranked))
+        linked_heads = {heads[work_of[svid]] for svid in written if work_of.get(svid) in heads}
+        chained = chaining.chained_heads(linked_heads, keyword_pool)
+        output = {"chained": chained,
+                  "links": {direction: sum(row["direction"] == direction for row in linked)
+                            for direction in chaining.DIRECTIONS},
+                  "linked_works": len({row["linked_openalex_id"] for row in linked}),
+                  "passed_filter": len({row["linked_openalex_id"] for row in linked if row["passed_filter"]}),
+                  "failed_filter": len({row["linked_openalex_id"] for row in linked if not row["passed_filter"]}),
+                  "records": len(written), "in_keyword_pool": len(linked_heads & keyword_pool),
+                  "new_works": len(chained)}
+        self.store.finish_step(step["id"], "succeeded", output=output)
+        return chained
+
+    def _chain_ranking(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                       chained: list[str]) -> list[str]:
+        """Rank the keyword pool and the chained works together and store the chained works' places alone (Task 3.6).
+
+        The keyword ranking step is not touched: its rows stay what they were, and `latest_ranking` never reads this
+        step. The joint pool only gives the chained works a scale the keyword works set.
+        """
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        decisions = DecisionStore(self.store)
+        step = self.store.step(run_id, "chain_ranking", "code:chain_ranking")
+        if step["status"] == "succeeded":
+            return decisions.ranking_order(step["id"])
+        self.store.start_step(step["id"])
+        stored = self.store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")["output"] or {}
+        terms = expansion_rules.expansion_blocks(stored.get("expansion"), stored.get("queries"))
+        query_words, blocks = ranking_rules.query_vocabulary(scope, vocabulary, terms)
+        versions = ranking_rules._versions(self.store, rid)
+        by_work: dict[str, list[dict[str, Any]]] = {}
+        for version in versions.values():
+            by_work.setdefault(version["work_id"], []).append(version)
+        keyword = decisions.ranking_order(self.store.step(run_id, "ranking", "code:ranking")["id"])
+        pool = [ranking_rules._work_row(head, by_work[versions[head]["work_id"]])
+                for head in [*keyword, *chained] if head in versions]
+        in_pool = {row["id"]: row for row in pool}
+        verified = [row for svid in ranking_rules.verified_seeds(self.store, rid, scope)
+                    if (row := in_pool.get(svid) or ranking_rules._seed_row(svid, versions)) is not None]
+        model = self._embedding_model()
+        similarities = self.store.source_similarities(rid, revision, model) if model else {}
+        ranked = ranking_rules.rank_pool(pool, verified, query_words, blocks, model, similarities)
+        keep = set(chained) & set(in_pool)
+        decisions.save_ranks(step["id"], rid, ranking_rules.rank_rows(ranked, keep))
+        self.store.finish_step(step["id"], "succeeded", output={
+            "pool": len(pool), "chained": len(keep),
+            "signals": {name: ranked["ranks"].get(name) is not None for name in ranking_rules.SIGNALS}})
+        return decisions.ranking_order(step["id"])
+
+    def _chain_summary(self, run: dict[str, Any]) -> None:
+        """What the chain did in this run, totalled from its stored steps and rows so a resumed run matches."""
+        run_id, rid = run["id"], run["research_id"]
+        step = self.store.step(run_id, "chain_summary", "code:chain_summary")
+        if step["status"] == "succeeded":
+            return
+        self.store.start_step(step["id"])
+        steps = [s for s in self.store.run_steps(run_id) if s["kind"] == chaining.STEP_KIND]
+        seeds = self.store.step(run_id, "chain_seeds", "code:chain_seeds")["output"] or {}
+        filtered = self.store.step(run_id, "chain_filter", "code:chain_filter")["output"] or {}
+        stage = self.store.existing_step(run_id, "chain_abstract_stage")
+        plan = (stage or {}).get("output") or {}
+        sent = [s for s in steps if s["status"] != "pending"]
+        forward_seeds = {work_id for seed in seeds.get("seeds") or [] for work_id in seed["openalex_ids"]}
+        reached = {s["operation_key"].split(":")[2] for s in sent if s["operation_key"].startswith("chain:forward:")}
+        chained = filtered.get("chained") or []
+        decisions = DecisionStore(self.store)
+        facts = decisions.facts(rid)
+        # What the chained works read as once their abstract stage is done: the reason code that speaks for each.
+        outcomes: Counter[str] = Counter(
+            decisions.work_outcome(rid, work_id, facts).get("reason_code") or "none"
+            for work_id in self.store.work_ids(chained).values())
+        summary = {
+            "seeds": {key: seeds.get(key, 0) for key in ("code", "user", "without_openalex_id", "without_references")},
+            # The seeds alone, for the run view: the seed step's own output also carries every reference list.
+            "seed_list": [{"source_version_id": seed["source_version_id"], "kind": seed["kind"]}
+                          for seed in seeds.get("seeds") or []],
+            "requests": {"backward": sum(s["operation_key"].startswith("chain:backward:") for s in sent),
+                         "forward": sum(s["operation_key"].startswith("chain:forward:") for s in sent),
+                         "failed": sum(s["status"] in ("failed", "outcome_unknown") for s in sent),
+                         "sent": self.store.run(run_id)["usage"].get("chain_requests", 0),
+                         "limit": run["budget"].get("max_chain_requests"),
+                         "not_reached_batches": len(seeds.get("backward_batches") or [])
+                         - sum(s["operation_key"].startswith("chain:backward:") for s in sent),
+                         "not_reached_seeds": len(forward_seeds - reached)},
+            "links": filtered.get("links") or {}, "passed_filter": filtered.get("passed_filter", 0),
+            "failed_filter": filtered.get("failed_filter", 0), "in_keyword_pool": filtered.get("in_keyword_pool", 0),
+            "new_works": len(chained),
+            "read_by_model": sum(len(batch) for batch in plan.get("batches") or []),
+            "not_read": plan.get("not_read", 0),
+            "outcomes": dict(sorted(outcomes.items())),
+        }
+        self.store.finish_step(step["id"], "succeeded", output=summary)
 
     async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]]) -> None:
         """Score screened sources by the similarity of their title and abstract to the question (D30).
@@ -2232,10 +2548,12 @@ class ResearchFlow:
         if step["status"] == "succeeded":
             return step["output"]
         self.store.start_step(step["id"])
-        works = self._fulltext_works(rid)
-        order = DecisionStore(self.store).latest_ranking(rid, revision) or []
+        chained, order, chain_order = self._chain_state(rid, revision)
+        works = self._fulltext_works(rid, chained)
         limit = run["budget"]["max_fulltext_works"]
-        plan = fulltext.fetch_plan(works, order, limit)
+        # The chain group's own room (D95); a run queued before D95 has none and plans the three keyword groups alone.
+        room = run["budget"].get("chain_room", 0)
+        plan = fulltext.fetch_plan(works, order, limit, chain_order, room)
         by_head = {work["head"]: work for work in works}
         # Nothing is requested for a work whose text is already here; the code it asks for is written straight away,
         # on the version an answer would read (D48).
@@ -2245,15 +2563,43 @@ class ResearchFlow:
                          for head in plan["works"] + plan["not_reached"] + plan["already_text"])
         output = {"limit": limit, "works": plan["works"], "not_reached": len(plan["not_reached"]),
                   "already_text": len(plan["already_text"]), "decisions": written,
-                  "groups": {name: groups.get(name, 0) for name in fulltext.GROUPS}}
+                  # A research nothing was chained for reads as it did before D95: three groups, no chain room.
+                  "groups": {name: groups.get(name, 0) for name in (fulltext.GROUPS if chained
+                                                                     else fulltext.KEYWORD_GROUPS)}}
+        if chained:
+            output |= {"chain_room": room,
+                       "chain_works": sum(fulltext.group_of(by_head[head]) == "chain" for head in plan["works"]),
+                       "chain_not_reached": sum(fulltext.group_of(by_head[head]) == "chain"
+                                                for head in plan["not_reached"])}
         self.store.finish_step(step["id"], "succeeded", output=output)
         return output
 
-    def _fulltext_works(self, research_id: str) -> list[dict[str, Any]]:
+    def _chain_state(self, research_id: str, revision: int) -> tuple[set[str], list[str], list[str]]:
+        """The works citation chaining brought under this question revision, the keyword order and the chain's order
+        (D95): the latest chain filter's list, the latest keyword ranking and the latest chain ranking.
+
+        When the chain ran, the keyword order is read by work: a chain record joined to a keyword work can head it
+        now, and the work keeps the place its earlier head had. Without a chain the keyword order is read as stored.
+        """
+        decisions = DecisionStore(self.store)
+        stored = self.store.latest_step_output(research_id, "chain_filter", revision)
+        order = decisions.latest_ranking(research_id, revision) or []
+        if stored is None:
+            return set(), order, []
+        return (set(stored.get("chained") or []), self._current_heads(research_id, order),
+                decisions.latest_chain_ranking(research_id, revision))
+
+    def _current_heads(self, research_id: str, order: list[str]) -> list[str]:
+        """These records as the heads of their works now, in the same order, each work once (D95)."""
+        heads = self.store.work_heads(research_id)
+        work_of = self.store.work_ids(order)
+        return list(dict.fromkeys(heads.get(work_of.get(svid), svid) for svid in order))
+
+    def _fulltext_works(self, research_id: str, chained: set[str] = frozenset()) -> list[dict[str, Any]]:
         """Every work of the research with what the retrieval plan reads about it, in a few whole-research queries.
 
         Asking per record cost a second on 2,000 candidates on the thread the API answers from (slices 05 and 07),
-        and this runs on the same thread.
+        and this runs on the same thread. `chained` names the heads citation chaining brought (D95).
         """
         decisions = DecisionStore(self.store)
         stale_key = decisions.staleness_key(research_id)
@@ -2284,7 +2630,7 @@ class ResearchFlow:
             return None if row is None else {"reason_code": row["reason_code"], "decided_by": row["decided_by"],
                                              "stale": decisions.is_stale(row, stale_key)}
 
-        return [{"work_id": work_id, "head": head, "selection": selections.get(head),
+        return [{"work_id": work_id, "head": head, "selection": selections.get(head), "chained": head in chained,
                  "versions": [{"id": svid, "has_text": svid in with_text,
                                "abstract": decision(svid, "abstract"), "fulltext": decision(svid, "fulltext")}
                               for svid in sorted(by_work.get(work_id, []))]}
@@ -2604,8 +2950,10 @@ class ResearchFlow:
                 else [{"name": part["name"], "definition": part["definition"]} for part in parts])
         criterion = {"criterion": frozen["criterion"], "parts": sent, "cue_phrases": frozen["cue_phrases"],
                      "protocol_revision": frozen["protocol_revision"]}
-        order = DecisionStore(self.store).latest_ranking(rid, run["scope_revision"]) or []
-        corpus = self._fulltext_works(rid)
+        # Chained works are read after the keyword order, in the chain's own order (D95); the limit is the same.
+        chained, order, chain_order = self._chain_state(rid, run["scope_revision"])
+        order = order + chain_order
+        corpus = self._fulltext_works(rid, chained)
         eligible = adjudication.read_plan(corpus, order, len(corpus))
         readable: list[dict[str, str]] = []
         unconfirmed: list[tuple[str, str]] = []
@@ -2788,8 +3136,8 @@ class ResearchFlow:
         if self.store.frozen_criterion(rid, scope["question"], scope.get("steering")) is None:
             return
         budget = adjudication.read_budget(scope["effort"])
-        plan = adjudication.read_plan(self._fulltext_works(rid),
-                                      DecisionStore(self.store).latest_ranking(rid, revision) or [],
+        chained, order, chain_order = self._chain_state(rid, revision)
+        plan = adjudication.read_plan(self._fulltext_works(rid, chained), order + chain_order,
                                       budget["max_fulltext_reads"])
         if not plan["works"]:
             return
@@ -2813,9 +3161,9 @@ class ResearchFlow:
             return
         rid, revision = run["research_id"], run["scope_revision"]
         budget = fulltext.fetch_budget(scope["effort"])
-        plan = fulltext.fetch_plan(self._fulltext_works(rid),
-                                   DecisionStore(self.store).latest_ranking(rid, revision) or [],
-                                   budget["max_fulltext_works"])
+        chained, order, chain_order = self._chain_state(rid, revision)
+        plan = fulltext.fetch_plan(self._fulltext_works(rid, chained), order, budget["max_fulltext_works"],
+                                   chain_order, budget["chain_room"])
         if not plan["works"] and not plan["already_text"]:
             return
         self.store.create_run(rid, "fulltext_fetch", budget, idempotency_key=f"fulltext_fetch:after:{run['id']}")

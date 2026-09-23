@@ -32,7 +32,7 @@ ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint wi
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
 STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze",
                      "code:fulltext_plan", "code:fulltext_work", "code:fulltext_summary", "code:criterion_phrases",
-                     "code:adjudication_plan", "code:adjudication_summary")
+                     "code:adjudication_plan", "code:adjudication_summary", "code:chain_summary")
 STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")
 MAX_SEED_PASSAGES = 4
 MAX_SEED_CHARS = 5600
@@ -282,7 +282,7 @@ class Store:
                           "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
                           "source_similarities", "protocol_records", "stage_decisions", "model_proposals",
-                          "record_signal_ranks", "record_flags"):
+                          "record_signal_ranks", "record_flags", "chain_links"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
             for table in ("runs", "scope_revisions"):
@@ -1961,6 +1961,9 @@ class Store:
                           "record_signal_ranks",
                           "record_flags", "corpus_memberships"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ? AND source_version_id IN ({marks})", scoped)
+            # A chain link names a record twice: the seed it came from and the record the linked work became (D95).
+            self.conn.execute(f"DELETE FROM chain_links WHERE research_id = ? AND (source_version_id IN ({marks})"
+                              f" OR seed_source_version_id IN ({marks}))", (research_id, *chosen, *chosen))
             self.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (research_id,))
             orphan_files: list[str] = []
             for svid in chosen:

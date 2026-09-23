@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, CornerUpLeft, Plus, RotateCcw, X } from 'lucide-react'
-import { ApiError, api, type ApprovalBlock, type ApprovalCriterion, type ApprovalSide, type ApprovalSuggestions, type ApprovalTerm, type ProtocolEdits, type Run, type RunApproval, type SearchQuerySide, type SourceRouting, type SuggestedTerm, type TermEdit } from './api'
+import { ApiError, api, type ApprovalBlock, type ApprovalCriterion, type ApprovalSide, type ApprovalSuggestions, type ApprovalTerm, type CitationChaining, type ProtocolEdits, type Run, type RunApproval, type SearchQuerySide, type SourceRouting, type SuggestedTerm, type TermEdit } from './api'
 import { approvedByText, blockLabels, blockNotes, blockOriginText, dropReasonText, pauseReasonText, providerName, queryWarningText, routeReasonText, suggestionBlockerText, termKindText, termOriginText } from './labels'
 import { t, uiLocale } from './i18n'
 import { Notice } from './Notice'
@@ -240,6 +240,8 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
 
     {approval.routing && <RoutingSection routing={approval.routing} />}
 
+    {approval.chaining && <ChainingSection chaining={approval.chaining} />}
+
     <SuggestionSection suggestions={approval.suggestions} editable={editable} working={working} busy={busy}
       drafted={new Set(ops.filter(op => op.op === 'add').map(op => op.phrase))}
       onAdd={row => setOps([...without(row.phrase), { op: 'add', phrase: row.phrase, block: row.block }])}
@@ -377,6 +379,20 @@ function RoutingSection({ routing }: { routing: SourceRouting }) {
       <span className="approval-field-label">{t('Not searched')}</span>
       <ul>{routing.left_out.map(row => <li key={row.provider_id}><small>{providerName(row.provider_id)}</small> {leftText(row)}</li>)}</ul>
     </div>}
+  </div>
+}
+
+// The citation chain this run will follow after its abstract stage (D95). The rule and its limits only: the seeds are
+// the ranking's first works, known after the search, and the run view lists them.
+function ChainingSection({ chaining }: { chaining: CitationChaining }) {
+  return <div className="approval-chaining">
+    <div className="approval-block-head">
+      <strong>{t('Citation chaining')}</strong>
+      <small>{chaining.enabled
+        ? t('After the abstracts are read, OpenAlex is asked for the works that the first {seeds} works of the ranking and every work you verified cite, and for the works that cite them. A new work is kept when a setting or task term stands in its title or abstract; the list of seeds is shown in the run once the search is done.', { seeds: chaining.seeds ?? 0 })
+        : t('Citation chaining is turned off in the settings; this run follows no citation.')}</small>
+    </div>
+    {chaining.enabled && <p className="approval-hint">{t('Up to {cap} citing works per seed · at most {requests} requests · the model reads up to {read} new works · up to {room} of them join the full-text plan, beside its own limit', { cap: chaining.citing_cap ?? 0, requests: chaining.request_limit ?? 0, read: chaining.abstract_read ?? 0, room: chaining.plan_room ?? 0 })}</p>}
   </div>
 }
 

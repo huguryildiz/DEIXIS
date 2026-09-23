@@ -170,6 +170,34 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
     assert sw["signals"][-1] == {"signal": "embedding", "model": None, "rescue": True}
 
 
+def test_an_sw_body_carries_the_chain_policy_its_budget_froze_and_a_legacy_body_does_not():
+    """D95: the setting is read from the run's budget, so both revisions of one run carry the same block."""
+    from deixis.workflow import protocol
+
+    scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
+             "seed_mode": "question_only", "providers": ["openalex"], "model_connection": "fake",
+             "requested_model": "fake-model", "reasoning_effort": None, "literature_model": None,
+             "review_mode": "off", "effort": "standard"}
+    settings = Settings(data_dir=None)
+    auto = {"citation_chaining": "auto", "max_chain_requests": 40}
+    sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, auto, None, [], "pkg_hash", settings)
+    assert sw["citation_chaining"] == {
+        "enabled": True, "rule_version": "deixis.citation_chaining.v1", "seeds": 15, "user_seeds": "every_verified",
+        "seed_order": "bm25_blocks_fused", "directions": ["backward", "forward"], "source": "openalex",
+        "citing_cap": 400, "backward_batch": 100, "request_limit": 40,
+        "filter": "gate_block_form_in_title_or_abstract", "abstract_read": 50, "plan_room": 12}
+    assert sw["thresholds"]["chain"] == {"seeds": 15, "citing_cap": 400, "backward_batch": 100, "request_limit": 40,
+                                         "abstract_read": 50, "plan_room": 12}
+    off = protocol.build_protocol(scope | {"search_workflow": "sw"}, {"citation_chaining": "off"}, None, [],
+                                  "pkg_hash", settings)
+    assert off["citation_chaining"] == {"enabled": False} and "chain" not in off["thresholds"]
+    before = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
+    assert "citation_chaining" not in before and "chain" not in before["thresholds"]
+    legacy = protocol.build_protocol(scope | {"search_workflow": "legacy"}, auto, None, [], "pkg_hash", settings)
+    unchanged = protocol.build_protocol(scope | {"search_workflow": "legacy"}, {}, None, [], "pkg_hash", settings)
+    assert "citation_chaining" not in legacy and legacy | {"budget": {}} == unchanged
+
+
 def test_a_discovery_run_freezes_one_protocol_before_its_first_search_and_stamps_the_later_steps(tmp_path, monkeypatch):
     from fakes import FakeAdapter
     from test_provider_flow import discover, routed, two_provider_plan

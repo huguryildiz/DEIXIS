@@ -146,10 +146,68 @@ def test_every_code_this_stage_writes_leaves_the_work_unresolved():
 def test_the_budget_of_a_retrieval_run_calls_no_model_and_sends_no_search():
     from deixis.domain.rules import FULLTEXT_WORK_LIMIT
 
+    from deixis.domain.rules import CHAIN_PLAN_ROOM
+
     for effort, limit in FULLTEXT_WORK_LIMIT.items():
         assert fulltext.fetch_budget(effort) == {"max_model_calls": 0, "max_provider_requests": 0,
-                                                 "max_fulltext_works": limit}
+                                                 "max_fulltext_works": limit, "chain_room": CHAIN_PLAN_ROOM[effort]}
     assert [FULLTEXT_WORK_LIMIT[e] for e in ("quick", "standard", "detailed")] == [80, 100, 300]  # quick was 40 before D94
+    # The chain's own room sits on top of the keyword limit (D95): 80 + 20, 100 + 25, 300 + 25.
+    assert [fulltext.fetch_budget(e)["max_fulltext_works"] + fulltext.fetch_budget(e)["chain_room"]
+            for e in ("quick", "standard", "detailed")] == [92, 112, 312]
+
+
+# ---- the chain group (slice 15, D95) --------------------------------------------------------------
+
+def chained(head, **fields):
+    return work(head, **fields) | {"chained": True}
+
+
+def test_the_chain_group_comes_last_with_its_own_room():
+    works = [work("c1", abstract=CANDIDATE), work("c2", abstract=CANDIDATE), work("r1", abstract=UNRESOLVED_HERE),
+             chained("x1", abstract=CANDIDATE), chained("x2", abstract=UNRESOLVED_HERE), chained("x3", abstract=CANDIDATE),
+             chained("x4", abstract=UNRESOLVED_MODEL),                  # not read yet: not fetched, as a keyword work
+             chained("x5", abstract=OUT_OF_SCOPE, selection=USER_INCLUDED)]  # the user's own stays the user's
+    plan = fulltext.fetch_plan(works, ["r1", "c2", "c1"], limit=2, chain_order=["x3", "x2", "x1"], chain_room=2)
+    assert plan["works"] == ["x5", "c2", "x3", "x2"]
+    assert plan["not_reached"] == ["c1", "r1", "x1"]
+    assert [fulltext.group_of(w) for w in works] == ["candidate", "candidate", "unresolved", "chain", "chain", "chain",
+                                                     None, "user"]
+    # Room the chain leaves unused is not given to a keyword work, and a keyword work never takes the chain's.
+    alone = fulltext.fetch_plan(works[:3], ["r1", "c2", "c1"], limit=2, chain_order=[], chain_room=20)
+    assert alone["works"] == ["c2", "c1"] and alone["not_reached"] == ["r1"]
+    # Without room the chain group plans nothing, which is what a run queued before D95 gets.
+    assert fulltext.fetch_plan(works, ["r1", "c2", "c1"], limit=2)["works"] == ["x5", "c2"]
+
+
+def test_the_first_three_groups_are_the_same_with_and_without_chained_works():
+    keyword = [work(f"c{n}", abstract=CANDIDATE) for n in range(6)] + [work("r1", abstract=UNRESOLVED_HERE),
+                                                                       work("u1", selection=USER_INCLUDED)]
+    extra = [chained(f"x{n}", abstract=CANDIDATE if n % 2 else UNRESOLVED_HERE) for n in range(5)]
+    order = ["c3", "r1", "c1", "c5", "c0"]
+    for limit in (2, 4, 20):
+        without = fulltext.fetch_plan(keyword, order, limit)
+        with_chain = fulltext.fetch_plan(keyword + extra, order, limit, [f"x{n}" for n in range(5)], 3)
+        kept = {w["head"] for w in keyword}
+        assert [h for h in with_chain["works"] if h in kept] == without["works"]
+        assert [h for h in with_chain["not_reached"] if h in kept] == without["not_reached"]
+        assert with_chain["works"][len(without["works"]):] == ["x0", "x1", "x2"]
+
+
+def test_a_user_started_retrieval_run_gets_the_same_chain_room(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from test_adjudication import _app
+
+    app = _app(tmp_path, monkeypatch, "sw")
+    with TestClient(app) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        created = client.post("/api/researches", json={
+            "question": "SYNTHETIC: drip irrigation and marketable yield of greenhouse tomato, beside a bakery.",
+            "model_connection": "fake", "requested_model": "fake-model", "effort": "standard"})
+        rid = created.json()["research"]["id"]
+        started = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_fetch"})
+    assert started.status_code == 202, started.text
+    assert started.json()["budget"] == fulltext.fetch_budget("standard") and started.json()["budget"]["chain_room"] == 12
 
 
 # ---- the identity check (Task 3) ---------------------------------------------------------------

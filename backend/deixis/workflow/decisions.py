@@ -189,6 +189,31 @@ class DecisionStore:
             " ORDER BY rank", (ranking_step_id,),
         )]
 
+    def signal_ranks(self, ranking_step_id: str, signals: tuple[str, ...]) -> dict[str, dict[str, tuple[float, bool]]]:
+        """One ranking step's stored places in these signals, as `ranking.fuse` reads them."""
+        ranks: dict[str, dict[str, tuple[float, bool]]] = {}
+        marks = ",".join("?" * len(signals))
+        for row in self.conn.execute(
+            f"SELECT source_version_id, signal, rank, available FROM record_signal_ranks WHERE ranking_step_id = ?"
+            f" AND signal IN ({marks})", (ranking_step_id, *signals),
+        ):
+            ranks.setdefault(row["signal"], {})[row["source_version_id"]] = (row["rank"], bool(row["available"]))
+        return ranks
+
+    def latest_chain_ranking(self, research_id: str, scope_revision: int) -> list[str]:
+        """The order the chained works of this question revision were last ranked in; empty when nothing was chained.
+
+        The chain's ranking is its own step (D95), so `latest_ranking` never reads it and the keyword order stays
+        what the keyword ranking wrote.
+        """
+        row = self.conn.execute(
+            "SELECT s.id FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
+            " AND r.scope_revision = ? AND s.operation_key = 'chain_ranking' AND s.kind = 'code:chain_ranking'"
+            " AND s.status = 'succeeded' ORDER BY s.finished_at DESC, s.id DESC LIMIT 1",
+            (research_id, scope_revision),
+        ).fetchone()
+        return [] if row is None else self.ranking_order(row["id"])
+
     def latest_ranking(self, research_id: str, scope_revision: int) -> list[str] | None:
         """The inspection order this question revision was last ranked in; `None` when it was never ranked.
 

@@ -21,8 +21,8 @@ import httpx
 from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, OtherVersion, ProviderRecord, SearchOutcome,
                                      normalize_doi, send)
 
-__all__ = ["OtherVersion", "ProviderRecord", "SearchOutcome", "count_works", "field_distribution", "normalize_doi",
-           "reconstruct_abstract", "search_works"]
+__all__ = ["OtherVersion", "ProviderRecord", "SearchOutcome", "citing_works", "count_works", "field_distribution",
+           "normalize_doi", "reconstruct_abstract", "search_works", "works_by_ids"]
 
 PROVIDER_ID = "openalex"
 WORKS_URL = "https://api.openalex.org/works"
@@ -138,6 +138,11 @@ async def search_works(
                    + f" access={access_mode}")
     response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
                                    (api_key,), max_rate_limit_retries=max_rate_limit_retries)
+    return _works_page(response, outcome, cursor)
+
+
+def _works_page(response: httpx.Response | None, outcome: SearchOutcome, cursor: str | None) -> SearchOutcome:
+    """A `/works` answer as a SearchOutcome: its records, its total and, for a cursor read, the next cursor."""
     if response is None:
         return outcome
     try:
@@ -153,6 +158,48 @@ async def search_works(
     outcome.status = "zero_results" if not outcome.records else "completed"
     outcome.raw_payload = payload
     return outcome
+
+
+# The two requests of citation chaining (D95, slice 15). Both read the fields an sw search reads, the reference list
+# included, so a chained record carries its own bibliography like any record an sw query found.
+CHAIN_SELECT = SELECT + f",{REFERENCE_COUNT_FIELD},{REFERENCES_FIELD}"
+MAX_IDS_PER_REQUEST = 100
+
+
+async def citing_works(client: httpx.AsyncClient, work_id: str, cursor: str, per_page: int = MAX_RESULTS,
+                       api_key: str | None = None, contact_email: str | None = None,
+                       max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
+    """One page of the works that cite `work_id` (`filter=cites:W…`), read by cursor like an sw query's pages."""
+    per_page = min(per_page, MAX_RESULTS)
+    works_filter = f"cites:{work_id}"
+    params: dict[str, Any] = {"filter": works_filter, "per_page": per_page, "select": CHAIN_SELECT, "cursor": cursor}
+    if contact_email:
+        params["mailto"] = contact_email
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    access_mode = "api_key" if api_key else "keyless"
+    description = f"GET {WORKS_URL} filter={works_filter} per_page={per_page} cursor={cursor} access={access_mode}"
+    response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
+                                   (api_key,), max_rate_limit_retries=max_rate_limit_retries)
+    return _works_page(response, outcome, cursor)
+
+
+async def works_by_ids(client: httpx.AsyncClient, ids: list[str], api_key: str | None = None,
+                       contact_email: str | None = None,
+                       max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
+    """The records of up to 100 OpenAlex works named by their short identifiers (`filter=openalex:W1|W2…`)."""
+    if not 0 < len(ids) <= MAX_IDS_PER_REQUEST:
+        raise ValueError(f"works_by_ids takes 1 to {MAX_IDS_PER_REQUEST} identifiers, not {len(ids)}")
+    works_filter = "openalex:" + "|".join(ids)
+    params: dict[str, Any] = {"filter": works_filter, "per_page": len(ids), "select": CHAIN_SELECT}
+    if contact_email:
+        params["mailto"] = contact_email
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    access_mode = "api_key" if api_key else "keyless"
+    description = (f"GET {WORKS_URL} filter=openalex:{ids[0]}|… ({len(ids)} ids) per_page={len(ids)}"
+                   f" access={access_mode}")
+    response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
+                                   (api_key,), max_rate_limit_retries=max_rate_limit_retries)
+    return _works_page(response, outcome, None)
 
 
 async def count_works(client: httpx.AsyncClient, query: str, *, api_key: str | None = None,

@@ -20,13 +20,15 @@ from __future__ import annotations
 from typing import Any
 
 from deixis.domain.reason_codes import reason
-from deixis.domain.rules import FULLTEXT_WORK_LIMIT
+from deixis.domain.rules import CHAIN_PLAN_ROOM, FULLTEXT_WORK_LIMIT
 
 # The codes this stage owns. A fresh decision carrying any other code was written by the user or by the stage that
 # reads the text (slice 12), and this stage neither confirms nor replaces it.
 OWNED_CODES = ("not_read_yet", "text_unreadable", "no_fulltext")
-# Which group of the retrieval order a work belongs to; the order of the tuple is the order they are fetched in.
-GROUPS = ("user", "candidate", "unresolved")
+# Which group of the retrieval order a work belongs to; the order of the tuple is the order they are fetched in. The
+# fourth group is the works citation chaining brought (D95): it has its own room and never takes a keyword work's.
+GROUPS = ("user", "candidate", "unresolved", "chain")
+KEYWORD_GROUPS = GROUPS[:3]
 # How many works one retrieval run fetches at once (slice 13e). Each host is still asked one request at a time
 # (`documents.fetch.host_gate`), so this bounds the hosts in flight, not the requests to one publisher. The same for
 # every effort; whether 4 is the right number was not measured.
@@ -35,8 +37,12 @@ FULLTEXT_FETCH_PARALLEL = 4
 
 def fetch_budget(effort: str) -> dict[str, Any]:
     """The budget a full-text retrieval run is queued with. Read by the API route and by the flow's auto-queue, so
-    a run the user starts and a run a discovery run leaves behind can never be given different room."""
-    return {"max_model_calls": 0, "max_provider_requests": 0, "max_fulltext_works": FULLTEXT_WORK_LIMIT[effort]}
+    a run the user starts and a run a discovery run leaves behind can never be given different room.
+
+    `chain_room` is the chain group's own room, on top of the keyword limit (D95). A run queued before D95 has none
+    and plans no chain group."""
+    return {"max_model_calls": 0, "max_provider_requests": 0, "max_fulltext_works": FULLTEXT_WORK_LIMIT[effort],
+            "chain_room": CHAIN_PLAN_ROOM[effort]}
 
 
 def _named(rows: list[dict[str, Any]], head: str) -> dict[str, Any]:
@@ -85,6 +91,9 @@ def group_of(work: dict[str, Any]) -> str | None:
        full-text decision on it now would keep it `pending` even after its abstract turns out to be out of scope,
        because `work_outcome` lets the full-text stage answer first.
 
+    4. The works citation chaining brought (`chained`, D95) that the abstract stage leaves a candidate or routes
+       here, as in 2 and 3. A chained work the user included stays in the user's group.
+
     Not fetched: a work whose full-text stage the user decided, a work the user excluded, a work out of scope, and
     a work with no abstract decision at all.
     """
@@ -98,9 +107,9 @@ def group_of(work: dict[str, Any]) -> str | None:
         return None
     code = reason(abstract["reason_code"])
     if code.outcome == "candidate":
-        return "candidate"
+        return "chain" if work.get("chained") else "candidate"
     if code.outcome == "unresolved" and code.next_step == "fulltext_fetch":
-        return "unresolved"
+        return "chain" if work.get("chained") else "unresolved"
     return None
 
 
@@ -110,7 +119,8 @@ def _settled(work: dict[str, Any]) -> bool:
     return any(row["reason_code"] in OWNED_CODES and not row.get("stale") for row in fulltext)
 
 
-def fetch_plan(works: list[dict[str, Any]], order: list[str], limit: int) -> dict[str, Any]:
+def fetch_plan(works: list[dict[str, Any]], order: list[str], limit: int, chain_order: list[str] | tuple[str, ...] = (),
+               chain_room: int = 0) -> dict[str, Any]:
     """The works this run fetches, the works its limit did not reach, and the works whose text is already here.
 
     The unit is the work (SW10.1). Each work is `{"work_id", "head", "versions": [...], "selection"}`, and each
@@ -122,23 +132,30 @@ def fetch_plan(works: list[dict[str, Any]], order: list[str], limit: int) -> dic
     dictionary's iteration. A work any version of which already has PDF text is not fetched — it goes to
     `already_text` and gets its code written straight away. A work already carrying a fresh code of this stage is
     in none of the three lists: the next run continues from where the first stopped rather than asking again.
+
+    The first three groups share `limit` and are planned exactly as they were before D95. The chain group comes
+    after them, in `chain_order`, and takes at most `chain_room` works; room the chain leaves unused is not given to
+    a keyword work, and a keyword work never takes the chain's.
     """
     place = {svid: position for position, svid in enumerate(order)}
+    chain_place = {svid: position for position, svid in enumerate(chain_order)}
     wanted: list[tuple[int, int, str, dict[str, Any]]] = []
     for work in works:
         group = group_of(work)
         if group is None:
             continue
-        wanted.append((GROUPS.index(group), place.get(work["head"], len(place)), work["head"], work))
+        where = chain_place if group == "chain" else place
+        wanted.append((GROUPS.index(group), where.get(work["head"], len(where)), work["head"], work))
     wanted.sort(key=lambda row: row[:3])
 
-    already_text, pending = [], []
-    for _, _, head, work in wanted:
+    already_text, pending, chained = [], [], []
+    for group, _, head, work in wanted:
         if any(version.get("has_text") for version in work["versions"]):
             already_text.append(head)
         elif not _settled(work):
-            pending.append(head)
-    return {"works": pending[:limit], "not_reached": pending[limit:], "already_text": already_text}
+            (chained if GROUPS[group] == "chain" else pending).append(head)
+    return {"works": pending[:limit] + chained[:chain_room], "not_reached": pending[limit:] + chained[chain_room:],
+            "already_text": already_text}
 
 
 def settled_code(attempt: dict[str, Any]) -> str | None:

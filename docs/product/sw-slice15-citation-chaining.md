@@ -1,6 +1,6 @@
 # SW dilim 15 — Atıf zinciri
 
-**Tarih:** 23 Eylül 2026. **Durum:** plan yazıldı, sahip onayı bekliyor (aşağıdaki altı karar). **Ana dosya:**
+**Tarih:** 23 Eylül 2026. **Durum:** plan yazıldı; altı karar Claude ile `gpt-6-sol` · medium arasında ortak karara bağlandı, sahip onayı bekliyor. **Ana dosya:**
 [sw-status.md](sw-status.md). **Karar:** D95 (dilim yazar). **Önkoşul:** 14a (kapandı, `8f86f54`, D94). **Tür:** Kur.
 **Uygulayan:** Opus · high (satırdaki gibi; yeni istekler, yeni adımlar, planın dördüncü grubu). **İnceleme:** satırda
 toplu; tam öneriyorum (Sol · high), çünkü dilim kütüphaneye kayıt ekliyor ve tam metin planına grup ekliyor.
@@ -47,7 +47,7 @@ Hepsi yeniden oynatmadan: on üç kütüphane (kuantum on, paket üç), 407 Open
    | P1 tek havuz: zincir eserleri sıralamaya ve özet okumasına katılır | 30 / 29 | 20 / 18 | 39 / 38 | 0 |
    | P2 en sona: zincir eserleri üç grubun arkasında | 30 | 20 | 41 | 0 |
    | P3 sınırın içinden pay (¼ plan yeri, ½ özet okuması) | 32 / 31 | 21 / 20 | 41 / 37 | 1 |
-   | **P4 zincire ayrıca yer** (sonradan hesaplandı) | **36** | **25** | **41** | **1** |
+   | **P4 zincire ayrıca yer** (sonradan, ayrı plan olarak oynatıldı: `p4.json`) | **36 / 35** | **25** | **41** | **0** |
    | aynı yeri anahtar sözcük eserlerine vermek (sonradan) | 35 | 24 | 44 | 0 |
 
    P1 bir koşuda 13'ten 11'e düşürdü. P2 hiçbir şey kazandırmıyor, çünkü üç grup her eforda sınırdan uzun. P4 koşu
@@ -61,47 +61,42 @@ Hepsi yeniden oynatmadan: on üç kütüphane (kuantum on, paket üç), 407 Open
 
 ## Sahibin vereceği kararlar
 
-1. **Üç efor da zincir kurar; `quick`'in hedefi 10 → 12 dk olur, `standard` 15 ve `detailed` 20 aynı kalır.** Önerim
-   bu. Gerekçe: zincirin istekleri ~10 sn; süreyi büyüten ayrılan yer (karar 4). Tahmin (ölçülmedi): `quick` +1,3–1,7
-   dk (istek 0,2, zincirin özet okuması 2 çağrı ~0,3, 20 iş getirme ~0,35, okuma 0,4–0,8), yani ~11–11,5 dk.
-   `standard` ve `detailed` +1,5–2,5 dk; ikisi zaten hedefin üstünde (17,9 ve 39,7) ve bu dilim onu düzeltmiyor.
-   Seçenekler: (a) `quick` zincir kurmaz ve 10 dk'da kalır; (b) `detailed` zincir kurmaz, çünkü kod tohumları orada
-   11 eksikten 1'ine ulaştı. (b)'yi önermiyorum: eforlara ayrı kural tek konuya ayar olur, maliyet de `detailed`'ın
-   süresinin ~%5'i.
-2. **Tohum: sıralamanın 15 kod tohumu, artı kullanıcının adlandırdığı ya da yüklediği her makale.** Önerim bu. Kod
-   tohumu bugün çizge sinyalinin kullandığı listenin aynısı (`ranking.rank_records`: BM25 ve blokların RRF'i, ilk 15).
-   Kullanıcının tohumları `ranking.verified_seeds`. İş düzeyinde tekilleştirme (birleşmenin işi, sonra normalleştirilmiş
-   başlık). Derleme tohum olmaz. Erken durma kurulmaz: hiç tetiklenmedi. Gerekçe: 25 tohum havuzda `quick`'te 5 eser
-   daha buluyor ama `quick` ve `standard`'da plana eser eklemiyor (`detailed`'da bir koşuda 1) ve 10–14 istek daha
-   istiyor. Seçenek: 25 tohum (SW4'ün üst ucu); ya da
-   15 kod tohumu + özet aşamasından sonra modelin tuttuğu ilk 10 eser (`detailed`'da daha iyi; tek konu, ölçülmedi).
-3. **İki yön, yalnız OpenAlex; Semantic Scholar bu dilimde yok.** Önerim bu. Geri yön: tohumun saklı referans listesi
-   (`record_references`, istek yok), kütüphanenin tanımadığı eserlerin künyesi 100'lük toplu isteklerle. İleri yön:
-   `cites:<W>`, tohum kimliği başına en çok 400 eser (2 sayfa). Gerekçe: iki yönden biri eksik olsa ulaşımın yarısı
-   gider. Semantic Scholar 2025 ön baskılarına ulaşıyor (dört `quick` koşusunda 2 eser), ama tohum başına bir istek ve
-   2 sn aralık (D67) 15 tohumda ≥ 30 sn ekler; dilim 14'te de 429 verdi. Ayrı iş olarak yazılsın.
-4. **Zincir eserleri kendi özet okumasıyla ve planda kendi yeriyle girer (P4).** Önerim bu. Süzgeçten geçen yeni
-   eserler: özet aşamasının kodu (`code_outcome`) hepsine uygulanır, model zincir sırasının ilk `C` eserini okur
-   (`quick` 20, `standard` 50, `detailed` 50). Aday olanlar tam metin planının dördüncü grubudur (`chain`). Bu grup
-   bugünkü sınırın **üstüne** `R` yer alır (`quick` 20, `standard` 25, `detailed` 25). Anahtar sözcük eserlerinin
-   sırası, özet okuması ve planı olduğu gibi kalır. Zincir sırası bugünkü sıralamanın havuz + zincir üzerinde yeniden
-   hesaplanmış hâlidir, yalnız zincir eserleri için saklanır. Gerekçe: P1 bir koşuda 2 eser kaybettirdi, P2 hiç
-   kazandırmadı, P3 `standard`'da yerinde saydı ve `detailed`'da kaybettirdi (41 → 37); P4 `quick`'te koşu başına +2, `standard`'da +2–3.
-   `detailed` için 50 / 25 yeniden oynatılmadı (oynatılan 150 / 75; oradaki tek zincir eseri zincirde 3. sıradaydı).
-   Seçenek: zinciri kurmadan aynı yeri anahtar sözcük eserlerine vermek (bir sabit değişikliği; `quick` 35'e karşı 36,
-   `standard` 24'e karşı 25). Bunu önermiyorum: yer tek başına tavana çarpar, `detailed`'da çarptı bile; havuzda
-   olmayan esere yalnız zincir ulaşır.
-5. **İkinci halka bu dilimde yok.** Önerim bu. İlk halkanın ulaştığı doğrulanmış eserlerden bir halka daha on üç
-   kütüphanede toplam 3 eser ekledi. Tam metinde kapsamda bulunan eserler daha iyi tohum (iki `quick` koşusunda 4 / 12
-   ve 6 / 13), ama onlar ancak tam metin okumasından sonra var olur: ikinci bir keşif, özet ve tam metin turu ister ve
-   süresi ölçülmedi. Ayrı dilim ya da "devam et" eylemi olarak yazılsın.
-6. **Onay kartı ve protokol zinciri yazar, kullanıcı kartta kapatamaz.** Önerim bu. Kartta kaynakların altına bir
-   satır: kaç tohum, nasıl seçildiği, iki yön, süzgeç, `C` ve `R`. Tohumlar aramadan sonra seçildiği için kart
-   listesini gösteremez; koşu görünümü gösterir. Protokol gövdesi `citation_chaining` bloğunu dondurur (kural sürümü,
-   tohum sayısı, kullanıcı tohumları, yönler, kaynak, 400 sınırı, süzgeç, `C`, `R`), sabitler `thresholds.chain`'e
-   girer. Koşu görünümü zincir satırını gösterir: tohumlar (başlıklarıyla), yön başına bağlanan, yeni, süzgeçten geçen,
-   modelin okuduğu, aday, planda. Kapatma `DEIXIS_CITATION_CHAINING` (`auto` | `off`) ayarındadır. Seçenek: kartta bir
-   anahtar (bu dilime arayüz işi ekler).
+Öneriler `gpt-6-sol` · medium'un incelemesinden sonra ortak karara bağlandı (23 Eylül 2026; inceleme ve yanıt
+`.local/sw-slice15-chain-replay-2026-09-23/sol-review.md`). Sol altı kararın üçüne katıldı, üçüne (1, 2, 4) itiraz etti;
+üçünde de düzeltme aşağıda. Sol'un itirazı üzerine P4 ayrı bir plan olarak yeniden oynatıldı (`p4.py` → `p4.json`):
+zincir kendi içinde tekilleştirildi, sabitler dilimin önerdiği boyda (20 / 20, 50 / 25, 50 / 25). Sonuç türetilmiş
+sayıyla aynı: `quick` 30 → 36 / 35, `standard` 20 → 25, `detailed` 41 → 41, paket 0 → 0.
+
+1. **Üç efor da zincir kurar; süre hedefleri şimdilik değişmez.** Kabul koşusu ölçer, hedef ölçümden sonra sahip
+   tarafından yazılır. İlk önerim `quick` hedefini şimdiden 12 dk yapmaktı. Sol itiraz etti: tahmin zincirin özet
+   okumasını, getirmesini ve okumasını ölçmüyor. Ortak karar: `quick` için 10 dk karşılaştırma ölçütü olarak kalır.
+   Kabulün süre koşulu zincirin kendi payıdır (Task 8). Tahmin (ölçülmedi): `quick` +1,3–1,7 dk, `standard` ve
+   `detailed` +1,5–2,5 dk. Seçenek: `quick` zincir kurmaz. `detailed` için bir not: kod tohumlarıyla iki koşuda da plana
+   eser eklemedi. Ama eforlara ayrı kural tek konuya ayar olur, maliyet de `detailed`'ın süresinin ~%5'i.
+2. **Tohum: BM25 ve blok sırasının ilk 15 farklı eseri, artı kullanıcının adlandırdığı ya da yüklediği her makale,
+   ayrı ayrı.** Sol'un bulgusu doğru: `rank_records` çizge tohumlarını kullanıcı tohumları önde olmak üzere toplam
+   15'e tamamlıyor. Saklı `kind = code` listesi bu yüzden kullanıcı tohumu olduğunda 15'ten kısa kalıyor. Zincir bu
+   listeyi okumaz. `fuse(("bm25", "blocks"))` sırasından kullanıcı tohumu olmayan ilk 15 farklı eseri alır,
+   `verified_seeds`'i ayrıca ekler, listeyi dondurur. İş düzeyinde tekilleştirme. Derleme tohum olmaz, erken durma
+   kurulmaz. 25 tohum `quick`'te havuza 5 eser daha getiriyor ama plana eser eklemiyor.
+3. **İki yön, yalnız OpenAlex; Semantic Scholar bu dilimde yok.** Sol katıldı. Geri yön saklı referans listesinden
+   (istek yok), tanınmayan eserlerin künyesi 100'lük toplu isteklerle. İleri yön `cites:<W>`, tohum kimliği başına
+   en çok 400 eser. Tek yön ulaşımın yarısını kaybettirir. Semantic Scholar ayrı iş.
+4. **Zincir eserleri kendi özet okumasıyla ve planda kendi yeriyle girer (P4), fayda kabulde okunan eserle
+   ölçülür.** Model zincir sırasının ilk `C` eserini okur (20 / 50 / 50). Adaylar planın dördüncü grubudur, bugünkü
+   sınırın **üstüne** `R` yer alır (20 / 25 / 25). Anahtar sözcük eserlerinin sırası, özet okuması ve planı değişmez.
+   Sol'un itirazı: P4 türetilmiş bir plan sayısıydı ve plan okuma demek değil. Ortak karar iki adımlı. Birincisi,
+   P4 ayrı plan olarak yeniden oynatıldı ve türetilmiş sayıyı doğruladı (yukarıda). İkincisi, varsayılan açık kalmak
+   için kabul koşusu okunan eser ister (Task 8, fayda koşulu). O koşul tutmazsa zincir kurulu ama `off` kapanır.
+   Seçenek: zincir yerine aynı yeri anahtar sözcük eserlerine vermek (`quick` 35, `standard` 24). Önermiyoruz: yer
+   tek başına tavana çarpar, havuzda olmayan esere yalnız zincir ulaşır.
+5. **İkinci halka bu dilimde yok.** Sol katıldı. On üç kütüphanede toplam 3 eser ekledi; tam metinde kapsamda bulunan
+   eserlerden zincir ikinci bir tur ister ve süresi ölçülmedi. Ayrı iş.
+6. **Onay kartı ve protokol zinciri yazar; kapatma ayarda.** Sol katıldı. Kartta kural ve sınırlar yazar, gerçek
+   tohumlar koşu görünümünde gösterilir. Protokol gövdesi `citation_chaining` bloğunu (kural sürümü, tohum sayısı,
+   kullanıcı tohumları, yönler, kaynak, 400 sınırı, istek sınırı, süzgeç, `C`, `R`) ilk dondurmada ve genişleme
+   revizyonunda aynı biçimde taşır. Ayar (`DEIXIS_CITATION_CHAINING`, `auto` | `off`) koşu kuyruğa girerken bütçeye
+   yazılır ve o koşu için donar.
 
 ## Global constraints
 
@@ -115,8 +110,11 @@ Hepsi yeniden oynatmadan: on üç kütüphane (kuantum on, paket üç), 407 Open
   tohumun W kimliği, sayfa, parti numarası.
 - **Başarısız istek koşuyu durdurmaz** (D18). Kaydedilir ve gösterilir, öbür istekler sürer. Zincir koşuyu hiçbir
   durumda duraklatmaz.
-- **Donmuş bütçeye saygı.** Bu değişiklikten önce kuyruğa girmiş koşu zincir kurmaz ve bütçesini korur. Model bütçesi
-  yalnız `sw` keşif koşusunda `2 × ceil(C / 20)` artar; getirme bütçesi `R` artar; okuma sınırı değişmez (hiç bağlamadı).
+- **Donmuş bütçeye saygı.** Bu değişiklikten önce kuyruğa girmiş koşu zincir kurmaz ve bütçesini korur. Yalnız `sw`
+  keşif koşusunda model bütçesi `2 × ceil(C / 20)` artar ve zincirin **kendi istek sınırı** `max_chain_requests`
+  eklenir. Zincirin istekleri `max_provider_requests`'ten düşmez: o bütçenin bitmesi koşuyu duraklatır, zincirinki
+  duraklatmaz. Sınır dolunca kalan tohumlar `not_reached` sayılır, koşu sürer. Getirme bütçesi `R` artar, okuma
+  sınırı değişmez (hiç bağlamadı).
 - **Kayıt yolu tek.** Zincir kayıtları aramanın kayıt yolundan geçer (normalleştirme, kimlik, birleştirme D46,
   `record_references`). Birleştirme yolu değişmez. Mevcut bir işe birleşen kayıt zincir eseri sayılmaz.
 - **Konuya özgü hiçbir şey yok.** Süzgeç onaylı sözcük dağarcığının iki kapı bloğunu okur.
@@ -126,10 +124,15 @@ Hepsi yeniden oynatmadan: on üç kütüphane (kuantum on, paket üç), 407 Open
 
 - `domain/rules.py`: `CHAIN_SEEDS = 15`, `CHAIN_CITING_CAP = 400`,
   `CHAIN_ABSTRACT_READ = {"quick": 20, "standard": 50, "detailed": 50}`,
-  `CHAIN_PLAN_ROOM = {"quick": 20, "standard": 25, "detailed": 25}`. Yorumda tarih, D95 ve yeniden oynatmanın klasörü:
-  "15 tohum = çizgenin kod tohumları; 25 plana eser eklemedi; `detailed` 50 / 25 oynatılmadı".
-- `workflow/protocol.py`: `sw` gövdesine `citation_chaining` bloğu ve `thresholds.chain`. Ayar `off` ise blok
-  `{"enabled": false}` olur. `legacy` gövdesi değişmez.
+  `CHAIN_PLAN_ROOM = {"quick": 20, "standard": 25, "detailed": 25}`, `CHAIN_REQUEST_LIMIT = 40` (15 tohumda ölçülen
+  17–24 istek ve iki sayfalı tohumlar için pay). Yorumda tarih, D95 ve yeniden oynatmanın klasörü:
+  "15 kod tohumu; 25 tohum `quick` ve `standard`'da plana eser eklemedi (kuantum `detailed`'da 150 / 75 ile bir
+  koşuda 1); 15 tohumla kuantum `detailed` 50 / 25 ve 150 / 75'te 0, paket `detailed` 150 / 75'te bir koşuda 1".
+- `workflow/protocol.py`: `sw` gövdesine `citation_chaining` bloğu ve `thresholds.chain`, hem ilk dondurmada hem
+  genişleme revizyonunda (`_freeze_expansion`) aynı değerle. Ayar `off` ise blok `{"enabled": false}` olur. `legacy`
+  gövdesi değişmez.
+- `api/app.py`: `sw` keşif bütçesine `max_chain_requests` ve zincir okumasının çağrıları; ayar bütçeye yazılır, koşu
+  için donar. `fulltext.fetch_budget` `chain_room` alanını taşır.
 - `Settings.citation_chaining` (`DEIXIS_CITATION_CHAINING`, varsayılan `auto`).
 
 ## Task 2: OpenAlex'in iki isteği
@@ -144,18 +147,23 @@ Hepsi yeniden oynatmadan: on üç kütüphane (kuantum on, paket üç), 407 Open
 
 `_discovery`'de `_abstract_stage`'den sonra çalışır. Yalnız `sw`, ayar `auto` ve koşunun bütçesi zinciri taşıyorsa.
 
-1. `code:chain_seeds`: `code:ranking` adımının saklı `seeds` listesinden `kind = code` olanlar ve
-   `ranking.verified_seeds`. İş düzeyinde tekilleştirilir, çıktıda donar. OpenAlex kimliği olmayan tohum yalnız geri
+1. `code:chain_seeds`: `code:ranking` adımının saklı `bm25` ve `blocks` sıralarından `ranking.fuse` ile kurulan sıranın,
+   kullanıcı tohumu olmayan ilk 15 farklı eseri, ayrıca `ranking.verified_seeds`. Saklı `seeds` listesi okunmaz
+   (kullanıcı tohumu varken 15'ten kısadır). İş düzeyinde tekilleştirilir, çıktıda donar. OpenAlex kimliği olmayan tohum yalnız geri
    yön alır; referans listesi olmayan yalnız ileri yön alır. İkisi de sayılır.
 2. `chain:backward:<n>`: tohumların referanslarından kütüphanenin tanımadığı kimlikler, 100'lük partiler.
 3. `chain:forward:<W>:<sayfa>`: tohum kimliği başına atıf yapanlar.
-4. Kayıtlar aramanın yoluyla yazılır: `search_runs` satırı (sağlayıcı `openalex`, tür `chain_backward` ya da
-   `chain_forward`), üyelik, aday, `candidate_hits`. Şema izin vermiyorsa yeni migration `0050` eklenir. Uygulayan önce
-   `search_runs` ve adım türlerinin `CHECK` kısıtlarını okur.
-5. `code:chain_filter`: bu koşunun zincir kayıtlarının iş başlarından, anahtar sözcük havuzunda olmayanlar; süzgeç iki
-   kapı bloğundan birinin biçimi başlıkta ya da özette (`ranking.blocks_in`, sözcük başı). Özeti olmayan başlığıyla
-   yargılanır. Süzgeçten geçemeyen kayıt kütüphanede kalır ama aday değildir: `stage_decisions`'a `chain_filter_out`
-   gibi bir kod yazılmaz, yalnız adımın çıktısında sayılır. Liste donar.
+4. Kayıtlar aramanın yoluyla yazılır: istek başına bir `search_runs` satırı (sağlayıcı `openalex`; `search_runs`'ta tür
+   sütunu yok, yön `query_text` ve `request_description`'da yazılır), üyelik, aday, `candidate_hits`. Migration
+   `0050_chain_links.sql` tohumdan esere bağı saklar: `chain_links(research_id, scope_revision, run_id,
+   seed_source_version_id, linked_openalex_id, direction, passed_filter, source_version_id NULL)`, anahtar
+   `(run_id, seed_source_version_id, linked_openalex_id, direction)`. Sürdürülen koşu yazılmış satırı yeniden yazmaz.
+   **Süzgeç kayıttan önce çalışır:** yanıttaki başlık ve özet üzerinde. Süzgeçten geçemeyen eser için kayıt, üyelik
+   ya da aday yazılmaz; yalnız `chain_links` satırı (`passed_filter = 0`, `source_version_id` boş) kalır.
+5. Süzgeç: iki kapı bloğundan birinin biçimi başlıkta ya da özette (`ranking.blocks_in`, sözcük başı); özeti olmayan
+   başlığıyla yargılanır. `code:chain_filter` süzgeçten geçip yazılan kayıtların iş başlarını (kayıt yolunun
+   birleştirmesinden sonra, yani zincirin kendi içindeki DOI ve başlık eşleri tek iş) ve anahtar sözcük havuzunda
+   olmayanları listeler, sayar, dondurur.
 6. `code:chain_ranking`: `rank_records`'un saf kısmı havuz + zincir üzerinde koşar. Satırlar yalnız zincir eserleri için
    yeni bir sıralama adımına yazılır. `ranking` adımına dokunulmaz.
 7. Zincirin özet aşaması: `code_outcome` her zincir eserine yazılır. `read_plan` zincir sırası üzerinde
@@ -169,9 +177,15 @@ Hepsi yeniden oynatmadan: on üç kütüphane (kuantum on, paket üç), 407 Open
 
 - `fulltext.GROUPS` sonuna `chain` eklenir. Bir iş, revizyonun en son `code:chain_filter` listesindeyse ve özet sonucu
   onu getirmeye yönlendiriyorsa bu gruptadır. Kullanıcının dahil ettiği zincir eseri `user` grubunda kalır.
-- `fetch_plan`: ilk üç grup `FULLTEXT_WORK_LIMIT` ile aynı kalır. `chain` grubu zincir sırasıyla ve `CHAIN_PLAN_ROOM`
-  kadar alır. Kullanılmayan yer anahtar sözcük eserlerine verilmez: ilk üç grubun planı byte byte aynı kalır.
-- `fetch_budget` `R` artar. Okuma planı getirme sırasını izler, `FULLTEXT_READ_LIMIT` değişmez.
+- `fetch_plan(works, order, limit, chain_order=(), chain_room=0)`: ilk üç grup bugünkü gibi `limit` alır, `chain` grubu
+  `chain_order` sırasıyla en çok `chain_room` alır. Tek bir toplam sınır kullanılmaz; kullanılmayan zincir yeri anahtar
+  sözcük eserlerine verilmez. İlk üç grubun planı byte byte aynı kalır.
+- İki çağıran da değişir: `_fulltext_plan` (koşunun kendi planı) ve keşiften sonra getirme koşusunu kuyruğa koyan yol.
+  İkisi de `fetch_budget`'tan `max_fulltext_works` ve `chain_room`'u ayrı ayrı okur; kullanıcının başlattığı getirme
+  koşusu da aynı işlevden bütçe alır.
+- Okuma sırası: `adjudication.read_plan` bugün `latest_ranking` sırasını okur ve orada olmayan işi kimliğe göre sona
+  koyar. Zincir eserleri anahtar sözcük sırasından sonra, zincir sırasıyla okunur (`order + chain_order`). Okuma
+  sınırı değişmez.
 
 ## Task 5: kart, protokol görünümü, koşu görünümü
 
@@ -200,8 +214,13 @@ Hepsi yeniden oynatmadan: on üç kütüphane (kuantum on, paket üç), 407 Open
   `test_chaining_off_sends_nothing_and_writes_no_step`,
   `test_a_legacy_research_never_chains`,
   `test_a_run_queued_before_this_change_keeps_its_budget`,
-  `test_a_chained_record_that_merges_into_a_pool_work_is_not_chained`.
-- `tests/test_fulltext_plan.py`: `test_the_chain_group_comes_last_with_its_own_room`,
+  `test_a_chained_record_that_merges_into_a_pool_work_is_not_chained`,
+  `test_the_chain_request_limit_stops_chaining_without_pausing_the_run`,
+  `test_user_seeds_do_not_shorten_the_fifteen_code_seeds`,
+  `test_the_expansion_revision_carries_the_same_chain_policy`,
+  `test_chain_links_are_written_once_on_resume`.
+- `tests/test_fulltext_plan.py` ve `tests/test_adjudication.py`: `test_the_chain_group_comes_last_with_its_own_room`,
+  `test_a_user_started_retrieval_run_gets_the_same_chain_room`, `test_chained_works_are_read_after_the_keyword_order`,
   `test_the_first_three_groups_are_the_same_with_and_without_chained_works`; bütçe testinin beklenen listesi
   `[100, 125, 325]`.
 - `tests/test_protocol_record.py`: `sw` gövdesinde `citation_chaining`, `legacy` gövdesi değişmedi.
@@ -231,9 +250,18 @@ Canlı koşudan önce yeni kodun saf işlevleri a14a `quick` kütüphanesinin bi
   ancak bir hata olabilir, o yüzden kabul koşusunda ilk üç grubun planı zincirsiz yeniden oynatmayla karşılaştırılır
   (`replay.py` A sırası, D94 sınırları). Düşüş başka bir adımdan geliyorsa dilim geçer, sebep ayrı iş olarak yazılır.
   Tartışmalı durumda o taraf iki kez koşulur, iyisi alınır.
+- **Aynı kodla zincirsiz karşılaştırma:** her koşuda ilk üç grubun planı, zincir kapalıyken yeniden oynatılan planla
+  (`replay.py` A sırası, D94 sınırları) karşılaştırılır. Fark varsa zincir anahtar sözcük yoluna dokunmuştur: dilim
+  düşer. Bir düşüşün sebebi zincir sayılır ancak bu karşılaştırma ya da zincirin kendi adımları onu gösterirse; bu
+  kural koşudan önce `protocol.md`'ye yazılır, sonuç görüldükten sonra değiştirilmez.
+- **Fayda koşulu (varsayılan için):** üç kuantum koşusunda toplam en az 1 doğrulanmış eser yalnız zincirle gelip
+  tam metinde okunmalı. Tutmazsa davranış kabul edilir ama fayda kanıtlanmamış sayılır: zincir kurulu kalır,
+  `DEIXIS_CITATION_CHAINING` varsayılanı `off` olur ve bulgu D95'e yazılır. "İki koşu, iyisi" kuralı yalnız süre ve
+  K8 sayılarında kullanılır, fayda koşulunda kullanılmaz.
 - **Süre, zincirin kendi payı:** zincirin adımları, zincirin özet okuması, `chain` grubunun getirmesi ve okuması
   toplamı `quick`'te ≤ 2,0 dk, `standard` ve `detailed`'da ≤ 3,0 dk. Aşarsa ve fazlası zincirin kendi adımlarındaysa
-  dilim düşer. Baştan sona süre yeni hedefle yan yana yazılır (karar 1: `quick` ≤ 12 dk).
+  dilim düşer. Baştan sona süre bugünkü hedeflerle (10 / 15 / 20 dk) yan yana yazılır; karar 1 gereği yeni hedefi
+  sahip bu ölçümden sonra yazar.
 - **Yazılan, kabul koşulu olmayan sayılar:** yalnız zincirin getirdiği doğrulanmış eser (havuzda, `chain` grubunda,
   okunan, atıf alan); tohum başına istek, başarısız istek; süzgeçten geçen yeni eser; `chain` grubunda PDF oranı;
   derleme bayrağı alan zincir eseri.
@@ -257,7 +285,8 @@ Canlı koşudan önce yeni kodun saf işlevleri a14a `quick` kütüphanesinin bi
   ölçer.
 - Model etiketleri: modelin zincir eserlerini tutup tutmayacağı bilinmiyor. Doğrulanmış zincir eserleri tutulmuş
   sayıldı (iyimser).
-- P4 sonradan hesaplandı (P3'ün zincir sayıları + bugünkü plan). `detailed` için 50 / 25 oynatılmadı.
+- P4 sayılar görüldükten sonra tanımlandı; Sol incelemesinden sonra ayrı plan olarak oynatıldı (`p4.py`). Okuma,
+  PDF ve atıf oynatılamaz.
 - Plana giren zincir eserinde PDF bulunma oranı, okunan ve atıf alan sayısı.
 - Doğru eser ölçüsü iki eksik listedir (31 kuantum, 6 paket). Zincirin getirdiği ama listede olmayan ilgili eserler
   sayılmadı. Paket sorusunda eksik 2–5 eser ve ulaşılan tek eser var; ulaşımı değil, süzgecin başka bir alanda çok daha

@@ -245,8 +245,11 @@ def first_round_records(store: Any, research_id: str, scope_revision: int,
 
     A record that only an expansion arm found is left out. A later discovery run of the same scope reads the same
     pool, and were those records in it, each run would learn from what the last one added and the search would
-    drift away from the question. A record the question's own query also found keeps the search run that found it
-    first, so it stays.
+    drift away from the question. A record the question's own query also found stays.
+
+    Which queries found a record is read from `candidate_hits`, every search that found it (D93): a record is taken
+    when any of them is a first-round query `only` allows, and left out only when every one is a second-round query.
+    A candidate with no hit row, found before that table existed, is read by the one search its row keeps, as before.
     """
     heads = set(store.work_heads(research_id).values())
     second_round = {(query["provider_id"], query["query_text"])
@@ -255,6 +258,16 @@ def first_round_records(store: Any, research_id: str, scope_revision: int,
                         " WHERE r.research_id = ? AND s.operation_key = 'vocabulary_expansion' AND s.status = 'succeeded'",
                         (research_id,))
                     for query in (json.loads(row["output"] or "{}").get("queries") or [])}
+    hits: dict[str, set[tuple[str, str]]] = {}
+    for row in store.conn.execute(
+            "SELECT h.source_version_id AS svid, sr.provider AS provider, sr.query_text AS query_text"
+            " FROM candidate_hits h JOIN search_runs sr ON sr.id = h.search_run_id"
+            " WHERE h.research_id = ? AND h.scope_revision = ?", (research_id, scope_revision)):
+        hits.setdefault(row["svid"], set()).add((row["provider"], row["query_text"]))
+
+    def taken(found: set[tuple[str, str]]) -> bool:
+        return any(pair not in second_round and (only is None or pair in only) for pair in found)
+
     return [{"work_id": row["work_id"], "title": row["title"],
              "author_keywords": json.loads(row["keywords"] or "[]")}
             for row in store.conn.execute(
@@ -264,5 +277,4 @@ def first_round_records(store: Any, research_id: str, scope_revision: int,
                 " LEFT JOIN search_runs sr ON sr.id = c.search_run_id"
                 " WHERE c.research_id = ? AND c.scope_revision = ? ORDER BY c.rank, c.created_at",
                 (research_id, scope_revision))
-            if row["svid"] in heads and (row["provider"], row["query_text"]) not in second_round
-            and (only is None or (row["provider"], row["query_text"]) in only)]
+            if row["svid"] in heads and taken(hits.get(row["svid"]) or {(row["provider"], row["query_text"])})]

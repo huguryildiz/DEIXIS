@@ -91,6 +91,12 @@ test.describe.serial('H: the protocol approval of an sw discovery run', () => {
     await expect(block(page, 'Setting')).toContainText('relay networks')
     await expect(block(page, 'Claim under test')).toContainText('bisection search')
     await expect(card(page)).toContainText('SYNTHETIC: the paper puts forward a method of its own')
+    // Slice 14 (D93): the sources the run would search, read by code from the field distribution before this card.
+    const routing = card(page).locator('.approval-routing')
+    await expect(routing).toContainText('OpenAlex and Semantic Scholar are always searched.')
+    await expect(routing.locator('.approval-query-group').first())
+      .toContainText('Physics and Astronomy + Mathematics + Computer Science, 80% of 100 records')
+    await expect(routing.locator('.approval-query-group.is-off')).toContainText('share 5%')
     // There is no plain Resume on a run that waits for the approval.
     await expect(page.locator('.run-strip')).toBeVisible()
     await expect(page.locator('.run-strip').getByRole('button', { name: 'Resume' })).toHaveCount(0)

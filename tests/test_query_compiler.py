@@ -192,8 +192,10 @@ def test_a_plain_word_query_keeps_a_word_of_each_block_when_the_setting_term_is_
     """Review of 13g (2026-09-23): a setting term of eight or more words filled Semantic Scholar's word cap and the
     task block was silently left out, with nothing in `dropped_terms`."""
     setting = ["SYNTHETIC long wearable body area network telemetry setting phrase here"]
-    (query,) = query_compiler.compile_block_queries(_blocks(setting, ["routing"]), ["semantic_scholar"], 8)
-    words = query["query_text"].split()
+    # Semantic Scholar's sw queries go to the bulk endpoint since D93, and no sw query goes to Crossref (D87); the rule
+    # stays for the plain-word syntax, which the fitting is asked for directly.
+    text, _ = query_compiler._fit_blocks("crossref", [setting, ["routing"]])
+    words = text.split()
     assert "routing" in words and "SYNTHETIC" in words
     assert len(words) <= query_compiler.query_rules.MAX_PLAIN_WORDS
 
@@ -201,9 +203,13 @@ def test_a_plain_word_query_keeps_a_word_of_each_block_when_the_setting_term_is_
 def test_a_plain_word_query_names_every_term_it_did_not_write_as_dropped():
     """Second review of 13g (2026-09-23): a plain-word query writes only the first term of each block, and SerpApi
     only the first setting term, so what the second round counts as searched reads the others as dropped."""
-    blocks = _blocks(["SYNTHETIC reef", "SYNTHETIC lagoon"], ["transplant", "gardening"])
+    groups = [["SYNTHETIC reef", "SYNTHETIC lagoon"], ["transplant", "gardening"]]
+    blocks = _blocks(*groups)
     by_provider = {q["provider_id"]: q for q in query_compiler.compile_block_queries(
-        blocks, ["openalex", "semantic_scholar", "serpapi"], 8)}
+        blocks, ["openalex", "semantic_scholar"], 8)}
     assert by_provider["openalex"]["dropped_terms"] == []
-    assert by_provider["semantic_scholar"]["dropped_terms"] == ["SYNTHETIC lagoon", "gardening"]
-    assert by_provider["serpapi"]["dropped_terms"] == ["SYNTHETIC lagoon"]
+    # A bulk query writes every term (D93); the plain-word and SerpApi syntaxes are fitted directly, since no sw
+    # query goes to Crossref (D87) or SerpApi (D93) any more.
+    assert by_provider["semantic_scholar"]["dropped_terms"] == []
+    assert query_compiler._fit_blocks("crossref", groups)[1] == ["SYNTHETIC lagoon", "gardening"]
+    assert query_compiler._fit_blocks("serpapi", groups)[1] == ["SYNTHETIC lagoon"]

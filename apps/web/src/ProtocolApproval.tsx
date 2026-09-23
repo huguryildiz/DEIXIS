@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, CornerUpLeft, Plus, RotateCcw, X } from 'lucide-react'
-import { ApiError, api, type ApprovalBlock, type ApprovalCriterion, type ApprovalSide, type ApprovalSuggestions, type ApprovalTerm, type ProtocolEdits, type Run, type RunApproval, type SearchQuerySide, type SuggestedTerm, type TermEdit } from './api'
-import { approvedByText, blockLabels, blockNotes, blockOriginText, dropReasonText, pauseReasonText, providerName, queryWarningText, suggestionBlockerText, termKindText, termOriginText } from './labels'
+import { ApiError, api, type ApprovalBlock, type ApprovalCriterion, type ApprovalSide, type ApprovalSuggestions, type ApprovalTerm, type ProtocolEdits, type Run, type RunApproval, type SearchQuerySide, type SourceRouting, type SuggestedTerm, type TermEdit } from './api'
+import { approvedByText, blockLabels, blockNotes, blockOriginText, dropReasonText, pauseReasonText, providerName, queryWarningText, routeReasonText, suggestionBlockerText, termKindText, termOriginText } from './labels'
 import { t, uiLocale } from './i18n'
 import { Notice } from './Notice'
 import { Button } from '@/components/ui/button'
@@ -238,6 +238,8 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
     {written && <QuerySection side={written} queries={proposal.queries ?? []} on={codeOn} editable={editable}
       onChange={on => setCodeQuery(on === written.code_query.searched ? null : on)} />}
 
+    {approval.routing && <RoutingSection routing={approval.routing} />}
+
     <SuggestionSection suggestions={approval.suggestions} editable={editable} working={working} busy={busy}
       drafted={new Set(ops.filter(op => op.op === 'add').map(op => op.phrase))}
       onAdd={row => setOps([...without(row.phrase), { op: 'add', phrase: row.phrase, block: row.block }])}
@@ -336,6 +338,45 @@ function QuerySection({ side, queries, on, editable, onChange }: {
       {compiled && !codeQueries.length && <p className="approval-hint">{t('This search’s request limit leaves no room for it: only the model’s queries are sent.')}</p>}
       <ul>{codeQueries.map(query => <li key={`code:${query.provider_id}`}><small>{providerName(query.provider_id)}</small> <code>{query.query_text}</code></li>)}</ul>
     </div>
+  </div>
+}
+
+// Which sources the run searches and why (D93): read by code from the field distribution of the gate query, before
+// this card. The list is shown, not edited; a source is left out of a research in its scope.
+function RoutingSection({ routing }: { routing: SourceRouting }) {
+  const percent = (share: number) => `${Math.round(share * 100)}%`
+  const total = routing.total?.toLocaleString(uiLocale())
+  const fieldsOf = (fields?: string[]) => (fields ?? []).join(' + ')
+  const chosenText = (row: SourceRouting['chosen'][number]) =>
+    row.reason === 'share' && row.share !== undefined && total !== undefined
+      ? t('{fields}, {share} of {total} records', { fields: fieldsOf(row.fields), share: percent(row.share), total })
+      : routeReasonText(row.reason)
+  const queried = routing.queried ?? routing.providers
+  const searched = routing.chosen.filter(row => queried.includes(row.provider_id))
+  const unqueried = routing.chosen.filter(row => !queried.includes(row.provider_id))
+  const leftText = (row: SourceRouting['left_out'][number]) =>
+    row.reason === 'share_below' && row.share !== undefined ? t('share {share}', { share: percent(row.share) }) : routeReasonText(row.reason)
+  return <div className="approval-routing">
+    <div className="approval-block-head">
+      <strong>{t('Sources')}</strong>
+      <small>{t('OpenAlex and Semantic Scholar are always searched. A field-specific source is searched when its fields hold at least {share} of the records the query finds. To leave a source out, remove it from the research’s sources.', { share: percent(routing.route_share) })}</small>
+    </div>
+    {routing.status === 'unavailable' && <Notice tone="attention">{t('The field distribution could not be read, so every source in this research’s scope is searched.')}</Notice>}
+    {routing.status === 'not_needed' && <p className="approval-hint">{t('No field-specific source is in this research’s scope, so the distribution was not asked for.')}</p>}
+    {routing.status === 'read' && total !== undefined && <p className="approval-hint">{t('Read from {total} records of the query {query}', { total, query: routing.query ?? '' })}</p>}
+    <div className="approval-query-group">
+      <span className="approval-field-label">{t('Searched')}</span>
+      <ul>{searched.map(row => <li key={row.provider_id}><small>{providerName(row.provider_id)}</small> {chosenText(row)}</li>)}</ul>
+    </div>
+    {unqueried.length > 0 && <div className="approval-query-group is-off">
+      <span className="approval-field-label">{t('Chosen, no query in the first round')}</span>
+      <small>{t('This effort’s query limit leaves these sources no first-round query.')}</small>
+      <ul>{unqueried.map(row => <li key={row.provider_id}><small>{providerName(row.provider_id)}</small> {chosenText(row)}</li>)}</ul>
+    </div>}
+    {routing.left_out.length > 0 && <div className="approval-query-group is-off">
+      <span className="approval-field-label">{t('Not searched')}</span>
+      <ul>{routing.left_out.map(row => <li key={row.provider_id}><small>{providerName(row.provider_id)}</small> {leftText(row)}</li>)}</ul>
+    </div>}
   </div>
 }
 

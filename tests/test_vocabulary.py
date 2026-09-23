@@ -280,22 +280,26 @@ def test_each_provider_gets_one_query_in_its_own_syntax_and_all_pass_the_rules()
     _, built = built_for(PACKET, default=10)
     providers = [p for p in query_rules.NAMES if CONNECTORS[p].searchable]
     queries = query_compiler.compile_block_queries(built, providers, 100)
-    # Scopus is searched by a legacy research only (D91); an sw vocabulary compiles it no query.
-    assert [q["provider_id"] for q in queries] == [p for p in providers if p != "scopus"]
+    # Scopus (D91), CORE and SerpApi (D93) are searched by a legacy research only; an sw vocabulary compiles them no
+    # query.
+    assert [q["provider_id"] for q in queries] == [p for p in providers if p not in ("scopus", "core", "serpapi")]
     for query in queries:
-        assert query_rules.query_issues(query["provider_id"], query["query_text"]) == [], query
+        assert query_rules.query_issues(query["provider_id"], query["query_text"], query.get("endpoint")) == [], query
         assert len(query["query_text"]) <= query_compiler.MAX_QUERY_CHARS
         assert set(query) >= {"provider_id", "query_text", "rationale", "dropped_terms"}
     by_provider = {q["provider_id"]: q["query_text"] for q in queries}
     assert by_provider["pubmed"] == "(energy[Title/Abstract] OR wireless[Title/Abstract]) AND packet[Title/Abstract]"
     assert by_provider["arxiv"] == "(abs:energy OR abs:wireless) AND abs:packet"
-    assert by_provider["semantic_scholar"] == "energy packet" and by_provider["serpapi"] == "energy packet"
+    # Semantic Scholar is read through its bulk endpoint, whose syntax holds the blocks whole (D93).
+    assert by_provider["semantic_scholar"] == "(energy | wireless) + packet"
 
 
-def test_a_budget_limits_how_many_providers_are_queried_and_serpapi_gets_one_query():
+def test_a_budget_limits_how_many_providers_are_queried_and_serpapi_gets_none():
     _, built = built_for(PACKET, default=10)
-    queries = query_compiler.compile_block_queries(built, ["serpapi", "openalex", "arxiv"], 2)
-    assert [q["provider_id"] for q in queries] == ["serpapi", "openalex"]
+    queries = query_compiler.compile_block_queries(built, ["pubmed", "openalex", "arxiv"], 2)
+    assert [q["provider_id"] for q in queries] == ["pubmed", "openalex"]
+    # SerpApi, like CORE, is searched by a legacy research only (D93).
+    assert query_compiler.compile_block_queries(built, ["serpapi", "core"], 2) == []
 
 
 def test_no_providers_query_holds_a_claim_word_an_exclusion_word_or_an_outcome_term():

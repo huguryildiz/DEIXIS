@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from deixis.documents import embeddings, pdf
@@ -133,7 +134,61 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
         "approved": _approval_side(approved["vocabulary"], approved["criterion"], approved["queries"]) if approved else None,
         "skipped_edits": output.get("skipped_edits") or [],
         "suggestions": _suggestions_side(store, run_id, step, output),
+        # Which sources the queries were compiled for and why (D93): the approved routing once a correction routed
+        # again, else the proposal's. None for a card shown before routing existed.
+        "routing": _card_routing(approved or output["proposal"], output["proposal"]),
     }
+
+
+def _card_routing(side: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any] | None:
+    """The card's routing with `queried`: the chosen sources the first round's queries really go to. The effort's
+    query limit can leave a chosen source no query, and the card must not call it searched (review of slice 14)."""
+    routing = side.get("routing") or proposal.get("routing")
+    if routing is None:
+        return None
+    queried = {q["provider_id"] for q in side.get("queries") or []}
+    return routing | {"queried": [p for p in routing["providers"] if p in queried]}
+
+
+def source_counts(store: Store, run_id: str) -> dict[str, Any] | None:
+    """Per round, what each source brought in this run: how many works, and how many no other source brought (D93).
+
+    Works are counted after the DOI and work merge, through the candidate each record became, and a source's work is
+    its own when no other source's search found that work anywhere in this run. The numbers come from
+    `candidate_hits`, which keeps every search that found a candidate; a run searched before that table existed has
+    none, and it says its counts were not kept (`counted` false) instead of reading as zero. None for a run that
+    searched nothing.
+    """
+    conn = store.conn
+    searches = [dict(r) for r in conn.execute(
+        "SELECT sr.id, sr.provider, sr.status, sr.result_count, st.operation_key FROM search_runs sr"
+        " JOIN run_steps st ON st.id = sr.step_id WHERE sr.run_id = ? ORDER BY sr.rowid", (run_id,))]
+    if not searches:
+        return None
+    works: dict[str, set[str]] = {}
+    for row in conn.execute(
+            "SELECT h.search_run_id, v.work_id FROM candidate_hits h JOIN search_runs sr ON sr.id = h.search_run_id"
+            " JOIN source_versions v ON v.id = h.source_version_id WHERE sr.run_id = ?", (run_id,)):
+        works.setdefault(row["search_run_id"], set()).add(row["work_id"])
+    if any(s["result_count"] and s["status"] == "completed" and s["id"] not in works for s in searches):
+        return {"counted": False, "rounds": []}
+    # The first round is the queries the approval closed on; what the second round added is numbered after them.
+    card = store.existing_step(run_id, "protocol_approval")
+    first = len((((card or {}).get("output") or {}).get("approved") or {}).get("queries") or []) or None
+    by_round: dict[int, dict[str, set[str]]] = {}
+    everywhere: dict[str, set[str]] = {}
+    for search in searches:
+        index = re.match(r"search:(\d+)", search["operation_key"])
+        number = 2 if first is not None and index and int(index.group(1)) >= first else 1
+        found = works.get(search["id"], set())
+        by_round.setdefault(number, {}).setdefault(search["provider"], set()).update(found)
+        everywhere.setdefault(search["provider"], set()).update(found)
+    return {"counted": True, "rounds": [
+        {"round": number, "sources": [
+            {"provider_id": provider, "works": len(found),
+             "only": len(found - set().union(*(w for p, w in everywhere.items() if p != provider)))}
+            for provider, found in providers.items()]}
+        for number, providers in sorted(by_round.items())]}
 
 
 def _json(value: str | None) -> Any:
@@ -222,6 +277,8 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         # Screening runs in batches; each batch's note is its own line, timed by its step.
         # What this run asked the user to approve before it froze its protocol; None for a legacy run (slice 08a).
         run["approval"] = approval_view(store, run["id"])
+        # What each source brought in each round of this run, and how much of it no other source did (D93).
+        run["source_counts"] = source_counts(store, run["id"]) if run["kind"] == "discovery" else None
         run["screening_notes"] = [
             {"step_id": r["id"], "text": note} for r in store.conn.execute(
                 "SELECT id, output_json FROM run_steps WHERE run_id = ? AND kind = 'model:screening' AND status = 'succeeded'"

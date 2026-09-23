@@ -95,6 +95,18 @@ const queryWarnings: Record<string, string> = {
   count_unknown: 'its count could not be read',
 }
 export const queryWarningText = (warning: string) => t(queryWarnings[warning] ?? warning)
+// Why a source is or is not searched by an sw run (D93).
+const routeReasons: Record<string, string> = {
+  always: 'always searched',
+  share: 'its fields hold enough of the records',
+  distribution_unavailable: 'searched because the field distribution could not be read',
+  no_route: 'searched; no field rule names it',
+  share_below: 'its fields hold too few of the records',
+  not_in_scope: 'not among this research’s sources',
+  not_configured: 'no key configured',
+  not_in_sw_search: 'not searched by this workflow',
+}
+export const routeReasonText = (reason: string) => t(routeReasons[reason] ?? reason)
 export const termOriginText = (origin: string) => t(termOrigins[origin] ?? origin)
 export const blockOriginText = (origin: string) => t(blockOrigins[origin] ?? origin)
 // Why a phrase left the query. It stays on record with its reason rather than disappearing.
@@ -131,7 +143,7 @@ export const verdictLabels: Record<Verdict, string> = {
 }
 
 const providerNames: Record<string, string> = {
-  unpaywall: 'Unpaywall', openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', ieee_xplore: 'IEEE Xplore', scopus: 'Scopus', core: 'CORE', serpapi: 'SerpApi', web_search: 'Web Search', zotero: 'Zotero',
+  unpaywall: 'Unpaywall', openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', pubmed: 'PubMed', ieee_xplore: 'IEEE Xplore', scopus: 'Scopus', core: 'CORE', serpapi: 'SerpApi', web_search: 'Web Search', zotero: 'Zotero',
 }
 export const providerName = (id: string) => providerNames[id] ?? id
 

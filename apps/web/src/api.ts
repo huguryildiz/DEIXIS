@@ -59,6 +59,13 @@ export type Run = {
   plan: SearchPlan | null; screening_notes: { step_id: string; text: string }[]
   // What this run asked the user to approve before freezing its protocol; null for a legacy run (D80).
   approval: RunApproval | null
+  // Per round, what each source brought in this discovery run and how much of it no other source did (D93).
+  // counted false: the run was searched before these were kept, which is not the same as zero.
+  source_counts?: SourceCounts | null
+}
+export type SourceCounts = {
+  counted: boolean
+  rounds: { round: number; sources: { provider_id: string; works: number; only: number }[] }[]
 }
 
 // ---- the protocol approval of an sw discovery run (D80) --------------------------------------------
@@ -136,6 +143,24 @@ export type RunApproval = {
   skipped_edits: { op: string; phrase: string; block?: string; reason?: string }[]
   // Other names the user asked a model for, and what came of it (D82).
   suggestions: ApprovalSuggestions
+  // Which sources the queries were compiled for and why (D93); null for a card shown before routing existed.
+  routing?: SourceRouting | null
+}
+// The source routing of an sw run (D93): the field distribution of the gate query and the sources it chose.
+// status read: a distribution was read; unavailable: it could not be, so every source in scope is searched;
+// not_needed: no field-specific source was in scope, so nothing was asked.
+export type SourceRouting = {
+  status: 'read' | 'unavailable' | 'not_needed'; query: string | null; total: number | null
+  fields: { field: string; count: number; share: number }[]; route_share: number; table_version: string
+  chosen: RoutedSource[]; left_out: RoutedSource[]; providers: string[]
+  // The chosen sources the first round's queries go to; the effort's query limit can leave a chosen one none.
+  queried?: string[]
+}
+export type RoutedSource = {
+  provider_id: string
+  reason: 'always' | 'share' | 'distribution_unavailable' | 'no_route' | 'share_below' | 'not_in_scope'
+    | 'not_configured' | 'not_in_sw_search'
+  fields?: string[]; share?: number
 }
 // One name the model proposed for a term of the card. `phrase_count` is how many records hold it; null was not
 // counted, which is not zero. `dropped` says why it cannot enter the query, and a dropped row cannot be added.

@@ -286,10 +286,22 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
           perProvider.set(s.provider, { taken: seen.taken + (s.status === 'completed' ? s.result_count : 0),
             total: s.provider_total === null ? seen.total : (seen.total ?? 0) + s.provider_total })
         })
-        if (perProvider.size < 2) return null  // a single provider is already named on each query row below
-        return <p className="chat-provider-totals">{[...perProvider].map(([id, { taken, total }]) => <span key={id}>
+        // Per round, the works each source brought after the DOI and work merge, and how many no other source did
+        // (D93). A run searched before these were kept says so instead of showing zeros.
+        const counts = run.source_counts
+        const perSource = counts && (counts.counted
+          ? counts.rounds.map(round => <p key={round.round} className="chat-provider-totals">
+            <span>{t('Round {n}', { n: round.round })}</span>
+            {round.sources.map(source => <span key={source.provider_id}>
+              <ConnectionIcon id={source.provider_id} />{providerName(source.provider_id)} {t('{works} works, {only} only here', { works: source.works, only: source.only })}
+            </span>)}</p>)
+          : <p className="chat-report-line"><span>{t('Works per source were not counted for this run')}</span></p>)
+        // A single provider is already named on each query row below.
+        const totals = perProvider.size < 2 ? null : <p className="chat-provider-totals">{[...perProvider].map(([id, { taken, total }]) => <span key={id}>
           <ConnectionIcon id={id} />{providerName(id)} {total !== null && total > taken ? t('{count} of {total}', { count: taken, total: compact(total) }) : taken}
         </span>)}</p>
+        if (!totals && !perSource) return null
+        return <>{totals}{perSource}</>
       }
       case 'plan': {
         if (!plan) return null

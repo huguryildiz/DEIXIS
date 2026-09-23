@@ -45,6 +45,25 @@ PROVIDER_WAIT = {"quick": 0, "standard": 1, "detailed": MAX_RATE_LIMIT_RETRIES}
 # effort. Hand-picked, not measured: whether four providers at once draws more 429s than one at a time is not known.
 SEARCH_PARALLEL_HOSTS = 4
 
+# Which domain source an sw discovery run searches, read from the OpenAlex field distribution of its gate query
+# (D93, slice 14). A source is searched when the fields it covers hold at least ROUTE_SHARE of the records together.
+# The table names OpenAlex fields (`primary_topic.field`), never words of a question. OpenAlex and Semantic Scholar
+# are searched whatever the distribution. Table and share were picked by hand, not measured: on the three questions
+# that were read, every chosen source held at least 86 % and every left-out one at most 9 %, so no share between
+# 10 % and 80 % would have changed them, and no question tested the share.
+SOURCE_ROUTES_VERSION = "deixis.source_routes.v1"
+ROUTE_SHARE = 0.25
+ALWAYS_SEARCHED = ("openalex", "semantic_scholar")
+LIFE_SCIENCE_FIELDS = ("Medicine", "Nursing", "Health Professions", "Dentistry", "Veterinary", "Neuroscience",
+                       "Immunology and Microbiology", "Biochemistry, Genetics and Molecular Biology",
+                       "Pharmacology, Toxicology and Pharmaceutics", "Agricultural and Biological Sciences")
+SOURCE_ROUTES = {
+    "ieee_xplore": ("Computer Science", "Engineering"),
+    "arxiv": ("Physics and Astronomy", "Mathematics", "Computer Science"),
+    "pubmed": LIFE_SCIENCE_FIELDS,
+    "biorxiv": LIFE_SCIENCE_FIELDS,
+}
+
 # Screening proposals are requested for at most this many candidates per model call.
 SCREENING_BATCH = 40
 

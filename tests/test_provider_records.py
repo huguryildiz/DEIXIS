@@ -354,7 +354,8 @@ def test_migration_joins_records_of_one_arxiv_preprint_found_before_d46(tmp_path
     old.mkdir()
     for path in real.glob("*.sql"):
         # Today's code writes memberships with 0029's columns (D50), so that migration comes along.
-        if int(path.name.split("_", 1)[0]) <= 25 or path.name.startswith("0029_"):
+        # So does 0049's hit table, which today's code writes with every candidate (D93).
+        if int(path.name.split("_", 1)[0]) <= 25 or path.name.startswith(("0029_", "0049_")):
             shutil.copy(path, old / path.name)
     monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
     monkeypatch.setattr(store_module, "ARXIV_DOI_PREFIX", "not-linked-before-d46")

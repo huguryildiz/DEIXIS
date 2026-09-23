@@ -324,11 +324,12 @@ def test_the_frozen_protocol_names_the_origin_of_every_block_and_is_the_same_on_
     assert {term["phrase"]: term["block_origin"] for term in body["vocabulary"]}["distributed ledgers"] == "model"
     assert all(term["block_origin"] in ("rule", "model") for term in body["vocabulary"])
 
-    stored = store.latest_step_output(rid, "vocabulary", 1)
+    # The queries searched are the ones the source routing compiled (D93), and its record is an input of the body.
+    stored = store.latest_step_output(rid, "source_routing", 1)
     # The criterion this run agreed on is an input of the body like the vocabulary, so the rebuild is given it too.
     criterion = _criterion_result(store.latest_step_output(rid, "criterion", 1))
     again = protocol.build_protocol(
         store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"], body["skill_package_hash"],
         Settings(data_dir=None, search_workflow="sw", search_query="code"), vocabulary=stored["vocabulary"], criterion=criterion,
-        approval=store.approval_step(run_id)["output"]["approval"])
+        approval=store.approval_step(run_id)["output"]["approval"], routing=stored["routing"])
     assert sha256_hex(again) == row["body_sha256"]

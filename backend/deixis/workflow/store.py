@@ -278,7 +278,8 @@ class Store:
             self.conn.execute("DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM pdf_discovery_runs WHERE research_id = ?", (research_id,))
             # Stage decisions, proposals and ranks go before the run steps and passages they point at.
-            for table in ("answer_reviews", "answers", "model_sessions", "step_inputs", "candidates", "search_runs",
+            for table in ("answer_reviews", "answers", "model_sessions", "step_inputs", "candidate_hits", "candidates",
+                          "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
                           "source_similarities", "protocol_records", "stage_decisions", "model_proposals",
                           "record_signal_ranks", "record_flags"):
@@ -1834,6 +1835,11 @@ class Store:
                     " THEN candidates.rank ELSE excluded.rank END, scope_revision = excluded.scope_revision",
                     (new_id("cnd"), research_id, search_run_id, svid, rank, scope_revision, ts),
                 )
+                if search_run_id is not None and scope_revision is not None:
+                    # Every search that found the candidate is kept, not only the one the row names (D93).
+                    self.conn.execute(
+                        "INSERT OR IGNORE INTO candidate_hits (research_id, scope_revision, source_version_id,"
+                        " search_run_id) VALUES (?, ?, ?, ?)", (research_id, scope_revision, svid, search_run_id))
             inserted = self.conn.execute(
                 "INSERT OR IGNORE INTO selections (research_id, source_version_id, state, origin, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (research_id, svid, selection_state, selection_origin, ts),
@@ -1951,7 +1957,8 @@ class Store:
             # sources is such a purge (D65), so the same authorization row the research purge uses opens the trigger.
             self.conn.execute("INSERT OR IGNORE INTO research_purge_authorizations VALUES (?)", (research_id,))
             for table in ("pdf_discovery_runs", "source_similarities", "suspected_duplicates", "selection_history",
-                          "selections", "candidates", "stage_decisions", "model_proposals", "record_signal_ranks",
+                          "selections", "candidate_hits", "candidates", "stage_decisions", "model_proposals",
+                          "record_signal_ranks",
                           "record_flags", "corpus_memberships"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ? AND source_version_id IN ({marks})", scoped)
             self.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (research_id,))

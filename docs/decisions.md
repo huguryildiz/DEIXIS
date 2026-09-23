@@ -2,6 +2,70 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D93 — Route the sw search to its sources from one field distribution, search Semantic Scholar through its bulk endpoint, and count what each source brought
+
+**Status:** accepted; implemented 2026-09-23 (slice 14). **Date:** 2026-09-23.
+
+**Context:** Before this slice an sw search sent the same query to every provider in scope that had its key, and the
+first round's query limit (`quick` 3, `standard` 8, `detailed` 12) cut the list in registry order. SW3 asks for OpenAlex
+always, a field-specific source only when the question belongs to its field, Semantic Scholar as a backup, and two
+numbers per source. In the third D88 measurement (`.local/sw-measure-2026-09-24/`) CORE, SerpApi and PubMed brought no
+verified quantum work that no other source brought; arXiv returned nothing (406). A probe of Semantic Scholar's bulk
+endpoint (`.local/sw-s2-bulk-probe-2026-09-23/`) found 20 / 21 / 20 of the quantum question's 31 verified works in 2–3
+requests per effort, where the relevance search found 6 / 8 / 19 and took 8.7 minutes in `detailed`. One OpenAlex
+`group_by=primary_topic.field.id` request per question (`.local/sw-slice14-fields-probe-2026-09-23/`) put the chosen
+sources' share at 86 % or more and the others' at 9 % or less on all three test questions.
+
+**Decision:** (1) After the `search_query` step and before the criterion and the approval card, a `source_routing`
+step sends one OpenAlex request grouped by primary-topic field for the gate query (each gate block's searched forms in
+one OR group) and stores the answer before it ends, so a resumed run asks nothing again. OpenAlex and Semantic Scholar
+are always searched. A field-specific source is chosen when its fields (`SOURCE_ROUTES`, `deixis.source_routes.v1`:
+IEEE Xplore ← Computer Science, Engineering; arXiv ← Physics and Astronomy, Mathematics, Computer Science; PubMed and
+bioRxiv ← the life-science fields) hold at least `ROUTE_SHARE` (0.25) of the records, compared unrounded. A distribution
+that cannot be read, or one read with no records or no field counts, chooses every usable domain source (`unavailable`);
+with no usable domain source in scope nothing is asked (`not_needed`). An in-scope searchable connector the table does
+not name is searched (`no_route`). Queries are compiled for the routed providers in the order OpenAlex, Semantic
+Scholar, domain sources; a term correction that changes the gate query reads the distribution once more for it. The
+second round is compiled for the routed providers too. (2) CORE and SerpApi leave the sw search (`sw_searchable=False`);
+a legacy research searches them as before. (3) Every new sw Semantic Scholar query names `endpoint: bulk` and
+`sort: citationCount:desc`, uses the bulk syntax (`+`, `|`, quoted phrases), reads up to 1,000 papers a call and follows
+the token while the query's D89 share and the effort's read limit allow. A stored query without `endpoint` goes to
+`/paper/search` as before. The sort was chosen by the owner from Task 1 (first 400 of each query: `citationCount:desc`
+76 verified works over six queries, `paperId` 38; `publicationDate:desc` was measured on one query only before 429s
+stopped the probe). (4) An sw run from before this decision (its card was shown without routing) keeps the query
+semantics its card showed: a correction at its approval and its second round are compiled with no endpoint and with CORE
+and SerpApi still searched (`routed=False`). (5) Migration `0049_candidate_hits.sql` keeps every search that found a
+candidate (`candidate_hits`, legacy runs included). The run view shows, per round and source, the works it brought and
+those no other source brought anywhere in the run; a run searched before the table says its counts were not kept. The
+second round's candidate list reads every first-round search that found a record, which closes the 13h review's
+deferred finding 3. (6) The approval card shows the chosen sources with their share, the chosen sources the query limit
+left without a first-round query apart, and the left-out sources with their reason.
+
+**Protocol body (version note):** `deixis.protocol.v1` gains, for a routed sw run, `source_routing` (status, gate query,
+total, field shares, `route_share`, table version, chosen and left-out sources with reasons, and `chosen_not_queried`);
+its `providers` lists only the sources a compiled query goes to. `compiled_queries` entries gain `endpoint` and `sort`
+for a bulk query. A body without `source_routing` is a legacy body or one frozen before this decision. `legacy` bodies
+are unchanged and `skill_package_hash` is unchanged (`sha256:7d4e238c…`).
+
+**Acceptance:** Two live runs with `gpt-5.6-luna` · medium, discovery only. Routing was right in all ten cases (quantum
+and packet size → arXiv + IEEE; sepsis → bioRxiv + PubMed). Verified quantum works in the pool against the third
+measurement's 19 / 25 / 30: first run 17 / 25 / 27 (`.local/sw-slice14-acceptance-2026-09-23/`; Semantic Scholar answered
+429 to both `quick` queries and to the model's `detailed` query), second run 18 / 28 / 25
+(`.local/sw-slice14-acceptance-2026-09-23b/`). Semantic Scholar's own records held 18 and 20 in `detailed` (threshold 18)
+with 8 and 4 requests (threshold 6). Packet size: 4 and 3 of 4. The acceptance rule did not pass as written. The owner
+accepted the slice (2026-09-23) under a revised rule: a single run compared with a single earlier run may fall at most 2
+works short, and a larger drop fails only when the change itself causes it. The second run's `detailed` drop came from
+the vocabulary labelling step, not from routing: two of Luna's three labelling runs called "mathematical programming" a
+claim, the code query lost its task block and became one block (12,579 OpenAlex records, first 1,000 read), and four
+works the `standard` run found appear on no `detailed` page. The slice was reviewed by `gpt-6-sol` · high; its five
+findings were fixed before the second run.
+
+**Limits:** The share and the table were picked by hand and no test question sits near the threshold; the distribution
+is read from `primary_topic` only. The bulk sort was chosen on one topic with one of three sorts incomplete. `quick`
+searches no domain source in its first round. CORE and SerpApi were removed on one topic's measurement. SW3.7's closing
+rule was not built. arXiv returned no page in either acceptance run (406). Run-to-run variance of the pool was not
+measured beyond the two runs; a code query left with one block is not caught.
+
 ## D92 — A model writes the sw search query once per scope revision, and the code's own query is searched beside it
 
 **Status:** accepted; implemented 2026-09-23 (slice 13h). **Date:** 2026-09-23.

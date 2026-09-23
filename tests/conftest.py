@@ -43,3 +43,25 @@ def memory_keychain(monkeypatch):
     monkeypatch.setattr(credentials, "dotenv_path", None)
     yield backend
     keyring.set_keyring(previous)
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "field_distribution: the test's own transport answers the routing request (D93)")
+
+
+@pytest.fixture(autouse=True)
+def no_field_distribution(request, monkeypatch):
+    """The source routing request of an sw run (D93) reads no distribution unless a test is about it.
+
+    An unread distribution routes to every domain source in scope, which is the search every test written before
+    slice 14 expects, and no mocked OpenAlex has to tell a grouped request from a search. A test marked
+    `field_distribution` sends the request through its own transport.
+    """
+    if request.node.get_closest_marker("field_distribution"):
+        return
+    from deixis.providers import openalex
+
+    async def unread(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(openalex, "field_distribution", unread)

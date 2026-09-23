@@ -74,7 +74,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                    expansion: dict[str, Any] | None = None,
                    criterion: dict[str, Any] | None = None,
                    approval: dict[str, Any] | None = None,
-                   embedding_model: str | None = None) -> dict[str, Any]:
+                   embedding_model: str | None = None,
+                   routing: dict[str, Any] | None = None) -> dict[str, Any]:
     """The body a research freezes. `vocabulary` is the sw workflow's code vocabulary step output (SW2).
 
     Its counts are the ones the first run read; they change in the literature over time and are never re-probed, so
@@ -86,7 +87,10 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     store; it says which signals were configured, never which of them really ran — that is in the ranking step's own
     output — so a research whose embedding failed keeps the body it froze. `approval` is how the vocabulary and the
     criterion below were agreed (slice 08a): who approved them, whether they were corrected and what the user was
-    asked about. A body without one is a `legacy` body or one frozen before that step existed.
+    asked about. A body without one is a `legacy` body or one frozen before that step existed. `routing` is the
+    source routing the queries were compiled for (D93): the gate query probed, the field shares, the share and table
+    it was decided with, and every source chosen or left out with its reason. A body without one is a `legacy` body or
+    one frozen before D93, and names the scope's searched providers as it always did.
     """
     # Imported here: flow loads this module, and the thresholds are read from their one definition rather than repeated.
     from deixis.documents.pdf import CHUNK_CHARS
@@ -108,7 +112,14 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     # the user's own correction at the approval step (SW2.6).
     default_origin = "user" if vocabulary and vocabulary["block_assignment"] == "user" else "rule"
     block_origin = block_origins(vocabulary) if vocabulary else {}
-    searched = search_providers(scope["providers"], scope.get("search_workflow"))
+    # An sw body frozen without a routing is a run from before D93, which still searched CORE and SerpApi.
+    searched = search_providers(scope["providers"], scope.get("search_workflow"), routed=routing is not None)
+    in_scope = searched
+    if routing is not None:
+        # A routed source is searched only when a query was compiled for it: the effort's query limit can leave a
+        # chosen source none (review of slice 14, 2026-09-23). The routing keeps it among the chosen, apart.
+        with_query = {q["provider_id"] for q in queries}
+        searched = [p for p in routing["providers"] if p in with_query]
 
     # A code vocabulary's queries came from the block compiler, so the body names that compiler, not the plan one.
     compiler_version = (query_compiler.BLOCKS_VERSION if vocabulary else
@@ -157,13 +168,22 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "compiled_queries": [{"provider_id": q["provider_id"], "query_text": q["query_text"],
                               **({"results": q["results"]} if q.get("results") is not None else {}),
                               # Which vocabulary wrote the query: the model's or the code's beside it (D92).
-                              **({"origin": q["origin"]} if q.get("origin") else {})}
+                              **({"origin": q["origin"]} if q.get("origin") else {}),
+                              # The endpoint and sort a Semantic Scholar sw query is read with (D93); a query that
+                              # names none goes to the relevance search, as every query did before.
+                              **({"endpoint": q["endpoint"], "sort": q["sort"]} if q.get("endpoint") else {})}
                              for q in queries],
+        # Which sources were searched and why, read from the field distribution of the gate query before the
+        # approval (D93). The counts each source brought are in the run view, not here: the body is frozen first.
+        **({"source_routing": {**{key: routing[key] for key in ("status", "query", "total", "fields", "route_share",
+                                                                "table_version", "chosen", "left_out")},
+                               "chosen_not_queried": [p for p in routing["providers"] if p not in searched]}}
+           if routing is not None else {}),
         # The databases searched, which is what the record reports (PRISMA-S item 1); a connector kept in scope only
         # to verify a known DOI is named apart so that it is not read as a searched source (D87). A `legacy` body
         # keeps the list it always had, digest and all. Scopus is not searched by an sw research (D91).
         **({"providers": sorted(searched),
-            "verification_providers": sorted(p for p in scope["providers"] if p not in searched)}
+            "verification_providers": sorted(p for p in scope["providers"] if p not in in_scope)}
            if scope.get("search_workflow") == "sw" else {"providers": sorted(scope["providers"])}),
         "arms": ["keyword_search", "data_expansion"] if expansion else ["keyword_search"],
         # How this research decides a record describes itself as a survey. A `legacy` body carries none of it.

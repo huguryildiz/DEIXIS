@@ -12,12 +12,21 @@ query may go there.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlsplit
 
 from deixis.providers import arxiv, biorxiv, core, crossref, ieee_xplore, openalex, pubmed, scopus, semantic_scholar, serpapi
 from deixis.providers.common import SearchOutcome
+
+
+@dataclass(frozen=True)
+class Endpoint:
+    """Another endpoint of a connector that an sw query can name (D93), and how a read of it pages."""
+
+    paging: str
+    max_results: int
+    max_reachable: int | None = None
 
 
 @dataclass(frozen=True)
@@ -46,6 +55,11 @@ class Connector:
     # The host name a search request goes to, taken from the URL the module sends it to. Two connectors that share one
     # are read one request at a time between them (D89): bioRxiv is searched through OpenAlex.
     host: str = ""
+    # What a new sw query compiled for this connector names besides its text: Semantic Scholar's bulk endpoint and its
+    # sort (D93). The query carries it, so a resumed run reads the endpoint its stored query names, and a query stored
+    # before D93, which names none, is read as it was (`reading`).
+    sw_query: dict[str, Any] = field(default_factory=dict)
+    endpoints: dict[str, Endpoint] = field(default_factory=dict)
 
     def api_key(self) -> str | None:
         return (os.environ.get(self.key_env) or None) if self.key_env else None
@@ -63,9 +77,12 @@ def _host(url: str) -> str:
 CONNECTORS = {c.provider_id: c for c in (
     Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",
               sw_options={"reference_count": True, "references": True}, host=_host(openalex.WORKS_URL)),
-    # Semantic Scholar serves `offset + limit` up to 1,000 and refuses a deeper page.
+    # Semantic Scholar's relevance search serves `offset + limit` up to 1,000 and refuses a deeper page. An sw query
+    # goes to the bulk endpoint instead: up to 1,000 papers a call, continued by a token (D93).
     Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000,
-              host=_host(semantic_scholar.SEARCH_URL)),
+              host=_host(semantic_scholar.SEARCH_URL),
+              sw_query={"endpoint": semantic_scholar.BULK_ENDPOINT, "sort": semantic_scholar.BULK_SORT},
+              endpoints={semantic_scholar.BULK_ENDPOINT: Endpoint("cursor", semantic_scholar.BULK_MAX_RESULTS)}),
     Connector("crossref", crossref.search, crossref.MAX_RESULTS, searchable=False,  # verification only (D87)
               host=_host(crossref.WORKS_URL)),
     # arXiv asks for three seconds between requests and refused consecutive ones on 2026-09-15 (D18).
@@ -77,9 +94,12 @@ CONNECTORS = {c.provider_id: c for c in (
               host=_host(ieee_xplore.SEARCH_URL)),
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,
               sw_searchable=False, host=_host(scopus.SEARCH_URL)),  # sw: last abstract source only (D91)
-    Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True, host=_host(core.SEARCH_URL)),
+    # CORE and SerpApi are searched by a legacy research only: in the third D88 measurement neither brought a verified
+    # work no other source brought, and SerpApi is paid (D93).
+    Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True, sw_searchable=False,
+              host=_host(core.SEARCH_URL)),
     Connector("serpapi", serpapi.search, serpapi.MAX_RESULTS, "SERPAPI_API_KEY", key_required=True, supplementary=True,
-              paging="single_page", host=_host(serpapi.SEARCH_URL)),
+              paging="single_page", sw_searchable=False, host=_host(serpapi.SEARCH_URL)),
 )}
 
 
@@ -103,9 +123,35 @@ def configured_providers() -> list[str]:
     return _configured()
 
 
-def search_providers(providers: list[str], workflow: str | None) -> list[str]:
-    """The given providers a new query of this workflow may go to, in the order given (D87, D91)."""
-    return [p for p in providers if CONNECTORS[p].searchable and (workflow != "sw" or CONNECTORS[p].sw_searchable)]
+# The connectors source routing took out of the sw search (D93). An sw run from before routing, which searches the
+# queries its card showed, still searches them in its own scope revision.
+LEFT_BY_ROUTING = frozenset({"core", "serpapi"})
+
+
+def search_providers(providers: list[str], workflow: str | None, *, routed: bool = True) -> list[str]:
+    """The given providers a new query of this workflow may go to, in the order given (D87, D91). `routed` false is an
+    sw run from before D93, which still searches CORE and SerpApi."""
+    return [p for p in providers if CONNECTORS[p].searchable and (
+        workflow != "sw" or CONNECTORS[p].sw_searchable or (not routed and p in LEFT_BY_ROUTING))]
+
+
+def reading(query: dict[str, Any]) -> Connector:
+    """The connector as a read of this query sees it: with the paging and depth of the endpoint the query names.
+
+    A query that names no endpoint — every legacy query, and an sw query stored before D93 — is read by the
+    connector's own paging, as it always was.
+    """
+    connector = CONNECTORS[query["provider_id"]]
+    endpoint = query.get("endpoint")
+    if endpoint is None:
+        return connector
+    shape = connector.endpoints[endpoint]
+    return replace(connector, paging=shape.paging, max_results=shape.max_results, max_reachable=shape.max_reachable)
+
+
+def endpoint_options(query: dict[str, Any]) -> dict[str, Any]:
+    """The arguments a query that names its endpoint passes to its connector's `search`; none for any other query."""
+    return {key: query[key] for key in ("endpoint", "sort") if query.get(key) is not None}
 
 
 def provider_role(connector: Connector) -> str:

@@ -37,7 +37,7 @@ from deixis.models import prompt
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
 from deixis.providers import openalex, query_compiler
 from deixis.providers.common import FIRST_PAGE, MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi
-from deixis.providers.registry import CONNECTORS, Connector, search_providers
+from deixis.providers.registry import CONNECTORS, Connector, endpoint_options, reading, search_providers
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import abstract_stage
@@ -50,6 +50,7 @@ from deixis.workflow import fulltext
 from deixis.workflow import lookups
 from deixis.workflow import protocol
 from deixis.workflow import ranking as ranking_rules
+from deixis.workflow import routing as routing_rules
 from deixis.workflow import search_query as search_query_rules
 from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import vocabulary as vocabulary_rules
@@ -215,7 +216,7 @@ def page_allowance(query: dict[str, Any], effort: str, budget: dict[str, Any]) -
     """
     read_limit = SW_READ_LIMIT[effort]
     per_page = 1 + PROVIDER_WAIT[effort] + MAX_TRANSIENT_NETWORK_RETRIES
-    connector = CONNECTORS[query["provider_id"]]
+    connector = reading(query)  # the endpoint the query names pages its own way (D93)
     pages = 1 if connector.paging == "single_page" else math.ceil(
         min(read_limit, connector.max_reachable or read_limit) / connector.max_results)
     return pages * per_page + budget.get("retry_provider_requests", 0)
@@ -384,6 +385,9 @@ class ResearchFlow:
             # A model writes the query from the question and the code's query is searched beside it (D92). With the
             # setting on `code`, or with the user's own key terms, the code's query stands alone as it did in 13g.
             vocabulary, queries = await self._search_query(run, scope, vocabulary, queries)
+            # Which domain sources are searched is read from the field distribution of the gate query, and the
+            # queries are compiled for those sources alone, before the user sees them (D93).
+            vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
             # The criterion is proposed before the protocol is frozen, so the body this research searches under
             # already carries it. It orders nothing and decides nothing yet (SW15.4 is slice 11).
             criterion = await self._criterion(run, scope, vocabulary)
@@ -424,7 +428,7 @@ class ResearchFlow:
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                 scope, budget, plan if plan and plan.get("concepts") else None, queries,
                 self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
-                approval=approval, embedding_model=self._embedding_model(),
+                approval=approval, embedding_model=self._embedding_model(), routing=self._routing(run_id),
             ), reason=reason)
             self.store.finish_step(protocol_step["id"], "succeeded",
                                    output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
@@ -830,7 +834,8 @@ class ResearchFlow:
         if output is None:
             failures = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("failures", [])
             output = {"proposal": {"vocabulary": vocabulary, "queries": queries, "criterion": criterion,
-                                   "criterion_failures": failures},
+                                   "criterion_failures": failures,
+                                   **({"routing": routing} if (routing := self._routing_step(run_id)) else {})},
                       "proposal_hash": approval_rules.proposal_hash(vocabulary, criterion),
                       "asked_for": asked_for, "submitted": None, "suggestion_requests": 0}
             # The model is not asked twice for the same thing (SW2.6): an earlier approval's suggestions are carried
@@ -877,9 +882,16 @@ class ResearchFlow:
         # user adds from this list carries the origin `model`, and its count is not read a second time (slice 08c).
         proposals, from_step = self._suggested(run_id, output)
         # The network work of an approval happens here, in the worker, and only for the terms the user added.
+        routing = self._routing_step(run_id)
         built, compiled, kept, skipped = await self._approved_vocabulary(
             run, scope, vocabulary, queries, edits.get("terms") or [], reapply=source == "earlier",
-            proposals=proposals, code_query=edits.get("code_query"))
+            proposals=proposals, code_query=edits.get("code_query"),
+            providers=routing["providers"] if routing else None)
+        if routing is not None and (gate := routing_rules.gate_query(built)) != routing["query"]:
+            # The correction changed the gate query: the distribution is read once more for it, and the queries are
+            # compiled for the sources it routes to. A query already read is not asked again (D93).
+            routing = await self._reroute(run, scope, step, output, gate)
+            built, compiled = self._compiled(built, routing["providers"], run["budget"])
         agreed = approval_rules.apply_criterion(criterion, edits.get("criterion"))
         # Switching the code's query off beside a model-written one is a correction too (D92).
         code_off = (search_query_rules.is_model_written(built) and vocabulary["code_query"]["searched"]
@@ -912,7 +924,8 @@ class ResearchFlow:
             "edits": {"terms": approval_rules.canonical_edits(edits.get("terms") or []),
                       "criterion": edits.get("criterion"), "note": edits.get("note"),
                       **({"code_query": edits["code_query"]} if edits.get("code_query") is not None else {})},
-            "approved": {"vocabulary": built, "queries": compiled, "criterion": agreed},
+            "approved": {"vocabulary": built, "queries": compiled, "criterion": agreed,
+                         **({"routing": routing} if routing else {})},
             # What was proposed stays with the closed approval, so a later run of this question can carry it and a
             # reader can still see which proposals were added and which were not (SW14.2).
             "suggestions": proposals if from_step or output.get("carried_suggestions") else None,
@@ -973,7 +986,8 @@ class ResearchFlow:
 
     async def _approved_vocabulary(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                                    queries: list[dict[str, Any]], term_edits: list[dict[str, Any]], reapply: bool,
-                                   proposals: list[dict[str, Any]] | None = None, code_query: bool | None = None
+                                   proposals: list[dict[str, Any]] | None = None, code_query: bool | None = None,
+                                   providers: list[str] | None = None
                                    ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         """The vocabulary and queries the run searches with, rebuilt through the one code path that builds them.
 
@@ -981,8 +995,11 @@ class ResearchFlow:
         vocabulary step compiled, byte for byte. With one, the corrected phrases go back through `build_vocabulary`,
         which decides the root or phrase form, the AND-only mark and the gate narrowing again — a patched term list
         would carry decisions that were taken for other phrases. The counts the proposal already read are given to
-        it, so only a phrase the user added is really probed.
+        it, so only a phrase the user added is really probed. `providers` is the routed list the proposal was compiled
+        for (D93); without one — a run from before D93 — the scope's, compiled as before routing.
         """
+        routed = providers is not None
+        providers = providers if providers is not None else scope["providers"]
         kept, skipped = approval_rules.applicable(vocabulary, term_edits) if reapply else (term_edits, [])
         if search_query_rules.is_model_written(vocabulary):
             # The model's terms are corrected as whole phrases and the code's query is only switched on or off; the
@@ -992,9 +1009,8 @@ class ResearchFlow:
             built = await search_query_rules.rebuild(
                 vocabulary, kept, code_query if vocabulary["code_query"]["searched"] else None,
                 self._count_probe(scope), suggestion_rules.model_phrases(proposals or []))
-            compiled = search_query_rules.compile_queries(built, scope["providers"],
-                                                          run["budget"]["max_provider_requests"])
-            return search_query_rules.with_compiled(built, compiled), compiled, built["user_edits"], skipped
+            built, compiled = self._compiled(built, providers, run["budget"], routed=routed)
+            return built, compiled, built["user_edits"], skipped
         if not kept:
             return vocabulary, queries, [], skipped
         proposals = proposals or []
@@ -1008,9 +1024,108 @@ class ResearchFlow:
         # `block_origins` reads both, so a phrase the user placed keeps `user` wherever its block is shown.
         built["labelling"] = vocabulary.get("labelling")
         built["user_edits"] = approval_rules.canonical_edits(kept)
-        compiled = query_compiler.compile_block_queries(built, scope["providers"],
-                                                        run["budget"]["max_provider_requests"])
+        compiled = query_compiler.compile_block_queries(built, providers, run["budget"]["max_provider_requests"],
+                                                        routed=routed)
         return built, compiled, built["user_edits"], skipped
+
+    async def _source_routing(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                              queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Read where the proposal's records lie and compile its queries for the sources that routes to (D93).
+
+        One OpenAlex request for the gate query (`routing.gate_query`), stored with its answer before the step ends, so
+        a resumed run sends nothing again and searches the queries the step compiled. A run that showed its approval
+        card before this step existed goes on without it, searching the queries the card showed; a new scope revision
+        is routed. No domain source usable in the scope: nothing is asked. A distribution that cannot be read: every
+        usable domain source is searched, and the step says so.
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        step = self.store.existing_step(run_id, "source_routing")
+        if step is not None and step["status"] == "succeeded":
+            stored = step["output"]
+            return search_query_rules.settled(stored["vocabulary"], stored["queries"]), stored["queries"]
+        card = self.store.existing_step(run_id, "protocol_approval")
+        if step is None and card is not None and card["output"] is not None:
+            return vocabulary, queries
+        step = step or self.store.step(run_id, "source_routing", "code:source_routing")
+        self.store.start_step(step["id"])
+        query = routing_rules.gate_query(vocabulary)
+        reads = await self._distribution(scope, query, {})
+        routing = routing_rules.route(scope["providers"], query, *reads[query] if query in reads else (None, "unavailable"))
+        built, compiled = self._compiled(vocabulary, routing["providers"], run["budget"])
+        # Written before the run can stop, so a resumed run reads the answer back instead of asking again.
+        self.store.finish_step(step["id"], "succeeded", output={
+            "routing": routing, "reads": {q: dist for q, (dist, _) in reads.items()}, "vocabulary": built,
+            "queries": compiled, "query_compiler": query_compiler.BLOCKS_VERSION})
+        self._checkpoint(run_id, revision)
+        return self._proposed(run_id, built, compiled)
+
+    async def _distribution(self, scope: dict[str, Any], query: str | None,
+                            known: dict[str, dict[str, Any] | None]) -> dict[str, tuple[dict[str, Any] | None, str]]:
+        """The field distribution of `query` with its routing status, keyed by the query; one request at most, none
+        for a query already in `known`, none when no domain source could be chosen or OpenAlex cannot be asked."""
+        if query is None:
+            return {}
+        if not routing_rules.needs_distribution(scope["providers"]):
+            return {query: (None, "not_needed")}
+        if query in known:
+            return {query: (known[query], "read" if known[query] else "unavailable")}
+        connector = CONNECTORS["openalex"]
+        if "openalex" not in scope["providers"] or connector.access_mode() == "not_configured":
+            return {query: (None, "unavailable")}
+        distribution = await openalex.field_distribution(self.deps.http, query, api_key=connector.api_key(),
+                                                         mailto=self.deps.settings.contact_email)
+        return {query: (distribution, "read" if distribution else "unavailable")}
+
+    async def _reroute(self, run: dict[str, Any], scope: dict[str, Any], approval_step: dict[str, Any],
+                       output: dict[str, Any], query: str) -> dict[str, Any]:
+        """Route again for a gate query the user's correction changed. The read is written on the approval step
+        before anything else happens, so a worker that dies here reads it back instead of asking again."""
+        known = {**(self._routing_step_output(run["id"]) or {}).get("reads", {}), **output.get("routing_reads", {})}
+        reads = await self._distribution(scope, query, known)
+        if query in reads and query not in known and reads[query][1] in ("read", "unavailable"):
+            output["routing_reads"] = {**output.get("routing_reads", {}), query: reads[query][0]}
+            self.store.set_step_output(approval_step["id"], output)
+        self._checkpoint(run["id"], run["scope_revision"])
+        return routing_rules.route(scope["providers"], query, *reads.get(query, (None, "unavailable")))
+
+    def _compiled(self, vocabulary: dict[str, Any], providers: list[str], budget: dict[str, Any], *,
+                  routed: bool = True) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """The first round's queries for these providers, through the compiler that wrote the vocabulary's: a
+        model-written vocabulary's with the code's query beside it (D92), recompiled for the same providers.
+
+        `routed` false is an sw run from before D93 (review of slice 14, 2026-09-23): its queries are compiled as its
+        card showed them, and the code's query keeps the queries stored with it, as before routing.
+        """
+        limit = budget["max_provider_requests"]
+        if not search_query_rules.is_model_written(vocabulary):
+            return vocabulary, query_compiler.compile_block_queries(vocabulary, providers, limit, routed=routed)
+        if not routed:
+            compiled = search_query_rules.compile_queries(vocabulary, providers, limit, routed=False)
+            return search_query_rules.with_compiled(vocabulary, compiled), compiled
+        code = vocabulary["code_query"]
+        built = vocabulary | {"code_query": code | {
+            "queries": query_compiler.compile_block_queries(code["vocabulary"], providers, limit)}}
+        compiled = search_query_rules.compile_queries(built, providers, limit)
+        return search_query_rules.with_compiled(built, compiled), compiled
+
+    def _routing_step_output(self, run_id: str) -> dict[str, Any] | None:
+        step = self.store.existing_step(run_id, "source_routing")
+        return step["output"] if step is not None and step["status"] == "succeeded" else None
+
+    def _routing_step(self, run_id: str) -> dict[str, Any] | None:
+        """The routing this run's proposal was compiled for, or None for a run from before D93."""
+        return (self._routing_step_output(run_id) or {}).get("routing")
+
+    def _routing(self, run_id: str) -> dict[str, Any] | None:
+        """The routing this run searches under: the approved one where a correction routed again, else the step's."""
+        card = self.store.existing_step(run_id, "protocol_approval")
+        approved = ((card or {}).get("output") or {}).get("approved") or {}
+        return approved.get("routing") or self._routing_step(run_id)
+
+    def _providers(self, run_id: str, scope: dict[str, Any]) -> list[str]:
+        """The providers this run's queries are compiled for: the routed ones (D93), else the scope's."""
+        routing = self._routing(run_id)
+        return routing["providers"] if routing else scope["providers"]
 
     def _searchable(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Stop the run when its vocabulary cannot be searched. A resumed run reads the same stored vocabulary, so it
@@ -1405,7 +1520,7 @@ class ResearchFlow:
             outcome = await connector.search(self.deps.http, query["query_text"], limit, connector.api_key(),
                                              self.deps.settings.contact_email,
                                              **({"cursor": page.cursor, "max_rate_limit_retries": page.rate_limit_retries,
-                                                 **connector.sw_options} if page else {}))
+                                                 **connector.sw_options, **endpoint_options(query)} if page else {}))
             if outcome.retries:
                 self.store.add_usage(run_id, "provider_requests", outcome.retries, query=query_key)
             if outcome.status == "failed" and outcome.delivery_class == "before_send" and attempts < MAX_TRANSIENT_NETWORK_RETRIES:
@@ -1581,7 +1696,7 @@ class ResearchFlow:
         left of its own share (`budget_exhausted`, D89). True when a stop was requested before a page was sent.
         """
         run_id, revision = run["id"], run["scope_revision"]
-        connector = CONNECTORS[read.query["provider_id"]]
+        connector = reading(read.query)  # a query stored before D93 names no endpoint and reads as it did
         query_key = f"search:{read.index}"
         allowance = page_allowance(read.query, effort, run["budget"])
         cursor, before, number, known_total = FIRST_PAGE, 0, 0, None
@@ -1689,8 +1804,10 @@ class ResearchFlow:
             second = expansion_rules.second_round_vocabulary(vocabulary, result["terms"], own)
             # Where each accepted phrase went (D90); the protocol body keeps the compiled queries, not this.
             result["second_round"] = {key: second[key] for key in ("setting_synonyms", "task_additions", "setting_width")}
+            # A run from before D93 compiles its second round as its first was (review of slice 14, 2026-09-23).
             more = query_compiler.compile_block_queries(
-                second, scope["providers"], budget["max_provider_requests"]) if second["terms"] else []
+                second, self._providers(run_id, scope), budget["max_provider_requests"],
+                routed=self._routing(run_id) is not None) if second["terms"] else []
             result["searched"] = expansion_rules.searched_additions(result, more)
             # What each term had brought in by the time the expansion ended: one dated photograph, never a number
             # the research keeps as its own (the live figure is derived by `term_yields`).
@@ -1725,7 +1842,7 @@ class ResearchFlow:
         record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
             scope, run["budget"], None, queries, self.deps.package.package_hash, self.deps.settings,
             vocabulary=vocabulary, expansion=expansion, criterion=criterion, approval=approval,
-            embedding_model=self._embedding_model()), reason="data_expansion")
+            embedding_model=self._embedding_model(), routing=self._routing(run_id)), reason="data_expansion")
         self.store.finish_step(step["id"], "succeeded",
                                output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
 

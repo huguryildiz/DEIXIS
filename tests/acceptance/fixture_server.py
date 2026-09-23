@@ -85,6 +85,13 @@ def openalex(request: httpx.Request) -> httpx.Response:
         return httpx.Response(429, headers={"retry-after": "60"})
     if params.get("search.title_and_abstract") == f'"{UNHELD_SUGGESTION}"':
         return httpx.Response(200, json={"meta": {"count": 0}, "results": []})
+    if params.get("group_by") == "primary_topic.field.id":
+        # The source routing request (D93): a SYNTHETIC distribution in which one domain source's fields hold most
+        # of the records and another's none.
+        return httpx.Response(200, json={"meta": {"count": 100}, "group_by": [
+            {"key": "https://openalex.org/fields/17", "key_display_name": "Computer Science", "count": 80},
+            {"key": "https://openalex.org/fields/22", "key_display_name": "Engineering", "count": 15},
+            {"key": "https://openalex.org/fields/27", "key_display_name": "Medicine", "count": 5}]})
     if params.get("per_page") == "1" and params.get("select") == "id":
         # A count-only request reads `meta.count` and no record; answering it with the whole fixture list would
         # make every phrase worth the same handful of works (slice 04a).

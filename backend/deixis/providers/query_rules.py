@@ -39,8 +39,10 @@ def boolean_part(provider_id: str, query: str) -> str | None:
     return None
 
 
-def syntax_issues(provider_id: str, query: str) -> list[str]:
+def syntax_issues(provider_id: str, query: str, endpoint: str | None = None) -> list[str]:
     name = NAMES[provider_id]
+    if provider_id == "semantic_scholar" and endpoint == "bulk":
+        return _bulk_issues(query)
     if provider_id in ("semantic_scholar", "crossref"):
         issues = []
         if re.search(r'["()]', query) or re.search(r"\b(AND|OR|NOT)\b", query):
@@ -66,6 +68,21 @@ def syntax_issues(provider_id: str, query: str) -> list[str]:
     if provider_id == "arxiv":
         return _arxiv_issues(query)
     return []
+
+
+def _bulk_issues(query: str) -> list[str]:
+    """Semantic Scholar's bulk query syntax as the compiler writes it (D93): quoted phrases and plain words, `|` inside
+    a parenthesized group, `+` between groups. Its other operators (`-` negates, `*` is a prefix, `~` a distance) are
+    never meant, so a term that would be read as one is refused rather than sent."""
+    if not balanced(query):
+        return ["unbalanced quotes or parentheses"]
+    issues = []
+    if any(re.search(r"[|+]", phrase) for phrase in re.findall(r'"([^"]*)"', query)):
+        issues.append("a quoted phrase holds | or +, which bulk search reads as an operator")
+    bare = re.sub(r'"[^"]*"', " ", query)
+    if re.search(r"[*~]", bare) or re.search(r"(^|[\s(])-", bare):
+        issues.append("a term would be read as a bulk operator (- negates, * is a prefix, ~ a distance); quote it")
+    return issues
 
 
 def _arxiv_issues(query: str) -> list[str]:
@@ -171,9 +188,12 @@ def openalex_query_shape_issues(query: str) -> list[str]:
     return issues
 
 
-def query_issues(provider_id: str, query: str) -> list[str]:
-    """Every rule one provider query must pass: its syntax, then the OpenAlex-style boolean checks where they apply."""
-    issues = syntax_issues(provider_id, query)
+def query_issues(provider_id: str, query: str, endpoint: str | None = None) -> list[str]:
+    """Every rule one provider query must pass: its syntax, then the OpenAlex-style boolean checks where they apply.
+
+    `endpoint` is the one an sw query names (D93); a query that names none is checked as it always was.
+    """
+    issues = syntax_issues(provider_id, query, endpoint)
     boolean = boolean_part(provider_id, query)
     if boolean is None or issues:
         return issues

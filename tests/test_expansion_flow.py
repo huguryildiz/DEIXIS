@@ -259,14 +259,14 @@ def test_an_accepted_phrase_freezes_a_second_revision_and_leaves_the_first_alone
         rid, run_id, view, run = discover(client)
         frozen = protocols(app.state.store, rid)
         stored = step_output(app.state.store, run_id, "vocabulary_expansion")
-        first = step_output(app.state.store, run_id, "vocabulary")
+        first = step_output(app.state.store, run_id, "source_routing")  # the queries routing compiled (D93)
         rebuilt = protocol.build_protocol(
             app.state.store.scope(rid, 1), app.state.store.run(run_id)["budget"], None,
             first["queries"] + stored["queries"], app.state.package.package_hash,
             Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw", search_query="code"),
             vocabulary=first["vocabulary"], expansion=stored["expansion"],
             # The approval is an input of the body like the vocabulary, so the rebuild is given it too (slice 08a).
-            approval=app.state.store.approval_step(run_id)["output"]["approval"])
+            approval=app.state.store.approval_step(run_id)["output"]["approval"], routing=first["routing"])
     finally:
         client.__exit__(None, None, None)
     assert [(row["protocol_revision"], row["reason"]) for row in frozen] == [(1, None), (2, "data_expansion")]

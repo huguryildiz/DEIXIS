@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from deixis.providers import query_rules
-from deixis.providers.registry import search_providers
+from deixis.providers.registry import CONNECTORS, search_providers
 
 VERSION = "deixis.query_compiler.v2"
 COMPACT_VERSION = "deixis.query_compiler.v3.compact_openalex_v1"
@@ -34,14 +34,14 @@ ROLE_NAMES = {"mechanism": "mechanism", "method": "method", "outcome": "outcome"
               "adjacent_field": "adjacent field"}
 
 
-def _searchable(providers: list[str], workflow: str | None = None) -> list[str]:
+def _searchable(providers: list[str], workflow: str | None = None, *, routed: bool = True) -> list[str]:
     """The given providers a query may go to, once each and in the order they arrived.
 
     A connector that is only asked about a record whose DOI is already known is dropped here rather than by each
     caller, so no caller names a provider and a research whose scope still holds one compiles no query for it (D87).
     An sw vocabulary also leaves out a connector that only a legacy research searches (D91).
     """
-    return search_providers(list(dict.fromkeys(providers)), workflow)
+    return search_providers(list(dict.fromkeys(providers)), workflow, routed=routed)
 
 
 def _terms(concept: dict[str, Any]) -> list[str]:
@@ -66,7 +66,10 @@ def _group(operands: list[str]) -> str:
     return operands[0] if len(operands) == 1 else "(" + " OR ".join(operands) + ")"
 
 
-def _render(provider: str, core: list[str], family: list[str]) -> str:
+def _render(provider: str, core: list[str], family: list[str], endpoint: str | None = None) -> str:
+    if endpoint == "bulk":  # Semantic Scholar's bulk syntax (D93): `|` inside a block, `+` between blocks
+        return " + ".join(quoted(group[0]) if len(group) == 1 else "(" + " | ".join(quoted(t) for t in group) + ")"
+                          for group in (core, family) if group)
     if provider in PLAIN_PROVIDERS:  # plain words: the first core term, then the first family term
         def words(text: str, seen: set[str]) -> list[str]:
             kept: dict[str, str] = {}
@@ -120,17 +123,18 @@ def _compact_openalex(core_term: str, family_term: str) -> str | None:
     return query if len(query) <= MAX_QUERY_CHARS and not query_rules.query_issues("openalex", query) else None
 
 
-def _rendered(provider: str, kept: list[list[str]]) -> list[int]:
+def _rendered(provider: str, kept: list[list[str]], endpoint: str | None = None) -> list[int]:
     """How many leading terms of each block `_render` really wrote: a plain-word query takes the first term of each
-    block, and SerpApi the first term of the first block (second review of 13g, 2026-09-23)."""
-    if provider in PLAIN_PROVIDERS:
+    block, and SerpApi the first term of the first block (second review of 13g, 2026-09-23). A bulk query writes them
+    all."""
+    if provider in PLAIN_PROVIDERS and endpoint is None:
         return [min(len(group), 1) for group in kept]
     if provider == "serpapi":
         return [min(len(group), 1) if position == 0 else len(group) for position, group in enumerate(kept)]
     return [len(group) for group in kept]
 
 
-def _fit_blocks(provider: str, groups: list[list[str]]) -> tuple[str, list[str]] | None:
+def _fit_blocks(provider: str, groups: list[list[str]], endpoint: str | None = None) -> tuple[str, list[str]] | None:
     """One query holding as many leading terms of each block as the provider's rules allow, with what was dropped.
 
     A term goes from the end of the block that still holds the most terms, the last such block on a tie, and every
@@ -141,21 +145,25 @@ def _fit_blocks(provider: str, groups: list[list[str]]) -> tuple[str, list[str]]
     counts = [len(group) for group in groups]
     while True:
         kept = [group[:count] for group, count in zip(groups, counts)]
-        text = _render(provider, kept[0], kept[1] if len(kept) > 1 else [])
-        if len(text) <= MAX_QUERY_CHARS and not query_rules.query_issues(provider, text):
-            used = _rendered(provider, kept)
+        text = _render(provider, kept[0], kept[1] if len(kept) > 1 else [], endpoint)
+        if len(text) <= MAX_QUERY_CHARS and not query_rules.query_issues(provider, text, endpoint):
+            used = _rendered(provider, kept, endpoint)
             return text, [term for group, count in zip(groups, used) for term in group[count:]]
         if max(counts) <= 1:
             return None
         counts[max(range(len(counts)), key=lambda position: (counts[position], position))] -= 1
 
 
-def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[str], limit: int) -> list[dict[str, Any]]:
+def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[str], limit: int, *,
+                          routed: bool = True) -> list[dict[str, Any]]:
     """One query per provider from the code vocabulary's blocks: OR inside a block, AND between blocks (SW2.7).
 
     Only terms of the setting and task blocks are read. Claim words, exclusion words and outcome terms are not in
     `terms`, so no query can hold one. The returned dictionaries carry the keys `compile_queries` returns, so the
-    search step reads them unchanged, plus the terms a provider's limits left out.
+    search step reads them unchanged, plus the terms a provider's limits left out. A connector whose sw queries go to
+    another endpoint (Semantic Scholar's bulk search, D93) gets a query in that endpoint's syntax, which names the
+    endpoint and its sort. `routed` false compiles as before D93, for an sw run from before routing: no endpoint, and
+    CORE and SerpApi still searched, so the run keeps the query semantics its card showed.
     """
     groups, names = [], []
     for block in BLOCK_ORDER:
@@ -168,13 +176,15 @@ def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[st
         return []
     rationale = "Concept blocks: " + " AND ".join(names)
     queries: list[dict[str, Any]] = []
-    for provider in _searchable(enabled_providers, "sw"):
+    for provider in _searchable(enabled_providers, "sw", routed=routed):
         if len(queries) >= limit:
             break
-        if (fitted := _fit_blocks(provider, groups)) is None:
+        extra = CONNECTORS[provider].sw_query if routed else {}
+        if (fitted := _fit_blocks(provider, groups, extra.get("endpoint"))) is None:
             continue
         text, dropped = fitted
-        queries.append({"provider_id": provider, "query_text": text, "rationale": rationale, "dropped_terms": dropped})
+        queries.append({"provider_id": provider, "query_text": text, "rationale": rationale, "dropped_terms": dropped,
+                        **extra})
     return queries
 
 

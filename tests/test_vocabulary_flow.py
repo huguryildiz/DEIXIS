@@ -119,9 +119,10 @@ def test_an_sw_discovery_searches_while_every_model_call_fails(tmp_path, monkeyp
     assert openalex.counts and openalex.searches
     # The vocabulary step opens first and the optional block labelling of slice 04d runs inside it; the criterion
     # proposal of slice 06 follows, the approval step of slice 08a closes without stopping in this setup, and the
-    # protocol is frozen next, still before any search.
-    assert [s["operation_key"] for s in run["steps"]][:10] == [
-        "vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
+    # protocol is frozen next, still before any search. The source routing of slice 14 (D93) sits between the
+    # vocabulary and the criterion.
+    assert [s["operation_key"] for s in run["steps"]][:11] == [
+        "vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3", "source_routing",
         "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
         "protocol_approval", "protocol"]
     # Since slice 09 the one record this fixture finds carries both concept blocks in its title, so the code stage
@@ -216,11 +217,12 @@ def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_secon
     assert body["vocabulary"] and all(term["origin"] == "question" for term in body["vocabulary"])
     assert body["code_version"].endswith("deixis.query_compiler.v4.blocks")
 
-    stored = store.latest_step_output(rid, "vocabulary", 1)
+    # The queries searched are the ones the source routing compiled (D93), and its record is an input of the body.
+    stored = store.latest_step_output(rid, "source_routing", 1)
     run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ?", (rid,)).fetchone()[0]
     again = protocol.build_protocol(store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"],
         body["skill_package_hash"], Settings(data_dir=None, search_workflow="sw", search_query="code"), vocabulary=stored["vocabulary"],
-        approval=store.approval_step(run_id)["output"]["approval"])
+        approval=store.approval_step(run_id)["output"]["approval"], routing=stored["routing"])
     assert sha256_hex(again) == rows[0]["body_sha256"]
 
 

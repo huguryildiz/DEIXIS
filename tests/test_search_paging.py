@@ -344,9 +344,11 @@ def test_semantic_scholar_stops_at_the_thousand_records_it_serves(tmp_path, monk
 
     monkeypatch.setattr("deixis.providers.common.SEMANTIC_SCHOLAR_PACER.interval_seconds", 0.0)
     app = app_for(tmp_path, monkeypatch, handler)
-    # Scaled down from the 1,000 records Semantic Scholar really serves; the registry keeps the real number.
+    # Scaled down from the 1,000 records Semantic Scholar really serves; the registry keeps the real number. Since D93
+    # a new sw query goes to the bulk endpoint; with no endpoint named, the query reads the relevance search, as a
+    # query stored before D93 still does.
     monkeypatch.setitem(CONNECTORS, "semantic_scholar",
-                        replace(CONNECTORS["semantic_scholar"], max_results=10, max_reachable=50))
+                        replace(CONNECTORS["semantic_scholar"], max_results=10, max_reachable=50, sw_query={}))
     client = client_of(app)
     try:
         rid, _, view, run = discover(client)

@@ -21,8 +21,8 @@ import httpx
 from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, OtherVersion, ProviderRecord, SearchOutcome,
                                      normalize_doi, send)
 
-__all__ = ["OtherVersion", "ProviderRecord", "SearchOutcome", "count_works", "normalize_doi", "reconstruct_abstract",
-           "search_works"]
+__all__ = ["OtherVersion", "ProviderRecord", "SearchOutcome", "count_works", "field_distribution", "normalize_doi",
+           "reconstruct_abstract", "search_works"]
 
 PROVIDER_ID = "openalex"
 WORKS_URL = "https://api.openalex.org/works"
@@ -45,6 +45,9 @@ MAX_RESULTS = 200
 # A count needs no record. OpenAlex refuses per_page=0, so the smallest page is asked for and only meta.count read.
 COUNT_PER_PAGE = 1
 COUNT_SELECT = "id"
+# The field of each work's primary topic, grouped over the whole result set (docs.openalex.org, "Group works", read
+# 2026-09-23; probed live on three questions the same day, `.local/sw-slice14-fields-probe-2026-09-23/`).
+FIELD_GROUP = "primary_topic.field.id"
 
 
 def reconstruct_abstract(inverted: dict[str, list[int]] | None) -> str | None:
@@ -175,3 +178,33 @@ async def count_works(client: httpx.AsyncClient, query: str, *, api_key: str | N
     except (json.JSONDecodeError, AttributeError, TypeError):
         return None
     return count if isinstance(count, int) else None
+
+
+async def field_distribution(client: httpx.AsyncClient, query: str, *, api_key: str | None = None,
+                             mailto: str | None = None) -> dict[str, Any] | None:
+    """How the works the query matches spread over OpenAlex fields: the total and one row per field (D93).
+
+    One request, grouped by the field of each work's primary topic, so it describes the whole result set and not a
+    first page. A failure, a timeout, a rate limit or an answer without the grouping gives `None`, which means the
+    distribution is unknown; nothing is retried here beyond `send`'s bounded 429 retries.
+    """
+    params: dict[str, Any] = {SEARCH_PARAM: query, "group_by": FIELD_GROUP}
+    if mailto:
+        params["mailto"] = mailto
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    access_mode = "api_key" if api_key else "keyless"
+    description = f"GET {WORKS_URL} {SEARCH_PARAM}={query!r} group_by={FIELD_GROUP} access={access_mode}"
+    response, _ = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,))
+    if response is None:
+        return None
+    try:
+        payload = response.json()
+        total = payload["meta"]["count"]
+        groups = payload["group_by"]
+        fields = [{"field": str(group["key_display_name"]), "key": str(group["key"]), "count": int(group["count"])}
+                  for group in groups]
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError):
+        return None
+    if not isinstance(total, int) or isinstance(total, bool):
+        return None
+    return {"total": total, "fields": fields, "request": description}

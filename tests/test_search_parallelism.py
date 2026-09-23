@@ -655,3 +655,38 @@ def test_an_error_on_one_host_still_writes_what_the_other_hosts_had_read(tmp_pat
         assert [i for _, i in written] == sorted(i for _, i in written)
     finally:
         session.close()
+
+
+def test_a_pause_asked_while_a_failed_request_waits_to_be_sent_again_sends_nothing_more(tmp_path, monkeypatch):
+    """A page whose request failed before it was sent waits before its retry; a pause asked in that wait sends no
+    retry, leaves the page unwritten, and the resumed run asks for that page again (second review of 13f)."""
+    hosts = Hosts()
+    session = Session(tmp_path, monkeypatch, hosts)
+    original, calls, flaky_on = CONNECTORS["openalex"].search, [], [True]
+
+    async def flaky(client, query, limit, *args, cursor=None, **kwargs):
+        outcome = await original(client, query, limit, *args, cursor=cursor, **kwargs)
+        if query == "SYNTHETIC packet size energy" and cursor not in (None, "*"):
+            calls.append(cursor)
+            if flaky_on[0]:
+                return replace(outcome, status="failed", delivery_class="before_send", records=[])
+        return outcome
+
+    monkeypatch.setitem(CONNECTORS, "openalex", replace(CONNECTORS["openalex"], search=flaky))
+    session.start()
+    try:
+        deadline = time.time() + 10
+        while not calls:
+            assert time.time() < deadline
+            time.sleep(0.005)
+        assert session.client.post(f"/api/runs/{session.run_id}/pause").status_code == 200
+        session.view, session.run = wait(session.client, session.rid, session.run_id)
+        assert session.run["pause_reason"] == "user_requested", session.run
+        assert len(calls) == 1
+        assert rows(session.store, "SELECT 1 FROM search_runs WHERE research_id = ? AND query_text = ? AND page_number = 1",
+                    session.rid, "SYNTHETIC packet size energy") == []
+        flaky_on[0] = False
+        session.control("resume")
+        assert calls[1] == calls[0] and session.run["status"] == "completed", session.run
+    finally:
+        session.close()

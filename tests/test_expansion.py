@@ -447,3 +447,17 @@ def test_only_the_accepted_phrases_a_second_round_query_kept_rank_and_count_and_
     _, blocks = query_vocabulary({"question": "SYNTHETIC question"}, vocabulary, searched)
     assert "quantum internet" in blocks["setting"] and "quantum internet" not in blocks["task"]
     assert "remote entanglement" in blocks["task"] and "quantum networking" not in blocks["setting"] + blocks["task"]
+
+
+def test_an_expansion_stored_before_its_searched_phrases_reads_them_from_its_stored_queries():
+    """Second review of 13g (2026-09-23): an expansion step written between 13g and its review has the blocks but no
+    `searched`; a resumed run reads it from the step's stored queries, trusting only queries that write every term
+    they keep, instead of ranking every accepted phrase as a task term."""
+    from deixis.workflow.expansion import expansion_blocks
+
+    stored = {"terms": ["quantum internet", "remote entanglement", "SYNTHETIC swap budget"],
+              "second_round": {"setting_synonyms": ["quantum internet"],
+                               "task_additions": ["remote entanglement", "SYNTHETIC swap budget"], "setting_width": 1}}
+    queries = [{"provider_id": "openalex", "dropped_terms": ["SYNTHETIC swap budget"]},
+               {"provider_id": "semantic_scholar", "dropped_terms": []}]
+    assert expansion_blocks(stored, queries) == {"setting": ["quantum internet"], "task": ["remote entanglement"]}

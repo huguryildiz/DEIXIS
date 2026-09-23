@@ -373,6 +373,9 @@ async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any
     step = store.step(run["id"], "lookup_plan:scopus", "code:lookup_plan")
     if step["status"] == "succeeded":
         return step["output"]
+    # A check a run sent before it died without its plan is counted: the plans the caller summed do not hold it.
+    checks = (step["output"] or {}).get("access_checks", 0)
+    spent += checks
     store.start_step(step["id"])
     if spent >= limit:
         # The access check is a request too: with none left it is not sent, and the plan says why Scopus was not
@@ -382,6 +385,7 @@ async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any
         store.finish_step(step["id"], "succeeded", output=output)
         return output
     store.add_usage(run["id"], "lookup_requests")
+    store.set_step_output(step["id"], {"access_checks": checks + 1})
     entitled = await scopus.complete_view_entitled(http, CONNECTORS["scopus"].api_key() or "")
     if entitled is True:
         output = plan_scopus(store, run["research_id"], run["scope_revision"], words, spent + 1, limit)

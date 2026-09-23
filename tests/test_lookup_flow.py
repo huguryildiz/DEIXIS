@@ -725,3 +725,27 @@ def test_with_no_lookup_request_left_scopus_is_skipped_without_its_access_check(
     # b and c are left without an abstract: the one request went to Semantic Scholar, none to Crossref.
     assert plan["skipped"] == "request_limit" and plan["chunks"] == [] and plan["outside_limit"] == 2
     assert usage["lookup_requests"] == 1
+
+
+def test_an_access_check_a_dead_run_already_sent_is_counted_against_the_lookup_limit(tmp_path, monkeypatch):
+    """Second review of 13g (2026-09-23): the access check is charged before it is sent, and a worker that died
+    before the Scopus plan was written left that request out of the plans the limit is summed from. The step now
+    records the check first, and the resumed plan counts it: with the limit reached, no second check is sent."""
+    import asyncio
+
+    sources = WithScopus(THREE, entitled=True, s2=S2_ANSWERS, crossref=CROSSREF_ANSWERS,
+                         scopus={"10.1/c": SCOPUS_ABSTRACT})
+    app = scopus_app(tmp_path, monkeypatch, sources)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        store = app.state.store
+        checks_before = len(sources.elsevier)
+        store.conn.execute("UPDATE run_steps SET status = 'running', output_json = ? WHERE run_id = ?"
+                           " AND operation_key = 'lookup_plan:scopus'", (json.dumps({"access_checks": 1}), run_id))
+        scope = {"providers": ["semantic_scholar", "crossref", "scopus"]}
+        plan = asyncio.run(lookups._scopus_plan(store, None, store.run(run_id), scope, (), spent=1, limit=2))
+    finally:
+        client.__exit__(None, None, None)
+    assert plan["skipped"] == "request_limit"
+    assert len(sources.elsevier) == checks_before

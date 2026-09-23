@@ -196,3 +196,14 @@ def test_a_plain_word_query_keeps_a_word_of_each_block_when_the_setting_term_is_
     words = query["query_text"].split()
     assert "routing" in words and "SYNTHETIC" in words
     assert len(words) <= query_compiler.query_rules.MAX_PLAIN_WORDS
+
+
+def test_a_plain_word_query_names_every_term_it_did_not_write_as_dropped():
+    """Second review of 13g (2026-09-23): a plain-word query writes only the first term of each block, and SerpApi
+    only the first setting term, so what the second round counts as searched reads the others as dropped."""
+    blocks = _blocks(["SYNTHETIC reef", "SYNTHETIC lagoon"], ["transplant", "gardening"])
+    by_provider = {q["provider_id"]: q for q in query_compiler.compile_block_queries(
+        blocks, ["openalex", "semantic_scholar", "serpapi"], 8)}
+    assert by_provider["openalex"]["dropped_terms"] == []
+    assert by_provider["semantic_scholar"]["dropped_terms"] == ["SYNTHETIC lagoon", "gardening"]
+    assert by_provider["serpapi"]["dropped_terms"] == ["SYNTHETIC lagoon"]

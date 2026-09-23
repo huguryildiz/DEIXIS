@@ -120,6 +120,16 @@ def _compact_openalex(core_term: str, family_term: str) -> str | None:
     return query if len(query) <= MAX_QUERY_CHARS and not query_rules.query_issues("openalex", query) else None
 
 
+def _rendered(provider: str, kept: list[list[str]]) -> list[int]:
+    """How many leading terms of each block `_render` really wrote: a plain-word query takes the first term of each
+    block, and SerpApi the first term of the first block (second review of 13g, 2026-09-23)."""
+    if provider in PLAIN_PROVIDERS:
+        return [min(len(group), 1) for group in kept]
+    if provider == "serpapi":
+        return [min(len(group), 1) if position == 0 else len(group) for position, group in enumerate(kept)]
+    return [len(group) for group in kept]
+
+
 def _fit_blocks(provider: str, groups: list[list[str]]) -> tuple[str, list[str]] | None:
     """One query holding as many leading terms of each block as the provider's rules allow, with what was dropped.
 
@@ -133,7 +143,8 @@ def _fit_blocks(provider: str, groups: list[list[str]]) -> tuple[str, list[str]]
         kept = [group[:count] for group, count in zip(groups, counts)]
         text = _render(provider, kept[0], kept[1] if len(kept) > 1 else [])
         if len(text) <= MAX_QUERY_CHARS and not query_rules.query_issues(provider, text):
-            return text, [term for group, count in zip(groups, counts) for term in group[count:]]
+            used = _rendered(provider, kept)
+            return text, [term for group, count in zip(groups, used) for term in group[count:]]
         if max(counts) <= 1:
             return None
         counts[max(range(len(counts)), key=lambda position: (counts[position], position))] -= 1

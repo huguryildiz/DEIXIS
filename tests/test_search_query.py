@@ -643,3 +643,15 @@ def test_a_failed_attempt_records_the_step_input_and_package_its_call_was_sent(t
     (attempt,) = protocol_body(client, rid)["search_query"]["attempts"]
     assert attempt["skill_package_hash"] == calls(adapter)[0]["skill_package_hash"]
     assert attempt["step_input_id"].startswith("sti_")
+
+
+def test_a_vocabulary_stored_before_compiled_was_written_reads_it_from_its_stored_queries():
+    """Second review of 13h (2026-09-23): a model-query step stored before `code_query.compiled` existed is read
+    back with it set from the queries it stored, so a resumed run whose code query was never sent does not rank
+    with the code's terms."""
+    built = proposal()
+    old = built | {"code_query": {k: v for k, v in built["code_query"].items() if k != "compiled"}}
+    model_only = [q for q in search_query.compile_queries(built, ["openalex"], 1)]
+    assert search_query.code_terms(search_query.settled(old, model_only)) == []
+    both = search_query.compile_queries(built, ["openalex"], 4)
+    assert search_query.code_terms(search_query.settled(old, both))

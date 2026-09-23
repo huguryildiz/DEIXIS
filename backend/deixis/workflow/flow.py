@@ -620,7 +620,8 @@ class ResearchFlow:
         step = step or self.store.step(run_id, "search_query", "code:search_query")
         if step["status"] == "succeeded":
             stored = step["output"]
-            return self._proposed(run_id, stored["vocabulary"], stored["queries"])
+            return self._proposed(run_id, search_query_rules.settled(stored["vocabulary"], stored["queries"]),
+                                  stored["queries"])
         earlier = self.store.search_query_of(rid, revision, run_id) if step["output"] is None else None
         if earlier is not None:
             # D92 is one call per scope revision: the query the user already saw is searched again, and the approval
@@ -628,7 +629,8 @@ class ResearchFlow:
             output = earlier["output"] | {"reused_from_run": earlier["output"].get("reused_from_run", earlier["run_id"])}
             self.store.start_step(step["id"])
             self.store.finish_step(step["id"], "succeeded", output=output)
-            return self._proposed(run_id, output["vocabulary"], output["queries"])
+            return self._proposed(run_id, search_query_rules.settled(output["vocabulary"], output["queries"]),
+                                  output["queries"])
         if code_vocabulary["block_assignment"] == "user":
             # The user's own key terms are above any proposal (SW2.6): the model is not asked to write another.
             self.store.start_step(step["id"])
@@ -816,7 +818,8 @@ class ResearchFlow:
         step = self.store.step(run_id, "protocol_approval", "code:protocol_approval")
         if step["status"] == "succeeded":
             approved = step["output"]["approved"]
-            return approved["vocabulary"], approved["queries"], approved["criterion"], step["output"]["approval"]
+            return (search_query_rules.settled(approved["vocabulary"], approved["queries"]), approved["queries"],
+                    approved["criterion"], step["output"]["approval"])
         asked_for = {"question": scope["question"], "steering": scope.get("steering"),
                      "key_terms": scope.get("key_terms")}
         # The newest approval this research closed for the same question, steering and key terms. It is both what a
@@ -1066,7 +1069,7 @@ class ResearchFlow:
             return decisions.ranking_order(step["id"])
         self.store.start_step(step["id"])
         stored = self.store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")["output"] or {}
-        terms = expansion_rules.expansion_blocks(stored.get("expansion"))
+        terms = expansion_rules.expansion_blocks(stored.get("expansion"), stored.get("queries"))
         output = ranking_rules.rank_records(self.store, run, scope, vocabulary, terms, self._embedding_model())
         self.store.finish_step(step["id"], "succeeded", output=output)
         return decisions.ranking_order(step["id"])
@@ -1386,9 +1389,13 @@ class ResearchFlow:
         return self._record_search(run, step, query, outcome, limit)
 
     async def _send_search(self, run_id: str, connector: Connector, query: dict[str, Any], limit: int,
-                           page: Page | None = None) -> SearchOutcome:
+                           page: Page | None = None, stop: Callable[[], bool] | None = None) -> SearchOutcome | None:
         """Send one search request, with its bounded retries, counting each against the run and, for an sw page,
-        against the query's own count too (D89). Nothing but the counts is written here."""
+        against the query's own count too (D89). Nothing but the counts is written here.
+
+        With `stop`, a stop asked during the wait before a network retry sends nothing more and returns None: the
+        page is left unwritten and a resumed run asks for it again (second review of 13f, 2026-09-23). The 429 waits
+        inside a connector's own `send` are not interrupted."""
         query_key = page.query_key if page else None
         attempts = 0
         while True:
@@ -1404,6 +1411,8 @@ class ResearchFlow:
             if outcome.status == "failed" and outcome.delivery_class == "before_send" and attempts < MAX_TRANSIENT_NETWORK_RETRIES:
                 attempts += 1
                 await asyncio.sleep(1.5 * attempts)
+                if stop is not None and stop():
+                    return None
                 continue
             return outcome
 
@@ -1611,7 +1620,11 @@ class ResearchFlow:
             ceiling = min(page.read_limit, connector.max_reachable or page.read_limit)
             limit = min(connector.max_results, ceiling - page.read_before)
             started = now()
-            outcome = await self._send_search(run_id, connector, read.query, limit, page)
+            outcome = await self._send_search(
+                run_id, connector, read.query, limit, page,
+                stop=lambda: (abort is not None and abort.is_set()) or self._stop_requested(run_id, revision))
+            if outcome is None:
+                return True
             ok = outcome.status in ("completed", "zero_results")
             read_total = before + len(outcome.records)
             stop_reason = _stop_reason(connector, outcome, ok, read_total, page.read_limit)

@@ -164,13 +164,24 @@ def searched_additions(result: dict[str, Any], queries: list[dict[str, Any]]) ->
             TASK_BLOCK: [phrase for phrase in second.get("task_additions") or [] if kept(phrase)]}
 
 
-def expansion_blocks(expansion: dict[str, Any] | None) -> dict[str, list[str]]:
-    """The second round's searched phrases by block; an expansion stored before they were recorded (13g) had its
-    accepted phrases read as task terms, and still is."""
+def expansion_blocks(expansion: dict[str, Any] | None,
+                     queries: list[dict[str, Any]] | None = None) -> dict[str, list[str]]:
+    """The second round's searched phrases by block.
+
+    An expansion step stored between 13g and its review has the accepted phrases' blocks but not which of them were
+    searched: that is read again from its stored queries, counting only the queries that write every term they keep,
+    since a plain-word query's list of left-out terms was incomplete then. One stored before 13g had its accepted
+    phrases read as task terms, and still has.
+    """
     expansion = expansion or {}
     if "searched" in expansion:
         return {SETTING_BLOCK: list(expansion["searched"].get(SETTING_BLOCK) or []),
                 TASK_BLOCK: list(expansion["searched"].get(TASK_BLOCK) or [])}
+    if "second_round" in expansion and queries is not None:
+        from deixis.providers.query_compiler import PLAIN_PROVIDERS
+
+        return searched_additions(expansion, [q for q in queries
+                                              if q["provider_id"] not in (*PLAIN_PROVIDERS, "serpapi")])
     return {SETTING_BLOCK: [], TASK_BLOCK: list(expansion.get("terms") or [])}
 
 

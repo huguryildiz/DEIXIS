@@ -199,6 +199,14 @@ def with_compiled(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> 
     return vocabulary | {"code_query": vocabulary["code_query"] | {"compiled": compiled}}
 
 
+def settled(vocabulary: dict[str, Any] | None, queries: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """A stored model-written vocabulary with `code_query.compiled` read from its stored queries when it was written
+    before that field existed (second review of 13h, 2026-09-23). Any other vocabulary is returned as it is."""
+    if not is_model_written(vocabulary) or "compiled" in vocabulary["code_query"]:
+        return vocabulary
+    return with_compiled(vocabulary, queries)
+
+
 def code_terms(vocabulary: dict[str, Any]) -> list[dict[str, Any]]:
     """The code query's terms when that query is searched beside the model's, otherwise none."""
     return list(vocabulary["code_query"]["vocabulary"]["terms"]) if code_searched(vocabulary) else []

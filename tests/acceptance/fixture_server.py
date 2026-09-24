@@ -8,11 +8,13 @@ fails before sending), "[invent-locator]" (every answer draft asserts a page and
 extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs), "[suggest-down]" (every
 term-suggestion call fails, so the approval card shows the failure and its retry), "[query-down]" (every call that
 writes the search query fails, so the run stops for the model query, D92), "[queue]" (the reading model answers each
-queue work by a script, so case J finds one row of each kind it needs).
+queue work by a script, so case J finds one row of each kind it needs), "[read-fails]" (the first reading run of the
+person's file of case L answers nothing usable, so the file is not read until the person asks again).
 
 `DEIXIS_FIXTURE_QUEUE=on` (case J, slice 17) switches on retrieval and reading and serves the queue works below instead
 of the A–I records; every other case leaves it unset and gets the server it always had. `DEIXIS_FIXTURE_WAITING=on`
 (case K, slice 18a) adds to those one work no route has a PDF for, so the retrieval leaves it waiting for the person's.
+Its file's reading takes a few seconds a call (case L, slice 18b), so the view can be seen while the model reads.
 """
 
 from __future__ import annotations
@@ -119,6 +121,8 @@ WAITING_PDF_PAGES = ["SYNTHETIC Journal of Relay Studies\nSYNTHETIC release timi
                      "https://doi.org/10.5555/q955", "SYNTHETIC second page of the publisher file."]
 if QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_WAITING") == "on":
     QUEUE_WORKS = [*QUEUE_WORKS, WAITING_WORK]
+# How long one reading call of the person's file takes (case L): long enough to see "The model is reading it".
+WAITING_READ_SECONDS = 3.0
 
 
 def queue_reading(si: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
@@ -195,6 +199,7 @@ class ScriptedCodex:
 
     def __init__(self) -> None:
         self.failed_once: set[str] = set()
+        self.unread_run: dict[str, str] = {}  # the one reading run per research that cannot read case L's file
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         return {"connection": "codex", "ready": True, "reason": None, "installed": True, "signed_in": True,
@@ -212,6 +217,12 @@ class ScriptedCodex:
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
         if "[slow-cells]" in question and task == "cell_extraction":
             await asyncio.sleep(1.5)
+        if task == "fulltext_adjudication" and any("Journal of Relay Studies" in p["text"] for p in si["passages"]):
+            # Case L: the person's file. Under "[read-fails]" its first reading run answers nothing usable, so the
+            # file is left unread; the run the person's retry opens reads it.
+            if "[read-fails]" in question and self.unread_run.setdefault(si["research_id"], si["run_id"]) == si["run_id"]:
+                return ModelStepResult("completed", raw_text="SYNTHETIC not a reading", resolved_model=requested_model)
+            await asyncio.sleep(WAITING_READ_SECONDS)
         return ModelStepResult("completed", raw_text=json.dumps(self.respond(si, question)), resolved_model=requested_model)
 
     def respond(self, si: dict[str, Any], question: str) -> dict[str, Any]:

@@ -16,6 +16,7 @@ from typing import Any
 from deixis.domain.canonical import sha256_hex
 from deixis.domain.reason_codes import reason
 from deixis.storage.db import new_id, now, transaction
+from deixis.workflow.fulltext import OWNED_CODES as RETRIEVAL_CODES
 from deixis.workflow.store import Store
 
 CRITERION_FIELDS = ("inclusion_criterion", "criterion_parts", "cue_phrases")
@@ -24,6 +25,8 @@ CRITERION_FIELDS = ("inclusion_criterion", "criterion_parts", "cue_phrases")
 SELECTION_STATE = {"include": "included", "criterion_not_met": "excluded", "out_of_scope": "excluded",
                    "candidate": "pending", "unresolved": "pending"}
 FULLTEXT_ORDER = ("include", "criterion_not_met", "unresolved")
+# The note of a code written for a person's file names the file (slice 18b): `person_pdf:<asset_id>`.
+PERSON_PDF_NOTE = "person_pdf:"
 
 
 class HumanDecisionStands(Exception):
@@ -53,7 +56,9 @@ class DecisionStore:
 
         The same decision from the same step is written once, so a resumed run repeats the call without adding a row.
         With `renew_stale`, the same decision gone stale is written again under what the research asks now: a person
-        who gives the same answer to a `look_again` row decides afresh (slice 16).
+        who gives the same answer to a `look_again` row decides afresh (slice 16). A code written for a person's file
+        names the file in its note (`person_pdf:<asset>`), and the note counts too: the same code for another file is a
+        new decision (slice 18b, decision 1).
         """
         code = reason(reason_code)
         with transaction(self.conn):
@@ -61,8 +66,10 @@ class DecisionStore:
             protocol_hash, criterion_hash = self._protocol_hashes(research_id, scope_revision)
             current = self.current(research_id, source_version_id, code.stage)
             if current is not None:
+                same_file = not (note or "").startswith(PERSON_PDF_NOTE) or current["note"] == note
                 if (current["reason_code"] == reason_code and current["protocol_hash"] == protocol_hash
-                        and current["step_id"] == step_id and not (renew_stale and self.is_stale(current))):
+                        and current["step_id"] == step_id and not (renew_stale and self.is_stale(current))
+                        and same_file):
                     return current
                 if current["decided_by"] == "human" and code.decided_by != "human":
                     raise HumanDecisionStands(f"{source_version_id}: the user decided this record's {code.stage} stage")
@@ -261,8 +268,11 @@ class DecisionStore:
         ):
             decision = dict(row)
             open_decisions.setdefault(decision.pop("in_work"), []).append(decision)
+        person: dict[str, dict[str, dict[str, Any]]] = {}
+        for svid, request in self.store.person_files(research_id, work_id).items():
+            person.setdefault(request["work_id"], {})[svid] = request
         return {"heads": self.store.work_heads(research_id), "decisions": open_decisions,
-                "stale_key": self.staleness_key(research_id)}
+                "stale_key": self.staleness_key(research_id), "person": person}
 
     def work_outcome(self, research_id: str, work_id: str, facts: dict[str, Any] | None = None) -> dict[str, Any]:
         """What this research decided about the work, over every version of it still in the research (SW9.4, SW1.7).
@@ -280,15 +290,27 @@ class DecisionStore:
             return min(rows, key=lambda d: (d["source_version_id"] != head, d["source_version_id"]))
 
         decisions = facts["decisions"].get(work_id, [])
+        person = facts.get("person", {}).get(work_id, {})
 
         fulltext = [d for d in decisions if d["stage"] == "fulltext"]
         if fulltext:
-            human = [d for d in fulltext if d["decided_by"] == "human"]
+            # A person's `human_pdf_wrong` says the file of its own version is wrong. While a file the person added to
+            # another version asks to be read, it is not the work's outcome; that file's version answers (slice 18b,
+            # decision 3). Every other decision of the person stands as it did.
+            human = [d for d in fulltext if d["decided_by"] == "human"
+                     and not (d["reason_code"] == "human_pdf_wrong" and set(person) - {d["source_version_id"]})]
             if human:
                 return _outcome(human[-1])  # the user's newest stands, stale or not (SW11.7)
             # A stale code decision no longer speaks for the work: the abstract outcome does (slice 12). A fresh
             # full-text decision still answers first, and two versions at opposite fresh decisions stay unresolved.
-            fresh = [d for d in fulltext if not self.is_stale(d, facts["stale_key"])]
+            fresh = [d for d in fulltext if d["decided_by"] != "human" and not self.is_stale(d, facts["stale_key"])]
+            # Once a person's file is read, the decision its reading wrote is the work's, while the file is in use as it
+            # was read; another version's different reading stays with that version and no disagreement is derived
+            # (slice 18b, decision 8).
+            held = [d for d in fresh if (person.get(d["source_version_id"]) or {}).get("holds")
+                    and d["reason_code"] not in RETRIEVAL_CODES]
+            if held:
+                return _outcome(held[-1])
             if fresh:
                 outcomes = {d["outcome"] for d in fresh}
                 if {"include", "criterion_not_met"} <= outcomes:

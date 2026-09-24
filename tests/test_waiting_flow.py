@@ -186,8 +186,9 @@ def test_a_confirmed_file_goes_to_the_chosen_version_and_the_work_leaves_the_lis
     assert records["W2"] not in [row["head"] for row in view["rows"]] and view["count"] == 2
     assert after["counts"]["waiting_for_pdf"] == 2
     assert tuple(asset) == ("user_upload", "dropped.pdf")
-    # 18a writes no code and queues no reading: the work keeps the code the fetch wrote (slice 18b decides).
-    assert code == "no_fulltext" and len(after["runs"]) == runs_before
+    # Slice 18b: the chosen version gets the code the file asks for; with reading off here no reading is queued.
+    assert code == "not_read_yet" and len(after["runs"]) == runs_before
+    assert response.json()["attached"]["reading"] == "model_off"
     assert "waiting_pdf_attached" in events
 
 

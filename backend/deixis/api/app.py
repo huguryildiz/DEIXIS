@@ -49,6 +49,7 @@ from deixis.workflow import adjudication, fulltext
 from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import bibliography
 from deixis.workflow import queue as human_queue
+from deixis.workflow import person_reading
 from deixis.workflow import waiting as pdf_waiting
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.equations import EquationService, equation_state, equations_to_check
@@ -461,6 +462,10 @@ def create_app(
     @app.exception_handler(pdf_waiting.AttachRefused)
     async def attach_refused(_: Request, exc: pdf_waiting.AttachRefused):
         return JSONResponse({"detail": {"reason": exc.reason, "message": str(exc)}}, status_code=409)
+
+    @app.exception_handler(person_reading.RetryRefused)
+    async def retry_refused(_: Request, exc: person_reading.RetryRefused):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
 
     @app.exception_handler(pdf_waiting.WaitingUnavailable)
     async def waiting_unavailable(_: Request, exc: pdf_waiting.WaitingUnavailable):
@@ -984,6 +989,9 @@ def create_app(
         elif action == "pause" and status in ("queued", "running"):
             new = "paused" if status == "queued" else "pause_requested"
             run = store.update_run(run_id, event="run_pause_requested", status=new, pause_reason="user_requested")
+            # A queued run paused here never passes the worker; a person's waiting files are looked at from here
+            # (slice 18b, decision 5). With a paused run in the research the helper opens nothing.
+            worker.flow.queue_person_reading(run["research_id"])
         elif action == "resume" and status == "paused" and run["pause_reason"] == "protocol_approval_needed":
             # There is no resuming past the approval: the run would freeze a protocol the user never saw (SW2.6).
             raise HTTPException(409, "Approve or correct the proposed protocol before resuming this run")
@@ -995,7 +1003,12 @@ def create_app(
             run = store.update_run(run_id, event="run_resumed", status="queued", pause_reason=None, error_json=None)
             worker.wake()
         elif action == "cancel" and status in ("queued", "running", "pause_requested", "paused"):
+            # The files this run held — those its plan took, or every waiting one while its plan was not frozen —
+            # are `unread` from this same write and are not asked again until the person says so; a file added after
+            # its plan froze was never the run's, and the queue opens its reading now (slice 18b, decision 5).
             run = store.update_run(run_id, event="run_cancelled", status="cancelled", pause_reason="user_cancelled")
+            worker.flow.queue_person_reading(run["research_id"])
+            worker.wake()
             if worker.current_run_id == run_id and run["kind"] != "table_fill":
                 # Roles may use different connections; only the running step's connection has a call to interrupt.
                 for adapter in request.app.state.adapters.values():
@@ -1099,8 +1112,16 @@ def create_app(
                 raise PdfInUse(source_version_id)
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             filename = Path(file.filename or "document.pdf").name
-            store.add_asset_with_pages(source_version_id, sha, size, path.name, "user_upload", None, filename,
-                                       extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+            flow = request.app.state.worker.flow
+            with db.transaction(store.conn):
+                asset_id = store.add_asset_with_pages(source_version_id, sha, size, path.name, "user_upload", None,
+                                                      filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+                if store.scope(research_id).get("search_workflow") == "sw":
+                    # The same code, request and queue as a file confirmed from the waiting list (slice 18b,
+                    # decision 10), with the same check whether the work may be read at all; legacy is unchanged.
+                    flow.attach_person_file(research_id, source_version_id, asset_id)
+                    flow.queue_person_reading(research_id)
+            request.app.state.worker.wake()
         return research_view(store, research_id)
 
     @app.post("/api/researches/{research_id}/uploads/match")
@@ -1112,7 +1133,7 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         if store.scope(research_id).get("search_workflow") == "sw":
-            return await match_waiting(store, research_id, files)
+            return await match_waiting(store, research_id, files, request.app.state.worker.flow)
         candidates = [store.source(svid) for head in store.included_works(research_id)
                       for svid in [head, *store.work_versions(research_id, head)]]
         settings.papers_dir.mkdir(parents=True, exist_ok=True)
@@ -1124,7 +1145,7 @@ def create_app(
             matches.append({"filename": Path(file.filename or "document.pdf").name, "source_version_id": svid, "basis": basis})
         return {"matches": matches}
 
-    async def match_waiting(store: Store, research_id: str, files: list[UploadFile]) -> dict[str, Any]:
+    async def match_waiting(store: Store, research_id: str, files: list[UploadFile], request_flow: Any) -> dict[str, Any]:
         revision = store.research(research_id)["current_scope_revision"]
         settings.papers_dir.mkdir(parents=True, exist_ok=True)
         matches = []
@@ -1136,6 +1157,13 @@ def create_app(
                             "page_count": extraction.page_count or None,
                             "has_text_layer": None if extraction.status == "failed" else bool(extraction.pages),
                             **pdf_waiting.propose(store, research_id, "\n".join(p.text for p in extraction.pages))})
+        # What a confirmation would lead to for each work shown, so the panel can say it before the person confirms.
+        works = [w for m in matches for w in ([m["work"]] if m["work"] else m.get("candidates") or [])]
+        outcomes = request_flow.attach_outcomes(research_id, sorted({w["work_id"] for w in works}))
+        for work in works:
+            for version in work["versions"]:
+                version["after_attach"] = outcomes.get(work["work_id"], {}).get(version["source_version_id"],
+                                                                                person_reading.NOT_ELIGIBLE)
         return {"matches": matches, "scope_revision": revision}
 
     # ---- the works of an sw research waiting for the person's PDF (slice 18a) ----------------------
@@ -1143,7 +1171,10 @@ def create_app(
     async def waiting_list(research_id: str, request: Request) -> dict[str, Any]:
         store = store_of(request)
         store.research(research_id)
-        return pdf_waiting.waiting_view(store, research_id)
+        view = pdf_waiting.waiting_view(store, research_id)
+        # The files the person added and what became of each (slice 18b, decision 9).
+        return view | {"files": person_reading.files_view(
+            store, research_id, request.app.state.worker.flow.person_reading_on(research_id))}
 
     @app.post("/api/researches/{research_id}/waiting/uploads", status_code=201)
     async def attach_waiting_pdf(research_id: str, request: Request, file: UploadFile = File(...),
@@ -1152,7 +1183,7 @@ def create_app(
                                  sha256: str = Form(...)) -> dict[str, Any]:
         """Add a dropped file to the version the person picked, once what the match showed still holds (decision 5).
 
-        The file is added as a person's upload always was; no code and no reading run is written for it (slice 18b).
+        The file is added as a person's upload always was, with the code and reading request slice 18b writes for it.
         Checked before the text is extracted, and again with the write, so nothing that moved meanwhile slips in."""
         store = store_of(request)
         store.research(research_id)
@@ -1164,14 +1195,35 @@ def create_app(
         pdf_waiting.check_attach(store, research_id, **bound)
         extraction = await asyncio.to_thread(pdf.extract_pdf, path)
         filename = Path(file.filename or "document.pdf").name
+        flow = request.app.state.worker.flow
         with db.transaction(store.conn):
             pdf_waiting.check_attach(store, research_id, **bound)
             asset_id = store.add_asset_with_pages(source_version_id, sha, size, path.name, "user_upload", None,
                                                   filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+            # The code on the chosen version and, when the work may be read, the reading request and its run, in the
+            # same write as the file (slice 18b, decisions 1–5).
+            reading = flow.attach_person_file(research_id, source_version_id, asset_id)
             store._event(research_id, "waiting_pdf_attached", {"source_version_id": source_version_id,
-                                                               "work_id": work_id, "asset_id": asset_id})
+                                                               "work_id": work_id, "asset_id": asset_id,
+                                                               "reading": reading})
+            flow.queue_person_reading(research_id)
+        request.app.state.worker.wake()
         return research_view(store, research_id) | {"attached": {"source_version_id": source_version_id,
-                                                                  "asset_id": asset_id}}
+                                                                  "asset_id": asset_id, "reading": reading}}
+
+    @app.post("/api/researches/{research_id}/waiting/requests/{request_id}/retry")
+    async def retry_person_reading(research_id: str, request_id: str, request: Request) -> dict[str, Any]:
+        """Read a person's file again after a reading that did not decide it (slice 18b, decision 6).
+
+        The request waits again with its attempt counted, and the reading run is opened when nothing else holds the
+        research; the view shows only the run that was opened."""
+        store = store_of(request)
+        store.research(research_id)
+        pdf_waiting.require_sw(store, research_id)
+        person_reading.retry(store, research_id, request_id)
+        run = request.app.state.worker.flow.queue_person_reading(research_id)
+        request.app.state.worker.wake()
+        return {"run": run}
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/pdf-discovery")
     async def discover_source_pdf(research_id: str, source_version_id: str, request: Request) -> dict[str, Any]:
@@ -1270,7 +1322,7 @@ def create_app(
         store.research(research_id)
         library, http = zotero.library(body.source), request.app.state.http
         missing = [head for head in store.included_works(research_id)
-                   if not store.has_pdf_text(store.answer_version(research_id, head)) and not store.has_asset(head)]
+                   if not store.has_pdf_text(store.answer_version(research_id, head) or head) and not store.has_asset(head)]
         added, notes = 0, []
         for svid in missing:
             source = store.source(svid)

@@ -239,7 +239,14 @@ export type PdfDiscovery = {
 }
 export type PdfMatch = { filename: string; source_version_id: string | null; basis: 'doi' | 'title' | null }
 // One version of a work a dropped file may go to (slice 18a): the person picks it; `proposed` is the version the match named.
-export type WaitingVersion = { source_version_id: string; title: string; version_label: string | null; year: number | null; publication_type: string | null; doi: string | null; has_pdf: boolean; proposed: boolean }
+export type WaitingVersion = {
+  source_version_id: string; title: string; version_label: string | null; year: number | null; publication_type: string | null; doi: string | null; has_pdf: boolean; proposed: boolean
+  // The person's own full-text decision on this version, and what attaching a file with text to it would lead to (slice 18b).
+  person_decision: string | null; after_attach?: AttachOutcome
+}
+// What attaching a person's file leads to (slice 18b): a reading request, no reading (off, or the work is not read here),
+// the person's decision standing, or a file with no text keeping the work on the waiting list.
+export type AttachOutcome = 'requested' | 'model_off' | 'not_eligible' | 'decision_stands' | 'unreadable'
 export type WaitingWork = { work_id: string; head: string; title: string; versions: WaitingVersion[]; versions_digest: string }
 // An sw research's match: the proposed work (or none) and what the confirmation sends back to be checked (decision 5).
 // With no proposal, `candidates` holds every work a file may go to here, for the person to choose from.
@@ -251,7 +258,16 @@ export type WaitingRow = {
   links: { doi: string | null; landing: string | null }; find_pdf_source_version_id: string | null
   versions: WaitingVersion[]; versions_digest: string
 }
-export type WaitingView = { rows: WaitingRow[]; count: number; scope_revision: number; has_plan: boolean; via_proxy: boolean; order: 'fulltext_plan' }
+export type WaitingView = { rows: WaitingRow[]; count: number; scope_revision: number; has_plan: boolean; via_proxy: boolean; order: 'fulltext_plan'; files: PersonFiles }
+// A file the person added, and what became of it, read from the stored decisions and steps (slice 18b, decision 9).
+export type PersonFileState = 'waiting' | 'reading' | 'included' | 'criterion_not_met' | 'your_decision' | 'unread' | 'changed' | 'model_off' | 'decision_stands' | 'not_eligible'
+export type PersonFile = {
+  work_id: string; head: string; source_version_id: string; asset_id: string; title: string; version_label: string | null
+  filename: string | null; added_at: string; state: PersonFileState; request_id: string | null; attempt: number
+  unread_reason: 'run_cancelled' | 'run_failed' | 'no_decision' | 'file_changed' | null; reason_code: string | null
+  quotes: { part: string; quote: string; page: number | null }[]; after_run: boolean; decided_code: string | null
+}
+export type PersonFiles = { rows: PersonFile[]; reading_on: boolean; paused_run: { id: string; kind: string; status: string; pause_reason: string | null } | null }
 export type Source = {
   // A short author–year key such as "Nakano13", one per work across the library (D59); null only before it is given.
   source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
@@ -262,6 +278,8 @@ export type Source = {
   found_in_revision: number | null; applicability: 'current' | 'stale_scope'; version_role: 'record' | 'other_version'
   // The other version of the work whose text answers read, when the record has no PDF text (D48).
   answer_reads_version_id: string | null
+  // No version of the work is read by an answer: its only PDF text is a person's file not read yet (slice 18b).
+  answer_reads_nothing: boolean
   // Whether an answer reads this version's PDF pages rather than its abstract (D49).
   has_pdf_text: boolean
   // Some of that text was read with OCR from scanned pages (D51).
@@ -612,8 +630,10 @@ export const api = {
     form.append('scope_revision', String(match.scope_revision))
     form.append('versions_digest', work.versions_digest)
     form.append('sha256', match.sha256)
-    return request<ResearchView & { attached: { source_version_id: string; asset_id: string } }>(`/api/researches/${id}/waiting/uploads`, { method: 'POST', body: form })
+    return request<ResearchView & { attached: { source_version_id: string; asset_id: string; reading: AttachOutcome } }>(`/api/researches/${id}/waiting/uploads`, { method: 'POST', body: form })
   },
+  // Asks for a person's file to be read again after a reading that did not decide it (slice 18b, decision 6).
+  retryPersonReading: (id: string, requestId: string) => request<{ run: Run | null }>(`/api/researches/${id}/waiting/requests/${requestId}/retry`, { method: 'POST' }),
   institutionProxy: () => request<{ address: string | null }>('/api/institution-proxy'),
   saveInstitutionProxy: (address: string) => request<{ address: string | null }>('/api/institution-proxy', json('PUT', { address })),
   // Takes sources out of this research; the library record, its files and the evidence citing it stay (D50).

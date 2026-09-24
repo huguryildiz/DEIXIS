@@ -49,6 +49,7 @@ from deixis.workflow import criterion_passages
 from deixis.workflow import expansion as expansion_rules
 from deixis.workflow import fulltext
 from deixis.workflow import lookups
+from deixis.workflow import person_reading
 from deixis.workflow import protocol
 from deixis.workflow import ranking as ranking_rules
 from deixis.workflow import routing as routing_rules
@@ -57,7 +58,7 @@ from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
 from deixis.workflow.equations import equation_state
-from deixis.workflow.store import NotFound, RunInProgress, Store
+from deixis.workflow.store import ACTIVE_RUN_STATUSES, NotFound, RunInProgress, Store
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
 
 CAPABILITIES = {
@@ -363,7 +364,8 @@ class ResearchFlow:
                 if summary is not None and summary["status"] == "succeeded":
                     self._queue_fulltext_adjudication(run, scope)
         elif self.store.run(run_id)["status"] in ("running", "pause_requested"):
-            # Nothing is left to pause once the last step's result has been applied.
+            # Nothing is left to pause once the last step's result has been applied. A person's file this run held
+            # and did not read is `unread` from the same write (`Store.update_run`, slice 18b).
             self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
             if run["kind"] == "discovery":
                 # An sw discovery run is followed by the retrieval of the open full text of the works it ranked
@@ -2332,7 +2334,9 @@ class ResearchFlow:
         heads = self.store.included_works(rid)  # one per included work
         selection_revision = self.store.selection_revision(rid)  # read together with the included set it describes
         await self._inspect(run, limit=MAX_DOWNLOADS_PER_RUN)
-        included = [self.store.answer_version(rid, head) for head in heads]
+        # A work whose only PDF text is a person's file not read under this criterion, with no abstract-only version
+        # to give instead, gives the answer nothing (slice 18b, decision 8).
+        included = [read for head in heads if (read := self.store.answer_version(rid, head)) is not None]
         await self._read_equations(run, included)
 
         self._checkpoint(run_id)
@@ -2725,7 +2729,7 @@ class ResearchFlow:
         # Nothing is requested for a work whose text is already here; the code it asks for is written straight away,
         # on the version an answer would read (D48).
         written = self._write_fulltext_codes(
-            run, step["id"], [(self.store.answer_version(rid, head), "not_read_yet") for head in plan["already_text"]])
+            run, step["id"], [(self._text_version(rid, head), "not_read_yet") for head in plan["already_text"]])
         output = self._plan_output(plan, by_head, chained, limit, room, written)
         self.store.finish_step(step["id"], "succeeded", output=output)
         return output
@@ -2797,6 +2801,10 @@ class ResearchFlow:
         selections = {row["source_version_id"]: {"state": row["state"], "origin": row["origin"]}
                       for row in self.store.conn.execute(
                           "SELECT source_version_id, state, origin FROM selections WHERE research_id = ?", (research_id,))}
+        # A person's file and the state of its reading request (slice 18b); a version with none carries None.
+        person = {svid: {"status": request["status"], "asset_id": request["asset_id"],
+                         "order": [request["asset_at"], request["asset_id"]]}
+                  for svid, request in self.store.person_files(research_id).items()}
 
         by_work: dict[str, list[str]] = {}
         for version in versions.values():
@@ -2809,7 +2817,8 @@ class ResearchFlow:
 
         return [{"work_id": work_id, "head": head, "selection": selections.get(head), "chained": head in chained,
                  "versions": [{"id": svid, "has_text": svid in with_text,
-                               "abstract": decision(svid, "abstract"), "fulltext": decision(svid, "fulltext")}
+                               "abstract": decision(svid, "abstract"), "fulltext": decision(svid, "fulltext"),
+                               "person": person.get(svid)}
                               for svid in sorted(by_work.get(work_id, []))]}
                 for work_id, head in sorted(heads.items())]
 
@@ -2888,7 +2897,7 @@ class ResearchFlow:
         has_text = any(self.store.has_pdf_text(svid) for svid in versions)
         has_asset = any(self.store.has_asset(svid) for svid in versions)
         unanswered = self._unanswered_routes(run_id, rid, versions)
-        read = self.store.answer_version(rid, head) if has_text else head
+        read = self._text_version(rid, head) if has_text else head
         asset_id = self._current_asset(read) if has_text else None
         return {"work_id": source["work_id"], "head": head, "read_version": read,
                 "version_label": self.store.source(read)["version_label"], "asset_id": asset_id, "route": route,
@@ -3262,7 +3271,7 @@ class ResearchFlow:
                     left[side] -= 1
             with transaction(self.store.conn):
                 written = self._write_fulltext_codes(
-                    run, step["id"], [(self.store.answer_version(rid, head), "not_read_yet") for head in plan["already_text"]])
+                    run, step["id"], [(self._text_version(rid, head), "not_read_yet") for head in plan["already_text"]])
                 output = self._plan_output(plan, by_head, chained, limit, chain_room, written) | {
                     "work_ids": final, "baseline_hash": baseline["hash"],
                     "claimed_early": [work_id for work_id, claim in claims.items() if claim["output"]["claim"]["early"]],
@@ -3388,8 +3397,10 @@ class ResearchFlow:
                 head, read_version = item["head"], item["read_version"]
                 if not self._adjudication_member(run["research_id"], head, read_version):
                     continue
-                if self._human_decided_fulltext(run["research_id"], head):
+                if self._human_decided_fulltext(run["research_id"], head, read_version):
                     continue  # a person decided the work after the plan was frozen (slice 16)
+                if not self._file_holds(item):
+                    continue  # the file the plan froze is no longer in use as it was: not read here (slice 18b)
                 owed = [run_no for run_no in range(1, FULLTEXT_RUNS + 1)
                         if f"fulltext_adjudication:{head}:{run_no}" not in answered]
                 if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
@@ -3411,9 +3422,10 @@ class ResearchFlow:
             # waited. No step is opened and the call is not charged to the budget (slice 16). Checked once more before
             # every send, the first and each resend (`_model_step`).
             def undecided(rows: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-                return None if self._human_decided_fulltext(run["research_id"], job.head) else rows
+                return None if self._human_decided_fulltext(run["research_id"], job.head, job.read_version) else rows
 
-            if undecided([]) is None:
+            # The file is checked once more before the call, as the plan froze it (slice 18b, decision 6).
+            if undecided([]) is None or not self._file_holds(items[job.head]):
                 submitted -= f"fulltext_adjudication:{job.head}:{job.run_no}" not in answered
                 return {"human_decided": True}
             try:
@@ -3451,10 +3463,25 @@ class ResearchFlow:
             raise stop
         self._adjudication_summary(run, plan)
 
-    def _human_decided_fulltext(self, research_id: str, head: str) -> bool:
-        """Whether a person decided the full-text stage of this head's work, on any version of it (slice 16)."""
+    def _human_decided_fulltext(self, research_id: str, head: str, read_version: str | None = None) -> bool:
+        """Whether a person decided the full-text stage of this head's work, on any version of it (slice 16).
+
+        A person's `human_pdf_wrong` on another version does not count while the version read carries a person's
+        file asking to be read (slice 18b, decision 3); every other decision of theirs counts as before."""
         work_id = self.store.source(head)["work_id"]
-        return work_id in DecisionStore(self.store).human_decided_works(research_id, "fulltext")
+        if work_id not in DecisionStore(self.store).human_decided_works(research_id, "fulltext"):
+            return False
+        asked = read_version is not None and read_version in self.store.person_files(research_id, work_id)
+        if not asked:
+            return True
+        return any(row["reason_code"] != "human_pdf_wrong" or row["source_version_id"] == read_version
+                   for row in self.store.conn.execute(
+                       "SELECT d.reason_code, d.source_version_id FROM stage_decisions d"
+                       " JOIN source_versions v ON v.id = d.source_version_id"
+                       " JOIN corpus_memberships m ON m.research_id = d.research_id"
+                       " AND m.source_version_id = d.source_version_id AND m.removed_at IS NULL"
+                       " WHERE d.research_id = ? AND v.work_id = ? AND d.stage = 'fulltext' AND d.decided_by = 'human'"
+                       " AND d.superseded_at IS NULL", (research_id, work_id)))
 
     def _adjudication_member(self, research_id: str, head: str, read_version: str) -> bool:
         """Whether both records are still in this research. A purged member is skipped, not crashed on."""
@@ -3488,26 +3515,67 @@ class ResearchFlow:
         chained, order, chain_order = self._chain_state(rid, run["scope_revision"])
         order = order + chain_order
         corpus = self._fulltext_works(rid, chained)
+        by_head = {work["head"]: work for work in corpus}
         eligible = adjudication.read_plan(corpus, order, len(corpus))
-        readable: list[dict[str, str]] = []
+        readable: list[dict[str, Any]] = []
         unconfirmed: list[tuple[str, str]] = []
         for head in eligible["works"]:
-            read = self.store.answer_version(rid, head)
+            # A person's file not read yet is read on its own version (slice 18b, decision 8).
+            person = adjudication.person_version(by_head[head]) or self._stale_person_version(rid, head)
+            read = person or self._text_version(rid, head)
             versions = [head, *self.store.work_versions(rid, head)]
-            if self._user_supplied_pdf(read):
-                readable.append({"head": head, "read_version": read})
+            if person or self._user_supplied_pdf(read):
+                readable.append(self._plan_item(head, read))
                 continue
             found = identity.check(self._pdf_head_text(read), [self.store.source(svid) for svid in versions])
             if found == "unconfirmed":
                 unconfirmed.append((head, read))
             else:
-                readable.append({"head": head, "read_version": read})
+                readable.append(self._plan_item(head, read))
+        # What the reading's decisions rest on besides each work's file: the question revision and the criterion
+        # digest, so a person's request is read only by a plan made under the same (slice 18b, decision 4).
+        _, criterion_hash = DecisionStore(self.store).staleness_key(rid)
         plan = {"limit": limit, "criterion": criterion, "works": readable[:limit],
                 "not_reached": len(readable) - len(readable[:limit]),
-                "identity_unconfirmed": len(unconfirmed), "reason": None}
-        self._write_adjudication_codes(run, step["id"], [(read, "pdf_identity_unconfirmed") for _, read in unconfirmed])
-        self.store.finish_step(step["id"], "succeeded", output=plan)
+                "identity_unconfirmed": len(unconfirmed), "reason": None,
+                "scope_revision": run["scope_revision"], "criterion_hash": criterion_hash}
+        # The plan, the codes it writes and the person's requests it takes are one write (decision 4).
+        with transaction(self.store.conn):
+            self._write_adjudication_codes(run, step["id"], [(read, "pdf_identity_unconfirmed") for _, read in unconfirmed])
+            self.store.finish_step(step["id"], "succeeded", output=plan)
+            person_reading.plan_requests(self.store, run, plan)
         return plan
+
+    def _text_version(self, rid: str, head: str) -> str:
+        """The version whose PDF text a work's reading and retrieval look at: the answer's version when it has PDF text,
+        else the first version with PDF text (a person's file the answer may not read yet), else the head (D48)."""
+        read = self.store.answer_version(rid, head)
+        if read is not None and self.store.has_pdf_text(read):
+            return read
+        return next((svid for svid in [head, *self.store.work_versions(rid, head)] if self.store.has_pdf_text(svid)),
+                    head)
+
+    def _stale_person_version(self, rid: str, head: str) -> str | None:
+        """A version whose person's file was asked to be read under an older question or criterion and has not been
+        read under this one: the reading reads it, in the group order, so the answer may use it after (decision 8)."""
+        unread = self.store.unread_person_versions(rid, self.store.source(head)["work_id"])
+        return next((svid for svid in [head, *self.store.work_versions(rid, head)]
+                     if svid in unread and self.store.has_pdf_text(svid)), None)
+
+    def _plan_item(self, head: str, read: str) -> dict[str, Any]:
+        """One work of a reading plan: the version read, the file in use on it and its pages' digest (decision 6)."""
+        asset_id = self._current_asset(read)
+        return {"head": head, "read_version": read, "asset_id": asset_id,
+                "page_digest": self.store.asset_page_digest(asset_id)}
+
+    def _file_holds(self, item: dict[str, Any]) -> bool:
+        """Whether the file a plan froze for this work is still the one in use, with the same pages (decision 6).
+
+        A plan frozen before slice 18b names no file and is read as it always was."""
+        if "asset_id" not in item:
+            return True
+        asset_id = self._current_asset(item["read_version"])
+        return asset_id == item["asset_id"] and self.store.asset_page_digest(asset_id) == item["page_digest"]
 
     def _user_supplied_pdf(self, svid: str) -> bool:
         """A PDF the user added is the file they meant, and so is one a person confirmed from the queue (slice 16).
@@ -3554,7 +3622,7 @@ class ResearchFlow:
         stored, and the person's answer stands (slice 16).
         """
         read = item["read_version"]
-        if self._human_decided_fulltext(run["research_id"], item["head"]):
+        if self._human_decided_fulltext(run["research_id"], item["head"], read):
             return
         parts = plan["criterion"]["parts"]
         decisions = DecisionStore(self.store)
@@ -3584,12 +3652,27 @@ class ResearchFlow:
                                        quote_page=row["page"])
             views.append(adjudication.run_view(proposals))
         code = adjudication.combine(views[0] if views else None, views[1] if len(views) > 1 else None)
-        if code is not None:
-            self._write_adjudication_codes(run, last_step, [(read, code)])
+        if code is None or not self._file_holds(item):
+            # The file the plan froze moved while the calls were out: nothing is decided from its reading (decision 6).
+            return
+        # The same code read from other pages than the decision it would keep (a person's file extracted again and
+        # read again) is a new reading, and is written as one (decision 6).
+        earlier = decisions.current(run["research_id"], read, "fulltext")
+        renew = ({read} if item.get("asset_id") and earlier is not None
+                 and self.store.decision_read_file(earlier) != (item["asset_id"], item["page_digest"]) else set())
+        with transaction(self.store.conn):
+            self._write_adjudication_codes(run, last_step, [(read, code)], renew)
+            # The decision and its person's request move together (decision 4).
+            current = decisions.current(run["research_id"], read, "fulltext")
+            if current is not None and current["step_id"] == last_step:
+                person_reading.mark_read(self.store, run, item, plan, current["id"])
+                # The work's outcome may now be the file's (decision 8): its selection is derived again.
+                decisions.derive_selection(run["research_id"], self.store.source(read)["work_id"])
 
     def _write_adjudication_codes(self, run: dict[str, Any], step_id: str | None,
-                                  writes: list[tuple[str, str]]) -> None:
-        """Write these full-text decisions and derive each work's selection. The user's decision is left as it is."""
+                                  writes: list[tuple[str, str]], renew: set[str] | None = None) -> None:
+        """Write these full-text decisions and derive each work's selection. The user's decision is left as it is;
+        a version in `renew` is written even over the same code (slice 18b)."""
         rid = run["research_id"]
         decisions = DecisionStore(self.store)
         stale_key = decisions.staleness_key(rid)
@@ -3598,7 +3681,8 @@ class ResearchFlow:
             held = decisions.current(rid, svid, "fulltext")
             if held is not None and held["decided_by"] == "human":
                 continue
-            if not adjudication.should_write(held, code, bool(held) and decisions.is_stale(held, stale_key)):
+            if not adjudication.should_write(held, code, bool(held) and (decisions.is_stale(held, stale_key)
+                                                                          or svid in (renew or ()))):
                 continue
             try:
                 decisions.record(rid, svid, code, step_id=step_id)
@@ -3644,10 +3728,17 @@ class ResearchFlow:
         # A work a person decided while this run was out is neither unsettled nor unreached (slice 16).
         decided_works = DecisionStore(self.store).human_decided_works(run["research_id"], "fulltext")
         work_of = self.store.work_ids(list(planned)) if decided_works else {}
-        human = {head for head in planned if work_of.get(head) in decided_works}
+        # A person's `human_pdf_wrong` on another version of a work read from their file does not count (slice 18b).
+        human = {head for head, read in planned.items() if work_of.get(head) in decided_works
+                 and self._human_decided_fulltext(run["research_id"], head, read)}
+        # A work whose frozen file moved before its decision is not reached, even when its calls were out (slice 18b).
+        moved = {item["head"] for item in plan["works"] if item["read_version"] not in decided_versions
+                 and not self._file_holds(item)}
         not_settled = sum(1 for head, read in planned.items()
-                          if head in model_heads and read not in decided_versions and head not in human)
-        not_reached = plan["not_reached"] + sum(1 for head in planned if head not in model_heads and head not in human)
+                          if head in model_heads and read not in decided_versions and head not in human
+                          and head not in moved)
+        not_reached = plan["not_reached"] + sum(1 for head in planned if (head not in model_heads or head in moved)
+                                                and head not in human)
         whole_text = self._adjudication_whole_text(run_id)
         summary = {"read": include + not_met + sum(unresolved.values()) - unresolved.get("pdf_identity_unconfirmed", 0),
                    "include": include, "criterion_not_met": not_met, "unresolved": unresolved,
@@ -3697,6 +3788,93 @@ class ResearchFlow:
             return
         self.store.create_run(rid, "fulltext_adjudication", budget,
                               idempotency_key=f"fulltext_adjudication:after:{run['id']}")
+
+    # ---- a person's file and its reading (slice 18b) ---------------------------------------------
+    def person_reading_on(self, research_id: str) -> bool:
+        """Whether a person's file can be read here: reading is `auto` and the research has a frozen criterion."""
+        scope = self.store.scope(research_id)
+        return (scope.get("search_workflow") == "sw" and self.deps.settings.fulltext_adjudication == "auto"
+                and self.store.frozen_criterion(research_id, scope["question"], scope.get("steering")) is not None)
+
+    def attach_outcomes(self, research_id: str, work_ids: list[str]) -> dict[str, dict[str, str]]:
+        """What a file with text would lead to on each version of these works, for the confirmation panel, by work
+        and version; writes nothing."""
+        works = {work["work_id"]: work for work in self._fulltext_works(research_id)}
+        reading_on = self.person_reading_on(research_id)
+        return {work_id: {version["id"]: person_reading.attach_outcome(works[work_id], version["id"], True, reading_on)
+                          for version in works[work_id]["versions"]}
+                for work_id in work_ids if work_id in works}
+
+    def attach_person_file(self, research_id: str, svid: str, asset_id: str) -> str:
+        """Write what a person's newly added file asks for: the code on its version and, when the work may be read, a
+        waiting request (decisions 1, 3, 4 and 10). The caller holds the transaction the file was added in.
+
+        The code is `not_read_yet`, or `text_unreadable` for a file with no text, noted with the file; the person's
+        own decision is never written over and `human_pdf_wrong` is never withdrawn. Returns what the attach led to.
+        """
+        work_id = self.store.source(svid)["work_id"]
+        work = next(work for work in self._fulltext_works(research_id) if work["work_id"] == work_id)
+        has_text = self.store.has_pdf_text(svid)
+        outcome = person_reading.attach_outcome(work, svid, has_text, self.person_reading_on(research_id))
+        if outcome in (person_reading.DECISION_STANDS, person_reading.NOT_ELIGIBLE):
+            return outcome
+        decisions = DecisionStore(self.store)
+        code, note = ("not_read_yet" if has_text else "text_unreadable"), person_reading.note_for(asset_id)
+        with transaction(self.store.conn):
+            if adjudication.person_should_write(decisions.current(research_id, svid, "fulltext"), code, note):
+                decisions.record(research_id, svid, code, note=note)
+            if outcome == person_reading.REQUESTED:
+                person_reading.insert_request(self.store, research_id, svid, asset_id)
+            decisions.derive_selection(research_id, work_id)
+        return outcome
+
+    def queue_person_reading(self, research_id: str) -> dict[str, Any] | None:
+        """Open the reading run a person's waiting files ask for, or do nothing (decision 5).
+
+        Nothing while no live request waits, while the research has an active or a paused run (a paused run is
+        resumed or cancelled, never stepped around), or while reading is off. The run's key names the question
+        revision, the criterion, the waiting files and the attempt; when a run with that key already ended — before
+        its plan took them — those requests are `unread` and no run is opened again, so nothing loops.
+        """
+        if self.store.scope(research_id).get("search_workflow") != "sw" or not self.person_reading_on(research_id):
+            return None
+        with transaction(self.store.conn):
+            waiting = person_reading.live_waiting(self.store, research_id)
+            if not waiting:
+                return None
+            if self.store.conn.execute(
+                    f"SELECT 1 FROM runs WHERE research_id = ? AND status IN ({','.join('?' * (len(ACTIVE_RUN_STATUSES) + 1))})"
+                    " LIMIT 1", (research_id, *ACTIVE_RUN_STATUSES, "paused")).fetchone():
+                return None
+            revision, criterion_hash = self.store.criterion_key(research_id)
+            files = canonical.sha256_hex(sorted(request["asset_id"] for request in waiting))
+            attempt = max(request["attempt"] for request in waiting)
+            key = f"fulltext_adjudication:person:{revision}:{criterion_hash}:{files}:{attempt}"
+            existing = self.store.conn.execute("SELECT id, status FROM runs WHERE idempotency_key = ?", (key,)).fetchone()
+            if existing is not None:
+                why = {"cancelled": person_reading.RUN_CANCELLED, "failed": person_reading.RUN_FAILED}.get(
+                    existing["status"], person_reading.NO_DECISION)
+                person_reading.unread_waiting(self.store, research_id, waiting, why, existing["id"])
+                return None
+            return self.store.create_run(research_id, "fulltext_adjudication",
+                                         adjudication.read_budget(self.store.scope(research_id)["effort"]),
+                                         idempotency_key=key)
+
+    def person_run_ended(self, run_id: str) -> dict[str, Any] | None:
+        """After a run, whichever way it ended: its unread requests are closed and the waiting ones get their run."""
+        person_reading.close_run(self.store, run_id)
+        return self.queue_person_reading(self.store.run(run_id)["research_id"])
+
+    def queue_person_readings(self) -> None:
+        """At the worker's start: close what runs that ended in a crash left planned, and queue each `sw` research's
+        waiting files (decision 5). A research whose run the recovery paused keeps waiting for the person."""
+        for row in self.store.conn.execute(
+                "SELECT DISTINCT run_id FROM person_pdf_requests WHERE status = 'planned' AND run_id IS NOT NULL").fetchall():
+            person_reading.close_run(self.store, row[0])
+        for row in self.store.conn.execute(
+                "SELECT DISTINCT q.research_id FROM person_pdf_requests q JOIN researches r ON r.id = q.research_id"
+                " WHERE q.status = 'waiting' AND r.trashed_at IS NULL").fetchall():
+            self.queue_person_reading(row[0])
 
 
     def _queue_fulltext_fetch(self, run: dict[str, Any], scope: dict[str, Any]) -> None:

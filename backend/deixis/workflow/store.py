@@ -21,6 +21,7 @@ from deixis.workflow import links
 from deixis.workflow.source_keys import key_stem, suffixes
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
+ENDED_RUN_STATUSES = ("completed", "failed", "cancelled")
 # What became of a passage's file since the passage was stored (D45), over `passages p LEFT JOIN source_assets a`.
 EVIDENCE_STATUS_SQL = (
     "CASE WHEN a.id IS NULL THEN 'current'"
@@ -48,6 +49,12 @@ def _output_digest(raw_output: str) -> str:
         return f"json:{sha256_hex(json.loads(raw_output))}"
     except (json.JSONDecodeError, TypeError, ValueError):
         return f"text:{sha256_hex(raw_output)}"
+
+
+def _read_person_file(requests: dict[str, dict[str, Any]]) -> str | None:
+    """The version whose person's file was read and still is as it was read, the newest such request's (slice 18b)."""
+    held = [request for request in requests.values() if request["holds"]]
+    return held[-1]["source_version_id"] if held else None
 
 
 def title_key(title: str | None) -> str:
@@ -109,6 +116,11 @@ class Store:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
         self._columns: dict[str, set[str]] = {}
+        # Pure functions of rows that are never rewritten, kept for the life of this store (slice 18b): a file's page
+        # digest by (asset, extraction version) — an extraction's passages are written once and shadowed, never
+        # changed — and the file each work of a frozen reading plan read, by run.
+        self._page_digests: dict[tuple[str, str], str] = {}
+        self._plan_files: dict[str, dict[str, tuple[str, str]]] = {}
 
     # ---- events -----------------------------------------------------------------
     def _event(self, research_id: str, type_: str, payload: dict[str, Any], run_id: str | None = None) -> int:
@@ -278,8 +290,8 @@ class Store:
             self.conn.execute("DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM pdf_discovery_runs WHERE research_id = ?", (research_id,))
             # Stage decisions, proposals and ranks go before the run steps and passages they point at.
-            for table in ("answer_reviews", "answers", "model_sessions", "step_inputs", "candidate_hits", "candidates",
-                          "search_runs",
+            for table in ("person_pdf_requests", "answer_reviews", "answers", "model_sessions", "step_inputs",
+                          "candidate_hits", "candidates", "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
                           "source_similarities", "protocol_records", "human_selection_links", "stage_decisions",
                           "model_proposals", "record_signal_ranks", "record_flags", "chain_links"):
@@ -620,6 +632,11 @@ class Store:
             self.conn.execute(f"UPDATE runs SET {assignments}, version = version + 1 WHERE id = ?", (*columns.values(), run_id))
             if event:
                 self._event(run["research_id"], event, {k: v for k, v in fields.items() if k != "usage_json"}, run_id)
+            if fields.get("status") in ENDED_RUN_STATUSES and run["status"] not in ENDED_RUN_STATUSES:
+                # A person's files this run held are closed by the write that ends it, whichever path ends it (slice
+                # 18b, decision 5): no crash can come between a run's end and its requests'.
+                from deixis.workflow import person_reading  # it builds on this module
+                person_reading.close_run(self, run_id, ended=True)
         return self.run(run_id)
 
     def queue_failed_search_retry(self, run_id: str) -> dict[str, Any]:
@@ -1777,14 +1794,26 @@ class Store:
             (research_id, svid, svid)
         )]
 
-    def answer_version(self, research_id: str, head: str) -> str:
+    def answer_version(self, research_id: str, head: str) -> str | None:
         """The version of a work whose text an answer reads: the head when it has PDF text, else the first other version
-        with PDF text, else the head's abstract (D48). One version per work, so versions never corroborate each other."""
-        if self.has_pdf_text(head):
-            return head
-        return next((svid for svid in self.work_versions(research_id, head) if self.has_pdf_text(svid)), head)
+        with PDF text, else the head's abstract (D48). One version per work, so versions never corroborate each other.
 
-    def answer_versions(self, research_id: str) -> dict[str, str]:
+        A person's file changes this (slice 18b, decision 8). Once it is read under the current question and
+        criterion, and while it is still in use with the pages it was read as, its version is the one read. Until
+        then its version's PDF text never reaches an answer, whatever key its request was made under: another version
+        with PDF text is read, else a version with no PDF text gives its abstract, else None — the work gives the
+        answer nothing."""
+        work_id = self.source(head)["work_id"]
+        held = _read_person_file(self.person_files(research_id, work_id))
+        if held is not None:
+            return held
+        unread = self.unread_person_versions(research_id, work_id)
+        versions = [head, *self.work_versions(research_id, head)]
+        text = [svid for svid in versions if self.has_pdf_text(svid)]
+        return (next((svid for svid in text if svid not in unread), None)
+                or next((svid for svid in versions if svid not in text), None))
+
+    def answer_versions(self, research_id: str) -> dict[str, str | None]:
         """`answer_version` for every head of the research at once, in three statements rather than three per work.
 
         The research view calls this: one query per work blocked the event loop for 30 s on a 7,000-work research
@@ -1808,9 +1837,125 @@ class Store:
             (research_id,)
         ):
             versions.setdefault(row["work_id"], []).append(row["id"])
-        return {head: head if head in with_text
-                else next((svid for svid in versions.get(wid, []) if svid != head and svid in with_text), head)
-                for wid, head in heads.items()}
+        person = self.person_files(research_id)
+        by_work: dict[str, dict[str, dict[str, Any]]] = {}
+        for svid, request in person.items():
+            by_work.setdefault(request["work_id"], {}).setdefault(svid, request)
+        unread = self.unread_person_versions(research_id)
+
+        def reads(wid: str, head: str) -> str | None:
+            # `answer_version`'s rule, the person's file included (slice 18b); a work with no such file reads as before.
+            held = _read_person_file(by_work.get(wid, {}))
+            if held is not None:
+                return held
+            ordered = [head, *(svid for svid in versions.get(wid, []) if svid != head)]
+            text = [svid for svid in ordered if svid in with_text]
+            return (next((svid for svid in text if svid not in unread), None)
+                    or next((svid for svid in ordered if svid not in with_text), None))
+
+        return {head: reads(wid, head) for wid, head in heads.items()}
+
+    # ---- a person's files and the reading they ask for (slice 18b) ------------------------------
+    def criterion_key(self, research_id: str) -> tuple[int, str | None]:
+        """The question revision and criterion digest a request must carry to still be live."""
+        from deixis.workflow.decisions import DecisionStore  # decisions builds on this module
+        return DecisionStore(self).staleness_key(research_id)
+
+    def asset_page_digest(self, asset_id: str | None) -> str | None:
+        """One file's page texts as its current extraction gives them, as one digest (slice 18b, decision 6).
+
+        A plan freezes it and a reading checks it again, so a file re-extracted since reads as a different file. The
+        pages of a removed file are still digested: the caller checks separately that the file is in use."""
+        if not asset_id:
+            return None
+        row = self.conn.execute("SELECT extraction_version FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
+        key = (asset_id, row[0]) if row is not None and row[0] is not None else None
+        if key is not None and key in self._page_digests:
+            return self._page_digests[key]
+        pages: dict[int, list[str]] = {}
+        for row in self.conn.execute(
+                # Through the file's version, which `passages` is indexed by: by the file alone it scans every passage.
+                "SELECT p.physical_page, p.text FROM source_assets a JOIN passages p ON p.source_version_id ="
+                " a.source_version_id AND p.asset_id = a.id AND p.extraction_version IS a.extraction_version"
+                " WHERE a.id = ? AND p.kind = 'pdf_page' ORDER BY p.physical_page, p.rowid", (asset_id,)):
+            pages.setdefault(row["physical_page"] or 0, []).append(row["text"])
+        digest = sha256_hex({"asset_id": asset_id, "pages": [[page, " ".join(texts)] for page, texts in sorted(pages.items())]})
+        if key is not None:
+            self._page_digests[key] = digest
+        return digest
+
+    def person_files(self, research_id: str, work_id: str | None = None) -> dict[str, dict[str, Any]]:
+        """The live reading request of each version that carries one, by version (slice 18b).
+
+        Live: made under the research's current question revision and criterion digest, for a file still in use on a
+        version still in the research. A `read` request also says whether it still `holds`: whether that file's pages
+        are the ones it was read as. Nothing is written here."""
+        revision, criterion_hash = self.criterion_key(research_id)
+        found: dict[str, dict[str, Any]] = {}
+        for row in self.conn.execute(
+                "SELECT q.*, v.work_id, a.retrieved_at AS asset_at FROM person_pdf_requests q"
+                " JOIN source_versions v ON v.id = q.source_version_id"
+                " JOIN source_assets a ON a.id = q.asset_id AND a.source_version_id = q.source_version_id"
+                "  AND a.removed_at IS NULL"
+                " JOIN corpus_memberships m ON m.research_id = q.research_id AND m.source_version_id = q.source_version_id"
+                "  AND m.removed_at IS NULL"
+                " WHERE q.research_id = ? AND q.scope_revision = ? AND q.criterion_hash IS ?"
+                f"{' AND v.work_id = ?' if work_id is not None else ''} ORDER BY q.created_at, q.rowid",
+                (research_id, revision, criterion_hash, *((work_id,) if work_id is not None else ()))):
+            request = dict(row)
+            request["holds"] = (request["status"] == "read"
+                                and request["page_digest"] == self.asset_page_digest(request["asset_id"]))
+            found[request["source_version_id"]] = request
+        return found
+
+    def decision_read_file(self, decision: dict[str, Any] | None) -> tuple[str, str] | None:
+        """The file and page digest a reading decision was made from, as its run's frozen plan names them (slice 18b).
+
+        None for a decision no reading plan of slice 18b names a file for: a code, a person's decision, or a reading
+        frozen before the plan named files."""
+        if not decision or not decision.get("step_id"):
+            return None
+        row = self.conn.execute("SELECT run_id FROM run_steps WHERE id = ?", (decision["step_id"],)).fetchone()
+        if row is None:
+            return None
+        files = self._plan_files.get(row[0])
+        if files is None:
+            plan = self.existing_step(row[0], "adjudication_plan")
+            files = {work["read_version"]: (work["asset_id"], work["page_digest"])
+                     for work in ((plan or {}).get("output") or {}).get("works") or [] if work.get("asset_id")}
+            if plan is not None and plan["status"] == "succeeded":  # frozen: it never changes again
+                self._plan_files[row[0]] = files
+        return files.get(decision["source_version_id"])
+
+    def unread_person_versions(self, research_id: str, work_id: str | None = None) -> set[str]:
+        """The versions carrying a person's file in use whose text was not read under the research's current question
+        and criterion (slice 18b, decision 8). Nothing is written, and no request is rewritten.
+
+        A request under the current key says it: read, and the pages still those it was read as. A request made
+        under an older question or criterion is stale and left as it was; its file counts as read only when the
+        version's current reading decision is fresh and its plan read this very file with these very pages."""
+        from deixis.workflow.decisions import DecisionStore  # decisions builds on this module
+        decisions = DecisionStore(self)
+        key = decisions.staleness_key(research_id)
+        unread: set[str] = set()
+        for row in self.conn.execute(
+                "SELECT q.* FROM person_pdf_requests q JOIN source_versions v ON v.id = q.source_version_id"
+                " JOIN source_assets a ON a.id = q.asset_id AND a.source_version_id = q.source_version_id"
+                "  AND a.removed_at IS NULL"
+                " JOIN corpus_memberships m ON m.research_id = q.research_id AND m.source_version_id = q.source_version_id"
+                "  AND m.removed_at IS NULL"
+                f" WHERE q.research_id = ?{' AND v.work_id = ?' if work_id is not None else ''}",
+                (research_id, *((work_id,) if work_id is not None else ()))):
+            digest = self.asset_page_digest(row["asset_id"])
+            if (row["scope_revision"], row["criterion_hash"]) == key:
+                read = row["status"] == "read" and row["page_digest"] == digest
+            else:
+                current = decisions.current(research_id, row["source_version_id"], "fulltext")
+                read = (current is not None and not decisions.is_stale(current, key)
+                        and self.decision_read_file(current) == (row["asset_id"], digest))
+            if not read:
+                unread.add(row["source_version_id"])
+        return unread
 
     def has_pdf_text(self, svid: str) -> bool:
         return any(p["kind"] == "pdf_page" for p in self.passages_for(svid))
@@ -1997,8 +2142,9 @@ class Store:
                 f"DELETE FROM human_selection_links WHERE research_id = ? AND (head IN ({marks}) OR decision_id IN"
                 f" (SELECT id FROM stage_decisions WHERE research_id = ? AND source_version_id IN ({marks})))",
                 (research_id, *chosen, research_id, *chosen))
-            for table in ("pdf_discovery_runs", "source_similarities", "suspected_duplicates", "selection_history",
-                          "selections", "candidate_hits", "candidates", "stage_decisions", "model_proposals",
+            for table in ("person_pdf_requests", "pdf_discovery_runs", "source_similarities", "suspected_duplicates",
+                          "selection_history", "selections", "candidate_hits", "candidates", "stage_decisions",
+                          "model_proposals",
                           "record_signal_ranks",
                           "record_flags", "corpus_memberships"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ? AND source_version_id IN ({marks})", scoped)

@@ -84,12 +84,21 @@ def abstract_outcome(work: dict[str, Any]) -> dict[str, Any] | None:
     return _named([row for row in rows if outcomes[row["id"]] == "unresolved"], work["head"])
 
 
-def decided_by_human(work: dict[str, Any], stage: str) -> bool:
-    """Whether the user decided this work's stage themselves, on any version of it (SW11.7)."""
-    return any(version[stage]["decided_by"] == "human" for version in work["versions"] if version.get(stage))
+def decided_by_human(work: dict[str, Any], stage: str, reading: bool = False) -> bool:
+    """Whether the user decided this work's stage themselves, on any version of it (SW11.7).
+
+    One exception, for the reading alone (`reading`; slice 18b, decision 3): a person's `human_pdf_wrong` speaks only
+    for its own version's file, so it does not hold the work back from the reading while a file the person added to
+    another version asks to be read (the version's `person` request). Every other decision of the person holds it
+    back as before, and the retrieval never takes the exception: its plan is what it was before slice 18b."""
+    asked = {version["id"] for version in work["versions"] if version.get("person")} if reading else set()
+    return any(version[stage]["decided_by"] == "human"
+               and not (stage == "fulltext" and version[stage]["reason_code"] == "human_pdf_wrong"
+                        and asked - {version["id"]})
+               for version in work["versions"] if version.get(stage))
 
 
-def group_of(work: dict[str, Any]) -> str | None:
+def group_of(work: dict[str, Any], reading: bool = False) -> str | None:
     """Which retrieval group this work belongs to, or None when it is not fetched at all.
 
     1. The works the user named: a selection the user set to `included`. It is read before anything code decided,
@@ -105,9 +114,10 @@ def group_of(work: dict[str, Any]) -> str | None:
        here, as in 2 and 3. A chained work the user included stays in the user's group.
 
     Not fetched: a work whose full-text stage the user decided, a work the user excluded, a work out of scope, and
-    a work with no abstract decision at all.
+    a work with no abstract decision at all. `reading` is passed by the reading plan and a person's attach alone:
+    it takes `decided_by_human`'s slice-18b exception, which the retrieval does not.
     """
-    if decided_by_human(work, "fulltext"):
+    if decided_by_human(work, "fulltext", reading):
         return None
     selection = work.get("selection") or {}
     if selection.get("origin") == "user":

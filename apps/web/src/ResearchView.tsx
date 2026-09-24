@@ -119,6 +119,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const keyTerms = useRef<HTMLInputElement>(null)
   const jumped = useRef(false)
   const lastRun = useRef<{ id: string; status: RunStatus } | null>(null)
+  // Runs another toast already announced when they were opened (a person's file whose attach opened its reading, 18b).
+  const announcedRuns = useRef(new Set<string>())
   const titleInput = useRef<HTMLTextAreaElement>(null)
   // An edit session ends once: Enter, Escape or the blur that follows either one must not save a second time.
   const titleEditDone = useRef(true)
@@ -192,7 +194,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (!previous || (previous.id === current.id && previous.status === current.status)) return
     const label = t(current.kind === 'answer' ? 'Answer generation' : runKindLabels[current.kind])
     const reason = pauseReasonText(current.pause_reason)
-    if (previous.id !== current.id) { if (ACTIVE.has(current.status)) toast('success', t('{label} started.', { label })); return }
+    if (previous.id !== current.id) { if (ACTIVE.has(current.status) && !announcedRuns.current.has(current.id)) toast('success', t('{label} started.', { label })); return }
     switch (current.status) {
       case 'completed': {
         if (current.kind !== 'discovery' && current.kind !== 'answer') { toast('success', current.kind === 'cell_recheck' ? t('Recheck finished. Its result waits as a proposal in the cell.') : t('{label} finished.', { label })); break }
@@ -519,7 +521,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       </TabsContent>}
 
       {hasQueue && <TabsContent value="waiting">
-        <WaitingForPdf researchId={id} view={view} busy={busy} incoming={waitingFiles} onIncomingTaken={takeWaitingFiles} onChanged={async () => { await load(); onChanged() }} />
+        <WaitingForPdf researchId={id} view={view} busy={busy} incoming={waitingFiles} onIncomingTaken={takeWaitingFiles} onChanged={async (announced?: string) => { if (announced) announcedRuns.current.add(announced); await load(); onChanged() }} />
       </TabsContent>}
 
       <TabsContent value="evidence">

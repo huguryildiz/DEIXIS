@@ -484,10 +484,16 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     for s in sources:
         if s["version_role"] == "record" and heads.get(s["work_id"]) != s["source_version_id"]:
             s["version_role"] = "other_version"
-        # The version whose text an answer reads when it is not the head itself (D48).
+        # The version whose text an answer reads when it is not the head itself (D48), and whether the answer reads
+        # no version of the work at all: its only PDF text is a person's file not read yet (slice 18b, decision 8).
         s["answer_reads_version_id"] = None
-        if s["version_role"] == "record" and (reads := reads_version.get(s["source_version_id"], s["source_version_id"])) != s["source_version_id"]:
-            s["answer_reads_version_id"] = reads
+        s["answer_reads_nothing"] = False
+        if s["version_role"] == "record":
+            reads = reads_version.get(s["source_version_id"], s["source_version_id"])
+            if reads is None:
+                s["answer_reads_nothing"] = True
+            elif reads != s["source_version_id"]:
+                s["answer_reads_version_id"] = reads
 
     # Other versions follow the record of their work and share its question revision.
     others: dict[str, list[dict[str, Any]]] = {}

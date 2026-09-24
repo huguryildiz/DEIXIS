@@ -8,7 +8,7 @@ A dropped file is matched to a work (`identity.propose`), never attached by the 
 and confirms. The match hands back what the confirmation must still find true — the file's digest, the question
 revision, the work's version list — and the confirmation is refused, with its reason, when any of it moved or when the
 chosen version already has a PDF in use. A confirmed file is added the way a person's upload always was
-(`origin = user_upload`); no code or reading run is written for it here (slice 18b).
+(`origin = user_upload`); slice 18b writes its code and reading request (`person_reading`).
 
 Nothing here is about a topic or a publisher: the list comes from the reason table and the stored plan order.
 """
@@ -111,12 +111,17 @@ def _digest(work_id: str, versions: list[str]) -> str:
 def work_view(store: Store, research_id: str, work_id: str, head: str, proposed: str | None = None) -> dict[str, Any]:
     """One work as the confirmation shows it: every version with its label, year and type, and the list's digest."""
     ids = _versions(store, research_id, head)
+    decisions = DecisionStore(store)
     versions = []
     for svid in ids:
         source = store.source(svid)
+        current = decisions.current(research_id, svid, "fulltext")
         versions.append({"source_version_id": svid, "title": source["title"], "version_label": source["version_label"],
                          "year": source["year"], "publication_type": source["publication_type"], "doi": source["doi"],
-                         "has_pdf": store.has_asset(svid), "proposed": svid == proposed})
+                         "has_pdf": store.has_asset(svid), "proposed": svid == proposed,
+                         # The person's own full-text decision on this version, which the panel names (slice 18b).
+                         "person_decision": current["reason_code"] if current and current["decided_by"] == "human"
+                         else None})
     return {"work_id": work_id, "head": head, "title": store.source(head)["title"], "versions": versions,
             "versions_digest": _digest(work_id, ids)}
 

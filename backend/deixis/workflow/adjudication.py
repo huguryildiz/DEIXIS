@@ -73,12 +73,46 @@ def should_write(current: dict[str, Any] | None, code: str, stale: bool = False)
     return current["reason_code"] in OWNED_CODES
 
 
+def person_should_write(current: dict[str, Any] | None, code: str, note: str) -> bool:
+    """Whether the code a person's newly added file asks for is written over its version's current decision.
+
+    The person's own decision is never written over. Any other decision there was made before this file existed —
+    about the version's earlier file, or its having none — and is replaced, even a fresh model decision: it was not
+    about this file. Only the same code for the same file (`note`) writes nothing (slice 18b, decision 1). A reading
+    decision made after the file was added is kept by `should_write`, which every later writer goes through."""
+    if current is None:
+        return True
+    if current["decided_by"] == "human":
+        return False
+    return not (current["reason_code"] == code and current.get("note") == note)
+
+
 def _fresh_model(work: dict[str, Any]) -> bool:
     for version in work["versions"]:
         row = version.get("fulltext")
         if row and not row.get("stale") and row["reason_code"] in FRESH_MODEL_CODES:
             return True
     return False
+
+
+# The states of a person's reading request in which its file has not been read yet (slice 18b).
+UNREAD_REQUESTS = ("waiting", "planned", "unread")
+
+
+def _person_files(work: dict[str, Any]) -> list[dict[str, Any]]:
+    """The versions carrying a person's file with text that has not been read yet, waiting ones first, oldest first."""
+    rows = [version for version in work["versions"]
+            if (version.get("person") or {}).get("status") in UNREAD_REQUESTS and version.get("has_text")]
+    return sorted(rows, key=lambda v: (v["person"]["status"] != "waiting", v["person"]["order"]))
+
+
+def person_version(work: dict[str, Any]) -> str | None:
+    """The version a reading reads for this work when a person's file on it has not been read yet, else None.
+
+    The version carrying the person's file is the one read, whatever another version was decided on (slice 18b,
+    decision 8); a work with no such file reads the version `Store.answer_version` names, as before."""
+    files = _person_files(work)
+    return files[0]["id"] if files else None
 
 
 def read_plan(works: list[dict[str, Any]], order: list[str], limit: int) -> dict[str, list[str]]:
@@ -91,18 +125,31 @@ def read_plan(works: list[dict[str, Any]], order: list[str], limit: int) -> dict
 
     Order is the group, then the inspection order, then the head identifier. The first `limit` heads are read;
     the rest are `not_reached`.
+
+    A work whose person's file waits to be read (its version's `person` request is `waiting`) comes before every
+    group, in the order the files were added (`person["order"]`), and counts against the same limit (slice 18b,
+    decision 7). A fresh decision on another version does not keep a person's unread file out; a file whose reading
+    did not happen (`unread`) keeps its work's place in the group order and is not put first again.
     """
     place = {head: position for position, head in enumerate(order)}
+    front: list[tuple[Any, str]] = []
     ranked: list[tuple[int, int, str]] = []
     for work in works:
-        group = group_of(work)
-        if group is None or _fresh_model(work):
+        group = group_of(work, reading=True)
+        if group is None:
+            continue
+        files = _person_files(work)
+        if files and files[0]["person"]["status"] == "waiting":
+            front.append((files[0]["person"]["order"], work["head"]))
+            continue
+        if not files and _fresh_model(work):
             continue
         if not any(version.get("has_text") for version in work["versions"]):
             continue
         ranked.append((GROUPS.index(group), place.get(work["head"], len(place)), work["head"]))
+    front.sort()
     ranked.sort()
-    heads = [head for _, _, head in ranked]
+    heads = [head for _, head in front] + [head for _, _, head in ranked]
     return {"works": heads[:limit], "not_reached": heads[limit:]}
 
 

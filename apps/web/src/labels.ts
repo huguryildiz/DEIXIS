@@ -1,4 +1,4 @@
-import type { ApprovalBlock, Evidence, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, Verdict } from './api'
+import type { ApprovalBlock, Evidence, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, Verdict } from './api'
 import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
@@ -266,6 +266,28 @@ const waitingReasons: Record<string, string> = {
   human_pdf_wrong: 'You marked the PDF that was found as wrong.',
 }
 export const waitingReasonText = (code: string) => t(waitingReasons[code] ?? 'No PDF with text is in hand.')
+// What became of a file the person added (slice 18b, decision 9), in plain words; the view adds the details.
+const personFileStates: Record<PersonFileState, string> = {
+  waiting: 'Waiting to be read.',
+  reading: 'The model is reading it…',
+  included: 'Included: both readings found every part of the criterion, and code found each quote on its page.',
+  criterion_not_met: 'Does not meet the criterion: the parts of the criterion were not found in the passages shown.',
+  your_decision: 'Awaiting your decision: the two readings did not settle it.',
+  unread: 'Not read.',
+  changed: 'The file’s text changed after it was read, so nothing it was read for is shown as verified. Read it again to use it.',
+  model_off: 'The model does not read it: full-text reading is off, or no criterion is frozen.',
+  decision_stands: 'Your decision stands; the model does not read this file.',
+  not_eligible: 'The model does not read it: this work is not in the reading order.',
+}
+export const personFileStateText = (row: Pick<PersonFile, 'state' | 'after_run'>) =>
+  row.state === 'waiting' && row.after_run ? t('Waiting to be read, after the run in progress.') : t(personFileStates[row.state])
+const personUnread: Record<NonNullable<PersonFile['unread_reason']>, string> = {
+  no_decision: 'The reading run ended without a decision on it.',
+  run_cancelled: 'The run that was to read it was cancelled.',
+  run_failed: 'The run that was to read it failed.',
+  file_changed: 'The file changed after the reading was planned.',
+}
+export const personUnreadText = (reason: NonNullable<PersonFile['unread_reason']>) => t(personUnread[reason])
 export const queueAnswerLabels: Record<QueueAnswer, string> = {
   pdf_confirmed: 'PDF is right, let the model read it', include: 'Include', criterion_not_met: 'Does not meet the criterion',
   not_sure: 'Not sure', pdf_wrong: 'PDF is wrong or incomplete',

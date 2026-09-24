@@ -32,7 +32,8 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
   const versionsOf = (record: Source) => view.sources.filter(s => s.work_id === record.work_id && s.source_version_id !== record.source_version_id)
   // The version an answer reads: the record, or another version with PDF text (D48).
   const reading = (record: Source) => (record.answer_reads_version_id ? byId.get(record.answer_reads_version_id) ?? record : record)
-  const full = (record: Source) => reading(record).has_pdf_text
+  // A work whose only PDF text is a person's file the model has not read yet gives an answer nothing (slice 18b).
+  const full = (record: Source) => !record.answer_reads_nothing && reading(record).has_pdf_text
   const pagesOf = (record: Source) => reading(record).access.assets[0]?.page_count ?? 0
   // A PDF with pages without text can be read with OCR (D51); its row names what OCR would read and offers the action.
   const ocrOf = (record: Source) => {
@@ -70,7 +71,11 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
 
   const total = records.length
   const inHand = records.filter(full).length
-  const missing = records.filter(r => !full(r))
+  // A work whose PDF is the person's and not read yet: the answer leaves it out until the model reads it, and another
+  // file cannot be added to its version (slice 18b). It is neither in hand nor missing; "Your files" says the rest.
+  const unread = records.filter(r => r.answer_reads_nothing)
+  const missing = records.filter(r => !full(r) && !r.answer_reads_nothing)
+  const yourFiles = `#/research/${researchId}/waiting`
   const pages = records.filter(full).reduce((sum, r) => sum + pagesOf(r), 0)
 
   const collect = () => act(() => api.startRun(researchId, 'pdf_collection', crypto.randomUUID()))
@@ -85,10 +90,12 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
       const ids = new Set([record.source_version_id, ...versionsOf(record).map(v => v.source_version_id)])
       return steps.filter(s => ids.has(s.operation_key.split(':')[1] ?? ''))
     }
-    const rowState = (record: Source): 'done' | 'checking' | 'none' | 'queued' => {
+    const rowState = (record: Source): 'done' | 'unread' | 'checking' | 'none' | 'queued' => {
       const own = stepsOf(record)
       if (full(record)) return 'done'
+      // A running step for another version of the work shows first; otherwise the person's unread PDF is the row's state.
       if (own.some(s => s.status === 'running')) return 'checking'
+      if (record.answer_reads_nothing) return 'unread'
       if (own.length || !canTry(record, versionsOf(record))) return 'none'
       return 'queued'
     }
@@ -102,16 +109,17 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
     const pct = (n: number) => `${total ? (100 * n) / total : 0}%`
     return <section className="pdf-ready" aria-labelledby="pdf-ready-title">
       <h2 id="pdf-ready-title">{t(current.status === 'paused' ? 'PDF collection paused' : 'Collecting open-access PDFs')}</h2>
-      <Depth cells={[[inHand, t('PDFs in hand')], [count('none'), t('checked, none open')], [count('queued') + count('checking'), t('still to check')]]} />
+      <Depth cells={[[inHand, t('PDFs in hand')], [count('none'), t('checked, none open')], [count('queued') + count('checking'), t('still to check')], ...(count('unread') ? [[count('unread'), t('your PDF, not read yet')] as [number, string]] : [])]} />
       <div className="pdf-ready-bar" aria-hidden><i className="is-pdf" style={{ width: pct(inHand) }} /><i className="is-run" style={{ width: pct(count('none')) }} /></div>
       <ul className="pdf-ready-rows">
         {states.map(([record, state]) => <li key={record.source_version_id}>
-          <RowHead record={record} facts={[state === 'checking' ? t(stepsOf(record).some(s => s.kind === 'pdf_other_copy' && s.status === 'running') ? 'looking for another open copy' : 'downloading') : state === 'queued' ? t('waiting') : state === 'done' && pagesOf(record) ? plural(pagesOf(record), '{n} page', '{n} pages') : state === 'none' ? { text: missingReason(record, versionsOf(record)), tone: 'abstract' } : '']} />
+          <RowHead record={record} facts={[state === 'checking' ? t(stepsOf(record).some(s => s.kind === 'pdf_other_copy' && s.status === 'running') ? 'looking for another open copy' : 'downloading') : state === 'queued' ? t('waiting') : state === 'done' && pagesOf(record) ? plural(pagesOf(record), '{n} page', '{n} pages') : state === 'none' ? { text: missingReason(record, versionsOf(record)), tone: 'abstract' } : state === 'unread' ? { text: t(UNREAD_FACT), tone: 'abstract' } : '']} />
           <span className="pdf-ready-side">
             {state === 'done' && <span className="pdf-pill is-ok">{doneSeconds(record) === null ? t('PDF') : t('PDF · {time}', { time: durationText(doneSeconds(record)!) })}</span>}
             {state === 'checking' && <span className="pdf-pill is-run"><span className="pdf-spin" aria-hidden />{t('Checking')}</span>}
             {state === 'none' && <span className="pdf-pill is-warn">{t('None open')}</span>}
             {state === 'queued' && <span className="pdf-pill">{t('Queued')}</span>}
+            {state === 'unread' && <span className="pdf-pill is-warn">{t('Not read yet')}</span>}
           </span>
         </li>)}
       </ul>
@@ -129,8 +137,9 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
     return <section className="pdf-ready" aria-labelledby="pdf-ready-title">
       <h2 id="pdf-ready-title">{t('Before the answer: how deeply can it read?')}</h2>
       <p className="pdf-ready-lede">{t('Screening read titles and abstracts. The answer can cite only what it reads, so a source without a PDF is cited from its abstract alone.')}</p>
-      <Depth cells={[[total, t('included sources')], [inHand, t('PDF already in hand')], [missing.length, t('abstract only for now')]]} />
+      <Depth cells={[[total, t('included sources')], [inHand, t('PDF already in hand')], [missing.length, t('abstract only for now')], ...(unread.length ? [[unread.length, t('your PDF, not read yet')] as [number, string]] : [])]} />
       <div className="pdf-ready-bar" aria-hidden><i className="is-pdf" style={{ width: `${(100 * inHand) / total}%` }} /></div>
+      {unread.length > 0 && <UnreadNote n={unread.length} href={yourFiles} />}
       <div className="pdf-ready-actions">
         <Button disabled={busy} onClick={() => void collect()}><Download size={15} />{t('Collect open-access PDFs')}</Button>
         <button type="button" className="pdf-ready-link" disabled={busy} onClick={onAnswer}>{t('Generate answer now')}</button>
@@ -141,7 +150,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
   }
 
   // ---- state 3: after collecting, or nothing is missing ---------------------------------
-  const needs = records.filter(r => !full(r) || touched.has(r.source_version_id))
+  const needs = records.filter(r => !r.answer_reads_nothing && (!full(r) || touched.has(r.source_version_id)))
   const stillMissing = missing.length
   const readFull = records.filter(full)
 
@@ -156,7 +165,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
       const recordOf = (svid: string | null) => (svid ? records.find(r => r.source_version_id === svid || versionsOf(r).some(v => v.source_version_id === svid)) : undefined)
       setProposals(matches.map((match, i) => {
         const record = recordOf(match.source_version_id)
-        return { file: pdfs[i], match, target: record && !full(record) ? record.source_version_id : '', hasPdf: Boolean(record && full(record)) }
+        return { file: pdfs[i], match, target: record && missing.includes(record) ? record.source_version_id : '', hasPdf: Boolean(record && !missing.includes(record)) }
       }))
     } catch (e) {
       toast('error', e instanceof Error ? e.message : String(e))
@@ -186,9 +195,19 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
   }
 
   return <section className="pdf-ready" aria-labelledby="pdf-ready-title">
-    <h2 id="pdf-ready-title">{stillMissing ? t('{full} of {total} sources will be read in full', { full: inHand, total }) : plural(total, 'The {n} source will be read in full', 'All {n} sources will be read in full')}</h2>
+    <h2 id="pdf-ready-title">{stillMissing || unread.length ? t('{full} of {total} sources will be read in full', { full: inHand, total }) : plural(total, 'The {n} source will be read in full', 'All {n} sources will be read in full')}</h2>
     {stillMissing > 0 && <p className="pdf-ready-lede">{plural(stillMissing, '{n} source still has no PDF. Add it if you have access, or generate the answer and it is cited from its abstract.', '{n} sources still have no PDF. Add the ones you have access to, or generate the answer and those {n} are cited from their abstracts.')}</p>}
     <div className="pdf-ready-bar" aria-hidden><i className="is-pdf" style={{ width: `${(100 * inHand) / total}%` }} /></div>
+
+    {unread.length > 0 && <>
+      <div className="pdf-ready-group"><h3>{t('Your PDF, not read yet')}</h3><small>{unread.length}</small></div>
+      <UnreadNote n={unread.length} href={yourFiles} />
+      <ul className="pdf-ready-rows" aria-label={t('Your PDF, not read yet')}>
+        {unread.map(record => <li key={record.source_version_id}>
+          <RowHead record={record} facts={[{ text: t(UNREAD_FACT), tone: 'abstract' }]} />
+        </li>)}
+      </ul>
+    </>}
 
     {needs.length > 0 && <>
       <div className="pdf-ready-group"><h3>{t('Needs your PDF')}</h3><small>{stillMissing}</small></div>
@@ -261,6 +280,16 @@ function RowHead({ record, facts, note }: { record: Source; facts: Fact[]; note?
       : <span key={f.text} className={`source-fact is-${f.tone}`}>{f.text}</span>)}</span>}
     {note}
   </span>
+}
+
+const UNREAD_FACT = 'Your PDF is attached and not read yet: the answer leaves this work out until the model reads it.'
+
+// Where a person's unread file is followed: "Your files" on the Waiting for your PDF tab, which also offers Read again.
+function UnreadNote({ n, href }: { n: number; href: string }) {
+  return <p className="pdf-ready-lede">
+    {plural(n, '{n} source has your PDF, not read yet. The answer leaves it out until the model reads it.', '{n} sources have your PDF, not read yet. The answer leaves them out until the model reads them.')}{' '}
+    <a href={href}>{t('See it in Your files')}</a>
+  </p>
 }
 
 function Depth({ cells }: { cells: [number, string][] }) {

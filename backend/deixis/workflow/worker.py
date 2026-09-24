@@ -83,6 +83,11 @@ class Worker:
         self._wake.set()
 
     async def run_forever(self) -> None:
+        try:
+            # A person's files that were waiting when the last instance stopped (slice 18b, decision 5).
+            self.flow.queue_person_readings()
+        except Exception:  # noqa: BLE001 - the worker must still start
+            log.exception("queueing waiting person readings at start failed")
         while not self._stop.is_set():
             self.store.conn.execute("UPDATE worker_owner SET heartbeat_at = ? WHERE instance_id = ?", (now(), self.instance_id))
             run = self.store.next_queued_run()
@@ -99,10 +104,16 @@ class Worker:
                 await self.flow.execute(run["id"])
             except Exception as exc:  # noqa: BLE001 - record any unexpected failure on the run
                 log.exception("run %s failed", run["id"])
+                # A person's files the run held are closed by this same write (`Store.update_run`, slice 18b).
                 self.store.update_run(run["id"], event="run_failed", status="failed", pause_reason="internal_error",
                                       error_json={"error": f"{type(exc).__name__}: {str(exc)[:300]}"})
             finally:
                 self.current_run_id = None
+            # Whichever way the run returned, a person's waiting files get their reading run now (slice 18b).
+            try:
+                self.flow.person_run_ended(run["id"])
+            except Exception:  # noqa: BLE001 - the next run must not be held up by it
+                log.exception("queueing a person's reading after run %s failed", run["id"])
 
     async def stop(self) -> None:
         self._stop.set()

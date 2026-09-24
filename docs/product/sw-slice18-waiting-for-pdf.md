@@ -1,6 +1,6 @@
 # SW dilim 18 — PDF bekleyenler ve kullanıcının eklediği PDF
 
-**Tarih:** 24 Eylül 2026. **Durum:** 18a uygulandı (D99; yayıncı PDF'iyle kabul yapılmadı, sahibin kararıyla commit edildi); 18b planı yazıldı (bu dosyanın "Dilim 18b" bölümü); `gpt-6-sol` · high'ın ikinci görüşü (`sol-plan.md`, "hazır değil", 11 bulgu) işlendi: dilim 18a ve 18b'ye bölündü; 18a uygulamaya hazır taslak, 18b'nin sözleşmesi kendi plan turunda kesinleşir. **Ana dosya:** [sw-status.md](sw-status.md).
+**Tarih:** 24 Eylül 2026. **Durum:** 18a uygulandı (D99; yayıncı PDF'iyle kabul yapılmadı, sahibin kararıyla commit edildi); 18b uygulandı (D100; bir yayıncı PDF'iyle canlı kabul yapıldı); `gpt-6-sol` · high'ın ikinci görüşü (`sol-plan.md`, "hazır değil", 11 bulgu) işlendi: dilim 18a ve 18b'ye bölündü; 18a uygulamaya hazır taslak, 18b'nin sözleşmesi kendi plan turunda kesinleşir. **Ana dosya:** [sw-status.md](sw-status.md).
 **Karar:** yeni D numarası (dilim yazar; en yüksek D98). **Önkoşul:** 10 (D83), 12 (D85), 17a (D98). **Tür:** Kur.
 **Kapsam:** SW10.4–5, SW11.9. **Plan:** Opus 5.5 · high. **Ölçüm:** `.local/sw-slice18-plan-2026-09-24/`
 (`waiting.py`, `waiting.json`; salt okunur, model ve ağ yok).

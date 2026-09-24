@@ -1078,6 +1078,7 @@ button.chat-step-title svg{color:var(--muted)}
 .queue-panel .queue-muted{margin:0;color:var(--muted);font-size:12.5px;line-height:1.55}
 .queue-panel .queue-kept-note{margin-top:6px;overflow-wrap:anywhere}
 .queue-panel .queue-kept-note q{font-style:italic}
+.queue-panel .queue-link{color:var(--accent);font-weight:500;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .queue-panel .queue-foot{position:sticky;bottom:0;z-index:3;display:grid;justify-content:stretch;gap:10px;margin-top:8px;padding:14px 0 16px;border-top:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:13px}
 .queue-panel .queue-foot .notice{margin:0}
 .queue-panel .queue-answers{display:flex;flex-wrap:wrap;gap:8px}

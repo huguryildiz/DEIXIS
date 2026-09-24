@@ -224,8 +224,12 @@ export function locateAnchors(doc: Doc, page: number | null, texts: string[]): A
   return marks
 }
 
+// A figure, table, equation or reference named in running text; the plain-text view makes it a link.
+// "Fig. 3", "Figs. 3", "Figure 3", "Table II", "Eq. (5)", "Equation 5", "[12]", "[3, 5]", "[3–5]"
+export const IN_TEXT = /\b(Figs?\.|Figures?|FIGS?\.|Tables?|TABLE|Eqs?\.|Equations?)\s*\(?([IVXL]+(?![A-Za-z])|[A-Z]?\d{1,3})\)?|\[(\d{1,4}(?:\s*[,–-]\s*\d{1,4})*)\]/g
+
 // Whether the marks are exactly the given text and nothing more, for a text opened from the human queue (slice 17):
-// only running text is marked span by span (a heading or table is marked whole, a formula as a whole), and a match
+// only running text is marked span by span (a heading or table is marked whole, a formula or a link as a whole), and a match
 // that starts or ends inside a word widens to that word. Any of these leaves the text unmarked instead.
 export function marksExactly(doc: Doc, marks: AnchorMarks, texts: string[]): boolean {
   const compact = (text: string) => [...text.matchAll(/[\p{L}\p{N}]+/gu)].map(m => m[0].normalize('NFKC').toLocaleLowerCase()).join('')
@@ -235,8 +239,10 @@ export function marksExactly(doc: Doc, marks: AnchorMarks, texts: string[]): boo
     if (!ranges) continue
     if (block.kind !== 'para' && block.kind !== 'note' && block.kind !== 'bio') return false
     const math = [...block.text.matchAll(/\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/g)].map(m => [m.index!, m.index! + m[0].length])
+    // A link is marked whole, like a formula: a mark that cuts one would show wider than the anchor.
+    const links = [...block.text.matchAll(IN_TEXT)].map(m => [m.index!, m.index! + m[0].length])
     for (const [s, e] of ranges) {
-      if (math.some(([a, b]) => a < e && b > s && (a < s || b > e))) return false
+      if ([...math, ...links].some(([a, b]) => a < e && b > s && (a < s || b > e))) return false
       marked += block.text.slice(s, e)
     }
   }

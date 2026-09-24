@@ -104,7 +104,9 @@ class _Context:
             self.links[row["decision_id"]] = dict(row)
         self.assets: dict[str, dict[str, Any]] = {}
         for row in conn.execute(
-                "SELECT a.id, a.source_version_id, a.identity_confirmed_at FROM source_assets a"
+                "SELECT a.id, a.source_version_id, a.identity_confirmed_at, a.extraction_version,"
+                " (SELECT COUNT(*) || ':' || IFNULL(MAX(p.rowid), 0) FROM passages p WHERE p.asset_id = a.id) AS text_mark"
+                " FROM source_assets a"
                 " JOIN corpus_memberships m ON m.source_version_id = a.source_version_id AND m.research_id = ?"
                 " AND m.removed_at IS NULL WHERE a.removed_at IS NULL ORDER BY a.retrieved_at DESC, a.id DESC",
                 (research_id,)):
@@ -170,7 +172,9 @@ def _token(ctx: _Context, work_id: str, svid: str, reason_code: str | None, head
     return sha256_hex({
         "revision": ctx.revision, "criterion_hash": ctx.facts["stale_key"][1], "decisions": decisions,
         "reason_code": reason_code, "head": head, "selection_version": selection["version"] if selection else None,
-        "member": ctx.store.is_active_member(ctx.rid, svid), "asset": (ctx.assets.get(svid) or {}).get("id"),
+        "member": ctx.store.is_active_member(ctx.rid, svid), "asset": (asset := ctx.assets.get(svid) or {}).get("id"),
+        # A new extraction or OCR text of the same file changes the passages a detail shows, so it moves the row too.
+        "text": [asset.get("extraction_version"), asset.get("text_mark")],
     })
 
 
@@ -296,7 +300,14 @@ def _decided(ctx: _Context, work_id: str, state: dict[str, Any]) -> dict[str, An
             "answer": ANSWER_OF[decision["reason_code"]],
             # The confirmation's note names the file for the undo; it is internal and never shown.
             "note": None if state["state"] == "confirmed" else decision["note"],
-            "created_at": decision["created_at"], "undo_token": _state_of(ctx, svid)["token"]}
+            "created_at": decision["created_at"], **_undo_of(ctx, work_id, svid, state)}
+
+
+def _undo_of(ctx: _Context, work_id: str, svid: str, state: dict[str, Any]) -> dict[str, Any]:
+    """The undo token, or why there is none: a confirmation whose reading has begun is kept, as `undo` refuses it."""
+    if state["state"] == "confirmed" and _reading_opened_since(ctx.store, ctx.rid, work_id, state["decision"]["created_at"]):
+        return {"undo_token": None, "undo_blocked": "reading_started"}
+    return {"undo_token": _state_of(ctx, svid)["token"], "undo_blocked": None}
 
 
 def queue_rows(store: Store, research_id: str) -> dict[str, Any]:
@@ -321,15 +332,14 @@ def queue_counts(store: Store, research_id: str) -> dict[str, int]:
 def queue_answers(store: Store, research_id: str) -> dict[tuple[str, int], str]:
     """The answer behind every selection a queue decision wrote and nobody changed since, by (head, selection version).
 
-    Read from the stored link (D71), not from the selection's reason text, which the person can also type by hand."""
-    links: dict[str, Any] = {}
-    for row in store.conn.execute(
-            "SELECT l.decision_id, l.head, l.selection_version, d.reason_code FROM human_selection_links l"
-            " JOIN stage_decisions d ON d.id = l.decision_id"
-            " WHERE l.research_id = ? AND d.superseded_at IS NULL ORDER BY l.created_at, l.rowid", (research_id,)):
-        links[row["decision_id"]] = row
-    return {(row["head"], row["selection_version"]): ANSWER_OF[row["reason_code"]]
-            for row in links.values() if row["reason_code"] in SELECTION_OF}
+    Read from the stored links (D71), not from the selection's reason text, which the person can also type by hand.
+    Every link of an open decision counts: a head change copies the link to the new head and the old head's own link
+    still names its unchanged selection."""
+    return {(row["head"], row["selection_version"]): ANSWER_OF[row["reason_code"]] for row in store.conn.execute(
+        "SELECT l.head, l.selection_version, d.reason_code FROM human_selection_links l"
+        " JOIN stage_decisions d ON d.id = l.decision_id"
+        " WHERE l.research_id = ? AND d.superseded_at IS NULL", (research_id,))
+        if row["reason_code"] in SELECTION_OF}
 
 
 def verified_records(store: Store, research_id: str) -> list[dict[str, Any]]:

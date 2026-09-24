@@ -91,11 +91,10 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   const [queue, setQueue] = useState<QueueView | null>(null)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<string | null>(null)  // a work id: its version may change under it
-  // Details by row and token, each with the list reading it was fetched under (see `generation`).
-  const [details, setDetails] = useState<Record<string, { view: QueueRowView; generation: number }>>({})
-  // Every list reading starts a generation: a detail from an earlier one is still shown, but it is fetched again
-  // before it can be answered, since a new extraction or file can change its passages without changing the token.
-  const [generation, setGeneration] = useState(0)
+  // Details by row and token. The token also moves with the file's text (a new extraction or OCR), so a detail kept
+  // under the list's token shows the passages that token was computed from.
+  const [details, setDetails] = useState<Record<string, QueueRowView>>({})
+  const [unsettled, setUnsettled] = useState<string | null>(null)  // a row whose detail kept disagreeing with the list
   const [detailError, setDetailError] = useState('')
   const [kindFilter, setKindFilter] = useState<'all' | QueueKind>('all')
   const [reasonFilter, setReasonFilter] = useState('all')
@@ -110,22 +109,26 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   const titleRef = useRef<HTMLHeadingElement>(null)
   const openWhenLoaded = useRef<string | null>(null)  // the row (and token) Enter was pressed on while it loaded
   const listRequest = useRef(0)
+  const latest = useRef<Promise<QueueView | null>>(Promise.resolve(null))
+  const mismatches = useRef(new Map<string, number>())
 
-  // Only the newest list request is applied: an older answer arriving late never overwrites a newer queue.
+  // Only the newest list request is applied, and a caller whose request was overtaken gets the newest list, not its own.
   const load = useCallback((): Promise<QueueView | null> => {
     const request = ++listRequest.current
-    return api.queue(researchId).then(next => {
-      if (request !== listRequest.current) return next
+    const reading: Promise<QueueView | null> = api.queue(researchId).then(next => {
+      if (request !== listRequest.current) return latest.current
       setQueue(next)
       setError('')
-      setGeneration(g => g + 1)
       const live = new Set(next.rows.map(keyOf))
       setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => live.has(key))))
       return next
     }, e => {
-      if (request === listRequest.current) setError(e instanceof Error ? e.message : String(e))
+      if (request !== listRequest.current) return latest.current
+      setError(e instanceof Error ? e.message : String(e))
       return null
     })
+    latest.current = reading
+    return reading
   }, [researchId])
   // Every recorded event can add or take a row: a reading run in flight writes decisions, another tab answers one.
   useEffect(() => { void load() }, [load, view.last_event_id])
@@ -138,11 +141,10 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   // Until a row is chosen the first one is, except at 760 px and below, where the list comes first.
   const selectedWork = selected ?? (narrow ? null : ordered[0]?.work_id ?? null)
   const current = rows.find(r => r.work_id === selectedWork) ?? null
-  const entry = current ? details[keyOf(current)] : undefined
-  const currentView = entry?.view
+  const currentView = current ? details[keyOf(current)] : undefined
   const detail = currentView?.detail
-  // An answer is sent only on a detail read under the current list, for the same row and token the list shows.
-  const answerable = Boolean(current && entry && entry.generation === generation && currentView?.row?.row_token === current.row_token)
+  // An answer is sent only on a detail whose row and token are the ones the list shows.
+  const answerable = Boolean(current && currentView?.row?.row_token === current.row_token)
   const gone = Boolean(selected && queue && !current)
   // The active row stays in view while the arrow keys move through a long list.
   useEffect(() => {
@@ -151,26 +153,32 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
 
   // The selected row's detail, then the next row's in the background: one row ahead, so the next answer does not wait.
   const inflight = useRef(new Set<string>())
-  const fetchDetail = useCallback(async (row: QueueRow, under: number) => {
+  const drop = (key: string) => setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key)))
+  const fetchDetail = useCallback(async (row: QueueRow) => {
     const key = keyOf(row)
-    if (inflight.current.has(`${key}@${under}`)) return
-    inflight.current.add(`${key}@${under}`)
+    if (inflight.current.has(key)) return
+    inflight.current.add(key)
     try {
       const value = await api.queueRow(researchId, row.source_version_id)
-      setDetails(prev => ((prev[key]?.generation ?? -1) > under ? prev : { ...prev, [key]: { view: value, generation: under } }))
-      // The row moved between the list and its detail: the list is read again, and the answer waits for it.
-      if (value.row?.row_token !== row.row_token) void load()
-    } finally { inflight.current.delete(`${key}@${under}`) }
+      setDetails(prev => ({ ...prev, [key]: value }))
+      if (value.row?.row_token === row.row_token) { mismatches.current.delete(key); return }
+      // The row moved between the list and its detail: the list is read again and the detail with it, twice at most;
+      // a row that still disagrees says so and waits for the person to read it again.
+      const tries = (mismatches.current.get(key) ?? 0) + 1
+      mismatches.current.set(key, tries)
+      if (tries > 2) { setUnsettled(key); return }
+      await load()
+      setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key)))
+    } finally { inflight.current.delete(key) }
   }, [researchId, load])
   const currentKey = current ? keyOf(current) : null
   const nextRow = current ? ordered[ordered.findIndex(r => r.work_id === current.work_id) + 1] : undefined
   const nextKey = nextRow ? keyOf(nextRow) : null
-  const fresh = (key: string | null) => Boolean(key && details[key]?.generation === generation)
   useEffect(() => {
     if (!current || !currentKey) return
-    if (!fresh(currentKey)) fetchDetail(current, generation).catch(e => setDetailError(e instanceof Error ? e.message : String(e)))
-    else if (nextRow && !fresh(nextKey)) void fetchDetail(nextRow, generation).catch(() => undefined)
-  }, [currentKey, nextKey, details, generation, fetchDetail])  // eslint-disable-line react-hooks/exhaustive-deps
+    if (!details[currentKey]) fetchDetail(current).catch(e => setDetailError(e instanceof Error ? e.message : String(e)))
+    else if (nextRow && nextKey && !details[nextKey]) void fetchDetail(nextRow).catch(() => undefined)
+  }, [currentKey, nextKey, details, fetchDetail])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const choose = (work: string | null) => {
     setSelected(work)
@@ -351,7 +359,10 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
         {conflict && conflict.gone && <Notice tone="attention">{t('The row you answered left the queue after it was shown. Your answer was not saved.')}
           {conflict.note && <p className="queue-kept-note">{t('Your note for “{title}” is kept here:', { title: conflict.title })} <q>{conflict.note}</q></p>}</Notice>}
         {gone && !conflict && <Notice tone="attention">{t('This work is no longer in the queue. Nothing was saved; your note is kept below.')}</Notice>}
-        {current && currentView && !answerable && !detailError && <p className="queue-muted" role="status">{t('Reading this row again…')}</p>}
+        {current && currentView && !answerable && !detailError && (unsettled === currentKey
+          ? <Notice tone="attention">{t('This row kept changing while it was read, so it cannot be answered yet.')}{' '}
+            <button type="button" className="queue-link" onClick={() => { mismatches.current.delete(currentKey!); setUnsettled(null); drop(currentKey!) }}>{t('Read it again')}</button></Notice>
+          : <p className="queue-muted" role="status">{t('Reading this row again…')}</p>)}
         {current ? <RowDetail row={current} rowView={currentView} detailError={detailError} titleRef={titleRef}
           onOpenPage={() => detail && openPage(current, detail, 'pdf')} onOpenPart={openPart}
           onOpenSource={() => setSheet({ source: current.source_version_id })}
@@ -371,7 +382,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
       </div>
     </div>}
 
-    {queue.decided.length > 0 && <Decided entries={queue.decided} busy={busy} onUndo={entry => { void undo(entry.source_version_id, entry.undo_token) }} onOpen={svid => setSheet({ source: svid })} />}
+    {queue.decided.length > 0 && <Decided entries={queue.decided} busy={busy} onUndo={entry => { if (entry.undo_token) void undo(entry.source_version_id, entry.undo_token) }} onOpen={svid => setSheet({ source: svid })} />}
 
     {sheet && <PassageSheet researchId={researchId} dark={dark} sources={view.sources}
       passageId={'source' in sheet ? null : sheet.passageId} assetId={'source' in sheet ? null : sheet.assetId}
@@ -475,7 +486,9 @@ function Decided({ entries, busy, onUndo, onOpen }: { entries: QueueDecided[]; b
         <p className="queue-muted">{[queueStateOf(entry.answer), t(queueAnsweredText[entry.answer]), dateText(entry.created_at)].join(' · ')}</p>
         {entry.note && <p className="queue-decided-note">{entry.note}</p>}
       </div>
-      <Button variant="ghost" size="sm" disabled={busy} onClick={() => onUndo(entry)} aria-label={t('Undo your decision on {title}', { title: entry.title })}><RotateCcw size={14} aria-hidden />{t('Undo')}</Button>
+      {entry.undo_token
+        ? <Button variant="ghost" size="sm" disabled={busy} onClick={() => onUndo(entry)} aria-label={t('Undo your decision on {title}', { title: entry.title })}><RotateCcw size={14} aria-hidden />{t('Undo')}</Button>
+        : <p className="queue-muted">{t('The reading has begun, so this can no longer be taken back.')}</p>}
     </li>)}</ul>
   </details>
 }

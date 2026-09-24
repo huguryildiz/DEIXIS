@@ -5,16 +5,13 @@ import { api, figureUrl, type AssetFigure } from './api'
 import { t } from './i18n'
 import { PassageMathText } from './PassageMathText'
 import { OCR_LABEL } from './ocr'
-import { SUBSECTION, buildDocument, locateAnchors, marksExactly, tableKey, type Doc, type Passages } from './pdfDocument'
+import { IN_TEXT, SUBSECTION, buildDocument, locateAnchors, marksExactly, tableKey, type Doc, type Passages } from './pdfDocument'
 import { scrollBehavior } from './motion'
 
 // The extracted text of a whole PDF as a readable document (D58): section contents, pictures of figures cut from the PDF
 // page, and in-text references to figures, tables, equations and numbered references that jump to them. Footnote markers are
 // not linked: the text layer drops superscripts, and on the stored library no marker could be found (D58).
 // Everything is found from the stored text with patterns (pdfDocument.ts); what a pattern misses stays plain text.
-
-// "Fig. 3", "Figs. 3", "Figure 3", "Table II", "Eq. (5)", "Equation 5", "[12]", "[3, 5]", "[3–5]"
-const IN_TEXT = /\b(Figs?\.|Figures?|FIGS?\.|Tables?|TABLE|Eqs?\.|Equations?)\s*\(?([IVXL]+(?![A-Za-z])|[A-Z]?\d{1,3})\)?|\[(\d{1,4}(?:\s*[,–-]\s*\d{1,4})*)\]/g
 
 function jump(id: string) {
   const element = document.getElementById(id)

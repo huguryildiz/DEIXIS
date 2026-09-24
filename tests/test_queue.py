@@ -811,3 +811,49 @@ def test_the_identity_check_shows_the_text_of_physical_page_one_or_none(store):
     first = queue.row_detail(store, lib.rid, with_first)["detail"]["identity"]["first_page"]
     missing = queue.row_detail(store, lib.rid, without_first)["detail"]["identity"]["first_page"]
     assert (first, missing) == ("SYNTHETIC first page", None)
+
+
+def test_a_confirmation_whose_reading_has_begun_is_listed_without_an_undo_and_says_why(store):
+    lib = Lib(store)
+    svid = lib.work()
+    lib.text(svid, [lib.field["page"]])
+    lib.unconfirmed(svid)
+    queue.decide(store, lib.rid, svid, "pdf_confirmed", None, lib.row(svid)["row_token"])
+    entry = lib.rows()["decided"][0]
+    assert entry["undo_token"] and entry["undo_blocked"] is None
+    run = lib.new_run("fulltext_adjudication")
+    plan = store.step(run, "adjudication_plan", "code:adjudication_plan")
+    store.finish_step(plan["id"], "succeeded", output={})
+    store.step(run, f"fulltext_adjudication:{svid}:1", "model:fulltext_adjudication")
+    # The list and `undo` apply the same rule: what the undo would refuse is not offered.
+    entry = lib.rows()["decided"][0]
+    assert (entry["source_version_id"], entry["undo_token"], entry["undo_blocked"]) == (svid, None, "reading_started")
+
+
+def test_the_row_token_moves_when_the_text_of_the_same_file_changes(store):
+    lib = Lib(store)
+    svid = queued(lib)
+    before = lib.row(svid)["row_token"]
+    asset = store.conn.execute("SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL",
+                               (svid,)).fetchone()[0]
+    # OCR or a new extraction adds passages to the file in use without replacing it.
+    with db.transaction(store.conn):
+        store._insert_passage(svid, asset, "pdf_page", 2, None, None, None, "pymupdf-synthetic", "SYNTHETIC added page")
+    after = lib.row(svid)["row_token"]
+    assert after != before
+    with pytest.raises(RevisionConflict):
+        queue.decide(store, lib.rid, svid, "include", None, before)
+
+
+def test_after_a_head_change_both_heads_keep_the_queue_answer_their_links_name(store):
+    lib = Lib(store)
+    preprint = lib.preprint("10.9999/synth.both")
+    lib.text(preprint, [lib.field["page"]])
+    lib.read(preprint, "part_without_evidence", labels=partial(lib))
+    queue.decide(store, lib.rid, preprint, "include", None, lib.row(preprint)["row_token"])
+    published = lib.published("10.9999/synth.both")
+    answers = queue.queue_answers(store, lib.rid)
+    assert answers[(published, lib.selection_version(published))] == "include"
+    assert answers[(preprint, lib.selection_version(preprint))] == "include"
+    lib.list_edit(preprint, "excluded")  # the old head's selection is the person's own again
+    assert (preprint, lib.selection_version(preprint)) not in queue.queue_answers(store, lib.rid)

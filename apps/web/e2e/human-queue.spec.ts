@@ -206,6 +206,56 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await expect(option(page, TITLES.find_part)).toHaveCount(1)
   })
 
+  test('a detail that keeps disagreeing with the list is read again a bounded number of times and can be read again by hand', async () => {
+    await page.reload()
+    const row = await rowOf(api, rid, 'find_part')
+    let reads = 0
+    await page.route(`**/queue/${row.source_version_id}`, async route => {
+      reads++
+      const response = await route.fetch()
+      const body = await response.json()
+      await route.fulfill({ response, json: { ...body, row: { ...body.row, row_token: 'SYNTHETIC-moved' } } })
+    })
+    await option(page, TITLES.find_part).click()
+    await expect(detail(page)).toContainText('This row kept changing while it was read, so it cannot be answered yet.')
+    await expect(detail(page).getByRole('button', { name: 'Not sure' })).toBeDisabled()
+    const settled = reads
+    await page.waitForTimeout(1000)
+    expect(reads).toBe(settled)
+    expect(reads).toBeLessThanOrEqual(3)
+    await page.unroute(`**/queue/${row.source_version_id}`)
+    await detail(page).getByRole('button', { name: 'Read it again' }).click()
+    await expect(detail(page).getByRole('button', { name: 'Not sure' })).toBeEnabled()
+  })
+
+  test('a list read that finishes after a newer one is not shown', async () => {
+    let first = true
+    let held = 0
+    await page.route('**/queue', async route => {
+      if (!first) return route.continue()
+      first = false
+      const response = await route.fetch()
+      const body = await response.json()
+      await new Promise(resolve => setTimeout(resolve, 4000))
+      held = Date.now()
+      await route.fulfill({ response, json: { ...body, rows: [] } })
+    })
+    await page.goto('about:blank')
+    await page.goto(`${server.url()}/#/research/${rid}/queue`)
+    await expect(page.getByRole('tab', { name: /Awaiting your decision/ })).toBeVisible()
+    await page.waitForTimeout(500)  // the event stream is open
+    // While the first read is held, another tab's answer and undo are two events, and each reads the list again.
+    const row = await rowOf(api, rid, 'find_part')
+    const answered = await (await post(api, `/api/researches/${rid}/queue/${row.source_version_id}/decision`, { decision: 'not_sure', note: null, row_token: row.row_token })).json()
+    expect((await post(api, `/api/researches/${rid}/queue/${row.source_version_id}/undo`, { row_token: answered.undo_token })).ok()).toBe(true)
+    await expect(list(page).getByRole('option')).toHaveCount(4)
+    expect(held).toBe(0)  // the newer reads were shown before the first one finished
+    await expect.poll(() => held, { timeout: 10_000 }).toBeGreaterThan(0)
+    await page.waitForTimeout(300)
+    await expect(list(page).getByRole('option')).toHaveCount(4)  // its empty answer came last and was not shown
+    await page.unroute('**/queue')
+  })
+
   test('Include takes the row out, the notification takes it back, and the source list shows the choice as the user’s', async () => {
     await page.reload()
     await option(page, TITLES.choose_run).click()

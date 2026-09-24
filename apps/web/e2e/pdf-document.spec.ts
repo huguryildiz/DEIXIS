@@ -110,3 +110,18 @@ test('a queue quote is marked only when the mark is exactly the quote: never in 
   expect(exact('rate $r = a')).toBe(false)                       // part of a formula would widen to all of it
   expect(exact('elays forward')).toBe(false)                     // part of a word would widen to the word
 })
+
+test('a queue quote across a hyphenated line end or two blocks is marked, and one that cuts a figure link is not', () => {
+  const doc = buildDocument(pages(
+    ['SYNTHETIC relays forward packets.\n\nIncreasing transmission power will re-\nduce the error rate on some links,', 'however, it raises interference on others, as Fig. 2 shows.'],
+  ), [], null)
+  const exact = (text: string) => {
+    const marks = locateAnchors(doc, 1, [text])
+    expect(marks.located).toBe(1)
+    return marksExactly(doc, marks, [text])
+  }
+  expect(exact('Increasing transmission power will reduce the error rate')).toBe(true)
+  expect(exact('on some links, however, it raises')).toBe(true)
+  expect(exact('as Fig. 2 shows')).toBe(true)   // the whole link inside the mark
+  expect(exact('on others, as Fig')).toBe(false) // the link would be marked whole, wider than the quote
+})

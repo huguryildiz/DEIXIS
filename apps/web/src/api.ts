@@ -304,7 +304,9 @@ export type QueueCounts = {
 // A work the person decided and can still take back (slice 17): its fresh human decision or its PDF confirmation.
 export type QueueDecided = {
   work_id: string; source_version_id: string; head: string; title: string; version_label: string | null
-  reason_code: string; answer: QueueAnswer; note: string | null; created_at: string; undo_token: string
+  reason_code: string; answer: QueueAnswer; note: string | null; created_at: string
+  // No token when the undo would be refused: a PDF confirmation whose reading has begun.
+  undo_token: string | null; undo_blocked: 'reading_started' | null
 }
 export type QueueView = { rows: QueueRow[]; counts: QueueCounts; order: 'fused_rank'; decided: QueueDecided[] }
 export type QueuePart = {

@@ -246,6 +246,18 @@ button.chat-step-title svg{color:var(--muted)}
 .chat-provider-totals span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .chat-provider-totals .connection-icon{display:inline-flex}
 .chat-provider-totals .connection-icon svg{width:13px;height:13px}
+/* Slice 19: an sw run's arm rows, the works no search found and the signal table; lines wrap at any width. */
+.chat-arms+.chat-arms,.chat-report-line+.chat-arms,.chat-arms+.chat-report-line{margin-top:8px}
+.chat-arm-head{margin:8px 0 2px!important;color:color-mix(in srgb,var(--ink),var(--muted) 24%);font-weight:550}
+.chat-arms>.chat-arm-head:first-child,.chat-arms>div:first-child>.chat-arm-head{margin-top:0!important}
+.chat-arm-list{margin:0 0 4px;padding:0;list-style:none}
+.chat-arm-list li{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 12px}
+.chat-arm-list li>span{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.chat-arm-source{color:color-mix(in srgb,var(--ink),var(--muted) 24%)}
+.chat-arm-list .connection-icon{display:inline-flex}
+.chat-arm-list .connection-icon svg{width:13px;height:13px}
+.chat-arm-note{margin:4px 0 2px!important}
+.chat-probe-list{margin:2px 0 6px}
 .chat-step-note .chat-phase-summary{color:color-mix(in srgb,var(--ink),var(--muted) 24%);font-size:13.5px;line-height:1.72}
 .chat-scope-note{margin-top:10px!important;padding:10px 12px;border:1px solid color-mix(in srgb,var(--tone-uncertain),transparent 77%);border-radius:9px;background:color-mix(in srgb,var(--tone-uncertain),transparent 94%);color:color-mix(in srgb,var(--ink),var(--muted) 22%)}
 .chat-scope-note>span{display:block;margin-bottom:3px;color:var(--tone-uncertain);font-size:11px;font-weight:700}

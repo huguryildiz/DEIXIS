@@ -88,6 +88,10 @@ def same_publication(a: dict[str, Any], b: dict[str, Any], basis: str) -> bool:
     return len(set(first) & set(second)) * 2 >= min(len(set(first)), len(set(second)))
 
 
+# The history reason a new head writes when it takes over another version's selection. It is reserved: a person's own
+# reason may not be this text (the API refuses it), so the probe set can tell the copy from a real edit (slice 19).
+COPIED_SELECTION_REASON = "taken from another version of the same work"
+
 class NotFound(Exception):
     pass
 
@@ -1762,7 +1766,7 @@ class Store:
         )
         self.conn.execute(
             "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (research_id, head, current["state"], source["state"], source["origin"], "taken from another version of the same work", now()),
+            (research_id, head, current["state"], source["state"], source["origin"], COPIED_SELECTION_REASON, now()),
         )
         self._bump_selection_revision(research_id, current["state"], source["state"])
         # A selection a queue decision wrote follows the work to its new head, and so does the decision's link, so

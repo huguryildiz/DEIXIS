@@ -67,6 +67,9 @@ export type Run = {
   // Per round, what each source brought in this discovery run and how much of it no other source did (D93).
   // counted false: the run was searched before these were kept, which is not the same as zero.
   source_counts?: SourceCounts | null
+  // Where the person's confirmed works stood in this discovery run's keyword ranking, descriptively (slice 19); null
+  // for a legacy research, another run kind, or a run that ranked nothing.
+  signals?: SignalTable | null
 }
 export type SourceCounts = {
   counted: boolean
@@ -74,6 +77,47 @@ export type SourceCounts = {
   // What citation chaining brought in this run, and how much of it no keyword search did (D95); absent when it
   // sent nothing.
   chain?: { works: number; only: number }
+  // Beside D93's rows, row for row (slice 19); null in a legacy research, absent when the counts were not kept.
+  arms?: SourceArms | null
+}
+// Counted in D93's "only" universe: a source row against the other sources' searches, the chain against every search.
+// `included`: two agreeing model runs included the work (never called verified); `verified`: the person confirmed it.
+export type ArmCount = { rows: number; included: number; included_only: number; verified: number; verified_only: number }
+export type ArmKind = 'keyword' | 'expansion' | 'chain'
+export type SourceArms = {
+  rounds: { round: number; sources: (ArmCount & { provider_id: string
+    // The first round's works by the query that found them (D92), when a source was queried by both origins.
+    by_origin?: { origin: string; works: number; included: number }[] })[] }[]
+  chain?: ArmCount
+  // The arm kinds in run order; `new_*` is what no earlier kind of this run found. Counts only: no stopping rule.
+  kinds: ({ kind: ArmKind; ran: false } | { kind: ArmKind; ran: true; works: number; new_works: number; included: number
+    new_included: number; verified: number; new_verified: number })[]
+  // false while no work of this question revision has a full-text reading: included counts come with it.
+  read: boolean
+}
+export type SignalCapture = { signal: string; top_100: number; top_200: number; tied_100: number; tied_200: number }
+export type SignalTable = {
+  step_id: string; pool: number | null
+  signals: { signal: string; ran: boolean; reason: string | null; available: number | null }[]
+  seeds: { verified: number; code: number }; no_reference_list_share: number | null
+  // The person's confirmed works present in this ranking step; below the display minimum the table says too few.
+  person: { denominator: number; status: 'too_few' | 'descriptive'; rows: SignalCapture[] }
+  // Works two agreeing runs included: read because the order put them near the top, so not a signal's success.
+  agreement: { denominator: number; rows: SignalCapture[]; note: 'read_because_ranked' }
+  embedding: { moved_up: number; moved_up_then_included: number; moved_up_then_verified: number
+    moved_up_already_decided: number; moved_up_time_unknown: number } | null
+}
+// The probe set of an sw research (slice 19): derived on read from the person's own decisions.
+export type Probes = {
+  verified: number
+  // out_of_scope null: no answer records it, which is not zero.
+  negatives: { criterion_not_met: number; not_recorded: number; out_of_scope: null }
+  look_again: number; included_by_agreement: number; brought: number; judge_min: number
+  // false while no work of this question revision has a full-text reading.
+  read: boolean
+  not_found: { status: 'counted' | 'partial' | 'not_counted' | 'no_search'
+    works: { work_id: string; source_version_id: string; title: string; doi: string | null; source_key: string | null
+      reasons: ('verified' | 'brought')[]; found: 'no' | 'unknown' }[] }
 }
 
 // ---- the protocol approval of an sw discovery run (D80) --------------------------------------------
@@ -372,6 +416,8 @@ export type QueueAnswerResult = {
 export type ResearchView = {
   research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string }
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
+  // null for a legacy research (slice 19).
+  probes?: Probes | null
   // The reviewer the next answer gets: the research's own setting, else the app-wide default. model null: no review.
   reviewer: { mode: ReviewMode; connection: string | null; model: string | null; reasoning_effort: string | null }
 }

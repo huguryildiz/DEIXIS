@@ -19,7 +19,7 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, 
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from keyring.errors import KeyringError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from deixis import credentials, local_tools
 from deixis.config import Settings, load_settings
@@ -55,7 +55,8 @@ from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.equations import EquationService, equation_state, equations_to_check
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.report.store import ReportStore
-from deixis.workflow.store import NotASource, NotFound, PdfInUse, RunInProgress, SameFile, SeedUnavailable, Store
+from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
+                                   SeedUnavailable, Store)
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, report_view, research_view
 from deixis.workflow.worker import Worker
@@ -140,6 +141,14 @@ class SelectionChange(BaseModel):
     state: Literal["included", "excluded", "pending"]
     expected_version: int
     reason: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def _not_the_copy_marker(cls, value: str | None) -> str | None:
+        # The copy a new head writes is told apart from a person's edit by this reason alone (slice 19): it is reserved.
+        if value == COPIED_SELECTION_REASON:
+            raise ValueError("this reason is reserved for a selection copied to a new head")
+        return value
 
 
 class QueueDecision(BaseModel):

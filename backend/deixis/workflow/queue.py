@@ -95,7 +95,8 @@ class _Context:
         self.revision = self.facts["stale_key"][0]
         conn = store.conn
         self.selections = {row["source_version_id"]: dict(row) for row in conn.execute(
-            "SELECT source_version_id, state, origin, version FROM selections WHERE research_id = ?", (research_id,))}
+            "SELECT source_version_id, state, origin, version, updated_at FROM selections WHERE research_id = ?",
+            (research_id,))}
         # The current link of every decision still open: its newest row (D71, added never edited).
         self.links: dict[str, dict[str, Any]] = {}
         for row in conn.execute(
@@ -123,6 +124,13 @@ class _Context:
         self._place: dict[str, int] | None = None
         self._runs: dict[str, str] | None = None
         self._proposals: dict[tuple[str, str], dict[str, dict[int, dict[str, Any]]]] | None = None
+        self._outcomes: dict[str, dict[str, Any]] = {}
+
+    def outcome(self, work_id: str) -> dict[str, Any]:
+        """`work_outcome` of one work, derived once per context: the queue and the probe set read the same result."""
+        if work_id not in self._outcomes:
+            self._outcomes[work_id] = self.decisions.work_outcome(self.rid, work_id, self.facts)
+        return self._outcomes[work_id]
 
     # The fused order (SW11.7, D95): keyword works by the latest keyword ranking, chained works after them by the
     # latest chain ranking. A work neither ranking placed has no place and goes last, by its head.
@@ -207,7 +215,7 @@ def _kind(reason_code: str, proposals: dict[str, dict[int, dict[str, Any]]]) -> 
 
 def _classify(ctx: _Context, work_id: str) -> dict[str, Any] | None:
     """Where the work stands for the queue: an open row, a `look_again` row, a fresh human decision, or nothing."""
-    outcome = ctx.decisions.work_outcome(ctx.rid, work_id, ctx.facts)
+    outcome = ctx.outcome(work_id)
     if not outcome or outcome["stage"] != "fulltext":
         return None
     fulltext = [d for d in ctx.facts["decisions"].get(work_id, []) if d["stage"] == "fulltext"]
@@ -325,10 +333,16 @@ def queue_rows(store: Store, research_id: str) -> dict[str, Any]:
     return {"rows": rows, "counts": counts, "order": "fused_rank", "decided": decided}
 
 
-def queue_counts(store: Store, research_id: str) -> dict[str, int]:
+def context(store: Store, research_id: str) -> _Context:
+    """One read of what the queue derives from, for a caller that derives more from the same state (slice 19): the
+    research view builds it once and hands it to `queue_counts` and to the probe set."""
+    return _Context(store, research_id)
+
+
+def queue_counts(store: Store, research_id: str, ctx: _Context | None = None) -> dict[str, int]:
     """The two numbers the research view shows, from one read of the facts and no row built."""
     with _snapshot(store.conn):
-        _, counts, _ = _scan(_Context(store, research_id))
+        _, counts, _ = _scan(ctx if ctx is not None else _Context(store, research_id))
     return {"queue": counts["open"], "look_again": counts["look_again"]}
 
 

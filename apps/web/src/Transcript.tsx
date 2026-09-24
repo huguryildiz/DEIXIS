@@ -5,6 +5,7 @@ import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { connectionName, fetchReasonText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { ProtocolApproval } from './ProtocolApproval'
+import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
 import { ModelName } from './ModelName'
 import type { ModelText } from './modelText'
 import { t, uiLocale } from './i18n'
@@ -308,15 +309,21 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         // Per round, the works each source brought after the DOI and work merge, and how many no other source did
         // (D93). A run searched before these were kept says so instead of showing zeros.
         const counts = run.source_counts
-        const perSource = counts && (counts.counted
+        // An sw research's rows also carry what each arm found that was later included or confirmed (slice 19).
+        const arms = counts?.counted && counts.arms ? <ArmReport counts={counts} probes={view.probes}
+          modelTerms={Boolean(run.approval?.approved?.terms.some(term => term.origin === 'model'))} /> : null
+        // The person's works no search of this question revision found, under its latest discovery run.
+        const notFound = view.probes && view.runs.find(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision)?.id === run.id
+          ? <NotFoundReport probes={view.probes} /> : null
+        const perSource = !arms && counts && (counts.counted
           ? counts.rounds.map(round => <p key={round.round} className="chat-provider-totals">
             <span>{t('Round {n}', { n: round.round })}</span>
             {round.sources.map(source => <span key={source.provider_id}>
-              <ConnectionIcon id={source.provider_id} />{providerName(source.provider_id)} {t('{works} works, {only} only here', { works: source.works, only: source.only })}
+              <ConnectionIcon id={source.provider_id} />{providerName(source.provider_id)} {t('{works} works, {only} no other source’s search found', { works: source.works, only: source.only })}
             </span>)}</p>)
           : <p className="chat-report-line"><span>{t('Works per source were not counted for this run')}</span></p>)
         // What the citation chain brought, counted the same way, beside the searches rather than as a round of them.
-        const chained = counts?.counted && counts.chain ? <p className="chat-provider-totals">
+        const chained = !arms && counts?.counted && counts.chain ? <p className="chat-provider-totals">
           <span>{t('Citation chaining')}</span>
           <span><ConnectionIcon id="openalex" />{t('{works} works, {only} not found by any search', { works: counts.chain.works, only: counts.chain.only })}</span>
         </p> : null
@@ -324,8 +331,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         const totals = perProvider.size < 2 ? null : <p className="chat-provider-totals">{[...perProvider].map(([id, { taken, total }]) => <span key={id}>
           <ConnectionIcon id={id} />{providerName(id)} {total !== null && total > taken ? t('{count} of {total}', { count: taken, total: compact(total) }) : taken}
         </span>)}</p>
-        if (!totals && !perSource && !chained) return null
-        return <>{totals}{perSource}{chained}</>
+        if (!totals && !perSource && !chained && !arms && !notFound) return null
+        return <>{totals}{perSource}{chained}{arms}{notFound}</>
       }
       case 'plan': {
         if (!plan) return null
@@ -354,6 +361,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
             {timed(similarity)}
           </p>}
           {lines.length > 0 && <p className="chat-report-line"><span>{lines.join(' · ')}</span></p>}
+          {run.signals && <SignalReport table={run.signals} probes={view.probes} />}
           {chain && <ChainReport steps={steps} view={view} />}
           {run.screening_notes.map(note => <p key={note.step_id} className="chat-report-line"><span>{note.text}</span>{timed(steps.find(s => s.id === note.step_id))}</p>)}
         </>

@@ -305,3 +305,19 @@ export const queueAnsweredText: Record<QueueAnswer, string> = {
   include: 'you included it', criterion_not_met: 'you said it does not meet the criterion', not_sure: 'you were not sure',
   pdf_wrong: 'you marked the PDF as wrong', pdf_confirmed: 'you confirmed the PDF; it waits for a reading run',
 }
+
+// Slice 19: the arm kinds of an sw discovery run, in run order, and the origin of a first-round query (D92).
+export const armKindLabels: Record<string, string> = { keyword: 'Keywords', expansion: 'Term expansion', chain: 'Citation chaining' }
+export const queryOriginLabels: Record<string, string> = { model: 'the model’s query', code: 'the code’s query' }
+// The ranking signals (D79) and the two stored orders the signal table reads beside them.
+export const signalLabels: Record<string, string> = {
+  bm25: 'BM25', blocks: 'Concept blocks', tfidf: 'TF-IDF', graph: 'Citation graph', embedding: 'Embedding',
+  fused: 'Fused order', inspection: 'Screening order',
+}
+const signalReasons: Record<string, string> = {
+  no_verified_seeds: 'no work you confirmed to compare with',
+  no_seed_with_references: 'no seed with a reference list',
+  embedding_off: 'semantic search is off',
+  no_stored_similarity: 'no similarity was stored',
+}
+export const signalReasonText = (reason: string | null) => t(reason ? signalReasons[reason] ?? reason : 'no reason recorded')

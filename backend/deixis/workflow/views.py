@@ -9,11 +9,12 @@ from typing import Any
 from deixis.documents import embeddings, pdf
 from deixis.domain.rules import SUGGESTION_CALLS, effective_reviewer, result_applicability
 from deixis.workflow import approval as approval_rules
+from deixis.workflow import probes as probe_rules
 from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy
 from deixis.workflow import suggestions as suggestions_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state, equations_to_check
-from deixis.workflow.queue import queue_answers, queue_counts
+from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.waiting import waiting_count
 from deixis.providers.registry import search_providers
@@ -161,7 +162,7 @@ def _card_routing(side: dict[str, Any], proposal: dict[str, Any]) -> dict[str, A
     return routing | {"queried": [p for p in routing["providers"] if p in queried]}
 
 
-def source_counts(store: Store, run_id: str) -> dict[str, Any] | None:
+def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Per round, what each source brought in this run: how many works, and how many no other source brought (D93).
 
     Works are counted after the DOI and work merge, through the candidate each record became, and a source's work is
@@ -169,6 +170,10 @@ def source_counts(store: Store, run_id: str) -> dict[str, Any] | None:
     `candidate_hits`, which keeps every search that found a candidate; a run searched before that table existed has
     none, and it says its counts were not kept (`counted` false) instead of reading as zero. None for a run that
     searched nothing.
+
+    With an `sw` research's probe set (slice 19), a counted run also gets `arms`: for each of these rows the records
+    it returned and the included and confirmed works it found, in the same "only" universe, the first round's split
+    of a source by query origin, and the arm-kind line. Without one the result is exactly D93's.
     """
     conn = store.conn
     searches = [dict(r) for r in conn.execute(
@@ -208,6 +213,9 @@ def source_counts(store: Store, run_id: str) -> dict[str, Any] | None:
         for number, providers in sorted(by_round.items())]}
     if any(search["operation_key"].startswith(CHAIN_PREFIX) for search in searches):
         counts["chain"] = {"works": len(chained), "only": len(chained - set().union(*everywhere.values()))}
+    if probe is not None:
+        # Beside D93's rows, not inside them: their fields and meaning stay exactly as D93 wrote them.
+        counts["arms"] = probe_rules.arm_counts(store, run_id, searches, works, first, card, probe)
     return counts
 
 
@@ -269,9 +277,20 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
 
 
 def research_view(store: Store, research_id: str) -> dict[str, Any]:
+    """The research as the screen reads it, from one read snapshot (slice 19, decision 10): an `sw` research derives
+    its decision facts once, and the queue counts, the probe set, the arm counts and the signal table share them."""
+    with snapshot(store.conn):
+        return _research_view(store, research_id)
+
+
+def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     conn = store.conn
     research = store.research(research_id)
     scope = store.scope(research_id)
+    sw = scope.get("search_workflow") == "sw"
+    # One queue context: the facts and every work's outcome, read once for all four (slice 19). Legacy has none.
+    ctx = queue_context(store, research_id) if sw else None
+    probe = probe_rules.probe_set(ctx) if ctx is not None else None
     seed = scope["seed_snapshot"]
     scope_view = {key: value for key, value in scope.items() if key != "seed_snapshot"}
     scope_view["seed"] = ({key: seed[key] for key in ("source_version_id", "asset_id", "asset_sha256",
@@ -298,7 +317,11 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         # What this run asked the user to approve before it froze its protocol; None for a legacy run (slice 08a).
         run["approval"] = approval_view(store, run["id"])
         # What each source brought in each round of this run, and how much of it no other source did (D93).
-        run["source_counts"] = source_counts(store, run["id"]) if run["kind"] == "discovery" else None
+        run["source_counts"] = source_counts(store, run["id"], probe) if run["kind"] == "discovery" else None
+        if run["source_counts"] and run["source_counts"]["counted"] and probe is None:
+            run["source_counts"]["arms"] = None  # a legacy research has no probe set
+        # Where the person's confirmed works stood in this run's keyword ranking, descriptively (slice 19).
+        run["signals"] = probe_rules.signal_table(store, run["id"], probe) if probe and run["kind"] == "discovery" else None
         run["screening_notes"] = [
             {"step_id": r["id"], "text": note} for r in store.conn.execute(
                 "SELECT id, output_json FROM run_steps WHERE run_id = ? AND kind = 'model:screening' AND status = 'succeeded'"
@@ -533,9 +556,9 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
             " WHERE m.research_id = ? AND m.removed_at IS NOT NULL", (research_id,)).fetchone())),
     }
-    if scope.get("search_workflow") == "sw":
+    if sw:
         # The human queue's open rows and the decisions to look at again (slice 16); a legacy view is unchanged.
-        counts |= queue_counts(store, research_id)
+        counts |= queue_counts(store, research_id, ctx)
         # The works waiting for the person's PDF (slice 18a).
         counts["waiting_for_pdf"] = waiting_count(store, research_id)
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
@@ -546,6 +569,8 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     )]
     return {"research": research, "scope": scope_view, "runs": runs, "search_runs": search_runs, "sources": sources,
             "answers": answers, "reportRuns": report_runs, "counts": counts, "last_event_id": last_event,
+            # The probe set's columns and the probes no arm found (slice 19); null for a legacy research.
+            "probes": probe_rules.probes_view(store, research_id, probe) if probe is not None else None,
             # The reviewer the next answer would get: the research's own setting, else the app-wide default.
             "reviewer": {"mode": scope["review_mode"], "connection": reviewer[0] if reviewer else None, "model": reviewer[1] if reviewer else None,
                          "reasoning_effort": reviewer[2] if reviewer else None}}

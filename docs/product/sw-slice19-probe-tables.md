@@ -1,6 +1,6 @@
 # SW dilim 19 — Prob seti, kol tablosu ve sinyal tablosu (durma kuralı açık gereksinim)
 
-**Tarih:** 25 Eylül 2026. **Durum:** dosya hazır. **Sahip A–E'yi 25 Eylül 2026'da önerildiği gibi kabul etti** (aşağıdaki
+**Tarih:** 25 Eylül 2026. **Durum:** uygulandı (D101, 25 Eylül 2026). **Sahip A–E'yi 25 Eylül 2026'da önerildiği gibi kabul etti** (aşağıdaki
 geçici yanıtlar artık sahibin kararıdır; D kaydına uygulamanın kapanışında yazılır). **Prompt:**
 [sw-slice19-prompt.md](sw-slice19-prompt.md). **Ana dosya:** [sw-status.md](sw-status.md). **Karar:** yeni D
 numarası (dilim yazar; en yüksek D100). **Önkoşul:** 15 (D95) ve 16 (D96), ikisi de kapandı. **Tür:** Kur.

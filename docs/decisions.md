@@ -40,16 +40,23 @@ recomputed inside the write transaction and a mismatch answers 409. Decision, se
 (`stage_decision_recorded`, `stage_decision_undone`, `pdf_identity_confirmed`, `pdf_identity_revoked`) are one
 transaction. A decided work is not sent to a model again: the abstract read plan (keyword and chain) skips a work with
 a person's full-text decision, an abstract batch drops records of works a person decided right before it is sent, and a
-reading run checks before each call once the limiter lets it through and again before it applies a result, which then
-writes neither proposal nor decision; the reading summary gains `human_decided` only when it is not zero.
+reading run checks once the limiter lets a call through and again after the connection check, right before the
+StepInput is stored (a call left with nothing to send is not made or charged, and its step closes as `human_decided`);
+a batch or work closes only on what both of its runs were sent, and a result that arrives after a decision writes
+neither proposal nor decision; the reading summary gains `human_decided` only when it is not zero.
 `queue.verified_records` lists `human_include` and `human_criterion_not_met` for slice 19 and changes no rule. Four
 `sw`-only endpoints (`GET …/queue`, `GET …/queue/{svid}`, `POST …/decision`, `POST …/undo`; legacy and a never-member
 record 422), and `research_view.counts` gains `queue` and `look_again` for an `sw` research. No model contract change.
 
 **Limits:** The replay of the 11 slice 15 libraries reproduced the planned row counts exactly
-(`.local/sw-slice16-acceptance-2026-09-24/`). One live quantum `quick` run (Luna medium) passed K8 (22 / 10 / 5
-against 22 / 11 / 7) with 17 rows equal to an independent count; the decision round wrote the selections and history
-as specified, and the next reading run made 0 calls for decided works and 2 for the confirmed PDF. Minutes per row,
+(`.local/sw-slice16-acceptance-2026-09-24/`). Two live quantum `quick` runs (Luna medium) passed K8 against slice 15's
+22 / 11 / 7: 22 / 10 / 5 (approval by pause) and 26 / 11 / 8 with `DEIXIS_PROTOCOL_APPROVAL=as_proposed`, the frozen
+setting; their queues (17 and 18 rows) equal an independent count. In both, the decision round wrote the selections and
+history as specified, and the next reading run made 0 calls for decided works and 2 for the confirmed PDF. With no
+human decision, three SYNTHETIC flows write the same tables and send the same model calls as before the slice (`a134c86`,
+fixed id generator). Calls freed by a decision are not given to a later batch the budget had already left unread; that
+batch waits for the next run. A crash between a batch's second run and its close forgets which records a run was not
+sent; a record whose decision was undone in that window can then be closed from one run. Minutes per row,
 whether cue sentences and closest passages help a person, and the packet question's decision round were not measured.
 The three fixes that would shrink the queue (topic part in the criterion, quote verification's line numbers, the
 identity check) and SW6.6 are separate items. No screen yet.

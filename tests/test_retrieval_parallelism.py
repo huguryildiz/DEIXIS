@@ -183,7 +183,7 @@ def _retrieve(tmp_path, monkeypatch, parallel):
     # in both researches and the two retrieval plans are the same list in the same order.
     monkeypatch.setattr(db, "secrets", random.Random(13))
     fetcher = SlowFetcher(ANSWERS)
-    app = app_for(tmp_path, monkeypatch, _transport(), fetcher)
+    app = app_for(tmp_path, monkeypatch, _transport(), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -251,7 +251,7 @@ def test_no_host_is_asked_twice_at_once_and_no_more_than_the_bound_are_in_flight
             "https://h2.example.org/a.pdf", "https://h2.example.org/b.pdf", "https://h3.example.org/a.pdf",
             "https://h4.example.org/moved.pdf", "https://h5.example.org/a.pdf", "https://h6.example.org/a.pdf"]
     monkeypatch.setattr(fulltext, "FULLTEXT_WORK_LIMIT", dict(fulltext.FULLTEXT_WORK_LIMIT, quick=len(urls)))
-    app = app_for(tmp_path, monkeypatch, Transport([work(n + 1, pdf_url=url) for n, url in enumerate(urls)]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([work(n + 1, pdf_url=url) for n, url in enumerate(urls)]), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -277,7 +277,7 @@ def test_a_pause_lets_the_works_in_flight_finish_and_the_resumed_run_ends_like_a
 
     def run_once(path, pause_at):
         fetcher = SlowFetcher(answers)
-        app = app_for(path, monkeypatch, Transport([work(n, pdf_url=url) for n, url in enumerate(urls, 1)]), fetcher)
+        app = app_for(path, monkeypatch, Transport([work(n, pdf_url=url) for n, url in enumerate(urls, 1)]), fetcher, overlap=False)
 
         def hook(fetcher, url):
             if pause_at and len(fetcher.calls) == pause_at:

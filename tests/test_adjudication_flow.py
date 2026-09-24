@@ -26,7 +26,7 @@ SETTLED = ("completed", "failed", "paused", "cancelled")
 
 
 def app_for(tmp_path, monkeypatch, transport, fetcher, *, workflow="sw", fetch="auto", reading="auto",
-            adapter=None, concurrency=1, overlap=False):
+            adapter=None, concurrency=1, overlap=True):
     if not overlap:
         # A discovery run queued before slice 17a: its fetch follows as a retrieval run of its own (decision 3).
         monkeypatch.setattr(fulltext, "overlap_budget", fulltext.fetch_budget)
@@ -75,6 +75,14 @@ def wait_kind(client, rid, kind, index=0):
             return wait(client, rid, found[index]["id"])
         time.sleep(0.05)
     raise AssertionError(f"no {kind} run settled")
+
+
+def wait_fetch(client, rid):
+    """The settled run that holds the fetch: since slice 17a the discovery run itself, before it a retrieval run."""
+    discovery = min(runs_of(client, rid, "discovery"), key=lambda r: r["created_at"])
+    if (discovery["budget"].get("fulltext_fetch") or {}).get("mode") == "overlap":
+        return wait(client, rid, discovery["id"])
+    return wait_kind(client, rid, "fulltext_fetch")
 
 
 def step_output(store, run_id, key):
@@ -160,7 +168,7 @@ def test_a_completed_retrieval_run_is_followed_by_a_reading_run_that_includes_on
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        _, fetch = wait_kind(client, rid, "fulltext_fetch")
+        _, fetch = wait_fetch(client, rid)
         _, reading = wait_kind(client, rid, "fulltext_adjudication")
         store = app.state.store
         head = records_of(store, rid)["W1"]
@@ -190,7 +198,7 @@ def test_off_legacy_and_a_research_with_no_criterion_queue_no_reading_run(tmp_pa
     client = client_of(off)
     try:
         rid, _, _, run = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         none = runs_of(client, rid, "fulltext_adjudication")
     finally:
         client.__exit__(None, None, None)
@@ -273,7 +281,7 @@ def test_a_user_exclusion_is_not_read_and_a_user_inclusion_is_not_overwritten(tm
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         store = app.state.store
         head = records_of(store, rid)["W1"]
         patch_selection(client, rid, head, "excluded")
@@ -293,7 +301,7 @@ def test_a_user_exclusion_is_not_read_and_a_user_inclusion_is_not_overwritten(tm
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         store = app.state.store
         head = records_of(store, rid)["W1"]
         patch_selection(client, rid, head, "included")
@@ -314,7 +322,7 @@ def test_a_human_fulltext_decision_is_not_read(tmp_path, monkeypatch):
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         store = app.state.store
         head = records_of(store, rid)["W1"]
         DecisionStore(store).record(rid, head, "human_include")
@@ -335,7 +343,7 @@ def test_nothing_is_decided_while_the_model_is_off(tmp_path, monkeypatch):
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         store = app.state.store
         head = records_of(store, rid)["W1"]
         adapter.ready = False
@@ -363,7 +371,7 @@ def test_a_call_that_did_not_answer_is_not_decided_and_resume_makes_only_the_mis
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         store = app.state.store
         head = records_of(store, rid)["W1"]
         run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
@@ -394,7 +402,7 @@ def test_invalid_output_is_not_repeated_and_the_next_run_reads_the_work_with_two
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         store = app.state.store
         head = records_of(store, rid)["W1"]
         first = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
@@ -551,7 +559,7 @@ def test_a_repair_leaves_the_last_work_not_reached_and_no_work_is_half_sent(tmp_
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
         _, short = wait(client, rid, run_id)
         opened = app.state.store.conn.execute(
@@ -577,7 +585,7 @@ def test_at_most_the_limiter_limit_calls_are_in_flight(tmp_path, monkeypatch):
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
         _, reading = wait(client, rid, run_id)
     finally:
@@ -604,7 +612,7 @@ def test_a_scope_revision_cancels_the_run_and_an_in_flight_response_writes_no_de
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         store = holder["store"] = app.state.store
         head = records_of(store, rid)["W1"]
         run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
@@ -626,7 +634,7 @@ def test_an_unconfirmed_pdf_is_decided_without_a_call_and_a_user_upload_is_read(
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         store = app.state.store
         head = records_of(store, rid)["W1"]
         run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
@@ -645,7 +653,7 @@ def test_an_unconfirmed_pdf_is_decided_without_a_call_and_a_user_upload_is_read(
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         store = app.state.store
         head = records_of(store, rid)["W1"]
         store.conn.execute("UPDATE source_assets SET origin = 'user_upload' WHERE source_version_id = ?", (head,))
@@ -664,7 +672,7 @@ def test_a_version_that_is_not_a_member_of_this_research_is_not_read(tmp_path, m
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_fetch")
+        wait_fetch(client, rid)
         store = app.state.store
         head = records_of(store, rid)["W1"]
         work_id = store.source(head)["work_id"]
@@ -691,7 +699,7 @@ def test_discovery_fetch_and_answer_runs_do_not_open_a_reading_step(tmp_path, mo
     client = client_of(app)
     try:
         rid, discovery_id, _, _ = discover(client)
-        _, fetch = wait_kind(client, rid, "fulltext_fetch")
+        _, fetch = wait_fetch(client, rid)
         _, reading = wait_kind(client, rid, "fulltext_adjudication")
         store = app.state.store
         discovery_kinds = {row["kind"] for row in store.run_steps(discovery_id)}

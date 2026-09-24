@@ -4,7 +4,7 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 ## D98 — The full-text fetch of an sw research runs inside its discovery run, from the abstract code step on, for the works already certain to be in the plan
 
-**Status:** accepted; implemented 2026-09-24 (slice 17a); `gpt-6-sol` · high's review (4 findings) and its check of the fixes (no findings) the same day. **Date:** 2026-09-24.
+**Status:** accepted; implemented 2026-09-24 (slice 17a); `gpt-6-sol` · high's review (4 findings), its check of the fixes (no findings) and its last check (4 findings: the separate-path estimate, the test helpers' default, the acceptance wording, two stale doc lines) fixed the same day. **Date:** 2026-09-24.
 
 **Context:** D83 queued the retrieval run after the whole discovery run, a named deviation from SW10.1, because the
 worker runs one run at a time and a research holds one active run. A model-free replay of 13 stored libraries
@@ -37,13 +37,15 @@ No migration, no model contract change (`skill_package_hash` unchanged), no new 
 
 **Limits:** Two live quantum runs (`.local/sw-slice17a-acceptance-2026-09-24/`, `gpt-5.6-luna` · medium): every
 gate held (fetch started at the code step, 92 and 112 works all claimed before the model arm ended, no deviation, the
-plan recomputed equals the stored one, the reading opened once); the fetch ended 0.6 and 0.9 min after the last model
-batch, and the same works replayed four at a time from the end of discovery would have ended 2.3 and 3.3 min later.
+work list recomputed after the reading run equals the stored one, the reading opened once; equality at the moment the
+plan was written was not measured); the fetch ended 0.6 and 0.9 min after the last model batch, and the same works with
+their measured durations, four at a time in the final plan's order from the moment the model arm ended, would have
+ended 1.6 and 2.4 min later.
 That is an estimate from one run each, not a measured causal gain. End to end the runs took 7.9 and 14.0 min, but
 model-call counts and durations differ from slice 15's runs. Event-loop delays over 0.5 s occurred inside and outside
 the overlap window, the longest outside it; `host_gate` waits reached 57 s. Not measured: `detailed`, topics other
-than quantum, how often a person changes a work while discovery runs, and whether overlapping reading with the fetch
-(17b) is the larger gain.
+than quantum, how often a person changes a work while discovery runs, whether the event-loop delays come from the overlap, and whether
+overlapping reading with the fetch (17b) is the larger gain.
 
 ## D97 — The human queue screen: its own tab, a list and one row's detail, the PDF opened on the row's page by one action, only the backend's anchor marked
 

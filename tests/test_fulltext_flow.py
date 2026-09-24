@@ -103,7 +103,7 @@ TIMED_OUT = FetchResult("timeout", final_url=None, error="ReadTimeout")
 
 
 def app_for(tmp_path, monkeypatch, transport, fetcher, workflow="sw", setting="auto", adapter=None,
-            approval="as_proposed", overlap=False):
+            approval="as_proposed", overlap=True):
     if not overlap:
         # A discovery run queued before slice 17a: its fetch follows as a retrieval run of its own (decision 3).
         monkeypatch.setattr(fulltext, "overlap_budget", fulltext.fetch_budget)
@@ -191,7 +191,7 @@ def unpaywall(doi, url, version):
 
 def test_a_completed_sw_discovery_run_is_followed_by_one_retrieval_run(tmp_path, monkeypatch):
     fetcher = Fetcher({"https://example.org/w1.pdf": ok()})
-    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf"), work(2)]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf"), work(2)]), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, run_id, _, discovery = discover(client)
@@ -259,7 +259,7 @@ def test_a_paused_discovery_run_queues_nothing(tmp_path, monkeypatch):
 def test_no_selection_is_included_or_excluded_and_no_model_session_is_opened(tmp_path, monkeypatch):
     """SW1.2: the three codes a retrieval run writes are all `unresolved`, which is the `pending` already there."""
     fetcher = Fetcher({"https://example.org/w1.pdf": ok()})
-    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf"), work(2)]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf"), work(2)]), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -276,7 +276,7 @@ def test_no_selection_is_included_or_excluded_and_no_model_session_is_opened(tmp
 
 def test_the_open_link_of_the_record_itself_is_the_first_route_and_the_version_read_is_stored(tmp_path, monkeypatch):
     fetcher = Fetcher({"https://example.org/w1.pdf": ok()})
-    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -296,7 +296,7 @@ def test_a_closed_published_record_is_read_through_the_open_preprint_of_the_same
     """D48: the published record's own link is closed, so the work is read through its submitted version."""
     record = work(1, pdf_url="https://example.org/w1-preprint.pdf", pdf_version="submittedVersion")
     fetcher = Fetcher({"https://example.org/w1-preprint.pdf": ok()})
-    app = app_for(tmp_path, monkeypatch, Transport([record]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([record]), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -315,7 +315,7 @@ def test_a_closed_published_record_is_read_through_the_open_preprint_of_the_same
 
 def test_a_work_every_route_answered_for_is_left_unresolved_as_no_fulltext(tmp_path, monkeypatch):
     fetcher = Fetcher({"https://example.org/w1.pdf": REFUSED})
-    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -332,7 +332,7 @@ def test_a_work_every_route_answered_for_is_left_unresolved_as_no_fulltext(tmp_p
 def test_a_work_whose_route_did_not_answer_is_decided_by_nothing_and_is_tried_by_the_next_run(tmp_path, monkeypatch):
     """A timeout is not a refusal (D35): the work stays undecided and the next retrieval run plans it again."""
     fetcher = Fetcher({"https://example.org/w1.pdf": TIMED_OUT})
-    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -357,7 +357,7 @@ def test_a_work_whose_route_did_not_answer_is_decided_by_nothing_and_is_tried_by
 def test_a_link_that_refused_is_not_requested_again_by_a_later_run(tmp_path, monkeypatch):
     """D35, and "the next run continues where the first stopped": a fresh `no_fulltext` is not tried twice."""
     fetcher = Fetcher({"https://example.org/w1.pdf": REFUSED})
-    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -377,7 +377,7 @@ def test_a_file_that_names_the_work_is_recorded_as_confirmed_and_one_that_does_n
     fetcher = Fetcher({"https://example.org/w1.pdf": ok(named_pdf("10.1/oa.1")),
                        "https://example.org/w2.pdf": ok()})
     works = [work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in (1, 2)]
-    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -401,7 +401,7 @@ def test_a_verified_copy_of_another_version_opens_its_own_row_under_the_work(tmp
     copy = "https://example.org/w1-submitted.pdf"
     transport = Transport([work(1)], unpaywall("10.1/oa.1", copy, "submittedVersion"))
     fetcher = Fetcher({copy: ok()})
-    app = app_for(tmp_path, monkeypatch, transport, fetcher)
+    app = app_for(tmp_path, monkeypatch, transport, fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -435,7 +435,7 @@ def test_an_uncertain_or_mismatched_copy_is_never_attached_by_code(tmp_path, mon
     doi = "10.1/oa.1" if identity_status == "doi_verified" else "10.1/other"
     payload = {"10.1/oa.1": {"doi": doi, "oa_locations": [{"url_for_pdf": copy, "version": version}]}}
     fetcher = Fetcher({copy: ok()})
-    app = app_for(tmp_path, monkeypatch, Transport([work(1)], payload), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([work(1)], payload), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -481,7 +481,7 @@ def test_the_limit_stops_the_run_and_the_next_one_takes_the_works_it_did_not_rea
     monkeypatch.setattr(fulltext, "FULLTEXT_WORK_LIMIT", dict(fulltext.FULLTEXT_WORK_LIMIT, quick=1))
     fetcher = Fetcher({f"https://example.org/w{n}.pdf": ok() for n in (1, 2)})
     works = [work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in (1, 2)]
-    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -502,7 +502,7 @@ def test_the_limit_stops_the_run_and_the_next_one_takes_the_works_it_did_not_rea
 
 def test_a_work_whose_text_is_already_here_is_not_requested_and_still_gets_its_code(tmp_path, monkeypatch):
     fetcher = Fetcher({"https://example.org/w1.pdf": ok()})
-    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -547,7 +547,7 @@ def test_a_run_paused_in_the_middle_finishes_the_whole_plan_when_it_is_resumed(t
     urls = {f"https://example.org/w{n}.pdf": ok() for n in (1, 2, 3)}
     works = [work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in (1, 2, 3)]
     fetcher = Fetcher(urls)
-    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, overlap=False)
     fetcher.hook = paused_after(app, 2)
     client = client_of(app)
     try:
@@ -580,7 +580,7 @@ def test_a_resumed_run_keeps_the_limit_it_was_queued_with_after_the_effort_limit
     urls = {f"https://example.org/w{n}.pdf": ok() for n in (1, 2, 3)}
     works = [work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in (1, 2, 3)]
     fetcher = Fetcher(urls)
-    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, overlap=False)
     fetcher.hook = paused_after(app, 1)
     client = client_of(app)
     try:
@@ -605,7 +605,7 @@ def test_an_uninterrupted_run_of_the_same_plan_reports_the_same_numbers(tmp_path
     urls = {f"https://example.org/w{n}.pdf": ok() for n in (1, 2, 3)}
     fetcher = Fetcher(urls)
     app = app_for(tmp_path, monkeypatch, Transport([work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in (1, 2, 3)]),
-                  fetcher)
+                  fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -625,7 +625,7 @@ def test_a_run_paused_inside_one_work_resumes_it_without_asking_the_same_link_ag
     record = work(1, pdf_url="https://example.org/w1-preprint.pdf", pdf_version="submittedVersion")
     record["locations"] = [{"is_oa": True, "pdf_url": "https://example.org/w1.pdf", "version": "publishedVersion"}]
     fetcher = Fetcher({"https://example.org/w1.pdf": REFUSED, "https://example.org/w1-preprint.pdf": ok()})
-    app = app_for(tmp_path, monkeypatch, Transport([record, work(2)]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([record, work(2)]), fetcher, overlap=False)
     fetcher.hook = paused_after(app, 1)
     client = client_of(app)
     try:
@@ -656,7 +656,7 @@ def test_one_work_s_failure_does_not_stop_the_others(tmp_path, monkeypatch):
 
     fetcher = Fetcher({"https://example.org/w1.pdf": explode, "https://example.org/w2.pdf": ok()})
     works = [work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in (1, 2)]
-    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -676,7 +676,7 @@ def test_a_question_revision_cancels_the_run_and_makes_its_decisions_stale(tmp_p
     monkeypatch.setattr(fulltext, "FULLTEXT_WORK_LIMIT", dict(fulltext.FULLTEXT_WORK_LIMIT, quick=3))
     fetcher = Fetcher({f"https://example.org/w{n}.pdf": ok() for n in (1, 2, 3)})
     app = app_for(tmp_path, monkeypatch,
-                  Transport([work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in (1, 2, 3)]), fetcher)
+                  Transport([work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in (1, 2, 3)]), fetcher, overlap=False)
     fetcher.hook = paused_after(app, 1)
     client = client_of(app)
     try:
@@ -769,7 +769,7 @@ def test_a_stale_non_human_fulltext_decision_yields_to_a_newer_abstract_decision
     `test_adjudication.py`.
     """
     fetcher = Fetcher({"https://example.org/w1.pdf": ok()})
-    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -808,7 +808,7 @@ def test_a_lookup_that_did_not_answer_is_asked_again_by_the_next_run_and_the_wor
             return super().__call__(request)
 
     transport = Limited([work(1)])  # a closed record: no open link, so the DOI lookup is its only route
-    app = app_for(tmp_path, monkeypatch, transport, Fetcher({}))
+    app = app_for(tmp_path, monkeypatch, transport, Fetcher({}), overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -834,7 +834,7 @@ def test_a_record_whose_own_link_refused_still_gets_the_verified_copy_of_another
     own, copy = "https://example.org/w1.pdf", "https://example.org/w1-submitted.pdf"
     transport = Transport([work(1, pdf_url=own)], unpaywall("10.1/oa.1", copy, "submittedVersion"))
     fetcher = Fetcher({own: REFUSED, copy: ok()})
-    app = app_for(tmp_path, monkeypatch, transport, fetcher)
+    app = app_for(tmp_path, monkeypatch, transport, fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -853,7 +853,7 @@ def test_a_record_whose_own_link_refused_still_gets_the_verified_copy_of_another
 
 def test_a_work_read_through_its_own_link_leaves_no_lookup_step_that_never_runs(tmp_path, monkeypatch):
     fetcher = Fetcher({"https://example.org/w1.pdf": ok()})
-    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher)
+    app = app_for(tmp_path, monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]), fetcher, overlap=False)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -870,7 +870,7 @@ def test_a_second_research_with_the_same_record_reads_the_version_row_the_first_
     copy = "https://example.org/w1-submitted.pdf"
     transport = Transport([work(1)], unpaywall("10.1/oa.1", copy, "submittedVersion"))
     fetcher = Fetcher({copy: ok()})
-    app = app_for(tmp_path, monkeypatch, transport, fetcher)
+    app = app_for(tmp_path, monkeypatch, transport, fetcher, overlap=False)
     client = client_of(app)
     try:
         first, _, _, _ = discover(client)

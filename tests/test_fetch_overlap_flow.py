@@ -143,7 +143,7 @@ def step_events(store, rid, kind, type_):
 def separate(tmp_path, monkeypatch, transport, fetcher, **extra):
     """The same library through the path a run queued before 17a takes: a separate retrieval run afterwards."""
     app = separate_app_for(tmp_path, monkeypatch, transport, fetcher,
-                           adapter=FakeAdapter(responder(), delay=0.05))
+                           adapter=FakeAdapter(responder(), delay=0.05), overlap=False)
     client = client_of(app)
     try:
         rid = research(client)
@@ -205,7 +205,7 @@ def test_the_fetch_starts_before_the_last_model_batch_closes_and_fetches_what_a_
 
 def test_a_run_queued_before_17a_takes_the_separate_path_and_takes_no_baseline(tmp_path, monkeypatch):
     works, answers = library(model_works=range(101, 103))
-    app = separate_app_for(tmp_path, monkeypatch, Transport(works), Fetcher(answers))
+    app = separate_app_for(tmp_path, monkeypatch, Transport(works), Fetcher(answers), overlap=False)
     client = client_of(app)
     try:
         rid = research(client)

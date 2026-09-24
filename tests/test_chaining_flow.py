@@ -98,7 +98,7 @@ class OpenAlex:
 
 
 def app_for(tmp_path, monkeypatch, handler, chaining="auto", workflow="sw", adapter=None, fetch="off", fetcher=None,
-            overlap=False):
+            overlap=True):
     if not overlap:
         # A discovery run queued before slice 17a: its fetch follows as a retrieval run of its own (decision 3).
         monkeypatch.setattr(fulltext, "overlap_budget", fulltext.fetch_budget)
@@ -357,14 +357,8 @@ def test_a_published_version_the_chain_joins_to_a_keyword_preprint_keeps_the_key
         try:
             rid, run_id, view, run = discover(client)
             store = app.state.store
-            deadline = time.time() + 30
-            while time.time() < deadline and store.conn.execute(
-                    "SELECT COUNT(*) FROM runs WHERE research_id = ? AND kind = 'fulltext_fetch'"
-                    " AND status = 'completed'", (rid,)).fetchone()[0] == 0:
-                time.sleep(0.05)
-            fetch_run = store.conn.execute("SELECT id FROM runs WHERE research_id = ? AND kind = 'fulltext_fetch'",
-                                           (rid,)).fetchone()[0]
-            plan = step_output(store, fetch_run, "fulltext_plan")
+            # The plan is the one the discovery run writes itself once its screening is done (slice 17a).
+            plan = step_output(store, run_id, "fulltext_plan")
             work_of = store.work_ids(plan["works"])
             # Each planned work by every OpenAlex identifier its records carry, so a new head reads as the same work.
             planned = [sorted(openalex_of(store, [row[0] for row in store.conn.execute(
@@ -630,18 +624,13 @@ def test_a_queued_run_keeps_the_chain_read_and_room_it_was_queued_with(tmp_path,
         frozen = store.run(run_id)["budget"]
         view, run = wait(client, rid, run_id)
         body = store.current_protocol(rid, 1)["body"]
-        deadline = time.time() + 30
-        while time.time() < deadline and not store.conn.execute(
-                "SELECT 1 FROM runs WHERE research_id = ? AND kind = 'fulltext_fetch'", (rid,)).fetchone():
-            time.sleep(0.05)
-        fetch = store.conn.execute("SELECT budget_json FROM runs WHERE research_id = ? AND kind = 'fulltext_fetch'",
-                                   (rid,)).fetchone()
     finally:
         client.__exit__(None, None, None)
     assert frozen["chain_abstract_read"] == CHAIN_ABSTRACT_READ["quick"] and "chain_plan_room" in frozen
     assert body["thresholds"]["chain"]["abstract_read"] == frozen["chain_abstract_read"]
     assert body["thresholds"]["chain"]["plan_room"] == frozen["chain_plan_room"]
-    assert json.loads(fetch[0])["chain_room"] == frozen["chain_plan_room"]
+    # The fetch runs inside the discovery run (slice 17a) and reads the room frozen with it.
+    assert frozen["fulltext_fetch"]["chain_room"] == frozen["chain_plan_room"]
 
 
 # ---- fix check findings (Sol high, 2026-09-24) ---------------------------------------------------

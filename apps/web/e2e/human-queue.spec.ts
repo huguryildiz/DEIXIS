@@ -165,9 +165,11 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await expect(detail(page)).toContainText('This part’s phrases do not occur in the text.')
   })
 
-  test('an answer to a row that changed since it was shown is refused and the row is read again', async () => {
+  test('an answer to a row that changed since it was shown is refused, the row is read again and the note is kept', async () => {
     await option(page, TITLES.confirm_quote).click()
     await expect(detail(page).getByRole('button', { name: 'Include', exact: true })).toBeEnabled()
+    await detail(page).getByRole('button', { name: 'Add a note' }).click()
+    await detail(page).getByRole('textbox').fill('SYNTHETIC note kept through a refusal')
     // The event stream is held back, so the screen still shows the row as it was.
     await page.route('**/events/stream**', route => route.abort())
     const row = await rowOf(api, rid, 'confirm_quote')
@@ -176,14 +178,48 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await detail(page).getByRole('button', { name: 'Include', exact: true }).click()
     await expect(detail(page)).toContainText('This row changed after it was shown; its current state is loaded. Your answer was not saved.')
     await expect(option(page, TITLES.confirm_quote)).toHaveAttribute('aria-selected', 'true')
+    await expect(detail(page).getByRole('textbox')).toHaveValue('SYNTHETIC note kept through a refusal')
+    // The answers wait for the row read again under the new list, then take the note.
+    await expect(detail(page).getByRole('button', { name: 'Include', exact: true })).toBeEnabled()
     await page.unroute('**/events/stream**')
+  })
+
+  test('an answer to a row another tab took out keeps its note, with the work it was written for', async () => {
+    await page.reload()
+    await option(page, TITLES.find_part).click()
+    await detail(page).getByRole('button', { name: 'Add a note' }).click()
+    await detail(page).getByRole('textbox').fill('SYNTHETIC note for a row that left')
+    await page.route('**/events/stream**', route => route.abort())
+    const row = await rowOf(api, rid, 'find_part')
+    const answered = await (await post(api, `/api/researches/${rid}/queue/${row.source_version_id}/decision`, { decision: 'not_sure', note: null, row_token: row.row_token })).json()
+    await detail(page).getByRole('button', { name: 'Not sure' }).click()
+    const notice = page.locator('.queue-panel .notice', { hasText: 'The row you answered left the queue after it was shown.' })
+    await expect(notice).toContainText(`Your note for “${TITLES.find_part}” is kept here:`)
+    await expect(notice).toContainText('SYNTHETIC note for a row that left')
+    await expect(option(page, TITLES.find_part)).toHaveCount(0)
+    // The note is not left under the row the selection moved to.
+    await expect(detail(page).getByRole('textbox')).toHaveCount(0)
+    // The three views were read again: the tab's count follows the queue.
+    await expect(page.getByRole('tab', { name: 'Awaiting your decision 3' })).toBeVisible()
+    await page.unroute('**/events/stream**')
+    expect((await post(api, `/api/researches/${rid}/queue/${row.source_version_id}/undo`, { row_token: answered.undo_token })).ok()).toBe(true)
+    await expect(option(page, TITLES.find_part)).toHaveCount(1)
   })
 
   test('Include takes the row out, the notification takes it back, and the source list shows the choice as the user’s', async () => {
     await page.reload()
     await option(page, TITLES.choose_run).click()
+    // The row stays where it is until the server has answered.
+    let release = () => {}
+    const held = new Promise<void>(resolve => { release = resolve })
+    await page.route('**/queue/*/decision', async route => { await held; await route.continue() })
     await detail(page).getByRole('button', { name: 'Include', exact: true }).click()
+    await page.waitForTimeout(300)
+    await expect(option(page, TITLES.choose_run)).toHaveCount(1)
+    await expect(option(page, TITLES.choose_run)).toHaveAttribute('aria-selected', 'true')
+    release()
     await expect(option(page, TITLES.choose_run)).toHaveCount(0)
+    await page.unroute('**/queue/*/decision')
     const toast = page.locator('.toast')
     await expect(toast).toContainText('Included. Your choice shows in the sources as your own selection.')
     await toast.getByRole('button', { name: 'Undo' }).click()
@@ -277,6 +313,12 @@ test.describe.serial('J: the human queue of an sw research', () => {
       await expect(list(narrow)).toBeFocused()
       await expect(list(narrow)).toHaveAttribute('aria-activedescendant', /queue-row-/)
       await expect(option(narrow, TITLES.confirm_quote)).toHaveAttribute('aria-selected', 'true')
+      // An answer moves to the next row's detail, with focus on its title.
+      await option(narrow, TITLES.confirm_quote).click()
+      await detail(narrow).getByRole('button', { name: 'Not sure' }).click()
+      await expect(option(narrow, TITLES.confirm_quote)).toHaveCount(0)
+      await expect(narrow.locator('#queue-detail-title')).toBeFocused()
+      await expect(detail(narrow).getByRole('heading', { name: TITLES.confirm_quote })).toHaveCount(0)
     } finally { await narrow.close() }
   })
 })

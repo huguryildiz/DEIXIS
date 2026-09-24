@@ -16,7 +16,7 @@ import { AUTHOR_NOTE, readablePassageText } from './pdfText'
 import { Notice } from './Notice'
 
 // Marks every located anchor; overlapping anchors are merged into one mark, and the first mark is scrolled into view.
-function HighlightedPassageText({ passage, highlightTexts }: { passage: Passage; highlightTexts: string[] }) {
+function HighlightedPassageText({ passage, highlightTexts, markLabel }: { passage: Passage; highlightTexts: string[]; markLabel?: string }) {
   const highlightRef = useRef<HTMLElement>(null)
   const ranges: [number, number][] = []
   for (const [start, end] of highlightTexts.map(text => [passage.text.indexOf(text), passage.text.indexOf(text) + text.length]).filter(([start]) => start >= 0).sort((a, b) => a[0] - b[0])) {
@@ -37,7 +37,7 @@ function HighlightedPassageText({ passage, highlightTexts }: { passage: Passage;
   return <>
     {ranges.map(([start, end], i) => <Fragment key={start}>
       <PassageMathText text={readablePassageText(passage.kind, passage.text.slice(i ? ranges[i - 1][1] : 0, start))} />
-      <mark ref={i === 0 ? highlightRef : undefined} className="citation-highlight" aria-label={t('Exact text cited in the answer')}>
+      <mark ref={i === 0 ? highlightRef : undefined} className="citation-highlight" aria-label={markLabel ?? t('Exact text cited in the answer')}>
         <PassageMathText text={readablePassageText(passage.kind, passage.text.slice(start, end))} />
       </mark>
     </Fragment>)}
@@ -162,7 +162,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
             {abstract && !pdfAssetId && <p className="source-notice"><Info size={15} aria-hidden />{t('No PDF is attached, so only the abstract can be inspected. Claims citing this source rest on the abstract alone.')}</p>}
             <h3 className="source-section">{abstract ? t('Abstract') : t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
             {expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{citationLabels?.unmarked ?? t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
-            <p className="passage-text"><HighlightedPassageText passage={passage} highlightTexts={highlights} /></p>
+            <p className="passage-text"><HighlightedPassageText passage={passage} highlightTexts={highlights} markLabel={citationLabels?.mark} /></p>
           </div> : assetText ? <div id="source-text-view" role="tabpanel" className="asset-text-view">
             <h3 className="source-section">{t('Extracted PDF text')}{assetText.passages.some(item => item.text.split(/\n{2,}/).some(p => AUTHOR_NOTE.test(p.trim()))) && <button type="button" className="pdf-text-notes-toggle" onClick={() => setShowNotes(v => !v)}>{t(showNotes ? 'Hide author notes' : 'Show author notes')}</button>}</h3>
             {assetText.passages.length ? <PdfTextDocument researchId={researchId} assetId={assetText.asset.id} passages={assetText.passages} showNotes={showNotes} sourceTitle={assetText.source.title} /> : <Notice tone="info">{t('No text was extracted from this PDF.')}</Notice>}

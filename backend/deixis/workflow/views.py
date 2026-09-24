@@ -13,7 +13,7 @@ from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as cha
 from deixis.workflow import suggestions as suggestions_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state, equations_to_check
-from deixis.workflow.queue import queue_counts
+from deixis.workflow.queue import queue_answers, queue_counts
 from deixis.workflow.report.store import ReportStore
 from deixis.providers.registry import search_providers
 from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
@@ -389,6 +389,7 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     # Similarity from the chosen semantic search model only; with semantic search off, no source has one (D30).
     provider, model = embeddings.chosen(store.setting("semantic_search"))
     similarity_model = embeddings.Embedder(provider, model).stored_model if provider != "off" and model else None
+    answered_in_queue = queue_answers(store, research_id)
     sources = []
     for row in conn.execute(
         "SELECT m.added_by, m.created_at AS added_at, s.*, sel.state, sel.origin AS selection_origin, sel.version AS selection_version, sel.proposal,"
@@ -462,7 +463,10 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
                        "pdf_discoveries": store.pdf_discoveries(research_id, svid)},
             "selection": {"state": row["state"], "origin": row["selection_origin"], "version": row["selection_version"],
                           "proposal": row["proposal"], "proposal_reason": row["proposal_reason"],
-                          "proposal_basis": row["proposal_basis"], "user_reason": row["user_reason"]},
+                          "proposal_basis": row["proposal_basis"], "user_reason": row["user_reason"],
+                          # A selection the human queue wrote (slice 17): the answer, read from its stored link.
+                          "queue_answer": answered_in_queue.get((svid, row["selection_version"]))
+                          if row["selection_origin"] == "user" else None},
             "cited_in_latest_answer": svid in cited_sources,
             # Providers whose records map to this source version (one DOI from several providers is one source).
             "provider_records": [r[0] for r in conn.execute(

@@ -4,7 +4,7 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 ## D97 — The human queue screen: its own tab, a list and one row's detail, the PDF opened on the row's page by one action, only the backend's anchor marked
 
-**Status:** accepted; implemented 2026-09-24 (slice 17), awaiting the batched review. **Date:** 2026-09-24.
+**Status:** accepted; implemented 2026-09-24 (slice 17, `89ce03d`); the eleven findings of `gpt-6-sol` · high's review fixed the same day, awaiting its check of the fixes. **Date:** 2026-09-24.
 
 **Context:** D96 put the queue in the back end with no screen; `research_view.counts.queue` was only a number. A
 model-free read of 13 stored libraries (`.local/sw-slice17-plan-2026-09-24/`, `shape.json`) found 346 rows: 155
@@ -25,9 +25,12 @@ text", an identity row's first page beside the work's title and DOI, and for `ch
 place of the two runs. Answers sit in a footer pinned under the detail: four equal buttons, and on an identity row "PDF
 is right, let the model read it" first and primary; an optional note of at most 1,000 characters; no confirmation
 dialog. A 200 removes the row (never before), moves the selection on, reloads queue and research view, and shows a
-toast with Undo; "Your decisions" lists every work a person decided and can take back. A 409 reloads all three; the
-detail says whether the row changed or left the queue, and a note being written survives. The queue reloads on every
-event of the research's stream. At 760 px and below the detail replaces the list, with "Back to the list".
+toast with Undo; "Your decisions" lists every work a person decided and can take back. An answer is sent with the
+list row's token, and only on a detail read under the current list reading for that same token; until then the
+buttons are off and the detail says it is being read again. Of overlapping list reads only the newest is applied. A
+409 reloads all three; the detail says whether the row changed or left the queue, and a note being written survives,
+under its row, or in the notice with its work's title when the row left. The queue reloads on every event of the
+research's stream. A `look_again` row names the earlier answer beside its label, in the list and in the detail. At 760 px and below the detail replaces the list, with "Back to the list".
 
 **Deliberate departure from SW11.6.** SW11.6 says selecting a row opens the PDF at its page. Here selecting fills the
 detail, and Enter or "Open page N in the PDF" opens the source sheet on that page, in the PDF view at full width.
@@ -38,16 +41,22 @@ else the first page the run was shown; an identity row opens page 1.
 
 **Evidence rules.** The PDF view is a canvas and marks nothing. In the plain-text view only `anchor_text` is marked:
 the page's own text a verified quote was found as by `locate_anchor`, `exact` or `normalized` only, computed when read
-and never stored. A model quote, a fuzzy match, the closest passage and a cue sentence are never marked; a page opened
-for an unverified quote has an amber strip saying nothing is marked. The screen never says an answer is right.
+and never stored. The mark is shown only when it is exactly that text: a match that falls in a title, heading, table
+or figure (marked whole there), cuts a formula, or starts or ends inside a word leaves the page unmarked, with the
+amber strip saying the quote could not be marked exactly (`marksExactly`). The mark's accessible name is "The model's
+quote, as found in the page text", not the answer citation's. A model quote, a fuzzy match, the closest passage and a
+cue sentence are never marked; a page opened for an unverified quote has an amber strip saying nothing is marked. The screen never says an answer is right.
 
 **Back end, reads only.** `row_detail` parts gain `passage_id` (the verified quote's page passage, else the passage
 the model named) and `anchor_text`; `closest` and cue sentences gain their page's `passage_id`; the detail gains the
 version's current `asset_id` and, for `choose_version`, `versions` (each version with a fresh full-text decision, the
 named one first, with its label, file, decision and runs). `GET …/queue` gains `decided`: one entry per work whose
 outcome is a fresh human decision or a fresh PDF confirmation, from the same snapshot and the same `_classify` path, with
-a typed `answer` and the undo token `_state_of` computes; a confirmation's internal note is not returned; a stale
-decision is a `look_again` row, not an entry. The queue endpoints' 409 is `{"detail": {"reason": "row_changed" |
+a typed `answer` and the undo token `_state_of` computes; a confirmation is listed only while its file is still the
+one in use (what `undo` checks); a confirmation's internal note is not returned; a stale decision is a `look_again`
+row, not an entry. An identity row's first page is the text of physical page 1, or none. A source row's selection gains
+`queue_answer`, read from the stored `human_selection_links` row of an open decision whose selection nobody changed
+since, and the Sources list says "Your answer in the queue: …" from it, never from the reason text a person can type. The queue endpoints' 409 is `{"detail": {"reason": "row_changed" |
 "reading_started", "message": …}}`, the reason set where the conflict is raised (`QueueConflict`); other 409s keep one
 sentence. No migration, no model contract change, no new reason code, nothing written on read.
 
@@ -55,7 +64,11 @@ sentence. No migration, no model contract change, no new reason code, nothing wr
 behavior, not whether a person reads well. The visual check on a copy of the slice 16 live library
 (`.local/sw-slice17-acceptance-2026-09-24/`) saw `choose_run`, `confirm_absent` and `find_part` rows; that library has no
 `confirm_quote`, `confirm_pdf` or `choose_version` row, so those were seen only in the fixture, and `choose_version` in
-neither (its data is covered by a back-end test). Minutes per row, whether cue sentences and closest passages help, the
+neither (its data is covered by a back-end test). After the review a second copy (slice 16 `data-q1-quick-luna`,
+port 8772) showed two `confirm_quote` rows and one `confirm_pdf` row: five verified quotes opened with one exact mark
+each, the unverified one unmarked, and the `pdf_confirmed` round with its undo matched the API at each step (15 → 14 →
+15 rows, `decided` 2 → 3 → 2). A `look_again` row's earlier answer is not in case J (it has no scope revision). At 900
+px the sidebar leaves the list 278 px and the detail 318 px, and the answers wrap to two lines. Minutes per row, whether cue sentences and closest passages help, the
 correctness of any decision, and a usability trial with a person were not measured. At 390 px the pinned answers take
 about a third of the screen height.
 

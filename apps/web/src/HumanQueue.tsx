@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronRight, ExternalLink, FileText, NotebookPen, RotateCcw
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api, ApiError, type QueueAnswer, type QueueDecided, type QueueDetail, type QueueKind, type QueuePart, type QueueRow, type QueueRowView, type QueueRun, type QueueView, type ResearchView } from './api'
-import { partLabelText, queueAnsweredText, queueAnswerLabels, queueKindLabels, queueReasonText, queueStateOf, versionText, versionTones } from './labels'
+import { partLabelText, queueAnsweredText, queueAnswerLabels, queueAnswerOfCode, queueKindLabels, queueReasonText, queueStateOf, versionText, versionTones } from './labels'
 import { PassageSheet } from './PassageSheet'
 import type { CitationLabels } from './PdfTextDocument'
 import { ConnectionIcon } from './connectionIcons'
@@ -49,16 +49,18 @@ function rowPage(row: QueueRow, detail: QueueDetail): PageChoice | null {
 
 // The strip over the plain text says why the page was opened and whether anything is marked.
 function labelsFor(kind: PageChoice['kind'], page: number): CitationLabels {
+  const mark = t(MARK_NAME)
   if (kind === 'quote') return {
     marked: t('The model’s quote, found in the text of PDF p. {page}. Only the text found on the page is marked.', { page }),
-    unmarked: t('The quote was not found in the text of PDF p. {page}, so nothing is marked. Check the page in the PDF.', { page }),
+    unmarked: t('The quote could not be marked exactly in the text of PDF p. {page}, so nothing is marked. Check the page in the PDF.', { page }),
+    mark,
   }
   if (kind === 'closest') {
     const text = t('The model’s quote was not found in the text, so nothing on PDF p. {page} is marked. Check the page in the PDF.', { page })
-    return { marked: text, unmarked: text }
+    return { marked: text, unmarked: text, mark }
   }
   const text = t(kind === 'cue' ? 'PDF p. {page}: a sentence on this page holds a phrase of this part. Nothing is marked.' : 'PDF p. {page}. Nothing is marked.', { page })
-  return { marked: text, unmarked: text }
+  return { marked: text, unmarked: text, mark }
 }
 
 function useNarrow() {
@@ -74,6 +76,13 @@ function useNarrow() {
 }
 
 const keyOf = (row: QueueRow) => `${row.source_version_id}:${row.row_token}`
+const MARK_NAME = 'The model’s quote, as found in the page text'
+// A look_again row names the earlier answer beside its label (decision 5): the person sees it without opening the row.
+const kindText = (row: QueueRow) => {
+  if (row.kind !== 'look_again') return t(queueKindLabels[row.kind])
+  const earlier = queueAnswerOfCode[row.reason_code]
+  return earlier ? `${t('Decided under an earlier question')} · ${t(queueAnsweredText[earlier])}` : t('Decided under an earlier question')
+}
 const dateText = (iso: string) => new Date(iso).toLocaleString(uiLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
 export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: string; view: ResearchView; dark: boolean; onChanged: () => Promise<void> }) {
@@ -82,7 +91,11 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   const [queue, setQueue] = useState<QueueView | null>(null)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<string | null>(null)  // a work id: its version may change under it
-  const [details, setDetails] = useState<Record<string, QueueRowView>>({})
+  // Details by row and token, each with the list reading it was fetched under (see `generation`).
+  const [details, setDetails] = useState<Record<string, { view: QueueRowView; generation: number }>>({})
+  // Every list reading starts a generation: a detail from an earlier one is still shown, but it is fetched again
+  // before it can be answered, since a new extraction or file can change its passages without changing the token.
+  const [generation, setGeneration] = useState(0)
   const [detailError, setDetailError] = useState('')
   const [kindFilter, setKindFilter] = useState<'all' | QueueKind>('all')
   const [reasonFilter, setReasonFilter] = useState('all')
@@ -90,29 +103,32 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   const [note, setNote] = useState<{ work: string | null; text: string; open: boolean }>({ work: null, text: '', open: false })
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
-  const [conflict, setConflict] = useState<{ work: string; gone: boolean } | null>(null)
+  // A 409: whether the row left the queue, and the note that was being written for it, which is kept.
+  const [conflict, setConflict] = useState<{ work: string; gone: boolean; title: string; note: string } | null>(null)
   const [sheet, setSheet] = useState<SheetTarget | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLHeadingElement>(null)
-  const openWhenLoaded = useRef(false)
+  const openWhenLoaded = useRef<string | null>(null)  // the row (and token) Enter was pressed on while it loaded
+  const listRequest = useRef(0)
 
-  const apply = useCallback((next: QueueView) => {
-    setQueue(next)
-    setError('')
-    // A detail whose row token no longer matches is dropped; one whose row did not move is kept.
-    const live = new Set(next.rows.map(keyOf))
-    setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => live.has(key))))
-  }, [])
-  const load = useCallback(async () => {
-    try { const next = await api.queue(researchId); apply(next); return next }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); return null }
-  }, [researchId, apply])
+  // Only the newest list request is applied: an older answer arriving late never overwrites a newer queue.
+  const load = useCallback((): Promise<QueueView | null> => {
+    const request = ++listRequest.current
+    return api.queue(researchId).then(next => {
+      if (request !== listRequest.current) return next
+      setQueue(next)
+      setError('')
+      setGeneration(g => g + 1)
+      const live = new Set(next.rows.map(keyOf))
+      setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => live.has(key))))
+      return next
+    }, e => {
+      if (request === listRequest.current) setError(e instanceof Error ? e.message : String(e))
+      return null
+    })
+  }, [researchId])
   // Every recorded event can add or take a row: a reading run in flight writes decisions, another tab answers one.
-  useEffect(() => {
-    let live = true
-    api.queue(researchId).then(next => { if (live) apply(next) }, e => { if (live) setError(e instanceof Error ? e.message : String(e)) })
-    return () => { live = false }
-  }, [researchId, apply, view.last_event_id])
+  useEffect(() => { void load() }, [load, view.last_event_id])
 
   const rows = queue?.rows ?? []
   const open = rows.filter(r => r.kind !== 'look_again')
@@ -122,8 +138,11 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   // Until a row is chosen the first one is, except at 760 px and below, where the list comes first.
   const selectedWork = selected ?? (narrow ? null : ordered[0]?.work_id ?? null)
   const current = rows.find(r => r.work_id === selectedWork) ?? null
-  const currentView = current ? details[keyOf(current)] : undefined
+  const entry = current ? details[keyOf(current)] : undefined
+  const currentView = entry?.view
   const detail = currentView?.detail
+  // An answer is sent only on a detail read under the current list, for the same row and token the list shows.
+  const answerable = Boolean(current && entry && entry.generation === generation && currentView?.row?.row_token === current.row_token)
   const gone = Boolean(selected && queue && !current)
   // The active row stays in view while the arrow keys move through a long list.
   useEffect(() => {
@@ -132,31 +151,32 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
 
   // The selected row's detail, then the next row's in the background: one row ahead, so the next answer does not wait.
   const inflight = useRef(new Set<string>())
-  const fetchDetail = useCallback(async (row: QueueRow) => {
+  const fetchDetail = useCallback(async (row: QueueRow, under: number) => {
     const key = keyOf(row)
-    if (inflight.current.has(key)) return
-    inflight.current.add(key)
+    if (inflight.current.has(`${key}@${under}`)) return
+    inflight.current.add(`${key}@${under}`)
     try {
       const value = await api.queueRow(researchId, row.source_version_id)
-      setDetails(prev => ({ ...prev, [key]: value }))
-      // The row moved between the list and its detail: the list is read again rather than answered on an old token.
+      setDetails(prev => ((prev[key]?.generation ?? -1) > under ? prev : { ...prev, [key]: { view: value, generation: under } }))
+      // The row moved between the list and its detail: the list is read again, and the answer waits for it.
       if (value.row?.row_token !== row.row_token) void load()
-    } finally { inflight.current.delete(key) }
+    } finally { inflight.current.delete(`${key}@${under}`) }
   }, [researchId, load])
   const currentKey = current ? keyOf(current) : null
   const nextRow = current ? ordered[ordered.findIndex(r => r.work_id === current.work_id) + 1] : undefined
   const nextKey = nextRow ? keyOf(nextRow) : null
+  const fresh = (key: string | null) => Boolean(key && details[key]?.generation === generation)
   useEffect(() => {
     if (!current || !currentKey) return
-    if (!details[currentKey]) fetchDetail(current).catch(e => setDetailError(e instanceof Error ? e.message : String(e)))
-    else if (nextRow && nextKey && !details[nextKey]) void fetchDetail(nextRow).catch(() => undefined)
-  }, [currentKey, nextKey, details, fetchDetail])  // eslint-disable-line react-hooks/exhaustive-deps
+    if (!fresh(currentKey)) fetchDetail(current, generation).catch(e => setDetailError(e instanceof Error ? e.message : String(e)))
+    else if (nextRow && !fresh(nextKey)) void fetchDetail(nextRow, generation).catch(() => undefined)
+  }, [currentKey, nextKey, details, generation, fetchDetail])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const choose = (work: string | null) => {
     setSelected(work)
     setActionError('')
     setDetailError('')
-    if (conflict && conflict.work !== work) setConflict(null)
+    if (conflict && !conflict.gone && conflict.work !== work) setConflict(null)  // a kept note stays until the next answer
     // A note belongs to the work it was written for; it is kept while that work stays selected, across refreshes.
     setNote(prev => (prev.work === work ? prev : { work, text: '', open: false }))
   }
@@ -167,12 +187,12 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
     setSheet({ passageId: choice.passageId, assetId: choice.passageId ? null : found.asset_id, page: choice.page, view,
       anchor: choice.anchor, expect: choice.kind !== 'cue' && choice.kind !== 'page', labels: labelsFor(choice.kind, choice.page) })
   }, [])
-  // Enter on a row whose detail is still loading opens its page as soon as the detail arrives.
+  // Enter on a row whose detail is still loading opens that row's page once its detail arrives, and no other row's.
   useEffect(() => {
-    if (!openWhenLoaded.current || !current || !detail) return
-    openWhenLoaded.current = false
+    if (!openWhenLoaded.current || openWhenLoaded.current !== currentKey || !current || !detail || !answerable) return
+    openWhenLoaded.current = null
     openPage(current, detail, 'pdf')
-  }, [current, detail, openPage])
+  }, [currentKey, current, detail, answerable, openPage])
 
   const openPart = (part: QueuePart) => {
     if (part.quote_verified && part.page !== null && part.passage_id) {
@@ -181,7 +201,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
       setSheet({ passageId: part.closest.passage_id, assetId: null, page: part.closest.page, view: 'text', anchor: null, expect: true, labels: labelsFor('closest', part.closest.page) })
     } else if (part.passage_id) {
       const text = t('The model’s quote was not found in the text of the page it named, so nothing is marked. Check the page in the PDF.')
-      setSheet({ passageId: part.passage_id, assetId: null, page: 1, view: 'text', anchor: null, expect: true, labels: { marked: text, unmarked: text } })
+      setSheet({ passageId: part.passage_id, assetId: null, page: 1, view: 'text', anchor: null, expect: true, labels: { marked: text, unmarked: text, mark: t(MARK_NAME) } })
     }
   }
 
@@ -193,13 +213,15 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   }
 
   async function answer(row: QueueRow, choice: QueueAnswer) {
-    const token = currentView?.row?.row_token ?? row.row_token
+    if (!answerable) return
+    const token = row.row_token
+    const written = note.work === row.work_id ? note.text : ''
     const index = ordered.findIndex(r => r.work_id === row.work_id)
     const after = ordered[index + 1] ?? ordered[index - 1] ?? null
     setBusy(true)
     setActionError('')
     try {
-      const result = await api.answerQueueRow(researchId, row.source_version_id, choice, token, note.work === row.work_id && note.text.trim() ? note.text.trim() : null)
+      const result = await api.answerQueueRow(researchId, row.source_version_id, choice, token, written.trim() || null)
       const next = await reloadAll()
       const target = next?.rows.find(r => r.work_id === after?.work_id) ?? next?.rows[0] ?? null
       setConflict(null)
@@ -214,8 +236,13 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
         // The row moved between showing and answering: the queue, its detail and the research view are read again.
         const next = await reloadAll()
         const still = next?.rows.some(r => r.work_id === row.work_id) ?? false
-        setConflict({ work: row.work_id, gone: !still })
-        if (!still) setSelected((next?.rows.find(r => r.work_id === after?.work_id) ?? next?.rows[0])?.work_id ?? row.work_id)
+        setConflict({ work: row.work_id, gone: !still, title: row.title, note: written.trim() })
+        if (!still) {
+          // The selection moves on; the note stays with its work, shown in the notice rather than under another row.
+          const target = (next?.rows.find(r => r.work_id === after?.work_id) ?? next?.rows[0])?.work_id ?? null
+          setSelected(target)
+          setNote({ work: target, text: '', open: false })
+        }
       } else setActionError(e instanceof Error ? e.message : String(e))
     } finally { setBusy(false) }
   }
@@ -248,8 +275,8 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
       event.preventDefault()
       if (!current) { choose(ordered[index].work_id); return }
       if (narrow) { setShowDetail(true); requestAnimationFrame(() => titleRef.current?.focus()); return }
-      if (detail) openPage(current, detail, 'pdf')
-      else openWhenLoaded.current = true
+      if (detail && answerable) openPage(current, detail, 'pdf')
+      else openWhenLoaded.current = currentKey
     }
   }
   const onRowClick = (row: QueueRow) => {
@@ -268,7 +295,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   const emptyFacts = [decidedCount > 0 && t(decidedCount === 1 ? 'You decided {n} work' : 'You decided {n} works', { n: decidedCount }),
     counts.user_selected > 0 && t(counts.user_selected === 1 ? 'you chose {n} work from the sources' : 'you chose {n} works from the sources', { n: counts.user_selected })].filter(Boolean)
   const option = (row: QueueRow) => {
-    const kind = row.kind === 'look_again' ? t('Decided under an earlier question') : t(queueKindLabels[row.kind])
+    const kind = kindText(row)
     return <div key={row.work_id} id={`queue-row-${row.work_id}`} role="option" aria-selected={row.work_id === selectedWork}
       aria-label={`${row.title}. ${kind}. ${t('Awaiting a decision')}`}
       className={`queue-row${row.work_id === selectedWork ? ' is-selected' : ''}`} onClick={() => onRowClick(row)}>
@@ -321,8 +348,10 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
       <div className="queue-detail" aria-labelledby={current ? 'queue-detail-title' : undefined}>
         {narrow && <button type="button" className="queue-back" onClick={backToList}><ArrowLeft size={15} aria-hidden />{t('Back to the list')}</button>}
         {conflict && conflict.work === selectedWork && !conflict.gone && <Notice tone="attention">{t('This row changed after it was shown; its current state is loaded. Your answer was not saved.')}</Notice>}
-        {conflict && conflict.gone && <Notice tone="attention">{t('The row you answered left the queue after it was shown. Your answer was not saved.')}</Notice>}
+        {conflict && conflict.gone && <Notice tone="attention">{t('The row you answered left the queue after it was shown. Your answer was not saved.')}
+          {conflict.note && <p className="queue-kept-note">{t('Your note for “{title}” is kept here:', { title: conflict.title })} <q>{conflict.note}</q></p>}</Notice>}
         {gone && !conflict && <Notice tone="attention">{t('This work is no longer in the queue. Nothing was saved; your note is kept below.')}</Notice>}
+        {current && currentView && !answerable && !detailError && <p className="queue-muted" role="status">{t('Reading this row again…')}</p>}
         {current ? <RowDetail row={current} rowView={currentView} detailError={detailError} titleRef={titleRef}
           onOpenPage={() => detail && openPage(current, detail, 'pdf')} onOpenPart={openPart}
           onOpenSource={() => setSheet({ source: current.source_version_id })}
@@ -335,7 +364,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
             : <button type="button" className="queue-note-toggle" onClick={() => setNote({ work: selectedWork, text: '', open: true })}><NotebookPen size={14} aria-hidden />{t('Add a note')}</button>}
           {current && <div className="queue-answers" role="group" aria-label={t('Your answer')}>
             {(current.kind === 'confirm_pdf' ? ['pdf_confirmed' as const, ...ANSWERS] : ANSWERS).map(choice =>
-              <Button key={choice} variant={choice === 'pdf_confirmed' ? 'default' : 'outline'} disabled={busy || !currentView} onClick={() => void answer(current, choice)}>{t(queueAnswerLabels[choice])}</Button>)}
+              <Button key={choice} variant={choice === 'pdf_confirmed' ? 'default' : 'outline'} disabled={busy || !answerable} onClick={() => void answer(current, choice)}>{t(queueAnswerLabels[choice])}</Button>)}
           </div>}
           <p className="queue-foot-note">{t('Semantic support not checked. Your answer is recorded as your decision; DEIXIS does not say whether it is right.')}</p>
         </footer>}
@@ -359,7 +388,7 @@ function RowDetail({ row, rowView, detailError, titleRef, onOpenPage, onOpenPart
 }) {
   const detail = rowView?.detail
   const choice = detail ? rowPage(row, detail) : null
-  const kind = row.kind === 'look_again' ? t('Decided under an earlier question') : t(queueKindLabels[row.kind])
+  const kind = kindText(row)
   const part = row.question?.part
   const question = row.question
     ? t('Does this paper have the part “{part}”?', { part: row.question.part })

@@ -30,7 +30,6 @@ import { Notice } from './Notice'
 import { HumanQueue } from './HumanQueue'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
-const QUEUE_REASONS: Record<string, 'include' | 'criterion_not_met'> = { human_include: 'include', human_criterion_not_met: 'criterion_not_met' }
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 // A research title wraps across the whole column, so the rename field grows with its text instead of scrolling sideways.
@@ -995,10 +994,10 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
       </div>
       {source.applicability === 'stale_scope' && <p className="proposal is-stale">{t(s.proposal ? 'Found for question revision {n}; the proposal below was made for that question. Search again to screen it for the current question.' : 'Found for question revision {n}. Search again to screen it for the current question.', { n: source.found_in_revision ?? '?' })}</p>}
       {s.proposal && !other && <p className="proposal is-model"><span className="proposal-tag">{t('Model proposal:')}</span> <span><em className={`verdict is-${s.proposal}`}>{t(s.proposal)}</em> — {s.proposal_reason} <span>({t(s.proposal_basis?.replaceAll('_', ' ') ?? '')})</span>{s.origin === 'user' ? ` ${t('· overridden by you')}` : ''}</span></p>}
-      {/* A queue answer sets the selection with its code as the reason (slice 16); it reads as the answer, not as the code. */}
-      {s.origin === 'user' && s.user_reason && <p className="proposal"><UserPen size={13} aria-hidden />{s.user_reason in QUEUE_REASONS
-        ? t('Your answer in the queue: {answer}', { answer: t(queueAnsweredText[QUEUE_REASONS[s.user_reason]]) })
-        : t('Your reason: {reason}', { reason: s.user_reason })}</p>}
+      {/* A selection the queue wrote reads as that answer; the backend names it from the stored link, never from the reason text. */}
+      {s.origin === 'user' && (s.queue_answer || s.user_reason) && <p className="proposal"><UserPen size={13} aria-hidden />{s.queue_answer
+        ? t('Your answer in the queue: {answer}', { answer: t(queueAnsweredText[s.queue_answer]) })
+        : t('Your reason: {reason}', { reason: s.user_reason ?? '' })}</p>}
       {s.origin === 'user' && s.state === 'excluded' && !s.user_reason && <ReasonForm busy={busy} onSave={onReason} />}
       {finding && <PdfSearchStatus />}
       {source.access.assets.map(asset => asset.rejected_extraction && <p key={asset.id} className="proposal"><ScanText size={13} aria-hidden />{t('A later text extraction ({version}) was not used: {reason}. The earlier text stays in use.', { version: asset.rejected_extraction.extraction_version, reason: asset.rejected_extraction.rejection_reason })}</p>)}

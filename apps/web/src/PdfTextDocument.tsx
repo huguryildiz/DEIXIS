@@ -5,7 +5,7 @@ import { api, figureUrl, type AssetFigure } from './api'
 import { t } from './i18n'
 import { PassageMathText } from './PassageMathText'
 import { OCR_LABEL } from './ocr'
-import { SUBSECTION, buildDocument, locateAnchors, tableKey, type Doc, type Passages } from './pdfDocument'
+import { SUBSECTION, buildDocument, locateAnchors, marksExactly, tableKey, type Doc, type Passages } from './pdfDocument'
 import { scrollBehavior } from './motion'
 
 // The extracted text of a whole PDF as a readable document (D58): section contents, pictures of figures cut from the PDF
@@ -37,7 +37,7 @@ function referenceNumbers(list: string) {
 
 const MARK_LABEL = 'Exact text cited in the answer'
 
-function InlineText({ text, doc, selfId, marks = [] }: { text: string; doc: Doc; selfId: string; marks?: [number, number][] }) {
+function InlineText({ text, doc, selfId, marks = [], markLabel = t(MARK_LABEL) }: { text: string; doc: Doc; selfId: string; marks?: [number, number][]; markLabel?: string }) {
   const math: [number, number][] = [...text.matchAll(/\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/g)].map(m => [m.index!, m.index! + m[0].length])
   const inMath = (at: number) => math.some(([a, b]) => at >= a && at < b)
   // A mark never cuts a formula: it widens to the whole formula it touches.
@@ -69,7 +69,7 @@ function InlineText({ text, doc, selfId, marks = [] }: { text: string; doc: Doc;
     const cuts = [...new Set([from, to, ...marked.flat().filter(at => at > from && at < to)])].sort((a, b) => a - b)
     for (let i = 0; i + 1 < cuts.length; i++) {
       const piece = <PassageMathText key={`t${cuts[i]}`} text={text.slice(cuts[i], cuts[i + 1])} />
-      parts.push(markedAt(cuts[i]) ? <mark key={`m${cuts[i]}`} className="citation-highlight" aria-label={t(MARK_LABEL)}>{piece}</mark> : piece)
+      parts.push(markedAt(cuts[i]) ? <mark key={`m${cuts[i]}`} className="citation-highlight" aria-label={markLabel}>{piece}</mark> : piece)
     }
   }
   let last = 0
@@ -95,8 +95,10 @@ function PdfTextTable({ rows }: { rows: string[] }) {
   </table></div>
 }
 
-// The strip's two sentences, for a text opened for something other than an answer's citation (the human queue).
-export type CitationLabels = { marked: string; unmarked: string }
+// The strip's two sentences and the mark's name, for a text opened for something other than an answer's citation (the
+// human queue). Such a text is marked exactly or not at all: a span that would widen to a formula, or that falls in a
+// title, heading, table or figure, is left unmarked rather than marked beyond what the backend found (slice 17).
+export type CitationLabels = { marked: string; unmarked: string; mark: string }
 
 // With a citation, the document opens on the cited text: every located anchor is marked and the first is scrolled into view.
 // An anchor not found in its page's text leaves the page unmarked; the view then opens on that page and says so.
@@ -108,7 +110,12 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
     return () => { cancelled = true }
   }, [researchId, assetId])
   const doc = useMemo(() => buildDocument(passages, figures, sourceTitle), [passages, figures, sourceTitle])
-  const marks = useMemo(() => citation ? locateAnchors(doc, citation.page, citation.texts) : null, [doc, citation])
+  const marks = useMemo(() => {
+    if (!citation) return null
+    const found = locateAnchors(doc, citation.page, citation.texts)
+    return citation.labels && !marksExactly(doc, found, citation.texts) ? { blocks: new Map(), first: null, located: 0 } : found
+  }, [doc, citation])
+  const markLabel = citation?.labels?.mark ?? t(MARK_LABEL)
   const citedPage = citation ? doc.pages.find(p => p.head.physical_page === citation.page)?.head.id ?? null : null
   const unmarked = Boolean(citation && (citation.texts.length ? marks!.located === 0 : citation.expected))
   const goToCitation = () => {
@@ -141,15 +148,15 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
         {(head.equations_to_check ?? 0) > 0 && <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(head.equations_to_check === 1 ? '{n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : '{n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: head.equations_to_check ?? 0 })}</p>}
         {blocks.map(block => {
           const blockMarks = marks?.blocks.get(block.id)
-          const inline = <InlineText text={block.text} doc={doc} selfId={block.id} marks={blockMarks} />
-          const plainText = blockMarks ? <mark className="citation-highlight" aria-label={t(MARK_LABEL)}>{block.text}</mark> : block.text
+          const inline = <InlineText text={block.text} doc={doc} selfId={block.id} marks={blockMarks} markLabel={markLabel} />
+          const plainText = blockMarks ? <mark className="citation-highlight" aria-label={markLabel}>{block.text}</mark> : block.text
           const figure = block.kind === 'figure' ? figures.find(f => f.label === block.label) : undefined
           return block.kind === 'figure' && figure ? <figure key={block.id} id={block.id} className="pdf-text-figure">
             <img src={figureUrl(researchId, assetId, figure.label)} alt={block.text || t('Figure {n}', { n: figure.label })} loading="lazy" style={{ aspectRatio: `${figure.width} / ${figure.height}` }} />
             {block.text ? <figcaption>{inline}</figcaption> : <figcaption>{t('Figure {n}', { n: figure.label })}</figcaption>}
             <small>{t('Picture cut from PDF page {page}; it can miss part of the figure.', { page: figure.page })}</small>
           </figure>
-            : block.kind === 'table' ? blockMarks ? <div key={block.id} id={block.id} className="pdf-text-table-cited" aria-label={t(MARK_LABEL)}><PdfTextTable rows={block.text.split('\n')} /></div> : <PdfTextTable key={block.id} rows={block.text.split('\n')} />
+            : block.kind === 'table' ? blockMarks ? <div key={block.id} id={block.id} className="pdf-text-table-cited" aria-label={markLabel}><PdfTextTable rows={block.text.split('\n')} /></div> : <PdfTextTable key={block.id} rows={block.text.split('\n')} />
             : block.kind === 'title' ? <h3 key={block.id} id={block.id} className="pdf-text-title">{plainText}</h3>
             : block.kind === 'heading' ? <h5 key={block.id} id={block.id} className={`pdf-text-heading${SUBSECTION.test(block.text) ? ' is-sub' : ''}`}>{plainText}</h5>
             : block.kind === 'note' ? (showNotes || blockMarks) && <p key={block.id} id={block.id} className="passage-text pdf-text-note">{inline}</p>

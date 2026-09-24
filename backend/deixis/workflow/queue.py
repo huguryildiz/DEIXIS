@@ -216,6 +216,10 @@ def _classify(ctx: _Context, work_id: str) -> dict[str, Any] | None:
         decision = next(d for d in fulltext if d["source_version_id"] == outcome["source_version_id"])
         if _confirmed_asset(decision) is None or ctx.decisions.is_stale(decision, ctx.facts["stale_key"]):
             return None
+        # Only a confirmation of the file still in use can be undone, so only that one is listed (as `undo` checks).
+        asset = ctx.assets.get(decision["source_version_id"])
+        if asset is None or asset["id"] != _confirmed_asset(decision) or not asset["identity_confirmed_at"]:
+            return None
         return {"state": "confirmed", "decision": decision, "head": head, "reason_code": code, "stale": False}
     if code != VERSIONS_DISAGREE and code not in QUEUE_CODES:
         return None
@@ -312,6 +316,20 @@ def queue_counts(store: Store, research_id: str) -> dict[str, int]:
     with _snapshot(store.conn):
         _, counts, _ = _scan(_Context(store, research_id))
     return {"queue": counts["open"], "look_again": counts["look_again"]}
+
+
+def queue_answers(store: Store, research_id: str) -> dict[tuple[str, int], str]:
+    """The answer behind every selection a queue decision wrote and nobody changed since, by (head, selection version).
+
+    Read from the stored link (D71), not from the selection's reason text, which the person can also type by hand."""
+    links: dict[str, Any] = {}
+    for row in store.conn.execute(
+            "SELECT l.decision_id, l.head, l.selection_version, d.reason_code FROM human_selection_links l"
+            " JOIN stage_decisions d ON d.id = l.decision_id"
+            " WHERE l.research_id = ? AND d.superseded_at IS NULL ORDER BY l.created_at, l.rowid", (research_id,)):
+        links[row["decision_id"]] = row
+    return {(row["head"], row["selection_version"]): ANSWER_OF[row["reason_code"]]
+            for row in links.values() if row["reason_code"] in SELECTION_OF}
 
 
 def verified_records(store: Store, research_id: str) -> list[dict[str, Any]]:
@@ -495,7 +513,7 @@ def _detail(ctx: _Context, row: dict[str, Any]) -> dict[str, Any]:
     if row["kind"] == "confirm_pdf":
         head = store.source(row["head"])
         stored = store.asset(asset["id"]) if asset else {}
-        detail["identity"] = {"first_page": pages[min(pages)] if pages else None, "work_title": head["title"],
+        detail["identity"] = {"first_page": pages.get(1), "work_title": head["title"],
                               "work_doi": head["doi"], "asset_id": stored.get("id"),
                               "retrieved_from": stored.get("retrieved_from"), "page_count": stored.get("page_count")}
     return detail

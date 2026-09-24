@@ -1,6 +1,6 @@
 # SW dilim 17 — İnsan kuyruğu (arayüz)
 
-**Tarih:** 24 Eylül 2026. **Durum:** yedi karar Claude ile `gpt-5.6-sol` · medium arasında ortak karara bağlandı (sahibin isteği, 24 Eylül 2026); 24 Eylül 2026'da uygulandı (D97), toplu inceleme bekliyor. **Prompt:** [sw-slice17-prompt.md](sw-slice17-prompt.md). **Ana dosya:** [sw-status.md](sw-status.md).
+**Tarih:** 24 Eylül 2026. **Durum:** yedi karar Claude ile `gpt-5.6-sol` · medium arasında ortak karara bağlandı (sahibin isteği, 24 Eylül 2026); 24 Eylül 2026'da uygulandı (D97); `gpt-6-sol` · high incelemesinin 11 bulgusu aynı gün düzeltildi, düzeltme denetimi bekliyor. **Prompt:** [sw-slice17-prompt.md](sw-slice17-prompt.md). **Ana dosya:** [sw-status.md](sw-status.md).
 **Karar:** D97 (dilim yazar). **Önkoşul:** 16 (kapandı, D96, `311d3ca`). **Tür:** Kur. **Uygulayan:** Opus · medium
 (satırdaki gibi). **İnceleme:** toplu (`gpt-5.6-sol` · high). **Plan:** Opus 5.5 · high, 24 Eylül 2026 (kural Fable ·
 high diyor; bu oturum Opus'ta koştu). **Ölçüm:** `.local/sw-slice17-plan-2026-09-24/` (`shape.py`, `shape.json`).

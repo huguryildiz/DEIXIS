@@ -223,3 +223,22 @@ export function locateAnchors(doc: Doc, page: number | null, texts: string[]): A
   marks.first = doc.pages.flatMap(p => p.blocks).find(b => marks.blocks.has(b.id))?.id ?? null
   return marks
 }
+
+// Whether the marks are exactly the given text and nothing more, for a text opened from the human queue (slice 17):
+// only running text is marked span by span (a heading or table is marked whole, a formula as a whole), and a match
+// that starts or ends inside a word widens to that word. Any of these leaves the text unmarked instead.
+export function marksExactly(doc: Doc, marks: AnchorMarks, texts: string[]): boolean {
+  const compact = (text: string) => [...text.matchAll(/[\p{L}\p{N}]+/gu)].map(m => m[0].normalize('NFKC').toLocaleLowerCase()).join('')
+  let marked = ''
+  for (const block of doc.pages.flatMap(p => p.blocks)) {
+    const ranges = marks.blocks.get(block.id)
+    if (!ranges) continue
+    if (block.kind !== 'para' && block.kind !== 'note' && block.kind !== 'bio') return false
+    const math = [...block.text.matchAll(/\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/g)].map(m => [m.index!, m.index! + m[0].length])
+    for (const [s, e] of ranges) {
+      if (math.some(([a, b]) => a < e && b > s && (a < s || b > e))) return false
+      marked += block.text.slice(s, e)
+    }
+  }
+  return texts.length !== 1 || compact(marked) === compact(texts[0])
+}

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildDocument, locateAnchors, type Passages } from '../src/pdfDocument'
+import { buildDocument, locateAnchors, marksExactly, type Passages } from '../src/pdfDocument'
 
 // The plain-text view's reading rules (D58) on SYNTHETIC page text; no browser or server is started.
 
@@ -91,4 +91,22 @@ test('a citation anchor is found across line breaks, hyphenation and paragraph j
   const block = doc.pages[0].blocks.find(b => b.id === id)!
   expect(block.text.slice(ranges[0][0], ranges[0][1])).toBe('Increasing transmission power will re- duce the error rate on some links, however, it raises')
   expect(locateAnchors(doc, 2, ['however, it raises interference']).located).toBe(0)
+})
+
+test('a queue quote is marked only when the mark is exactly the quote: never in a heading, a table, part of a formula or part of a word', () => {
+  const doc = buildDocument(pages([
+    'II. SYSTEM MODEL\nIn this study, relays forward packets at the rate $r = a + b$ over the link.\n\n'
+    + '| Payload | Lifetime |\n| --- | --- |\n| 120 | 0.1 |',
+  ]), [], null)
+  const exact = (text: string) => {
+    const marks = locateAnchors(doc, 1, [text])
+    expect(marks.located).toBe(1)  // each text is found; only whether its mark is exact differs
+    return marksExactly(doc, marks, [text])
+  }
+  expect(exact('relays forward packets at the rate')).toBe(true)
+  expect(exact('the rate $r = a + b$ over the link')).toBe(true)  // a whole formula inside the mark
+  expect(exact('SYSTEM MODEL')).toBe(false)                     // a heading is marked whole
+  expect(exact('Payload')).toBe(false)                           // so is a table
+  expect(exact('rate $r = a')).toBe(false)                       // part of a formula would widen to all of it
+  expect(exact('elays forward')).toBe(false)                     // part of a word would widen to the word
 })

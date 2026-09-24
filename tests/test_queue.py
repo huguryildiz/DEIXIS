@@ -784,3 +784,30 @@ def test_a_stale_human_decision_is_in_look_again_and_not_in_decided(store):
     found = lib.rows()
     assert [(row["source_version_id"], row["kind"]) for row in found["rows"]] == [(svid, "look_again")]
     assert found["decided"] == []
+
+
+def test_a_confirmation_of_a_file_that_was_replaced_since_is_not_listed_as_decided(store):
+    lib = Lib(store, "irrigation")
+    identity = lib.work()
+    lib.text(identity, [lib.field["page"]])
+    lib.unconfirmed(identity)
+    queue.decide(store, lib.rid, identity, "pdf_confirmed", None, lib.row(identity)["row_token"])
+    assert [entry["answer"] for entry in lib.rows()["decided"]] == ["pdf_confirmed"]
+    # The confirmed file is no longer the one in use, so its confirmation could not be undone: it is not offered.
+    lib.text(identity, [lib.field["page"]])
+    assert lib.rows()["decided"] == []
+
+
+def test_the_identity_check_shows_the_text_of_physical_page_one_or_none(store):
+    lib = Lib(store)
+    with_first, without_first = lib.work(), lib.work()
+    lib.text(with_first, ["SYNTHETIC first page", "SYNTHETIC second page"])
+    asset = lib.text(without_first, [])
+    with db.transaction(store.conn):
+        store._insert_passage(without_first, asset, "pdf_page", 2, None, None, None, "pymupdf-synthetic",
+                              "SYNTHETIC second page only")
+    for svid in (with_first, without_first):
+        lib.unconfirmed(svid)
+    first = queue.row_detail(store, lib.rid, with_first)["detail"]["identity"]["first_page"]
+    missing = queue.row_detail(store, lib.rid, without_first)["detail"]["identity"]["first_page"]
+    assert (first, missing) == ("SYNTHETIC first page", None)

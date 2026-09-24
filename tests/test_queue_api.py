@@ -900,3 +900,26 @@ def test_decided_rows_carry_a_typed_answer_and_no_internal_note(tmp_path, monkey
     assert decided[identity]["reason_code"] == "not_read_yet" and decided[identity]["note"] is None
     assert decided[by_answer["not_sure"]]["note"] == "SYNTHETIC note on not_sure"
     assert "pdf_confirmed:" not in listed.text  # the file the confirmation names is internal
+
+
+def test_a_source_row_names_a_queue_answer_from_its_stored_link_and_not_from_a_typed_reason(tmp_path, monkeypatch):
+    from test_queue import Lib, queued
+    app, client = quiet_app(tmp_path, monkeypatch)
+    try:
+        store = app.state.store
+        lib = Lib(store)
+        answered, typed, edited = queued(lib), queued(lib), queued(lib)
+        for svid in (answered, edited):
+            row = next(r for r in queue_of(client, lib.rid)["rows"] if r["source_version_id"] == svid)
+            assert answer(client, lib.rid, row, "include").status_code == 200
+        # The same words typed as a reason from the source list are the person's reason, not a queue answer.
+        store.set_user_selection(lib.rid, typed, "included", lib.selection_version(typed), "human_include")
+        # A list edit after the queue answer makes the selection the person's own again.
+        lib.list_edit(edited, "excluded")
+        view = client.get(f"/api/researches/{lib.rid}").json()
+    finally:
+        client.__exit__(None, None, None)
+    selections = {source["source_version_id"]: source["selection"] for source in view["sources"]}
+    assert selections[answered]["queue_answer"] == "include"
+    assert selections[typed]["queue_answer"] is None and selections[typed]["user_reason"] == "human_include"
+    assert selections[edited]["queue_answer"] is None

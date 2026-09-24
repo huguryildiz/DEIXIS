@@ -266,6 +266,10 @@ export const queueAnswerLabels: Record<QueueAnswer, string> = {
 export const queueStateOf = (answer: QueueAnswer) =>
   t(answer === 'include' ? 'Included' : answer === 'criterion_not_met' ? 'Does not meet the criterion' : 'Awaiting a decision')
 export const partLabelText = (label: 'present' | 'absent' | 'unclear') => t(label === 'present' ? 'present' : label === 'absent' ? 'absent' : 'unclear')
+// The answer an earlier human decision gave, by its stored reason code: a look_again row names it beside its label.
+export const queueAnswerOfCode: Record<string, QueueAnswer> = {
+  human_include: 'include', human_criterion_not_met: 'criterion_not_met', human_not_sure: 'not_sure', human_pdf_wrong: 'pdf_wrong',
+}
 // What the person answered, as the "Your decisions" list says it.
 export const queueAnsweredText: Record<QueueAnswer, string> = {
   include: 'you included it', criterion_not_met: 'you said it does not meet the criterion', not_sure: 'you were not sure',

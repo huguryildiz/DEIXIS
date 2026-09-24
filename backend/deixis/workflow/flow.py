@@ -1229,7 +1229,6 @@ class ResearchFlow:
         submitted = 0
         collected: dict[int, dict[int, dict[str, Any] | None]] = {}
         rows_of: dict[int, list[dict[str, Any]]] = {}
-        left_out: dict[int, set[str]] = {}  # records a run of the batch was not sent, because a person decided them
         closed: set[int] = set()
 
         # Read, not opened: a batch the budget never reaches must not be left with a pending step of its own.
@@ -1270,24 +1269,23 @@ class ResearchFlow:
                     submitted += run_no in owed
                     yield _AbstractJob(f"{prefix}:{number}:{run_no}", number, run_no, rows_of[number])
 
-        def undecided(job: _AbstractJob, rows: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-            """The rows still to send, or None when none are; what is left out is remembered for the batch's close."""
+        def undecided(rows: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+            """The rows still to send, or None when none are."""
             decided = self._human_decided_records(run["research_id"], [row["source_version_id"] for row in rows])
-            left_out.setdefault(job.number, set()).update(decided)
             kept = [row for row in rows if row["source_version_id"] not in decided]
             return kept or None
 
         async def call(job: _AbstractJob) -> dict[str, Any] | None:
             nonlocal submitted
-            # Checked again once the limiter let the call through, and once more right before the StepInput is
-            # stored: a person may have decided a record's work while the call waited. Those records are not sent; a
-            # call left with none is not made or charged (slice 16).
-            rows = undecided(job, job.rows)
+            # Checked again once the limiter let the call through, and once more before every send (`_model_step`): a
+            # person may have decided a record's work while the call waited. Those records are not sent; a call left
+            # with none is not made or charged (slice 16).
+            rows = undecided(job.rows)
             if rows is None:
                 submitted -= job.key not in answered
                 return None
             return await self._abstract_call(run, scope, job.number, job.run_no, rows, self.deps.limiter, prefix,
-                                             recheck=lambda rows: undecided(job, rows))
+                                             recheck=undecided)
 
         def close_ready(completed: list[tuple[dict[str, Any] | None, _AbstractJob]]) -> None:
             """Close every batch both of whose runs have come back, on the event loop, one short transaction each."""
@@ -1300,7 +1298,7 @@ class ResearchFlow:
                 closed.add(number)
                 # A record one run of the batch was not sent gets nothing from the batch, even if the person's
                 # decision was taken back since: only what both runs saw is closed.
-                sent = [row for row in rows_of[number] if row["source_version_id"] not in left_out.get(number, set())]
+                sent = self._sent_to_every_run(run_id, prefix, number, runs, rows_of[number])
                 self._close_abstract_batch(run, number, sent,
                                            [collected[number][run_no] for run_no in range(1, runs + 1)], runs, prefix)
 
@@ -1311,6 +1309,31 @@ class ResearchFlow:
             self._write_abstract_codes(run, step_id, [(svid, "abstract_not_read") for svid in unread])
         if stop is not None:
             raise stop
+
+    def _sent_to_every_run(self, run_id: str, prefix: str, number: int, runs: int,
+                           rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The batch's rows that every run of it was sent, read from the stored steps and StepInputs (slice 16).
+
+        A run never sent (no step, or one closed unsent for a person's decision) saw nothing; a run that stored a
+        StepInput saw that StepInput's candidates, its last attempt's. A run stopped before storing one for another
+        reason (the budget) narrows nothing, as before. Being read from the store, a resumed run closes the same
+        records the stopped one would have.
+        """
+        for run_no in range(1, runs + 1):
+            key = f"{prefix}:{number}:{run_no}"
+            if self._unsent(run_id, key):
+                return []
+            last = self.store.last_step_input(self.store.existing_step(run_id, key)["id"])
+            if last is not None:
+                seen = {c["candidate_id"] for c in self.store.step_input_payload(last["id"])["candidates"]}
+                rows = [row for row in rows if row["candidate_id"] in seen]
+        return rows
+
+    def _unsent(self, run_id: str, key: str) -> bool:
+        """Whether this call of a two-run stage was never sent: it has no step, or its step was closed unsent because
+        a person decided its work (slice 16). Read from the store, so a resumed run sees what the stopped one did."""
+        step = self.store.existing_step(run_id, key)
+        return step is None or step["error_code"] == "human_decided"
 
     def _human_decided_records(self, research_id: str, svids: list[str]) -> set[str]:
         """Which of these records belong to a work a person decided at any stage (slice 16)."""
@@ -2951,7 +2974,6 @@ class ResearchFlow:
         submitted = 0
         collected: dict[str, dict[int, dict[str, Any] | None]] = {}
         closed: set[str] = set()
-        left_out: set[str] = set()  # works a run was not sent for, because a person decided them (slice 16)
         items = {item["head"]: item for item in works}
         answered = {s["operation_key"] for s in self.store.run_steps(run_id)
                     if s["kind"] == "model:fulltext_adjudication"
@@ -2983,13 +3005,10 @@ class ResearchFlow:
             if not self._adjudication_member(run["research_id"], job.head, job.read_version):
                 return None
             # Checked again once the limiter let the call through: a person may have decided the work while it
-            # waited. No step is opened and the call is not charged to the budget (slice 16). Checked once more right
-            # before the StepInput is stored, after the connection check.
+            # waited. No step is opened and the call is not charged to the budget (slice 16). Checked once more before
+            # every send, the first and each resend (`_model_step`).
             def undecided(rows: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-                if self._human_decided_fulltext(run["research_id"], job.head):
-                    left_out.add(job.head)
-                    return None
-                return rows
+                return None if self._human_decided_fulltext(run["research_id"], job.head) else rows
 
             if undecided([]) is None:
                 submitted -= f"fulltext_adjudication:{job.head}:{job.run_no}" not in answered
@@ -3008,9 +3027,10 @@ class ResearchFlow:
             for head in sorted(collected):
                 if head in closed or len(collected[head]) < FULLTEXT_RUNS:
                     continue
-                if head in left_out:
+                if any(self._unsent(run_id, f"fulltext_adjudication:{head}:{run_no}")
+                       for run_no in range(1, FULLTEXT_RUNS + 1)):
                     # One run of the work was not sent: nothing is written from the other, even if the person's
-                    # decision was taken back since.
+                    # decision was taken back since. Read from the stored steps, as a resumed run reads them.
                     closed.add(head)
                     continue
                 try:
@@ -3799,11 +3819,14 @@ class ResearchFlow:
     async def _call_adapter(self, run_id: str, rid: str, step_id: str, step_input_id: str, connection: str,
                             requested_model: str | None, adapter: ModelAdapter, base: str, developer: str, message: str,
                             schema: dict[str, Any], reasoning_effort: str | None,
-                            limiter: ModelCallLimiter | None) -> tuple[str, ModelStepResult]:
+                            limiter: ModelCallLimiter | None,
+                            resend: Callable[[], bool] | None = None) -> tuple[str | None, ModelStepResult]:
         """Send one model call, resending under a lower ceiling after a rate-limit response.
 
         Resends reuse the stored StepInput because their model input is identical, and each gets its own model session.
-        Passing no limiter keeps the existing one-attempt behavior for model steps outside table fill.
+        Passing no limiter keeps the existing one-attempt behavior for model steps outside table fill. `resend` is
+        asked right before a resend: when it says no (a person decided a work of this input meanwhile, slice 16), the
+        call returns no session and the rate-limited result, and the caller builds its next input itself.
         """
         attempts = 0
         while True:
@@ -3821,6 +3844,8 @@ class ResearchFlow:
             await limiter.reduce()
             self._checkpoint(run_id)
             await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS * attempts)
+            if resend is not None and not resend():
+                return None, result
 
     async def _model_step(self, run: dict[str, Any], scope: dict[str, Any], operation_key: str, task_type: str,
                           candidate_rows: list[dict[str, Any]] | None = None, source_ids: list[str] | None = None,
@@ -3857,14 +3882,12 @@ class ResearchFlow:
         if not health.get("ready"):
             halt("model_connection_not_ready", {"connection": connection, "reason": health.get("reason")})
         self._checkpoint(run_id)  # a pause or cancel may have arrived while the connection was checked
-        if recheck is not None:
-            # The last look before anything is sent (slice 16): a person may have decided the work while the
-            # connection was checked. The candidates still wanted are sent; with none, the step is closed unsent.
-            wanted = recheck(candidate_rows or [])
-            if wanted is None:
-                self.store.finish_step(step["id"], "failed", error_code="human_decided")
-                return {"invalid": True, "issues": [], "step_input_id": None, "human_decided": True}
-            candidate_rows = wanted if candidate_rows is not None else candidate_rows
+
+        def unchanged() -> bool:
+            """Whether a rate-limited call may be resent as it is: no work of its input was decided meanwhile."""
+            wanted = recheck(candidate_rows or []) if recheck is not None else candidate_rows or []
+            return wanted is not None and len(wanted) == len(candidate_rows or [])
+
         self.store.start_step(step["id"])
         repair_issues: list[dict[str, Any]] | None = None
         max_repairs = schema_repairs(task_type)
@@ -3873,6 +3896,16 @@ class ResearchFlow:
         attempt, repairs, timeout_resent = -1, 0, False
         while True:
             attempt += 1
+            if recheck is not None:
+                # The last look before each send (slice 16), the first one and every resend: a person may have
+                # decided a work while the connection was checked or while an earlier attempt was out. The candidates
+                # still wanted are sent; with none, the step is closed unsent. That is a skip, not a failure: a resumed
+                # run opens the step again, and sends it if the decision was taken back.
+                wanted = recheck(candidate_rows or [])
+                if wanted is None:
+                    self.store.finish_step(step["id"], "cancelled", error_code="human_decided")
+                    return {"invalid": True, "issues": [], "step_input_id": None, "human_decided": True}
+                candidate_rows = wanted if candidate_rows is not None else candidate_rows
             if self.store.run(run_id)["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"]:
                 if repair_issues is not None and budget_short == "skip":
                     # A repair the budget no longer holds is skipped (D86): the invalid answer stands for this run,
@@ -3912,8 +3945,10 @@ class ResearchFlow:
             self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema, selection_revision)
             session, result = await self._call_adapter(
                 run_id, rid, step["id"], payload["step_input_id"], connection, requested_model, adapter, base, developer,
-                message, schema, reasoning_effort, limiter,
+                message, schema, reasoning_effort, limiter, unchanged if recheck is not None else None,
             )
+            if session is None:
+                continue  # rate-limited, and a work of this input was decided since: the next attempt is built anew
             recorded: dict[str, Any] = {
                 "status": result.status, "resolved_model": result.resolved_model, "external_thread_id": result.external_thread_id,
                 "raw_output": result.raw_text, "token_usage_json": result.token_usage, "tool_item_types_json": result.tool_item_types,

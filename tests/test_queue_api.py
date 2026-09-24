@@ -7,9 +7,13 @@ the chain read, the fetch plan, the reading plan and a reading run already in fl
 the `sw` workflow; it says nothing about how a real model or a real person reads a paper.
 """
 
+import asyncio
+
 import pytest
 
+from deixis.models.adapter import ModelStepResult
 from deixis.workflow import abstract_stage, adjudication, fulltext
+from deixis.workflow import flow as flow_module
 from deixis.workflow.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
 from test_abstract_flow import records_of, responder
@@ -375,6 +379,7 @@ def test_a_decision_taken_while_the_connection_is_checked_stops_the_call_before_
         store = app.state.store
         decided = holder["decided"]
         screening = {s["operation_key"]: s for s in store.run_steps(run_id) if s["kind"] == "model:abstract_screening"}
+        unsent = [store.last_step_input(s["id"]) for s in screening.values() if s["error_code"] == "human_decided"]
         calls = [c for c in adapter.calls if c["run_id"] == run_id]
         usage = store.run(run_id)["usage"].get("model_calls", 0)
         abstract = DecisionStore(store).current(rid, decided, "abstract")
@@ -382,7 +387,8 @@ def test_a_decision_taken_while_the_connection_is_checked_stops_the_call_before_
         client.__exit__(None, None, None)
     assert run["status"] == "completed", run
     statuses = sorted((s["status"], s["error_code"]) for s in screening.values())
-    assert statuses == [("failed", "human_decided"), ("succeeded", None)]
+    # Skipped, not failed: the step is not trouble for the run's view, and a resumed run may open it again.
+    assert statuses == [("cancelled", "human_decided"), ("succeeded", None)] and unsent == [None]
     assert len([c for c in calls if c["task_type"] == "abstract_screening"]) == 1 and usage == len(calls)
     assert abstract is None
 
@@ -416,13 +422,15 @@ def test_a_work_decided_while_the_connection_is_checked_for_its_second_reading_c
         store = app.state.store
         decided = holder["decided"]
         steps = [s for s in store.run_steps(reading["id"]) if s["kind"] == "model:fulltext_adjudication"]
+        unsent = [store.last_step_input(s["id"]) for s in steps if s["error_code"] == "human_decided"]
         usage = store.run(reading["id"])["usage"].get("model_calls", 0)
         current = DecisionStore(store).current(rid, decided, "fulltext")
         proposals = DecisionStore(store).proposals(rid, decided, "fulltext")
     finally:
         client.__exit__(None, None, None)
     assert reading["status"] == "completed"
-    assert sorted((s["status"], s["error_code"]) for s in steps) == [("failed", "human_decided"), ("succeeded", None)]
+    assert sorted((s["status"], s["error_code"]) for s in steps) == [("cancelled", "human_decided"), ("succeeded", None)]
+    assert unsent == [None]
     assert usage == 1 and len(adj_calls(adapter, reading["id"])) == 1
     assert current["reason_code"] == "human_criterion_not_met" and proposals == []
 
@@ -494,6 +502,295 @@ def test_a_response_that_arrives_after_the_person_decided_writes_no_proposal_and
     assert len(adj_calls(adapter, reading["id"])) == 2 and steps == ["succeeded", "succeeded"]  # the steps stay stored
     assert proposals == 0 and history == ["not_read_yet", "human_include"]
     assert summary["human_decided"] == 1 and summary["not_settled"] == 0 and summary["include"] == 0
+
+
+# ---- every send after a decision: resends, a real limiter wait, a pause, an undo before the close ------------------
+
+def test_a_record_decided_while_its_abstract_call_waits_in_the_limiter_is_not_sent(tmp_path, monkeypatch):
+    """Two calls allowed, one slot held elsewhere: the batch's second run really waits in the limiter while the first
+    is out, and a person decides a record in that wait. The second run goes without it and the record gets nothing."""
+    holder = {}
+
+    def before(si):
+        store = holder["app"].state.store
+        limiter = holder["app"].state.worker.flow.deps.limiter
+        if si["task_type"] != "abstract_screening":
+            if "hold" not in holder:  # an earlier step of the run takes one of the two slots until it is released
+                holder["release"] = asyncio.Event()
+                holder["hold"] = asyncio.ensure_future(limiter.run("synthetic-hold", holder["release"].wait))
+            return
+        if "decided" in holder:
+            return
+        sent = sent_records(store, si)
+        # Both slots are taken (the hold and this call) and the batch's other run is already in the limiter.
+        holder["waiting"] = (limiter._in_flight == limiter.limit == 2
+                             and sum(key.startswith("abstract_screening:") for key in limiter._by_key) == 2)
+        DecisionStore(store).record(store.run(si["run_id"])["research_id"], sent[0], "human_include")
+        holder.update(decided=sent[0], first=sent)
+        holder["release"].set()
+
+    from test_abstract_flow import work as abstract_work
+    adapter = FakeAdapter(responder(), before=before)
+    app = app_for(tmp_path, monkeypatch, Transport([abstract_work(n) for n in range(3)]), papers(0)[1],
+                  adapter=adapter, fetch="off", reading="off", concurrency=2)
+    holder["app"] = app
+    client = client_of(app)
+    try:
+        rid, run_id, _, run = discover(client)
+        store = app.state.store
+        sent = [sent_records(store, call) for call in adapter.calls if call["task_type"] == "abstract_screening"]
+        decided = holder["decided"]
+        abstract = DecisionStore(store).current(rid, decided, "abstract")
+        proposals = DecisionStore(store).proposals(rid, decided, "abstract")
+        usage = store.run(run_id)["usage"].get("model_calls", 0)
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed", run
+    assert holder["waiting"]
+    assert len(sent) == 2 and decided in sent[0] and sent[1] == [svid for svid in sent[0] if svid != decided]
+    assert abstract is None and proposals == [] and usage == len([c for c in adapter.calls if c["run_id"] == run_id])
+
+
+def test_a_rate_limited_abstract_call_is_resent_without_a_record_decided_while_it_was_out(tmp_path, monkeypatch):
+    """A resend is a new call: it stores its own StepInput without the record a person decided while the first try was
+    out, and the record gets nothing from the batch."""
+    monkeypatch.setattr(flow_module, "RATE_LIMIT_BACKOFF_SECONDS", 0)
+    holder = {}
+
+    def before(si):
+        if si["task_type"] != "abstract_screening" or "decided" in holder:
+            return
+        store = holder["app"].state.store
+        sent = sent_records(store, si)
+        DecisionStore(store).record(store.run(si["run_id"])["research_id"], sent[0], "human_include")
+        holder.update(decided=sent[0], first=sent)
+
+    def fail(si):
+        if si["task_type"] == "abstract_screening" and not holder.get("limited"):
+            holder["limited"] = True
+            return ModelStepResult("failed", error="429 Too Many Requests")
+        return None
+
+    from test_abstract_flow import work as abstract_work
+    adapter = FakeAdapter(responder(), before=before, fail=fail)
+    app = app_for(tmp_path, monkeypatch, Transport([abstract_work(n) for n in range(3)]), papers(0)[1],
+                  adapter=adapter, fetch="off", reading="off")
+    holder["app"] = app
+    client = client_of(app)
+    try:
+        rid, run_id, _, run = discover(client)
+        store = app.state.store
+        sent = [sent_records(store, call) for call in adapter.calls if call["task_type"] == "abstract_screening"]
+        decided = holder["decided"]
+        abstract = DecisionStore(store).current(rid, decided, "abstract")
+        proposals = DecisionStore(store).proposals(rid, decided, "abstract")
+        others = {DecisionStore(store).current(rid, svid, "abstract")["reason_code"]
+                  for svid in holder["first"] if svid != decided}
+        usage = store.run(run_id)["usage"].get("model_calls", 0)
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed", run
+    assert len(sent) == 3 and decided in sent[0]
+    assert sent[1] == sent[2] == [svid for svid in sent[0] if svid != decided]
+    assert abstract is None and proposals == [] and others == {"runs_agree_candidate"}
+    assert usage == len([c for c in adapter.calls if c["run_id"] == run_id])
+
+
+@pytest.mark.parametrize("resend", ["rate_limit", "turn_timeout", "schema_repair"])
+def test_a_reading_call_is_not_sent_again_for_a_work_decided_while_it_was_out(tmp_path, monkeypatch, resend):
+    """The three ways a step sends a second time: after a rate limit, after a turn timeout, and for a schema repair.
+    None of them is sent for a work a person decided meanwhile; the step closes unsent and nothing is written."""
+    monkeypatch.setattr(flow_module, "RATE_LIMIT_BACKOFF_SECONDS", 0)
+    holder = {}
+
+    def before(si):
+        if si["task_type"] != "fulltext_adjudication" or "decided" in holder:
+            return
+        store = holder["app"].state.store
+        holder["decided"] = sent_source(store, si)
+        DecisionStore(store).record(store.run(si["run_id"])["research_id"], holder["decided"], "human_criterion_not_met")
+
+    def fail(si):
+        if si["task_type"] != "fulltext_adjudication" or holder.get("failed"):
+            return None
+        holder["failed"] = True
+        if resend == "rate_limit":
+            return ModelStepResult("failed", error="429 Too Many Requests")
+        if resend == "turn_timeout":
+            return ModelStepResult("failed", error="client_timeout", delivery_class="after_send_unknown")
+        return ModelStepResult("completed", raw_text="{", resolved_model="fake-model")
+
+    works, fetcher = papers(1)
+    adapter = FakeAdapter(valid_response, before=before, fail=fail)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    holder["app"] = app
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        decided = holder["decided"]
+        steps = [(s["status"], s["error_code"]) for s in store.run_steps(reading["id"])
+                 if s["kind"] == "model:fulltext_adjudication"]
+        usage = store.run(reading["id"])["usage"].get("model_calls", 0)
+        current = DecisionStore(store).current(rid, decided, "fulltext")
+        proposals = DecisionStore(store).proposals(rid, decided, "fulltext")
+    finally:
+        client.__exit__(None, None, None)
+    assert reading["status"] == "completed", reading
+    assert len(adj_calls(adapter, reading["id"])) == 1 and usage == 1
+    assert steps == [("cancelled", "human_decided")]
+    assert current["reason_code"] == "human_criterion_not_met" and proposals == []
+
+
+def test_a_record_one_run_was_not_sent_gets_nothing_after_a_pause_an_undo_and_a_resume(tmp_path, monkeypatch):
+    """The run pauses after both runs of the batch came back and before it closed; the decision is undone while it is
+    paused. The resumed run reads both answers back and closes only what both stored StepInputs hold, so the record the
+    second run was not sent gets no proposal and no decision (Sol's final check of slice 16, finding 3)."""
+    holder = {}
+
+    def before(si):
+        if si["task_type"] != "abstract_screening":
+            return
+        store = holder["app"].state.store
+        if "decided" not in holder:
+            sent = sent_records(store, si)
+            DecisionStore(store).record(store.run(si["run_id"])["research_id"], sent[0], "human_include")
+            holder.update(decided=sent[0], first=sent)
+        elif "paused" not in holder:
+            holder["paused"] = True
+            store.update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
+                             pause_reason="user_requested")
+
+    from test_abstract_flow import work as abstract_work
+    adapter = FakeAdapter(responder(), before=before)
+    app = app_for(tmp_path, monkeypatch, Transport([abstract_work(n) for n in range(3)]), papers(0)[1],
+                  adapter=adapter, fetch="off", reading="off")
+    holder["app"] = app
+    client = client_of(app)
+    try:
+        rid, run_id, _, paused = discover(client)
+        store = app.state.store
+        decided = holder["decided"]
+        closed_before = DecisionStore(store).proposals(rid, holder["first"][1], "abstract")
+        DecisionStore(store).undo_human(rid, decided, "fulltext")
+        client.post(f"/api/runs/{run_id}/resume")
+        _, run = wait(client, rid, run_id)
+        calls = [c for c in adapter.calls if c["task_type"] == "abstract_screening"]
+        abstract = DecisionStore(store).current(rid, decided, "abstract")
+        proposals = DecisionStore(store).proposals(rid, decided, "abstract")
+        others = {DecisionStore(store).current(rid, svid, "abstract")["reason_code"]
+                  for svid in holder["first"] if svid != decided}
+    finally:
+        client.__exit__(None, None, None)
+    assert paused["status"] == "paused" and closed_before == []  # paused before the batch closed
+    assert run["status"] == "completed", run
+    assert len(calls) == 2  # the resumed run reads both answers back and sends nothing again
+    assert abstract is None and proposals == [] and others == {"runs_agree_candidate"}
+
+
+def test_a_reading_decision_undone_before_the_close_leaves_the_work_undecided_by_the_run(tmp_path, monkeypatch):
+    """Two calls in flight: the work's second call is closed unsent because a person decided it during the connection
+    check, and the decision is undone before the first call returns. Nothing is closed from one run: no proposal, no
+    decision, and the next reading run reads the work with two calls."""
+    holder = {}
+
+    def before(si):
+        if si["task_type"] == "fulltext_adjudication" and "armed" not in holder:
+            store = holder["app"].state.store
+            holder.update(armed=sent_source(store, si), rid=store.run(si["run_id"])["research_id"])
+
+    def respond(si):
+        if si["task_type"] == "fulltext_adjudication" and holder.get("decided") and not holder.get("undone"):
+            DecisionStore(holder["app"].state.store).undo_human(holder["rid"], holder["decided"], "fulltext")
+            holder["undone"] = True
+        return valid_response(si)
+
+    works, fetcher = papers(1)
+    adapter = FakeAdapter(respond, before=before, delay=0.05)
+    health = adapter.health
+
+    async def slow_health(refresh=False):
+        if holder.get("armed") and not holder.get("decided"):
+            DecisionStore(holder["app"].state.store).record(holder["rid"], holder["armed"], "human_criterion_not_met")
+            holder["decided"] = holder["armed"]
+        return await health(refresh)
+
+    adapter.health = slow_health
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter, concurrency=2)
+    holder["app"] = app
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        decided = holder["decided"]
+        steps = sorted((s["status"], s["error_code"]) for s in store.run_steps(reading["id"])
+                       if s["kind"] == "model:fulltext_adjudication")
+        current = DecisionStore(store).current(rid, decided, "fulltext")
+        proposals = DecisionStore(store).proposals(rid, decided, "fulltext")
+        later = reading_run(client, rid)
+        later_calls = calls_for(store, adapter, later["id"], decided)
+    finally:
+        client.__exit__(None, None, None)
+    assert reading["status"] == "completed" and holder["undone"]
+    assert steps == [("cancelled", "human_decided"), ("succeeded", None)]
+    assert proposals == [] and current["decided_by"] != "human" and current["reason_code"] == "not_read_yet"
+    assert len(later_calls) == 2
+
+
+def test_a_reading_call_closed_unsent_is_opened_again_and_sent_when_the_run_resumes_after_an_undo(
+        tmp_path, monkeypatch):
+    """A step closed unsent for a person's decision is a skip, not a failure: the run pauses, the decision is undone,
+    and the resumed run sends that call and closes the work from both runs."""
+    holder = {}
+
+    def before(si):
+        if si["task_type"] != "fulltext_adjudication":
+            return
+        store = holder["app"].state.store
+        source = sent_source(store, si)
+        if "armed" not in holder:
+            holder.update(armed=source, rid=store.run(si["run_id"])["research_id"])
+        elif source != holder["armed"] and "paused" not in holder:
+            holder["paused"] = True
+            store.update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
+                             pause_reason="user_requested")
+
+    works, fetcher = papers(2)
+    adapter = FakeAdapter(valid_response, before=before)
+    health = adapter.health
+
+    async def slow_health(refresh=False):
+        if holder.get("armed") and not holder.get("decided"):
+            DecisionStore(holder["app"].state.store).record(holder["rid"], holder["armed"], "human_criterion_not_met")
+            holder["decided"] = holder["armed"]
+        return await health(refresh)
+
+    adapter.health = slow_health
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    holder["app"] = app
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, paused = wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        decided = holder["decided"]
+        skipped = [(s["status"], s["error_code"]) for s in store.run_steps(paused["id"])
+                   if s["operation_key"] == f"fulltext_adjudication:{decided}:2"]
+        DecisionStore(store).undo_human(rid, decided, "fulltext")
+        client.post(f"/api/runs/{paused['id']}/resume")
+        _, reading = wait(client, rid, paused["id"])
+        resent = [(s["status"], s["error_code"]) for s in store.run_steps(reading["id"])
+                  if s["operation_key"] == f"fulltext_adjudication:{decided}:2"]
+        runs = sorted(call["adjudication_target"]["run"] for call in calls_for(store, adapter, reading["id"], decided))
+        current = DecisionStore(store).current(rid, decided, "fulltext")
+    finally:
+        client.__exit__(None, None, None)
+    assert paused["status"] == "paused" and skipped == [("cancelled", "human_decided")]
+    assert reading["status"] == "completed" and resent == [("succeeded", None)]
+    assert runs == [1, 2]  # the first call is read back, only the skipped one is sent
+    assert current["decided_by"] == "model_agreement" and current["reason_code"] != "not_read_yet"
 
 
 # ---- the fifth answer --------------------------------------------------------------------------------------------

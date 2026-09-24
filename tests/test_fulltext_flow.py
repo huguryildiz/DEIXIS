@@ -103,7 +103,10 @@ TIMED_OUT = FetchResult("timeout", final_url=None, error="ReadTimeout")
 
 
 def app_for(tmp_path, monkeypatch, transport, fetcher, workflow="sw", setting="auto", adapter=None,
-            approval="as_proposed"):
+            approval="as_proposed", overlap=False):
+    if not overlap:
+        # A discovery run queued before slice 17a: its fetch follows as a retrieval run of its own (decision 3).
+        monkeypatch.setattr(fulltext, "overlap_budget", fulltext.fetch_budget)
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
@@ -233,16 +236,22 @@ def test_no_retrieval_run_follows_when_the_setting_is_off_or_the_research_is_leg
 
 
 def test_a_paused_discovery_run_queues_nothing(tmp_path, monkeypatch):
-    """Only a run that really completed leaves work behind; one waiting for the user is still theirs to resume."""
-    app = app_for(tmp_path, monkeypatch, Transport([work(1)]), Fetcher({}), approval="ask")
+    """Only a run that really completed leaves work behind; one waiting for the user is still theirs to resume.
+
+    Since slice 17a the fetch is part of the discovery run: paused before its abstract code step, it has fetched
+    nothing, and neither a retrieval run nor a reading run follows it."""
+    fetcher = Fetcher({})
+    app = app_for(tmp_path, monkeypatch, Transport([work(1)]), fetcher, approval="ask", overlap=True)
     client = client_of(app)
     try:
-        rid, _, _, run = discover(client)
-        queued = retrieval_runs(client, rid)
+        rid, run_id, _, run = discover(client)
+        queued = [r for r in client.get(f"/api/researches/{rid}").json()["runs"] if r["id"] != run_id]
+        keys = [s["operation_key"] for s in app.state.store.run_steps(run_id)]
     finally:
         client.__exit__(None, None, None)
     assert run["status"] == "paused" and run["pause_reason"] == "protocol_approval_needed"
-    assert queued == []
+    assert queued == [] and fetcher.calls == []
+    assert not [key for key in keys if key.startswith(("fetch_baseline", "fulltext_"))]
 
 
 # ---- what one work's single attempt does -------------------------------------------------------
@@ -516,13 +525,13 @@ def test_a_work_whose_text_is_already_here_is_not_requested_and_still_gets_its_c
 
 # ---- a resumed run finishes the whole plan and counts nothing twice ----------------------------
 
-def paused_after(app, n):
+def paused_after(app, n, kind="fulltext_fetch"):
     """A fetcher that asks the running retrieval run to pause once it has answered n requests."""
     def hook(fetcher, url):
         if len(fetcher.calls) != n:
             return
         row = app.state.store.conn.execute(
-            "SELECT id FROM runs WHERE kind = 'fulltext_fetch' AND status = 'running'").fetchone()
+            "SELECT id FROM runs WHERE kind = ? AND status = 'running'", (kind,)).fetchone()
         if row:
             app.state.store.update_run(row["id"], status="pause_requested", pause_reason="user_requested")
     return hook
@@ -692,18 +701,19 @@ def test_a_question_revision_cancels_the_run_and_makes_its_decisions_stale(tmp_p
 
 
 def test_an_answer_run_waits_for_the_retrieval_run_and_is_free_once_it_is_paused(tmp_path, monkeypatch):
-    """One worker, one active run per research: the way out of a long retrieval is to pause it (open point)."""
+    """One worker, one active run per research: the way out of a long retrieval is to pause it (open point).
+
+    Since slice 17a the retrieval is part of the discovery run, so it is that run the answer waits for and pauses."""
     # More works than are fetched at once (slice 13e), so the resumed run still has works of its own to fetch.
     numbers = range(1, fulltext.FULLTEXT_FETCH_PARALLEL + 3)
     monkeypatch.setattr(fulltext, "FULLTEXT_WORK_LIMIT", dict(fulltext.FULLTEXT_WORK_LIMIT, quick=len(numbers)))
     fetcher = Fetcher({f"https://example.org/w{n}.pdf": ok() for n in numbers})
     app = app_for(tmp_path, monkeypatch, Transport([work(n, pdf_url=f"https://example.org/w{n}.pdf") for n in numbers]),
-                  fetcher)
-    fetcher.hook = paused_after(app, 1)
+                  fetcher, overlap=True)
+    fetcher.hook = paused_after(app, 1, kind="discovery")
     client = client_of(app)
     try:
-        rid, _, view, _ = discover(client)
-        _, paused = wait_for_retrieval(client, rid)
+        rid, _, view, paused = discover(client)
         head = records_of(app.state.store, rid)["W1"]
         source = next(s for s in client.get(f"/api/researches/{rid}").json()["sources"]
                       if s["source_version_id"] == head)

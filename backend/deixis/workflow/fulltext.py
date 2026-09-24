@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from deixis.domain import canonical
 from deixis.domain.reason_codes import reason
 from deixis.domain.rules import CHAIN_PLAN_ROOM, FULLTEXT_WORK_LIMIT
 
@@ -43,6 +44,15 @@ def fetch_budget(effort: str) -> dict[str, Any]:
     and plans no chain group."""
     return {"max_model_calls": 0, "max_provider_requests": 0, "max_fulltext_works": FULLTEXT_WORK_LIMIT[effort],
             "chain_room": CHAIN_PLAN_ROOM[effort]}
+
+
+def overlap_budget(effort: str) -> dict[str, Any]:
+    """The retrieval room an `sw` discovery run is queued with when its fetch overlaps its screening (slice 17a).
+
+    `fetch_budget`'s room under an explicit mode: a discovery run queued before 17a carries none and leaves a separate
+    retrieval run behind as it always did (decision 3).
+    """
+    return {"mode": "overlap", **fetch_budget(effort)}
 
 
 def _named(rows: list[dict[str, Any]], head: str) -> dict[str, Any]:
@@ -156,6 +166,70 @@ def fetch_plan(works: list[dict[str, Any]], order: list[str], limit: int, chain_
             (chained if GROUPS[group] == "chain" else pending).append(head)
     return {"works": pending[:limit] + chained[:chain_room], "not_reached": pending[limit:] + chained[chain_room:],
             "already_text": already_text}
+
+
+# A work of the fetch that overlaps discovery (slice 17a) whose attempt was cut by a crash is sent again on resume;
+# after this many starts it is closed as not settled instead, and a later run tries it again (D18).
+FULLTEXT_WORK_ATTEMPTS = 3
+# What a work whose abstract batch is still open is counted as when the safe set is computed: the outcome that takes
+# a slot ahead of the most works (a candidate), whatever the model later says.
+WORST_CASE = {"reason_code": "blocks_in_title", "decided_by": "code", "stale": False}
+
+
+def baseline_of(works: list[dict[str, Any]], **fixed: Any) -> dict[str, Any]:
+    """The works this stage has already settled and the works with PDF text, by `work_id`, at one moment (slice 17a).
+
+    Taken once, when the abstract code step ends and before the fetch that overlaps discovery starts, so the plan is
+    computed against what was there before that fetch, never against what it wrote itself. `fixed` is what the
+    proof rests on besides (the revision, the criterion, the room, the keyword order); the digest covers everything
+    but itself, and the lists are sorted, so the same works read in another order give the same digest.
+    """
+    body = {"version": 1, **fixed,
+            "settled": sorted(work["work_id"] for work in works if _settled(work)),
+            "has_text": sorted(work["work_id"] for work in works
+                               if any(version.get("has_text") for version in work["versions"]))}
+    return body | {"hash": canonical.sha256_hex(body)}
+
+
+def as_of_baseline(works: list[dict[str, Any]], baseline: dict[str, Any],
+                   pending: set[str] | frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+    """These works as the plan reads them under `baseline`, with every `pending` work counted as a candidate.
+
+    The codes this stage owns and the PDF text are read from the baseline alone: a work the overlapping fetch already
+    settled, or gave a text, stays in the plan it was claimed under instead of dropping out of it and letting the works
+    behind it move up (Sol, finding 4). A decision a person or the reading stage wrote is kept as it is.
+    """
+    settled, has_text = set(baseline["settled"]), set(baseline["has_text"])
+    out = []
+    for work in works:
+        versions = []
+        for version in work["versions"]:
+            row = version.get("fulltext")
+            if row is not None and row["reason_code"] in OWNED_CODES and row["decided_by"] != "human":
+                row = None
+            versions.append(dict(version, has_text=work["work_id"] in has_text, fulltext=row,
+                                 **({"abstract": WORST_CASE} if work["work_id"] in pending else {})))
+        if work["work_id"] in settled and versions:
+            at = next((i for i, version in enumerate(versions)
+                       if (version["fulltext"] or {}).get("decided_by") != "human"), 0)
+            versions[at] = dict(versions[at], fulltext={"reason_code": OWNED_CODES[0], "decided_by": "code",
+                                                        "stale": False})
+        out.append(dict(work, versions=versions))
+    return out
+
+
+def safe_to_fetch(works: list[dict[str, Any]], order: list[str], limit: int, chain_order: list[str] | tuple[str, ...],
+                  room: int, pending: set[str] | frozenset[str], baseline: dict[str, Any]) -> list[str]:
+    """The works that may be fetched now, by `work_id` in plan order, while the abstract stage is still deciding others.
+
+    A work is safe when its own abstract decision is final (it is not `pending`) and it is inside the plan in which
+    every pending work comes out a candidate. No pending work can take a slot the worst case did not already give it:
+    one that ends out of scope leaves the plan, and one that ends unresolved moves to a later group, so the works
+    behind it only move up (slice 17a, decision 2).
+    """
+    plan = fetch_plan(as_of_baseline(works, baseline, pending), order, limit, chain_order, room)
+    work_of = {work["head"]: work["work_id"] for work in works}
+    return [work_of[head] for head in plan["works"] if work_of[head] not in pending]
 
 
 def settled_code(attempt: dict[str, Any]) -> str | None:

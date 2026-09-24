@@ -1443,6 +1443,10 @@ const tr: Record<string, string> = {
   // The full-text retrieval run that follows an sw discovery run (slice 10, D83).
   'Full-text retrieval': 'Tam metin getirme',
   'Retrieval plan (code)': 'Getirme planı (kod)',
+  'Retrieval baseline (code)': 'Getirme tabanı (kod)',
+  'Retrieving the full text: {done} of {total}': 'Tam metin getiriliyor: {done} / {total}',
+  'Retrieved the full text of {n} work': '{n} işin tam metni getirildi',
+  'Retrieved the full text of {n} works': '{n} işin tam metni getirildi',
   'Full text of one work': 'Bir işin tam metni',
   'Retrieval summary (code)': 'Getirme özeti (kod)',
   'Criterion phrases (code)': 'Ölçüt ifadeleri (kod)',

@@ -21,6 +21,7 @@ from deixis.config import Settings
 from deixis.domain.rules import ABSTRACT_BATCH, CHAIN_ABSTRACT_READ
 from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
+from deixis.workflow import fulltext
 from fakes import FakeAdapter, valid_response
 from test_abstract_flow import (ON_ABSTRACT, ON_TOPIC, QUESTION, client_of, codes_of, records_of, responder, step_output,
                                 wait)
@@ -96,7 +97,11 @@ class OpenAlex:
                                          "results": self.works})
 
 
-def app_for(tmp_path, monkeypatch, handler, chaining="auto", workflow="sw", adapter=None, fetch="off", fetcher=None):
+def app_for(tmp_path, monkeypatch, handler, chaining="auto", workflow="sw", adapter=None, fetch="off", fetcher=None,
+            overlap=False):
+    if not overlap:
+        # A discovery run queued before slice 17a: its fetch follows as a retrieval run of its own (decision 3).
+        monkeypatch.setattr(fulltext, "overlap_budget", fulltext.fetch_budget)
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
@@ -146,7 +151,8 @@ def keyword_pool():
 def test_an_sw_run_chains_after_the_abstract_stage(tmp_path, monkeypatch):
     by_id = {"W900": work(900), "W901": work(901, OFF_TOPIC, OFF_ABSTRACT), "W902": work(902, abstract=None)}
     transport = OpenAlex(keyword_pool(), citing={"W1": [work(700), work(701, OFF_TOPIC, OFF_ABSTRACT)]}, by_id=by_id)
-    app = app_for(tmp_path, monkeypatch, transport)
+    # The full text is fetched beside the screening (slice 17a); the chain's steps keep their order around it.
+    app = app_for(tmp_path, monkeypatch, transport, fetch="auto", overlap=True)
     client = client_of(app)
     try:
         rid, run_id, view, run = discover(client)
@@ -163,6 +169,9 @@ def test_an_sw_run_chains_after_the_abstract_stage(tmp_path, monkeypatch):
     assert (order.index("abstract_stage") < order.index("chain_seeds") < order.index("chain:backward:0")
             < order.index("chain_filter") < order.index("chain_ranking") < order.index("chain_abstract_stage")
             < order.index("chain_summary"))
+    # The fetch starts after the keyword code step and its final plan waits for the chain (item 6).
+    assert order.index("abstract_stage") < order.index("fetch_baseline")
+    assert order.index("chain_summary") < order.index("fulltext_plan") < order.index("fulltext_summary")
     assert [s["kind"] for s in seeds["seeds"]] == ["code"] * 5 and seeds["backward_batches"] == [["W900", "W901", "W902"]]
     # What passed the filter is a record of the research; what did not is a link and nothing else.
     assert {"W700", "W900", "W902"} <= set(records) and not {"W701", "W901"} & set(records)
@@ -398,18 +407,13 @@ def test_the_keyword_ranking_read_plan_and_fetch_plan_are_unchanged_by_chaining(
         pool = keyword_pool() + [work(n, ON_TOPIC, ON_ABSTRACT + " Plot" * n) for n in range(10, 14)]
         transport = OpenAlex(pool, citing={"W1": [work(700), work(701)], "W10": [work(710)]},
                              by_id={"W900": work(900)})
-        app = app_for(path, monkeypatch, transport, chaining=chaining, fetch="auto")
+        # The plan is the one the discovery run writes itself once its screening is done (slice 17a).
+        app = app_for(path, monkeypatch, transport, chaining=chaining, fetch="auto", overlap=True)
         client = client_of(app)
         try:
             rid, run_id, view, run = discover(client)
             store = app.state.store
-            deadline = time.time() + 30
-            while time.time() < deadline and store.conn.execute(
-                    "SELECT COUNT(*) FROM runs WHERE research_id = ? AND kind = 'fulltext_fetch'"
-                    " AND status = 'completed'", (rid,)).fetchone()[0] == 0:
-                time.sleep(0.05)
-            fetch_run = store.conn.execute("SELECT id FROM runs WHERE research_id = ? AND kind = 'fulltext_fetch'",
-                                           (rid,)).fetchone()[0]
+            fetch_run = run_id
             ranking_step = store.step(run_id, "ranking", "code:ranking")["id"]
             ranks = sorted((openalex_of(store, [row["source_version_id"]])[0], row["signal"], row["rank"],
                             row["available"]) for row in store.conn.execute(

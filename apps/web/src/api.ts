@@ -38,7 +38,9 @@ export type Step = {
     image_pages?: number[]; blank_pages?: number[]; outcome?: 'current' | 'rejected' | 'unchanged'; rejection_reason?: string | null
     // Citation chaining (D95): what its summary counted, with the seeds it froze.
     seed_list?: { source_version_id: string; kind: 'code' | 'user' }[]; new_works?: number; read_by_model?: number
-    requests?: { sent?: number; failed?: number; not_reached_seeds?: number } } | null
+    requests?: { sent?: number; failed?: number; not_reached_seeds?: number }
+    // The full-text retrieval summary (D83), also written by a discovery run that fetched beside its screening (17a).
+    fetched?: number } | null
 }
 // What the search plan step reported, as the model wrote it.
 export type SearchPlan = {

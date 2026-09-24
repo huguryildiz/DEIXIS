@@ -59,7 +59,7 @@ function phaseOf(kind: string): PhaseKey | null {
   if (kind.startsWith('code:chain_') || kind.startsWith('provider_chain:')) return 'screen'
   if (kind === 'fetch_pdf' || kind === 'pdf_other_copy') return 'pdf'
   // A full-text retrieval run plans, fetches and totals in code; all three belong to the run's one PDF phase.
-  if (kind.startsWith('code:fulltext_')) return 'pdf'
+  if (kind.startsWith('code:fulltext_') || kind === 'code:fetch_baseline') return 'pdf'
   if (kind === 'code:adjudication_plan' || kind === 'model:fulltext_adjudication' || kind === 'code:adjudication_summary') return 'pdf'
   if (kind.startsWith('ocr_')) return 'ocr'
   if (kind.startsWith('embedding:')) return 'semantic'
@@ -158,7 +158,9 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
 
   const steps = run.steps ?? []
-  const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen'] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
+  // An sw discovery run queued since slice 17a fetches the full text itself, beside its screening.
+  const overlap = run.kind === 'discovery' && (run.budget.fulltext_fetch as unknown as { mode?: string } | undefined)?.mode === 'overlap'
+  const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen', ...(overlap ? ['pdf' as const] : [])] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
   const reached = Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
   // A citation chain's requests are not searches of the question; the screening phase reports them (D95).
@@ -188,9 +190,14 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const ocrPages = steps.find(s => s.kind === 'ocr_pages')?.output?.image_pages
   const rationaleOf = (provider: string, query: string) => plan?.queries.find(q => q.provider_id === provider && q.query_text === query)?.rationale ?? ''
 
+  // With the fetch beside it, screening is over only once its final retrieval plan is written; both phases can run at once.
+  const fetchPlanned = steps.some(s => s.kind === 'code:fulltext_plan' && s.status === 'succeeded')
+  const fetchSummary = steps.find(s => s.kind === 'code:fulltext_summary' && s.status === 'succeeded')?.output
+  const fetchWorks = steps.filter(s => s.kind === 'code:fulltext_work')
   const stateOf = (i: number): PhaseState => {
     const hasTrouble = groups[i].some(troubled)
     if (groups[i].some(step => step.status === 'running')) return 'running'
+    if (overlap && active && order[i] === 'screen' && groups[i].length && !fetchPlanned) return 'running'
     if (i < reached) return hasTrouble ? 'attention' : groups[i].length ? 'done' : 'skipped'
     if (i === reached) return active ? 'running' : hasTrouble ? 'attention' : run.status === 'completed' ? 'done' : 'attention'
     if (active && reached < 0 && i === 0 && run.status !== 'queued') return 'running'
@@ -203,6 +210,9 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const title = (key: PhaseKey, state: PhaseState, group: Step[]) => {
     const finished = searches.filter(s => s.status === 'completed' || s.status === 'zero_results').length
     if ((state === 'done' || state === 'attention') && key === 'search' && finished) return plural(finished, 'Conducted {n} search', 'Conducted {n} searches')
+    // The fetch inside a discovery run counts works, not files: N of the M works it has claimed so far are settled.
+    if (overlap && key === 'pdf' && state === 'running' && fetchWorks.length) return t('Retrieving the full text: {done} of {total}', { done: fetchWorks.filter(s => s.status === 'succeeded' || s.status === 'failed').length, total: fetchWorks.length })
+    if (overlap && key === 'pdf' && state === 'done' && fetchSummary) return plural(fetchSummary.fetched ?? 0, 'Retrieved the full text of {n} work', 'Retrieved the full text of {n} works')
     if (state === 'done' && key === 'pdf') return plural(group.filter(s => s.status === 'succeeded').length, attachedOnly ? 'Read {n} attached PDF' : 'Downloaded {n} open-access PDF', attachedOnly ? 'Read {n} attached PDFs' : 'Downloaded {n} open-access PDFs')
     if (state === 'done' && key === 'ocr' && ocrPages) return plural(ocrPages.length, 'Read {n} scanned page with OCR', 'Read {n} scanned pages with OCR')
     if (state === 'done' && key === 'review' && answer?.review?.status === 'completed') return plural(answer.review.reviews.length, 'Reviewed {n} claim', 'Reviewed {n} claims')

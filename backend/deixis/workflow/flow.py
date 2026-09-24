@@ -292,6 +292,22 @@ class _AdjudicationJob:
 
 
 @dataclass
+class _Held:
+    """A discovery run whose full-text fetch overlaps its screening (slice 17a, decision 4).
+
+    While both arms run, no call under them writes a stop on the run: `_checkpoint` only reads one, and `_pause` and
+    `_fail` note theirs here and stop their arm. The coordinator writes the stop once both arms have drained.
+    """
+
+    revision: int
+    wake: asyncio.Event = field(default_factory=asyncio.Event)  # an abstract batch closed, or an arm ended
+    halted: bool = False             # the coordinator stopped both arms
+    model_done: bool = False         # the model arm finished: the final plan can be written
+    stop: tuple[str, str, Any] | None = None  # ("pause" | "fail", reason, detail) a call asked for
+    closed: dict[str, set[int]] = field(default_factory=dict)  # abstract batches closed in this process, by key prefix
+
+
+@dataclass
 class FlowDeps:
     settings: Settings
     store: Store
@@ -307,6 +323,7 @@ class ResearchFlow:
     def __init__(self, deps: FlowDeps):
         self.deps = deps
         self.store = deps.store
+        self._held: dict[str, _Held] = {}
 
     async def execute(self, run_id: str) -> None:
         run = self.store.run(run_id)
@@ -336,7 +353,16 @@ class ResearchFlow:
                 await self._table_columns(run, scope)
         except RunStopped:
             return
-        if self.store.run(run_id)["status"] in ("running", "pause_requested"):
+        if self.store.run(run_id)["status"] in ("running", "pause_requested") and run["kind"] == "discovery" and self._overlaps(run):
+            # The fetch ran inside this run (slice 17a): the reading run is queued from here, once, only when the fetch
+            # wrote its summary, and in the transaction that completes the run, so no crash can come between the two
+            # and leave a completed run whose reading never opens (decision 5).
+            with transaction(self.store.conn):
+                self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
+                summary = self.store.existing_step(run_id, "fulltext_summary")
+                if summary is not None and summary["status"] == "succeeded":
+                    self._queue_fulltext_adjudication(run, scope)
+        elif self.store.run(run_id)["status"] in ("running", "pause_requested"):
             # Nothing is left to pause once the last step's result has been applied.
             self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
             if run["kind"] == "discovery":
@@ -350,6 +376,12 @@ class ResearchFlow:
 
     # ---- run control ---------------------------------------------------------------
     def _checkpoint(self, run_id: str, scope_revision: int | None = None) -> None:
+        held = self._held.get(run_id)
+        if held is not None:
+            # Inside the overlap a call only reads the stop; the coordinator writes it once both arms have drained.
+            if self._stop_requested(run_id, held.revision):
+                raise RunStopped
+            return
         run = self.store.run(run_id)
         if run["status"] == "pause_requested":
             self.store.update_run(run_id, event="run_paused", status="paused", pause_reason="user_requested")
@@ -362,14 +394,28 @@ class ResearchFlow:
             raise RunStopped
 
     def _pause(self, run_id: str, reason: str, detail: Any = None) -> None:
+        if self._hold(run_id, "pause", reason, detail):
+            raise RunStopped
         if self.store.run(run_id)["status"] == "cancelled":
             raise RunStopped
         self.store.update_run(run_id, event="run_paused", status="paused", pause_reason=reason, error_json=detail)
         raise RunStopped
 
     def _fail(self, run_id: str, reason: str, detail: Any = None) -> None:
+        if self._hold(run_id, "fail", reason, detail):
+            raise RunStopped
         self.store.update_run(run_id, event="run_failed", status="failed", pause_reason=reason, error_json=detail)
         raise RunStopped
+
+    def _hold(self, run_id: str, kind: str, reason: str, detail: Any) -> bool:
+        """Note a pause or failure a call under the overlap asked for, and stop both arms; False outside it."""
+        held = self._held.get(run_id)
+        if held is None:
+            return False
+        held.stop = held.stop or (kind, reason, detail)
+        held.halted = True
+        held.wake.set()
+        return True
 
     # ---- discovery -----------------------------------------------------------------
     async def _discovery(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
@@ -491,14 +537,12 @@ class ResearchFlow:
             await self._source_similarity(run, scope, pool)
             order = await self._ranking(run, scope, vocabulary)
             self.store.update_run(run_id, stage="screening")
-            # Slice 09: code classifies every record and the model is asked, twice, only about the works code left
-            # open and the read limit reaches. Nothing is included from an abstract and `max_candidates` does not
-            # cut here any more: what the model does not read stays `abstract_not_read` for the next run.
-            await self._abstract_stage(run, scope, vocabulary, order)
-            # Citation chaining, after the keyword works were read and never before (D95). A run queued before D95,
-            # or with the setting off, has no chain in its budget and sends nothing here.
-            if chaining.enabled(budget):
-                await self._chaining(run, scope, vocabulary)
+            if self._overlaps(run):
+                # The open full text of the works whose place in the retrieval plan is already certain is fetched
+                # while the model still reads the other abstracts (slice 17a, SW10.1).
+                await self._overlap(run, scope, vocabulary, order)
+            else:
+                await self._screening(run, scope, vocabulary, order)
         else:
             self.store.update_run(run_id, stage="screening")
             # A record an earlier run screened goes last, as it does in the candidate order. One this run screened
@@ -538,6 +582,18 @@ class ResearchFlow:
                 await self._research_title(run, scope, optional=True)
             except OptionalStepFailed:
                 return
+
+    async def _screening(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                         order: list[str]) -> None:
+        """The abstract stage and citation chaining of an sw run: the model arm when the fetch overlaps (slice 17a)."""
+        # Slice 09: code classifies every record and the model is asked, twice, only about the works code left
+        # open and the read limit reaches. Nothing is included from an abstract and `max_candidates` does not
+        # cut here any more: what the model does not read stays `abstract_not_read` for the next run.
+        await self._abstract_stage(run, scope, vocabulary, order)
+        # Citation chaining, after the keyword works were read and never before (D95). A run queued before D95,
+        # or with the setting off, has no chain in its budget and sends nothing here.
+        if chaining.enabled(run["budget"]):
+            await self._chaining(run, scope, vocabulary)
 
     async def _second_sources(self, run: dict[str, Any], scope: dict[str, Any],
                               vocabulary: dict[str, Any] | None) -> None:
@@ -1222,6 +1278,7 @@ class ResearchFlow:
         run_id, revision = run["id"], run["scope_revision"]
         prefix = "abstract_screening:chain" if chain is not None else "abstract_screening"
         plan = self._abstract_code_stage(run, scope, vocabulary, order, chain)
+        self._wake_fetch(run_id)  # the code's decisions are written: more works may be certain now (slice 17a)
         batches, runs = plan["batches"], plan["runs"]
         by_svid = {c["source_version_id"]: c for c in self.store.candidates(run["research_id"])}
         spent_before = self.store.run(run_id)["usage"].get("model_calls", 0)
@@ -1301,6 +1358,7 @@ class ResearchFlow:
                 sent = self._sent_to_every_run(run_id, prefix, number, runs, rows_of[number])
                 self._close_abstract_batch(run, number, sent,
                                            [collected[number][run_no] for run_no in range(1, runs + 1)], runs, prefix)
+                self._wake_fetch(run_id, prefix, number)
 
         stop = await self._send_through_limiter(run, jobs(), call, close_ready)
         if unread and stop is None:
@@ -1569,6 +1627,7 @@ class ResearchFlow:
         self._checkpoint(run_id, revision)
         chained = self._chain_filter(run)
         order = self._chain_ranking(run, scope, vocabulary, chained)
+        self._wake_fetch(run_id)
         if chained:
             works = set(self.store.work_ids(chained).values())
             words, _ = lookups.title_words(vocabulary)
@@ -2630,7 +2689,10 @@ class ResearchFlow:
 
     def _stop_requested(self, run_id: str, revision: int) -> bool:
         """Whether `_checkpoint` would stop the run now, without writing the stop: a pause, a cancellation or a newer
-        question revision."""
+        question revision, or, inside the overlap, the other arm's stop (slice 17a)."""
+        held = self._held.get(run_id)
+        if held is not None and held.halted:
+            return True
         run = self.store.run(run_id)
         return (run["status"] in ("pause_requested", "cancelled")
                 or self.store.research(run["research_id"])["current_scope_revision"] != revision)
@@ -2664,6 +2726,14 @@ class ResearchFlow:
         # on the version an answer would read (D48).
         written = self._write_fulltext_codes(
             run, step["id"], [(self.store.answer_version(rid, head), "not_read_yet") for head in plan["already_text"]])
+        output = self._plan_output(plan, by_head, chained, limit, room, written)
+        self.store.finish_step(step["id"], "succeeded", output=output)
+        return output
+
+    @staticmethod
+    def _plan_output(plan: dict[str, Any], by_head: dict[str, dict[str, Any]], chained: set[str], limit: int,
+                     room: int, written: dict[str, int]) -> dict[str, Any]:
+        """The stored form of a retrieval plan, for the retrieval run and the fetch that overlaps discovery alike."""
         groups = Counter(fulltext.group_of(by_head[head])
                          for head in plan["works"] + plan["not_reached"] + plan["already_text"])
         output = {"limit": limit, "works": plan["works"], "not_reached": len(plan["not_reached"]),
@@ -2676,7 +2746,6 @@ class ResearchFlow:
                        "chain_works": sum(fulltext.group_of(by_head[head]) == "chain" for head in plan["works"]),
                        "chain_not_reached": sum(fulltext.group_of(by_head[head]) == "chain"
                                                 for head in plan["not_reached"])}
-        self.store.finish_step(step["id"], "succeeded", output=output)
         return output
 
     def _chain_state(self, research_id: str, revision: int) -> tuple[set[str], list[str], list[str]]:
@@ -2949,6 +3018,340 @@ class ResearchFlow:
                    "already_text": plan["already_text"], "not_reached": plan["not_reached"],
                    "identity": dict(sorted(identities.items())), "routes": dict(sorted(routes.items()))}
         self.store.finish_step(step["id"], "succeeded", output=summary)
+
+    # ---- the full-text fetch that overlaps an sw discovery run (slice 17a) -------------------
+    def _overlaps(self, run: dict[str, Any]) -> bool:
+        """Whether this discovery run fetches the full text itself, beside its screening (slice 17a, decision 3).
+
+        Read from the mode the run was queued with, never from the key alone: a run queued before 17a has no mode and
+        leaves a separate retrieval run behind. With the setting off nothing is fetched at all.
+        """
+        return ((run["budget"].get("fulltext_fetch") or {}).get("mode") == "overlap"
+                and self.deps.settings.fulltext_fetch == "auto")
+
+    def _wake_fetch(self, run_id: str, prefix: str | None = None, number: int | None = None) -> None:
+        """Tell the fetch arm that an abstract decision was written: a batch closed, or a code step ended."""
+        held = self._held.get(run_id)
+        if held is None:
+            return
+        if prefix is not None:
+            held.closed.setdefault(prefix, set()).add(number)
+        held.wake.set()
+
+    async def _overlap(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                       order: list[str]) -> None:
+        """Screen and fetch side by side, and write a stop only once both have drained (slice 17a, decisions 1 and 4).
+
+        The fetch arm starts after the abstract code step, from the baseline taken then. Neither arm writes a pause:
+        each only reads the stop and sends nothing more, the works and calls in flight finish, and then this writes
+        the stop once — the user's, the other arm's (a model connection that is not ready), or a newer revision's.
+        An unexpected error in one arm stops the other, waits for it and is raised.
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        self._abstract_code_stage(run, scope, vocabulary, order)
+        baseline = self._fetch_baseline(run, scope)
+        held = self._held[run_id] = _Held(revision)
+        errors: list[BaseException] = []
+        try:
+            model = asyncio.ensure_future(self._screening(run, scope, vocabulary, order))
+            fetching = asyncio.ensure_future(self._fetch_arm(run, baseline, held))
+            pending = {model, fetching}
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    if (exc := task.exception()) is not None:
+                        errors.append(exc)
+                        held.halted = True
+                    elif task is model:
+                        held.model_done = True
+                    held.wake.set()
+        finally:
+            del self._held[run_id]
+        failure = next((exc for exc in errors if not isinstance(exc, RunStopped)), None)
+        if failure is not None:
+            raise failure
+        if errors:
+            if held.stop is not None:
+                kind, reason, detail = held.stop
+                (self._fail if kind == "fail" else self._pause)(run_id, reason, detail)
+            self._checkpoint(run_id, revision)
+            raise RunStopped
+
+    def _fetch_baseline(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
+        """Freeze what the retrieval plan is computed against: the works already settled and those with text (item 1).
+
+        Written once, in one short transaction, before the fetch arm starts; a resumed run reads it back unchanged.
+        """
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        step = self.store.step(run_id, "fetch_baseline", "code:fetch_baseline")
+        if step["status"] == "succeeded":
+            return step["output"]
+        room = run["budget"]["fulltext_fetch"]
+        frozen = self.store.frozen_criterion(rid, scope["question"], scope.get("steering"))
+        output = fulltext.baseline_of(
+            self._fulltext_works(rid), as_of=now(), scope_revision=revision,
+            criterion_hash=canonical.sha256_hex(frozen) if frozen else None, limit=room["max_fulltext_works"],
+            chain_room=room.get("chain_room", 0),
+            keyword_order_step=self.store.step(run_id, "ranking", "code:ranking")["id"])
+        with transaction(self.store.conn):
+            self.store.start_step(step["id"])
+            self.store.finish_step(step["id"], "succeeded", output=output)
+        return output
+
+    async def _fetch_arm(self, run: dict[str, Any], baseline: dict[str, Any], held: _Held) -> None:
+        """Fetch every work as soon as it is safe, at most `FULLTEXT_FETCH_PARALLEL` at once (slice 17a, decision 2).
+
+        Each wake recomputes the safe set against the baseline and claims what is new in it; once the model arm is
+        done, the final plan is written and the rest of its works are claimed. A stop is only read here: no new work
+        is sent, the works in flight finish, and the coordinator writes it. A resumed run sends its claimed works
+        that have not settled first, in the order they were claimed.
+        """
+        run_id = run["id"]
+        queue = [work_id for work_id, step in self._claims(run_id).items() if step["status"] not in ("succeeded", "failed")]
+        sent: set[str] = set()  # a work is sent once per arm, whatever its step says while it is in flight
+        in_flight: set[asyncio.Future[Any]] = set()
+        stopping, failure, plan = False, None, None
+        held.wake.set()
+        while True:
+            if not stopping and self._stop_requested(run_id, held.revision):
+                stopping = True
+            if not stopping and failure is None and held.wake.is_set():
+                held.wake.clear()
+                try:
+                    stored = self.store.existing_step(run_id, "fulltext_plan")
+                    if held.model_done or (stored is not None and stored["status"] == "succeeded"):
+                        # A written plan is the only source of claims from then on, on a resumed run too: a person's
+                        # change while the run was stopped does not open a claim outside it.
+                        plan = self._overlap_plan(run, baseline)
+                        new = plan["fetch"]
+                    else:
+                        new = self._claim_safe(run, baseline, held)
+                except Exception as exc:  # the works in flight still finish before it is raised
+                    failure, new = exc, []
+                queue.extend(work_id for work_id in new if work_id not in queue and work_id not in sent
+                             and self.store.existing_step(run_id, f"fulltext_work:{work_id}")["status"]
+                             not in ("succeeded", "failed"))
+            while not stopping and failure is None and queue and len(in_flight) < fulltext.FULLTEXT_FETCH_PARALLEL:
+                sent.add(queue[0])
+                in_flight.add(asyncio.ensure_future(self._overlap_work(run, queue.pop(0))))
+            if not in_flight:
+                if stopping or failure is not None or (plan is not None and not queue):
+                    break
+                await held.wake.wait()
+                continue
+            waiter = asyncio.ensure_future(held.wake.wait())
+            done, _ = await asyncio.wait(in_flight | {waiter}, return_when=asyncio.FIRST_COMPLETED)
+            waiter.cancel()
+            for task in done - {waiter}:
+                in_flight.discard(task)
+                try:
+                    task.result()
+                except RunStopped:
+                    stopping = True
+                except Exception as exc:  # _overlap_work closes its own step on any other failure
+                    failure = failure or exc
+        if failure is not None:
+            raise failure
+        if stopping:
+            raise RunStopped
+        self._fulltext_summary(run, plan)
+
+    def _claims(self, run_id: str) -> dict[str, dict[str, Any]]:
+        """This run's claimed works, by `work_id`, in the order they were claimed."""
+        return {row["operation_key"].split(":", 1)[1]: {**dict(row), "output": json.loads(row["output_json"] or "{}")}
+                for row in self.store.conn.execute(
+                    "SELECT operation_key, status, attempt, output_json FROM run_steps"
+                    " WHERE run_id = ? AND kind = 'code:fulltext_work' ORDER BY rowid", (run_id,))}
+
+    def _claim(self, run_id: str, work_id: str, early: bool, group: str | None) -> None:
+        """Open the work's step with its claim, in one transaction; a claim is never taken back (item 2)."""
+        self.store.step(run_id, f"fulltext_work:{work_id}", "code:fulltext_work",
+                        output={"claim": {"claimed_at": now(), "early": early, "group": group}})
+
+    def _overlap_state(self, run: dict[str, Any]) -> tuple[set[str], list[str], list[str]]:
+        """`_chain_state`, with the keyword order read by work always: a chain record may head a keyword work by the
+        time the final plan is written, and the work keeps its place."""
+        rid = run["research_id"]
+        chained, order, chain_order = self._chain_state(rid, run["scope_revision"])
+        return chained, self._current_heads(rid, order), chain_order
+
+    def _pending_works(self, run: dict[str, Any], held: _Held) -> set[str]:
+        """The works whose abstract decision may still change: those in a batch of this run not closed yet."""
+        svids: list[str] = []
+        for key, prefix in (("abstract_stage", "abstract_screening"), ("chain_abstract_stage", "abstract_screening:chain")):
+            step = self.store.existing_step(run["id"], key)
+            if step is None or step["status"] != "succeeded":
+                continue
+            closed = held.closed.get(prefix, set())
+            svids += [svid for number, batch in enumerate(step["output"]["batches"]) if number not in closed
+                      for svid in batch]
+        return set(self.store.work_ids(svids).values())
+
+    def _chain_fixed(self, run: dict[str, Any]) -> bool:
+        """Whether the chain group may be claimed from: its order is ranked and its works' code decisions are written
+        (item 6). A run that does not chain reads an earlier run's chain, which nothing here changes."""
+        if not chaining.enabled(run["budget"]):
+            return True
+        ranked = self.store.existing_step(run["id"], "chain_ranking")
+        if ranked is None or ranked["status"] != "succeeded":
+            return False
+        stage = self.store.existing_step(run["id"], "chain_abstract_stage")
+        chained = (self.store.existing_step(run["id"], "chain_filter") or {}).get("output") or {}
+        return (stage is not None and stage["status"] == "succeeded") or not chained.get("chained")
+
+    def _claim_safe(self, run: dict[str, Any], baseline: dict[str, Any], held: _Held) -> list[str]:
+        """Claim every work that became safe, in plan order, and return the new claims."""
+        run_id, rid = run["id"], run["research_id"]
+        room = run["budget"]["fulltext_fetch"]
+        chained, order, chain_order = self._overlap_state(run)
+        works = self._fulltext_works(rid, chained)
+        by_id = {work["work_id"]: work for work in works}
+        safe = fulltext.safe_to_fetch(works, order, room["max_fulltext_works"], chain_order, room.get("chain_room", 0),
+                                      self._pending_works(run, held), baseline)
+        claimed, chain_fixed, new = self._claims(run_id), self._chain_fixed(run), []
+        # A claim is never taken back and counts against its group's room, even once a person moved its work out of
+        # the plan (decision 2); without such a move the safe set never reaches past the room anyway.
+        left = self._room_left(run, claimed)
+        for work_id in safe:
+            group = fulltext.group_of(by_id[work_id])
+            side = "chain" if group == "chain" else "keyword"
+            if work_id in claimed or (group == "chain" and not chain_fixed) or left[side] <= 0:
+                continue
+            self._claim(run_id, work_id, True, group)
+            left[side] -= 1
+            new.append(work_id)
+        return new
+
+    @staticmethod
+    def _room_left(run: dict[str, Any], claims: dict[str, dict[str, Any]]) -> dict[str, int]:
+        """How many more works each side of the plan may claim: the keyword groups share the limit, the chain its room."""
+        room = run["budget"]["fulltext_fetch"]
+        left = {"keyword": room["max_fulltext_works"], "chain": room.get("chain_room", 0)}
+        for claim in claims.values():
+            left["chain" if claim["output"]["claim"]["group"] == "chain" else "keyword"] -= 1
+        return left
+
+    def _overlap_plan(self, run: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
+        """Write the final retrieval plan once the model arm is done, and claim the rest of its works (item 3).
+
+        The plan is `_fulltext_plan`'s, computed against the baseline. A work claimed early that the final plan does
+        not hold (a person changed it meanwhile) stays fetched, is named in `deviations` and counts against its
+        group's room; the rest of the room goes to the plan's works in order. A written plan is read back as it is.
+        """
+        run_id, rid = run["id"], run["research_id"]
+        step = self.store.step(run_id, "fulltext_plan", "code:fulltext_plan")
+        if step["status"] != "succeeded":
+            self.store.start_step(step["id"])
+            room = run["budget"]["fulltext_fetch"]
+            limit, chain_room = room["max_fulltext_works"], room.get("chain_room", 0)
+            chained, order, chain_order = self._overlap_state(run)
+            works = self._fulltext_works(rid, chained)
+            by_head = {work["head"]: work for work in works}
+            by_id = {work["work_id"]: work for work in works}
+            plan = fulltext.fetch_plan(fulltext.as_of_baseline(works, baseline), order, limit, chain_order, chain_room)
+            claims = self._claims(run_id)
+            final = [by_head[head]["work_id"] for head in plan["works"]]
+            deviations = [{"work_id": work_id, "reason": self._deviation(by_id.get(work_id))}
+                          for work_id in claims if work_id not in final]
+            left = self._room_left(run, claims)
+            fetch = list(claims)
+            for work_id in final:
+                side = "chain" if fulltext.group_of(by_id[work_id]) == "chain" else "keyword"
+                if work_id not in claims and left[side] > 0:
+                    fetch.append(work_id)
+                    left[side] -= 1
+            with transaction(self.store.conn):
+                written = self._write_fulltext_codes(
+                    run, step["id"], [(self.store.answer_version(rid, head), "not_read_yet") for head in plan["already_text"]])
+                output = self._plan_output(plan, by_head, chained, limit, chain_room, written) | {
+                    "work_ids": final, "baseline_hash": baseline["hash"],
+                    "claimed_early": [work_id for work_id, claim in claims.items() if claim["output"]["claim"]["early"]],
+                    "deviations": deviations, "conditions_held": not deviations, "fetch": fetch}
+                self.store.finish_step(step["id"], "succeeded", output=output)
+                for work_id in fetch:
+                    if work_id not in claims:
+                        self._claim(run_id, work_id, False, fulltext.group_of(by_id[work_id]))
+            return output
+        output = step["output"]
+        # A crash between the plan and the last claim: the claims the plan named are opened now, the same ones.
+        claims = self._claims(run_id)
+        chained, _, _ = self._overlap_state(run)
+        by_id = {work["work_id"]: work for work in self._fulltext_works(rid, chained)}
+        for work_id in output["fetch"]:
+            if work_id not in claims:
+                self._claim(run_id, work_id, False, fulltext.group_of(by_id[work_id]) if work_id in by_id else None)
+        return output
+
+    @staticmethod
+    def _deviation(work: dict[str, Any] | None) -> str:
+        """Why a work claimed early is not in the final plan: a person's selection, a person's full-text decision, or
+        a move between the keyword and the chain group (decision 2's conditions)."""
+        if work is None or (work.get("selection") or {}).get("origin") == "user":
+            return "user_selection"
+        if fulltext.decided_by_human(work, "fulltext"):
+            return "human_fulltext"
+        return "group_change"
+
+    async def _overlap_work(self, run: dict[str, Any], work_id: str) -> None:
+        """One claimed work's attempt, as `_fulltext_work`, keyed by the work and settled in one transaction (item 2).
+
+        The step's output, the `fulltext_work_settled` event and the work's code are written together, so none of them
+        exists without the others. A person's full-text decision on the version stands: then no code is written, and
+        the step and the event say so. A step a crash left `outcome_unknown` is sent again, at most
+        `FULLTEXT_WORK_ATTEMPTS` starts in all; then it is closed as not settled and a later run tries it (D18).
+        """
+        run_id, rid = run["id"], run["research_id"]
+        step = self.store.existing_step(run_id, f"fulltext_work:{work_id}")
+        if step["status"] in ("succeeded", "failed"):
+            return
+        claim = (step["output"] or {}).get("claim")
+        if step["status"] == "outcome_unknown" and step["attempt"] >= fulltext.FULLTEXT_WORK_ATTEMPTS:
+            self.store.finish_step(step["id"], "failed", output={"claim": claim, "work_id": work_id},
+                                   error_code="fetch_not_settled", error={"work_id": work_id, "attempts": step["attempt"]})
+            return
+        head = self.store.work_heads(rid).get(work_id)
+        if head is None:  # the work left the research since it was claimed
+            self.store.finish_step(step["id"], "failed", output={"claim": claim, "work_id": work_id},
+                                   error_code="fulltext_work_failed", error={"work_id": work_id, "error": "no head"})
+            return
+        self.store.start_step(step["id"])
+        try:
+            output = await self._fetch_work_text(run, head)
+        except RunStopped:
+            # Stopped between two routes: nothing is settled and the step does not stay `running` under a stopped run.
+            # A resumed run sends the work again (the routes that answered are not asked twice).
+            self.store.finish_step(step["id"], "cancelled", output={"claim": claim, "work_id": work_id},
+                                   error_code="run_stopped")
+            raise
+        except Exception as exc:  # noqa: BLE001 - one work's failure must not end the run
+            self.store.finish_step(step["id"], "failed", output={"claim": claim, "work_id": work_id},
+                                   error_code="fulltext_work_failed",
+                                   error={"head": head, "error": f"{type(exc).__name__}: {exc}"})
+            return
+        output["claim"] = claim
+        if output["code"] is None:
+            self.store.finish_step(step["id"], "failed", output=output, error_code="fetch_not_settled",
+                                   error={"head": head, "requests_unanswered": output["requests_unanswered"]})
+            return
+        decisions = DecisionStore(self.store)
+        with transaction(self.store.conn):
+            if self.store.research(rid)["current_scope_revision"] != run["scope_revision"]:
+                # The question changed while the file was on its way: a code written now would be dated under the new
+                # revision. The answer is kept on the step and nothing is decided; the run is cancelled at its stop.
+                self.store.finish_step(step["id"], "cancelled", output=output, error_code="scope_revised")
+                return
+            held = decisions.current(rid, output["read_version"], "fulltext")
+            human = held is not None and held["decided_by"] == "human"
+            self._write_fulltext_codes(run, step["id"], [(output["read_version"], output["code"])])
+            now_held = decisions.current(rid, output["read_version"], "fulltext")
+            output["code_written"] = (not human and now_held is not None
+                                      and now_held["reason_code"] == output["code"])
+            output["held_by"] = "human" if human else None
+            self.store.finish_step(step["id"], "succeeded", output=output)
+            self.store._event(rid, "fulltext_work_settled", {
+                "run_id": run_id, "work_id": work_id, "head": output["head"], "read_version": output["read_version"],
+                "code": output["code"] if output["code_written"] else None, "asset_id": output["asset_id"],
+                "step_id": step["id"]}, run_id)
 
     async def _fulltext_adjudication(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
         """Two model runs per work, then a code decision from the pair (D85).

@@ -15,7 +15,7 @@ from deixis.config import Settings
 from deixis.documents.fetch import FetchResult
 from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow import adjudication
+from deixis.workflow import adjudication, fulltext
 from deixis.workflow.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
 from helpers import make_pdf
@@ -26,7 +26,10 @@ SETTLED = ("completed", "failed", "paused", "cancelled")
 
 
 def app_for(tmp_path, monkeypatch, transport, fetcher, *, workflow="sw", fetch="auto", reading="auto",
-            adapter=None, concurrency=1):
+            adapter=None, concurrency=1, overlap=False):
+    if not overlap:
+        # A discovery run queued before slice 17a: its fetch follows as a retrieval run of its own (decision 3).
+        monkeypatch.setattr(fulltext, "overlap_budget", fulltext.fetch_budget)
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)

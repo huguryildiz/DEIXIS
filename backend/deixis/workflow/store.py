@@ -671,7 +671,9 @@ class Store:
         return usage
 
     # ---- steps --------------------------------------------------------------------------
-    def step(self, run_id: str, operation_key: str, kind: str) -> dict[str, Any]:
+    def step(self, run_id: str, operation_key: str, kind: str, output: Any = None) -> dict[str, Any]:
+        """The step with this key, opened `pending` when there is none. `output` is written only on that opening: a
+        claim that must carry its own time, since `run_steps` has no opening time (slice 17a)."""
         with transaction(self.conn):
             row = self.conn.execute(
                 "SELECT * FROM run_steps WHERE run_id = ? AND operation_key = ?", (run_id, operation_key)
@@ -681,6 +683,8 @@ class Store:
                 # A step opened after the protocol was frozen carries its hash; the protocol step and whatever ran
                 # before it (the search plan) keep NULL, because no protocol was frozen when they opened.
                 columns = {"id": sid, "run_id": run_id, "operation_key": operation_key, "kind": kind, "status": "pending"}
+                if output is not None:
+                    columns["output_json"] = dumps(output)
                 # Historical migration tests create a Store before migration 0037 exists.
                 if any(row[1] == "protocol_hash" for row in self.conn.execute("PRAGMA table_info(run_steps)")):
                     run = self.conn.execute("SELECT research_id, scope_revision FROM runs WHERE id = ?", (run_id,)).fetchone()

@@ -175,6 +175,7 @@ export const stepLabel = (kind: string, key: string) => {
   if (kind === 'table_no_text') return t('Source without stored text')
   if (kind.startsWith('provider_search')) return t('{provider} search {n}', { provider: providerName(kind.split(':')[1] ?? ''), n: Number(key.split(':')[1]) + 1 })
   if (kind === 'code:fulltext_plan') return t('Retrieval plan (code)')
+  if (kind === 'code:fetch_baseline') return t('Retrieval baseline (code)')
   if (kind === 'code:fulltext_work') return t('Full text of one work')
   if (kind === 'code:fulltext_summary') return t('Retrieval summary (code)')
   if (kind === 'code:adjudication_plan') return t('Reading plan (code)')

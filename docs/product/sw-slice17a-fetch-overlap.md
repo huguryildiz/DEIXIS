@@ -1,6 +1,6 @@
 # SW dilim 17a — Tam metin getirme keşifle üst üste
 
-**Tarih:** 24 Eylül 2026. **Durum:** plan hazır; Sol · medium'un ikinci görüşü, onay turu ve üç sözleşme denetimi işlendi, son denetimde "uygulamaya hazır, bulgu yok" (`sol-contract4.md`); prompt: [sw-slice17a-prompt.md](sw-slice17a-prompt.md). **Ana dosya:**
+**Tarih:** 24 Eylül 2026. **Durum:** uygulandı (D98, kabul `.local/sw-slice17a-acceptance-2026-09-24/result.md`); plan hazır; Sol · medium'un ikinci görüşü, onay turu ve üç sözleşme denetimi işlendi, son denetimde "uygulamaya hazır, bulgu yok" (`sol-contract4.md`); prompt: [sw-slice17a-prompt.md](sw-slice17a-prompt.md). **Ana dosya:**
 [sw-status.md](sw-status.md). **Karar:** yeni D numarası (dilim yazar). **Önkoşul:** 15 (kapandı, D95), 17 (son
 denetim yapılmadı, `80caa75`). **Tür:** Kur. **Plan:** Opus 5.5 · high, 24 Eylül 2026. **Ölçüm:**
 `.local/sw-slice17a-plan-2026-09-24/` (`overlap.py`, `overlap.json`, `safe_set.py`, `safe_set.json`). **İkinci görüş:**

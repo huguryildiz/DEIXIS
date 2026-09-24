@@ -2,6 +2,49 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D98 — The full-text fetch of an sw research runs inside its discovery run, from the abstract code step on, for the works already certain to be in the plan
+
+**Status:** accepted; implemented 2026-09-24 (slice 17a); `gpt-6-sol` · high's review (4 findings) and its check of the fixes (no findings) the same day. **Date:** 2026-09-24.
+
+**Context:** D83 queued the retrieval run after the whole discovery run, a named deviation from SW10.1, because the
+worker runs one run at a time and a research holds one active run. A model-free replay of 13 stored libraries
+(`.local/sw-slice17a-plan-2026-09-24/`) put the gain at 1.5–2.1 min (`quick`), 2.2–4.8 (`standard`) and 4.3–4.4
+(`detailed`), with no early work outside the final plan. Eight choices were settled by Claude and `gpt-5.6-sol` ·
+medium (`docs/product/sw-slice17a-fetch-overlap.md`, "Ortak kararlar" and "Kalıcı koordinasyon sözleşmesi").
+
+**Decision:** An `sw` discovery run queued with the setting `auto` carries `fulltext_fetch: {"mode": "overlap", …
+fetch_budget(effort)}`. After its abstract code step it writes `fetch_baseline` (the works holding a fresh code of this
+stage and the works with PDF text, by `work_id`, with the revision, criterion digest, room and keyword ranking step,
+and a digest that does not depend on order) and starts a fetch arm beside the model arm (abstract batches and
+citation chaining). A work is claimed when it is safe: its own abstract decision is final and it is inside the plan in
+which every work of an open batch is counted a candidate, computed against the baseline, so the fetch's own codes and
+texts never move the plan (`fulltext.safe_to_fetch`). The chain group is claimed from only once this run's chain order
+and its works' code decisions are written. A claim opens `fulltext_work:<work_id>` with its time; it is never taken
+back and counts against its group's room. When the model arm ends, `fulltext_plan` is written once (the D83 plan
+against the baseline, with `claimed_early`, `deviations`, `conditions_held` and the `fetch` list), the rest is claimed,
+and once written it is the only source of claims, on a resumed run too. At most four works are in flight
+(`host_gate` unchanged). A settled work's step output, its `fulltext_work_settled` event and its code are one
+transaction; a person's full-text decision on the version stands (`code_written: false`, `held_by: "human"`, the
+event's code empty); a file that arrives after a question revision decides nothing (`cancelled` / `scope_revised`).
+Only the coordinator writes a stop: under the overlap `_checkpoint` reads it, `_pause` and `_fail` note theirs, both
+arms drain, and the stop is written once; a work stopped between two routes is closed `cancelled` / `run_stopped` and
+sent again on resume. A step a crash left `outcome_unknown` is sent again, and after three starts closed
+`fetch_not_settled` (delivery is at least once). The run completes and queues its reading run
+(`fulltext_adjudication:after:<discovery run>`) in one transaction; no retrieval run is queued. A discovery run
+queued before this carries no mode and keeps D83's separate run; a retrieval run the user starts is unchanged. The
+timeline shows the fetch as the discovery turn's PDF phase ("Retrieving the full text: N of M") beside screening.
+No migration, no model contract change (`skill_package_hash` unchanged), no new reason code.
+
+**Limits:** Two live quantum runs (`.local/sw-slice17a-acceptance-2026-09-24/`, `gpt-5.6-luna` · medium): every
+gate held (fetch started at the code step, 92 and 112 works all claimed before the model arm ended, no deviation, the
+plan recomputed equals the stored one, the reading opened once); the fetch ended 0.6 and 0.9 min after the last model
+batch, and the same works replayed four at a time from the end of discovery would have ended 2.3 and 3.3 min later.
+That is an estimate from one run each, not a measured causal gain. End to end the runs took 7.9 and 14.0 min, but
+model-call counts and durations differ from slice 15's runs. Event-loop delays over 0.5 s occurred inside and outside
+the overlap window, the longest outside it; `host_gate` waits reached 57 s. Not measured: `detailed`, topics other
+than quantum, how often a person changes a work while discovery runs, and whether overlapping reading with the fetch
+(17b) is the larger gain.
+
 ## D97 — The human queue screen: its own tab, a list and one row's detail, the PDF opened on the row's page by one action, only the backend's anchor marked
 
 **Status:** accepted; implemented 2026-09-24 (slice 17, `89ce03d`); `gpt-6-sol` · high's review (11 findings) and its check of the fixes (5 open points) and its last check (5 more) fixed the same day. **Date:** 2026-09-24.

@@ -844,6 +844,10 @@ def create_app(
                           "chain_abstract_read": CHAIN_ABSTRACT_READ[scope["effort"]],
                           "chain_plan_room": CHAIN_PLAN_ROOM[scope["effort"]]}
             budget = budget | {"max_model_calls": budget["max_model_calls"] + extra} | chain
+            if settings.fulltext_fetch == "auto":
+                # The full text is fetched inside this run, beside its screening, with the room a retrieval run
+                # would have had (slice 17a); the mode is frozen here, so a run keeps the path it was queued with.
+                budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
             budget = {"max_model_calls": 2, "max_provider_requests": 0}

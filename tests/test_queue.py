@@ -857,3 +857,29 @@ def test_after_a_head_change_both_heads_keep_the_queue_answer_their_links_name(s
     assert answers[(preprint, lib.selection_version(preprint))] == "include"
     lib.list_edit(preprint, "excluded")  # the old head's selection is the person's own again
     assert (preprint, lib.selection_version(preprint)) not in queue.queue_answers(store, lib.rid)
+
+
+def test_a_rejected_extraction_of_the_same_file_does_not_move_the_row_token(store):
+    lib = Lib(store)
+    svid = queued(lib)
+    before = lib.row(svid)["row_token"]
+    asset = store.conn.execute("SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL",
+                               (svid,)).fetchone()[0]
+    # A later extraction that was not taken keeps its passages, but the detail shows only the current extraction's.
+    with db.transaction(store.conn):
+        store._insert_passage(svid, asset, "pdf_page", 1, None, None, None, "pymupdf-rejected", "SYNTHETIC rejected text")
+    assert lib.row(svid)["row_token"] == before
+
+
+def test_the_detail_says_a_confirmation_is_no_longer_undoable_once_its_reading_has_begun(store):
+    lib = Lib(store)
+    svid = lib.work()
+    lib.text(svid, [lib.field["page"]])
+    lib.unconfirmed(svid)
+    queue.decide(store, lib.rid, svid, "pdf_confirmed", None, lib.row(svid)["row_token"])
+    assert queue.row_detail(store, lib.rid, svid)["decision"]["undoable"] is True
+    run = lib.new_run("fulltext_adjudication")
+    plan = store.step(run, "adjudication_plan", "code:adjudication_plan")
+    store.finish_step(plan["id"], "succeeded", output={})
+    store.step(run, f"fulltext_adjudication:{svid}:1", "model:fulltext_adjudication")
+    assert queue.row_detail(store, lib.rid, svid)["decision"]["undoable"] is False

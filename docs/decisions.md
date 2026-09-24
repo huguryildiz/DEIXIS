@@ -4,7 +4,7 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 ## D97 — The human queue screen: its own tab, a list and one row's detail, the PDF opened on the row's page by one action, only the backend's anchor marked
 
-**Status:** accepted; implemented 2026-09-24 (slice 17, `89ce03d`); `gpt-6-sol` · high's review (11 findings) and its check of the fixes (5 open points) fixed the same day, awaiting its last check. **Date:** 2026-09-24.
+**Status:** accepted; implemented 2026-09-24 (slice 17, `89ce03d`); `gpt-6-sol` · high's review (11 findings) and its check of the fixes (5 open points) and its last check (5 more) fixed the same day. **Date:** 2026-09-24.
 
 **Context:** D96 put the queue in the back end with no screen; `research_view.counts.queue` was only a number. A
 model-free read of 13 stored libraries (`.local/sw-slice17-plan-2026-09-24/`, `shape.json`) found 346 rows: 155
@@ -25,10 +25,11 @@ text", an identity row's first page beside the work's title and DOI, and for `ch
 place of the two runs. Answers sit in a footer pinned under the detail: four equal buttons, and on an identity row "PDF
 is right, let the model read it" first and primary; an optional note of at most 1,000 characters; no confirmation
 dialog. A 200 removes the row (never before), moves the selection on, reloads queue and research view, and shows a
-toast with Undo; "Your decisions" lists every work a person decided and can take back. An answer is sent with the
+toast with Undo; "Your decisions" lists every work a person decided, with Undo where `undo` would take it back and the reason where it
+would not (a PDF confirmation whose reading has begun). An answer is sent with the
 list row's token, and only on a detail whose row token is that same token; until then the buttons are off and the
 detail says it is being read again. The row token also moves with the text of the file in use (its extraction version
-and passages), so a new extraction or OCR text makes a shown detail stale. A detail that still disagrees with the list
+and that extraction's passages; a rejected extraction's kept passages do not count), so a new extraction or OCR text makes a shown detail stale. A detail that still disagrees with the list
 after two list reads says so and waits for "Read it again". Of overlapping list reads only the newest is applied, and a
 caller whose read was overtaken gets the newest list. A
 409 reloads all three; the detail says whether the row changed or left the queue, and a note being written survives,
@@ -57,7 +58,7 @@ named one first, with its label, file, decision and runs). `GET …/queue` gains
 outcome is a fresh human decision or a fresh PDF confirmation, from the same snapshot and the same `_classify` path, with
 a typed `answer` and the undo token `_state_of` computes; a confirmation is listed only while its file is still the
 one in use; a confirmation whose reading has begun is listed with no undo token and `undo_blocked: "reading_started"`,
-the same rule `undo` applies; a confirmation's internal note is not returned; a stale decision is a `look_again`
+the same rule `undo` applies, and the detail's `decision.undoable` says the same; a confirmation's internal note is not returned; a stale decision is a `look_again`
 row, not an entry. An identity row's first page is the text of physical page 1, or none. A source row's selection gains
 `queue_answer`, read from every stored `human_selection_links` row of an open decision whose selection nobody changed
 since (after a head change both heads keep theirs), and the Sources list says "Your answer in the queue: …" from it, never from the reason text a person can type. The queue endpoints' 409 is `{"detail": {"reason": "row_changed" |

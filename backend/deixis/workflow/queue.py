@@ -105,7 +105,10 @@ class _Context:
         self.assets: dict[str, dict[str, Any]] = {}
         for row in conn.execute(
                 "SELECT a.id, a.source_version_id, a.identity_confirmed_at, a.extraction_version,"
-                " (SELECT COUNT(*) || ':' || IFNULL(MAX(p.rowid), 0) FROM passages p WHERE p.asset_id = a.id) AS text_mark"
+                # The text a detail shows: the file's passages of its current extraction, read through the
+                # source-version index (a rejected extraction's passages are kept but never shown, so they do not count).
+                " (SELECT COUNT(*) || ':' || IFNULL(MAX(p.rowid), 0) FROM passages p WHERE p.source_version_id = a.source_version_id"
+                "  AND p.asset_id = a.id AND p.extraction_version IS a.extraction_version) AS text_mark"
                 " FROM source_assets a"
                 " JOIN corpus_memberships m ON m.source_version_id = a.source_version_id AND m.research_id = ?"
                 " AND m.removed_at IS NULL WHERE a.removed_at IS NULL ORDER BY a.retrieved_at DESC, a.id DESC",
@@ -385,9 +388,15 @@ def _decision_view(ctx: _Context, state: dict[str, Any]) -> dict[str, Any] | Non
     current = state["current"]
     if current is None:
         return None
+    # Whether `undo` would take it back now: a human decision always; a confirmation while its file is in use and its
+    # reading has not begun.
+    undoable = current["decided_by"] == "human"
+    if not undoable and (asset_id := _confirmed_asset(current)) is not None:
+        asset = ctx.assets.get(current["source_version_id"])
+        undoable = bool(asset and asset["id"] == asset_id and asset["identity_confirmed_at"]) and not _reading_opened_since(
+            ctx.store, ctx.rid, state["work_id"], current["created_at"])
     return {"id": current["id"], "reason_code": current["reason_code"], "decided_by": current["decided_by"],
-            "stale": ctx.decisions.is_stale(current, ctx.facts["stale_key"]),
-            "undoable": current["decided_by"] == "human" or _confirmed_asset(current) is not None}
+            "stale": ctx.decisions.is_stale(current, ctx.facts["stale_key"]), "undoable": undoable}
 
 
 def _confirmed_asset(decision: dict[str, Any]) -> str | None:

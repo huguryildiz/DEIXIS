@@ -256,6 +256,36 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await page.unroute('**/queue')
   })
 
+  test('after an answer whose own list read was overtaken, the selection moves on from the newest list', async () => {
+    await page.reload()
+    await expect(list(page).getByRole('option')).toHaveCount(4)
+    const titles = await list(page).getByRole('option').evaluateAll(els => els.map(el => el.getAttribute('aria-label') ?? ''))
+    const [firstTitle, answeredTitle, nextTitle] = titles.map(label => Object.values(TITLES).find(title => label.startsWith(title))!)
+    // With the event stream held back, the answer's own list read is the first one; the research view it reloads
+    // brings a new event id and a second read, which finishes first. The held read then answers with an empty list.
+    await page.route('**/events/stream**', route => route.abort())
+    let first = true
+    await page.route('**/queue', async route => {
+      if (!first || route.request().method() !== 'GET') return route.continue()
+      first = false
+      const response = await route.fetch()
+      const body = await response.json()
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      await route.fulfill({ response, json: { ...body, rows: [] } })
+    })
+    await option(page, answeredTitle).click()
+    await detail(page).getByRole('button', { name: 'Not sure' }).click()
+    await expect(option(page, answeredTitle)).toHaveCount(0)
+    await expect(page.locator('.toast')).toBeVisible({ timeout: 10_000 })
+    // The row after the answered one is selected, not the first row a lost selection falls back to.
+    await expect(option(page, nextTitle)).toHaveAttribute('aria-selected', 'true')
+    await expect(option(page, firstTitle)).toHaveAttribute('aria-selected', 'false')
+    await page.unroute('**/queue')
+    await page.unroute('**/events/stream**')
+    await page.locator('.toast').getByRole('button', { name: 'Undo' }).click()
+    await expect(option(page, answeredTitle)).toHaveCount(1)
+  })
+
   test('Include takes the row out, the notification takes it back, and the source list shows the choice as the user’s', async () => {
     await page.reload()
     await option(page, TITLES.choose_run).click()

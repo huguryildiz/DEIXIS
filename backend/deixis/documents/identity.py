@@ -44,6 +44,25 @@ def match_pdf_to_source(text: str, sources: list[dict[str, Any]]) -> tuple[str |
     return None, None
 
 
+def propose(text: str, sources: list[dict[str, Any]]) -> tuple[str | None, str | None]:
+    """The work a file dropped on an `sw` research is proposed for, as one of its versions, and why (slice 18a).
+
+    `match_pdf_to_source`'s rule with one change: a first page that names the DOI of more than one candidate work (a
+    reference list that starts early, a companion paper cited on the title page) does not let the DOI decide, and the
+    title is asked instead. A title that points at one work proposes it; otherwise nothing is proposed and the person
+    picks the work. The person picks the version in every case, so the version named here is only marked.
+    """
+    dois = identifiers_in(text)
+    named = [source for source in sources if normalize_doi(source["doi"]) in dois]
+    if len({source["work_id"] for source in named}) == 1:
+        return named[0]["id"], "doi"
+    body = f" {title_key(text[:MATCH_TEXT_CHARS])} "
+    titled = [s for s in sources if len(title_key(s["title"]).split()) >= MIN_TITLE_WORDS and f" {title_key(s['title'])} " in body]
+    if len({s["work_id"] for s in titled}) == 1:
+        return titled[0]["id"], "title"
+    return None, None
+
+
 def check(text: str, versions: list[dict[str, Any]]) -> str:
     """Whether this text is the work's own: "doi", "title" or "unconfirmed" (SW10.2).
 

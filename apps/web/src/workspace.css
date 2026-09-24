@@ -957,7 +957,41 @@ button.chat-step-title svg{color:var(--muted)}
 .pdf-ready-matches li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:6px 14px;align-items:center}
 .pdf-ready-file{display:grid;font-size:13px;overflow-wrap:anywhere}
 .pdf-ready-file small{color:var(--muted);font-size:11.5px}
+/* The works of an sw research waiting for the person's PDF (slice 18a): the PDF panel's rows with their place in the reading order */
+.waiting-pdf{margin-top:18px}
+.waiting-pdf h2{margin:0;font-size:22px;font-weight:500;text-wrap:balance}
+.waiting-pdf .pdf-ready-hint a{color:var(--accent);text-underline-offset:3px}
+.waiting-pdf .waiting-rows{padding:0;list-style:none;color:inherit}
+.waiting-rows li{grid-template-columns:28px minmax(0,1fr) auto}
+.waiting-rows .pdf-ready-side{grid-column:3}
+.waiting-place{align-self:start;padding-top:3px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;text-align:right}
+.waiting-doi{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;overflow-wrap:anywhere}
+.waiting-actions{flex-wrap:wrap;justify-content:flex-end}
+.waiting-link{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.waiting-match{display:grid;gap:10px;padding:14px 16px;border:1px solid var(--line);border-radius:9px;background:var(--raised-surface)}
+.waiting-match p{margin:0}
+.waiting-file{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:13px;overflow-wrap:anywhere}
+.waiting-file small{color:var(--muted);font-size:12px}
+.waiting-basis{color:var(--muted);font-size:13px}
+.waiting-work{font-family:'Newsreader Variable',serif;font-size:17px;font-weight:500;line-height:1.3;text-wrap:balance}
+.waiting-versions{display:grid;gap:4px;margin:0;padding:0;border:0}
+.waiting-versions legend{margin-bottom:6px;padding:0;font-size:13px;font-weight:600}
+.waiting-versions label{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:7px 8px;border-radius:7px;font-size:13px;cursor:pointer}
+.waiting-versions label:hover{background:var(--hover-surface)}
+.waiting-versions label:has(input:checked){background:var(--selected-surface)}
+.waiting-versions label.is-disabled{cursor:default;color:var(--muted)}
+.waiting-versions label.is-disabled:hover{background:none}
+.waiting-versions input{accent-color:var(--accent)}
+.waiting-version-facts{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.waiting-version-note{color:var(--muted);font-size:11.5px;font-style:italic}
+.proxy-setting{margin-bottom:34px}
+.proxy-form{display:grid;gap:6px;max-width:640px;margin-top:14px}
+.proxy-form label{font-size:13px;font-weight:600}
+.proxy-form input{height:36px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--ink);font:inherit;font-size:13.5px}
+.proxy-form small{color:var(--muted);font-size:12px}
+.proxy-actions{display:flex;align-items:center;gap:14px;margin-top:4px}
 @media (max-width:650px){.pdf-ready-depth{grid-template-columns:1fr}.pdf-ready-depth div+div{border-left:0;border-top:1px solid var(--line)}.pdf-ready-rows li,.pdf-ready-matches li{grid-template-columns:1fr}.pdf-ready-side{grid-row:auto;grid-column:1}}
+@media (max-width:650px){.waiting-rows li{grid-template-columns:24px minmax(0,1fr)}.waiting-rows .pdf-ready-side{grid-column:2;justify-content:flex-start}}
 /* Sidebar search and the background PDF work card */
 .app .sidebar-find{display:flex;align-items:center;gap:10px;height:38px;margin:30px 0 16px;padding:0 10px 0 12px;border:1px solid var(--strong-line);border-radius:8px;background:var(--raised-surface);color:var(--muted);font:inherit;font-size:13px;text-align:left;cursor:pointer}
 .app .sidebar-find:hover{color:var(--ink)}

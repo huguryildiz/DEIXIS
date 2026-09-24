@@ -238,6 +238,20 @@ export type PdfDiscovery = {
   http_status: number | null; error_code: string | null; created_at: string; finished_at: string | null
 }
 export type PdfMatch = { filename: string; source_version_id: string | null; basis: 'doi' | 'title' | null }
+// One version of a work a dropped file may go to (slice 18a): the person picks it; `proposed` is the version the match named.
+export type WaitingVersion = { source_version_id: string; title: string; version_label: string | null; year: number | null; publication_type: string | null; doi: string | null; has_pdf: boolean; proposed: boolean }
+export type WaitingWork = { work_id: string; head: string; title: string; versions: WaitingVersion[]; versions_digest: string }
+// An sw research's match: the proposed work (or none) and what the confirmation sends back to be checked (decision 5).
+// With no proposal, `candidates` holds every work a file may go to here, for the person to choose from.
+export type WaitingMatch = PdfMatch & { sha256: string; scope_revision: number; page_count: number | null; has_text_layer: boolean | null; work: WaitingWork | null; candidates?: WaitingWork[] }
+// A work waiting for the person's PDF, in reading order (slice 18a). Links come through the institution's proxy when one is set.
+export type WaitingRow = {
+  work_id: string; head: string; source_version_id: string; reason_code: 'no_fulltext' | 'text_unreadable' | 'human_pdf_wrong' | string
+  decided_by: string; place: number; title: string; year: number | null; venue: string | null; authors: string[]; doi: string | null
+  links: { doi: string | null; landing: string | null }; find_pdf_source_version_id: string | null
+  versions: WaitingVersion[]; versions_digest: string
+}
+export type WaitingView = { rows: WaitingRow[]; count: number; scope_revision: number; has_plan: boolean; via_proxy: boolean; order: 'fulltext_plan' }
 export type Source = {
   // A short author–year key such as "Nakano13", one per work across the library (D59); null only before it is given.
   source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
@@ -289,6 +303,8 @@ export type Counts = {
   removed: number; removed_found_again: number
   // An sw research's human queue: open rows, and decisions made under an earlier criterion (slice 16). Absent in legacy.
   queue?: number; look_again?: number
+  // An sw research's works waiting for the person's PDF (slice 18a). Absent in legacy.
+  waiting_for_pdf?: number
 }
 // The human queue of an sw research (slice 16, D96). Rows are derived from stored decisions each time they are read.
 export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'confirm_absent' | 'find_part' | 'look_again'
@@ -580,6 +596,26 @@ export const api = {
     files.forEach(file => form.append('files', file))
     return request<{ matches: PdfMatch[] }>(`/api/researches/${id}/uploads/match`, { method: 'POST', body: form })
   },
+  // An sw research's match: a work among those waiting for a PDF, with its versions to pick from (slice 18a).
+  matchWaiting: (id: string, files: File[]) => {
+    const form = new FormData()
+    files.forEach(file => form.append('files', file))
+    return request<{ matches: WaitingMatch[]; scope_revision: number }>(`/api/researches/${id}/uploads/match`, { method: 'POST', body: form })
+  },
+  waiting: (id: string) => request<WaitingView>(`/api/researches/${id}/waiting`),
+  // Adds the file to the version the person picked; 409 with a reason when what the match showed has moved (slice 18a).
+  attachWaiting: (id: string, file: File, match: WaitingMatch, work: WaitingWork, sourceId: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('work_id', work.work_id)
+    form.append('source_version_id', sourceId)
+    form.append('scope_revision', String(match.scope_revision))
+    form.append('versions_digest', work.versions_digest)
+    form.append('sha256', match.sha256)
+    return request<ResearchView & { attached: { source_version_id: string; asset_id: string } }>(`/api/researches/${id}/waiting/uploads`, { method: 'POST', body: form })
+  },
+  institutionProxy: () => request<{ address: string | null }>('/api/institution-proxy'),
+  saveInstitutionProxy: (address: string) => request<{ address: string | null }>('/api/institution-proxy', json('PUT', { address })),
   // Takes sources out of this research; the library record, its files and the evidence citing it stay (D50).
   removeSources: (id: string, sourceIds: string[], note?: string) =>
     request<ResearchView & { changed_source_version_ids: string[] }>(`/api/researches/${id}/sources`, json('DELETE', { source_version_ids: sourceIds, note })),

@@ -11,7 +11,8 @@ writes the search query fails, so the run stops for the model query, D92), "[que
 queue work by a script, so case J finds one row of each kind it needs).
 
 `DEIXIS_FIXTURE_QUEUE=on` (case J, slice 17) switches on retrieval and reading and serves the queue works below instead
-of the A–I records; every other case leaves it unset and gets the server it always had.
+of the A–I records; every other case leaves it unset and gets the server it always had. `DEIXIS_FIXTURE_WAITING=on`
+(case K, slice 18a) adds to those one work no route has a PDF for, so the retrieval leaves it waiting for the person's.
 """
 
 from __future__ import annotations
@@ -110,6 +111,14 @@ QUEUE_PDFS = {
                                          "SYNTHETIC second page of the scanned sheet."],
 }
 QUEUE_MODE = os.environ.get("DEIXIS_FIXTURE_QUEUE") == "on"
+# Case K's work: a DOI and no open location, so every route answers "none" and it is left `no_fulltext`.
+WAITING_WORK = work("W955", "SYNTHETIC release timing of molecular relays in closed channels",
+                    "Release timing of molecular relays is studied in closed channels.", "publishedVersion", None,
+                    "https://doi.org/10.5555/q955")
+WAITING_PDF_PAGES = ["SYNTHETIC Journal of Relay Studies\nSYNTHETIC release timing of molecular relays in closed channels\n"
+                     "https://doi.org/10.5555/q955", "SYNTHETIC second page of the publisher file."]
+if QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_WAITING") == "on":
+    QUEUE_WORKS = [*QUEUE_WORKS, WAITING_WORK]
 
 
 def queue_reading(si: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
@@ -268,9 +277,13 @@ def main() -> None:
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--write-hostile-pdf", type=Path, help="Write the untrusted-text PDF used by case G and exit")
     parser.add_argument("--write-replacement-pdf", type=Path, help="Write a SYNTHETIC PDF used to replace a source's file (D45) and exit")
+    parser.add_argument("--write-waiting-pdf", type=Path, help="Write the SYNTHETIC publisher file case K drops and exit")
     args = parser.parse_args()
     if args.write_hostile_pdf:
         args.write_hostile_pdf.write_bytes(make_pdf([HOSTILE_PDF_TEXT]))
+        return
+    if args.write_waiting_pdf:
+        args.write_waiting_pdf.write_bytes(make_pdf(WAITING_PDF_PAGES))
         return
     if args.write_replacement_pdf:
         args.write_replacement_pdf.write_bytes(make_pdf(["SYNTHETIC replacement scan: release scheduling by bisection, full page."]))

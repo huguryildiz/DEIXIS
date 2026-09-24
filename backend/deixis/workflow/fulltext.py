@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 from deixis.domain import canonical
-from deixis.domain.reason_codes import reason
+from deixis.domain.reason_codes import REASON_CODES, reason
 from deixis.domain.rules import CHAIN_PLAN_ROOM, FULLTEXT_WORK_LIMIT
 
 # The codes this stage owns. A fresh decision carrying any other code was written by the user or by the stage that
@@ -262,3 +262,68 @@ def should_write(current: dict[str, Any] | None, code: str, stale: bool = False)
     if current["reason_code"] == code:
         return False
     return current["reason_code"] in OWNED_CODES
+
+
+# ---- the works waiting for a person's PDF (slice 18a) ----------------------------------------------------------
+
+# Every code whose next step is a PDF from the person, read from the reason table so a code added there is listed.
+WAITING_CODES = tuple(code for code, entry in REASON_CODES.items() if entry.next_step == "waiting_for_pdf")
+# `DecisionStore.work_outcome`'s order among fresh full-text outcomes; this module stays free of the store.
+FULLTEXT_OUTCOMES = ("include", "criterion_not_met", "unresolved")
+
+
+def current_fulltext(work: dict[str, Any]) -> dict[str, Any] | None:
+    """The full-text decision that speaks for the work, `DecisionStore.work_outcome`'s rule on the rows in hand.
+
+    The user's newest decision first, stale or not; else the fresh decisions, the best outcome named by the head. Two
+    versions at opposite fresh decisions speak for nothing here: that work is the human queue's (`versions_disagree`).
+    Each row is `{"id", "reason_code", "decided_by", "stale", "created_at", "order"}`, the version's identifier as
+    `id` and the order the rows were written in as `order` (the store's rowid), which settles two decisions written in
+    the same millisecond as `work_outcome` settles them.
+    """
+    rows = [dict(version["fulltext"], id=version["id"]) for version in work["versions"] if version.get("fulltext")]
+    human = sorted((row for row in rows if row["decided_by"] == "human"), key=lambda row: (row.get("created_at") or "", row.get("order") or 0))
+    if human:
+        return human[-1]
+    fresh = [row for row in rows if not row["stale"]]
+    outcomes = {reason(row["reason_code"]).outcome for row in fresh}
+    if not fresh or {"include", "criterion_not_met"} <= outcomes:
+        return None
+    best = next(outcome for outcome in FULLTEXT_OUTCOMES if outcome in outcomes)
+    return _named([row for row in fresh if reason(row["reason_code"]).outcome == best], work["head"])
+
+
+def waiting(works: list[dict[str, Any]], plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The works that wait for the person's PDF, in reading order, each with the decision that put it here.
+
+    A work waits when its current full-text decision (`current_fulltext`) is fresh, carries a code whose next step
+    is `waiting_for_pdf`, and no version of it has PDF text. A person's `human_pdf_wrong` keeps the work here even
+    though the file they judged is still attached: that version's text does not count, another version's does. A
+    stale decision lists nothing, whoever wrote it: the question moved on, and a stale decision of the person's is
+    the queue's to ask again (`look_again`). A work the plan did not reach has no decision and is not listed.
+
+    `plans` are the stored retrieval plans of the question revision, newest first. The order is the newest plan's,
+    then an older plan's for a work settled before it (a later plan leaves a settled work out), then the head for a
+    work no plan fetched; a work is matched to a plan through any of its versions, so a head that changed since the
+    plan was written keeps the work's place. No plan, no list.
+    """
+    if not plans:
+        return []
+    place: dict[str, tuple[int, int]] = {}
+    for age, plan in enumerate(plans):
+        for position, head in enumerate(plan.get("works") or []):
+            place.setdefault(head, (age, position))
+    rows = []
+    for work in works:
+        decision = current_fulltext(work)
+        if decision is None or decision["stale"] or decision["reason_code"] not in WAITING_CODES:
+            continue
+        judged = decision["id"] if decision["reason_code"] == "human_pdf_wrong" else None
+        if any(version.get("has_text") and version["id"] != judged for version in work["versions"]):
+            continue
+        at = min((place[version["id"]] for version in work["versions"] if version["id"] in place), default=None)
+        rows.append({"work_id": work["work_id"], "head": work["head"], "source_version_id": decision["id"],
+                     "reason_code": decision["reason_code"], "decided_by": decision["decided_by"], "_at": at})
+    rows.sort(key=lambda row: (row["_at"] is None, row["_at"] or (0, 0), row["head"]))
+    return [{key: value for key, value in row.items() if key != "_at"} | {"place": n}
+            for n, row in enumerate(rows, start=1)]

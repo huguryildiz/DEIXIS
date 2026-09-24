@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal
 
 import httpx
-from fastapi import FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from keyring.errors import KeyringError
@@ -31,7 +31,7 @@ from deixis.documents.identity import MATCH_TEXT_CHARS, match_pdf_to_source
 from deixis.documents import math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
-from deixis.domain import skill
+from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ, CHAIN_PLAN_ROOM,
                                  CHAIN_REQUEST_LIMIT, CRITERION_CALLS, SEARCH_QUERY_CALLS,
@@ -49,6 +49,7 @@ from deixis.workflow import adjudication, fulltext
 from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import bibliography
 from deixis.workflow import queue as human_queue
+from deixis.workflow import waiting as pdf_waiting
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.equations import EquationService, equation_state, equations_to_check
 from deixis.workflow.flow import FlowDeps, ResearchFlow
@@ -119,6 +120,10 @@ def check_offered(listed: list[dict[str, Any]] | None, connection: str, model: s
 
 class KeyValue(BaseModel):
     value: str = Field(min_length=8, max_length=400, pattern=r"^\S+$")
+
+
+class ProxyAddress(BaseModel):
+    address: str | None = Field(default=None, max_length=4000)
 
 
 class SemanticChoice(BaseModel):
@@ -452,6 +457,19 @@ def create_app(
     async def queue_conflict(_: Request, exc: human_queue.QueueConflict):
         return JSONResponse({"detail": {"reason": exc.reason, "message": str(exc)}}, status_code=409)
 
+    # A confirmation of a dropped file says why it was refused (slice 18a), as the queue's 409 does.
+    @app.exception_handler(pdf_waiting.AttachRefused)
+    async def attach_refused(_: Request, exc: pdf_waiting.AttachRefused):
+        return JSONResponse({"detail": {"reason": exc.reason, "message": str(exc)}}, status_code=409)
+
+    @app.exception_handler(pdf_waiting.WaitingUnavailable)
+    async def waiting_unavailable(_: Request, exc: pdf_waiting.WaitingUnavailable):
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    @app.exception_handler(proxy.ProxyRefused)
+    async def proxy_refused(_: Request, exc: proxy.ProxyRefused):
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+
     @app.exception_handler(zotero.ZoteroError)
     async def zotero_failed(_: Request, exc: zotero.ZoteroError):
         return JSONResponse({"detail": str(exc)}, status_code=exc.status)
@@ -774,6 +792,18 @@ def create_app(
         store_of(request).set_setting("semantic_search", {"provider": body.provider, "model": model})
         return await semantic_search_view(request)
 
+    # The institution's proxy address (slice 18a): links open through it in the person's browser; DEIXIS never
+    # sends a request through it. Empty means links open directly.
+    @app.get("/api/institution-proxy")
+    async def get_institution_proxy(request: Request) -> dict[str, Any]:
+        return {"address": store_of(request).setting(proxy.SETTING)}
+
+    @app.put("/api/institution-proxy")
+    async def put_institution_proxy(body: ProxyAddress, request: Request) -> dict[str, Any]:
+        address = proxy.validate(body.address)
+        store_of(request).set_setting(proxy.SETTING, address)
+        return {"address": address}
+
     @app.get("/api/researches/{research_id}")
     async def get_research(research_id: str, request: Request) -> dict[str, Any]:
         return research_view(store_of(request), research_id)
@@ -1075,9 +1105,14 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/uploads/match")
     async def match_uploads(research_id: str, request: Request, files: list[UploadFile] = File(...)) -> dict[str, Any]:
-        """Propose which included source each dropped PDF belongs to; nothing is attached until the user confirms (D49)."""
+        """Propose which included source each dropped PDF belongs to; nothing is attached until the user confirms (D49).
+
+        An `sw` research proposes a work among those waiting for a PDF, the latest plan's and those included since,
+        with its versions for the person to pick from and what the confirmation checks (slice 18a)."""
         store = store_of(request)
         store.research(research_id)
+        if store.scope(research_id).get("search_workflow") == "sw":
+            return await match_waiting(store, research_id, files)
         candidates = [store.source(svid) for head in store.included_works(research_id)
                       for svid in [head, *store.work_versions(research_id, head)]]
         settings.papers_dir.mkdir(parents=True, exist_ok=True)
@@ -1088,6 +1123,55 @@ def create_app(
             svid, basis = match_pdf_to_source("\n".join(page.text for page in extraction.pages), candidates)
             matches.append({"filename": Path(file.filename or "document.pdf").name, "source_version_id": svid, "basis": basis})
         return {"matches": matches}
+
+    async def match_waiting(store: Store, research_id: str, files: list[UploadFile]) -> dict[str, Any]:
+        revision = store.research(research_id)["current_scope_revision"]
+        settings.papers_dir.mkdir(parents=True, exist_ok=True)
+        matches = []
+        for file in files[:50]:
+            sha, _, path = await store_upload(file, settings.papers_dir)
+            extraction = await asyncio.to_thread(pdf.extract_pdf, path, MATCH_TEXT_CHARS)
+            # What the confirmation sends back and is checked against (decision 5): the file, the revision, the work.
+            matches.append({"filename": Path(file.filename or "document.pdf").name, "sha256": sha, "scope_revision": revision,
+                            "page_count": extraction.page_count or None,
+                            "has_text_layer": None if extraction.status == "failed" else bool(extraction.pages),
+                            **pdf_waiting.propose(store, research_id, "\n".join(p.text for p in extraction.pages))})
+        return {"matches": matches, "scope_revision": revision}
+
+    # ---- the works of an sw research waiting for the person's PDF (slice 18a) ----------------------
+    @app.get("/api/researches/{research_id}/waiting")
+    async def waiting_list(research_id: str, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        return pdf_waiting.waiting_view(store, research_id)
+
+    @app.post("/api/researches/{research_id}/waiting/uploads", status_code=201)
+    async def attach_waiting_pdf(research_id: str, request: Request, file: UploadFile = File(...),
+                                 work_id: str = Form(...), source_version_id: str = Form(...),
+                                 scope_revision: int = Form(...), versions_digest: str = Form(...),
+                                 sha256: str = Form(...)) -> dict[str, Any]:
+        """Add a dropped file to the version the person picked, once what the match showed still holds (decision 5).
+
+        The file is added as a person's upload always was; no code and no reading run is written for it (slice 18b).
+        Checked before the text is extracted, and again with the write, so nothing that moved meanwhile slips in."""
+        store = store_of(request)
+        store.research(research_id)
+        pdf_waiting.require_sw(store, research_id)
+        settings.papers_dir.mkdir(parents=True, exist_ok=True)
+        sha, size, path = await store_upload(file, settings.papers_dir)
+        bound = dict(work_id=work_id, source_version_id=source_version_id, scope_revision=scope_revision,
+                     versions_digest=versions_digest, sha256=sha256, uploaded_sha256=sha)
+        pdf_waiting.check_attach(store, research_id, **bound)
+        extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+        filename = Path(file.filename or "document.pdf").name
+        with db.transaction(store.conn):
+            pdf_waiting.check_attach(store, research_id, **bound)
+            asset_id = store.add_asset_with_pages(source_version_id, sha, size, path.name, "user_upload", None,
+                                                  filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+            store._event(research_id, "waiting_pdf_attached", {"source_version_id": source_version_id,
+                                                               "work_id": work_id, "asset_id": asset_id})
+        return research_view(store, research_id) | {"attached": {"source_version_id": source_version_id,
+                                                                  "asset_id": asset_id}}
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/pdf-discovery")
     async def discover_source_pdf(research_id: str, source_version_id: str, request: Request) -> dict[str, Any]:

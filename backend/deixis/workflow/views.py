@@ -15,6 +15,7 @@ from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state, equations_to_check
 from deixis.workflow.queue import queue_answers, queue_counts
 from deixis.workflow.report.store import ReportStore
+from deixis.workflow.waiting import waiting_count
 from deixis.providers.registry import search_providers
 from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
 
@@ -529,6 +530,8 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
     if scope.get("search_workflow") == "sw":
         # The human queue's open rows and the decisions to look at again (slice 16); a legacy view is unchanged.
         counts |= queue_counts(store, research_id)
+        # The works waiting for the person's PDF (slice 18a).
+        counts["waiting_for_pdf"] = waiting_count(store, research_id)
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
     reviewer = effective_reviewer(scope, store.setting("reviewer"))
     report_runs = [dict(row) for row in conn.execute(

@@ -259,6 +259,13 @@ const queueReasons: Record<string, string> = {
   human_pdf_wrong: 'You marked this PDF as wrong under an earlier question or criterion.',
 }
 export const queueReasonText = (code: string) => t(queueReasons[code] ?? 'This work needs a person’s decision.')
+// Why a work waits for the person's PDF (slice 18a), by the reason code the backend stored.
+const waitingReasons: Record<string, string> = {
+  no_fulltext: 'No open copy was found by any route.',
+  text_unreadable: 'The PDF that was found has no text layer.',
+  human_pdf_wrong: 'You marked the PDF that was found as wrong.',
+}
+export const waitingReasonText = (code: string) => t(waitingReasons[code] ?? 'No PDF with text is in hand.')
 export const queueAnswerLabels: Record<QueueAnswer, string> = {
   pdf_confirmed: 'PDF is right, let the model read it', include: 'Include', criterion_not_met: 'Does not meet the criterion',
   not_sure: 'Not sure', pdf_wrong: 'PDF is wrong or incomplete',

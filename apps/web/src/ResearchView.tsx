@@ -28,6 +28,7 @@ import { SourceKey } from './SourceKey'
 import { scrollBehavior } from './motion'
 import { Notice } from './Notice'
 import { HumanQueue } from './HumanQueue'
+import { WaitingForPdf } from './WaitingForPdf'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -86,7 +87,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [titleDraft, setTitleDraft] = useState('')
   const [error, setError] = useState('')
   const toast = useToast()
-  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'queue' || initialTab === 'evidence' || initialTab === 'artifacts' || initialTab === 'activity' ? initialTab : 'answer')
+  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'queue' || initialTab === 'waiting' || initialTab === 'evidence' || initialTab === 'artifacts' || initialTab === 'activity' ? initialTab : 'answer')
   const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean } | null>(null)
   const [pdfTarget, setPdfTarget] = useState<{ assetId: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -96,6 +97,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // The counts under the question open the Sources tab, so the selection filter lives here rather than inside the list.
   const [sourceFilter, setSourceFilter] = useState<StateFilter>('all')
   const [pdfFinding, setPdfFinding] = useState<string | null>(null)
+  const [waitingFiles, setWaitingFiles] = useState<File[] | null>(null)
+  const takeWaitingFiles = useCallback(() => setWaitingFiles(null), [])
   const [attachTarget, setAttachTarget] = useState<string | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ source: Source; assetId: string } | null>(null)
   // Replacing a PDF: the file is chosen first, then the confirmation names what still cites the old file (D45).
@@ -367,6 +370,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const hasQueue = view.scope.search_workflow === 'sw'
   const queueCount = (view.counts.queue ?? 0) + (view.counts.look_again ?? 0)
   const showQueue = () => { setTab('queue'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
+  // Files dropped on the PDF panel of an sw research go to the waiting view's version-checked match (slice 18a).
+  const waitingCount = view.counts.waiting_for_pdf ?? 0
+  const dropForWaiting = (files: File[]) => { setWaitingFiles(files); setTab('waiting'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
   return <section className="research-view legacy-research">
     {/* The hint takes the row that already exists above the title: reserving it there keeps the field from pushing the counts down
         while the title is edited, and it leaves the scope revision readable. */}
@@ -416,7 +422,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
     <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => { setTab(String(value)); setPicked([]) }}>
       <div className="research-tabs-bar">
-        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger>{hasQueue && <TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger>}<TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
+        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger>{hasQueue && <TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger>}{hasQueue && <TabsTrigger value="waiting">{t('Waiting for your PDF')} <span className="research-tab-count">{waitingCount}</span></TabsTrigger>}<TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
         {/* The live run carries its own quiet Pause; these controls ride with the tabs so pause, resume and cancel stay reachable from every tab.
             A table run is controlled on the Evidence tab above its table; elsewhere the bar only links there. */}
         {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? tab !== 'evidence' && <button type="button" className="run-chip" title={t('Open the Evidence tab to control this run')} onClick={() => { setTab('evidence'); setPicked([]) }}>
@@ -467,7 +473,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
         </div>}
         {/* Before the first answer, the next step is getting the included sources' PDFs (D49); the panel carries the answer button. */}
-        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady} act={act} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} /> :
+        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady} act={act} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} onDropFiles={hasQueue ? dropForWaiting : undefined} /> :
         /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
            While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */
         active ? null : <div className="answer-actions">
@@ -510,6 +516,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
       {hasQueue && <TabsContent value="queue">
         <HumanQueue researchId={id} view={view} dark={dark} onChanged={async () => { await load(); onChanged() }} />
+      </TabsContent>}
+
+      {hasQueue && <TabsContent value="waiting">
+        <WaitingForPdf researchId={id} view={view} busy={busy} incoming={waitingFiles} onIncomingTaken={takeWaitingFiles} onChanged={async () => { await load(); onChanged() }} />
       </TabsContent>}
 
       <TabsContent value="evidence">

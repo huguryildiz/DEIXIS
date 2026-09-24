@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { SlidersHorizontal } from 'lucide-react'
+import { Landmark, SlidersHorizontal } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { api, type ModelRole, type RoleModelSetting } from './api'
 import { connectionModels, defaultEffort, ModelPicker, modelKey, modelRoles, notReadyReasons, type ConnectionModel } from './Home'
 import { ConnectionsTab } from './Connections'
@@ -69,6 +70,41 @@ export function SettingsPage({ dark, tab, onTab }: { dark: boolean; tab: 'defaul
               </div>
             })}</div>}
     </div>}
-    {tab === 'connections' && <div id="panel-connections" role="tabpanel" aria-labelledby="tab-connections"><ConnectionsTab dark={dark} /></div>}
+    {tab === 'connections' && <div id="panel-connections" role="tabpanel" aria-labelledby="tab-connections"><InstitutionProxy /><ConnectionsTab dark={dark} /></div>}
+  </section>
+}
+
+// The institution's proxy address (slice 18a): the links of works waiting for a PDF open through it in the browser, where
+// the institution's own login happens. DEIXIS never sends a request through it and stores no password.
+function InstitutionProxy() {
+  const toast = useToast()
+  const [saved, setSaved] = useState<string | null | undefined>(undefined)
+  const [draft, setDraft] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    api.institutionProxy().then(result => { setSaved(result.address); setDraft(result.address ?? '') }).catch((e: Error) => setError(e.message))
+  }, [])
+  const save = (address: string) => {
+    setBusy(true)
+    api.saveInstitutionProxy(address).then(result => {
+      setSaved(result.address); setDraft(result.address ?? ''); setError('')
+      toast('success', t(result.address ? 'Proxy address saved. Links of works waiting for a PDF open through it.' : 'Proxy address removed. Links open directly.'))
+    }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+  return <section className="connections-group proxy-setting" aria-labelledby="proxy-title">
+    <h2 id="proxy-title" className="with-icon"><Landmark size={20} aria-hidden />{t('Institution proxy')}</h2>
+    <p className="legacy-mini-note">{t('The links of works waiting for your PDF open through this address in your browser, where your institution asks you to sign in. DEIXIS sends nothing through it, downloads nothing from it and never stores a password. Whether your institution grants access is not checked.')}</p>
+    <form className="proxy-form" onSubmit={e => { e.preventDefault(); save(draft) }}>
+      <label htmlFor="proxy-address">{t('Proxy address')}</label>
+      <input id="proxy-address" type="url" inputMode="url" spellCheck={false} autoComplete="off" value={draft} disabled={saved === undefined || busy}
+        placeholder="https://login.proxy.example.edu/login?url=" aria-describedby="proxy-help" onChange={e => { setDraft(e.target.value); setError('') }} />
+      <small id="proxy-help">{t('A prefix the link is appended to, or an address with {url} where the link goes. https only; no user name or password.')}</small>
+      <span className="proxy-actions">
+        <Button type="submit" size="sm" disabled={busy || saved === undefined || draft.trim() === (saved ?? '')}>{t('Save')}</Button>
+        {saved && <button type="button" className="pdf-ready-link" disabled={busy} onClick={() => save('')}>{t('Remove')}</button>}
+      </span>
+    </form>
+    {error && <Notice tone="error">{error}</Notice>}
   </section>
 }

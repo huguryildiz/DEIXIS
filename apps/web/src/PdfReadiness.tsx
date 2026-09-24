@@ -19,11 +19,13 @@ type Proposal = { file: File; match: PdfMatch; target: string; hasPdf: boolean }
 const durationText = (seconds: number) => (seconds < 60 ? t('{s} s', { s: seconds }) : t('{m} min {s} s', { m: Math.floor(seconds / 60), s: seconds % 60 }))
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 
-export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearchAgain, onAnswer, onUpload, ocrTool, onReadWithOcr }: {
+export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearchAgain, onAnswer, onUpload, ocrTool, onReadWithOcr, onDropFiles }: {
   researchId: string; view: ResearchView; busy: boolean; hasAcademic: boolean
   act: (action: () => Promise<unknown>, success?: string) => Promise<void>
   onSearchAgain: () => void; onAnswer: () => void; onUpload: (source: Source) => void
   ocrTool: OcrTool | null; onReadWithOcr: (source: Source, assetId: string) => void
+  // An sw research hands dropped files to its waiting view, where the person picks the version (slice 18a); legacy matches here.
+  onDropFiles?: (files: File[]) => void
 }) {
   const byId = new Map(view.sources.map(s => [s.source_version_id, s]))
   const records = view.sources.filter(s => s.version_role === 'record' && s.selection.state === 'included')
@@ -146,6 +148,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
   const matchFiles = async (files: File[]) => {
     const pdfs = files.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
     if (!pdfs.length) return
+    if (onDropFiles) { onDropFiles(pdfs); return }
     setMatching(true)
     try {
       const { matches } = await api.matchUploads(researchId, pdfs)

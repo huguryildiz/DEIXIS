@@ -281,8 +281,8 @@ class Store:
             for table in ("answer_reviews", "answers", "model_sessions", "step_inputs", "candidate_hits", "candidates",
                           "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
-                          "source_similarities", "protocol_records", "stage_decisions", "model_proposals",
-                          "record_signal_ranks", "record_flags", "chain_links"):
+                          "source_similarities", "protocol_records", "human_selection_links", "stage_decisions",
+                          "model_proposals", "record_signal_ranks", "record_flags", "chain_links"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
             for table in ("runs", "scope_revisions"):
@@ -1744,6 +1744,20 @@ class Store:
             (research_id, head, current["state"], source["state"], source["origin"], "taken from another version of the same work", now()),
         )
         self._bump_selection_revision(research_id, current["state"], source["state"])
+        # A selection a queue decision wrote follows the work to its new head, and so does the decision's link, so
+        # undoing the decision still finds the selection it wrote (slice 16). Only while the link still names the
+        # record and the version copied: a selection the user changed from the source list since is the user's.
+        if source["origin"] == "user":
+            link = self.conn.execute(
+                "SELECT l.decision_id FROM human_selection_links l JOIN stage_decisions d ON d.id = l.decision_id"
+                " WHERE l.research_id = ? AND l.head = ? AND l.selection_version = ? AND d.superseded_at IS NULL"
+                " AND l.rowid = (SELECT MAX(rowid) FROM human_selection_links WHERE decision_id = l.decision_id)",
+                (research_id, source["source_version_id"], source["version"]),
+            ).fetchone()
+            if link is not None:
+                self.conn.execute(
+                    "INSERT INTO human_selection_links (decision_id, research_id, head, selection_version, created_at)"
+                    " VALUES (?, ?, ?, ?, ?)", (link["decision_id"], research_id, head, current["version"] + 1, now()))
 
     def included_works(self, research_id: str) -> list[str]:
         """Heads of the works included in the research: a work counts once, by its head's selection (D48)."""
@@ -1974,6 +1988,11 @@ class Store:
             # A stage decision is kept unless a purge authorizes removing it; deleting this research's record of these
             # sources is such a purge (D65), so the same authorization row the research purge uses opens the trigger.
             self.conn.execute("INSERT OR IGNORE INTO research_purge_authorizations VALUES (?)", (research_id,))
+            # A queue decision's selection links go before the decisions they name, and with the head they name.
+            self.conn.execute(
+                f"DELETE FROM human_selection_links WHERE research_id = ? AND (head IN ({marks}) OR decision_id IN"
+                f" (SELECT id FROM stage_decisions WHERE research_id = ? AND source_version_id IN ({marks})))",
+                (research_id, *chosen, research_id, *chosen))
             for table in ("pdf_discovery_runs", "source_similarities", "suspected_duplicates", "selection_history",
                           "selections", "candidate_hits", "candidates", "stage_decisions", "model_proposals",
                           "record_signal_ranks",
@@ -2139,6 +2158,28 @@ class Store:
         return dict(self.conn.execute(
             "SELECT * FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
         ).fetchone())
+
+    def release_user_selection(self, research_id: str, svid: str, expected_version: int, reason: str) -> bool:
+        """Give a selection a queue decision wrote back to code, only while it is still at `expected_version`.
+
+        Any change since, from the source list too and even to the same state, moved the version on and the
+        selection stays the user's. The caller derives the state afterwards (`DecisionStore.derive_selection`).
+        """
+        with transaction(self.conn):
+            current = self.conn.execute(
+                "SELECT * FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
+            ).fetchone()
+            if current is None or current["version"] != expected_version or current["origin"] != "user":
+                return False
+            ts = now()
+            self.conn.execute(
+                "UPDATE selections SET origin = 'code_rule', user_reason = NULL, version = version + 1, updated_at = ?"
+                " WHERE research_id = ? AND source_version_id = ?", (ts, research_id, svid))
+            self.conn.execute(
+                "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, reason,"
+                " created_at) VALUES (?, ?, ?, ?, 'code_rule', ?, ?)",
+                (research_id, svid, current["state"], current["state"], reason, ts))
+        return True
 
     def included_sources(self, research_id: str) -> list[str]:
         return [r[0] for r in self.conn.execute(

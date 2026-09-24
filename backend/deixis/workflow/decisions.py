@@ -48,10 +48,12 @@ class DecisionStore:
 
     # ---- decisions --------------------------------------------------------------------
     def record(self, research_id: str, source_version_id: str, reason_code: str, *, step_id: str | None = None,
-               note: str | None = None) -> dict[str, Any]:
+               note: str | None = None, renew_stale: bool = False) -> dict[str, Any]:
         """Decide this record's stage under `reason_code`, closing whatever the stage said before.
 
         The same decision from the same step is written once, so a resumed run repeats the call without adding a row.
+        With `renew_stale`, the same decision gone stale is written again under what the research asks now: a person
+        who gives the same answer to a `look_again` row decides afresh (slice 16).
         """
         code = reason(reason_code)
         with transaction(self.conn):
@@ -60,7 +62,7 @@ class DecisionStore:
             current = self.current(research_id, source_version_id, code.stage)
             if current is not None:
                 if (current["reason_code"] == reason_code and current["protocol_hash"] == protocol_hash
-                        and current["step_id"] == step_id):
+                        and current["step_id"] == step_id and not (renew_stale and self.is_stale(current))):
                     return current
                 if current["decided_by"] == "human" and code.decided_by != "human":
                     raise HumanDecisionStands(f"{source_version_id}: the user decided this record's {code.stage} stage")
@@ -121,6 +123,17 @@ class DecisionStore:
             return self._insert(research_id, source_version_id, reason(previous["reason_code"]), previous["step_id"],
                                 "restored after an undone human decision", previous["scope_revision"],
                                 previous["protocol_hash"], previous["criterion_hash"], closing=current)
+
+    def human_decided_works(self, research_id: str, stage: str | None = None) -> set[str]:
+        """The works a person decided, on any version still in the research, at `stage` or at any stage (SW11.7).
+
+        Read by the stages that must not send such a work to a model again, right before they send (slice 16).
+        """
+        return {row[0] for row in self.conn.execute(
+            "SELECT DISTINCT v.work_id FROM stage_decisions d JOIN source_versions v ON v.id = d.source_version_id"
+            " JOIN corpus_memberships m ON m.research_id = d.research_id AND m.source_version_id = d.source_version_id"
+            " AND m.removed_at IS NULL WHERE d.research_id = ? AND d.decided_by = 'human' AND d.superseded_at IS NULL"
+            f"{' AND d.stage = ?' if stage else ''}", (research_id, stage) if stage else (research_id,))}
 
     def staleness_key(self, research_id: str) -> tuple[int, str | None]:
         """What a decision must have been made under to still be current: the question revision and the criterion

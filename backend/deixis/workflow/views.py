@@ -13,6 +13,7 @@ from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as cha
 from deixis.workflow import suggestions as suggestions_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state, equations_to_check
+from deixis.workflow.queue import queue_counts
 from deixis.workflow.report.store import ReportStore
 from deixis.providers.registry import search_providers
 from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
@@ -521,6 +522,9 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
             " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
             " WHERE m.research_id = ? AND m.removed_at IS NOT NULL", (research_id,)).fetchone())),
     }
+    if scope.get("search_workflow") == "sw":
+        # The human queue's open rows and the decisions to look at again (slice 16); a legacy view is unchanged.
+        counts |= queue_counts(store, research_id)
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
     reviewer = effective_reviewer(scope, store.setting("reviewer"))
     report_runs = [dict(row) for row in conn.execute(

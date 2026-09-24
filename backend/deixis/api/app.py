@@ -48,6 +48,7 @@ from deixis.workflow import approval as approval_rules
 from deixis.workflow import adjudication, fulltext
 from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import bibliography
+from deixis.workflow import queue as human_queue
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.equations import EquationService, equation_state, equations_to_check
 from deixis.workflow.flow import FlowDeps, ResearchFlow
@@ -133,6 +134,16 @@ class SelectionChange(BaseModel):
     state: Literal["included", "excluded", "pending"]
     expected_version: int
     reason: str | None = Field(default=None, max_length=1000)
+
+
+class QueueDecision(BaseModel):
+    decision: Literal["include", "criterion_not_met", "not_sure", "pdf_wrong", "pdf_confirmed"]
+    note: str | None = Field(default=None, max_length=1000)
+    row_token: str = Field(max_length=200)
+
+
+class QueueUndo(BaseModel):
+    row_token: str = Field(max_length=200)
 
 
 class ScopeRevision(BaseModel):
@@ -426,6 +437,10 @@ def create_app(
     @app.exception_handler(SameFile)
     async def same_file(_: Request, exc: SameFile):
         return JSONResponse({"detail": "This file is already the PDF in use"}, status_code=422)
+
+    @app.exception_handler(human_queue.QueueUnavailable)
+    async def queue_unavailable(_: Request, exc: human_queue.QueueUnavailable):
+        return JSONResponse({"detail": str(exc)}, status_code=422)
 
     @app.exception_handler(RevisionConflict)
     async def conflict(_: Request, exc: RevisionConflict):
@@ -954,6 +969,32 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         return store.set_user_selection(research_id, source_version_id, body.state, body.expected_version, body.reason)
+
+    # ---- the human queue of an sw research (slice 16, D96) ----------------------------------------
+    @app.get("/api/researches/{research_id}/queue")
+    async def queue(research_id: str, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        return human_queue.queue_rows(store, research_id)
+
+    @app.get("/api/researches/{research_id}/queue/{source_version_id}")
+    async def queue_row(research_id: str, source_version_id: str, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        return human_queue.row_detail(store, research_id, source_version_id)
+
+    @app.post("/api/researches/{research_id}/queue/{source_version_id}/decision")
+    async def queue_decision(research_id: str, source_version_id: str, body: QueueDecision,
+                             request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        return human_queue.decide(store, research_id, source_version_id, body.decision, body.note, body.row_token)
+
+    @app.post("/api/researches/{research_id}/queue/{source_version_id}/undo")
+    async def queue_undo(research_id: str, source_version_id: str, body: QueueUndo, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        return human_queue.undo(store, research_id, source_version_id, body.row_token)
 
     @app.delete("/api/researches/{research_id}/sources")
     async def remove_sources(research_id: str, body: SourceRemoval, request: Request) -> dict[str, Any]:

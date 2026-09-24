@@ -118,6 +118,52 @@ def stage_work_outcome(rows: list[dict[str, Any]]) -> Any:
     return canonical_rows(outcomes, "work_id")
 
 
+def stage_queue(rows: list[dict[str, Any]]) -> Any:
+    """The human queue of a mixed set of decisions, written in a shuffled order (slice 16).
+
+    The rows are decisions, not a ranking; the ranking is fixed. The same rows must come back in the same order, with
+    the same kind, place and counts, whatever order the decisions were written in. Tokens and decision identifiers
+    are random per run and are left out.
+    """
+    from deixis.workflow import queue
+
+    with tempfile.TemporaryDirectory() as directory:
+        conn = db.connect(Path(directory) / "library.sqlite")
+        db.migrate(conn)
+        store = Store(conn)
+        rid = store.create_research("SYNTHETIC question?", "academic", "quick", ["openalex"], "fake", "fake-model",
+                                    None, search_workflow="sw")
+        ts = "2026-09-24T00:00:00.000+00:00"
+        with db.transaction(conn):
+            for work_id in sorted({row["work_id"] for row in rows}):
+                conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (work_id, ts))
+            for source_version_id in sorted({row["id"] for row in rows}):
+                conn.execute(
+                    "INSERT INTO source_versions (id, work_id, title, origin, created_at)"
+                    " VALUES (?, ?, 'SYNTHETIC record', 'provider', ?)",
+                    (source_version_id, next(r["work_id"] for r in rows if r["id"] == source_version_id), ts),
+                )
+                conn.execute(
+                    "INSERT INTO corpus_memberships (research_id, source_version_id, added_by, created_at)"
+                    " VALUES (?, ?, 'library', ?)", (rid, source_version_id, ts),
+                )
+        run = store.create_run(rid, "discovery", {"max_model_calls": 0}, None)["id"]
+        step = store.step(run, "ranking", "code:ranking")
+        store.finish_step(step["id"], "succeeded", output={})
+        decisions = DecisionStore(store)
+        decisions.save_ranks(step["id"], rid, [{"source_version_id": svid, "signal": "inspection", "rank": place,
+                                                "available": 1} for place, svid in enumerate(QUEUE_RANKING, start=1)])
+        for row in rows:
+            decisions.record(rid, row["id"], row["reason_code"])
+        found = queue.queue_rows(store, rid)
+        conn.close()
+    kept = ("source_version_id", "work_id", "reason_code", "kind", "question", "place", "arm", "stale")
+    return {"rows": [{key: row[key] for key in kept} for row in found["rows"]], "counts": found["counts"]}
+
+
+# The keyword order the queue stage reads; two works are left unranked and go last, by their head.
+QUEUE_RANKING = ["srv_q_e", "srv_q_b", "srv_q_g_b", "srv_q_a"]
+
 LINK_AUTHORS = ["Aydin, Mert", "Zhao, Li"]
 LINK_TITLES = {
     "one": "SYNTHETIC release scheduling for diffusion channels",
@@ -607,6 +653,7 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "compile_queries": stage_compile_queries,
     "chunk_page": stage_chunk_page,
     "fuse_rankings": stage_fuse_rankings,
+    "queue": stage_queue,
     "answer_source_order": stage_answer_source_order,
     "build_protocol": stage_build_protocol,
     "work_outcome": stage_work_outcome,
@@ -811,6 +858,20 @@ ROWS: dict[str, list[dict[str, Any]]] = {
         {"id": "psg_e", "physical_page": None,
          "text": "SYNTHETIC the bakery delivers bread subject to the morning round."},
         {"id": "psg_f", "physical_page": 1, "text": "SYNTHETIC the bakery delivers bread every morning."},
+    ],
+    # One work per queue code, a work whose two versions disagree, a work a person decided, and works the queue
+    # does not ask about. SYNTHETIC; they show the queue's classification and order, not a real library.
+    "queue": [
+        {"id": "srv_q_a", "work_id": "wrk_q_a", "reason_code": "part_without_evidence"},
+        {"id": "srv_q_b", "work_id": "wrk_q_b", "reason_code": "fulltext_runs_disagree"},
+        {"id": "srv_q_c", "work_id": "wrk_q_c", "reason_code": "include_quote_unverified"},
+        {"id": "srv_q_d", "work_id": "wrk_q_d", "reason_code": "pdf_identity_unconfirmed"},
+        {"id": "srv_q_e", "work_id": "wrk_q_e", "reason_code": "fulltext_runs_agree_unresolved"},
+        {"id": "srv_q_f", "work_id": "wrk_q_f", "reason_code": "human_include"},
+        {"id": "srv_q_g_a", "work_id": "wrk_q_g", "reason_code": "criterion_absent"},
+        {"id": "srv_q_g_b", "work_id": "wrk_q_g", "reason_code": "all_parts_verified"},
+        {"id": "srv_q_h", "work_id": "wrk_q_h", "reason_code": "no_fulltext"},
+        {"id": "srv_q_i", "work_id": "wrk_q_i", "reason_code": "runs_agree_candidate"},
     ],
     "work_outcome": [
         # First in the list: both shuffles the test runs reverse this pair.

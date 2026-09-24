@@ -285,6 +285,38 @@ export type Counts = {
   found: number; unique: number; included: number; excluded: number; pending: number; inspected: number; cited: number
   // Works the user removed from this research, and those of them a later search found again; neither is listed (D50).
   removed: number; removed_found_again: number
+  // An sw research's human queue: open rows, and decisions made under an earlier criterion (slice 16). Absent in legacy.
+  queue?: number; look_again?: number
+}
+// The human queue of an sw research (slice 16, D96). Rows are derived from stored decisions each time they are read.
+export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'confirm_absent' | 'find_part' | 'look_again'
+export type QueueAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong' | 'pdf_confirmed'
+export type QueueRow = {
+  source_version_id: string; head: string; work_id: string; title: string; year: number | null; doi: string | null
+  version_label: string | null; publication_type: string | null; reason_code: string; kind: QueueKind
+  question: { part: string; definition: string | null } | null; place: number | null; arm: 'keyword' | 'chain'
+  stale: boolean; decision_id: string; row_token: string
+}
+export type QueueCounts = {
+  open: number; by_kind: Record<string, number>; by_reason: Record<string, number>; look_again: number
+  decided: Record<string, number>; user_selected: number
+}
+export type QueueView = { rows: QueueRow[]; counts: QueueCounts; order: 'fused_rank' }
+export type QueuePart = {
+  part: string; label: 'present' | 'absent' | 'unclear'; quote: string | null; quote_verified: boolean | null
+  page: number | null; passage: string | null; rationale: string | null
+  closest?: { page: number; text: string; kind: 'exact' | 'normalized' | 'fuzzy'; ratio: number } | null; closest_note?: string | null
+}
+export type QueueDetail = {
+  runs: { run_no: number; shown_pages: number[]; parts: QueuePart[] }[]
+  cues: { phrases: string[]; sentences: { page: number; sentence: string }[]; total: number; note: string | null }
+  identity?: { first_page: string | null; work_title: string; work_doi: string | null; asset_id: string | null; retrieved_from: string | null; page_count: number | null }
+}
+export type QueueDecision = { id: string; reason_code: string; decided_by: 'code' | 'model_agreement' | 'human'; stale: boolean; undoable: boolean }
+export type QueueRowView = { row: QueueRow | null; decision: QueueDecision | null; undo_token: string; detail?: QueueDetail }
+export type QueueAnswerResult = {
+  row: QueueRow | null; decision: QueueDecision | null; undo_token: string
+  selection: { source_version_id: string; state: Source['selection']['state']; origin: Source['selection']['origin']; version: number } | null
 }
 export type ResearchView = {
   research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string }
@@ -558,6 +590,12 @@ export const api = {
   controlRun: (runId: string, action: 'pause' | 'resume' | 'cancel' | 'retry_failed') => request<Run>(`/api/runs/${runId}/${action}`, { method: 'POST' }),
   select: (id: string, sourceId: string, state: Source['selection']['state'], expectedVersion: number, reason?: string) =>
     request<unknown>(`/api/researches/${id}/selections/${sourceId}`, json('PATCH', { state, expected_version: expectedVersion, reason })),
+  queue: (id: string) => request<QueueView>(`/api/researches/${id}/queue`),
+  queueRow: (id: string, sourceId: string) => request<QueueRowView>(`/api/researches/${id}/queue/${sourceId}`),
+  answerQueueRow: (id: string, sourceId: string, decision: QueueAnswer, rowToken: string, note?: string | null) =>
+    request<QueueAnswerResult>(`/api/researches/${id}/queue/${sourceId}/decision`, json('POST', { decision, note: note ?? null, row_token: rowToken })),
+  undoQueueDecision: (id: string, sourceId: string, undoToken: string) =>
+    request<QueueAnswerResult>(`/api/researches/${id}/queue/${sourceId}/undo`, json('POST', { row_token: undoToken })),
   reviseScope: (id: string, question: string, expectedVersion: number, keyTerms?: string | null) =>
     request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion, key_terms: keyTerms ?? null })),
   // Approve or correct the protocol an sw discovery run stopped for; the run is queued again (D80).

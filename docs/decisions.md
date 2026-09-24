@@ -2,6 +2,58 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D96 — The human queue: rows derived from stored decisions, a person's answer written as a stage decision and the user's selection in one transaction, and no model call for a decided work
+
+**Status:** accepted; implemented 2026-09-24 (slice 16, back end only; the screen is slice 17). **Date:** 2026-09-24.
+
+**Context:** Since slice 12 five reason codes and `pdf_identity_unconfirmed` routed works to `human_queue`, and
+nothing read them. A model-free count on 16 stored libraries (`.local/sw-slice16-queue-measure-2026-09-24/`) found the
+queue would hold 8–21 / 15–40 / 90–100 rows for quantum `quick` / `standard` / `detailed` and 1–4 for the packet
+question; 223 of 315 rows were `part_without_evidence`, mostly because the model's criterion carried a topic part
+(SW15.1). A sample of 74 rows found about a third to be real questions. Seven choices were settled by Claude and
+`gpt-6-sol` (one high, two medium rounds) and approved by the owner on Sol medium's approval
+(`docs/product/sw-slice16-human-queue.md`).
+
+**Decision:** The queue is not stored. `workflow/queue.py` derives it on each read from `DecisionStore.work_outcome`:
+one row per work whose outcome routes to `human_queue` (the six codes of the reason table) or is `versions_disagree`,
+named on the version that decision is written on; no code is closed by a rule. A work whose selection the user set
+from the source list is not listed (counted as `user_selected`); a person's decision that went stale under a new
+revision or criterion is listed at the end as `look_again` whoever set the selection, and still counts. Each row has
+a `kind` (`confirm_quote`, `choose_run`, `choose_version`, `confirm_pdf`, `confirm_absent`, `find_part`), one question
+(the first criterion part the two runs did not settle), its place in the fused order (keyword works by the latest
+keyword ranking, chained works after them by the chain ranking; ties by head) and a `row_token`. The row detail adds
+each run's labels, quotes, checks, pages, passages and rationales, the pages each run was shown, the closest passage
+to an unverified quote on those pages only (`locate_anchor`), the question part's cue sentences with pages (only that
+part's phrases), and for an identity row the PDF's first page. Reading writes nothing and opens no step.
+
+An answer (`include`, `criterion_not_met`, `not_sure`, `pdf_wrong`) is a `human` stage decision on the row's version.
+`include` and `criterion_not_met` also set the work head's selection `included` / `excluded` with origin `user`, and
+an append-only `human_selection_links` row (migration `0051`) records which head and selection version the decision
+wrote; `_settle_work_head` adds a row when it copies that selection to a new head. Undo (`undo_human`) restores the
+earlier code decision and releases the selection only while the link's head is still at that version; any list edit
+since, to the same state too, keeps it the user's. The fifth answer `pdf_confirmed` marks the file
+(`source_assets.identity_confirmed_at`, migration `0051`) and closes the identity code with `not_read_yet` (note
+`pdf_confirmed:<asset>`, no step); `_user_supplied_pdf` exempts a confirmed file, and its undo is refused once a later
+reading plan opened a step for the work. The token carries the revision, criterion digest, every current full-text
+decision of the work, the row's reason, the head and its selection version, membership and the current file; it is
+recomputed inside the write transaction and a mismatch answers 409. Decision, selection, link, history and event
+(`stage_decision_recorded`, `stage_decision_undone`, `pdf_identity_confirmed`, `pdf_identity_revoked`) are one
+transaction. A decided work is not sent to a model again: the abstract read plan (keyword and chain) skips a work with
+a person's full-text decision, an abstract batch drops records of works a person decided right before it is sent, and a
+reading run checks before each call once the limiter lets it through and again before it applies a result, which then
+writes neither proposal nor decision; the reading summary gains `human_decided` only when it is not zero.
+`queue.verified_records` lists `human_include` and `human_criterion_not_met` for slice 19 and changes no rule. Four
+`sw`-only endpoints (`GET …/queue`, `GET …/queue/{svid}`, `POST …/decision`, `POST …/undo`; legacy and a never-member
+record 422), and `research_view.counts` gains `queue` and `look_again` for an `sw` research. No model contract change.
+
+**Limits:** The replay of the 11 slice 15 libraries reproduced the planned row counts exactly
+(`.local/sw-slice16-acceptance-2026-09-24/`). One live quantum `quick` run (Luna medium) passed K8 (22 / 10 / 5
+against 22 / 11 / 7) with 17 rows equal to an independent count; the decision round wrote the selections and history
+as specified, and the next reading run made 0 calls for decided works and 2 for the confirmed PDF. Minutes per row,
+whether cue sentences and closest passages help a person, and the packet question's decision round were not measured.
+The three fixes that would shrink the queue (topic part in the criterion, quote verification's line numbers, the
+identity check) and SW6.6 are separate items. No screen yet.
+
 ## D95 — Citation chaining: 15 code seeds plus the user's, both directions through OpenAlex, its own abstract read and 12 places after the keyword plan
 
 **Status:** accepted; implemented 2026-09-23 (slice 15). **Date:** 2026-09-23.

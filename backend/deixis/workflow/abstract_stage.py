@@ -125,8 +125,9 @@ def read_plan(order: list[str], works: list[dict[str, Any]], limit: int, batch: 
     """The works the model reads, cut into batches, and the works left over; the unit is the work (SW9.4).
 
     Each work is `{"work_id", "head", "versions": [...]}`, and each version carries `id`, `has_abstract`, `code`
-    (this run's `code_outcome`), `decision` (the reason code it currently holds), `decided_by` and `stale`. A work
-    is read when no version of it is a code candidate, no version carries the user's own decision, it has a reading
+    (this run's `code_outcome`), `decision` (the reason code it currently holds), `decided_by` and `stale`; the work
+    may carry `fulltext_human`, true when a person decided its full-text stage on any version. A work is read when no
+    version of it is a code candidate, no version carries the user's own decision at either stage, it has a reading
     version, and that version's decision leaves it to be read.
 
     The order is where the work's head stands in `order`, the inspection order the ranking stored; a work the
@@ -139,6 +140,9 @@ def read_plan(order: list[str], works: list[dict[str, Any]], limit: int, batch: 
         if any(version.get("code") == "blocks_in_title" for version in work["versions"]):
             continue
         if any(version.get("decided_by") == "human" for version in work["versions"]):
+            continue
+        # The person's answer from the queue stands: the model is not asked about the work again (SW11.7, slice 16).
+        if work.get("fulltext_human"):
             continue
         svid = reading_version(work)
         if svid is None:

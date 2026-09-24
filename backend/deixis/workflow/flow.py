@@ -1241,9 +1241,18 @@ class ResearchFlow:
                              and s["status"] in ("failed", "outcome_unknown")))}
 
         def jobs() -> Iterator[_AbstractJob]:
-            """The (batch, run) calls in plan order, up to the batch the budget no longer holds whole."""
+            """The (batch, run) calls in plan order, up to the batch the budget no longer holds whole.
+
+            Right before a batch is sent, the records of works a person decided since the plan was frozen leave it
+            (slice 16): the plan step keeps its list, the StepInput stores the one sent, and a batch left empty is
+            not sent at all. No decision of this batch is written for a record that left it.
+            """
             nonlocal submitted
-            for number, batch in enumerate(batches):
+            for number, planned in enumerate(batches):
+                decided = self._human_decided_records(run["research_id"], planned)
+                batch = [svid for svid in planned if svid not in decided]
+                if not batch:
+                    continue
                 # A call whose step is already stored is read back and costs nothing, so a resumed run charges the
                 # budget only for the calls it still has to make; counting the stored ones too left paid-for
                 # answers unused and later batches unread while the budget still held them.
@@ -1252,7 +1261,8 @@ class ResearchFlow:
                 if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
                     # The budget stopped short of this batch. Its records are unread, which is a state the workflow
                     # already has, so the run finishes rather than pausing on something a later run will pick up.
-                    unread.extend(svid for later in batches[number:] for svid in later)
+                    unread.extend(svid for later in batches[number:] for svid in later
+                                  if svid not in self._human_decided_records(run["research_id"], later))
                     return
                 rows_of[number] = [by_svid[svid] for svid in batch if svid in by_svid]
                 for run_no in range(1, runs + 1):
@@ -1281,6 +1291,14 @@ class ResearchFlow:
             self._write_abstract_codes(run, step_id, [(svid, "abstract_not_read") for svid in unread])
         if stop is not None:
             raise stop
+
+    def _human_decided_records(self, research_id: str, svids: list[str]) -> set[str]:
+        """Which of these records belong to a work a person decided at any stage (slice 16)."""
+        works = DecisionStore(self.store).human_decided_works(research_id)
+        if not works:
+            return set()
+        work_of = self.store.work_ids(svids)
+        return {svid for svid in svids if work_of.get(svid) in works}
 
     def _model_calls_left(self, run: dict[str, Any], wanted: int, submitted: int = 0,
                           before: int | None = None) -> bool:
@@ -1356,6 +1374,7 @@ class ResearchFlow:
                 by_work.setdefault(version["work_id"], []).append(version)
 
         works, writes = [], []
+        fulltext_human = decisions.human_decided_works(rid, "fulltext")
         chained = set(chain) if chain is not None else None
         # The keyword stage leaves out what only an earlier run's chain found (D95); the chain reads its own.
         chain_only = self.store.chain_only_works(rid, revision) if chain is None else set()
@@ -1379,7 +1398,10 @@ class ResearchFlow:
                 rows.append({"id": version["id"], "has_abstract": bool(version["abstract"]), "code": code,
                              "decision": held["reason_code"] if held else None,
                              "decided_by": held["decided_by"] if held else None, "stale": stale})
-            works.append({"work_id": versions[svid]["work_id"], "head": svid, "versions": rows})
+            work = {"work_id": versions[svid]["work_id"], "head": svid, "versions": rows}
+            if work["work_id"] in fulltext_human:
+                work["fulltext_human"] = True
+            works.append(work)
 
         limit = (run["budget"].get("chain_abstract_read", CHAIN_ABSTRACT_READ[scope["effort"]]) if chain is not None
                  else ABSTRACT_READ_LIMIT[scope["effort"]])
@@ -2913,6 +2935,8 @@ class ResearchFlow:
                 head, read_version = item["head"], item["read_version"]
                 if not self._adjudication_member(run["research_id"], head, read_version):
                     continue
+                if self._human_decided_fulltext(run["research_id"], head):
+                    continue  # a person decided the work after the plan was frozen (slice 16)
                 owed = [run_no for run_no in range(1, FULLTEXT_RUNS + 1)
                         if f"fulltext_adjudication:{head}:{run_no}" not in answered]
                 if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
@@ -2927,8 +2951,14 @@ class ResearchFlow:
                     yield _AdjudicationJob(f"fulltext_adjudication:{head}:{run_no}", head, read_version, run_no)
 
         async def call(job: _AdjudicationJob) -> dict[str, Any] | None:
+            nonlocal submitted
             if not self._adjudication_member(run["research_id"], job.head, job.read_version):
                 return None
+            # Checked again once the limiter let the call through: a person may have decided the work while it
+            # waited. No step is opened and the call is not charged to the budget (slice 16).
+            if self._human_decided_fulltext(run["research_id"], job.head):
+                submitted -= f"fulltext_adjudication:{job.head}:{job.run_no}" not in answered
+                return {"human_decided": True}
             try:
                 return await self._adjudication_call(run, scope, plan, job, self.deps.limiter)
             except RunStopped:
@@ -2957,6 +2987,11 @@ class ResearchFlow:
         if stop is not None:
             raise stop
         self._adjudication_summary(run, plan)
+
+    def _human_decided_fulltext(self, research_id: str, head: str) -> bool:
+        """Whether a person decided the full-text stage of this head's work, on any version of it (slice 16)."""
+        work_id = self.store.source(head)["work_id"]
+        return work_id in DecisionStore(self.store).human_decided_works(research_id, "fulltext")
 
     def _adjudication_member(self, research_id: str, head: str, read_version: str) -> bool:
         """Whether both records are still in this research. A purged member is skipped, not crashed on."""
@@ -3012,11 +3047,15 @@ class ResearchFlow:
         return plan
 
     def _user_supplied_pdf(self, svid: str) -> bool:
-        """A PDF the user added is the file they meant. It is not held back for an identity check."""
+        """A PDF the user added is the file they meant, and so is one a person confirmed from the queue (slice 16).
+        Neither is held back for an identity check. The confirmation belongs to the file: a new file is checked."""
         if self.store.source(svid).get("origin") == "user_upload":
             return True
         asset_id = self._current_asset(svid)
-        return bool(asset_id) and self.store.asset(asset_id).get("origin") == "user_upload"
+        if not asset_id:
+            return False
+        asset = self.store.asset(asset_id)
+        return asset.get("origin") == "user_upload" or bool(asset.get("identity_confirmed_at"))
 
     async def _adjudication_call(self, run: dict[str, Any], scope: dict[str, Any], plan: dict[str, Any],
                                  job: _AdjudicationJob, limiter: ModelCallLimiter | None) -> dict[str, Any] | None:
@@ -3044,8 +3083,14 @@ class ResearchFlow:
 
     def _close_adjudication(self, run: dict[str, Any], item: dict[str, str], plan: dict[str, Any],
                             outputs: list[dict[str, Any] | None]) -> None:
-        """Verify both runs' quotes on the pages they were shown and write one decision on the read version."""
+        """Verify both runs' quotes on the pages they were shown and write one decision on the read version.
+
+        A work a person decided while its calls were out gets neither a proposal nor a decision: the steps stay
+        stored, and the person's answer stands (slice 16).
+        """
         read = item["read_version"]
+        if self._human_decided_fulltext(run["research_id"], item["head"]):
+            return
         parts = plan["criterion"]["parts"]
         decisions = DecisionStore(self.store)
         views: list[dict[str, Any] | None] = []
@@ -3131,14 +3176,22 @@ class ResearchFlow:
             decided_versions = {row["source_version_id"] for row in self.store.conn.execute(
                 f"SELECT source_version_id FROM stage_decisions WHERE step_id IN ({marks})"
                 " AND reason_code != 'pdf_identity_unconfirmed'", tuple(step_ids))}
-        not_settled = sum(1 for head, read in planned.items() if head in model_heads and read not in decided_versions)
-        not_reached = plan["not_reached"] + sum(1 for head in planned if head not in model_heads)
+        # A work a person decided while this run was out is neither unsettled nor unreached (slice 16).
+        decided_works = DecisionStore(self.store).human_decided_works(run["research_id"], "fulltext")
+        work_of = self.store.work_ids(list(planned)) if decided_works else {}
+        human = {head for head in planned if work_of.get(head) in decided_works}
+        not_settled = sum(1 for head, read in planned.items()
+                          if head in model_heads and read not in decided_versions and head not in human)
+        not_reached = plan["not_reached"] + sum(1 for head in planned if head not in model_heads and head not in human)
         whole_text = self._adjudication_whole_text(run_id)
         summary = {"read": include + not_met + sum(unresolved.values()) - unresolved.get("pdf_identity_unconfirmed", 0),
                    "include": include, "criterion_not_met": not_met, "unresolved": unresolved,
                    "not_settled": not_settled, "not_reached": not_reached,
                    "identity_unconfirmed": plan["identity_unconfirmed"], "whole_text": whole_text,
                    "model_calls": self.store.run(run_id)["usage"].get("model_calls", 0)}
+        if human:
+            # Written only when there is one, so a run no person decided during keeps its summary as it was.
+            summary["human_decided"] = len(human)
         self.store.finish_step(step["id"], "succeeded", output=summary)
 
     def _adjudication_whole_text(self, run_id: str) -> int:

@@ -55,6 +55,17 @@ class QueueUnavailable(Exception):
     """The research is not on the `sw` workflow, or the answer does not fit the row; the API answers 422."""
 
 
+class QueueConflict(RevisionConflict):
+    """A 409 of the queue, with why it was refused (slice 17): `row_changed` or `reading_started`.
+
+    The reason is set where the conflict is found, so the screen never reads it out of the message.
+    """
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
+
+
 # ---- reading ----------------------------------------------------------------------------------------------------
 
 
@@ -200,6 +211,12 @@ def _classify(ctx: _Context, work_id: str) -> dict[str, Any] | None:
         return {"state": LOOK_AGAIN if stale else "decided", "decision": decision, "head": head,
                 "reason_code": decision["reason_code"], "stale": stale}
     code = outcome["reason_code"]
+    if code == "not_read_yet":
+        # A PDF the person confirmed: the work waits for a reading run, and the confirmation can be undone until then.
+        decision = next(d for d in fulltext if d["source_version_id"] == outcome["source_version_id"])
+        if _confirmed_asset(decision) is None or ctx.decisions.is_stale(decision, ctx.facts["stale_key"]):
+            return None
+        return {"state": "confirmed", "decision": decision, "head": head, "reason_code": code, "stale": False}
     if code != VERSIONS_DISAGREE and code not in QUEUE_CODES:
         return None
     decision = next(d for d in fulltext if d["source_version_id"] == outcome["source_version_id"])
@@ -233,8 +250,9 @@ def _order_key(row: dict[str, Any]) -> tuple[Any, ...]:
     return (row["kind"] == LOOK_AGAIN, row["place"] is None, row["place"] or 0, row["arm"] == "chain", row["head"])
 
 
-def _scan(ctx: _Context) -> tuple[list[tuple[str, dict[str, Any]]], dict[str, Any]]:
+def _scan(ctx: _Context) -> tuple[list[tuple[str, dict[str, Any]]], dict[str, Any], list[tuple[str, dict[str, Any]]]]:
     found: list[tuple[str, dict[str, Any]]] = []
+    answered: list[tuple[str, dict[str, Any]]] = []
     by_reason: Counter[str] = Counter()
     decided: Counter[str] = Counter()
     look_again = user_selected = 0
@@ -244,6 +262,9 @@ def _scan(ctx: _Context) -> tuple[list[tuple[str, dict[str, Any]]], dict[str, An
             continue
         if state["state"] == "decided":
             decided[state["reason_code"]] += 1
+            answered.append((work_id, state))
+        elif state["state"] == "confirmed":
+            answered.append((work_id, state))
         elif state["state"] == "user_selected":
             user_selected += 1
         else:
@@ -254,23 +275,42 @@ def _scan(ctx: _Context) -> tuple[list[tuple[str, dict[str, Any]]], dict[str, An
                 by_reason[state["reason_code"]] += 1
     counts = {"open": sum(by_reason.values()), "by_reason": dict(sorted(by_reason.items())), "look_again": look_again,
               "decided": dict(sorted(decided.items())), "user_selected": user_selected}
-    return found, counts
+    return found, counts, answered
+
+
+# What a person answered, by the code it wrote; a PDF confirmation writes `not_read_yet` and is its own answer.
+ANSWER_OF = {code: answer for answer, code in ANSWERS.items()} | {"not_read_yet": PDF_CONFIRMED}
+
+
+def _decided(ctx: _Context, work_id: str, state: dict[str, Any]) -> dict[str, Any]:
+    """One work the person decided and can still take back, with the token its undo is checked against."""
+    decision = state["decision"]
+    svid = decision["source_version_id"]
+    source = ctx.store.source(svid)
+    return {"work_id": work_id, "source_version_id": svid, "head": state["head"], "title": source["title"],
+            "version_label": source["version_label"], "reason_code": decision["reason_code"],
+            "answer": ANSWER_OF[decision["reason_code"]],
+            # The confirmation's note names the file for the undo; it is internal and never shown.
+            "note": None if state["state"] == "confirmed" else decision["note"],
+            "created_at": decision["created_at"], "undo_token": _state_of(ctx, svid)["token"]}
 
 
 def queue_rows(store: Store, research_id: str) -> dict[str, Any]:
     """Every row of the research's queue in the fused order, `look_again` last, with the queue's counts."""
     with _snapshot(store.conn):
         ctx = _Context(store, research_id)
-        found, counts = _scan(ctx)
+        found, counts, answered = _scan(ctx)
         rows = sorted((_row(ctx, work_id, state) for work_id, state in found), key=_order_key)
+        decided = sorted((_decided(ctx, work_id, state) for work_id, state in answered),
+                         key=lambda entry: entry["created_at"], reverse=True)
     counts["by_kind"] = dict(sorted(Counter(row["kind"] for row in rows if row["kind"] != LOOK_AGAIN).items()))
-    return {"rows": rows, "counts": counts, "order": "fused_rank"}
+    return {"rows": rows, "counts": counts, "order": "fused_rank", "decided": decided}
 
 
 def queue_counts(store: Store, research_id: str) -> dict[str, int]:
     """The two numbers the research view shows, from one read of the facts and no row built."""
     with _snapshot(store.conn):
-        _, counts = _scan(_Context(store, research_id))
+        _, counts, _ = _scan(_Context(store, research_id))
     return {"queue": counts["open"], "look_again": counts["look_again"]}
 
 
@@ -359,21 +399,40 @@ def _shown_pages(store: Store, step_id: str) -> list[int]:
     return sorted(page for page in pages if isinstance(page, int))
 
 
-def _closest(quote: str, pages: dict[int, str], shown: list[int]) -> dict[str, Any] | None:
+def _page_passages(store: Store, svid: str) -> dict[int, str]:
+    """The first passage of each PDF page of the file in use, which opens that page in the source sheet."""
+    found: dict[int, str] = {}
+    for passage in store.passages_for(svid):
+        if passage["kind"] == "pdf_page" and passage["physical_page"] is not None:
+            found.setdefault(passage["physical_page"], passage["id"])
+    return found
+
+
+def _closest(quote: str, pages: dict[int, str], shown: list[int], opens: dict[int, str]) -> dict[str, Any] | None:
     """The nearest text to a quote code did not verify, looked for only on the pages that run was shown."""
     best = None
     for page in shown:
         match = locate_anchor(quote, pages.get(page) or "")
         if match is not None and (best is None or match.ratio > best["ratio"]):
-            best = {"page": page, "text": match.text, "kind": match.kind, "ratio": match.ratio}
+            best = {"page": page, "text": match.text, "kind": match.kind, "ratio": match.ratio,
+                    "passage_id": opens.get(page)}
     return best
+
+
+def _anchor(quote: str | None, page_text: str | None) -> str | None:
+    """The page's own text a verified quote was found as, the only span the screen may mark (AGENTS.md).
+
+    Only `exact` and `normalized` count, as in `adjudication.verify`; a fuzzy match is never an anchor.
+    """
+    match = locate_anchor(quote or "", page_text or "")
+    return match.text if match is not None and match.kind in ("exact", "normalized") else None
 
 
 def _sentences(text: str) -> list[str]:
     return [s for s in re.split(r"(?<=[.!?])\s+", " ".join(text.split())) if s]
 
 
-def _cues(ctx: _Context, part: str | None, pages: dict[int, str]) -> dict[str, Any]:
+def _cues(ctx: _Context, part: str | None, pages: dict[int, str], opens: dict[int, str]) -> dict[str, Any]:
     """Sentences holding one of the question part's own cue phrases, with their pages; unassigned phrases go nowhere."""
     phrases = [row for row in ((ctx.criterion or {}).get("cue_phrases") or []) if part and row.get("part") == part]
     patterns = compile_phrases(phrases)["patterns"]
@@ -381,17 +440,17 @@ def _cues(ctx: _Context, part: str | None, pages: dict[int, str]) -> dict[str, A
     for page in sorted(pages):
         for sentence in _sentences(pages[page]):
             if any(pattern.search(sentence) for _, pattern in patterns):
-                found.append({"page": page, "sentence": sentence})
+                found.append({"page": page, "sentence": sentence, "passage_id": opens.get(page)})
     return {"phrases": [phrase for phrase, _ in patterns], "sentences": found[:CUE_SENTENCES], "total": len(found),
             "note": None if found else "no cue found"}
 
 
-def _detail(ctx: _Context, row: dict[str, Any]) -> dict[str, Any]:
-    store, svid = ctx.store, row["source_version_id"]
-    decision = next(d for d in ctx.facts["decisions"][row["work_id"]] if d["id"] == row["decision_id"])
+def _runs(ctx: _Context, svid: str, decision: dict[str, Any], pages: dict[int, str],
+          opens: dict[int, str]) -> list[dict[str, Any]]:
+    """What each run of the reading that wrote `decision` said about every part, with its quote and where it is."""
+    store = ctx.store
     run_id = ctx.run_of_step().get(decision["step_id"] or "")
     proposals = ctx.proposals(svid, run_id)
-    pages = store.page_texts(svid)
     steps = {n: r["step_id"] for runs in proposals.values() for n, r in runs.items()}
     shown = {n: _shown_pages(store, step_id) for n, step_id in steps.items()}
     rationale = {n: {p.get("part"): p.get("rationale") for p in ((_step_output(store, step_id).get("result") or {})
@@ -407,24 +466,57 @@ def _detail(ctx: _Context, row: dict[str, Any]) -> dict[str, Any]:
             passage = store.conn.execute("SELECT text FROM passages WHERE id = ?",
                                          (found["quote_passage_id"],)).fetchone() if found["quote_passage_id"] else None
             unverified = found["label"] == "present" and not found["quote_verified"] and found["quote"]
-            closest = _closest(found["quote"], pages, shown[run_no]) if unverified else None
+            closest = _closest(found["quote"], pages, shown[run_no], opens) if unverified else None
+            verified = bool(found["quote_verified"]) and found["quote_page"] is not None
             parts.append({"part": name, "label": found["label"], "quote": found["quote"],
                           "quote_verified": None if found["quote_verified"] is None else bool(found["quote_verified"]),
                           "page": found["quote_page"], "passage": passage[0] if passage else None,
+                          # A verified quote opens the page it was found on; any other the passage the model named.
+                          "passage_id": opens.get(found["quote_page"]) if verified else found["quote_passage_id"],
+                          "anchor_text": _anchor(found["quote"], pages.get(found["quote_page"])) if verified else None,
                           "rationale": rationale[run_no].get(name),
                           **({"closest": closest,
                               "closest_note": None if closest else "no close text on the shown pages"}
                              if unverified else {})})
         runs.append({"run_no": run_no, "shown_pages": shown[run_no], "parts": parts})
-    detail: dict[str, Any] = {"runs": runs, "cues": _cues(ctx, (row["question"] or {}).get("part"), pages)}
+    return runs
+
+
+def _detail(ctx: _Context, row: dict[str, Any]) -> dict[str, Any]:
+    store, svid = ctx.store, row["source_version_id"]
+    decision = next(d for d in ctx.facts["decisions"][row["work_id"]] if d["id"] == row["decision_id"])
+    pages, opens = store.page_texts(svid), _page_passages(store, svid)
+    asset = ctx.assets.get(svid)
+    detail: dict[str, Any] = {"runs": _runs(ctx, svid, decision, pages, opens),
+                              "cues": _cues(ctx, (row["question"] or {}).get("part"), pages, opens),
+                              "asset_id": asset["id"] if asset else None}
+    if row["kind"] == "choose_version":
+        detail["versions"] = _versions(ctx, row)
     if row["kind"] == "confirm_pdf":
-        asset = ctx.assets.get(svid)
         head = store.source(row["head"])
         stored = store.asset(asset["id"]) if asset else {}
         detail["identity"] = {"first_page": pages[min(pages)] if pages else None, "work_title": head["title"],
                               "work_doi": head["doi"], "asset_id": stored.get("id"),
                               "retrieved_from": stored.get("retrieved_from"), "page_count": stored.get("page_count")}
     return detail
+
+
+def _versions(ctx: _Context, row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Both sides of a `versions_disagree` row: every version with a fresh full-text decision, the named one first."""
+    store, found = ctx.store, []
+    fresh = [d for d in ctx.facts["decisions"].get(row["work_id"], [])
+             if d["stage"] == "fulltext" and not ctx.decisions.is_stale(d, ctx.facts["stale_key"])]
+    for decision in sorted(fresh, key=lambda d: (d["source_version_id"] != row["source_version_id"],
+                                                  d["source_version_id"])):
+        svid = decision["source_version_id"]
+        source, asset = store.source(svid), ctx.assets.get(svid)
+        pages, opens = store.page_texts(svid), _page_passages(store, svid)
+        found.append({"source_version_id": svid, "title": source["title"], "version_label": source["version_label"],
+                      "asset_id": asset["id"] if asset else None,
+                      "decision": {"id": decision["id"], "reason_code": decision["reason_code"],
+                                   "outcome": decision["outcome"], "decided_by": decision["decided_by"]},
+                      "runs": _runs(ctx, svid, decision, pages, opens)})
+    return found
 
 
 # ---- writing --------------------------------------------------------------------------------------------------------
@@ -440,7 +532,7 @@ def _require_source(store: Store, research_id: str, svid: str) -> None:
 
 def _check(state: dict[str, Any], token: str) -> None:
     if token != state["token"]:
-        raise RevisionConflict("This row changed since it was shown; read it again")
+        raise QueueConflict("row_changed", "This row changed since it was shown; read it again")
 
 
 def _result(store: Store, research_id: str, svid: str) -> dict[str, Any]:
@@ -467,7 +559,7 @@ def decide(store: Store, research_id: str, source_version_id: str, answer: str, 
         ctx = _Context(store, research_id, store.source(svid)["work_id"])
         state = _state_of(ctx, svid)
         if state["row"] is None:
-            raise RevisionConflict("This record has no open row in the queue")
+            raise QueueConflict("row_changed", "This record has no open row in the queue")
         _check(state, row_token)
         row, decisions = state["row"], ctx.decisions
         if answer == PDF_CONFIRMED:
@@ -475,7 +567,7 @@ def decide(store: Store, research_id: str, source_version_id: str, answer: str, 
                 raise QueueUnavailable("Only a PDF identity row can be confirmed")
             asset = ctx.assets.get(svid)
             if asset is None:
-                raise RevisionConflict("This record has no PDF in use")
+                raise QueueConflict("row_changed", "This record has no PDF in use")
             ts = now()
             store.conn.execute("UPDATE source_assets SET identity_confirmed_at = ? WHERE id = ?", (ts, asset["id"]))
             # The one code decision written outside a step (`step_id` NULL): its note and the file's mark say why.
@@ -544,14 +636,14 @@ def undo(store: Store, research_id: str, source_version_id: str, row_token: str)
         elif current is not None and (asset_id := _confirmed_asset(current)) is not None:
             asset = ctx.assets.get(svid)
             if asset is None or asset["id"] != asset_id or not asset["identity_confirmed_at"]:
-                raise RevisionConflict("The confirmed PDF is no longer the one in use")
+                raise QueueConflict("row_changed", "The confirmed PDF is no longer the one in use")
             if _reading_opened_since(store, research_id, state["work_id"], current["created_at"]):
-                raise RevisionConflict("The reading of this PDF has begun; decide about the work instead")
+                raise QueueConflict("reading_started", "The reading of this PDF has begun; decide about the work instead")
             store.conn.execute("UPDATE source_assets SET identity_confirmed_at = NULL WHERE id = ?", (asset_id,))
             decisions.record(research_id, svid, "pdf_identity_unconfirmed", note="pdf_confirmation_undone")
             store._event(research_id, "pdf_identity_revoked", {"source_version_id": svid, "asset_id": asset_id})
         else:
-            raise RevisionConflict("Nothing on this record can be undone")
+            raise QueueConflict("row_changed", "Nothing on this record can be undone")
         decisions.derive_selection(research_id, state["work_id"])
         return _result(store, research_id, svid)
 

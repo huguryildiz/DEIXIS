@@ -11,7 +11,7 @@ import { ConnectionIcon } from './connectionIcons'
 import { PdfViewer } from './PdfViewer'
 import { OCR_LABEL } from './ocr'
 import { SourceKey } from './SourceKey'
-import { PdfTextDocument } from './PdfTextDocument'
+import { PdfTextDocument, type CitationLabels } from './PdfTextDocument'
 import { AUTHOR_NOTE, readablePassageText } from './pdfText'
 import { Notice } from './Notice'
 
@@ -50,7 +50,9 @@ function HighlightedPassageText({ passage, highlightTexts }: { passage: Passage;
 // sources: the research's source rows; the one matching the opened source adds its screening state, similarity and citation.
 // onRestoreSource: offered when the passage's source was removed from this research (D50).
 // sourceVersionId: open a source rather than a passage (one of `sources`): its PDF text, else its abstract, else its details alone.
-export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', highlightText, highlightTexts, expectHighlight = false, pdfRemoved = false, sources, dark, onClose, onRestoreSource }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void }) {
+// initialPage: the PDF page a file opened without a passage starts on. citationLabels: the strip's words when the
+// text is opened for something other than an answer's citation (the human queue, slice 17).
+export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', initialPage = 1, highlightText, highlightTexts, expectHighlight = false, citationLabels, pdfRemoved = false, sources, dark, onClose, onRestoreSource }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; initialPage?: number; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; citationLabels?: CitationLabels; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [assetText, setAssetText] = useState<AssetText | null>(null)
   // The whole extracted text of the PDF a cited passage comes from: undefined while it loads, null when the passage opens alone.
@@ -98,7 +100,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const highlights = highlightTexts ?? (highlightText ? [highlightText] : [])
   const highlightAvailable = Boolean(passage && highlights.length && highlights.every(text => passage.text.includes(text)))
   const highlightKey = highlights.join('\u0000')
-  const citation = useMemo(() => passage ? { page: passage.physical_page, texts: highlightKey ? highlightKey.split('\u0000') : [], expected: expectHighlight } : null, [passage, highlightKey, expectHighlight])
+  const citation = useMemo(() => passage ? { page: passage.physical_page, texts: highlightKey ? highlightKey.split('\u0000') : [], expected: expectHighlight, labels: citationLabels } : null, [passage, highlightKey, expectHighlight, citationLabels])
   const status = passage?.evidence_status ?? 'current'
   const removed = pdfRemoved || status === 'pdf_removed'
   const pdfAssetId = removed ? null : passage?.asset_id ?? assetText?.asset.id ?? null
@@ -159,13 +161,13 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
           </div> : passage ? <div id="source-text-view" role="tabpanel">
             {abstract && !pdfAssetId && <p className="source-notice"><Info size={15} aria-hidden />{t('No PDF is attached, so only the abstract can be inspected. Claims citing this source rest on the abstract alone.')}</p>}
             <h3 className="source-section">{abstract ? t('Abstract') : t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
-            {expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
+            {expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{citationLabels?.unmarked ?? t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
             <p className="passage-text"><HighlightedPassageText passage={passage} highlightTexts={highlights} /></p>
           </div> : assetText ? <div id="source-text-view" role="tabpanel" className="asset-text-view">
             <h3 className="source-section">{t('Extracted PDF text')}{assetText.passages.some(item => item.text.split(/\n{2,}/).some(p => AUTHOR_NOTE.test(p.trim()))) && <button type="button" className="pdf-text-notes-toggle" onClick={() => setShowNotes(v => !v)}>{t(showNotes ? 'Hide author notes' : 'Show author notes')}</button>}</h3>
             {assetText.passages.length ? <PdfTextDocument researchId={researchId} assetId={assetText.asset.id} passages={assetText.passages} showNotes={showNotes} sourceTitle={assetText.source.title} /> : <Notice tone="info">{t('No text was extracted from this PDF.')}</Notice>}
           </div> : <p className="source-notice"><Info size={15} aria-hidden />{t('No abstract or PDF text is stored for this source.')}</p> : pdfAssetId && <div id="source-pdf-view" role="tabpanel" className="source-pdf-view">
-            <PdfViewer url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? 1} title={source.title} />
+            <PdfViewer url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? initialPage} title={source.title} />
           </div>}
         </>}
       </div>

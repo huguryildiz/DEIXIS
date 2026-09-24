@@ -364,7 +364,9 @@ def test_cue_sentences_come_with_their_pages_or_the_row_says_none_were_found(sto
     lib.text(without, [lib.field["page"] + f" A {unassigned} is kept."])
     lib.read(without, "part_without_evidence", labels=partial(lib))
     cues = queue.row_detail(store, lib.rid, with_cue)["detail"]["cues"]
-    assert cues["sentences"] == [{"page": 3, "sentence": lib.field["cue"]}] and cues["total"] == 1
+    page_three = next(p["id"] for p in store.passages_for(with_cue) if p["physical_page"] == 3)
+    assert cues["sentences"] == [{"page": 3, "sentence": lib.field["cue"], "passage_id": page_three}]
+    assert cues["total"] == 1
     assert cues["note"] is None
     none = queue.row_detail(store, lib.rid, without)["detail"]["cues"]
     # The unassigned phrase is on the page, but it belongs to no part, so it is no cue for this one.
@@ -624,3 +626,161 @@ def test_verified_records_lists_only_human_include_and_criterion_not_met(store):
         (answers["include"], "human_include", "include"),
         (answers["criterion_not_met"], "human_criterion_not_met", "criterion_not_met")}
     assert all(row["stale"] is False and row["criterion_hash"] for row in found)
+
+
+# ---- what the screen reads (slice 17, D97) --------------------------------------------------------------------------
+
+def page_passage(store, svid, page):
+    return next(p["id"] for p in store.passages_for(svid) if p["kind"] == "pdf_page" and p["physical_page"] == page)
+
+
+@pytest.mark.parametrize("field", sorted(FIELDS))
+def test_detail_parts_cues_and_closest_carry_the_passage_of_their_page(store, field):
+    lib = Lib(store, field)
+    first, second = lib.parts
+    svid = lib.work()
+    page = lib.field["page"]
+    near = page.replace("SYNTHETIC the ", "SYNTHETIC teh ", 1)  # a few letters off: fuzzy, never verified
+    lib.text(svid, ["SYNTHETIC an unrelated page about antenna gain and cable loss.", page])
+    lib.read(svid, "include_quote_unverified", quotes={first: (near, near), second: (page, page)},
+             verified={first: (False, False), second: (True, True)}, shown=((2,), (2,)))
+    detail = queue.row_detail(store, lib.rid, svid)["detail"]
+    two = page_passage(store, svid, 2)
+    for run in detail["runs"]:
+        by_part = {part["part"]: part for part in run["parts"]}
+        assert by_part[first]["passage_id"] == two  # the passage the model named
+        assert by_part[first]["closest"]["page"] == 2 and by_part[first]["closest"]["passage_id"] == two
+        assert by_part[second]["passage_id"] == two and by_part[second]["page"] == 2
+    # The question part's own phrase is on page 2, so its cue sentence opens that page.
+    assert [(s["page"], s["passage_id"]) for s in detail["cues"]["sentences"]] == [(2, two)]
+
+
+def test_every_row_detail_names_the_current_file_of_its_version(store):
+    lib = Lib(store, "irrigation")
+    first, second = lib.parts
+    kinds = {}
+    for code in ("part_without_evidence", "fulltext_runs_disagree", "include_quote_unverified"):
+        svid = lib.work()
+        asset = lib.text(svid, [lib.field["page"]])
+        labels = partial(lib) if code == "part_without_evidence" else (
+            {first: ("present", "absent"), second: ("present", "absent")} if code == "fulltext_runs_disagree" else None)
+        lib.read(svid, code, labels=labels, verified={first: (False, False)} if code == "include_quote_unverified" else None)
+        kinds[svid] = asset
+    identity = lib.work()
+    kinds[identity] = lib.text(identity, [lib.field["page"]])
+    lib.unconfirmed(identity)
+    for svid, asset in kinds.items():
+        assert queue.row_detail(store, lib.rid, svid)["detail"]["asset_id"] == asset
+    replaced = next(iter(kinds))
+    newer = lib.text(replaced, [lib.field["page"]])  # a new PDF in use for the version
+    assert queue.row_detail(store, lib.rid, replaced)["detail"]["asset_id"] == newer != kinds[replaced]
+
+
+def test_decided_lists_current_human_decisions_and_pdf_confirmations_with_an_undo_token_and_writes_nothing(store):
+    lib = Lib(store)
+    included, unsure, left = queued(lib), queued(lib), queued(lib)
+    queue.decide(store, lib.rid, included, "include", "SYNTHETIC both parts on page 1", lib.row(included)["row_token"])
+    queue.decide(store, lib.rid, unsure, "not_sure", None, lib.row(unsure)["row_token"])
+    identity = lib.work()
+    lib.text(identity, [lib.field["page"]])
+    lib.unconfirmed(identity)
+    queue.decide(store, lib.rid, identity, "pdf_confirmed", None, lib.row(identity)["row_token"])
+    tables = [row[0] for row in store.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+    before = {table: store.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in tables}
+    changes = store.conn.total_changes
+    found = lib.rows()
+    after = {table: store.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in tables}
+    assert after == before and store.conn.total_changes == changes
+    decided = found["decided"]
+    # Newest first: the confirmation, the unsure answer, the inclusion. The row still open is not listed.
+    assert [entry["source_version_id"] for entry in decided] == [identity, unsure, included]
+    assert left not in {entry["source_version_id"] for entry in decided}
+    first = decided[-1]
+    assert (first["work_id"], first["head"], first["reason_code"], first["note"]) == (
+        lib.work_of(included), included, "human_include", "SYNTHETIC both parts on page 1")
+    assert first["title"] == store.source(included)["title"] and first["created_at"]
+    # The listed token is the one the undo checks.
+    queue.undo(store, lib.rid, included, first["undo_token"])
+    assert lib.code(included) == "part_without_evidence"
+    queue.undo(store, lib.rid, identity, lib.rows()["decided"][0]["undo_token"])
+    assert lib.code(identity) == "pdf_identity_unconfirmed"
+
+
+def test_a_decided_entry_leaves_the_list_once_undone_or_superseded(store):
+    lib = Lib(store, "irrigation")
+    svid = queued(lib)
+    result = queue.decide(store, lib.rid, svid, "include", None, lib.row(svid)["row_token"])
+    assert [entry["source_version_id"] for entry in lib.rows()["decided"]] == [svid]
+    queue.undo(store, lib.rid, svid, result["undo_token"])
+    assert lib.rows()["decided"] == []
+    # A confirmation stands until a reading run decides the work; then the work's outcome is the reading's.
+    identity = lib.work()
+    lib.text(identity, [lib.field["page"]])
+    lib.unconfirmed(identity)
+    queue.decide(store, lib.rid, identity, "pdf_confirmed", None, lib.row(identity)["row_token"])
+    assert [entry["answer"] for entry in lib.rows()["decided"]] == ["pdf_confirmed"]
+    lib.read(identity, "all_parts_verified")
+    assert lib.rows()["decided"] == []
+
+
+def test_a_verified_quote_carries_the_source_text_it_was_found_as_and_an_unverified_one_none(store):
+    lib = Lib(store)
+    first, second = lib.parts
+    svid = lib.work()
+    page = "SYNTHETIC The Release  Model is a Poisson process, with a fixed rate per slot."
+    lib.text(svid, [page])
+    spaced = "synthetic the release model is a poisson process with a fixed rate per slot"
+    lib.read(svid, "include_quote_unverified", quotes={first: (spaced, spaced), second: ("SYNTHETIC not on the page", page)},
+             verified={first: (True, True), second: (False, True)})
+    runs = {run["run_no"]: {part["part"]: part for part in run["parts"]}
+            for run in queue.row_detail(store, lib.rid, svid)["detail"]["runs"]}
+    # The page's own words, as the page has them: the quote's case and spacing are not the anchor.
+    assert runs[1][first]["anchor_text"] == "SYNTHETIC The Release  Model is a Poisson process, with a fixed rate per slot"
+    assert runs[2][second]["anchor_text"] == page.removesuffix(".")  # the match ends on the quote's last letter
+    assert runs[1][second]["anchor_text"] is None and runs[1][second]["quote_verified"] is False
+    for run in runs.values():
+        assert all(part["anchor_text"] is None for part in run.values() if part["label"] != "present")
+
+
+def test_a_stored_verified_flag_whose_quote_only_matches_fuzzily_gets_no_anchor(store):
+    lib = Lib(store, "irrigation")
+    first, second = lib.parts
+    svid = lib.work()
+    lib.text(svid, [lib.field["page"]])
+    near = lib.field["page"].replace("water", "watr", 1)
+    lib.read(svid, "include_quote_unverified", quotes={first: (near, near)},
+             verified={first: (True, True), second: (False, False)})
+    part = queue.row_detail(store, lib.rid, svid)["detail"]["runs"][0]["parts"][0]
+    assert part["part"] == first and part["quote_verified"] is True and part["anchor_text"] is None
+
+
+def test_a_choose_version_detail_carries_both_versions_and_their_decisions(store):
+    lib = Lib(store, "irrigation")
+    published = lib.published("10.9999/synth.both")
+    preprint = lib.preprint("10.9999/synth.both")
+    assets = {}
+    for svid, code in ((published, "criterion_absent"), (preprint, "all_parts_verified")):
+        assets[svid] = lib.text(svid, [lib.field["page"]])
+        lib.read(svid, code, head=published,
+                 labels=None if code == "all_parts_verified" else {n: ("absent", "absent") for n in lib.parts})
+    row = lib.rows()["rows"][0]
+    assert row["kind"] == "choose_version" and row["source_version_id"] == preprint
+    versions = queue.row_detail(store, lib.rid, preprint)["detail"]["versions"]
+    assert [v["source_version_id"] for v in versions] == [preprint, published]  # the named version first
+    assert [(v["decision"]["reason_code"], v["decision"]["outcome"]) for v in versions] == [
+        ("all_parts_verified", "include"), ("criterion_absent", "criterion_not_met")]
+    assert [v["version_label"] for v in versions] == ["submittedVersion", "publishedVersion"]
+    assert [v["asset_id"] for v in versions] == [assets[preprint], assets[published]]
+    labels = [{part["label"] for run in v["runs"] for part in run["parts"]} for v in versions]
+    assert labels == [{"present"}, {"absent"}] and all(len(v["runs"]) == 2 for v in versions)
+
+
+def test_a_stale_human_decision_is_in_look_again_and_not_in_decided(store):
+    lib = Lib(store)
+    svid = queued(lib)
+    queue.decide(store, lib.rid, svid, "criterion_not_met", None, lib.row(svid)["row_token"])
+    assert [entry["source_version_id"] for entry in lib.rows()["decided"]] == [svid]
+    lib.revise()
+    found = lib.rows()
+    assert [(row["source_version_id"], row["kind"]) for row in found["rows"]] == [(svid, "look_again")]
+    assert found["decided"] == []

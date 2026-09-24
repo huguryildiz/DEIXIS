@@ -2,6 +2,63 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D97 — The human queue screen: its own tab, a list and one row's detail, the PDF opened on the row's page by one action, only the backend's anchor marked
+
+**Status:** accepted; implemented 2026-09-24 (slice 17), awaiting the batched review. **Date:** 2026-09-24.
+
+**Context:** D96 put the queue in the back end with no screen; `research_view.counts.queue` was only a number. A
+model-free read of 13 stored libraries (`.local/sw-slice17-plan-2026-09-24/`, `shape.json`) found 346 rows: 155
+`find_part`, 98 `confirm_absent`, 51 `choose_run`, 25 `confirm_quote`, 17 `confirm_pdf`, no `choose_version`; 243 rows
+with no cue sentence for their question part; 47 unverifiable quotes, a closest passage for 40 of them; a PDF on every
+row. The API returned neither the passage of a quote nor, outside identity rows, the file. Seven choices were settled
+by Claude and `gpt-5.6-sol` · medium at the owner's request (`docs/product/sw-slice17-human-queue-screen.md`, "Ortak
+kararlar").
+
+**Decision:** An `sw` research gets a tab, "Awaiting your decision", after Sources, with the pill `counts.queue +
+counts.look_again`; the latest reading run's timeline turn carries one line "N works await your decision · Open". A
+legacy research has neither. The tab (`HumanQueue.tsx`) is a listbox of rows in the fused order, `look_again` rows last
+under their own heading, filter chips by kind and a reason filter, and the selected row's detail: its one question and
+the part's definition, why it is in the queue with the code in small type, the two runs side by side (label, quote,
+"found on the page" or "not found in the text", page link, rationale), for an unverified quote the model's quote beside
+the closest text with its match ratio, the question part's cue sentences or "This part's phrases do not occur in the
+text", an identity row's first page beside the work's title and DOI, and for `choose_version` both versions in the
+place of the two runs. Answers sit in a footer pinned under the detail: four equal buttons, and on an identity row "PDF
+is right, let the model read it" first and primary; an optional note of at most 1,000 characters; no confirmation
+dialog. A 200 removes the row (never before), moves the selection on, reloads queue and research view, and shows a
+toast with Undo; "Your decisions" lists every work a person decided and can take back. A 409 reloads all three; the
+detail says whether the row changed or left the queue, and a note being written survives. The queue reloads on every
+event of the research's stream. At 760 px and below the detail replaces the list, with "Back to the list".
+
+**Deliberate departure from SW11.6.** SW11.6 says selecting a row opens the PDF at its page. Here selecting fills the
+detail, and Enter or "Open page N in the PDF" opens the source sheet on that page, in the PDF view at full width.
+Opening a full-width sheet on every selection would cover the context the answer needs, break row-by-row keyboard
+work (every arrow key would load a PDF), and carry a queue action into the source sheet. The page is the question
+part's verified quote page (run 1, then run 2), else the closest passage's page, else the first cue sentence's page,
+else the first page the run was shown; an identity row opens page 1.
+
+**Evidence rules.** The PDF view is a canvas and marks nothing. In the plain-text view only `anchor_text` is marked:
+the page's own text a verified quote was found as by `locate_anchor`, `exact` or `normalized` only, computed when read
+and never stored. A model quote, a fuzzy match, the closest passage and a cue sentence are never marked; a page opened
+for an unverified quote has an amber strip saying nothing is marked. The screen never says an answer is right.
+
+**Back end, reads only.** `row_detail` parts gain `passage_id` (the verified quote's page passage, else the passage
+the model named) and `anchor_text`; `closest` and cue sentences gain their page's `passage_id`; the detail gains the
+version's current `asset_id` and, for `choose_version`, `versions` (each version with a fresh full-text decision, the
+named one first, with its label, file, decision and runs). `GET …/queue` gains `decided`: one entry per work whose
+outcome is a fresh human decision or a fresh PDF confirmation, from the same snapshot and the same `_classify` path, with
+a typed `answer` and the undo token `_state_of` computes; a confirmation's internal note is not returned; a stale
+decision is a `look_again` row, not an entry. The queue endpoints' 409 is `{"detail": {"reason": "row_changed" |
+"reading_started", "message": …}}`, the reason set where the conflict is raised (`QueueConflict`); other 409s keep one
+sentence. No migration, no model contract change, no new reason code, nothing written on read.
+
+**Limits:** Case J passes on four SYNTHETIC works of two fields with a scripted reading model; it shows application
+behavior, not whether a person reads well. The visual check on a copy of the slice 16 live library
+(`.local/sw-slice17-acceptance-2026-09-24/`) saw `choose_run`, `confirm_absent` and `find_part` rows; that library has no
+`confirm_quote`, `confirm_pdf` or `choose_version` row, so those were seen only in the fixture, and `choose_version` in
+neither (its data is covered by a back-end test). Minutes per row, whether cue sentences and closest passages help, the
+correctness of any decision, and a usability trial with a person were not measured. At 390 px the pinned answers take
+about a third of the screen height.
+
 ## D96 — The human queue: rows derived from stored decisions, a person's answer written as a stage decision and the user's selection in one transaction, and no model call for a decided work
 
 **Status:** accepted; implemented 2026-09-24 (slice 16, back end only; the screen is slice 17). **Date:** 2026-09-24.

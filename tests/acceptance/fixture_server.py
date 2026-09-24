@@ -7,7 +7,11 @@ Question markers select failure scripts: "[rate-limit]" (OpenAlex 429), "[model-
 fails before sending), "[invent-locator]" (every answer draft asserts a page and an equation), "[slow-cells]" (each cell
 extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs), "[suggest-down]" (every
 term-suggestion call fails, so the approval card shows the failure and its retry), "[query-down]" (every call that
-writes the search query fails, so the run stops for the model query, D92).
+writes the search query fails, so the run stops for the model query, D92), "[queue]" (the reading model answers each
+queue work by a script, so case J finds one row of each kind it needs).
+
+`DEIXIS_FIXTURE_QUEUE=on` (case J, slice 17) switches on retrieval and reading and serves the queue works below instead
+of the A–I records; every other case leaves it unset and gets the server it always had.
 """
 
 from __future__ import annotations
@@ -70,6 +74,71 @@ PDFS = {
 }
 
 
+# Case J's four works, from two fields (molecular relays and greenhouse irrigation). Each PDF's page text carries a
+# marker the scripted reading model answers by; the fourth PDF's first page names neither its title nor its DOI, so the
+# identity check holds it back for a person (`pdf_identity_unconfirmed`). Every sentence is SYNTHETIC.
+QUEUE_SENTENCES = {
+    "runs": ("We propose a bisection schedule that times each molecule release in a relay network.",
+             "Results show that the bisection schedule lowers the bit error probability of every relay."),
+    "quote": ("We propose a threshold rule that starts each irrigation cycle when the substrate moisture falls.",
+              "Results show that the threshold rule saves water on every greenhouse bench."),
+    "part": ("Our approach assigns each relay a release slot by a greedy rule over the molecule budget.",
+             "The appendix lists the relay positions and the slot map used in the simulations."),
+}
+# A few letters off the page: the quote does not verify, and the nearest text is found fuzzily.
+QUEUE_MISQUOTE = "We propse a threshold rul that starts each irigation cycle when the substrate moisture falls."
+QUEUE_WORKS = [
+    work("W951", "SYNTHETIC bisection release scheduling for molecular relay networks",
+         "A bisection schedule times molecule releases in relay networks.", "publishedVersion",
+         {"pdf_url": "https://fixture.example/q951.pdf", "version": "publishedVersion"}, "https://doi.org/10.5555/q951"),
+    work("W952", "SYNTHETIC moisture threshold irrigation of greenhouse benches",
+         "A moisture threshold starts irrigation cycles on greenhouse benches.", "publishedVersion",
+         {"pdf_url": "https://fixture.example/q952.pdf", "version": "publishedVersion"}, "https://doi.org/10.5555/q952"),
+    work("W953", "SYNTHETIC greedy release slots for molecular relays",
+         "A greedy rule gives each molecular relay a release slot.", "publishedVersion",
+         {"pdf_url": "https://fixture.example/q953.pdf", "version": "publishedVersion"}, "https://doi.org/10.5555/q953"),
+    work("W954", "SYNTHETIC drip irrigation timing in tomato greenhouses",
+         "Drip irrigation timing is compared across tomato greenhouses.", "publishedVersion",
+         {"pdf_url": "https://fixture.example/q954.pdf", "version": "publishedVersion"}, "https://doi.org/10.5555/q954"),
+]
+QUEUE_PDFS = {
+    # One sentence per line: the test PDF writes a line as it is, and a longer one would run off the page.
+    **{f"https://fixture.example/q{n}.pdf": [f"SYNTHETIC queue-{key} https://doi.org/10.5555/q{n} first page.\n{first}",
+                                            f"SYNTHETIC queue-{key} second page.\n{second}"]
+       for n, (key, (first, second)) in zip((951, 952, 953), QUEUE_SENTENCES.items())},
+    "https://fixture.example/q954.pdf": ["SYNTHETIC scanned cover sheet with no title and no identifier on it.",
+                                         "SYNTHETIC second page of the scanned sheet."],
+}
+QUEUE_MODE = os.environ.get("DEIXIS_FIXTURE_QUEUE") == "on"
+
+
+def queue_reading(si: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
+    """The scripted reading of case J: by the marker on the shown pages, one row kind per work."""
+    passages = si["passages"]
+    key = next((k for k in QUEUE_SENTENCES if any(f"queue-{k}" in p["text"] for p in passages)), None)
+    if key is None:
+        return output
+    first, second = QUEUE_SENTENCES[key]
+    run = si["adjudication_target"]["run"]
+
+    def present(sentence: str, quote: str | None = None) -> dict[str, Any]:
+        held = next((p for p in passages if sentence in " ".join(p["text"].split())), None)
+        if held is None:  # the page was not shown: the part reads as unclear, and case J's precheck says so
+            return {"label": "unclear", "quote": "", "passage_id": None}
+        return {"label": "present", "quote": quote or sentence, "passage_id": held["passage_id"]}
+
+    for part, sentence in zip(output["parts"], (first, second)):
+        method = part is output["parts"][0]
+        if key == "runs":  # run 1 finds both parts, run 2 neither: the runs disagree
+            found = present(sentence) if run == 1 else {"label": "absent", "quote": "", "passage_id": None}
+        elif key == "quote":  # both runs include, one quote a few letters off the page
+            found = present(sentence, QUEUE_MISQUOTE if method else None)
+        else:  # the first part is on the page, the second neither run can tell
+            found = present(sentence) if method else {"label": "unclear", "quote": "", "passage_id": None}
+        part.update(found, rationale=f"SYNTHETIC run {run} on {part['part']}.")
+    return output
+
+
 # What a count probe of the sw workflow is told every phrase is worth: enough for no term to drop and few enough
 # for the gate never to be narrowed. SYNTHETIC, like everything else here.
 PROBE_COUNT = 800
@@ -81,6 +150,8 @@ UNHELD_SUGGESTION = "synthetic unheld name"
 
 def openalex(request: httpx.Request) -> httpx.Response:
     params = request.url.params
+    if QUEUE_MODE and request.url.host != "api.openalex.org":
+        return httpx.Response(404)  # a DOI lookup answers "no result"; the queue works' PDFs come from OpenAlex
     if '"rate limit"' in params.get("search.title_and_abstract", ""):
         return httpx.Response(429, headers={"retry-after": "60"})
     if params.get("search.title_and_abstract") == f'"{UNHELD_SUGGESTION}"':
@@ -96,13 +167,15 @@ def openalex(request: httpx.Request) -> httpx.Response:
         # A count-only request reads `meta.count` and no record; answering it with the whole fixture list would
         # make every phrase worth the same handful of works (slice 04a).
         return httpx.Response(200, json={"meta": {"count": PROBE_COUNT}, "results": []})
-    return httpx.Response(200, json={"meta": {"count": len(WORKS)}, "results": WORKS})
+    works = QUEUE_WORKS if QUEUE_MODE else WORKS
+    return httpx.Response(200, json={"meta": {"count": len(works)}, "results": works})
 
 
 async def fetch(url: str) -> FetchResult:
-    if url not in PDFS:
+    pdfs = QUEUE_PDFS if QUEUE_MODE else PDFS
+    if url not in pdfs:
         return FetchResult("http_error", final_url=url, http_status=404)
-    return FetchResult("ok", data=make_pdf(PDFS[url]), final_url=url, media_type="application/pdf", http_status=200)
+    return FetchResult("ok", data=make_pdf(pdfs[url]), final_url=url, media_type="application/pdf", http_status=200)
 
 
 class ScriptedCodex:
@@ -156,6 +229,8 @@ class ScriptedCodex:
                        "task": [{"term": "molecule release", "kind": "topic", "why": "SYNTHETIC: the process studied"},
                                 {"term": "bisection search", "kind": "method", "why": "SYNTHETIC: the method named"}],
                        "setting_backup": [{"term": "molecular relays"}], "task_backup": [{"term": "release timing"}]}
+        elif si["task_type"] == "fulltext_adjudication" and "[queue]" in question:
+            output = queue_reading(si, output)
         elif si["task_type"] == "abstract_screening":
             # `valid_response` already quotes each abstract's own first words, which is what the code stage
             # verifies; only the keyword false positive of case D is labelled apart, as screening does.
@@ -209,8 +284,9 @@ def main() -> None:
                         # model-written query of D92.
                         search_query=os.environ.get("DEIXIS_SEARCH_QUERY", "code"),
                         # Case H reads the approval card of one discovery run; the retrieval run that would follow
-                        # it (D83) is not part of the case and would open a second run under it.
-                        fulltext_fetch="off", fulltext_adjudication="off")
+                        # it (D83) is not part of the case and would open a second run under it. Case J reads.
+                        fulltext_fetch="auto" if QUEUE_MODE else "off",
+                        fulltext_adjudication="auto" if QUEUE_MODE else "off")
     app = create_app(settings, adapters={"codex": ScriptedCodex()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(openalex)), fetcher=fetch)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", timeout_graceful_shutdown=1)

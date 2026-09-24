@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Evidence, type Limitation, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
-import { accessParts, citedText, fetchReasonText, locatorText, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, stepLabel, verdictLabels, versionText, versionTones } from './labels'
+import { accessParts, citedText, fetchReasonText, locatorText, pauseReasonText, providerName, queueAnsweredText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { Elapsed, EvidenceTab, TABLE_RUN_KINDS } from './EvidenceTable'
 import { MathText } from './MathText'
@@ -27,8 +27,10 @@ import { t, uiLocale } from './i18n'
 import { SourceKey } from './SourceKey'
 import { scrollBehavior } from './motion'
 import { Notice } from './Notice'
+import { HumanQueue } from './HumanQueue'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
+const QUEUE_REASONS: Record<string, 'include' | 'criterion_not_met'> = { human_include: 'include', human_criterion_not_met: 'criterion_not_met' }
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 // A research title wraps across the whole column, so the rename field grows with its text instead of scrolling sideways.
@@ -85,7 +87,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [titleDraft, setTitleDraft] = useState('')
   const [error, setError] = useState('')
   const toast = useToast()
-  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'evidence' || initialTab === 'artifacts' || initialTab === 'activity' ? initialTab : 'answer')
+  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'queue' || initialTab === 'evidence' || initialTab === 'artifacts' || initialTab === 'activity' ? initialTab : 'answer')
   const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean } | null>(null)
   const [pdfTarget, setPdfTarget] = useState<{ assetId: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -362,6 +364,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // Table cards sit under the report card, or at the end of the conversation before the first answer.
   const tableCards = tables && tables.length > 0 && <div className="table-artifacts">{tables.map(table => <TableCard key={table.id} table={table} onOpen={() => openTable(table.id)} />)}</div>
   const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
+  // The human queue is an sw research's own surface (slice 17); a legacy research has no such tab.
+  const hasQueue = view.scope.search_workflow === 'sw'
+  const queueCount = (view.counts.queue ?? 0) + (view.counts.look_again ?? 0)
+  const showQueue = () => { setTab('queue'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
   return <section className="research-view legacy-research">
     {/* The hint takes the row that already exists above the title: reserving it there keeps the field from pushing the counts down
         while the title is edited, and it leaves the scope revision readable. */}
@@ -411,7 +417,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
     <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => { setTab(String(value)); setPicked([]) }}>
       <div className="research-tabs-bar">
-        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger><TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
+        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger>{hasQueue && <TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger>}<TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
         {/* The live run carries its own quiet Pause; these controls ride with the tabs so pause, resume and cancel stay reachable from every tab.
             A table run is controlled on the Evidence tab above its table; elsewhere the bar only links there. */}
         {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? tab !== 'evidence' && <button type="button" className="run-chip" title={t('Open the Evidence tab to control this run')} onClick={() => { setTab('evidence'); setPicked([]) }}>
@@ -435,6 +441,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           onProtocolApproved={async () => { toast('success', t('Correction recorded. The run is queued again.')); await load(); onChanged() }}
           onChooseCodeQuery={target => act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.'))}
           onGiveKeyTerms={() => { keyTerms.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }); keyTerms.current?.focus({ preventScroll: true }) }}
+          queueCount={hasQueue ? queueCount : 0} onOpenQueue={showQueue}
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
           latestAnswer={answer ? <><AnswerBlock researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
         {!answer && tableCards}
@@ -501,6 +508,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           onRemove={() => { void askRemoval(picked) }} onClear={() => setPicked([])} />}
         </section>
       </TabsContent>
+
+      {hasQueue && <TabsContent value="queue">
+        <HumanQueue researchId={id} view={view} dark={dark} onChanged={async () => { await load(); onChanged() }} />
+      </TabsContent>}
 
       <TabsContent value="evidence">
         <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
@@ -984,7 +995,10 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
       </div>
       {source.applicability === 'stale_scope' && <p className="proposal is-stale">{t(s.proposal ? 'Found for question revision {n}; the proposal below was made for that question. Search again to screen it for the current question.' : 'Found for question revision {n}. Search again to screen it for the current question.', { n: source.found_in_revision ?? '?' })}</p>}
       {s.proposal && !other && <p className="proposal is-model"><span className="proposal-tag">{t('Model proposal:')}</span> <span><em className={`verdict is-${s.proposal}`}>{t(s.proposal)}</em> — {s.proposal_reason} <span>({t(s.proposal_basis?.replaceAll('_', ' ') ?? '')})</span>{s.origin === 'user' ? ` ${t('· overridden by you')}` : ''}</span></p>}
-      {s.origin === 'user' && s.user_reason && <p className="proposal"><UserPen size={13} aria-hidden />{t('Your reason: {reason}', { reason: s.user_reason })}</p>}
+      {/* A queue answer sets the selection with its code as the reason (slice 16); it reads as the answer, not as the code. */}
+      {s.origin === 'user' && s.user_reason && <p className="proposal"><UserPen size={13} aria-hidden />{s.user_reason in QUEUE_REASONS
+        ? t('Your answer in the queue: {answer}', { answer: t(queueAnsweredText[QUEUE_REASONS[s.user_reason]]) })
+        : t('Your reason: {reason}', { reason: s.user_reason })}</p>}
       {s.origin === 'user' && s.state === 'excluded' && !s.user_reason && <ReasonForm busy={busy} onSave={onReason} />}
       {finding && <PdfSearchStatus />}
       {source.access.assets.map(asset => asset.rejected_extraction && <p key={asset.id} className="proposal"><ScanText size={13} aria-hidden />{t('A later text extraction ({version}) was not used: {reason}. The earlier text stays in use.', { version: asset.rejected_extraction.extraction_version, reason: asset.rejected_extraction.rejection_reason })}</p>)}

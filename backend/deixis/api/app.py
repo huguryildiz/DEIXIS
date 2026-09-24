@@ -446,6 +446,12 @@ def create_app(
     async def conflict(_: Request, exc: RevisionConflict):
         return JSONResponse({"detail": str(exc)}, status_code=409)
 
+    # The queue's 409 says why (slice 17): the row changed, or the reading of a confirmed PDF began. Other 409s keep
+    # their one-sentence detail.
+    @app.exception_handler(human_queue.QueueConflict)
+    async def queue_conflict(_: Request, exc: human_queue.QueueConflict):
+        return JSONResponse({"detail": {"reason": exc.reason, "message": str(exc)}}, status_code=409)
+
     @app.exception_handler(zotero.ZoteroError)
     async def zotero_failed(_: Request, exc: zotero.ZoteroError):
         return JSONResponse({"detail": str(exc)}, status_code=exc.status)

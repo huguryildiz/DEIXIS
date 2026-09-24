@@ -826,3 +826,77 @@ def test_pdf_confirmed_lets_the_next_reading_run_read_the_work_and_can_be_undone
     assert again["decision"]["undoable"] is True
     assert len(later_calls) == 2 and code == "all_parts_verified"
     assert refused.status_code == 409  # the confirmed work was read; nothing of the confirmation is left to undo
+
+
+# ---- what the screen reads (slice 17, D97) ------------------------------------------------------------------------
+
+def quiet_app(tmp_path, monkeypatch):
+    """The API over a library the test writes itself, with no worker: rows come from `test_queue.Lib`, not a run."""
+    import httpx
+    from deixis.api.app import create_app
+    from deixis.config import Settings
+    monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw"),
+                     adapters={"fake": FakeAdapter(valid_response)},
+                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(404))),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    return app, client_of(app)
+
+
+def test_a_409_names_whether_the_row_changed_or_reading_started(tmp_path, monkeypatch):
+    from test_queue import Lib, queued
+    app, client = quiet_app(tmp_path, monkeypatch)
+    try:
+        store = app.state.store
+        lib = Lib(store)
+        svid = queued(lib)
+        stale = client.post(f"/api/researches/{lib.rid}/queue/{svid}/decision",
+                            json={"decision": "include", "note": None, "row_token": "stale"})
+        identity = lib.work()
+        lib.text(identity, [lib.field["page"]])
+        lib.unconfirmed(identity)
+        row = next(r for r in queue_of(client, lib.rid)["rows"] if r["source_version_id"] == identity)
+        confirmed = answer(client, lib.rid, row, "pdf_confirmed").json()
+        # A later reading run froze its plan after the confirmation and opened this work's step.
+        run = lib.new_run("fulltext_adjudication")
+        plan = store.step(run, "adjudication_plan", "code:adjudication_plan")
+        store.finish_step(plan["id"], "succeeded", output={})
+        store.step(run, f"fulltext_adjudication:{identity}:1", "model:fulltext_adjudication")
+        started = client.post(f"/api/researches/{lib.rid}/queue/{identity}/undo",
+                              json={"row_token": confirmed["undo_token"]})
+        other = client.post(f"/api/runs/{run}/resume")
+    finally:
+        client.__exit__(None, None, None)
+    assert stale.status_code == 409 and stale.json()["detail"] == {
+        "reason": "row_changed", "message": "This row changed since it was shown; read it again"}
+    assert started.status_code == 409 and started.json()["detail"]["reason"] == "reading_started"
+    assert started.json()["detail"]["message"].startswith("The reading of this PDF has begun")
+    assert other.status_code == 409 and isinstance(other.json()["detail"], str)  # other 409s keep one sentence
+
+
+def test_decided_rows_carry_a_typed_answer_and_no_internal_note(tmp_path, monkeypatch):
+    from test_queue import Lib, queued
+    app, client = quiet_app(tmp_path, monkeypatch)
+    try:
+        lib = Lib(app.state.store, "irrigation")
+        by_answer = {}
+        for choice in ("include", "criterion_not_met", "not_sure", "pdf_wrong"):
+            svid = queued(lib)
+            row = next(r for r in queue_of(client, lib.rid)["rows"] if r["source_version_id"] == svid)
+            assert answer(client, lib.rid, row, choice, f"SYNTHETIC note on {choice}").status_code == 200
+            by_answer[choice] = svid
+        identity = lib.work()
+        lib.text(identity, [lib.field["page"]])
+        lib.unconfirmed(identity)
+        row = next(r for r in queue_of(client, lib.rid)["rows"] if r["source_version_id"] == identity)
+        answer(client, lib.rid, row, "pdf_confirmed")
+        by_answer["pdf_confirmed"] = identity
+        listed = client.get(f"/api/researches/{lib.rid}/queue")
+    finally:
+        client.__exit__(None, None, None)
+    decided = {entry["source_version_id"]: entry for entry in listed.json()["decided"]}
+    assert {entry["answer"] for entry in decided.values()} == set(by_answer)
+    assert all(decided[svid]["answer"] == choice for choice, svid in by_answer.items())
+    assert decided[identity]["reason_code"] == "not_read_yet" and decided[identity]["note"] is None
+    assert decided[by_answer["not_sure"]]["note"] == "SYNTHETIC note on not_sure"
+    assert "pdf_confirmed:" not in listed.text  # the file the confirmation names is internal

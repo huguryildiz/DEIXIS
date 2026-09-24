@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, Check, ChevronDown, ChevronRight, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert } from 'lucide-react'
+import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert } from 'lucide-react'
 import type { ResearchView, Run, Verdict } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { connectionName, fetchReasonText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
@@ -96,7 +96,7 @@ function totalTokens(usage: unknown): number | null {
   return typeof total === 'number' ? total : null
 }
 
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onProtocolApproved, onGiveKeyTerms, onChooseCodeQuery }: {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onProtocolApproved, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   // The approval card sends its own correction; this only refreshes the view once the backend has taken it.
@@ -105,8 +105,11 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   onGiveKeyTerms?: () => void
   // The way on after the model could not write the query: search with the code's query alone (D92).
   onChooseCodeQuery?: (run: Run) => Promise<void>
+  // An sw research's works awaiting a person, named once under the latest reading run (slice 17).
+  queueCount?: number; onOpenQueue?: () => void
 }) {
   const runs = [...view.runs].reverse()  // the view lists the newest run first
+  const lastReading = runs.filter(r => r.kind === 'fulltext_adjudication').at(-1)?.id
   const active = runs.some(r => ACTIVE.has(r.status))
   const end = useRef<HTMLDivElement>(null)
   const [atEnd, setAtEnd] = useState(true)
@@ -127,7 +130,8 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   return <>
   <div className="chat-question"><p dir="auto">{view.scope.question}</p></div>
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
-    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onProtocolApproved={onProtocolApproved} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}>
+    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onProtocolApproved={onProtocolApproved} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
+      queueLine={run.id === lastReading && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
     {!runs.length && <div className="chat-say"><Sparkles size={18} strokeWidth={1.6} aria-hidden /><p>{emptyText}</p></div>}
@@ -137,11 +141,11 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onProtocolApproved, onGiveKeyTerms, onChooseCodeQuery, children }: {
+function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onProtocolApproved, onGiveKeyTerms, onChooseCodeQuery, queueLine = null, children }: {
   run: Run; view: ResearchView; now: number; latest: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   onProtocolApproved?: () => void | Promise<void>; onGiveKeyTerms?: () => void
-  onChooseCodeQuery?: (run: Run) => Promise<void>; children: ReactNode
+  onChooseCodeQuery?: (run: Run) => Promise<void>; queueLine?: { count: number; open: () => void } | null; children: ReactNode
 }) {
   const active = ACTIVE.has(run.status)
   const [open, setOpen] = useState<boolean | null>(null)
@@ -516,6 +520,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
     {/* What this run would search with, before it searches: the user corrects it here and approves it (D80). */}
     {run.approval && <ProtocolApproval run={run} approval={run.approval} onApproved={() => onProtocolApproved?.()} />}
     {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note ${run.status === 'failed' ? 'is-error' : 'is-neutral'}`}><p>{pauseReasonText(run.pause_reason)}</p></div>}
+    {queueLine && <p className="chat-queue-line"><Hand size={14} aria-hidden /><span>{t(queueLine.count === 1 ? '{n} work awaits your decision' : '{n} works await your decision', { n: queueLine.count })}</span>
+      <span aria-hidden>·</span><button type="button" onClick={queueLine.open}>{t('Open')}</button></p>}
     {children}
     {!children && answer && run.kind === 'answer' && <div className="answer-history-note"><span className="answer-history-icon" aria-hidden="true"><TriangleAlert size={14} /></span><span>{t('An earlier answer: {status}.', { status: t(answer.status.replaceAll('_', ' ')) })}</span></div>}
   </section>

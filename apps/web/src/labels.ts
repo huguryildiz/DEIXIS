@@ -1,4 +1,4 @@
-import type { ApprovalBlock, Evidence, RunKind, RunStatus, Source, SourceScope, Verdict } from './api'
+import type { ApprovalBlock, Evidence, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, Verdict } from './api'
 import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
@@ -235,4 +235,39 @@ export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unst
   if (source.access.abstract_passage_id) parts.push({ tone: 'abstract', text: t(source.access.abstract_origin === 'provider_openalex_inverted_index' ? 'Abstract (rebuilt from OpenAlex index)' : 'Abstract') })
   if (!parts.length) parts.push({ tone: 'unstated', text: t('Metadata only') })
   return parts
+}
+
+// ---- the human queue of an sw research (slice 17, D97) ----
+// What each row asks the person to do, in the order the filter chips list them.
+export const queueKindLabels: Record<Exclude<QueueKind, 'look_again'>, string> = {
+  confirm_quote: 'Confirm the quote', choose_run: 'Choose one of the runs', choose_version: 'Choose one of the versions',
+  confirm_pdf: 'Confirm the PDF', confirm_absent: 'Confirm the absence', find_part: 'Find the part',
+}
+// Why a work is in the queue, by the reason code the backend stored. The code itself is shown only beside this, small.
+const queueReasons: Record<string, string> = {
+  include_quote_unverified: 'Both runs found every part, but a quote was not found on the page it was taken from.',
+  fulltext_runs_disagree: 'The two reading runs came to different readings of the text.',
+  versions_disagree: 'Two versions of this work were read, and their decisions are opposite.',
+  pdf_identity_unconfirmed: 'The first page of the PDF does not name this work, so the model has not read it.',
+  fulltext_runs_agree_unresolved: 'Neither run could tell from the text whether the parts are there.',
+  abstract_promise_absent: 'The abstract promises a part the text does not show.',
+  part_without_evidence: 'The runs found some of the criterion’s parts, but not this one.',
+  human_include: 'You included this work under an earlier question or criterion.',
+  human_criterion_not_met: 'You excluded this work under an earlier question or criterion.',
+  human_not_sure: 'You were not sure about this work under an earlier question or criterion.',
+  human_pdf_wrong: 'You marked this PDF as wrong under an earlier question or criterion.',
+}
+export const queueReasonText = (code: string) => t(queueReasons[code] ?? 'This work needs a person’s decision.')
+export const queueAnswerLabels: Record<QueueAnswer, string> = {
+  pdf_confirmed: 'PDF is right, let the model read it', include: 'Include', criterion_not_met: 'Does not meet the criterion',
+  not_sure: 'Not sure', pdf_wrong: 'PDF is wrong or incomplete',
+}
+// The three plain states of SW11.1: every open row awaits a decision; an answer leaves one of these.
+export const queueStateOf = (answer: QueueAnswer) =>
+  t(answer === 'include' ? 'Included' : answer === 'criterion_not_met' ? 'Does not meet the criterion' : 'Awaiting a decision')
+export const partLabelText = (label: 'present' | 'absent' | 'unclear') => t(label === 'present' ? 'present' : label === 'absent' ? 'absent' : 'unclear')
+// What the person answered, as the "Your decisions" list says it.
+export const queueAnsweredText: Record<QueueAnswer, string> = {
+  include: 'you included it', criterion_not_met: 'you said it does not meet the criterion', not_sure: 'you were not sure',
+  pdf_wrong: 'you marked the PDF as wrong', pdf_confirmed: 'you confirmed the PDF; it waits for a reading run',
 }

@@ -95,9 +95,12 @@ function PdfTextTable({ rows }: { rows: string[] }) {
   </table></div>
 }
 
+// The strip's two sentences, for a text opened for something other than an answer's citation (the human queue).
+export type CitationLabels = { marked: string; unmarked: string }
+
 // With a citation, the document opens on the cited text: every located anchor is marked and the first is scrolled into view.
 // An anchor not found in its page's text leaves the page unmarked; the view then opens on that page and says so.
-export function PdfTextDocument({ researchId, assetId, passages, showNotes, sourceTitle = null, citation = null }: { researchId: string; assetId: string; passages: Passages; showNotes: boolean; sourceTitle?: string | null; citation?: { page: number | null; texts: string[]; expected: boolean } | null }) {
+export function PdfTextDocument({ researchId, assetId, passages, showNotes, sourceTitle = null, citation = null }: { researchId: string; assetId: string; passages: Passages; showNotes: boolean; sourceTitle?: string | null; citation?: { page: number | null; texts: string[]; expected: boolean; labels?: CitationLabels } | null }) {
   const [figures, setFigures] = useState<AssetFigure[]>([])
   useEffect(() => {
     let cancelled = false
@@ -123,7 +126,7 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
   return <>
     {citation && <div className={`pdf-text-citation${unmarked ? ' is-unmarked' : ''}`}>
       {unmarked ? <TriangleAlert size={14} aria-hidden /> : <Quote size={14} aria-hidden />}
-      <span>{unmarked
+      <span>{citation.labels ? (unmarked ? citation.labels.unmarked : citation.labels.marked) : unmarked
         ? t(citation.texts.length ? 'The cited text was not found in the text of PDF p. {page}, so it is not marked. Check the page in the PDF.' : 'This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.', { page: citation.page ?? '?' })
         : t('Cited text · PDF p. {page}', { page: citation.page ?? '?' })}</span>
       {(marks?.first || citedPage) && <button type="button" onClick={goToCitation}>{t(marks?.first ? 'Go to cited text' : 'Go to cited page')}</button>}

@@ -301,15 +301,28 @@ export type QueueCounts = {
   open: number; by_kind: Record<string, number>; by_reason: Record<string, number>; look_again: number
   decided: Record<string, number>; user_selected: number
 }
-export type QueueView = { rows: QueueRow[]; counts: QueueCounts; order: 'fused_rank' }
+// A work the person decided and can still take back (slice 17): its fresh human decision or its PDF confirmation.
+export type QueueDecided = {
+  work_id: string; source_version_id: string; head: string; title: string; version_label: string | null
+  reason_code: string; answer: QueueAnswer; note: string | null; created_at: string; undo_token: string
+}
+export type QueueView = { rows: QueueRow[]; counts: QueueCounts; order: 'fused_rank'; decided: QueueDecided[] }
 export type QueuePart = {
   part: string; label: 'present' | 'absent' | 'unclear'; quote: string | null; quote_verified: boolean | null
   page: number | null; passage: string | null; rationale: string | null
-  closest?: { page: number; text: string; kind: 'exact' | 'normalized' | 'fuzzy'; ratio: number } | null; closest_note?: string | null
+  // The passage that opens this quote's page, and the page's own text a verified quote was found as: the only span
+  // the screen marks. Null for an unverified quote; a fuzzy match is never an anchor.
+  passage_id: string | null; anchor_text: string | null
+  closest?: { page: number; text: string; kind: 'exact' | 'normalized' | 'fuzzy'; ratio: number; passage_id: string | null } | null; closest_note?: string | null
 }
+export type QueueRun = { run_no: number; shown_pages: number[]; parts: QueuePart[] }
 export type QueueDetail = {
-  runs: { run_no: number; shown_pages: number[]; parts: QueuePart[] }[]
-  cues: { phrases: string[]; sentences: { page: number; sentence: string }[]; total: number; note: string | null }
+  runs: QueueRun[]
+  cues: { phrases: string[]; sentences: { page: number; sentence: string; passage_id: string | null }[]; total: number; note: string | null }
+  asset_id: string | null  // the file in use for the row's version
+  // A `choose_version` row: every version with a fresh full-text decision, the named one first.
+  versions?: { source_version_id: string; title: string; version_label: string | null; asset_id: string | null
+    decision: { id: string; reason_code: string; outcome: string; decided_by: string }; runs: QueueRun[] }[]
   identity?: { first_page: string | null; work_title: string; work_doi: string | null; asset_id: string | null; retrieved_from: string | null; page_count: number | null }
 }
 export type QueueDecision = { id: string; reason_code: string; decided_by: 'code' | 'model_agreement' | 'human'; stale: boolean; undoable: boolean }
@@ -475,7 +488,9 @@ export class ApiError extends Error {
   status: number
   // A 422 from the approval route names every fault of the correction at once; the card shows them by their row.
   errors: string[]
-  constructor(status: number, message: string, errors: string[] = []) { super(message); this.status = status; this.errors = errors }
+  // A 409 of the human queue says why: `row_changed` or `reading_started` (slice 17).
+  reason: string | null
+  constructor(status: number, message: string, errors: string[] = [], reason: string | null = null) { super(message); this.status = status; this.errors = errors; this.reason = reason }
 }
 
 let csrfToken: string | null = null
@@ -499,13 +514,15 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
   if (!response.ok) {
     let detail = response.statusText
     let errors: string[] = []
+    let reason: string | null = null
     try {
       const body = await response.json()
       if (typeof body.detail === 'string') detail = body.detail
       // A validation refusal answers with a list of faults rather than one sentence (slice 08a).
       else if (Array.isArray(body.detail?.errors)) { errors = body.detail.errors.map(String); detail = errors.join(' · ') }
+      else if (typeof body.detail?.message === 'string') { detail = body.detail.message; reason = typeof body.detail.reason === 'string' ? body.detail.reason : null }
     } catch { /* keep status text */ }
-    throw new ApiError(response.status, detail, errors)
+    throw new ApiError(response.status, detail, errors, reason)
   }
   return response.json() as Promise<T>
 }

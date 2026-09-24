@@ -1,6 +1,6 @@
 # SW dilim 18 — PDF bekleyenler ve kullanıcının eklediği PDF
 
-**Tarih:** 24 Eylül 2026. **Durum:** 18a uygulandı (D99; yayıncı PDF'iyle kabul yapılmadı, sahibin kararıyla commit edildi); 18b plan turu bekliyor; `gpt-6-sol` · high'ın ikinci görüşü (`sol-plan.md`, "hazır değil", 11 bulgu) işlendi: dilim 18a ve 18b'ye bölündü; 18a uygulamaya hazır taslak, 18b'nin sözleşmesi kendi plan turunda kesinleşir. **Ana dosya:** [sw-status.md](sw-status.md).
+**Tarih:** 24 Eylül 2026. **Durum:** 18a uygulandı (D99; yayıncı PDF'iyle kabul yapılmadı, sahibin kararıyla commit edildi); 18b planı yazıldı (bu dosyanın "Dilim 18b" bölümü); `gpt-6-sol` · high'ın ikinci görüşü (`sol-plan.md`, "hazır değil", 11 bulgu) işlendi: dilim 18a ve 18b'ye bölündü; 18a uygulamaya hazır taslak, 18b'nin sözleşmesi kendi plan turunda kesinleşir. **Ana dosya:** [sw-status.md](sw-status.md).
 **Karar:** yeni D numarası (dilim yazar; en yüksek D98). **Önkoşul:** 10 (D83), 12 (D85), 17a (D98). **Tür:** Kur.
 **Kapsam:** SW10.4–5, SW11.9. **Plan:** Opus 5.5 · high. **Ölçüm:** `.local/sw-slice18-plan-2026-09-24/`
 (`waiting.py`, `waiting.json`; salt okunur, model ve ağ yok).
@@ -73,24 +73,99 @@ detailed sütunlarında da birer `r12` var (detailed'da 32'lik olan). Güncel yo
    dosya bırakma orada. `PdfReadiness`'in bugünkü akışı yalnız dahil edilen satırları seçenek yapıyor ve eşleşen
    sürümü işin başına çeviriyor; `sw`'de bırakma yeni görünümün sürüm onaylı akışına bağlanır, `legacy`'de değişmez.
 
-## Dilim 18b — ekleme sonrası (sözleşme kendi plan turunda kesinleşir)
+## Dilim 18b — ekleme sonrası
 
-Sol'ün 5–8. bulguları burada; 18a kapanmadan uygulanmaz.
+**Plan turu:** 24 Eylül 2026, Opus 5.5 · high; ikinci görüş `gpt-6-sol` · high iki tur: ilki "hazır değil", 9 bulgu;
+ikincisi yine "hazır değil", 8 yeni bulgu; üçüncüsü "hazır değil", 6 bulgu; dördüncüsü 2 bulgu; beşincisi "düzeltmeyle hazır", 1 kısmi bulgu (`.local/sw-slice18b-plan-2026-09-24/`
+`sol-plan.md` … `sol-plan-5.md`); hepsi aşağıda işlendi. İkinci turun dersi: okuma isteğini saklı karardan ve eski planlardan türetmek
+her bitiş yolunda ayrı bir kural istiyordu, bu yüzden istek kendi tablosuna taşındı. **Önkoşul:** 18a commit'i (D99). Bugünkü durum (koddan
+okundu; bu tur için ölçüm yapılmadı): 18a'nın onayı dosyayı ekliyor, olay yazıyor, başka hiçbir şey yazmıyor. İşin
+saklı kararı eski `no_fulltext` olarak kalıyor, iş listeden düşüyor ve başka hiçbir ekranda görünmüyor; okuma planı
+başka bir sürümünde taze model kararı olan işi hiç almıyor; okuma koşusunu yalnız getirme ya da keşif bitişi kuyruğa
+koyuyor.
 
-- **Kod** (Sol 5). Onaylanan dosya için `not_read_yet` ya da `text_unreadable` yalnız `fulltext.should_write` izin
-  veriyorsa yazılır; taze bir okuma kararı ezilmez. Kişinin `human_pdf_wrong` dediği işe yeni dosya eklenince eski
-  karar sessizce kalkmaz: kişiye yeni dosya gösterilir, o kararı geri alıp yeniden okutma yolu sunulur.
-- **Okuma isteği** (Sol 6). SW11.9'un "başa geçer"i çalışan D85 planını değiştirmez. `create_run` aynı araştırmada
-  kuyrukta olan dahil etkin koşu varken ikinci koşuyu reddediyor (`store.py` `create_run`); bu yüzden onay, aynı işlemde
-  kalıcı bir okuma isteği yazar. Etkin koşu yoksa okuma hemen açılır; varsa o koşu bitince açılır ve henüz donmamış
-  okuma planının başına konur. Anahtar araştırmayı, kapsam ve ölçüt revizyonunu ve dosyayı içerir; keşif sürerken
-  gelen istek keşfin bitişinde yeniden değerlendirilir, çift okuma açılmaz.
-- **Yanıt durumu** (Sol 7). "Okuma bekliyor" ile "model okuyor" ayrı durumlar; ikincisi çağrı gerçekten başlayınca.
-  `text_unreadable` "alıntı ve sayfayla kodla kapandı" sayılmaz. Katı-ipucu kapısı kurulmadığı için SW11.9 "kısmen
-  uygulandı" kalır.
-- **Sürüm** (Sol 8). Taze eski model kodu işi `read_plan` dışında bırakıyor ve `_adjudication_plan` sürümü
-  `answer_version` (D48) ile seçiyor. Yeni dosyanın hangi kararı yeniden açtığı, hangi sürümün okunduğu ve iki sürüm
-  ters sonuç verdiğinde ne gösterileceği tek kararda yazılır; bu karar olmadan 18b'nin sürüm kısmı uygulanmaz.
+1. **Onayla birlikte kod, dosyaya bağlı** (Sol 5; Sol'ün plan bulguları 1–2). Onay işlemi, dosyayı eklediği aynı
+   işlemde, kişinin seçtiği sürüme bir tam metin kodu yazar: metin varsa `not_read_yet`, yoksa `text_unreadable`. Karar
+   notu dosyayı adlar (`person_pdf:<asset_id>`) ve karar o dosyanındır: aynı kod da olsa dosya değişince yeni satır
+   yazılır (`record`'un "aynı karar bir kez" kuralı bu notlu yazımda nota da bakar). Kişinin kararı hiç ezilmez. Kişi
+   dışındaki bir karar (kod ya da model) yazımdan önce verilmişse o sürümün önceki dosyası ya da dosyasızlığı
+   içindir ve üzerine yazılır; `should_write`'ın "taze okuma kararı ezilmez" kuralı bu dosyadan sonra verilen
+   kararları korur. Metni olmayan dosyanın işi listede `text_unreadable` nedeniyle kalır.
+2. **Dosya değiştirme yok, kaldırmaya yönlendirme de yok** (plan bulgusu 5; ikinci tur 1). 18a'nın `pdf_in_use`
+   reddi aynen kalır. D50'nin "yanlış dosyayı kaldır" eylemi ve D45'in değiştirmesi kütüphane geneli çalışır ve aynı
+   sürümü kullanan öbür araştırmaları da etkiler; 18b ikisini de değiştirmez, çağırmaz, önermez. Sonuç: bekleme nedeni
+   sürümün kendi dosyası olan (`text_unreadable`, ya da o dosya için `human_pdf_wrong`) ve başka sürümü olmayan iş
+   18b'de yeni dosya alamaz; panel bunu söyler. Bu bilerek bırakılan bir sınırdır, D kaydına yazılır.
+3. **Kişinin `human_pdf_wrong`'u geri alınmaz, yalnız o sürüm için konuşur** (Sol 5; plan bulgusu 1; üçüncü tur 2).
+   Kişi yanlış dediği sürümün değil, işin başka bir sürümüne dosya ekleyebilir. Yanıtı silinmez, `undo_human`
+   çağrılmaz; böylece yanlış dosyaya dayanan eski model kararı (örneğin bir `include`) geri gelmez. `work_outcome`'da
+   bir tek istisna: `human_pdf_wrong` "bu sürümün dosyası yanlış" demektir ve işin başka bir sürümünde kişi dosyası
+   isteği varsa işin sonucu olmaz; sonuç o isteğin sürümünden gelir (karar 8), okunana kadar `not_read_yet`, yani
+   `unresolved` ve yanıtta yok. Aynı istisna okuma kapılarında da geçerlidir (dördüncü tur 1): `group_of`, okuma
+   planı ve okuma yürütücüsü, işin başka sürümündeki kişi kararı `human_pdf_wrong` ise ve bu sürümde kişi dosyası
+   isteği varsa işi atlamaz; öbür kişi kararlarında atlamayı sürdürür. Onay paneli önceki yanıtı adıyla yazar
+   ("X sürümünün dosyasını yanlış demiştiniz; bu dosya Y sürümüne eklenir ve model onu okur; X hakkındaki yanıtınız
+   durur"). Kişinin başka bir kararı (dahil, ölçütü karşılamıyor, emin değilim) varsa dosya eklenir, kod ve istek
+   yazılmaz, okuma açılmaz; panel "kararınız duruyor" der.
+4. **Okuma isteği kendi tablosunda** (Sol 6; plan bulguları 2–4, 8; ikinci tur 3–7). Migration `0052`:
+   `person_pdf_requests` (araştırma, sürüm, asset, kapsam revizyonu, ölçüt özeti, durum, koşu, zamanlar). Durumlar:
+   `waiting` → `planned` (bir okuma planı dondurulurken, planla aynı işlemde, koşu kimliğiyle) → `read` (o dosyanın
+   okuma kararı yazılınca, aynı işlemde; hangi koşu yazarsa yazsın, olağan grup sırasıyla okuyan bir koşu da: okuma
+   aşaması bir sürüme karar yazdığında o sürümün kullanımdaki asset'inin `read` olmayan isteği aynı işlemde `read`
+   olur, ama yalnız kararın dayandığı plan isteğin asset'ini, sayfa özetini, kapsam revizyonunu ve ölçüt özetini
+   taşıyorsa; biri tutmazsa istek değişmez, dördüncü tur 2) ya da `unread` (planlandığı koşu karar yazmadan bitti: model yanıt veremedi,
+   D18; koşu iptal edildi, başarısız oldu ya da dosya kullanımdan çıktı). Kapsam revizyonu ya da ölçüt özeti değişince
+   (aynı kapsamda protokol yeniden dondurulabilir) eski satırlar `stale` sayılır, yazılmaz. İstek onayla (ve karar 10'da kaynak satırı yüklemesiyle) aynı işlemde yazılır; yalnız
+   iş okumaya uygunsa (`group_of` karar 3'ün istisnasıyla boş değil; istisna yazılacak istek varsa diye sınanır ve istek aynı işlemde
+   yazılır, beşinci tur; dondurulmuş ölçüt var, okuma ayarı `auto`), değilse dosya eklenir,
+   istek yazılmaz, görünüm nedenini söyler.
+5. **Kuyruğu tek yardımcı açar.** `ResearchFlow.queue_person_reading(research_id)`: `waiting` istek yoksa ya da
+   araştırmada etkin (`queued`, `running`, `pause_requested`) **veya duraklatılmış** koşu varsa hiçbir şey yapmaz.
+   Duraklatılmış koşu varken görünüm yeni koşu sunmaz; o koşuyu sürdürme ya da iptal etme eylemini gösterir (üçüncü
+   tur 5). Yoksa anahtarı `fulltext_adjudication:person:<kapsam>:<ölçüt>:<waiting asset kimliklerinin özeti>`
+   olan okuma koşusunu açar (ilk denemede `attempt` 0). Bu anahtarla koşu zaten varsa ve bitmişse (plan dondurulmadan başarısız ya da iptal
+   olduysa) o istekler `unread` yapılır, yeni koşu açılmaz. Çağıranlar: onay işleminin sonu; worker, `execute` hangi
+   yoldan dönerse dönsün; worker açılışı (bekleyen isteği olan her `sw` araştırma); API'nin koşu duraklatma ve iptal
+   uçları (yürütülmeden `paused` / `cancelled` olan koşu worker'dan geçmez). Kişi bir okuma koşusunu iptal ettiyse o
+   koşunun `planned` istekleri `unread` olur, yeniden açılmaz; `waiting` olanlar (plan dondurulmamıştı) de `unread`
+   olur. D98'in keşif bitişi okuma koşusu (`after:<run_id>` anahtarı aynen) `waiting` istekleri planına alır ve
+   `planned` yapar; bu yüzden bitişte ikinci koşu açılmaz.
+6. **Plan dosyaya ve çıkarıma bağlı** (plan bulgusu 6; ikinci tur 2). Dondurulan `adjudication_plan` her iş için
+   okunacak sürümü, asset kimliğini ve o asset'in sayfa metinlerinin özetini yazar. Çağrıdan önce ve karar yazımından
+   önce aynı asset kullanımda mı ve sayfa özeti aynı mı denetlenir; değilse o iş bu koşuda karara bağlanmaz,
+   `not_reached` sayılır, isteği `unread` olur. Donmuş plana sonradan iş eklenmez. **Yeniden deneme kişinin:** `unread`
+   isteğin satırında "Yeniden oku" düğmesi isteği yeniden `waiting` yapar, yardımcıyı çağırır, tablodaki `attempt` sayısını bir artırır ve anahtar `…:<özet>:<attempt>` olur, bu yüzden aynı dosya için yeni koşu
+   gerçekten açılır (üçüncü tur 1); arayüz yalnız açılan koşuyu gösterir. Otomatik plan `unread` istekleri başa almaz; onlar
+   bugünkü grup sırasında kalır.
+7. **Okuma sırasının başı** (SW11.9). `read_plan`'da `waiting` isteği olan işler bütün gruplardan önce gelir,
+   aralarında onay sırasıyla (asset `created_at`, sonra kimlik). Sınır aynıdır (40 / 50 / 150) ve onlar da sayılır.
+8. **Kişinin dosyası öne geçer** (Sol 8; plan bulgusu 7; ikinci tur 8; SW11.9'un sürüm cümlesi). Okunan sürüm kişinin dosyasını
+   taşıyan sürümdür; başka bir sürümdeki taze model kararı onu plandan dışlamaz (`_fresh_model` başka işlerde aynen
+   kalır). Kimlik denetimi kullanıcı yüklemesinde bugünkü gibi atlanır (D85). Sonuç:
+   - **Okunana kadar** iş önceki sonucunu korur ve yanıt, o sonucun dayandığı sürümü okur: `answer_version` kişinin
+     henüz okunmamış dosyasını taşıyan sürümü atlar; araştırma görünümünün toplu seçicisi
+     `answer_versions` aynı kuralı kullanır ve ikisinin aynı sürümü verdiği sınanır. Böylece ölçüte göre okunmamış metin yanıta girmez.
+   - **Okunduktan sonra** kişinin dosyasının kararı işin sonucudur: `work_outcome`'da taze model kararları içinde
+     `read` isteğinin dosyasına ait olan öne geçer ve `answer_version` o sürümü okur. Kişinin kendi kararı yine her
+     şeyin önündedir (karar 3'ün `human_pdf_wrong` istisnası dışında). Üstünlük yalnız o dosya hâlâ kullanımdaysa ve
+     sayfa özeti okunan hâliyle aynıysa geçerlidir; bu her okumada yeniden denetlenir (üçüncü tur 3). Dosya başka bir
+     araştırmadan kütüphane genelinde kaldırılırsa üstünlük düşer ve bugünkü kural geri gelir; o araştırmanın yanıt
+     revizyonunun değişmemesi D50'nin bugünkü sınırıdır, 18b onu değiştirmez ve D kaydına yazılır. Başka sürümün
+     farklı sonucu silinmez, kendi sürüm etiketiyle "öteki sürüm şöyle okundu" diye gösterilir; bu iş için
+     `versions_disagree` kuyruk satırı açılmaz. Önceki alıntılar kendi sürüm etiketini taşır.
+   - Kişi dosyası olmayan işlerde `work_outcome` ve `answer_version` aynen kalır.
+9. **Yanıt durumu, saklı kanıttan** (Sol 7; plan bulgusu 9). "PDF bekliyor" görünümünün altında "Eklediğiniz
+   dosyalar" bölümü: güncel kapsamda kişi dosyası olan işler, durumları saklı karardan ve adımlardan: *okuma
+   bekliyor* (etkin koşu varsa "o koşu bitince"), *model okuyor* (bu işin `model:fulltext_adjudication` adımı
+   `running`), *dahil edildi* (doğrulanmış alıntılar ve sayfaları), *ölçütü karşılamıyor* (metin: "gösterilen
+   pasajlarda ölçütün parçaları bulunamadı"; alıntı gösterilmez, çünkü `criterion_absent` doğrulanmış olumlu alıntı
+   taşımaz), *kararınızı bekliyor* (insan kuyruğu sekmesine bağlantı), *okunamadı* (`unread`, karar 6, "Yeniden oku"),
+   *model kapalı* (okuma ayarı `off`, dondurulmuş ölçüt ya da model yok; koşu açılmaz), *kararınız duruyor*. Metinsiz
+   dosya bu bölümde değil, listede `text_unreadable` nedeniyle görünür. Katı-ipucu kod kapısı kurulmadığı için
+   "kodla kapandı" biçimi yok; SW11.9 "kısmen uygulandı" kalır.
+10. **Aynı yol kaynak satırında** (ikinci tur 7). `sw` araştırmada kaynak satırındaki yükleme (`/sources/{svid}/uploads`)
+    karar 1, 3 ve 4'ün aynı yardımcısını çağırır, karar 4'ün uygunluk denetimiyle: kişinin dışladığı ya da okumaya
+    uygun olmayan işe kod ve istek yazılmaz. `legacy`'de hiçbir şey değişmez.
 
 ## Global constraints
 
@@ -128,9 +203,48 @@ Sol'ün 5–8. bulguları burada; 18a kapanmadan uygulanmaz.
 - arXiv başlık araması, Europe PMC, LaTeX / Marker okuma (SW10.3, 10.6–7).
 - Vekil üzerinden otomatik indirme ya da oturum çerezi saklama.
 
+## Task taslağı (18b)
+
+1. **Kod.** Onay yardımcısı (karar 1–3, 10): notlu kod, dosya değişince yeni satır, `human_pdf_wrong`'un yalnız kendi
+   sürümü için konuşması. Testler: metinli / metinsiz dosya, önceki kod ve model kararı üzerine yazılır,
+   dosyadan sonraki okuma kararı ezilmez, kişinin başka kararı durur, `human_pdf_wrong` silinmez ve yanlış dosyanın eski
+   `include`'u geri gelmez, `pdf_in_use` aynı, `legacy` aynı.
+2. **Okuma isteği.** Migration `0052`, istek durumları ve `queue_person_reading` ile çağıranları (karar 4–6).
+   Testler: etkin ya da duraklatılmış koşu varken bekler; bitişte açılır (tamam / hata / iptal / duraklama yolları
+   ayrı ayrı, API'nin yürütülmeden duraklattığı ve iptal ettiği kuyruk koşusu dahil); kapsam revizyonu eski isteği
+   açmaz; kişinin iptali `unread` yapar ve yeniden açmaz; D98 keşif bitişi ikinci koşu açmaz; plan dondurulmadan
+   başarısız olan koşu isteği `unread` yapar; model karar yazamazsa döngü yok ve "Yeniden oku" aynı dosya için yeni koşu açar; `unread`
+   dosyayı olağan sırayla okuyan koşu isteği `read` yapar; ilk 40
+   `unread` iken sonraki 10 `waiting` istek önce okunur; çökme (onaydan sonra süreç ölür, açılışta koşu açılır); ayar
+   `off` ve uygun olmayan iş istek yazmaz.
+3. **Plan ve sonuç.** `read_plan` önü, planda asset kimliği ve sayfa özeti, çağrı ve yazım öncesi denetim, `work_outcome` ve
+   `answer_version`'ın kişi dosyası kuralı (karar 5, 7, 8). Testler: sıra, sınır, başka sürümde taze model kararı,
+   dosya duraklatılmış koşuda kaldırılır ya da yeniden
+   çıkarılırsa karar yazılmaz, `answer_version` ile `answer_versions` aynı sürümü verir, okunmadan önce yanıt eski sürümü okur, okunduktan sonra
+   kişi dosyasının kararı sonuçtur ve öteki sürüm görünür, dosya kaldırılınca üstünlük düşer, kişi dosyası olmayan işte hiçbir şey değişmez.
+4. **Arayüz.** "Eklediğiniz dosyalar" bölümü, onay panelinin yeni metinleri (önceki `human_pdf_wrong` yanıtı,
+   "kararınız duruyor", tek sürümlü işte "yeni dosya alamaz"), duraklatılmış koşuda sürdür / iptal et.
+   Playwright: yeni L senaryosu (K'nin sonundan: dosya onaylandı → okuma bekliyor → betikli model okur → dahil
+   edildi) ve bir failure betiği (model okuyamaz → okunamadı → Yeniden oku). Ekran görüntüsüyle masaüstü ve telefon
+   genişliğinde kendim doğrularım.
+5. **Kabul.** 18a'nın kabul kütüphanesinde (`data-q1-quick`), sahibin yayıncı PDF'i onaylandıktan sonra okuma canlı
+   bir modelle koşar (model sahibin; `gpt-5.6-luna` kotası yoksa `deepseek-flash`): onaydan okumanın başlamasına ve
+   sonuca kadar geçen süre ile sonucun kendisi yazılır.
+6. **Kapanış.** Yeni D numarası (D48'in kişi dosyası istisnasını adıyla yazar), SW11 durum satırı (madde 9: öne
+   geçme, yanıt durumları, sürüm üstünlüğü; kod kapısı yok), sw-status 18b satırı.
+
+## Bu dilimde yok (18b)
+
+- Katı-ipucu kod kapısı ve "kodla kapandı" yanıtı (SW10.2, SW1.5; dilim 23).
+- Dosya değiştirme ya da kaldırma; D45 ve D50'nin kütüphane genelindeki eylemleri ve öbür araştırmalara etkileri
+  aynen kalır. Kendi dosyası yüzünden bekleyen tek sürümlü iş 18b'de yeni dosya alamaz.
+- Donmuş okuma planına sonradan iş eklemek; çalışan okuma koşusunu kesmek.
+- Kişi dosyası olmayan işlerde sürüm değişince yeniden okuma (`_fresh_model` kuralı aynı kalır).
+
 ## Ölçülmedi
 
 Vekil akışının kendisi (sahibin kurum girişi gerekiyor). Kişinin bırakacağı yayıncı dosyalarında eşlemenin doğruluğu (633 gözlem açık kopyalardan):
 ölçü indirilmiş açık kopyalarla, ağırlıkla ön baskılarla yapıldı; yayıncı PDF'inin ilk sayfası DOI'yi daha sık taşır,
 kaynakça ise daha önce başlayabilir. Liste boyunun kuantum ve `q2` dışında ne olduğu. Bir kişinin gerçekte kaç dosya
-bıraktığı ve okumanın öne geçmesinin kişinin bekleme süresini ne kadar kısalttığı.
+bıraktığı ve okumanın öne geçmesinin kişinin bekleme süresini ne kadar kısalttığı. 18b'de: onaydan sonucun
+gelişine kadar geçen süre ve kişinin yayıncı dosyasının okuma sonucu (kabulde bir iş; genelleme değil).

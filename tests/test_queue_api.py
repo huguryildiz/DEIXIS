@@ -129,11 +129,15 @@ def test_queue_endpoints_refuse_legacy_and_mutations_need_the_csrf_header(tmp_pa
         stale = client.post(f"{path}/decision", json={"decision": "include", "note": None, "row_token": "stale"})
         stranger = client.get(f"/api/researches/{rid}/queue/srv_notasource0000000000")
         still = queue_of(client, rid)["counts"]["open"]
+        client.request("DELETE", f"/api/researches/{rid}/sources",
+                       json={"source_version_ids": [row["head"]], "note": "SYNTHETIC removed"})
+        removed = client.post(f"{path}/decision",
+                              json={"decision": "include", "note": None, "row_token": row["row_token"]})
     finally:
         client.__exit__(None, None, None)
     assert no_csrf.status_code == 403 and no_csrf_undo.status_code == 403
     assert long_note.status_code == 422 and stale.status_code == 409 and stranger.status_code == 422
-    assert still == 1
+    assert still == 1 and removed.status_code == 409  # once a source, a removed record is a stale row, not unknown
 
 
 # ---- the model is not asked again --------------------------------------------------------------------------------
@@ -219,6 +223,43 @@ def test_a_record_decided_while_a_discovery_run_is_in_flight_is_left_out_of_the_
     assert len(sent) == 4 and all(decided not in batch for batch in sent)
     assert sent[2] == [svid for svid in plan["batches"][1] if svid != decided]
     assert abstract is None  # no decision of that batch was written for the record that left it
+
+
+def test_a_record_decided_between_the_two_runs_of_a_batch_is_not_sent_again_and_gets_no_abstract_decision(
+        tmp_path, monkeypatch):
+    """The check once the limiter lets a call through: the second run of the same batch was already generated with
+    the record in it, and is sent without it (Sol's review of slice 16)."""
+    holder = {}
+
+    def before(si):
+        if si["task_type"] != "abstract_screening" or holder.get("done"):
+            return
+        store = holder["app"].state.store
+        sent = sent_records(store, si)
+        DecisionStore(store).record(store.run(si["run_id"])["research_id"], sent[0], "human_include")
+        holder.update(done=True, decided=sent[0], first=sent)
+
+    from test_abstract_flow import work as abstract_work
+    adapter = FakeAdapter(responder(), before=before)
+    app = app_for(tmp_path, monkeypatch, Transport([abstract_work(n) for n in range(3)]), papers(0)[1],
+                  adapter=adapter, fetch="off", reading="off")
+    holder["app"] = app
+    client = client_of(app)
+    try:
+        rid, run_id, _, run = discover(client)
+        store = app.state.store
+        sent = [sent_records(store, call) for call in adapter.calls if call["task_type"] == "abstract_screening"]
+        decided = holder["decided"]
+        abstract = DecisionStore(store).current(rid, decided, "abstract")
+        others = {svid: DecisionStore(store).current(rid, svid, "abstract")["reason_code"]
+                  for svid in holder["first"] if svid != decided}
+        pending = [s["operation_key"] for s in store.run_steps(run_id) if s["status"] == "pending"]
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed", run
+    assert len(sent) == 2 and decided in sent[0] and decided not in sent[1]
+    assert sent[1] == [svid for svid in sent[0] if svid != decided]
+    assert abstract is None and set(others.values()) == {"runs_agree_candidate"} and pending == []
 
 
 def test_a_work_decided_while_a_reading_run_is_in_flight_gets_no_model_call(tmp_path, monkeypatch):

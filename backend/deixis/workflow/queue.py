@@ -562,4 +562,3 @@ def confirmed_pdf(store: Store, asset_id: str | None) -> bool:
         return False
     row = store.conn.execute("SELECT identity_confirmed_at FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
     return bool(row and row[0])
-

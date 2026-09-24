@@ -1270,7 +1270,15 @@ class ResearchFlow:
                     yield _AbstractJob(f"{prefix}:{number}:{run_no}", number, run_no, rows_of[number])
 
         async def call(job: _AbstractJob) -> dict[str, Any] | None:
-            return await self._abstract_call(run, scope, job.number, job.run_no, job.rows, self.deps.limiter, prefix)
+            nonlocal submitted
+            # Checked again once the limiter let the call through: a person may have decided a record's work while
+            # it waited. Those records are not sent; a call left with none is not made or charged (slice 16).
+            decided = self._human_decided_records(run["research_id"], [row["source_version_id"] for row in job.rows])
+            rows = [row for row in job.rows if row["source_version_id"] not in decided]
+            if not rows:
+                submitted -= job.key not in answered
+                return None
+            return await self._abstract_call(run, scope, job.number, job.run_no, rows, self.deps.limiter, prefix)
 
         def close_ready(completed: list[tuple[dict[str, Any] | None, _AbstractJob]]) -> None:
             """Close every batch both of whose runs have come back, on the event loop, one short transaction each."""
@@ -1479,6 +1487,11 @@ class ResearchFlow:
         """
         rid = run["research_id"]
         decisions = DecisionStore(self.store)
+        # A record whose work a person decided while the batch was out gets nothing from it (slice 16).
+        decided = self._human_decided_records(rid, [row["source_version_id"] for row in rows])
+        rows = [row for row in rows if row["source_version_id"] not in decided]
+        if not rows:
+            return  # nothing left to write, and no step to open for a call that was never made
         steps = [self.store.step(run["id"], f"{prefix}:{number}:{run_no}", "model:abstract_screening")["id"]
                  for run_no in range(1, runs + 1)]
         proposals: list[dict[str, Any]] = []

@@ -557,6 +557,25 @@ def test_a_row_token_is_rejected_after_a_scope_revision_a_new_code_decision_a_se
     assert lib.code(svid) == "human_criterion_not_met"
 
 
+def test_a_row_token_is_rejected_after_a_head_change_or_the_records_removal(store):
+    lib = Lib(store, "irrigation")
+    preprint = lib.preprint("10.9999/synth.token")
+    lib.text(preprint, [lib.field["page"]])
+    lib.read(preprint, "part_without_evidence", labels=partial(lib))
+    token = lib.row(preprint)["row_token"]
+    published = lib.published("10.9999/synth.token")
+    row = lib.row(preprint)  # the same version still asks, under a new head
+    assert row["head"] == published and row["row_token"] != token
+    with pytest.raises(RevisionConflict):
+        queue.decide(store, lib.rid, preprint, "include", None, token)
+    removed = queued(lib)
+    token = lib.row(removed)["row_token"]
+    store.remove_sources(lib.rid, [removed], "SYNTHETIC removed from the list")
+    with pytest.raises(RevisionConflict):  # it was a source: the stale row is refused, not an unknown record
+        queue.decide(store, lib.rid, removed, "include", None, token)
+    assert lib.code(removed) == "part_without_evidence"
+
+
 def test_a_record_that_was_never_a_source_or_a_legacy_research_is_refused(store):
     lib = Lib(store)
     other = Lib(store, "irrigation")

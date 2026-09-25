@@ -319,6 +319,7 @@ const signalReasons: Record<string, string> = {
   no_seed_with_references: 'no seed with a reference list',
   embedding_off: 'semantic search is off',
   no_stored_similarity: 'no similarity was stored',
+  english_question_missing: 'no English sentence for the built-in model',
 }
 export const signalReasonText = (reason: string | null) => t(reason ? signalReasons[reason] ?? reason : 'no reason recorded')
 // Where each work of an sw research stands in the flow (slice 20, decision 1). "Two agreeing runs" and "you

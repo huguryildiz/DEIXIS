@@ -6,8 +6,9 @@ import json
 import re
 from typing import Any
 
-from deixis.documents import embeddings, pdf
+from deixis.documents import embeddings, local_embedding, pdf
 from deixis.domain.rules import SUGGESTION_CALLS, effective_reviewer, result_applicability
+from deixis.workflow import english_question as english_question_rules
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import flow_counts as flow_rules
 from deixis.workflow import overrides as override_rules
@@ -580,11 +581,36 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     )]
     return {"research": research, "scope": scope_view, "runs": runs, "search_runs": search_runs, "sources": sources,
             "answers": answers, "reportRuns": report_runs, "counts": counts, "last_event_id": last_event,
+            # The semantic search arm for this research's current revision (slice 21); no count of what will be sent.
+            "semantic": semantic_view(store, research_id, scope),
             # The probe set's columns and the probes no arm found (slice 19); null for a legacy research.
             "probes": probe_rules.probes_view(store, research_id, probe) if probe is not None else None,
             # The reviewer the next answer would get: the research's own setting, else the app-wide default.
             "reviewer": {"mode": scope["review_mode"], "connection": reviewer[0] if reviewer else None, "model": reviewer[1] if reviewer else None,
                          "reasoning_effort": reviewer[2] if reviewer else None}}
+
+
+def semantic_view(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, Any]:
+    """The provider semantic search uses, and whether its arm runs for this revision (D103, decision 10).
+
+    `arm`: "off" (no provider), "english_question_missing" (the built-in model, a question not in English and no
+    sentence saved), "not_installed" (the built-in model is chosen but not ready now), else "on". The provider is
+    what Settings say now; a run freezes its own in its step."""
+    provider, model = embeddings.chosen(store.setting("semantic_search"))
+    stored_model = embeddings.Embedder(provider, model).stored_model if provider != "off" and model else None
+    row = store.english_question(research_id, scope["revision"])
+    needs = provider == "builtin" and not english_question_rules.is_english(scope["question"], scope.get("language_hint"))
+    if stored_model is None:
+        arm = "off"
+    elif needs and row is None:
+        arm = "english_question_missing"
+    elif provider == "builtin" and not local_embedding.builtin_available():
+        arm = "not_installed"
+    else:
+        arm = "on"
+    return {"provider": provider, "stored_model": stored_model, "arm": arm,
+            "english_question": {"text": row["text"], "origin": row["origin"]} if row else None,
+            "needs_english_question": needs}
 
 
 def _start_snapshot(store: Store, answer: Any) -> dict[str, Any] | None:

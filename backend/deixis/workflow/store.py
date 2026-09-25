@@ -298,7 +298,7 @@ class Store:
                           "candidate_hits", "candidates", "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
                           "source_similarities", "protocol_records", "human_selection_links", "stage_decisions",
-                          "model_proposals", "record_signal_ranks", "record_flags", "chain_links"):
+                          "model_proposals", "record_signal_ranks", "record_flags", "chain_links", "scope_english_questions"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
             for table in ("runs", "scope_revisions"):
@@ -401,6 +401,7 @@ class Store:
                 (research_id, research["current_scope_revision"]),
             ).fetchone())
             revision = research["current_scope_revision"] + 1
+            current_question = current["question"]
             current.update(revision=revision, question=question.strip(), steering=steering, created_at=now())
             if key_terms is not None and "key_terms" in current:
                 current["key_terms"] = key_terms
@@ -415,8 +416,43 @@ class Store:
                 "UPDATE researches SET current_scope_revision = ?, version = version + 1, title = ?, updated_at = ? WHERE id = ?",
                 (revision, question.strip().splitlines()[0][:160], now(), research_id),
             )
+            # The built-in model's English sentence goes with an unchanged question (slice 21): a revision that only
+            # changed key terms or steering keeps it; a changed question needs a sentence of its own.
+            if current_question == question.strip():
+                self.conn.execute(
+                    "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
+                    " SELECT research_id, ?, text, origin, ? FROM scope_english_questions"
+                    " WHERE research_id = ? AND scope_revision = ?",
+                    (revision, now(), research_id, revision - 1))
             self._event(research_id, "scope_revised", {"scope_revision": revision})
         return revision
+
+    # ---- the built-in model's English sentence (slice 21) ---------------------------------------------
+    def english_question(self, research_id: str, scope_revision: int) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT text, origin, created_at FROM scope_english_questions WHERE research_id = ? AND scope_revision = ?",
+            (research_id, scope_revision)).fetchone()
+        return dict(row) if row else None
+
+    def save_english_question(self, research_id: str, expected_version: int, text: str | None) -> dict[str, Any]:
+        """Write the current revision's English sentence once: the person's `text` (origin 'user'), or with `text`
+        None the revision's own question (origin 'question'). Raises RevisionConflict on a stale version or when the
+        revision already has one. Opens no scope revision; raises the research's version."""
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            revision = research["current_scope_revision"]
+            if self.english_question(research_id, revision) is not None:
+                raise RevisionConflict("This question revision already has its English sentence")
+            origin = "user" if text is not None else "question"
+            if text is None:
+                text = self.scope(research_id, revision)["question"]
+            self.conn.execute(
+                "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at) VALUES (?, ?, ?, ?, ?)",
+                (research_id, revision, text, origin, now()))
+            self.conn.execute("UPDATE researches SET version = version + 1, updated_at = ? WHERE id = ?", (now(), research_id))
+            self._event(research_id, "english_question_saved", {"scope_revision": revision, "origin": origin})
+        return {"scope_revision": revision, "text": text, "origin": origin}
 
     def seed_status(self, research_id: str, scope: dict[str, Any] | None = None) -> str:
         scope = scope or self.scope(research_id)
@@ -506,6 +542,11 @@ class Store:
                 "UPDATE researches SET current_scope_revision = ?, version = version + 1, updated_at = ? WHERE id = ?",
                 (revision, now(), research_id),
             )
+            # The question is unchanged: the built-in model's English sentence goes with it (slice 21).
+            self.conn.execute(
+                "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
+                " SELECT research_id, ?, text, origin, ? FROM scope_english_questions WHERE research_id = ? AND scope_revision = ?",
+                (revision, now(), research_id, scope["revision"]))
             self._event(research_id, "seed_selected", {"scope_revision": revision,
                                                        "source_version_id": source_version_id, "asset_id": asset["id"]})
             return revision
@@ -768,6 +809,21 @@ class Store:
                  **({"http_status": error["http_status"]} if isinstance(error, dict) and error.get("http_status") else {})},
                 row["run_id"],
             )
+
+    def step_output(self, step_id: str) -> Any:
+        """A step's latest stored output, or None."""
+        row = self.conn.execute("SELECT output_json FROM run_steps WHERE id = ?", (step_id,)).fetchone()
+        return json.loads(row[0]) if row and row[0] else None
+
+    def user_upload_assets(self, asset_ids: set[str]) -> set[str]:
+        """Of these files, the ones a person uploaded (slice 21: what semantic search sends of them is counted)."""
+        ids = sorted(asset_ids)
+        found: set[str] = set()
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            found |= {row[0] for row in self.conn.execute(
+                f"SELECT id FROM source_assets WHERE origin = 'user_upload' AND id IN ({','.join('?' * len(chunk))})", chunk)}
+        return found
 
     def set_step_output(self, step_id: str, output: Any) -> None:
         """Add to a finished step's stored output (the compiled queries of a search plan) without a second step event."""

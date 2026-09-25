@@ -365,7 +365,7 @@ def pool_rows(store: Any, research_id: str, revision: int) -> tuple[dict[str, di
 
 def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_words: set[str],
               blocks: dict[str, list[str]], embedding_model: str | None,
-              similarities: dict[str, float]) -> dict[str, Any]:
+              similarities: dict[str, float], off_reason: str | None = None) -> dict[str, Any]:
     """The pure part of `rank_records`: every signal's ranks and the three orders, for these pool rows and seeds.
 
     No store is read and nothing is written, so the keyword ranking and the chain's ranking (D95), which runs this
@@ -390,7 +390,8 @@ def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_
         reasons["graph"] = "no_seed_with_references"
     scored = {row["id"]: similarities[row["id"]] for row in pool if row["id"] in similarities}
     if not embedding_model:
-        reasons["embedding"] = "embedding_off"
+        # Off, or the built-in model with no English sentence for this question (`english_question_missing`, D103).
+        reasons["embedding"] = off_reason or "embedding_off"
     elif not scored:
         reasons["embedding"] = "no_stored_similarity"
     else:
@@ -420,7 +421,8 @@ def rank_rows(ranked: dict[str, Any], keep: set[str] | None = None) -> list[dict
 
 
 def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                 expansion_terms: list[str] | dict[str, list[str]], embedding_model: str | None = None) -> dict[str, Any]:
+                 expansion_terms: list[str] | dict[str, list[str]], embedding_model: str | None = None,
+                 off_reason: str | None = None) -> dict[str, Any]:
     """Rank this revision's records and store every rank; returns the step output.
 
     The pool is the work heads the search offered, the records slice 05 holds back from screening included: they are
@@ -435,7 +437,7 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     verified = [row for svid in verified_seeds(store, research_id, scope)
                 if (row := in_pool.get(svid) or _seed_row(svid, versions)) is not None]
     similarities = store.source_similarities(research_id, revision, embedding_model) if embedding_model else {}
-    ranked = rank_pool(pool, verified, query_words, blocks, embedding_model, similarities)
+    ranked = rank_pool(pool, verified, query_words, blocks, embedding_model, similarities, off_reason)
     ranks, reasons, graph_seeds = ranked["ranks"], ranked["reasons"], ranked["graph_seeds"]
 
     step = store.step(run["id"], "ranking", "code:ranking")

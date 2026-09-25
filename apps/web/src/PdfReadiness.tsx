@@ -8,6 +8,7 @@ import { OCR_LABEL, ocrOffer } from './ocr'
 import { OcrNote } from './OcrNote'
 import { t } from './i18n'
 import { useToast } from './Toast'
+import { UploadedTextNote } from './SemanticNotes'
 
 // Between screening and the answer (D49): how many included works an answer can read in full, a run that collects their
 // open PDFs, and ways to add the rest (a PDF per row, several dropped at once, or the user's Zotero library).
@@ -146,6 +147,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
         {hasAcademic && <button type="button" className="pdf-ready-link" disabled={busy} onClick={onSearchAgain}>{t('Search again')}</button>}
       </div>
       <p className="pdf-ready-hint">{t('Tries each source’s open links, then looks once for another open copy. Nothing is downloaded from paywalled sites.')}</p>
+      <UploadedTextNote semantic={view.semantic} />
     </section>
   }
 
@@ -264,6 +266,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
       {stillMissing > 0 && <span className="pdf-ready-hint is-warn">{plural(stillMissing, '{n} source from abstract only', '{n} sources from abstract only')}</span>}
       {hasAcademic && <button type="button" className="pdf-ready-link" disabled={busy} onClick={onSearchAgain}>{t('Search again')}</button>}
     </div>
+    <UploadedTextNote semantic={view.semantic} />
   </section>
 }
 

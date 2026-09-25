@@ -16,6 +16,7 @@ import { t, uiLocale } from './i18n'
 import { SourceKey } from './SourceKey'
 import './EvidenceTable.css'
 import { Notice } from './Notice'
+import { UploadedTextNote } from './SemanticNotes'
 
 // The Evidence tab (P5 slice 1, D37/D38): a table whose rows are source versions and whose cells are append-only
 // revisions. The screen renders the recorded cell state; only the user's edit or decision changes a cell's value.
@@ -348,6 +349,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
       </span>
     </div>
     {runLine(fillProgress ? [t('{done} / {n} sources', fillProgress)] : suggesting ? [t('From the question and the rows’ abstracts')] : [])}
+    {fillable && <UploadedTextNote semantic={view.semantic} />}
     {cancelDialog}
     {((activeRun && !tableRun) || estimate.sources_without_text > 0 || estimate.sources_beyond_limit > 0) && <p className="evidence-toolbar-note">
       {[activeRun && !tableRun && t('Model actions are off while a run is active.'),

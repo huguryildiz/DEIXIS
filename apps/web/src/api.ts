@@ -40,7 +40,12 @@ export type Step = {
     seed_list?: { source_version_id: string; kind: 'code' | 'user' }[]; new_works?: number; read_by_model?: number
     requests?: { sent?: number; failed?: number; not_reached_seeds?: number }
     // The full-text retrieval summary (D83), also written by a discovery run that fetched beside its screening (17a).
-    fetched?: number } | null
+    fetched?: number
+    // An embedding step (slice 21): the model it froze, what it read from the store, what it still misses, its 429 waits,
+    // the person's uploaded files whose text it sent, and why the built-in model skipped it.
+    provider?: string; stored_model?: string; from_store?: number; missing?: number; query_origin?: string
+    rate_limited_waits?: number; waited_seconds?: number; uploaded_files_attempted?: number; uploaded_passages_attempted?: number; uploaded_files_confirmed?: number; uploaded_passages_confirmed?: number; uploaded_files_unknown?: number; uploaded_passages_unknown?: number; stored_other_dimension?: number; model_installed?: boolean
+    skipped?: boolean; reason?: string } | null
 }
 // What the search plan step reported, as the model wrote it.
 export type SearchPlan = {
@@ -475,6 +480,12 @@ export type ResearchView = {
   probes?: Probes | null
   // The reviewer the next answer gets: the research's own setting, else the app-wide default. model null: no review.
   reviewer: { mode: ReviewMode; connection: string | null; model: string | null; reasoning_effort: string | null }
+  // The semantic search arm for the current revision (slice 21). Carries no count of what will be sent.
+  semantic?: SemanticArm
+}
+export type SemanticArm = {
+  provider: SemanticSearchProvider; stored_model: string | null; arm: 'on' | 'off' | 'english_question_missing' | 'not_installed'
+  english_question: { text: string; origin: 'user' | 'question' } | null; needs_english_question: boolean
 }
 export type ResearchSummary = {
   id: string; title: string; question: string; version: number; source_scope: SourceScope; effort: Effort; last_run_status: RunStatus | null
@@ -534,8 +545,24 @@ export type EquationReader = {
   pdfs: Partial<Record<'read' | 'no_math' | 'failed' | 'reading' | 'pending', number>>
 }
 export type LocalTools = { machine: { chip: string | null; memory_gb: number | null; disk_free_gb: number | null }; tools: LocalTool[] }
-export type SemanticSearchProvider = 'gemini' | 'openai' | 'ollama' | 'lm_studio' | 'off'
-export type SemanticSearchOption = { provider: SemanticSearchProvider; models: string[]; available: boolean; reason: string | null }
+export type SemanticSearchProvider = 'gemini' | 'builtin' | 'openai' | 'ollama' | 'lm_studio' | 'off'
+export type SemanticSearchOption = {
+  provider: SemanticSearchProvider; models: string[]; available: boolean; reason: string | null
+  // The built-in model only (slice 21): why it cannot be chosen, and the last full sha256 check of its files.
+  reason_code?: string | null; last_full_check?: { at: string; passed: boolean } | null
+}
+// The built-in embedding model (slice 21), installed on request under the data directory.
+export type BuiltinEmbeddingJob = {
+  status: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'remove_failed'; step: number; steps: number; step_name: string | null
+  started_at: string | null; finished_at: string | null; pid?: number; bytes_done?: number; bytes_total?: number; output: string
+}
+export type BuiltinEmbedding = { status: 'unsupported_platform' } | {
+  status: 'not_installed' | 'installing' | 'installing_elsewhere' | 'ready' | 'failed' | 'files_do_not_match' | 'removing' | 'remove_failed'
+  installed: boolean; available: boolean; last_full_check: { at: string; passed: boolean } | null; job: BuiltinEmbeddingJob | null
+  model: { name: string; id: string; repository: string; revision: string; package: string }
+  sizes: { runtime_bytes: number; model_bytes: number; python_bytes: number }
+  path: string; size_bytes: number; uv: { available: boolean; reason: string | null; url: string }
+}
 export type SemanticSearch = { provider: SemanticSearchProvider; model: string | null; explicit: boolean; options: SemanticSearchOption[] }
 export type InstitutionalAccess = { status: 'institutional' | 'none' | 'unknown' | 'not_checked'; via?: string; reason?: string }
 // Reading depth of a stored source version: a PDF text layer, an abstract, or bare metadata.
@@ -818,6 +845,13 @@ export const api = {
   semanticSearch: () => request<SemanticSearch>('/api/semantic-search'),
   saveSemanticSearch: (provider: SemanticSearchProvider, model: string | null) =>
     request<SemanticSearch>('/api/semantic-search', json('PUT', { provider, model })),
+  builtinEmbedding: () => request<BuiltinEmbedding>('/api/semantic-search/builtin'),
+  installBuiltinEmbedding: () => request<{ job: BuiltinEmbeddingJob }>('/api/semantic-search/builtin/install', { method: 'POST' }),
+  cancelBuiltinEmbedding: () => request<{ job: BuiltinEmbeddingJob }>('/api/semantic-search/builtin/cancel', { method: 'POST' }),
+  removeBuiltinEmbedding: () => request<BuiltinEmbedding>('/api/semantic-search/builtin', { method: 'DELETE' }),
+  // The built-in model's English sentence for the current question revision, written once (slice 21).
+  saveEnglishQuestion: (id: string, body: { text: string; expected_version: number } | { use_question: true; expected_version: number }) =>
+    request<ResearchView>(`/api/researches/${id}/english-question`, json('PUT', body)),
   tables: (id: string) => request<TableSummary[]>(`/api/researches/${id}/tables`),
   table: (id: string, tableId: string) => request<TableView>(`/api/researches/${id}/tables/${tableId}`),
   // rows omitted: the table starts with the research's included sources; given, those sources in that order, included or not.

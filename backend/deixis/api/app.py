@@ -28,7 +28,7 @@ from deixis.documents import acquisition
 from deixis.documents import embeddings
 from deixis.documents import figures
 from deixis.documents.identity import MATCH_TEXT_CHARS, match_pdf_to_source
-from deixis.documents import math_reader
+from deixis.documents import local_embedding, math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import proxy, skill
@@ -54,7 +54,9 @@ from deixis.workflow import queue as human_queue
 from deixis.workflow import person_reading
 from deixis.workflow import waiting as pdf_waiting
 from deixis.workflow.concurrency import ModelCallLimiter
+from deixis.workflow import english_question
 from deixis.workflow.equations import EquationService, equation_state, equations_to_check
+from deixis.workflow.local_embedding_service import EmbeddingService, ServiceError
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
@@ -131,8 +133,16 @@ class ProxyAddress(BaseModel):
 
 
 class SemanticChoice(BaseModel):
-    provider: Literal["gemini", "openai", "ollama", "lm_studio", "off"]
+    provider: Literal["gemini", "builtin", "openai", "ollama", "lm_studio", "off"]
     model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class EnglishQuestion(BaseModel):
+    """The built-in model's English sentence for the current scope revision (slice 21): the person's `text`, or
+    `use_question` when the question is already English; the server then writes the question itself."""
+    text: str | None = Field(default=None, max_length=english_question.MAX_CHARS)
+    use_question: bool = False
+    expected_version: int
 
 
 class StartRun(BaseModel):
@@ -341,6 +351,7 @@ def create_app(
     extra_hosts: tuple[str, ...] = (),
     trusted_clients: tuple[str, ...] = (),
     equation_service: Any = None,
+    local_embedder: Any = None,
 ) -> FastAPI:
     settings = settings or load_settings()
     ports = {settings.port}
@@ -367,8 +378,15 @@ def create_app(
         package = skill.load_skill_package()
         equations = equation_service if equation_service is not None else EquationService(
             store, math_reader.MathReader(math_reader.runtime_paths(settings.data_dir)), settings.papers_dir)
+        # The built-in embedding model (slice 21): a test injects its own embedder and never starts a real runner.
+        builtin_paths = local_embedding.builtin_paths(settings.data_dir)
+        embedder = local_embedder if local_embedder is not None else local_embedding.LocalEmbedder(builtin_paths)
+        builtin = EmbeddingService(builtin_paths, embedder, http)
+        await builtin.start()  # recovers an install a closed DEIXIS left running, then checks the files in full
+        local_embedding.register(builtin.integrity)
         flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf, equations,
-                                     limiter=ModelCallLimiter(settings.model_concurrency)))
+                                     limiter=ModelCallLimiter(settings.model_concurrency), local_embedder=embedder))
+        app.state.builtin = builtin
         worker = Worker(store, flow, settings.lock_path)
         owner = start_worker and worker.acquire()
         app.state.equations = equations
@@ -404,6 +422,7 @@ def create_app(
                     pass
             worker.release()
             await equations.stop()
+            await builtin.stop()
             if http_client is None:
                 await http.aclose()
             for adapter in adapter_map.values():
@@ -799,7 +818,8 @@ def create_app(
         saved = store_of(request).setting("semantic_search")
         provider, model = embeddings.chosen(saved)
         return {"provider": provider, "model": model, "explicit": saved is not None,
-                "options": embeddings.options(await request.app.state.local_tools.snapshot(refresh))}
+                "options": embeddings.options(await request.app.state.local_tools.snapshot(refresh),
+                                              request.app.state.builtin.option())}
 
     @app.get("/api/semantic-search")
     async def get_semantic_search(request: Request) -> dict[str, Any]:
@@ -809,18 +829,48 @@ def create_app(
     async def put_semantic_search(body: SemanticChoice, request: Request) -> dict[str, Any]:
         """Save the embedding provider for later answers; a provider or model not offered now is refused, never replaced."""
         tools = await request.app.state.local_tools.snapshot(refresh=body.provider in ("ollama", "lm_studio"))
-        option = next(o for o in embeddings.options(tools) if o["provider"] == body.provider)
+        option = next(o for o in embeddings.options(tools, request.app.state.builtin.option()) if o["provider"] == body.provider)
         if not option["available"]:
             raise HTTPException(422, option["reason"])
         model = None
         if body.provider != "off":
-            model = body.model or (option["models"][0] if body.provider in ("gemini", "openai") else None)
+            model = body.model or (option["models"][0] if body.provider in ("gemini", "builtin", "openai") else None)
             if model is None:
                 raise HTTPException(422, "Choose an embedding model")
             if model not in option["models"]:
                 raise HTTPException(422, f"Model '{model}' is not offered by {body.provider}")
         store_of(request).set_setting("semantic_search", {"provider": body.provider, "model": model})
         return await semantic_search_view(request)
+
+    # The built-in embedding model (slice 21, D103): install on request, cancel, remove; POSIX only in this slice.
+    def service_error(exc: ServiceError) -> HTTPException:
+        return HTTPException(409, {"reason": exc.code, "message": str(exc)})
+
+    @app.get("/api/semantic-search/builtin")
+    async def builtin_status(request: Request) -> dict[str, Any]:
+        return await request.app.state.builtin.status()
+
+    @app.post("/api/semantic-search/builtin/install", status_code=202)
+    async def install_builtin(request: Request) -> dict[str, Any]:
+        try:
+            return {"job": await request.app.state.builtin.install()}
+        except ServiceError as exc:
+            raise service_error(exc) from exc
+
+    @app.post("/api/semantic-search/builtin/cancel")
+    async def cancel_builtin(request: Request) -> dict[str, Any]:
+        try:
+            return {"job": await request.app.state.builtin.cancel()}
+        except ServiceError as exc:
+            raise service_error(exc) from exc
+
+    @app.delete("/api/semantic-search/builtin")
+    async def remove_builtin(request: Request) -> dict[str, Any]:
+        try:
+            await request.app.state.builtin.remove()
+        except ServiceError as exc:
+            raise service_error(exc) from exc
+        return await request.app.state.builtin.status()
 
     # The institution's proxy address (slice 18a): links open through it in the person's browser; DEIXIS never
     # sends a request through it. Empty means links open directly.
@@ -856,6 +906,30 @@ def create_app(
     async def revise_scope(research_id: str, body: ScopeRevision, request: Request) -> dict[str, Any]:
         store = store_of(request)
         store.revise_scope(research_id, body.expected_version, body.question, body.steering, body.key_terms)
+        return research_view(store, research_id)
+
+    @app.put("/api/researches/{research_id}/english-question")
+    async def save_english_question(research_id: str, body: EnglishQuestion, request: Request) -> dict[str, Any]:
+        """The English sentence the built-in model reads for the current scope revision, written once (slice 21).
+
+        No scope revision is opened and no decision goes stale. With `use_question` the server writes the question as
+        it is, with no language check: the way out when the language rule reads an English question as not English."""
+        store = store_of(request)
+        scope = store.scope(research_id)
+        if english_question.is_english(scope["question"], scope.get("language_hint")):
+            # The built-in model reads an English question as written and would never read the sentence (D103).
+            raise HTTPException(422, "The question is already read as English; the built-in model uses it as written")
+        if body.use_question:
+            if body.text is not None:
+                raise HTTPException(422, "Send either the sentence or use_question, not both")
+            store.save_english_question(research_id, body.expected_version, None)
+        else:
+            text = " ".join((body.text or "").split())
+            if not text:
+                raise HTTPException(422, "Write one English sentence")
+            if not english_question.is_english(text):
+                raise HTTPException(422, "The sentence does not read as English")
+            store.save_english_question(research_id, body.expected_version, text)
         return research_view(store, research_id)
 
     @app.post("/api/researches/{research_id}/seed")

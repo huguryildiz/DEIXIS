@@ -4,6 +4,7 @@ The embedding endpoints are mocked with keyword-derived vectors, so these tests 
 """
 
 import asyncio
+import hashlib
 import json
 from types import SimpleNamespace
 
@@ -97,9 +98,25 @@ def test_semantic_ranking_matches_across_languages_and_embeds_each_passage_once(
 
     first = rank(store, rid, svid, run, handler)
     assert "Depth-based routing" in first[0]["text"]
-    assert batches == [["RETRIEVAL_DOCUMENT", "RETRIEVAL_DOCUMENT"], ["RETRIEVAL_QUERY"]]
+    # Slice 21 (D103, decision 4): the query is embedded first, then the passages batch by batch; the step output
+    # also carries the frozen identity, the query's origin and the wait and upload counts.
+    assert batches == [["RETRIEVAL_QUERY"], ["RETRIEVAL_DOCUMENT", "RETRIEVAL_DOCUMENT"]]
     semantic_step = research_view(store, rid)["runs"][0]["steps"][0]
-    assert semantic_step["output"] == {"model": "gemini-embedding-2", "passages": 2, "embedded": 2}
+    question = store.scope(rid)["question"]
+    upload = store.conn.execute("SELECT id FROM source_assets WHERE source_version_id = ?", (svid,)).fetchone()[0]
+    assert semantic_step["output"] == {
+        "model": "gemini-embedding-2", "passages": 2, "embedded": 2,
+        "provider": "gemini", "stored_model": "gemini-embedding-2", "from_store": 0, "missing": 0,
+        "query_origin": "question", "query_sha256": "sha256:" + hashlib.sha256(question.encode()).hexdigest(),
+        "rate_limited_waits": 0, "waited_seconds": 0.0,
+        # the person's uploaded PDF: a request carried its text, and vectors came back for both passages
+        "uploaded_file_ids": [upload], "uploaded_confirmed_file_ids": [upload],
+        "uploaded_passage_ids": sorted(p["id"] for p in store.passages_for(svid)),
+        "uploaded_files_attempted": 1, "uploaded_passages_attempted": 2,
+        "uploaded_files_confirmed": 1, "uploaded_passages_confirmed": 2, "dimensions": 2,
+        "uploaded_pending_file_ids": [], "uploaded_pending_passage_ids": [], "stored_other_dimension": 0,
+        "uploaded_unknown_file_ids": [], "uploaded_unknown_passage_ids": [], "uploaded_files_unknown": 0, "uploaded_passages_unknown": 0,
+    }
     batches.clear()
     rank(store, rid, svid, run, handler)
     assert batches == [["RETRIEVAL_QUERY"]]  # stored passage vectors are reused

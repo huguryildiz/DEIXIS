@@ -80,12 +80,17 @@ function startedText(iso: string) {
 const secondsBetween = (from: string, to: number) => Math.max(0, Math.round((to - Date.parse(from)) / 1000))
 const present = (values: (string | null)[]) => values.filter((v): v is string => Boolean(v)).sort()
 const stepSeconds = (s?: Step) => (s?.started_at && s.finished_at ? secondsBetween(s.started_at, Date.parse(s.finished_at)) : null)
-// An embedding model is stored bare for Gemini and as "connection:model" for the others.
-const EMBEDDING_CONNECTIONS = new Set(['openai', 'ollama', 'lm_studio'])
+// An embedding model is stored bare for Gemini and as "connection:model" for the others. The built-in model (slice 21)
+// is named for where it runs, not by its file name.
+const EMBEDDING_CONNECTIONS = new Set(['builtin', 'openai', 'ollama', 'lm_studio'])
 const embeddingOf = (stored: string) => {
   const [head, ...rest] = stored.split(':')
+  if (head === 'builtin') return { connection: 'builtin', model: rest[0].split('@')[0] }
   return EMBEDDING_CONNECTIONS.has(head) ? { connection: head, model: rest.join(':') } : { connection: 'gemini', model: stored }
 }
+// A 429 the embedding step waited out stays visible (slice 21).
+const waitedText = (output: Step['output']) => output?.rate_limited_waits ? t('rate limited, waited {s} s', { s: Math.round(output.waited_seconds ?? 0) }) : ''
+const embeddingServices: Record<string, string> = { gemini: 'Google', openai: 'OpenAI' }
 const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unknown'
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
@@ -271,11 +276,27 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
       }
       case 'semantic': {
         if (state === 'running') return attemptText
-        if (state === 'attention') return t('Unavailable · continued with keyword search')
-        const output = group.find(s => s.status === 'succeeded')?.output
-        return output?.passages !== undefined && output.embedded !== undefined
-          ? t('{passages} passages ranked · {embedded} newly embedded', { passages: output.passages, embedded: output.embedded })
-          : ''
+        const step = group.find(s => s.status === 'succeeded' || s.status === 'partial') ?? group[group.length - 1]
+        const builtin = step?.kind.startsWith('embedding:builtin:')
+        const output = step?.output
+        const service = output ? embeddingServices[output.provider ?? embeddingOf(output.model ?? '').connection] : undefined
+        // Shown on every finished step, failed or partial too: which uploaded text went out, and which may have.
+        // Issued with no vectors back, or cut off before its reply (whether the request even started is then not known).
+        const unconfirmed = (output?.uploaded_passages_attempted ?? 0) - (output?.uploaded_passages_confirmed ?? 0)
+        const uploads = service ? [
+          output?.uploaded_files_confirmed ? plural(output.uploaded_files_confirmed, 'Text of {n} uploaded PDF was sent to {service}', 'Text of {n} uploaded PDFs was sent to {service}', { service }) : '',
+          unconfirmed ? plural(unconfirmed, '{n} uploaded passage went in a request that brought no vectors back; whether {service} received it is not known', '{n} uploaded passages went in a request that brought no vectors back; whether {service} received them is not known', { service }) : '',
+          output?.uploaded_passages_unknown ? plural(output.uploaded_passages_unknown, '{n} uploaded passage was being sent when the step stopped; whether {service} received it is not known', '{n} uploaded passages were being sent when the step stopped; whether {service} received them is not known', { service }) : '',
+        ] : []
+        if (state === 'attention') return [t(output?.stored_other_dimension ? 'Stored vectors differ in size from the question’s · continued with keyword search' : builtin ? 'The built-in model was not available · continued with keyword search' : 'Unavailable · continued with keyword search'), waitedText(output ?? null), ...uploads].filter(Boolean).join(' · ')
+        if (output?.skipped) return t(output.reason === 'column_not_english' ? 'Not used: the column is not in English' : 'Not used: no English sentence for the built-in model')
+        if (output?.passages === undefined || output.embedded === undefined) return ''
+        return [step?.status === 'partial'
+          ? t('{n} of {m} passages ranked by similarity · the rest by keyword search', { n: (output.from_store ?? 0) + output.embedded, m: output.passages })
+          : t('{passages} passages ranked · {embedded} newly embedded', { passages: output.passages, embedded: output.embedded }),
+        waitedText(output),
+        ...uploads,
+        ].filter(Boolean).join(' · ')
       }
       case 'answer': {
         if (state !== 'done') return attemptText
@@ -350,14 +371,32 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
           changed ? plural(changed, 'You changed {n} proposal', 'You changed {n} proposals') : '',
         ].filter(Boolean)
         const similarityModel = similarity ? embeddingOf(similarity.output?.model ?? similarity.kind.slice('similarity:'.length)) : null
+        // What the similarity step gave the ranking (slice 21): scores it made, scores from an earlier run it read,
+        // part of the pool when a batch failed, or nothing when the model was not available.
+        const simOut = similarity?.output ?? null
+        const fromStore = simOut?.from_store ?? 0
+        const scoredCount = fromStore + (simOut?.embedded ?? 0)
+        const simTotal = simOut?.sources ?? 0
+        const builtinSim = similarityModel?.connection === 'builtin'
+        const similarityScored = similarity?.status === 'succeeded' || similarity?.status === 'partial' || fromStore > 0
+        const similarityText = !similarity ? '' : [
+          similarity.status === 'succeeded'
+            ? simOut?.embedded === 0 && fromStore > 0
+              ? builtinSim && simOut?.model_installed === false  // what the step recorded when it ran, not today's setting
+                ? plural(fromStore, '{n} similarity from an earlier run; the built-in model was not installed when this step ran', '{n} similarities from an earlier run; the built-in model was not installed when this step ran')
+                : plural(fromStore, '{n} similarity from an earlier run', '{n} similarities from an earlier run')
+              : plural(simTotal || (simOut?.sources ?? 0), 'Similarity to the question: {n} source scored', 'Similarity to the question: {n} sources scored')
+            : scoredCount > 0 ? t('{n} of {m} records scored', { n: scoredCount, m: simTotal })
+              : builtinSim ? t('The built-in model was not available; the records were ordered without the embedding')
+                : t('Similarity unavailable; ordered by search position'),
+          waitedText(simOut),
+        ].filter(Boolean).join(' · ')
         const timed = (step?: Step) => { const s = stepSeconds(step); return s === null ? null : <time>{durationText(s)}</time> }
         // One line per finding, each with the time its step took.
         return <>
           {similarity && similarityModel && <p className="chat-report-line">
-            <span>{similarity.status === 'succeeded'
-              ? <>{plural(similarity.output?.sources ?? 0, 'Similarity to the question: {n} source scored', 'Similarity to the question: {n} sources scored')}
-                <span className="chat-run-model chat-report-model"><ConnectionIcon id={similarityModel.connection} /><span className="sr-only">{connectionName(similarityModel.connection)} · </span>{similarityModel.model}</span></>
-              : t('Similarity unavailable; ordered by search position')}</span>
+            <span>{similarityText}
+              {similarityScored && <span className="chat-run-model chat-report-model"><ConnectionIcon id={similarityModel.connection} /><span className="sr-only">{connectionName(similarityModel.connection)} · </span>{builtinSim ? t('This computer · built-in') : similarityModel.model}</span>}</span>
             {timed(similarity)}
           </p>}
           {lines.length > 0 && <p className="chat-report-line"><span>{lines.join(' · ')}</span></p>}
@@ -410,7 +449,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const embeddingStep = steps.find(s => s.kind.startsWith('embedding:'))
   const embeddingStoredModel = embeddingStep?.kind.slice('embedding:'.length) ?? ''
   const { connection: embeddingConnection, model: embeddingModel } = embeddingOf(embeddingStoredModel)
-  const embeddingProviders: Record<string, string> = { gemini: 'Gemini', openai: 'OpenAI', ollama: 'Ollama', lm_studio: 'LM Studio' }
+  const embeddingProviders: Record<string, string> = { gemini: 'Gemini', builtin: 'This computer · built-in', openai: 'OpenAI', ollama: 'Ollama', lm_studio: 'LM Studio' }
   const agents: Partial<Record<PhaseKey, { role: string; connection: string; model: string | null; effort: string | null }>> = {
     plan: literature, screen: literature,
     semantic: embeddingStep ? { role: embeddingProviders[embeddingConnection], connection: embeddingConnection, model: embeddingModel, effort: null } : undefined,

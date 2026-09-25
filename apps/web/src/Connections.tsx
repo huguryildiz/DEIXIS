@@ -3,11 +3,11 @@ import { BookMarked, Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, Scan
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
-import { api, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type SemanticSearch, type SemanticSearchProvider } from './api'
+import { api, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { ConnectionIcon } from './connectionIcons'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
-import { t } from './i18n'
+import { t, uiLocale } from './i18n'
 import { connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
 import { Notice } from './Notice'
 
@@ -278,6 +278,69 @@ function ModelCatalogue({ model }: { model: ModelHealth }) {
   </>
 }
 
+// The built-in embedding model (slice 21): disk sizes before the download, the job's steps while it runs, then ready
+// with the time of the last full file check. Downloaded, checked and ready are told apart; sizes are disk sizes.
+const builtinSteps: Record<string, string> = {
+  environment: 'Creating its Python environment…', package: 'Installing fastembed…',
+  model_files: 'Downloading the model files…', start_check: 'Checking that the model starts and answers…',
+}
+const aboutMb = (bytes: number) => Math.round(bytes / 1e6)
+
+function BuiltinEmbeddingPanel({ builtin, dark, onChanged }: { builtin: BuiltinEmbedding; dark: boolean; onChanged: () => Promise<void> }) {
+  const [confirm, setConfirm] = useState<'install' | 'remove' | null>(null)
+  const [busy, setBusy] = useState(false)
+  const toast = useToast()
+  function run(action: () => Promise<unknown>) {
+    setBusy(true)
+    action().then(() => { setConfirm(null); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+  }
+  if (builtin.status === 'unsupported_platform') return <p className="local-tool-note">{t('The built-in model is not available on Windows yet')}</p>
+  const { sizes, job } = builtin
+  const running = builtin.status === 'installing'
+  const failed = !running && job?.status === 'failed' && builtin.status !== 'ready'
+  const sizeVars = { total: aboutMb(sizes.runtime_bytes + sizes.model_bytes), runtime: aboutMb(sizes.runtime_bytes), model: aboutMb(sizes.model_bytes), python: aboutMb(sizes.python_bytes) }
+  const checked = builtin.last_full_check ? new Date(builtin.last_full_check.at).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' }) : null
+  const canDownload = !running && builtin.status !== 'ready' && builtin.status !== 'installing_elsewhere' && builtin.status !== 'removing'
+  const stepName = job ? t(builtinSteps[job.step_name ?? ''] ?? '') : ''
+  return <div className="semantic-builtin">
+    {builtin.status === 'ready' && <span className="status-chip">{checked ? t('Ready · files checked {time}', { time: checked }) : t('Ready')}</span>}
+    {builtin.status === 'ready' && <p className="local-tool-note">{t('Files checked at install and each time the model starts.')}</p>}
+    {builtin.status === 'files_do_not_match' && <p className="local-tool-error">{t('The model files do not match the checked copy, so the model is not used. Download them again.')}</p>}
+    {builtin.status === 'installing_elsewhere' && <p className="local-tool-note">{t('Being downloaded by another DEIXIS process.')}</p>}
+    {builtin.status === 'removing' && <p className="local-tool-note">{t('Being removed…')}</p>}
+    {builtin.status === 'remove_failed' && <>
+      <p className="local-tool-error">{t('Removal did not finish: some files could not be deleted.')}</p>
+      {(job?.output ?? '').split('\n').filter(Boolean).slice(0, 4).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
+    </>}
+    {canDownload && <p className="local-tool-note">{t('Needs about {total} MB of disk (runtime about {runtime} MB installed, model {model} MB), plus about {python} MB if uv has to download Python 3.12, plus uv’s download cache (not measured).', sizeVars)}</p>}
+    {running && job && <p className="local-tool-note local-tool-progress-head" role="status"><LoaderCircle size={14} className="chat-spin" aria-hidden />
+      {t('Step {step} of {steps}: {what}', { step: job.step, steps: job.steps, what: stepName })}
+      {job.step_name === 'model_files' && job.bytes_total ? ` ${t('{done} of {total} MB', { done: aboutMb(job.bytes_done ?? 0), total: aboutMb(job.bytes_total) })}` : ''}</p>}
+    {failed && job && <>
+      <p className="local-tool-error">{t('Download failed at step {step} of {steps}: {what}', { step: job.step, steps: job.steps, what: stepName })}</p>
+      {errorLines(job.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
+    </>}
+    {!running && job?.status === 'cancelled' && builtin.status !== 'ready' && <p className="local-tool-note">{t('Download cancelled.')}</p>}
+    {job?.output && (failed || running) && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{job.output}</pre></details>}
+    {canDownload && (builtin.uv.available
+      ? <div className="actions"><Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirm('install')}>{t(failed || builtin.status === 'files_do_not_match' ? 'Try again' : 'Download')}</Button></div>
+      : <p className="local-tool-note">{builtin.uv.reason}<br /><a href={builtin.uv.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
+    {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => run(api.cancelBuiltinEmbedding)}>{t('Cancel download')}</Button></div>}
+    {(builtin.status === 'ready' || builtin.status === 'remove_failed') && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</Button></div>}
+    <ConfirmDialog open={confirm === 'install'} dark={dark} neutral title={t('Download the built-in model?')}
+      description={t('It takes about {total} MB of disk in the DEIXIS data folder: the runtime (about {runtime} MB installed) and the model files ({model} MB), plus about {python} MB if uv has to download Python 3.12, and uv’s download cache (not measured). The model is downloaded once, from Hugging Face. For semantic search, no text leaves the computer.', sizeVars)}
+      context={builtin.path} confirmLabel={t('Download')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.installBuiltinEmbedding)} onOpenChange={open => setConfirm(open ? 'install' : null)} />
+    <ConfirmDialog open={confirm === 'remove'} dark={dark} title={t('Remove the built-in model?')}
+      description={t('Its environment and model files are deleted. Similarities it already stored stay and may still be used for the same question revision; records not yet scored are ranked without it until you download it again.')}
+      confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.removeBuiltinEmbedding)} onOpenChange={open => setConfirm(open ? 'remove' : null)} />
+  </div>
+}
+
+function GeminiKeyPath() {
+  const [before, after] = t('Get a free key: sign in at {link}, create a key, paste it under Cloud models → Gemini.').split('{link}')
+  return <p className="local-tool-note">{before}<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a>{after}</p>
+}
+
 export function ConnectionsTab({ dark }: { dark: boolean }) {
   const [data, setData] = useState<Connections | null>(null)
   const [busy, setBusy] = useState(false)
@@ -296,6 +359,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
   const [semProvider, setSemProvider] = useState<SemanticSearchProvider | null>(null)
   const [semModel, setSemModel] = useState<string | null>(null)
   const [semBusy, setSemBusy] = useState(false)
+  const [builtin, setBuiltin] = useState<BuiltinEmbedding | null>(null)
   const toast = useToast()
 
   const load = useCallback((refresh: boolean) => {
@@ -307,10 +371,17 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
   const loadReader = useCallback(() => api.equationReader().then(setReader).catch((e: Error) => { setToolsError(e.message) }), [])
   const loadOcr = useCallback(() => api.ocr().then(setOcrTool).catch((e: Error) => { setToolsError(e.message) }), [])
   const loadSemantic = useCallback(() => { api.semanticSearch().then(result => { setSemantic(result); setSemError('') }).catch((e: Error) => setSemError(e.message)) }, [])
+  const loadBuiltin = useCallback(() => api.builtinEmbedding().then(setBuiltin).catch((e: Error) => setSemError(e.message)), [])
   useEffect(() => { load(false) }, [load])
   useEffect(() => { loadCredentials() }, [loadCredentials])
   useEffect(() => { loadTools(false) }, [loadTools])
   useEffect(() => { loadSemantic() }, [loadSemantic])
+  useEffect(() => { void loadBuiltin() }, [loadBuiltin])
+  useEffect(() => {
+    if (builtin?.status !== 'installing' && builtin?.status !== 'installing_elsewhere' && builtin?.status !== 'removing') return
+    const timer = window.setInterval(() => { void loadBuiltin().then(() => loadSemantic()) }, 1500)
+    return () => window.clearInterval(timer)
+  }, [builtin, loadBuiltin, loadSemantic])
   useEffect(() => { void loadReader() }, [loadReader])
   useEffect(() => { void loadOcr() }, [loadOcr])
   useEffect(() => {
@@ -393,7 +464,21 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
   const machine = tools?.machine
   const hasMachineInfo = machine && (machine.chip || machine.memory_gb != null || machine.disk_free_gb != null)
 
-  const semanticLabels: Record<SemanticSearchProvider, string> = { gemini: 'Gemini', openai: 'OpenAI', ollama: t('This computer · Ollama'), lm_studio: t('This computer · LM Studio'), off: t('Off · keyword search only') }
+  const semanticLabels: Record<SemanticSearchProvider, string> = { gemini: 'Gemini', builtin: t('This computer · built-in'), openai: 'OpenAI', ollama: t('This computer · Ollama'), lm_studio: t('This computer · LM Studio'), off: t('Off · keyword search only') }
+  // What a choice says under its row (slice 21): Gemini's key path and languages, the built-in model's place and state.
+  const optionBody = (opt: SemanticSearchOption) => {
+    if (opt.provider === 'gemini') return <>
+      <p className="local-tool-note">{t('Reads the question in any language. Needs a Google AI Studio key; a free key works.')}</p>
+      {!opt.available && <GeminiKeyPath />}
+    </>
+    if (opt.provider === 'builtin') return <>
+      <p className="local-tool-note">{t('Runs on this computer. No key, no account. For semantic search, no text leaves the computer; the model you chose for the research steps still receives what it receives today. English only: a research whose question is not in English needs one English sentence.')}</p>
+      <p className="local-tool-note">{t('Measured on one Apple M1 Pro: 1,369 records took 51 seconds, 6,696 records about 4 minutes. Other computers were not measured.')}</p>
+      {builtin && <BuiltinEmbeddingPanel builtin={builtin} dark={dark} onChanged={async () => { await loadBuiltin(); loadSemantic() }} />}
+    </>
+    return null
+  }
+
   const needsModel = (p: SemanticSearchProvider | null) => p === 'ollama' || p === 'lm_studio'
   function chooseSemantic(p: SemanticSearchProvider, models: string[]) { setSemProvider(p); setSemModel(needsModel(p) ? (models[0] ?? null) : null) }
   function saveSemantic() {
@@ -458,17 +543,24 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
         <div className="semantic-choices" role="radiogroup" aria-label={t('Semantic search provider')}>
           {semantic.options.map(opt => {
             const checked = semProvider === opt.provider
-            return <label className={`semantic-choice ${!opt.available ? 'is-disabled' : ''}`} key={opt.provider}>
-              <input type="radio" name="semantic-provider" checked={checked} disabled={!opt.available} onChange={() => chooseSemantic(opt.provider, opt.models)} />
-              {opt.provider === 'off' ? <TextSearch className="semantic-off-icon" size={16} aria-hidden /> : <ConnectionIcon id={opt.provider} />}
-              <strong>{semanticLabels[opt.provider]}</strong>
-              {!needsModel(opt.provider) && opt.models[0] && <code className="semantic-model-name">{opt.models[0]}</code>}
-              {opt.available ? <span className="status-chip">{t('Available')}</span> : <span className="semantic-reason">{t(opt.reason ?? '')}</span>}
-              {needsModel(opt.provider) && checked && <select className="semantic-model" value={semModel ?? ''} onChange={e => setSemModel(e.target.value)}>{opt.models.map(m => <option key={m} value={m}>{m}</option>)}</select>}
-            </label>
+            const body = optionBody(opt)
+            return <div className="semantic-option" key={opt.provider}>
+              <label className={`semantic-choice ${!opt.available ? 'is-disabled' : ''}`}>
+                <input type="radio" name="semantic-provider" checked={checked} disabled={!opt.available} onChange={() => chooseSemantic(opt.provider, opt.models)} />
+                {opt.provider === 'off' ? <TextSearch className="semantic-off-icon" size={16} aria-hidden /> : <ConnectionIcon id={opt.provider} />}
+                <strong>{semanticLabels[opt.provider]}</strong>
+                {!needsModel(opt.provider) && opt.models[0] && <code className="semantic-model-name">{opt.models[0]}</code>}
+                {opt.available ? <span className="status-chip">{t('Available')}</span> : <span className="semantic-reason">{t(opt.reason ?? '')}</span>}
+                {needsModel(opt.provider) && checked && <select className="semantic-model" value={semModel ?? ''} onChange={e => setSemModel(e.target.value)}>{opt.models.map(m => <option key={m} value={m}>{m}</option>)}</select>}
+              </label>
+              {body && <div className="semantic-option-body">{body}</div>}
+            </div>
           })}
         </div>
-        {semProvider && <p className="legacy-mini-note">{semProvider === 'off' ? t('Sources get no similarity score; passages are ranked by keyword match only. No text is sent anywhere.') : semProvider === 'gemini' ? t('Passage text is sent to {service}.', { service: 'Google' }) : semProvider === 'openai' ? t('Passage text is sent to {service}.', { service: 'OpenAI' }) : t('Passage text stays on this computer.')}</p>}
+        {semProvider && <p className="legacy-mini-note">{semProvider === 'off' ? t('Sources get no similarity score; passages are ranked by keyword match only. No text is sent anywhere.')
+          : semProvider === 'gemini' ? t('Passage text is sent to Google. If your key is on Google’s free tier, Google may use the text you send to improve its products. DEIXIS cannot tell which tier your key is on.')
+          : semProvider === 'openai' ? t('Passage text is sent to {service}.', { service: 'OpenAI' })
+          : semProvider === 'builtin' ? t('For semantic search, no text leaves the computer.') : t('Passage text stays on this computer.')}</p>}
         <div className="actions"><Button size="sm" disabled={semBusy || !semProvider || (needsModel(semProvider) && !semModel)} onClick={saveSemantic}>{t(semBusy ? 'Saving…' : 'Save')}</Button></div>
       </>}
     </section>

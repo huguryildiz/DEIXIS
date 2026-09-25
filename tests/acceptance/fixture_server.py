@@ -16,6 +16,10 @@ of the A–I records; every other case leaves it unset and gets the server it al
 J and M, slice 20) adds one work both reading runs include, for the audit sample and an sw answer. `DEIXIS_FIXTURE_WAITING=on`
 (case K, slice 18a) adds to those one work no route has a PDF for, so the retrieval leaves it waiting for the person's.
 Its file's reading takes a few seconds a call (case L, slice 18b), so the view can be seen while the model reads.
+`DEIXIS_FIXTURE_BUILTIN_EMBEDDING=fake` (case N, slice 21) gives the built-in embedding model a fake install: a fake
+`uv` in the data directory, SYNTHETIC model files served as the pinned revision, and the fake runner, so Settings can
+download, show the steps, check, choose and remove the model with no network, no uv and no fastembed. With
+`GEMINI_API_KEY` set the Gemini embedding endpoint answers too.
 """
 
 from __future__ import annotations
@@ -310,6 +314,43 @@ class ScriptedCodex:
         pass
 
 
+def fake_builtin(data_dir: Path):
+    """Case N (slice 21): a fake uv on PATH, SYNTHETIC model files behind the pinned revision's address, the fake
+    runner, and Gemini's embedding endpoint; every other request goes to the OpenAlex mock."""
+    import builtin_helpers
+    from deixis.documents import local_embedding
+
+    class Patch:
+        def setattr(self, target, name, value):
+            setattr(target, name, value)
+
+    bodies = builtin_helpers.fake_manifest(Patch())
+    tools = data_dir.parent / f"{data_dir.name}-fake-uv"
+    builtin_helpers.write_fake_uv(tools)
+    os.environ["PATH"] = f"{tools}:{os.environ.get('PATH', '')}"
+    os.environ.setdefault("FAKE_UV_RECORD", str(tools / "calls.jsonl"))
+    os.environ.setdefault("FAKE_UV_SLEEP", "1.5")  # each uv step takes a moment, so the steps can be seen
+    os.environ.setdefault("FAKE_RUNNER", "ok")
+
+    failing: set[bool] = set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "huggingface.co":
+            return httpx.Response(200, content=bodies[request.url.path.rsplit("/", 1)[-1]])
+        if request.url.host == "generativelanguage.googleapis.com":
+            rows = json.loads(request.content)["requests"]
+            # `[embed-fails]` in the question: once its query is embedded, document batches answer HTTP 500.
+            if rows[0]["taskType"] == "RETRIEVAL_QUERY" and "[embed-fails]" in rows[0]["content"]["parts"][0]["text"]:
+                failing.add(True)
+            elif rows[0]["taskType"] == "RETRIEVAL_DOCUMENT" and failing:
+                return httpx.Response(500, json={"error": {"message": "SYNTHETIC embedding failure"}})
+            return httpx.Response(200, json={"embeddings": [{"values": [1.0, float(i % 3)]} for i, _ in enumerate(rows)]})
+        return openalex(request)
+
+    paths = local_embedding.builtin_paths(data_dir)
+    return handler, builtin_helpers.fake_embedder(paths)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, required=True)
@@ -339,8 +380,12 @@ def main() -> None:
                         # it (D83) is not part of the case and would open a second run under it. Case J reads.
                         fulltext_fetch="auto" if QUEUE_MODE else "off",
                         fulltext_adjudication="auto" if QUEUE_MODE else "off")
+    handler, local_embedder = openalex, None
+    if os.environ.get("DEIXIS_FIXTURE_BUILTIN_EMBEDDING") == "fake":
+        handler, local_embedder = fake_builtin(args.data_dir)
     app = create_app(settings, adapters={"codex": ScriptedCodex()},
-                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(openalex)), fetcher=fetch)
+                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fetch,
+                     local_embedder=local_embedder)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", timeout_graceful_shutdown=1)
 
 

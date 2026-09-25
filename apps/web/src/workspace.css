@@ -897,6 +897,15 @@ button.chat-step-title svg{color:var(--muted)}
 .semantic-choices{display:flex;flex-direction:column;border:1px solid var(--strong-line);border-radius:7px;overflow:hidden}
 .semantic-choice{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:11px 13px;border-bottom:1px solid var(--line);cursor:pointer}
 .semantic-choice:last-child{border-bottom:0}
+.semantic-option{border-bottom:1px solid var(--line)}
+.semantic-option:last-child{border-bottom:0}
+.semantic-option>.semantic-choice{border-bottom:0}
+/* A choice's notes and controls sit under its name, clear of the radio and the icon (slice 21). */
+.semantic-option-body{display:grid;gap:4px;padding:0 13px 11px 49px}
+.semantic-option-body .actions{margin-top:4px}
+.semantic-builtin{display:grid;gap:4px}
+.semantic-builtin .status-chip{justify-self:start;margin-top:2px}
+@media(max-width:600px){.semantic-option-body{padding-left:13px}}
 .semantic-choice input{accent-color:var(--accent);margin:0}
 .semantic-choice.is-disabled{cursor:not-allowed;color:var(--muted)}
 .semantic-reason{font-size:11px;color:var(--muted)}
@@ -1230,3 +1239,11 @@ button.chat-step-title svg{color:var(--muted)}
 .queue-panel .audit-answered .queue-link{padding:0;font-size:12.5px}
 .source-focus{margin:8px 0 4px;color:var(--muted);font-size:12.5px}
 .source-focus button{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+/* Semantic search notes in a research (slice 21): the conditional line under the answer and table buttons, the
+   built-in model's English sentence and its form at the top of the Sources tab. */
+.semantic-upload-note{margin:6px 0 0;max-width:76ch;color:var(--muted);font-size:12px;line-height:1.5}
+.english-question-line{margin:0 0 10px;max-width:76ch;color:var(--muted);font-size:12.5px;line-height:1.5;overflow-wrap:anywhere}
+.english-question{display:grid;gap:8px;margin:0 0 14px;max-width:76ch}
+.english-question form{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.english-question input{flex:1 1 280px;min-width:0;height:32px;padding:0 11px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface);color:var(--ink);font-family:inherit;font-size:13px}
+.english-question input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}

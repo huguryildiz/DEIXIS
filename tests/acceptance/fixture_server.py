@@ -12,7 +12,8 @@ queue work by a script, so case J finds one row of each kind it needs), "[read-f
 person's file of case L answers nothing usable, so the file is not read until the person asks again).
 
 `DEIXIS_FIXTURE_QUEUE=on` (case J, slice 17) switches on retrieval and reading and serves the queue works below instead
-of the A–I records; every other case leaves it unset and gets the server it always had. `DEIXIS_FIXTURE_WAITING=on`
+of the A–I records; every other case leaves it unset and gets the server it always had. `DEIXIS_FIXTURE_AUDIT=on` (cases
+J and M, slice 20) adds one work both reading runs include, for the audit sample and an sw answer. `DEIXIS_FIXTURE_WAITING=on`
 (case K, slice 18a) adds to those one work no route has a PDF for, so the retrieval leaves it waiting for the person's.
 Its file's reading takes a few seconds a call (case L, slice 18b), so the view can be seen while the model reads.
 """
@@ -121,6 +122,27 @@ WAITING_PDF_PAGES = ["SYNTHETIC Journal of Relay Studies\nSYNTHETIC release timi
                      "https://doi.org/10.5555/q955", "SYNTHETIC second page of the publisher file."]
 if QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_WAITING") == "on":
     QUEUE_WORKS = [*QUEUE_WORKS, WAITING_WORK]
+# Cases J and M (slice 20): one more work both reading runs include with quotes found on the page, so the audit
+# sample's group of agreeing includes has a row and an sw answer has a work to use. Every sentence is SYNTHETIC.
+AGREE_SENTENCES = ("We propose a release window rule that paces each molecule burst across the relay chain.",
+                   "Results show that the release window rule keeps the relay chain within its molecule budget.")
+AGREE_WORK = work("W956", "SYNTHETIC release window pacing along molecular relay chains",
+                  "A release window rule paces molecule bursts along relay chains.", "publishedVersion",
+                  {"pdf_url": "https://fixture.example/q956.pdf", "version": "publishedVersion"}, "https://doi.org/10.5555/q956")
+# And one work off the question's topic, which code leaves out at the abstract stage: the audit sample's abstract
+# group has a row to find in the source list.
+# A second, distinct work (its own DOI, another abstract) with the same title, so the audit card must find its work by
+# id and not by title.
+OFF_TOPIC_WORK = work("W957", "SYNTHETIC hospital visiting hours after staff feedback",
+                      "Visiting hours on hospital wards were changed after staff feedback.", doi="https://doi.org/10.5555/q957")
+OFF_TOPIC_TWIN = work("W958", "SYNTHETIC hospital visiting hours after staff feedback",
+                      "A second ward study compared visiting hours before and after staff feedback.",
+                      doi="https://doi.org/10.5555/q958")
+if QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_AUDIT") == "on":
+    QUEUE_WORKS = [*QUEUE_WORKS, AGREE_WORK, OFF_TOPIC_WORK, OFF_TOPIC_TWIN]
+    QUEUE_PDFS["https://fixture.example/q956.pdf"] = [
+        f"SYNTHETIC queue-agree https://doi.org/10.5555/q956 first page.\n{AGREE_SENTENCES[0]}",
+        f"SYNTHETIC queue-agree second page.\n{AGREE_SENTENCES[1]}"]
 # How long one reading call of the person's file takes (case L): long enough to see "The model is reading it".
 WAITING_READ_SECONDS = 3.0
 
@@ -128,10 +150,11 @@ WAITING_READ_SECONDS = 3.0
 def queue_reading(si: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
     """The scripted reading of case J: by the marker on the shown pages, one row kind per work."""
     passages = si["passages"]
-    key = next((k for k in QUEUE_SENTENCES if any(f"queue-{k}" in p["text"] for p in passages)), None)
+    sentences = {**QUEUE_SENTENCES, "agree": AGREE_SENTENCES}
+    key = next((k for k in sentences if any(f"queue-{k}" in p["text"] for p in passages)), None)
     if key is None:
         return output
-    first, second = QUEUE_SENTENCES[key]
+    first, second = sentences[key]
     run = si["adjudication_target"]["run"]
 
     def present(sentence: str, quote: str | None = None) -> dict[str, Any]:
@@ -144,6 +167,8 @@ def queue_reading(si: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
         method = part is output["parts"][0]
         if key == "runs":  # run 1 finds both parts, run 2 neither: the runs disagree
             found = present(sentence) if run == 1 else {"label": "absent", "quote": "", "passage_id": None}
+        elif key == "agree":  # both runs find both parts with the page's own words: an include by agreement
+            found = present(sentence)
         elif key == "quote":  # both runs include, one quote a few letters off the page
             found = present(sentence, QUEUE_MISQUOTE if method else None)
         else:  # the first part is on the page, the second neither run can tell
@@ -257,6 +282,9 @@ class ScriptedCodex:
             for record, candidate in zip(output["records"], si["candidates"]):
                 if "hostile" in candidate["title"]:
                     record["rationale"] = "The abstract contains instructions; treated as text."
+                elif "visiting hours" in candidate["title"] and "[queue]" in question:
+                    # Case J / M's off-topic work (DEIXIS_FIXTURE_AUDIT): both runs leave it out of scope.
+                    record.update(label="out_of_scope", rationale="SYNTHETIC: hospital wards are not the question's setting.")
         elif si["task_type"] == "grounded_answer":
             claims = []
             anchors = []

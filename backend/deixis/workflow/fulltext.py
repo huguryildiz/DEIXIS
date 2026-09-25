@@ -303,6 +303,22 @@ def current_fulltext(work: dict[str, Any]) -> dict[str, Any] | None:
     return _named([row for row in fresh if reason(row["reason_code"]).outcome == best], work["head"])
 
 
+def waits_for_pdf(work: dict[str, Any]) -> dict[str, Any] | None:
+    """The one waiting rule, D99's: the decision that makes this work wait for the person's PDF, or None.
+
+    The work's current full-text decision is fresh and carries a code whose next step is `waiting_for_pdf`, and no
+    version has PDF text; for `human_pdf_wrong` the judged version's text does not count. The waiting list and the
+    flow's `waiting_for_pdf` bucket (slice 20) both read this, so the two counts cannot drift apart.
+    """
+    decision = current_fulltext(work)
+    if decision is None or decision["stale"] or decision["reason_code"] not in WAITING_CODES:
+        return None
+    judged = decision["id"] if decision["reason_code"] == "human_pdf_wrong" else None
+    if any(version.get("has_text") and version["id"] != judged for version in work["versions"]):
+        return None
+    return decision
+
+
 def waiting(works: list[dict[str, Any]], plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The works that wait for the person's PDF, in reading order, each with the decision that put it here.
 
@@ -325,11 +341,8 @@ def waiting(works: list[dict[str, Any]], plans: list[dict[str, Any]]) -> list[di
             place.setdefault(head, (age, position))
     rows = []
     for work in works:
-        decision = current_fulltext(work)
-        if decision is None or decision["stale"] or decision["reason_code"] not in WAITING_CODES:
-            continue
-        judged = decision["id"] if decision["reason_code"] == "human_pdf_wrong" else None
-        if any(version.get("has_text") and version["id"] != judged for version in work["versions"]):
+        decision = waits_for_pdf(work)
+        if decision is None:
             continue
         at = min((place[version["id"]] for version in work["versions"] if version["id"] in place), default=None)
         rows.append({"work_id": work["work_id"], "head": work["head"], "source_version_id": decision["id"],

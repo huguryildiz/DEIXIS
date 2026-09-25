@@ -35,7 +35,7 @@ from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ, CHAIN_PLAN_ROOM,
                                  CHAIN_REQUEST_LIMIT, CRITERION_CALLS, SEARCH_QUERY_CALLS,
-                                 SUGGESTION_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict)
+                                 SUGGESTION_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict, effort_limits)
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
 from deixis.models.deepseek import DeepSeekAdapter
@@ -48,6 +48,8 @@ from deixis.workflow import approval as approval_rules
 from deixis.workflow import adjudication, fulltext
 from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import bibliography
+from deixis.workflow import audit as audit_rules
+from deixis.workflow import prisma_s
 from deixis.workflow import queue as human_queue
 from deixis.workflow import person_reading
 from deixis.workflow import waiting as pdf_waiting
@@ -159,6 +161,16 @@ class QueueDecision(BaseModel):
 
 class QueueUndo(BaseModel):
     row_token: str = Field(max_length=200)
+
+
+class AuditDecision(BaseModel):
+    decision: Literal["include", "criterion_not_met", "not_sure", "pdf_wrong"]
+    note: str | None = Field(default=None, max_length=1000)
+    audit_token: str = Field(max_length=300)
+
+
+class AuditUndo(BaseModel):
+    audit_token: str = Field(max_length=300)
 
 
 class ScopeRevision(BaseModel):
@@ -455,6 +467,10 @@ def create_app(
 
     @app.exception_handler(human_queue.QueueUnavailable)
     async def queue_unavailable(_: Request, exc: human_queue.QueueUnavailable):
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    @app.exception_handler(prisma_s.NotAnSwResearch)
+    async def not_an_sw_research(_: Request, exc: prisma_s.NotAnSwResearch):
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
     @app.exception_handler(RevisionConflict)
@@ -1057,6 +1073,50 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         return human_queue.undo(store, research_id, source_version_id, body.row_token)
+
+    # ---- the audit sample, the PRISMA-S export and the depth text of an sw research (slice 20) ------------------
+    @app.get("/api/researches/{research_id}/audit")
+    async def audit(research_id: str, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        if store.scope(research_id).get("search_workflow") != "sw":
+            raise human_queue.QueueUnavailable("The audit sample belongs to the search workflow")
+        return audit_rules.audit_view(store, research_id)
+
+    @app.get("/api/researches/{research_id}/audit/{source_version_id}")
+    async def audit_row(research_id: str, source_version_id: str, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        return audit_rules.audit_detail(store, research_id, source_version_id)
+
+    @app.post("/api/researches/{research_id}/audit/{source_version_id}/decision")
+    async def audit_decision(research_id: str, source_version_id: str, body: AuditDecision,
+                             request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        return human_queue.audit_decide(store, research_id, source_version_id, body.decision, body.note,
+                                        body.audit_token)
+
+    @app.post("/api/researches/{research_id}/audit/{source_version_id}/undo")
+    async def audit_undo(research_id: str, source_version_id: str, body: AuditUndo, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        return human_queue.audit_undo(store, research_id, source_version_id, body.audit_token)
+
+    @app.get("/api/researches/{research_id}/prisma-s")
+    async def prisma_s_export(research_id: str, request: Request, format: Literal["md", "json"] = "json") -> Response:
+        store = store_of(request)
+        store.research(research_id)
+        data = prisma_s.export(store, research_id)
+        name = f"deixis-prisma-s-{research_id}-r{data['scope_revision']}"
+        if format == "md":
+            return Response(prisma_s.markdown(data), media_type="text/markdown; charset=utf-8",
+                            headers={"Content-Disposition": f'attachment; filename="{name}.md"'})
+        return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="{name}.json"'})
+
+    @app.get("/api/effort-limits")
+    async def effort_limits_view() -> dict[str, Any]:
+        return effort_limits(settings.search_workflow)
 
     @app.delete("/api/researches/{research_id}/sources")
     async def remove_sources(research_id: str, body: SourceRemoval, request: Request) -> dict[str, Any]:

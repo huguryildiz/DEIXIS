@@ -9,6 +9,8 @@ from typing import Any
 from deixis.documents import embeddings, pdf
 from deixis.domain.rules import SUGGESTION_CALLS, effective_reviewer, result_applicability
 from deixis.workflow import approval as approval_rules
+from deixis.workflow import flow_counts as flow_rules
+from deixis.workflow import overrides as override_rules
 from deixis.workflow import probes as probe_rules
 from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy
 from deixis.workflow import suggestions as suggestions_rules
@@ -16,7 +18,7 @@ from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import equation_state, equations_to_check
 from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts
 from deixis.workflow.report.store import ReportStore
-from deixis.workflow.waiting import waiting_count
+from deixis.workflow import waiting as waiting_rules
 from deixis.providers.registry import search_providers
 from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
 
@@ -407,6 +409,9 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                 status != "current" for status in store.evidence_statuses([p["passage_id"] for p in given["passages"]]).values()),
             "inputs_given": {"sources": len(given["sources"]), "passages": len(given["passages"]),
                              "source_ids": [s["source_id"] for s in given["sources"]]} if given else None,
+            # Where the flow stood when this answer's run started (slice 20); null for an answer whose run kept none,
+            # never today's counts in its place. Beside `inputs_given`, not instead of it.
+            "start_snapshot": _start_snapshot(store, a) if sw else None,
             "review": review,
         })
     duplicates = store.suspected_duplicates(research_id)
@@ -560,7 +565,13 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         # The human queue's open rows and the decisions to look at again (slice 16); a legacy view is unchanged.
         counts |= queue_counts(store, research_id, ctx)
         # The works waiting for the person's PDF (slice 18a).
-        counts["waiting_for_pdf"] = waiting_count(store, research_id)
+        counts["waiting_for_pdf"] = len(waiting_rules.for_context(ctx)[1])
+    # Every work of the revision in one bucket, PRISMA 2020-style boxes and the override count (slice 20), from the
+    # same context and probe set as the queue counts; null for a legacy research.
+    flow = flow_rules.flow_counts(ctx, probe) if ctx is not None and probe is not None else None
+    counts["flow"] = flow
+    counts["flow_boxes"] = flow_rules.flow_boxes(ctx, flow) if flow is not None else None
+    counts["overrides"] = override_rules.overrides_view(ctx, probe) if ctx is not None and probe is not None else None
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
     reviewer = effective_reviewer(scope, store.setting("reviewer"))
     report_runs = [dict(row) for row in conn.execute(
@@ -574,6 +585,17 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             # The reviewer the next answer would get: the research's own setting, else the app-wide default.
             "reviewer": {"mode": scope["review_mode"], "connection": reviewer[0] if reviewer else None, "model": reviewer[1] if reviewer else None,
                          "reasoning_effort": reviewer[2] if reviewer else None}}
+
+
+def _start_snapshot(store: Store, answer: Any) -> dict[str, Any] | None:
+    """The `code:answer_start_snapshot` step of this answer's run, and whether the included sources' state moved
+    while the answer ran (its own selection revision is not the one the snapshot read)."""
+    step = store.existing_step(answer["run_id"], "answer_start_snapshot")
+    if step is None or step["status"] != "succeeded" or not step["output"]:
+        return None
+    output = step["output"]
+    return output | {"included_state_changed": answer["selection_revision"] is not None
+                     and output["selection_revision"] != answer["selection_revision"]}
 
 
 # Reading depth of one stored source version. A PDF text layer, an abstract and bare metadata are

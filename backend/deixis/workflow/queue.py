@@ -125,6 +125,8 @@ class _Context:
         self._runs: dict[str, str] | None = None
         self._proposals: dict[tuple[str, str], dict[str, dict[int, dict[str, Any]]]] | None = None
         self._outcomes: dict[str, dict[str, Any]] = {}
+        self._scanned: tuple[Any, ...] | None = None
+        self._waiting: tuple[dict[str, dict[str, Any]], set[str]] | None = None
 
     def outcome(self, work_id: str) -> dict[str, Any]:
         """`work_outcome` of one work, derived once per context: the queue and the probe set read the same result."""
@@ -270,6 +272,13 @@ def _order_key(row: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def _scan(ctx: _Context) -> tuple[list[tuple[str, dict[str, Any]]], dict[str, Any], list[tuple[str, dict[str, Any]]]]:
+    """The queue's rows and counts, scanned once per context: the research view's counts and flow read the same."""
+    if ctx._scanned is None:
+        ctx._scanned = _scan_all(ctx)
+    return ctx._scanned
+
+
+def _scan_all(ctx: _Context) -> tuple[list[tuple[str, dict[str, Any]]], dict[str, Any], list[tuple[str, dict[str, Any]]]]:
     found: list[tuple[str, dict[str, Any]]] = []
     answered: list[tuple[str, dict[str, Any]]] = []
     by_reason: Counter[str] = Counter()
@@ -326,6 +335,12 @@ def queue_rows(store: Store, research_id: str) -> dict[str, Any]:
     with _snapshot(store.conn):
         ctx = _Context(store, research_id)
         found, counts, answered = _scan(ctx)
+        # An answer given in the audit sample is listed and undone there, never here (slice 20, decision 6).
+        origins = decision_origins(store, research_id)
+        answered = [(work_id, state) for work_id, state in answered
+                    if state["state"] != "decided" or origins.get(state["decision"]["id"]) != AUDIT]
+        counts = counts | {"decided": dict(sorted(Counter(
+            state["reason_code"] for _, state in answered if state["state"] == "decided").items()))}
         rows = sorted((_row(ctx, work_id, state) for work_id, state in found), key=_order_key)
         decided = sorted((_decided(ctx, work_id, state) for work_id, state in answered),
                          key=lambda entry: entry["created_at"], reverse=True)
@@ -626,26 +641,36 @@ def decide(store: Store, research_id: str, source_version_id: str, answer: str, 
             store._event(research_id, "pdf_identity_confirmed", {"source_version_id": svid, "asset_id": asset["id"],
                                                                  "decision_id": written["id"]})
         else:
-            code = ANSWERS[answer]
-            previous = state["current"]
-            prior_link = ctx.links.get(previous["id"]) if previous and previous["decided_by"] == "human" else None
-            written = decisions.record(research_id, svid, code, note=note, renew_stale=True)
-            head = state["head"]
-            selection = ctx.selections.get(head) if head else None
-            if code in SELECTION_OF and selection is not None:
-                changed = store.set_user_selection(research_id, head, SELECTION_OF[code], selection["version"], code)
-                store.conn.execute(
-                    "INSERT INTO human_selection_links (decision_id, research_id, head, selection_version, created_at)"
-                    " VALUES (?, ?, ?, ?, ?)", (written["id"], research_id, head, changed["version"], now()))
-            elif _link_valid(ctx, prior_link):
-                # The earlier answer wrote the selection and nobody changed it since; the new answer does not set one.
-                store.release_user_selection(research_id, prior_link["head"], prior_link["selection_version"],
-                                             f"released: {code} replaced a queue decision")
-            store._event(research_id, "stage_decision_recorded",
-                         {"source_version_id": svid, "decision_id": written["id"], "reason_code": code,
-                          "decided_by": "human", "head": head})
+            _write_answer(ctx, svid, state, ANSWERS[answer], note)
         decisions.derive_selection(research_id, state["work_id"])
         return _result(store, research_id, svid)
+
+
+def _write_answer(ctx: _Context, svid: str, state: dict[str, Any], code: str, note: str | None,
+                  via: str | None = None) -> dict[str, Any]:
+    """A person's answer as D96 writes it: the decision, the selection and its link, or the release of a selection an
+    earlier answer wrote, and the event. The queue and the audit branch (slice 20) both write through here; the
+    caller holds the transaction and derives the selection afterwards. `via` names the audit branch in the event, which
+    is how a decision's origin is read back by its id; D96's own answers carry no `via`, as they always did."""
+    store, research_id, decisions = ctx.store, ctx.rid, ctx.decisions
+    previous = state["current"]
+    prior_link = ctx.links.get(previous["id"]) if previous and previous["decided_by"] == "human" else None
+    written = decisions.record(research_id, svid, code, note=note, renew_stale=True)
+    head = state["head"]
+    selection = ctx.selections.get(head) if head else None
+    if code in SELECTION_OF and selection is not None:
+        changed = store.set_user_selection(research_id, head, SELECTION_OF[code], selection["version"], code)
+        store.conn.execute(
+            "INSERT INTO human_selection_links (decision_id, research_id, head, selection_version, created_at)"
+            " VALUES (?, ?, ?, ?, ?)", (written["id"], research_id, head, changed["version"], now()))
+    elif _link_valid(ctx, prior_link):
+        # The earlier answer wrote the selection and nobody changed it since; the new answer does not set one.
+        store.release_user_selection(research_id, prior_link["head"], prior_link["selection_version"],
+                                     f"released: {code} replaced a queue decision")
+    store._event(research_id, "stage_decision_recorded",
+                 {"source_version_id": svid, "decision_id": written["id"], "reason_code": code,
+                  "decided_by": "human", "head": head, **({"via": via} if via else {})})
+    return written
 
 
 def _reading_opened_since(store: Store, research_id: str, work_id: str, since: str) -> bool:
@@ -673,17 +698,18 @@ def undo(store: Store, research_id: str, source_version_id: str, row_token: str)
     with transaction(store.conn):
         ctx = _Context(store, research_id, store.source(svid)["work_id"])
         state = _state_of(ctx, svid)
-        _check(state, row_token)
         current, decisions = state["current"], ctx.decisions
+        if current is None or current["decided_by"] != "human":
+            _check(state, row_token)
         if current is not None and current["decided_by"] == "human":
-            link = ctx.links.get(current["id"])
-            restored = decisions.undo_human(research_id, svid, "fulltext")
-            if _link_valid(ctx, link):
-                store.release_user_selection(research_id, link["head"], link["selection_version"],
-                                             "released: the queue decision that set it was undone")
-            store._event(research_id, "stage_decision_undone",
-                         {"source_version_id": svid, "decision_id": current["id"],
-                          "restored_id": restored["id"] if restored else None})
+            # Only a decision this path wrote (slice 20): an audit answer is taken back through the audit branch.
+            origin = decision_origin(store, research_id, current["id"])
+            if origin == AUDIT:
+                raise QueueConflict("audit_decision", "This decision was given in the audit sample; undo it there")
+            if origin != QUEUE:
+                raise QueueConflict("origin_unknown", "Where this decision was given cannot be read; nothing was undone")
+            _check(state, row_token)
+            _undo_answer(ctx, svid, current)
         elif current is not None and (asset_id := _confirmed_asset(current)) is not None:
             asset = ctx.assets.get(svid)
             if asset is None or asset["id"] != asset_id or not asset["identity_confirmed_at"]:
@@ -697,6 +723,153 @@ def undo(store: Store, research_id: str, source_version_id: str, row_token: str)
             raise QueueConflict("row_changed", "Nothing on this record can be undone")
         decisions.derive_selection(research_id, state["work_id"])
         return _result(store, research_id, svid)
+
+
+def _undo_answer(ctx: _Context, svid: str, current: dict[str, Any]) -> None:
+    """D96's undo of a person's decision: the machine decision comes back, the selection the answer wrote is released
+    while nobody changed it since, and the event is written. The queue and the audit branch both undo through here."""
+    store, research_id = ctx.store, ctx.rid
+    link = ctx.links.get(current["id"])
+    restored = ctx.decisions.undo_human(research_id, svid, "fulltext")
+    if _link_valid(ctx, link):
+        store.release_user_selection(research_id, link["head"], link["selection_version"],
+                                     "released: the queue decision that set it was undone")
+    store._event(research_id, "stage_decision_undone",
+                 {"source_version_id": svid, "decision_id": current["id"],
+                  "restored_id": restored["id"] if restored else None})
+
+
+# ---- the audit branch (slice 20, decision 6) ------------------------------------------------------------------------
+#
+# An F1 / F2 row of the audit sample is not an open queue row: `_state_of` makes no row of it and `decide` refuses it.
+# Its answer and undo go through here, with D96's answer body, transaction and undo rule, and write D96's tables. The
+# event carries `via: "audit"`, written in the same transaction as the decision, which is how both undo paths read a
+# decision's origin back by its id.
+
+AUDIT_ANSWERS = ("include", "criterion_not_met", "not_sure", "pdf_wrong")
+
+
+def _audit_state(store: Store, research_id: str) -> Any:
+    from deixis.workflow import audit as audit_rules  # the audit sample reads this module's context
+    return audit_rules, audit_rules.AuditState(_Context(store, research_id))
+
+
+def _split_token(audit_token: str) -> str:
+    machine_id, _, digest = audit_token.partition(".")
+    if not machine_id or not digest:
+        raise QueueConflict("row_changed", "This audit row changed since it was shown; read it again")
+    return machine_id
+
+
+def audit_decide(store: Store, research_id: str, source_version_id: str, answer: str, note: str | None,
+                 audit_token: str) -> dict[str, Any]:
+    """Answer one F1 / F2 row of the audit sample, in one transaction; in order: the work is still in its stratum's
+    current sample, the version's current full-text decision is still the token's machine decision, and the token
+    matches. Any of them failing is a 409 and nothing is written."""
+    _require_source(store, research_id, source_version_id)
+    if answer not in AUDIT_ANSWERS:
+        raise QueueUnavailable("An audit row takes include, criterion_not_met, not_sure or pdf_wrong")
+    svid = source_version_id
+    with transaction(store.conn):
+        audit_rules, state = _audit_state(store, research_id)
+        found = audit_rules.find(state, svid)
+        if found is not None and found[0] in audit_rules.ABSTRACT_STRATA:
+            raise QueueUnavailable("An abstract-stage audit row is for viewing and manual selection only")
+        if found is None:
+            raise QueueConflict("row_changed", "This record is no longer in the audit sample")
+        stratum, work_id = found
+        ctx = state.ctx
+        current = ctx.decisions.current(research_id, svid, "fulltext")
+        if current is None or current["id"] != _split_token(audit_token) or current["decided_by"] == "human":
+            raise QueueConflict("row_changed", "The decision on this record changed since it was shown")
+        if audit_token != audit_rules.token(ctx, work_id, svid, stratum, current["id"]):
+            raise QueueConflict("row_changed", "This audit row changed since it was shown; read it again")
+        _write_answer(ctx, svid, {"current": current, "head": ctx.facts["heads"].get(work_id)}, ANSWERS[answer], note,
+                      via=AUDIT)
+        ctx.decisions.derive_selection(research_id, work_id)
+        return _audit_result(store, research_id, svid)
+
+
+def audit_undo(store: Store, research_id: str, source_version_id: str, audit_token: str) -> dict[str, Any]:
+    """Take back an answer given in the audit sample, only that: D96's undo rule brings the machine decision back."""
+    _require_source(store, research_id, source_version_id)
+    svid = source_version_id
+    with transaction(store.conn):
+        audit_rules, state = _audit_state(store, research_id)
+        ctx = state.ctx
+        current = ctx.decisions.current(research_id, svid, "fulltext")
+        if current is None or current["decided_by"] != "human":
+            raise QueueConflict("row_changed", "Nothing on this record can be undone")
+        origin = decision_origin(store, research_id, current["id"])
+        if origin == QUEUE:
+            raise QueueConflict("not_an_audit_decision", "This decision was given in the queue; undo it there")
+        if origin != AUDIT:
+            raise QueueConflict("origin_unknown", "Where this decision was given cannot be read; nothing was undone")
+        work_id = store.source(svid)["work_id"]
+        machine = state._before(current)
+        stratum = audit_rules.STRATUM_OF_CODE.get((machine or {}).get("reason_code"))
+        if machine is None or stratum is None:
+            raise QueueConflict("row_changed", "The decision before this answer is not an audit stratum's")
+        if audit_token != audit_rules.token(ctx, work_id, svid, stratum, machine["id"]):
+            raise QueueConflict("row_changed", "This audit row changed since it was shown; read it again")
+        _undo_answer(ctx, svid, current)
+        ctx.decisions.derive_selection(research_id, work_id)
+        return _audit_result(store, research_id, svid)
+
+
+def _audit_result(store: Store, research_id: str, svid: str) -> dict[str, Any]:
+    audit_rules, state = _audit_state(store, research_id)
+    found = audit_rules.find(state, svid)
+    row = (audit_rules.fulltext_row(state, *found) if found is not None and found[0] in audit_rules.FULLTEXT_STRATA
+           else None)
+    head = state.ctx.facts["heads"].get(store.source(svid)["work_id"])
+    return {"row": row, "selection": state.ctx.selections.get(head) if head else None,
+            "undo_token": row["audit_token"] if row else None}
+
+
+# ---- where a person's decision was given (slice 20) -----------------------------------------------------------------
+
+AUDIT = "audit"
+QUEUE = "queue"
+UNKNOWN = "unknown"
+
+
+_NO_VIA = object()
+
+
+def _via(payload_json: str) -> Any:
+    payload = json.loads(payload_json)
+    return payload["via"] if "via" in payload else _NO_VIA
+
+
+def _origin_of(vias: list[Any]) -> str:
+    """One decision's origin from its `stage_decision_recorded` events: every one without a `via` field is D96's,
+    every one with `via: "audit"` the audit branch's; none, a mix, or any other `via` (null included) is unknown, and
+    nothing falls back to either path."""
+    if not vias:
+        return UNKNOWN
+    if all(via is _NO_VIA for via in vias):
+        return QUEUE
+    if all(via == AUDIT for via in vias):
+        return AUDIT
+    return UNKNOWN
+
+
+def decision_origins(store: Store, research_id: str) -> dict[str, str]:
+    """The origin of every person's decision of the research that has an event, by decision id."""
+    vias: dict[str, list[Any]] = {}
+    for row in store.conn.execute(
+            "SELECT json_extract(payload_json, '$.decision_id') AS decision_id, payload_json FROM events"
+            " WHERE research_id = ? AND type = 'stage_decision_recorded'", (research_id,)):
+        vias.setdefault(row["decision_id"], []).append(_via(row["payload_json"]))
+    return {decision_id: _origin_of(found) for decision_id, found in vias.items() if decision_id}
+
+
+def decision_origin(store: Store, research_id: str, decision_id: str) -> str:
+    """Where one person's decision was given, read positively from the event tied to its id (slice 20, decision 6)."""
+    return _origin_of([_via(row[0]) for row in store.conn.execute(
+        "SELECT payload_json FROM events WHERE research_id = ? AND type = 'stage_decision_recorded'"
+        " AND json_extract(payload_json, '$.decision_id') = ?", (research_id, decision_id))])
 
 
 def confirmed_pdf(store: Store, asset_id: str | None) -> bool:

@@ -28,6 +28,7 @@ import { SourceKey } from './SourceKey'
 import { scrollBehavior } from './motion'
 import { Notice } from './Notice'
 import { HumanQueue } from './HumanQueue'
+import { AnswerFlowNote, FlowBlock } from './FlowReport'
 import { WaitingForPdf } from './WaitingForPdf'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
@@ -96,6 +97,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [ocrTool, setOcrTool] = useState<OcrTool | null>(null)
   // The counts under the question open the Sources tab, so the selection filter lives here rather than inside the list.
   const [sourceFilter, setSourceFilter] = useState<StateFilter>('all')
+  // One work the audit sample sent the person to (slice 20): the Sources list shows that work alone, by its id.
+  const [sourceFocus, setSourceFocus] = useState<string | null>(null)
+  // Leaving the Sources tab ends that focus: coming back shows the whole list.
+  const goTab = (next: string) => { if (next !== 'sources') setSourceFocus(null); setTab(next) }
   const [pdfFinding, setPdfFinding] = useState<string | null>(null)
   const [waitingFiles, setWaitingFiles] = useState<File[] | null>(null)
   const takeWaitingFiles = useCallback(() => setWaitingFiles(null), [])
@@ -328,7 +333,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const created = await api.createTable(id, { title: t('Evidence table'), rows: inSourceOrder(ids).map(s => s.source_version_id) }, crypto.randomUUID())
     setPicked([])
     setFocusTable(created.table.id)
-    setTab('evidence')
+    goTab('evidence')
   }, t(ids.length === 1 ? 'Table started with {n} row.' : 'Table started with {n} rows.', { n: ids.length }))
   const askTableStart = (ids: string[]) => {
     const notIncluded = inSourceOrder(ids).filter(s => workState(s) !== 'included').length
@@ -340,7 +345,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     await api.addTableRows(id, table.id, inSourceOrder(ids).map(s => s.source_version_id), current.table.version)
     setPicked([])
     setFocusTable(table.id)
-    setTab('evidence')
+    goTab('evidence')
   }, t('Rows added to {title}.', { title: table.title }))
 
   const ScopeIcon = scopeOptions[view.scope.source_scope].icon
@@ -358,23 +363,26 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // The stored title is the question cut to 160 characters until a valid answer names the research (D36); until then show it whole.
   const heading = view.scope.question.startsWith(view.research.title) ? view.scope.question : view.research.title
   // Each count is the way into the evidence it describes; the selection filter lives here so a count can set it.
-  const showSources = (filter: StateFilter) => { setSourceFilter(filter); setTab('sources'); tabsRef.current?.scrollIntoView({ block: 'start' }) }
-  const showAnswer = () => { setTab('answer'); requestAnimationFrame(() => document.getElementById('research-answer')?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })) }
+  const showSources = (filter: StateFilter) => { setSourceFocus(null); setSourceFilter(filter); goTab('sources'); tabsRef.current?.scrollIntoView({ block: 'start' }) }
+  // An abstract-stage work of the audit sample is chosen with the source list's own controls: the list opens at that
+  // work alone, found by its id (two works can share a title).
+  const showInSources = (workId: string) => { showSources('all'); setSourceFocus(workId) }
+  const showAnswer = () => { goTab('answer'); requestAnimationFrame(() => document.getElementById('research-answer')?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })) }
   // Reports are the research's artifacts: every answer that passed validation, newest first, with the number and title saved with it.
   const reports = view.answers.filter(a => a.status === 'structurally_valid').map(a => ({ answer: a, version: a.report_version ?? 0, title: a.report_title ?? heading }))
   // The latest report's sheet lives in its card on the Answer tab; from any other tab, or for an older version, it opens here.
   const olderReport = reports.find(r => r.answer.id === openReportId && (r.answer.id !== answer?.id || tab !== 'answer'))
-  const openTable = (tableId: string) => { setFocusTable(tableId); setTab('evidence'); tabsRef.current?.scrollIntoView({ block: 'start' }) }
+  const openTable = (tableId: string) => { setFocusTable(tableId); goTab('evidence'); tabsRef.current?.scrollIntoView({ block: 'start' }) }
   // Table cards sit under the report card, or at the end of the conversation before the first answer.
   const tableCards = tables && tables.length > 0 && <div className="table-artifacts">{tables.map(table => <TableCard key={table.id} table={table} onOpen={() => openTable(table.id)} />)}</div>
   const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
   // The human queue is an sw research's own surface (slice 17); a legacy research has no such tab.
   const hasQueue = view.scope.search_workflow === 'sw'
   const queueCount = (view.counts.queue ?? 0) + (view.counts.look_again ?? 0)
-  const showQueue = () => { setTab('queue'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
+  const showQueue = () => { goTab('queue'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
   // Files dropped on the PDF panel of an sw research go to the waiting view's version-checked match (slice 18a).
   const waitingCount = view.counts.waiting_for_pdf ?? 0
-  const dropForWaiting = (files: File[]) => { setWaitingFiles(files); setTab('waiting'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
+  const dropForWaiting = (files: File[]) => { setWaitingFiles(files); goTab('waiting'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
   return <section className="research-view legacy-research">
     {/* The hint takes the row that already exists above the title: reserving it there keeps the field from pushing the counts down
         while the title is edited, and it leaves the scope revision readable. */}
@@ -422,12 +430,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <span title={t('How much searching and reading a run may do')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
     </div>
 
-    <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => { setTab(String(value)); setPicked([]) }}>
+    <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => { goTab(String(value)); setPicked([]) }}>
       <div className="research-tabs-bar">
         <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger>{hasQueue && <TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger>}{hasQueue && <TabsTrigger value="waiting">{t('Waiting for your PDF')} <span className="research-tab-count">{waitingCount}</span></TabsTrigger>}<TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
         {/* The live run carries its own quiet Pause; these controls ride with the tabs so pause, resume and cancel stay reachable from every tab.
             A table run is controlled on the Evidence tab above its table; elsewhere the bar only links there. */}
-        {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? tab !== 'evidence' && <button type="button" className="run-chip" title={t('Open the Evidence tab to control this run')} onClick={() => { setTab('evidence'); setPicked([]) }}>
+        {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? tab !== 'evidence' && <button type="button" className="run-chip" title={t('Open the Evidence tab to control this run')} onClick={() => { goTab('evidence'); setPicked([]) }}>
           <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
         </button>
         : run && (active || run.status === 'paused') && <div className="run-strip">
@@ -500,11 +508,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
             </>}
           </div></div>
         {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
+        <FlowBlock researchId={id} counts={view.counts} />
         {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {t(s.status.replace('_', ' '))} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
         {view.counts.removed > 0 && <p className="removed-summary"><ListMinus size={14} aria-hidden /><span>{t(view.counts.removed === 1 ? 'You removed {n} source from this research.' : 'You removed {n} sources from this research.', { n: view.counts.removed })}
           {view.counts.removed_found_again > 0 && ` ${t(view.counts.removed_found_again === 1 ? '{n} of them was found again by a later search and is not listed.' : '{n} of them were found again by a later search and are not listed.', { n: view.counts.removed_found_again })}`}</span>
           <a href="#/trash">{t('Show in Trash')}</a></p>}
-        <SourceList sources={view.sources} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
+        <SourceList sources={view.sources} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
           onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
           onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
           onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
@@ -517,7 +526,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       </TabsContent>
 
       {hasQueue && <TabsContent value="queue">
-        <HumanQueue researchId={id} view={view} dark={dark} onChanged={async () => { await load(); onChanged() }} />
+        <HumanQueue researchId={id} view={view} dark={dark} onChanged={async () => { await load(); onChanged() }} onShowInSources={showInSources} />
       </TabsContent>}
 
       {hasQueue && <TabsContent value="waiting">
@@ -618,11 +627,11 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
     return <div className="legacy-answer"><div className="section-label">{t('Clarification needed')}</div><h2>{answer.clarification.question}</h2><p>{answer.clarification.why_it_matters}</p>{answer.clarification.options.length > 0 && <ul className="plain-list">{answer.clarification.options.map(o => <li key={o}>{o}</li>)}</ul>}<p className="legacy-mini-note">{t('Revise the question below to continue.')}</p></div>
   }
   if (answer.status === 'no_evidence') {
-    return <Notice tone="attention">{t('No text passages were available for the included sources (no abstract, no retrievable PDF text). No answer was generated.')}</Notice>
+    return <><Notice tone="attention">{t('No text passages were available for the included sources (no abstract, no retrievable PDF text). No answer was generated.')}</Notice><AnswerFlowNote answer={answer} /></>
   }
   if (answer.status === 'unverified_draft') {
     return <div className="legacy-answer"><Notice tone="error">{t('The model output failed validation after one repair attempt, so it is not shown as a cited answer.')}<ul className="plain-list">{answer.validation.issues?.map(i => <li key={`${i.code}${i.path}`}>{t('{code} at {path}', { code: i.code, path: i.path })}</li>)}</ul></Notice>
-      {answer.unverified_draft?.claims?.map(c => <p className="claim is-unverified" key={c.claim_label}><MathText text={c.text} /></p>)}</div>
+      {answer.unverified_draft?.claims?.map(c => <p className="claim is-unverified" key={c.claim_label}><MathText text={c.text} /></p>)}<AnswerFlowNote answer={answer} /></div>
   }
   const refs = new Map<string, { n: number; e: Answer['claims'][number]['evidence'][number] }>()
   answer.claims.forEach(c => c.evidence.forEach(e => { if (!refs.has(e.passage_id)) refs.set(e.passage_id, { n: refs.size + 1, e }) }))
@@ -726,6 +735,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
       })}</ol>
     </>}
     <p className="legacy-mini-note">{t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.')} {answer.model && <>{t('Model')}: <ModelName connection={answer.model.connection} text={modelText(answer.model.resolved_model ?? answer.model.requested_model ?? t('unknown'))} />.</>} {answer.inputs_given ? t('{passages} passages from {sources} sources were provided.', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }) : ''}</p>
+    <AnswerFlowNote answer={answer} />
     <ReviewNote review={answer.review} />
     <ChecksNote warnings={answer.validation.warnings} />
     {suggestion && <PdfSuggestions notes={suggestion.notes} sources={suggestion.sources} busy={busy} onAttachPdf={onAttachPdf} />}
@@ -740,6 +750,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
       </span>
       <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
     </button>}
+    {showCard && <AnswerFlowNote answer={answer} />}
     <Sheet open={reportOpen} onOpenChange={open => { onReportOpenChange(open); if (!open) setCopied(false) }}>
       <SheetContent className={`detail-sheet report-sheet ${dark ? 'dark' : ''}`}>
         <SheetHeader className="report-toolbar">
@@ -882,7 +893,7 @@ type SourceActions = { onRemoveFromResearch: (source: Source) => void; onSelect:
 // What the Sources rows need to offer OCR (D51): the local tool, the runs that may be reading a PDF, and the action.
 type OcrContext = { tool: OcrTool | null; runs: Run[]; onRead: (source: Source, assetId: string) => void }
 
-function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveFromResearch, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, pdfFinding, ocr }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; picked: string[]; onPick: (ids: string[]) => void } & SourceActions) {
+function SourceList({ sources, busy, filter, onFilter, focus, onFocus, picked, onPick, onRemoveFromResearch, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, pdfFinding, ocr }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; focus: string | null; onFocus: (workId: string | null) => void; picked: string[]; onPick: (ids: string[]) => void } & SourceActions) {
   const [pdfFilter, setPdfFilter] = useState<PdfFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SourceSort>('relevant')
@@ -899,7 +910,8 @@ function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveF
   const pdfCounts = { all: families.length, with_pdf: families.filter(hasPdf).length, without_pdf: families.filter(family => !hasPdf(family)).length }
   const needle = query.trim().toLocaleLowerCase()
   const matches = (s: Source) => [s.title, s.venue, s.doi, ...s.authors].some(text => text?.toLocaleLowerCase().includes(needle))
-  const shown = families.filter(f => (filter === 'all' || f[0].selection.state === filter) && (pdfFilter === 'all' || (pdfFilter === 'with_pdf' ? hasPdf(f) : !hasPdf(f))) && (!needle || f.some(matches)))
+  const focused = focus ? families.filter(f => f[0].work_id === focus) : null
+  const shown = focused ?? families.filter(f => (filter === 'all' || f[0].selection.state === filter) && (pdfFilter === 'all' || (pdfFilter === 'with_pdf' ? hasPdf(f) : !hasPdf(f))) && (!needle || f.some(matches)))
     .sort((a, b) => sourceCompare[sort](a[0], b[0]))
   const shownIds = shown.flat().map(s => s.source_version_id)
   const allShownPicked = shownIds.length > 0 && shownIds.every(sid => picked.includes(sid))
@@ -911,10 +923,10 @@ function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveF
         ref={node => { if (node) node.indeterminate = !allShownPicked && shownIds.some(sid => picked.includes(sid)) }}
         onChange={e => onPick(e.target.checked ? [...new Set([...picked, ...shownIds])] : picked.filter(sid => !shownIds.includes(sid)))} /><span>{t('Select shown')}</span></label>
       <div className="source-filters" role="group" aria-label={t('Show sources')}>
-        {stateFilters.map(([key, label]) => <button key={key} aria-pressed={filter === key} onClick={() => onFilter(key)}>{t(label)}<span>{counts[key]}</span></button>)}
+        {stateFilters.map(([key, label]) => <button key={key} aria-pressed={!focused && filter === key} onClick={() => { onFocus(null); onFilter(key) }}>{t(label)}<span>{counts[key]}</span></button>)}
       </div>
-      <label className="source-search"><Search size={14} aria-hidden /><input type="search" aria-label={t('Filter sources')} placeholder={t('Title, author, venue or DOI')} value={query} onChange={e => setQuery(e.target.value)} /></label>
-      <Select value={pdfFilter} onValueChange={value => { if (value) setPdfFilter(value as PdfFilter) }}>
+      <label className="source-search"><Search size={14} aria-hidden /><input type="search" aria-label={t('Filter sources')} placeholder={t('Title, author, venue or DOI')} value={query} onChange={e => { onFocus(null); setQuery(e.target.value) }} /></label>
+      <Select value={pdfFilter} onValueChange={value => { if (value) { onFocus(null); setPdfFilter(value as PdfFilter) } }}>
         <SelectTrigger className="source-pdf-filter" aria-label={t('Filter sources by PDF availability')}><SelectValue>{(value: string) => <><Filter size={14} />{t(pdfFilterLabels[value as PdfFilter])}</>}</SelectValue></SelectTrigger>
         <SelectContent className="intake-select-content" align="end" alignItemWithTrigger={false}>
           {(Object.keys(pdfFilterLabels) as PdfFilter[]).map(k => <SelectItem key={k} value={k}><span className="source-filter-option"><span>{t(pdfFilterLabels[k])}</span><small>{pdfCounts[k]}</small></span></SelectItem>)}
@@ -927,6 +939,7 @@ function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveF
         </SelectContent>
       </Select>
     </div>}
+    {focused && <p className="source-focus">{t('Showing the one work the audit sample sent you to.')} <button type="button" onClick={() => { onFocus(null); onFilter('all'); setPdfFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
     <div className={`source-list${picked.length ? ' has-selection-bar' : ''}`}>{shown.flat().map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
       picked={picked.includes(source.source_version_id)} onPick={on => togglePick(source.source_version_id, on)} onRemoveFromResearch={() => onRemoveFromResearch(source)}
       duplicates={source.suspected_duplicates.map(d => ({ basis: d.basis, source: sources.find(s => s.source_version_id === d.source_version_id) }))}
@@ -934,7 +947,7 @@ function SourceList({ sources, busy, filter, onFilter, picked, onPick, onRemoveF
       onSelect={state => onSelect(source, state)} onReason={reason => onReason(source, reason)} onAbstract={() => onAbstract(source)}
       onDiscoverPdf={() => onDiscoverPdf(source)} onAttachPdf={() => onAttachPdf(source)} onAttachCandidate={candidateId => onAttachCandidate(source, candidateId)} onOpenPdf={assetId => onOpenPdf(source, assetId)}
       onRemoveAsset={assetId => onRemoveAsset(source, assetId)} onReplaceAsset={assetId => onReplaceAsset(source, assetId)} onReextract={assetId => onReextract(source, assetId)} onRereadEquations={assetId => onRereadEquations(source, assetId)} finding={pdfFinding === source.source_version_id} ocr={ocr} />)}</div>
-    {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { onFilter('all'); setPdfFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
+    {!shown.length && <p className="empty-inline source-empty">{t('No source matches this filter.')} <button onClick={() => { onFilter('all'); setPdfFilter('all'); setQuery(''); onFocus(null) }}>{t('Show all sources')}</button></p>}
   </>
 }
 

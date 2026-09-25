@@ -1186,3 +1186,47 @@ button.chat-step-title svg{color:var(--muted)}
   .queue-panel .queue-answers{flex-direction:column}
   .queue-panel .queue-answers>button{width:100%}
 }
+
+/* The flow of an sw research (slice 20): the Sources tab's flow block, the line under an answer, the override count and
+   the audit sample. Counts only, set as quiet interface text; nothing here is styled as success. */
+.flow-block summary small{flex:1;min-width:0;text-align:right;line-height:1.45}
+.flow-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px 32px;padding:4px 0 14px 24px}
+.flow-block:not([open]) .flow-detail{display:none}
+.flow-head{margin:6px 0 4px;color:var(--ink);font-size:12px;font-weight:600}
+.flow-list{margin:0;padding:0;list-style:none}
+.flow-list li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-top:1px solid color-mix(in srgb,var(--line),transparent 38%);color:var(--ink);font-size:12px;line-height:1.45}
+.flow-list strong{font-weight:600;font-variant-numeric:tabular-nums}
+.flow-note{margin:6px 0 0;color:var(--muted);font-size:11.5px;line-height:1.5}
+.flow-detail .flow-report{grid-column:1/-1;justify-self:start}
+.answer-flow{display:grid;gap:3px;max-width:760px;margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.55}
+.answer-flow p{margin:0}
+.answer-flow .is-attention{color:var(--warn-ink)}
+.queue-panel .overrides-line{margin:-6px 0 16px;color:var(--ink);font-size:12.5px;line-height:1.55}
+.queue-panel .audit-panel{margin-top:28px;padding-top:14px;border-top:1px solid var(--line)}
+.queue-panel .audit-panel h3{margin:0 0 4px;color:var(--ink);font-size:14px;font-weight:600}
+.queue-panel .audit-group{margin-top:16px}
+.queue-panel .audit-group-head,.queue-panel .audit-subhead{margin:0 0 4px;color:var(--ink);font-size:13px;font-weight:600}
+.queue-panel .audit-subhead{margin-top:12px;font-size:12.5px;font-weight:550}
+.queue-panel .audit-group-head small,.queue-panel .audit-subhead small{margin-left:6px;color:var(--muted);font-size:11.5px;font-weight:400}
+.queue-panel .audit-result{margin:0 0 6px;color:var(--ink);font-size:12.5px}
+.queue-panel .audit-rows{margin:0;padding:0;list-style:none}
+.queue-panel .audit-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;align-items:start;padding:11px 0;border-top:1px solid var(--line)}
+.queue-panel .audit-row-main{display:grid;gap:4px;min-width:0}
+.queue-panel .audit-question{margin:2px 0 0;color:var(--ink);font-size:13px;font-weight:550}
+.queue-panel .audit-runs{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:6px;color:var(--ink);font-size:12.5px;line-height:1.5}
+.queue-panel .audit-runs p,.queue-panel .audit-quote{margin:0;color:var(--ink);font-size:12.5px;line-height:1.5}
+.queue-panel .audit-answered{display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:flex-end}
+.queue-panel .audit-answers{justify-content:flex-end;max-width:420px}
+.queue-panel .audit-abstract{margin-top:22px;padding-top:12px;border-top:1px solid var(--line)}
+@media (max-width:760px){
+  .flow-detail{padding-left:0}
+  .flow-block summary{flex-wrap:wrap}
+  .flow-block summary small{text-align:left;flex-basis:100%}
+  .queue-panel .audit-row{grid-template-columns:minmax(0,1fr)}
+  .queue-panel .audit-answers,.queue-panel .audit-answered{justify-content:flex-start;max-width:none}
+}
+.queue-panel .audit-row-main .queue-link{justify-self:start;padding:0;font-size:12.5px}
+.queue-panel .audit-panel .empty-inline{margin:0;padding:2px 0 0;font-size:12.5px}
+.queue-panel .audit-answered .queue-link{padding:0;font-size:12.5px}
+.source-focus{margin:8px 0 4px;color:var(--muted);font-size:12.5px}
+.source-focus button{color:var(--accent);text-decoration:underline;text-underline-offset:3px}

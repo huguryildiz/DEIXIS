@@ -47,10 +47,13 @@ from deixis.workflow import chaining
 from deixis.workflow import criterion as criterion_rules
 from deixis.workflow import criterion_passages
 from deixis.workflow import expansion as expansion_rules
+from deixis.workflow import flow_counts
 from deixis.workflow import fulltext
 from deixis.workflow import lookups
 from deixis.workflow import person_reading
+from deixis.workflow import probes as probe_rules
 from deixis.workflow import protocol
+from deixis.workflow import queue as human_queue
 from deixis.workflow import ranking as ranking_rules
 from deixis.workflow import routing as routing_rules
 from deixis.workflow import search_query as search_query_rules
@@ -2333,6 +2336,9 @@ class ResearchFlow:
         run_id, rid = run["id"], run["research_id"]
         heads = self.store.included_works(rid)  # one per included work
         selection_revision = self.store.selection_revision(rid)  # read together with the included set it describes
+        if scope.get("search_workflow") == "sw":
+            # No await between the two reads above and this step's write: the snapshot is the state they describe.
+            self._answer_start_snapshot(run, heads, selection_revision)
         await self._inspect(run, limit=MAX_DOWNLOADS_PER_RUN)
         # A work whose only PDF text is a person's file not read under this criterion, with no abstract-only version
         # to give instead, gives the answer nothing (slice 18b, decision 8).
@@ -2373,6 +2379,26 @@ class ResearchFlow:
                                            output["result"], {"ok": True, "issues": [], "warnings": output.get("warnings", [])}, links,
                                            selection_revision=step_selection)
         await self._review(run, scope, answer_id, output["result"])
+
+    def _answer_start_snapshot(self, run: dict[str, Any], heads: list[str], selection_revision: int) -> None:
+        """Where the flow stood when this `sw` answer run started (slice 20, decision 3), kept in a code step.
+
+        A snapshot, not the works the answer used: which works and passages reached the model is the StepInput's
+        (`inputs_given`), read after `_inspect`. A resumed run keeps the snapshot its start wrote. Synchronous, so
+        nothing else writes between the included set and selection revision the caller read and this step.
+        """
+        step = self.store.step(run["id"], "answer_start_snapshot", "code:answer_start_snapshot")
+        if step["status"] == "succeeded":
+            return
+        rid = run["research_id"]
+        self.store.start_step(step["id"])
+        ctx = human_queue.context(self.store, rid)
+        flow = flow_counts.flow_counts(ctx, probe_rules.probe_set(ctx))
+        self.store.finish_step(step["id"], "succeeded", output={
+            "scope_revision": run["scope_revision"], "selection_revision": selection_revision,
+            "flow": flow, "included": len(heads),
+            # Included works whose only text is the person's file not read yet: they give the answer nothing (D100).
+            "included_without_answer_text": sum(1 for head in heads if self.store.answer_version(rid, head) is None)})
 
     def _criterion_phrases(self, run: dict[str, Any], scope: dict[str, Any]) -> list[tuple[str, re.Pattern[str]]]:
         """The approved cue phrases this answer run orders criterion passages with, compiled (D84, SW12.3).

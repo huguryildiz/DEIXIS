@@ -18,6 +18,8 @@ const SERVER = path.join(REPO, 'tests', 'acceptance', 'fixture_server.py')
 const OUT = path.resolve(process.env.DEIXIS_ACCEPTANCE_DIR ?? 'test-results/acceptance')
 mkdirSync(OUT, { recursive: true })
 
+const AGREED = 'SYNTHETIC release window pacing along molecular relay chains'
+const OFF_TOPIC = 'SYNTHETIC hospital visiting hours after staff feedback'
 const QUESTION = '[queue] How do SYNTHETIC molecular relays and greenhouse irrigation schedule their releases?'
 const TITLES = {
   choose_run: 'SYNTHETIC bisection release scheduling for molecular relay networks',
@@ -86,7 +88,9 @@ async function openQueue(page: Page, server: QueueServer, rid: string) {
 }
 
 test.describe.serial('J: the human queue of an sw research', () => {
-  const server = new QueueServer(8781, { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on' })
+  // DEIXIS_FIXTURE_AUDIT adds one work both reading runs include (slice 20): it is no queue row, and the audit sample's
+  // group of agreeing includes shows it.
+  const server = new QueueServer(8781, { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
   const legacy = new QueueServer(8782, {})
   let api: Api
   let rid = ''
@@ -400,5 +404,91 @@ test.describe.serial('J: the human queue of an sw research', () => {
       await expect(narrow.locator('#queue-detail-title')).toBeFocused()
       await expect(detail(narrow).getByRole('heading', { name: TITLES.confirm_quote })).toHaveCount(0)
     } finally { await narrow.close() }
+  })
+  test('the audit sample answers an agreeing include, the counts and the override line follow, and undo takes it back', async () => {
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await openQueue(page, server, rid)
+    const audit = page.locator('.audit-panel')
+    const f1 = audit.locator('.audit-group').first()
+    await expect(f1).toContainText('Included by two agreeing runs')
+    await expect(f1).toContainText('Current sample: you looked at 0 of 1 rows; you decided differently in 0.')
+    const row = f1.locator('.audit-row', { hasText: AGREED })
+    await expect(row).toContainText('Does this work meet the criterion?')
+    const line = page.locator('.overrides-line')
+    const before = (await line.textContent()) ?? ''
+    const model = (text: string) => Number(/model runs (\d+)\)/.exec(text)?.[1] ?? 0)
+    await row.getByRole('button', { name: 'Does not meet the criterion' }).click()
+    await expect(page.locator('.toast').last()).toContainText('Your audit answer is recorded as your decision.')
+    await expect(f1).toContainText('Current sample: you looked at 1 of 1 rows; you decided differently in 1.')
+    await expect(row).toContainText('You answered:')
+    await expect.poll(async () => model((await line.textContent()) ?? '')).toBe(model(before) + 1)
+    await expect(line).not.toContainText('%')
+    // An audit answer is not a queue row and does not show under the queue's own decisions.
+    await expect(page.locator('.queue-decided:not(.audit-earlier) li', { hasText: AGREED })).toHaveCount(0)
+    await shot(page, 'J-audit-answered-1440')
+    await row.getByRole('button', { name: `Undo your audit answer on ${AGREED}` }).click()
+    await expect(f1).toContainText('Current sample: you looked at 0 of 1 rows; you decided differently in 0.')
+    await expect.poll(async () => (await line.textContent()) ?? '').toBe(before)
+  })
+  test('an abstract-stage work of the audit sample is chosen in the source list by its id, not its title', async () => {
+    // Two distinct works share the off-topic title; the card sends the person to its own work only.
+    type AbstractRow = { work_id: string; source_version_id: string; title: string }
+    const sample = (await (await api.context.get(`/api/researches/${rid}/audit`)).json()).abstract.A1.rows as AbstractRow[]
+    const twins = sample.filter(r => r.title === OFF_TOPIC)
+    expect(twins).toHaveLength(2)
+    expect(twins[0].work_id).not.toBe(twins[1].work_id)
+    const [target, twin] = twins
+    await openQueue(page, server, rid)
+    const cards = page.locator('.audit-abstract .audit-row', { hasText: OFF_TOPIC })
+    await expect(cards).toHaveCount(2)
+    await expect(cards.first().getByRole('button', { name: 'Include', exact: true })).toHaveCount(0)  // no selection from the card
+    await cards.first().scrollIntoViewIfNeeded()
+    await shot(page, 'J-audit-abstract-1440')
+    await cards.first().getByRole('button', { name: `Find ${OFF_TOPIC} in the source list` }).click()
+    await expect(page.getByRole('tab', { name: /^Sources/ })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.locator('.source-focus')).toContainText('Showing the one work the audit sample sent you to.')
+    const source = page.locator('.source-row', { hasText: OFF_TOPIC })
+    await expect(page.locator('.source-row')).toHaveCount(1)
+    await source.getByRole('button', { name: 'Include', exact: true }).click()
+    await expect(source.getByRole('button', { name: 'Include', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    // Only the target work's selection changed.
+    const state = async (workId: string) => ((await (await api.context.get(`/api/researches/${rid}`)).json()).sources as { work_id: string; version_role: string; selection: { state: string } }[])
+      .find(s => s.work_id === workId && s.version_role === 'record')!.selection.state
+    expect(await state(target.work_id)).toBe('included')
+    expect(await state(twin.work_id)).not.toBe('included')
+    // Changing the PDF filter ends the focus: the list follows the filter again and shows both works.
+    const focusLine = page.locator('.source-focus')
+    const pdfFilter = page.getByRole('combobox', { name: 'Filter sources by PDF availability' })
+    await pdfFilter.click()
+    await page.getByRole('option', { name: /No PDF attached/ }).click()
+    await expect(focusLine).toHaveCount(0)
+    await expect(page.locator('.source-row', { hasText: OFF_TOPIC })).toHaveCount(2)
+    // "Show all sources" clears the search and the PDF filter too, whatever was set before the focus.
+    const search = page.getByRole('searchbox', { name: 'Filter sources' })
+    await search.fill('SYNTHETIC greedy')
+    const follow = async () => {
+      await page.getByRole('tab', { name: /Awaiting your decision/ }).click()
+      await page.locator('.audit-abstract .audit-row', { hasText: OFF_TOPIC }).first()
+        .getByRole('button', { name: `Find ${OFF_TOPIC} in the source list` }).click()
+      await expect(focusLine).toBeVisible()
+    }
+    await follow()
+    await focusLine.getByRole('button', { name: 'Show all sources' }).click()
+    await expect(focusLine).toHaveCount(0)
+    await expect(search).toHaveValue('')
+    await expect(pdfFilter).toContainText('All PDFs')
+    const total = ((await (await api.context.get(`/api/researches/${rid}`)).json()).sources as { version_role: string }[]).length
+    await expect(page.locator('.source-row')).toHaveCount(total)
+    // Leaving the Sources tab ends the focus: coming back shows the whole list.
+    await follow()
+    await page.getByRole('tab', { name: 'Answer', exact: true }).click()
+    await page.getByRole('tab', { name: /^Sources/ }).click()
+    await expect(focusLine).toHaveCount(0)
+    await expect(page.locator('.source-row')).toHaveCount(total)
+    // The list edit is the person's decision: the target leaves the sample (strata hold no person's work), its twin
+    // stays, and the override line counts it on the list path against the model runs' abstract-stage decision.
+    await page.getByRole('tab', { name: /Awaiting your decision/ }).click()
+    await expect(page.locator('.audit-abstract .audit-row', { hasText: OFF_TOPIC })).toHaveCount(1)
+    await expect(page.locator('.overrides-line')).toContainText('model runs 1)')
   })
 })

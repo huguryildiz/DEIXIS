@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from './Toast'
-import { api, type Connections, type Effort, type ModelOption, type ModelRole, type RoleModelSetting, type SourceScope, type ZoteroSource } from './api'
+import { api, type Connections, type Effort, type EffortLimits, type ModelOption, type ModelRole, type RoleModelSetting, type SourceScope, type ZoteroSource } from './api'
 import { connectionName, isPlannedModel, reasoningLabel, scopeLabels } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroPanel } from './ZoteroPanel'
@@ -25,6 +25,17 @@ export const effortOptions: Record<Effort, { icon: LucideIcon; detail: string }>
   quick: { icon: Zap, detail: 'Up to 3 searches of 400 results, 20 candidates, 16 passages' },
   standard: { icon: Gauge, detail: 'Up to 8 searches (the core search 100 results, the others 1,000), 250 candidates, 48 passages' },
   detailed: { icon: Telescope, detail: 'Up to 12 searches (the core search 100 results, the others 2,000), 300 candidates, 80 passages' },
+}
+
+// An sw server's depth text, from the limits in rules.py (slice 20, decision 9): the same numbers the run reads, so a
+// changed limit cannot leave this text behind. Without an answer from the server the text carries no number at all.
+function effortDetail(effort: Effort, limits: EffortLimits | null | undefined): string | undefined {
+  if (!limits) return undefined
+  if (limits.search_workflow !== 'sw' || !limits.efforts) return t(effortOptions[effort].detail)
+  const e = limits.efforts[effort]
+  const number = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
+  return t('Each search reads up to {read} records; the model screens {abstracts} abstracts, fetches up to {fetch} full texts and reads {reads} of them twice; the answer uses up to {passages} passages.', {
+    read: number(e.read), abstracts: number(e.abstracts), fetch: number(e.fetch), reads: number(e.reads), passages: number(e.passages) })
 }
 
 export function Option({ icon: Icon, title, detail }: { icon: LucideIcon; title: string; detail?: ReactNode }) {
@@ -181,6 +192,8 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const [question, setQuestion] = useState('')
   const [scope, setScope] = useState<SourceScope>('academic')
   const [effort, setEffort] = useState<Effort>('standard')
+  const [limits, setLimits] = useState<EffortLimits | null>(null)
+  useEffect(() => { api.effortLimits().then(setLimits, () => setLimits(null)) }, [])
   const [connections, setConnections] = useState<Connections | null>(null)
   const [model, setModel] = useState('')
   const [reasoning, setReasoning] = useState<string | null>(null)
@@ -389,7 +402,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
             <SelectTrigger aria-label={t('Research depth')} title={t('How much searching and reading a run may do')}><SelectValue>{(value: string) => { const Icon = effortOptions[value as Effort].icon; return <><Icon size={15} />{t(effortLabels[value as Effort])}</> }}</SelectValue></SelectTrigger>
             <SelectContent className="intake-select-content has-details" align="start" alignItemWithTrigger={false}>
               <div className="intake-select-heading" aria-hidden="true">{t('Research depth')}</div>
-                {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d}><Option icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={t(effortOptions[d].detail)} /></SelectItem>)}
+                {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d}><Option icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={effortDetail(d, limits)} /></SelectItem>)}
             </SelectContent>
           </Select>
           {models.length > 0

@@ -8,6 +8,8 @@ import { PassageSheet } from './PassageSheet'
 import type { CitationLabels } from './PdfTextDocument'
 import { ConnectionIcon } from './connectionIcons'
 import { Notice } from './Notice'
+import { AuditSample } from './AuditSample'
+import { OverridesLine } from './FlowReport'
 import { useToast } from './Toast'
 import { t, uiLocale } from './i18n'
 import { scrollBehavior } from './motion'
@@ -85,7 +87,7 @@ const kindText = (row: QueueRow) => {
 }
 const dateText = (iso: string) => new Date(iso).toLocaleString(uiLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
-export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: string; view: ResearchView; dark: boolean; onChanged: () => Promise<void> }) {
+export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources }: { researchId: string; view: ResearchView; dark: boolean; onChanged: () => Promise<void>; onShowInSources: (workId: string) => void }) {
   const toast = useToast()
   const narrow = useNarrow()
   const [queue, setQueue] = useState<QueueView | null>(null)
@@ -322,6 +324,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   return <section className="queue-panel" aria-labelledby="queue-heading">
     <div className="workspace-pane-head"><div><h2 id="queue-heading">{t('Awaiting your decision')}</h2>
       <p>{t('Works the reading could not settle. Each row asks one question; your answer is recorded as your decision and can be taken back.')}</p></div></div>
+    <OverridesLine overrides={view.counts.overrides} />
     {error && <Notice tone="error">{t('Could not load the queue: {error}', { error })}</Notice>}
     {!rows.length ? <div className="queue-empty">
       <p className="empty-inline">{t('No rows in the queue.')}</p>
@@ -383,6 +386,8 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
     </div>}
 
     {queue.decided.length > 0 && <Decided entries={queue.decided} busy={busy} onUndo={entry => { if (entry.undo_token) void undo(entry.source_version_id, entry.undo_token) }} onOpen={svid => setSheet({ source: svid })} />}
+
+    <AuditSample researchId={researchId} lastEvent={view.last_event_id} onChanged={onChanged} onOpenSource={svid => setSheet({ source: svid })} onShowInSources={onShowInSources} />
 
     {sheet && <PassageSheet researchId={researchId} dark={dark} sources={view.sources}
       passageId={'source' in sheet ? null : sheet.passageId} assetId={'source' in sheet ? null : sheet.assetId}

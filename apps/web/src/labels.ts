@@ -321,3 +321,30 @@ const signalReasons: Record<string, string> = {
   no_stored_similarity: 'no similarity was stored',
 }
 export const signalReasonText = (reason: string | null) => t(reason ? signalReasons[reason] ?? reason : 'no reason recorded')
+// Where each work of an sw research stands in the flow (slice 20, decision 1). "Two agreeing runs" and "you
+// confirmed" stay apart: only a person's decision is a confirmation.
+export const flowBucketLabels: Record<string, string> = {
+  confirmed: 'You confirmed', person_not_met: 'You said the criterion is not met',
+  person_excluded: 'You excluded (kind not recorded)', look_again: 'Your earlier decision, to look at again',
+  included: 'Included by two agreeing runs', not_met: 'Criterion not met (two agreeing runs)',
+  queued: 'In your queue, not looked at', person_unsure: 'You were not sure', waiting_for_pdf: 'Waiting for a PDF',
+  not_read_yet: 'Text in hand, not read yet', candidate_not_fetched: 'Passed the abstract stage, full text not tried',
+  abstract_open: 'Abstract could not decide', abstract_not_read: 'Abstract not read',
+  survey: 'Survey, kept for citation chaining', out_of_scope_model: 'Out of scope (model runs)',
+  out_of_scope_code: 'Out of scope (code rule)', not_screened: 'Not screened', other: 'Other',
+}
+// PRISMA 2020-style boxes (decision 2): counts only, never added up, all marked incomplete.
+export const flowBoxLabels: Record<string, string> = {
+  rows_returned: 'Records returned by the searches', chain_rows_returned: 'Records returned by citation requests',
+  works_found_by_search: 'Works a search or citation request found', works: 'Works in this question revision',
+  abstract_read_by_model: 'Works whose abstract the model read',
+  out_of_scope_model: 'Out of scope at the abstract stage (model runs)',
+  out_of_scope_code: 'Out of scope at the abstract stage (code rule)', fulltext_sought: 'Full text sought',
+  fulltext_not_retrieved: 'Full text not retrieved', fulltext_read: 'Full text read',
+  not_met: 'Criterion not met', queued: 'In your queue', included: 'Included (two agreeing runs or you)',
+}
+// The audit sample's groups (decision 5): the machine decision that puts a work in each.
+export const auditStratumLabels: Record<string, string> = {
+  F1: 'Included by two agreeing runs', F2: 'Criterion not met (two agreeing runs)',
+  A1: 'Out of scope at the abstract stage (model runs)', A2: 'Out of scope at the abstract stage (code rule)',
+}

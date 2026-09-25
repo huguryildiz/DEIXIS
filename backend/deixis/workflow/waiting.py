@@ -93,6 +93,16 @@ def _rows(store: Store, research_id: str) -> tuple[list[dict[str, Any]], list[di
     return fulltext.waiting(_works(store, research_id), plans), plans, revision
 
 
+def for_context(ctx: Any) -> tuple[dict[str, dict[str, Any]], set[str]]:
+    """The works as `fulltext.waiting` reads them, by id, and the ids on the waiting list, once per queue context:
+    the flow's buckets and the tab's count read the same derivation (slice 20)."""
+    if ctx._waiting is None:
+        works = _works(ctx.store, ctx.rid)
+        rows = fulltext.waiting(works, _plans(ctx.store, ctx.rid, ctx.revision))
+        ctx._waiting = ({work["work_id"]: work for work in works}, {row["work_id"] for row in rows})
+    return ctx._waiting
+
+
 def waiting_count(store: Store, research_id: str) -> int:
     """How many works wait for the person's PDF: the number beside the view's tab."""
     return len(_rows(store, research_id)[0])

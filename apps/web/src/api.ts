@@ -357,7 +357,32 @@ export type Answer = {
   model: { connection: string; requested_model: string | null; resolved_model: string | null; token_usage: unknown } | null
   inputs_given: { sources: number; passages: number; source_ids: string[] } | null
   source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D45)
+  // Where the flow stood when this sw answer's run started (slice 20); null when that run kept none, and in legacy.
+  start_snapshot?: AnswerStartSnapshot | null
   review: AnswerReview | null
+}
+// Slice 20, decision 1: every work of the revision in one bucket, from the person's decisions first.
+export type FlowBucket = 'confirmed' | 'person_not_met' | 'person_excluded' | 'look_again' | 'included' | 'not_met' | 'queued'
+  | 'person_unsure' | 'waiting_for_pdf' | 'not_read_yet' | 'candidate_not_fetched' | 'abstract_open' | 'abstract_not_read'
+  | 'survey' | 'out_of_scope_model' | 'out_of_scope_code' | 'not_screened' | 'other'
+export type FlowCounts = {
+  works: number; buckets: Record<FlowBucket, number>; other_reasons: Record<string, number>
+  five: { included: number; included_by_agreement: number; confirmed: number; not_met: number; waiting_for_pdf: number
+    queued: number; not_read: number; not_read_in_reading: number; not_read_not_tried: number }
+  look_again_in_answer: number; queue_by_reason: Record<string, number>
+}
+export type FlowBoxes = { flow_status: 'incomplete_no_human_screening'; revision: number
+  boxes: { key: string; count: number | null; flow_status: 'incomplete_no_human_screening' }[] }
+export type OverrideClass = 'overruled' | 'agreed' | 'settled_open' | 'time_unknown'
+export type Overrides = {
+  decisions: number; changed: number; changed_by: { code: number; model_agreement: number }
+  classes: Record<OverrideClass, number>; by_path: Record<'queue' | 'audit' | 'list', Record<OverrideClass, number>>
+  overruled: { path: string; decided_by: string; stage: string; direction: string; count: number }[]
+  apart: { not_sure: number; pdf_wrong: number; look_again: number }
+}
+export type AnswerStartSnapshot = {
+  scope_revision: number; selection_revision: number; flow: FlowCounts; included: number
+  included_without_answer_text: number; included_state_changed: boolean
 }
 export type Counts = {
   found: number; unique: number; included: number; excluded: number; pending: number; inspected: number; cited: number
@@ -367,7 +392,37 @@ export type Counts = {
   queue?: number; look_again?: number
   // An sw research's works waiting for the person's PDF (slice 18a). Absent in legacy.
   waiting_for_pdf?: number
+  // Slice 20: the flow buckets, the PRISMA 2020-style boxes and the override count; null in legacy.
+  flow?: FlowCounts | null; flow_boxes?: FlowBoxes | null; overrides?: Overrides | null
 }
+// The audit sample of an sw research (slice 20, decisions 5–7): F1 / F2 answered here, A1 / A2 for viewing only.
+export type AuditAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong'
+export type AuditRow = {
+  work_id: string; head: string; source_version_id: string; title: string; year: number | null; doi: string | null
+  version_label: string | null; publication_type: string | null; stratum: 'F1' | 'F2'; kind: 'audit_include' | 'audit_not_met'
+  question: string; machine: { decision_id: string; reason_code: string; decided_by: string }
+  answered: { decision_id: string; reason_code: string; answer: AuditAnswer; note: string | null; created_at: string; stale: boolean } | null
+  audit_token: string
+}
+export type AuditAbstractRow = {
+  work_id: string; head: string; source_version_id: string; title: string; year: number | null; doi: string | null
+  version_label: string | null; publication_type: string | null; stratum: 'A1' | 'A2'; reason_code: string; decided_by: string
+  quotes: { run_no: number; label: string; quote: string | null; quote_verified: boolean | null }[]
+  selection: { state: Source['selection']['state'] | null; origin: string | null; version: number | null }
+}
+export type AuditView = {
+  revision: number; per_stratum: number
+  fulltext: Record<'F1' | 'F2', { size: number; sample_size: number; rows: AuditRow[]; answered: number; differs: number }>
+  earlier: { work_id: string; source_version_id: string; title: string; stratum: 'F1' | 'F2' | null; answer: AuditAnswer
+    reason_code: string; created_at: string; in_sample: boolean; differs: boolean }[]
+  earlier_counts: Record<'F1' | 'F2', { answers: number; differs: number }>
+  abstract: Record<'A1' | 'A2', { size: number; rows: AuditAbstractRow[] }>
+}
+export type AuditRowView = { row: AuditRow | AuditAbstractRow | null; detail: QueueDetail & { cues: unknown } | null }
+export type AuditResult = { row: AuditRow | null; selection: QueueAnswerResult['selection']; undo_token: string | null }
+export type EffortLimits = { search_workflow: 'sw' | 'legacy'
+  efforts: Record<'quick' | 'standard' | 'detailed', { read: number; abstracts: number; fetch: number; reads: number; runs: number
+    chain_seeds: number; chain_abstracts: number; passages: number }> | null }
 // The human queue of an sw research (slice 16, D96). Rows are derived from stored decisions each time they are read.
 export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'confirm_absent' | 'find_part' | 'look_again'
 export type QueueAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong' | 'pdf_confirmed'
@@ -719,6 +774,13 @@ export const api = {
     request<QueueAnswerResult>(`/api/researches/${id}/queue/${sourceId}/decision`, json('POST', { decision, note: note ?? null, row_token: rowToken })),
   undoQueueDecision: (id: string, sourceId: string, undoToken: string) =>
     request<QueueAnswerResult>(`/api/researches/${id}/queue/${sourceId}/undo`, json('POST', { row_token: undoToken })),
+  audit: (id: string) => request<AuditView>(`/api/researches/${id}/audit`),
+  auditRow: (id: string, sourceId: string) => request<AuditRowView>(`/api/researches/${id}/audit/${sourceId}`),
+  answerAuditRow: (id: string, sourceId: string, decision: AuditAnswer, auditToken: string) =>
+    request<AuditResult>(`/api/researches/${id}/audit/${sourceId}/decision`, json('POST', { decision, note: null, audit_token: auditToken })),
+  undoAuditDecision: (id: string, sourceId: string, auditToken: string) =>
+    request<AuditResult>(`/api/researches/${id}/audit/${sourceId}/undo`, json('POST', { audit_token: auditToken })),
+  effortLimits: () => request<EffortLimits>('/api/effort-limits'),
   reviseScope: (id: string, question: string, expectedVersion: number, keyTerms?: string | null) =>
     request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion, key_terms: keyTerms ?? null })),
   // Approve or correct the protocol an sw discovery run stopped for; the run is queued again (D80).
@@ -799,6 +861,9 @@ export const api = {
   restoreTemplate: (templateId: string) => request<{ restored: boolean }>(`/api/table-templates/${templateId}/restore`, { method: 'POST' }),
   purgeTemplate: (templateId: string) => request<{ deleted: boolean; tables_unlinked: number }>(`/api/trash/templates/${templateId}`, { method: 'DELETE' }),
 }
+
+export const prismaSUrl = (researchId: string, format: 'md' | 'json') =>
+  `/api/researches/${researchId}/prisma-s?format=${format}`
 
 export const bibliographyUrl = (researchId: string, format: 'bibtex' | 'ris', sources: 'included' | 'cited') =>
   `/api/researches/${researchId}/bibliography?format=${format}&sources=${sources}`

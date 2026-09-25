@@ -227,3 +227,16 @@ def effective_selection(
             state = {"include": "included", "exclude": "excluded"}.get(proposal, "pending")
             result[cid] = {"state": state, "origin": "model_proposal"}
     return result
+
+
+def effort_limits(search_workflow: str) -> dict[str, Any]:
+    """What each research depth lets an `sw` run read, from the constants above at the moment of asking (slice 20,
+    decision 9): Home's depth text says these numbers, so the next change of a limit cannot leave the text behind.
+    A `legacy` server returns no numbers; its depth texts stay as they are."""
+    if search_workflow != "sw":
+        return {"search_workflow": "legacy", "efforts": None}
+    return {"search_workflow": "sw", "efforts": {effort: {
+        "read": SW_READ_LIMIT[effort], "abstracts": ABSTRACT_READ_LIMIT[effort], "fetch": FULLTEXT_WORK_LIMIT[effort],
+        "reads": FULLTEXT_READ_LIMIT[effort], "runs": FULLTEXT_RUNS, "chain_seeds": CHAIN_SEEDS,
+        "chain_abstracts": CHAIN_ABSTRACT_READ[effort],
+        "passages": TEST_EFFORT_BUDGETS[effort].max_answer_passages} for effort in ("quick", "standard", "detailed")}}

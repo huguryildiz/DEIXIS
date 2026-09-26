@@ -12,10 +12,11 @@
     "skill_package_hash",
     "criterion",
     "parts",
+    "question_elements",
     "exclusion_title_words"
   ],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.criterion_proposal.v1" },
+    "schema_version": { "type": "string", "const": "deixis.criterion_proposal.v2" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
@@ -29,7 +30,7 @@
       "type": "array",
       "minItems": 2,
       "maxItems": 5,
-      "description": "What the paper itself must do or state, one entry per part. The setting the question asks about is not a part: the search blocks already hold it.",
+      "description": "What the paper itself must do or state, one entry per part. The setting (system, domain, material, environment) is not a part: the search blocks hold it. A population of participants and a comparator the question names are parts, listed in `question_elements`.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -45,6 +46,24 @@
             "description": "Words an author would literally write in a paper that has this part: one to four words, lower case, as running text or as a standard abbreviation or notation.",
             "items": { "type": "string", "minLength": 1, "maxLength": 80 }
           }
+        }
+      }
+    },
+    "question_elements": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 2,
+      "description": "The population and the comparator the question names, each with the question's own words and the part that holds it. Empty when the question names neither.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "words", "part"],
+        "properties": {
+          "role": { "type": "string", "enum": ["population", "comparator"] },
+          "words": { "type": "string", "minLength": 1, "maxLength": 300,
+                     "description": "The question's own words that name this element, copied exactly." },
+          "part": { "type": "string", "minLength": 1, "maxLength": 60,
+                    "description": "The name of the part in `parts` that holds this element." }
         }
       }
     },

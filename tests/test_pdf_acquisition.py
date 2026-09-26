@@ -255,7 +255,8 @@ def test_acquisition_uses_web_when_metadata_sources_yield_no_verified_pdf(tmp_pa
 
     result = run(check())
     assert result["pdf_found"] is False
-    assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == ["unpaywall", "openalex", "crossref", "core", "web_search"]
+    assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == [
+        "unpaywall", "openalex", "crossref", "core", "europepmc", "web_search"]
     assert [(c["provider"], c["version_status"]) for c in store.pdf_candidates(svid)] == [
         ("openalex", "different"), ("core", "uncertain"), ("web_search", "uncertain")]
     connection.close()

@@ -290,7 +290,9 @@ def test_pdf_discovery_is_visible_and_user_can_attach_pdf_to_existing_source(tmp
         found = client.post(f"/api/researches/{rid}/sources/{source['source_version_id']}/pdf-discovery")
         assert found.status_code == 200, found.text
         refreshed = next(s for s in found.json()["sources"] if s["source_version_id"] == source["source_version_id"])
-        assert [d["provider"] for d in refreshed["access"]["pdf_discoveries"]] == ["unpaywall", "openalex", "crossref", "core", "web_search"]
+        # Europe PMC is asked after the four lookups gave no file and before web search (SW21, D106).
+        assert [d["provider"] for d in refreshed["access"]["pdf_discoveries"]] == [
+            "unpaywall", "openalex", "crossref", "core", "europepmc", "web_search"]
 
         attached = client.post(
             f"/api/researches/{rid}/sources/{source['source_version_id']}/uploads",
@@ -397,7 +399,8 @@ def test_refused_link_leads_to_one_lookup_for_another_copy_and_is_not_requested_
         other = next(s for s in run["steps"] if s["kind"] == "pdf_other_copy")
         source = next(s for s in view["sources"] if s["doi"] == "10.1/a")
         # The automatic lookup leaves web search to the user's own "Find PDF".
-        assert [d["provider"] for d in source["access"]["pdf_discoveries"]] == ["unpaywall", "openalex", "crossref", "core"]
+        expected = ["unpaywall", "openalex", "crossref", "core"] + ([] if copy_found else ["europepmc"])  # SW21
+        assert [d["provider"] for d in source["access"]["pdf_discoveries"]] == expected
         assert source["access"]["fetch"]["http_status"] == 403
         if copy_found:
             assert other["status"] == "succeeded" and other["output"]["page_count"] == 1
@@ -1281,7 +1284,9 @@ def test_pdf_discovery_is_visible_and_user_can_attach_pdf_to_existing_source(tmp
         found = client.post(f"/api/researches/{rid}/sources/{source['source_version_id']}/pdf-discovery")
         assert found.status_code == 200, found.text
         refreshed = next(s for s in found.json()["sources"] if s["source_version_id"] == source["source_version_id"])
-        assert [d["provider"] for d in refreshed["access"]["pdf_discoveries"]] == ["unpaywall", "openalex", "crossref", "core", "web_search"]
+        # Europe PMC is asked after the four lookups gave no file and before web search (SW21, D106).
+        assert [d["provider"] for d in refreshed["access"]["pdf_discoveries"]] == [
+            "unpaywall", "openalex", "crossref", "core", "europepmc", "web_search"]
 
         attached = client.post(
             f"/api/researches/{rid}/sources/{source['source_version_id']}/uploads",
@@ -1388,7 +1393,8 @@ def test_refused_link_leads_to_one_lookup_for_another_copy_and_is_not_requested_
         other = next(s for s in run["steps"] if s["kind"] == "pdf_other_copy")
         source = next(s for s in view["sources"] if s["doi"] == "10.1/a")
         # The automatic lookup leaves web search to the user's own "Find PDF".
-        assert [d["provider"] for d in source["access"]["pdf_discoveries"]] == ["unpaywall", "openalex", "crossref", "core"]
+        expected = ["unpaywall", "openalex", "crossref", "core"] + ([] if copy_found else ["europepmc"])  # SW21
+        assert [d["provider"] for d in source["access"]["pdf_discoveries"]] == expected
         assert source["access"]["fetch"]["http_status"] == 403
         if copy_found:
             assert other["status"] == "succeeded" and other["output"]["page_count"] == 1

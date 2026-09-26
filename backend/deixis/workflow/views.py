@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from deixis.documents import embeddings, local_embedding, pdf
+from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import SUGGESTION_CALLS, effective_reviewer, result_applicability
 from deixis.workflow import english_question as english_question_rules
 from deixis.workflow import approval as approval_rules
@@ -300,6 +301,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                                                       "extraction_version", "title", "title_basis", "page_count", "text_pages")}
                           | {"passage_count": len(seed["passages"])} if seed else None)
     scope_view["seed_status"] = store.seed_status(research_id, scope)
+    # An sw research may ask for an answer with no included work once this revision's search finished (SW22, D106).
+    scope_view["discovery_completed"] = store.discovery_completed(research_id)
     # The providers a query may go to; a verification connector in the scope is not one (D87), nor Scopus in an sw
     # research (D91).
     scope_view["search_providers"] = search_providers(scope["providers"], scope.get("search_workflow"))
@@ -365,11 +368,13 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                  "physical_page": e["physical_page"], "printed_label": e["printed_label"],
                  "reading_depth": "abstract" if e["kind"] == "abstract" else "selected_sections", "title": e["title"],
                  "version_label": e["version_label"], "anchor_text": e["anchor_text"], "evidence_status": e["evidence_status"],
-                 "text_source": e["text_source"], "removed_from_research": e["source_version_id"] in removed}
+                 "text_source": e["text_source"], "removed_from_research": e["source_version_id"] in removed,
+                 # Europe PMC's text drawn as a PDF: its page is DEIXIS's, not the publisher's (SW21).
+                 "rendition": bool(e["rendition"])}
                 for e in conn.execute(
                     "SELECT l.passage_id, l.source_version_id, l.anchor_text, p.kind, p.physical_page, p.printed_label, p.text_source, s.title, s.version_label,"
                     " (SELECT w.source_key FROM works w WHERE w.id = s.work_id) AS source_key,"
-                    f" {EVIDENCE_STATUS_SQL} AS evidence_status FROM evidence_links l"
+                    f" {EVIDENCE_STATUS_SQL} AS evidence_status, {RENDITION_SQL} AS rendition FROM evidence_links l"
                     " JOIN passages p ON p.id = l.passage_id JOIN source_versions s ON s.id = l.source_version_id"
                     " LEFT JOIN source_assets a ON a.id = p.asset_id"
                     " WHERE l.claim_id = ? ORDER BY l.rowid", (c["id"],)
@@ -833,6 +838,7 @@ def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, A
                                           passage["physical_page"], passage["payload_ref"]) if passage["text_source"] == "latex_source" else [],
         "reading_depth": "abstract" if passage["kind"] == "abstract" else "selected_sections",
         "asset_id": passage["asset_id"],
+        "rendition": store.asset_rendition(passage["asset_id"]),
         "evidence_status": store.evidence_statuses([passage_id])[passage_id],
         "removed_from_research": not store.is_active_member(research_id, passage["source_version_id"]),
         "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",

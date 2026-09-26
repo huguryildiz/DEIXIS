@@ -26,7 +26,7 @@ def at_0053(tmp_path, monkeypatch):
     folder = tmp_path / "migrations-0053"
     folder.mkdir()
     for path in db.MIGRATIONS_DIR.glob("*.sql"):
-        if path.name != REBUILD:
+        if int(path.name.split("_", 1)[0]) < 54:  # a library as it stood before 0054, later migrations included
             shutil.copy(path, folder / path.name)
     real = db.MIGRATIONS_DIR
     monkeypatch.setattr(db, "MIGRATIONS_DIR", folder)
@@ -77,7 +77,7 @@ def test_the_passages_rebuild_keeps_every_row_link_trigger_and_fts_entry(tmp_pat
     before_ddl, before_trigger = ddl(conn, "passages"), ddl(conn, "cell_evidence_same_source")
     rows = conn.execute("SELECT rowid, id, text_sha256, text_source FROM passages ORDER BY rowid").fetchall()
     fts = conn.execute("SELECT rowid FROM passages_fts WHERE passages_fts MATCH 'channel' ORDER BY rowid").fetchall()
-    assert db.migrate(conn) == [54]
+    assert db.migrate(conn)[:1] == [54]  # the rebuild first; migrations added after it follow
     after_ddl = ddl(conn, "passages")
     normalize = lambda s: re.sub(r'CREATE TABLE "?passages(_new)?"?', "CREATE TABLE passages", s)  # noqa: E731
     assert normalize(after_ddl) == normalize(before_ddl).replace("'marker'))", "'marker', 'latex_source'))")
@@ -104,7 +104,7 @@ def test_the_passages_rebuild_keeps_every_row_link_trigger_and_fts_entry(tmp_pat
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("INSERT INTO passages (id, source_version_id, kind, abstract_origin, text, text_sha256, retrieved_at, created_at, text_source)"
                      " VALUES ('psg_U', ?, 'abstract', 'x', 'y', 'h', ?, ?, 'unknown')", (svid, ts, ts))
-    assert max(r[0] for r in conn.execute("SELECT version FROM schema_migrations")) == 54
+    assert max(r[0] for r in conn.execute("SELECT version FROM schema_migrations")) == 55  # 0055 (SW21) follows the rebuild
 
 
 # ---- contracts ------------------------------------------------------------------------------------------------------------

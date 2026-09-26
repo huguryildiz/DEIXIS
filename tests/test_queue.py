@@ -365,7 +365,8 @@ def test_cue_sentences_come_with_their_pages_or_the_row_says_none_were_found(sto
     lib.read(without, "part_without_evidence", labels=partial(lib))
     cues = queue.row_detail(store, lib.rid, with_cue)["detail"]["cues"]
     page_three = next(p["id"] for p in store.passages_for(with_cue) if p["physical_page"] == 3)
-    assert cues["sentences"] == [{"page": 3, "sentence": lib.field["cue"], "passage_id": page_three}]
+    assert cues["sentences"] == [{"page": 3, "sentence": lib.field["cue"], "passage_id": page_three,
+                                  "rendition": False}]  # a PDF of its own, not Europe PMC's drawn text (SW21)
     assert cues["total"] == 1
     assert cues["note"] is None
     none = queue.row_detail(store, lib.rid, without)["detail"]["cues"]

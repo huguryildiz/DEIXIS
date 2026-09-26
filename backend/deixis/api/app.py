@@ -352,6 +352,7 @@ def create_app(
     trusted_clients: tuple[str, ...] = (),
     equation_service: Any = None,
     local_embedder: Any = None,
+    xml_fetcher: Callable[[str], Awaitable[fetch_module.FetchResult]] | None = None,
 ) -> FastAPI:
     settings = settings or load_settings()
     ports = {settings.port}
@@ -387,7 +388,8 @@ def create_app(
         await builtin.start()  # recovers an install a closed DEIXIS left running, then checks the files in full
         local_embedding.register(builtin.integrity)
         flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf, equations,
-                                     limiter=ModelCallLimiter(settings.model_concurrency), local_embedder=embedder))
+                                     limiter=ModelCallLimiter(settings.model_concurrency), local_embedder=embedder,
+                                     fetch_xml=xml_fetcher or acquisition.fetch_xml))
         app.state.builtin = builtin
         worker = Worker(store, flow, settings.lock_path)
         owner = start_worker and worker.acquire()
@@ -397,6 +399,7 @@ def create_app(
         app.state.store, app.state.worker, app.state.adapters = store, worker, adapter_map
         app.state.package, app.state.owner = package, owner
         app.state.http, app.state.fetch_pdf = http, fetcher or fetch_module.fetch_pdf
+        app.state.fetch_xml = xml_fetcher or acquisition.fetch_xml  # Europe PMC's full text (SW21)
         app.state.institutional_access = None
         app.state.local_tools = local_tools.LocalTools(http)
         app.state.recovered = worker.recover() if owner else None
@@ -954,7 +957,11 @@ def create_app(
                                     "Choose a readable PDF seed before searching" if seed_status == "missing"
                                     else "The selected PDF changed; select it again before searching")
         if body.kind in ("answer", "pdf_collection") and not store.included_works(research_id):
-            raise HTTPException(422, "Include at least one source before generating an answer")
+            # An sw research whose search finished may still ask: its answer records that no work was included when
+            # it started (SW22, D106). A legacy research and a PDF collection keep the refusal.
+            if not (body.kind == "answer" and scope.get("search_workflow") == "sw"
+                    and store.discovery_completed(research_id)):
+                raise HTTPException(422, "Include at least one source before generating an answer")
         if body.kind == "fulltext_fetch" and scope.get("search_workflow") != "sw":
             raise HTTPException(422, "Full-text retrieval runs belong to the search workflow")
         if body.kind == "fulltext_adjudication" and scope.get("search_workflow") != "sw":
@@ -1384,7 +1391,7 @@ def create_app(
             await acquisition.acquire_for_source(
                 store, research_id, source_version_id, request.app.state.http, settings.papers_dir,
                 settings.contact_email, os.environ.get("SERPAPI_API_KEY"), request.app.state.fetch_pdf,
-                core_key=os.environ.get("CORE_API_KEY"),
+                core_key=os.environ.get("CORE_API_KEY"), xml_fetcher=request.app.state.fetch_xml,
             )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
@@ -1402,6 +1409,9 @@ def create_app(
             raise HTTPException(404, "PDF candidate is not listed for this source")
         if candidate["version_status"] != "uncertain" or candidate["identity_status"] not in ("doi_verified", "title_verified"):
             raise HTTPException(422, "Only a version-uncertain candidate whose DOI or title matches this source can be confirmed")
+        if candidate["provider"] == "europepmc":
+            # Europe PMC's full text is XML drawn as a PDF by code (SW21); it is attached only by the version rule.
+            raise HTTPException(422, "A Europe PMC full text is attached only when its version matches this record")
         if store.has_asset(source_version_id):
             raise HTTPException(409, "This source already has a PDF")
         result = await acquisition.attach_confirmed_candidate(store, source_version_id, candidate, settings.papers_dir,
@@ -1547,7 +1557,8 @@ def create_app(
         source_numbers = {version: latex_numbers(store, asset_id, version)
                           for version in {p["extraction_version"] for p in passages if p["text_source"] == "latex_source"}}
         return {
-            "asset": {k: asset[k] for k in ("id", "extraction_status", "page_count", "origin", "byte_size", "original_filename")},
+            "asset": {k: asset[k] for k in ("id", "extraction_status", "page_count", "origin", "byte_size", "original_filename")}
+            | {"rendition": store.asset_rendition(asset_id)},
             "passages": [{k: passage[k] for k in ("id", "kind", "text", "physical_page", "printed_label", "extraction_version", "payload_ref", "text_source")}
                          | {"equations_to_check": to_check.get(passage["physical_page"], 0) if passage["text_source"] == "marker" else 0,
                             "source_equations": chunk_numbers(source_numbers[passage["extraction_version"]], passage["physical_page"],

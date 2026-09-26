@@ -75,6 +75,8 @@ CAPABILITIES = {
     "unsupported_tasks": ["synthesis", "candidate_development", "claim_check", "experiment"],
 }
 MAX_DOWNLOADS_PER_RUN = 8
+# The reason an sw answer records when no work was included at full text as it started (SW22, D106).
+NO_INCLUDABLE_SOURCE = "no_includable_source"
 MAX_ABSTRACT_CHARS = 2500
 MAX_PASSAGES_PER_SOURCE = 6  # passages one included source may contribute to an answer step
 PDF_PAGES_PER_SOURCE = 2  # PDF passages a source adds to its abstract when the included sources outnumber the passage limit
@@ -326,6 +328,7 @@ class FlowDeps:
     equations: Any = None  # workflow.equations.EquationService when the equation reader is set up (D52)
     limiter: ModelCallLimiter = field(default_factory=lambda: ModelCallLimiter(1))
     local_embedder: Any = None  # documents.local_embedding.LocalEmbedder: the built-in embedding model (slice 21)
+    fetch_xml: Callable[[str], Awaitable[fetch_module.FetchResult]] = acquisition.fetch_xml  # Europe PMC (SW21)
 
 
 class ResearchFlow:
@@ -2461,6 +2464,15 @@ class ResearchFlow:
         if scope.get("search_workflow") == "sw":
             # No await between the two reads above and this step's write: the snapshot is the state they describe.
             self._answer_start_snapshot(run, heads, selection_revision)
+            if not heads:
+                # Nothing was included at full text when this answer started (SW22, D106): the answer says so with
+                # the snapshot's counts and asks no model. It is a record of that moment, not a finding about sources.
+                self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
+                                       {"ok": True, "issues": [], "reason": NO_INCLUDABLE_SOURCE,
+                                        "note": "No work was included at full text when this answer started;"
+                                                " no model was asked."},
+                                       selection_revision=selection_revision)
+                return
         await self._inspect(run, limit=MAX_DOWNLOADS_PER_RUN)
         # A work whose only PDF text is a person's file not read under this criterion, with no abstract-only version
         # to give instead, gives the answer nothing (slice 18b, decision 8).
@@ -2801,6 +2813,7 @@ class ResearchFlow:
         found = await acquisition.acquire_for_source(
             self.store, run["research_id"], source["id"], self.deps.http, settings.papers_dir, settings.contact_email, None,
             self.deps.fetch_pdf, core_key=CONNECTORS["core"].api_key(), web_search=False, other_versions=other_versions,
+            xml_fetcher=self.deps.fetch_xml,
         )
         if found["asset_id"] is None:
             self.store.finish_step(step["id"], "failed", error_code="no_other_copy", error={"candidates": found["candidates"]})

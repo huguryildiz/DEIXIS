@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { BookOpen, CircleCheck, CircleDashed, CircleMinus, ExternalLink, FileSearch, Info, RotateCcw, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api, ApiError, type AttachOutcome, type PersonFile, type PersonFiles, type ResearchView, type WaitingMatch, type WaitingRow, type WaitingView, type WaitingWork } from './api'
-import { personFileStateText, personUnreadText, queueAnswerLabels, queueAnswerOfCode, versionText, versionTones, waitingReasonText } from './labels'
+import { pageLocator, personFileStateText, personUnreadText, queueAnswerLabels, queueAnswerOfCode, versionText, versionTones, waitingReasonText } from './labels'
 import { Notice } from './Notice'
 import { useToast } from './Toast'
 import { t } from './i18n'
@@ -222,7 +222,7 @@ function YourFiles({ researchId, files, busy, onChanged }: { researchId: string;
         {row.state === 'included' && row.quotes.length > 0 && <ul className="person-file-quotes" aria-label={t('Quotes code found on their pages')}>
           {row.quotes.map(q => <li key={`${q.part}-${q.quote}`}>
             <blockquote>{q.quote}</blockquote>
-            <small>{[q.part, q.page != null ? t('PDF p. {page}', { page: q.page }) : null].filter(Boolean).join(' · ')}</small>
+            <small>{[q.part, q.page != null ? pageLocator(q.page, q.rendition) : null].filter(Boolean).join(' · ')}</small>
           </li>)}
         </ul>}
         {(row.state === 'unread' || row.state === 'changed') && row.request_id && <span className="person-files-actions">

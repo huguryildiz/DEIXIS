@@ -24,7 +24,10 @@ from deixis.providers.registry import search_providers
 PROTOCOL_SCHEMA = "deixis.protocol.v1"
 # What the criterion body says about where it came from. It is kept out of `decisions.CRITERION_FIELDS` on purpose:
 # the same criterion read back from an earlier protocol must not make the decisions taken under it stale (SW11.10).
-CRITERION_ORIGIN_FIELDS = ("origin", "base_run", "runs_ok", "dropped_exclusion_title_words", "sought_term_in_criterion")
+CRITERION_ORIGIN_FIELDS = ("origin", "base_run", "runs_ok", "dropped_exclusion_title_words", "sought_term_in_criterion",
+                           "question_elements", "required_roles")
+# A criterion built before SW23 (D106) has neither of these; it named no population or comparator.
+_ORIGIN_DEFAULTS = {"question_elements": [], "required_roles": []}
 
 
 def _model(role: tuple[str, str | None, str | None] | None) -> dict[str, Any] | None:
@@ -144,7 +147,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "criterion_parts": criterion["parts"] if criterion else None,
         "cue_phrases": criterion["cue_phrases"] if criterion else None,
         "exclusion_title_words": criterion["exclusion_title_words"] if criterion else None,
-        **({"criterion_origin": {name: criterion[name] for name in CRITERION_ORIGIN_FIELDS}} if criterion else {}),
+        **({"criterion_origin": {name: criterion[name] if name in criterion else _ORIGIN_DEFAULTS[name]
+                                    for name in CRITERION_ORIGIN_FIELDS}} if criterion else {}),
         # How this vocabulary and criterion were agreed before the freeze (SW2.6, SW15.3).
         **({"approval": approval} if approval else {}),
         # Who wrote the query and what came of it, when a model wrote it (D92). A body without it is 13g's.

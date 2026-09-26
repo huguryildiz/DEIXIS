@@ -284,6 +284,10 @@ def apply_criterion(proposed: dict[str, Any] | None, edited: dict[str, Any] | No
         "base_run": (proposed or {}).get("base_run"),
         "runs_ok": (proposed or {}).get("runs_ok", []),
         "sought_term_in_criterion": (proposed or {}).get("sought_term_in_criterion"),
+        # What the proposal named as the question's population and comparator (SW23). It is the proposal's record and
+        # is not checked again against the user's parts: the user may delete such a part, and the user's word stands.
+        "question_elements": (proposed or {}).get("question_elements", []),
+        "required_roles": (proposed or {}).get("required_roles", []),
         "origin": "user",
     }
 

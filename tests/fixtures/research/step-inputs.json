@@ -1652,13 +1652,71 @@
    "references/criterion-proposal.md"
   ],
   "output_schema_versions": [
-   "deixis.criterion_proposal.v1"
+   "deixis.criterion_proposal.v2"
   ],
   "question": {
    "text": "SYNTHETIC: which supervised exercise programmes have been tested for reducing fatigue in adults after chemotherapy, and which fatigue scale did each one report?",
    "language_hint": "en"
   },
   "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "search_plan",
+    "screening",
+    "grounded_answer"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [
+   "openalex"
+  ],
+  "candidates": [],
+  "sources": [],
+  "passages": [],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [],
+   "passage_ids": []
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 9,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 3
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": null
+  },
+  "created_at": "2026-09-21T12:00:00Z"
+ },
+ "E_criterion_proposal_steered": {
+  "step_input_id": "sti_SYNTHE0001",
+  "research_id": "res_SYNTHE0001",
+  "run_id": "run_SYNTHE0001",
+  "step_id": "stp_SYNTHE0001",
+  "task_type": "criterion_proposal",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "skill_files": [
+   "SKILL.md",
+   "references/criterion-proposal.md"
+  ],
+  "output_schema_versions": [
+   "deixis.criterion_proposal.v2"
+  ],
+  "question": {
+   "text": "SYNTHETIC: which supervised exercise programmes have been tested for reducing fatigue in adults after chemotherapy, and which fatigue scale did each one report?",
+   "language_hint": "en"
+  },
+  "user_steering": [
+   "SYNTHETIC: only trials compared with usual care"
+  ],
   "capabilities": {
    "supported_tasks": [
     "search_plan",

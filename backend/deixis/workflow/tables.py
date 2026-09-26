@@ -11,6 +11,7 @@ import json
 import math
 from typing import Any
 
+from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, EVIDENCE_STATUS_SQL, NotFound, Store
@@ -737,9 +738,10 @@ class TableStore:
         )]
 
     def _revision_view(self, revision: dict[str, Any]) -> dict[str, Any]:
-        evidence = [dict(r) for r in self.conn.execute(
+        # A page of Europe PMC's drawn text says so on every surface (SW21).
+        evidence = [dict(r) | {"rendition": bool(r["rendition"])} for r in self.conn.execute(
             "SELECT l.passage_id, l.anchor_text, l.anchor_match, p.kind, p.physical_page, p.printed_label, p.asset_id, p.text_source,"
-            f" {EVIDENCE_STATUS_SQL} AS evidence_status"
+            f" {EVIDENCE_STATUS_SQL} AS evidence_status, {RENDITION_SQL} AS rendition"
             " FROM cell_evidence_links l JOIN passages p ON p.id = l.passage_id"
             " LEFT JOIN source_assets a ON a.id = p.asset_id WHERE l.cell_revision_id = ? ORDER BY l.rowid", (revision["id"],)
         )]

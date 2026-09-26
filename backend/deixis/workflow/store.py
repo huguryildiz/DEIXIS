@@ -15,6 +15,7 @@ import sqlite3
 from typing import Any
 
 from deixis.domain.canonical import sha256_hex
+from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
 from deixis.workflow import links
@@ -617,6 +618,8 @@ class Store:
                 "dropped_exclusion_title_words": origin.get("dropped_exclusion_title_words", []),
                 "base_run": origin.get("base_run"), "runs_ok": origin.get("runs_ok", []),
                 "sought_term_in_criterion": origin.get("sought_term_in_criterion"),
+                "question_elements": origin.get("question_elements", []),
+                "required_roles": origin.get("required_roles", []),
                 "protocol_revision": row["protocol_revision"],
             }
         return None
@@ -650,6 +653,17 @@ class Store:
             self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (ts, research_id))
             self._event(research_id, "run_queued", {"kind": kind}, run_id)
         return self.run(run_id)
+
+    def discovery_completed(self, research_id: str) -> bool:
+        """Whether the research's current scope revision has a completed discovery run (SW22, D106).
+
+        An `sw` research may then ask for an answer with no included work: the answer records that none was included
+        when it started, instead of the request being refused.
+        """
+        return self.conn.execute(
+            "SELECT 1 FROM runs r JOIN researches s ON s.id = r.research_id WHERE r.research_id = ?"
+            " AND r.kind = 'discovery' AND r.status = 'completed' AND r.scope_revision = s.current_scope_revision LIMIT 1",
+            (research_id,)).fetchone() is not None
 
     def run(self, run_id: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
@@ -2513,6 +2527,24 @@ class Store:
         if row is None:
             raise NotFound(passage_id)
         return dict(row)
+
+    def asset_rendition(self, asset_id: str | None) -> bool:
+        """Whether this file is Europe PMC's full text drawn by DEIXIS (SW21): its pages are not the publisher's.
+
+        Read from the asset row itself, so a removed or replaced file keeps saying so where old evidence cites it.
+        """
+        if asset_id is None:
+            return False
+        row = self.conn.execute(f"SELECT {RENDITION_SQL} FROM source_assets a WHERE a.id = ?", (asset_id,)).fetchone()
+        return bool(row and row[0])
+
+    def passage_rendition(self, passage_id: str | None) -> bool:
+        """`asset_rendition` of the file this passage was cut from; an abstract has none."""
+        if passage_id is None:
+            return False
+        row = self.conn.execute(f"SELECT {RENDITION_SQL} FROM passages p JOIN source_assets a ON a.id = p.asset_id"
+                                " WHERE p.id = ?", (passage_id,)).fetchone()
+        return bool(row and row[0])
 
     # ---- answers --------------------------------------------------------------------------
     def latest_step_output(self, research_id: str, operation_key: str, scope_revision: int) -> dict[str, Any] | None:

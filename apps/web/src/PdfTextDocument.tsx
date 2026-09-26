@@ -7,6 +7,7 @@ import { PassageMathText } from './PassageMathText'
 import { OCR_LABEL } from './ocr'
 import { IN_TEXT, SUBSECTION, buildDocument, locateAnchors, marksExactly, tableKey, type Doc, type Passages } from './pdfDocument'
 import { scrollBehavior } from './motion'
+import { pageLocator } from './labels'
 
 // The extracted text of a whole PDF as a readable document (D58): section contents, pictures of figures cut from the PDF
 // page, and in-text references to figures, tables, equations and numbered references that jump to them. Footnote markers are
@@ -99,7 +100,7 @@ export type CitationLabels = { marked: string; unmarked: string; mark: string }
 
 // With a citation, the document opens on the cited text: every located anchor is marked and the first is scrolled into view.
 // An anchor not found in its page's text leaves the page unmarked; the view then opens on that page and says so.
-export function PdfTextDocument({ researchId, assetId, passages, showNotes, sourceTitle = null, citation = null }: { researchId: string; assetId: string; passages: Passages; showNotes: boolean; sourceTitle?: string | null; citation?: { page: number | null; texts: string[]; expected: boolean; labels?: CitationLabels } | null }) {
+export function PdfTextDocument({ researchId, assetId, passages, showNotes, sourceTitle = null, citation = null, rendition = false }: { researchId: string; assetId: string; passages: Passages; showNotes: boolean; sourceTitle?: string | null; rendition?: boolean; citation?: { page: number | null; texts: string[]; expected: boolean; labels?: CitationLabels } | null }) {
   const [figures, setFigures] = useState<AssetFigure[]>([])
   useEffect(() => {
     let cancelled = false
@@ -131,8 +132,8 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
     {citation && <div className={`pdf-text-citation${unmarked ? ' is-unmarked' : ''}`}>
       {unmarked ? <TriangleAlert size={14} aria-hidden /> : <Quote size={14} aria-hidden />}
       <span>{citation.labels ? (unmarked ? citation.labels.unmarked : citation.labels.marked) : unmarked
-        ? t(citation.texts.length ? 'The cited text was not found in the text of PDF p. {page}, so it is not marked. Check the page in the PDF.' : 'This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.', { page: citation.page ?? '?' })
-        : t('Cited text · PDF p. {page}', { page: citation.page ?? '?' })}</span>
+        ? t(citation.texts.length ? 'The cited text was not found in the text of {locator}, so it is not marked. Check the page in the PDF.' : 'This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.', { locator: pageLocator(citation.page ?? '?', rendition) })
+        : t('Cited text · {locator}', { locator: pageLocator(citation.page ?? '?', rendition) })}</span>
       {(marks?.first || citedPage) && <button type="button" onClick={goToCitation}>{t(marks?.first ? 'Go to cited text' : 'Go to cited page')}</button>}
     </div>}
     {doc.headings.length >= 3 && <details className="pdf-text-contents">
@@ -141,7 +142,7 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
     </details>}
     {doc.pages.map(({ head, blocks }) => {
       return <section className={`pdf-text-page${unmarked && head.id === citedPage ? ' is-cited-page' : ''}`} key={head.id} id={head.id}>
-        <h4>{head.physical_page ? t('PDF p. {page}', { page: head.physical_page }) : t('Extracted text')}{head.text_source === 'ocr' && <span className="ref-pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}</h4>
+        <h4>{head.physical_page ? pageLocator(head.physical_page, rendition) : t('Extracted text')}{head.text_source === 'ocr' && <span className="ref-pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}</h4>
         {(head.equations_to_check ?? 0) > 0 && <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(head.equations_to_check === 1 ? '{n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : '{n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: head.equations_to_check ?? 0 })}</p>}
         {blocks.map(block => {
           const blockMarks = marks?.blocks.get(block.id)

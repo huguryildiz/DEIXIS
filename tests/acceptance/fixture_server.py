@@ -27,6 +27,14 @@ monkeypatches `deixis.documents.fetch.fetch_file`, before `create_app`, to an as
 request; Marker is not installed in the fixture's temp data directory, so the arXiv source route reads the one arXiv
 record this mode adds. Its PDF (`tests/arxiv_helpers.make_arxiv_pdf()`) has the letters-only text of two display
 equations that the fixture's source archive's LaTeX matches and places.
+
+`DEIXIS_FIXTURE_EUROPEPMC=on` (case P, slice 25, SW21) with the queue mode withholds the open PDFs of the queue works
+that have one of their own, so the retrieval asks Europe PMC: the mocked search answers each DOI with an open-access
+PMCID and the injected `xml_fetcher` returns a SYNTHETIC JATS document built from the same page text, which the real
+drawing and extraction turn into a rendition. No request leaves the machine.
+
+The sw research of case Q (slice 25, SW22) needs no marker: with retrieval and reading off, an sw search finishes with
+nothing included, which is the state its answer is asked from.
 """
 
 from __future__ import annotations
@@ -175,6 +183,38 @@ if QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_AUDIT") == "on":
     QUEUE_PDFS["https://fixture.example/q956.pdf"] = [
         f"SYNTHETIC queue-agree https://doi.org/10.5555/q956 first page.\n{AGREE_SENTENCES[0]}",
         f"SYNTHETIC queue-agree second page.\n{AGREE_SENTENCES[1]}"]
+# Case P (SW21): the queue works whose own PDF is withheld and whose text Europe PMC gives instead, by DOI.
+EUROPEPMC_MODE = QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_EUROPEPMC") == "on"
+EUROPEPMC_WORKS = {work["doi"].removeprefix("https://doi.org/"): (f"PMC9000{work['id'][-3:]}", work)
+                   for work in QUEUE_WORKS if work["id"][-3:] in ("951", "952", "953", "956")}
+WITHHELD_PDFS = {work["best_oa_location"]["pdf_url"] for _, work in EUROPEPMC_WORKS.values()} if EUROPEPMC_MODE else set()
+
+
+def europepmc_search(request: httpx.Request) -> httpx.Response:
+    doi = request.url.params.get("query", "").removeprefix('DOI:"').removesuffix('"')
+    found = EUROPEPMC_WORKS.get(doi)
+    results = [{"pmcid": found[0], "doi": doi, "isOpenAccess": "Y", "inEPMC": "Y", "authMan": "N",
+                "license": "cc by"}] if found else []
+    return httpx.Response(200, json={"hitCount": len(results), "resultList": {"result": results}})
+
+
+async def europepmc_xml(url: str) -> FetchResult:
+    """The SYNTHETIC JATS full text of a case P work: its title, abstract and the lines of its PDF's pages."""
+    from html import escape
+
+    pmcid = url.rsplit("/", 2)[-2]
+    work = next((w for p, w in EUROPEPMC_WORKS.values() if p == pmcid), None)
+    if work is None:
+        return FetchResult("http_error", final_url=url, http_status=404)
+    lines = [line for page in QUEUE_PDFS[work["best_oa_location"]["pdf_url"]] for line in page.split("\n")]
+    abstract = " ".join(sorted(work["abstract_inverted_index"], key=lambda w: work["abstract_inverted_index"][w][0]))
+    body = "".join(f"<p>{escape(line)}</p>" for line in lines)
+    xml = (f'<?xml version="1.0" encoding="UTF-8"?><article><front><article-meta><title-group><article-title>'
+           f"{escape(work['display_name'])}</article-title></title-group><abstract><p>{escape(abstract)}</p></abstract>"
+           f"</article-meta></front><body><sec><title>SYNTHETIC text</title>{body}</sec></body></article>")
+    return FetchResult("ok", data=xml.encode(), final_url=url, media_type="application/xml", http_status=200)
+
+
 # How long one reading call of the person's file takes (case L): long enough to see "The model is reading it".
 WAITING_READ_SECONDS = 3.0
 
@@ -220,6 +260,8 @@ UNHELD_SUGGESTION = "synthetic unheld name"
 
 def openalex(request: httpx.Request) -> httpx.Response:
     params = request.url.params
+    if EUROPEPMC_MODE and request.url.host == "www.ebi.ac.uk":
+        return europepmc_search(request)
     if QUEUE_MODE and request.url.host != "api.openalex.org":
         return httpx.Response(404)  # a DOI lookup answers "no result"; the queue works' PDFs come from OpenAlex
     if '"rate limit"' in params.get("search.title_and_abstract", ""):
@@ -243,7 +285,7 @@ def openalex(request: httpx.Request) -> httpx.Response:
 
 async def fetch(url: str) -> FetchResult:
     pdfs = QUEUE_PDFS if QUEUE_MODE else PDFS
-    if url not in pdfs:
+    if url not in pdfs or url in WITHHELD_PDFS:
         return FetchResult("http_error", final_url=url, http_status=404)
     data = make_arxiv_pdf() if pdfs[url] is None else make_pdf(pdfs[url])
     return FetchResult("ok", data=data, final_url=url, media_type="application/pdf", http_status=200)
@@ -436,7 +478,7 @@ def main() -> None:
         fake_arxiv_source()  # before create_app: SourceStore reads fetch_module.fetch_file at construction
     app = create_app(settings, adapters={"codex": ScriptedCodex()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fetch,
-                     local_embedder=local_embedder)
+                     local_embedder=local_embedder, xml_fetcher=europepmc_xml if EUROPEPMC_MODE else None)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", timeout_graceful_shutdown=1)
 
 

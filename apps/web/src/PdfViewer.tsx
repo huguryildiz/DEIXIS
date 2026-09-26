@@ -5,10 +5,11 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { t } from './i18n'
 import { scrollBehavior } from './motion'
 import { Notice } from './Notice'
+import { pageLocator } from './labels'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
-export function PdfViewer({ url, initialPage = 1, title }: { url: string; initialPage?: number; title: string }) {
+export function PdfViewer({ url, initialPage = 1, title, rendition = false }: { url: string; initialPage?: number; title: string; rendition?: boolean }) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null)
@@ -79,7 +80,7 @@ export function PdfViewer({ url, initialPage = 1, title }: { url: string; initia
     viewportRef.current?.scrollTo({ top: 0, behavior: scrollBehavior() })
   }
 
-  return <section className="pdf-viewer" aria-label={title}>
+  return <section className="pdf-viewer" aria-label={`${title} · ${pageLocator(page, rendition)}`}>
     <div className="pdf-toolbar">
       <div className="pdf-page-controls">
         <button type="button" aria-label={t('Previous page')} disabled={!document || page <= 1} onClick={() => changePage(page - 1)}><ChevronLeft /></button>
@@ -96,7 +97,7 @@ export function PdfViewer({ url, initialPage = 1, title }: { url: string; initia
     </div>
     <div className="pdf-document" ref={viewportRef}>
       {error ? <Notice tone="error">{t('Could not display PDF: {message}', { message: error })}</Notice> : !document && <p>{t('Loading PDF…')}</p>}
-      <canvas ref={canvasRef} aria-label={t('PDF page {n}', { n: page })} />
+      <canvas ref={canvasRef} aria-label={pageLocator(page, rendition)} />
     </div>
   </section>
 }

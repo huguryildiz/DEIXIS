@@ -29,7 +29,7 @@ RUNS = three_runs()
 CRITERION_STEPS = ["criterion"] + [f"criterion_proposal_{i + 1}" for i in range(PROPOSAL_RUNS)]
 
 
-def proposing(fail_steps=(), invalid_steps=()):
+def proposing(fail_steps=(), invalid_steps=(), elements=None):
     """A model that answers each criterion call with its own proposal, and fails or breaks the ones named.
 
     The run number follows the step, not the call, so a schema repair of a broken proposal stays broken instead of
@@ -53,7 +53,8 @@ def proposing(fail_steps=(), invalid_steps=()):
         body = RUNS[number(si)]
         if number(si) in invalid_steps:
             body = body | {"parts": body["parts"][:1]}  # one part: below the contract's floor, so the run is dropped
-        return json.dumps(envelope(si, "deixis.criterion_proposal.v1") | body)
+        body = body | {"question_elements": (elements or {}).get(number(si), [])}
+        return json.dumps(envelope(si, "deixis.criterion_proposal.v2") | body)
 
     return FakeAdapter(responder, fail=fail)
 
@@ -163,6 +164,8 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     assert body["criterion_origin"]["runs_ok"] == [1, 2, 3]
     # The known defect's trace: a record only, read by nothing in this slice.
     assert body["criterion_origin"]["sought_term_in_criterion"] is True
+    # No proposal named a population or a comparator, so none is required (SW23).
+    assert body["criterion_origin"]["question_elements"] == [] and body["criterion_origin"]["required_roles"] == []
     assert body["thresholds"]["criterion"] == {"proposal_runs": 3, "proposal_majority": 2}
     # An sw discovery run is given the criterion's three calls, the abstract stage's own (slice 09) and the one
     # term suggestion the user may ask for (slice 08c), on top of its preset; the preset a legacy run and an answer
@@ -328,3 +331,26 @@ def test_the_legacy_protocol_body_has_the_digest_it_had_before_this_slice():
                           [{"provider_id": "openalex", "query_text": "diffusion channel"}],
                           "SYNTHETIC_package_hash", Settings(data_dir=None))
     assert sha256_hex(body) == "b860f3c8ad392bdc49229c98594b4a15e17797fa19e4dd8d83cfe98259c31833"
+
+
+def test_a_population_two_proposals_name_is_recorded_and_read_back_with_the_frozen_criterion(tmp_path, monkeypatch):
+    """SW23 (D106): the role two runs named is required, the base run holds it, and both fields travel with the
+    criterion into the protocol and back out of it. The proposals are SYNTHETIC."""
+    named = {"role": "population", "words": "adults after chemotherapy", "part": "exercise"}
+    openalex = CountingOpenAlex()
+    adapter = proposing(elements={2: [named], 3: [named | {"part": "something else"}]})
+    with TestClient(app_for(tmp_path, monkeypatch, openalex, adapter)) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        rid, run_id = start(client, EXERCISE)
+        wait(client, rid, run_id)
+        second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        wait(client, rid, second)
+    first, *later = body_of(tmp_path, rid)
+    origin = first["criterion_origin"]
+    assert origin["required_roles"] == ["population"] and origin["question_elements"] == [named]
+    assert origin["base_run"] == 2 and first["inclusion_criterion"] == RUNS[2]["criterion"]
+    assert later and later[-1]["criterion_origin"]["origin"] == "protocol"
+    assert later[-1]["criterion_origin"]["question_elements"] == [named]
+    assert later[-1]["criterion_origin"]["required_roles"] == ["population"]
+    # The two fields are a record of the proposal, not criterion fields: reading them back marks nothing stale.
+    assert "question_elements" not in CRITERION_FIELDS and "required_roles" not in CRITERION_FIELDS

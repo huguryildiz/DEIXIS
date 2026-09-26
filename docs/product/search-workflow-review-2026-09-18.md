@@ -342,7 +342,7 @@ This narrows SW2 point 5, which keeps the model as a conditional step that propo
 
 ## SW21 — On a clinical question `sw` reads almost none of the relevant trials because it finds no open PDF; Europe PMC holds some of them
 
-**Status:** open finding from slice 24a; not implemented; Europe PMC is still absent from the code. **Date:** 2026-09-26.
+**Status:** implemented in slice 25 (D106); measured live in 25b. Only as a full-text source after the four PDF lookups, from Europe PMC's open-access `fullTextXML` drawn as a PDF labelled "rendered"; no Europe PMC search arm. **Date:** 2026-09-26.
 
 **Finding:** In the five medicine `sw` researches (one M1 Pro, Luna medium, one run per cell, two for `standard`), 0 of the 4 reference trials and 0 of Elicit's 5 works reached a PDF: the ones that were routed were planned and then ended `planned_no_pdf` (`no_fulltext`). Of 112 planned works, 29 and 19 had a PDF in the two `standard` runs (quantum: 54 and 54), with 40 and 42 `fetch_http_error` steps. `legacy` cited two of Elicit's five from abstracts. One read-only Europe PMC request per reference trial without a PDF: 2 of 4 (Kotarsky 2021 PMC8157764, Feehan 2023 PMC10708421) have open full text in PMC. That is the upper bound of what a PMC full-text source would have added here. The share of open-access records among abstracts the model read was higher in medicine (86/150, 94/150) than in quantum (61/150, 57/150), so the loss is in fetching, not in availability.
 
@@ -350,7 +350,7 @@ This narrows SW2 point 5, which keeps the model as a conditional step that propo
 
 ## SW22 — An `sw` research whose reading includes nothing ends with no answer
 
-**Status:** open finding from slice 24a; not implemented. **Date:** 2026-09-26.
+**Status:** implemented in slice 25 (D106); measured live in 25b. The answer records that no work was included at full text when it started (`no_evidence`, reason `no_includable_source`), with no model call. **Date:** 2026-09-26.
 
 **Finding:** `qtre-sw-standard-emb-r1` finished discovery (7,565 works in the pool) and full-text reading (24 PDFs read, 5 `criterion_not_met`, 47 `unresolved`, 0 `include`). The campaign then asked for the answer, as a person would, and the API refused it with 422 "Include at least one source before generating an answer". The research has no answer at all, not even one that says nothing was confirmed. This single case failed gate 1. The other nine `sw` researches had 3–42 includes. A clinical question where no PDF is open (SW21) will hit this more often.
 
@@ -358,7 +358,7 @@ This narrows SW2 point 5, which keeps the model as a conditional step that propo
 
 ## SW23 — The proposed inclusion criterion drops the population and folds the comparator into the design part
 
-**Status:** open finding from slice 24a; not implemented. **Date:** 2026-09-26. Narrows SW15.
+**Status:** implemented in slice 25 (D106); measured live in 25b. Population and comparator only (not all five PICO elements); the full-text reading's rule is unchanged. **Date:** 2026-09-26. Narrows SW15.
 
 **Finding:** For the question "In adults with overweight or obesity, does time-restricted eating reduce body weight compared with unrestricted eating or usual diet? (randomised controlled trials)", all five medicine `sw` criteria had the same three parts: TRE intervention, randomised design, body-weight outcome. No run made the population a part; `sw` r1's criterion sentence does not mention it at all. The comparator appeared only inside the design part. Full-text reading asks one question per part, so neither was checked. The analyst reading (8 unique `include`s from the two `standard` runs) found 3 serious errors: a trial in "healthy volunteers without obesity", a trial comparing 14:10 TRE with 12:12 TRE (both on a calorie-controlled diet), and a trial comparing TRE with an individualised dietitian programme (the blind second reader called this one debatable). The quantum criterion had no such gap (0 of 10). The frozen expectation named the comparator as the likely error, at 0–1 in 10.
 
@@ -379,3 +379,11 @@ This narrows SW2 point 5, which keeps the model as a conditional step that propo
 **Finding:** In all five medicine `sw` researches the code-built query searched the phrase `"time-restricted eating reduce body weight"` in the task block, next to `"usual diet"` and `unrestricted`. The phrase is the question's words run together, so it matches almost nothing; the model's query carried the search. SW17's Limits already noted that 3 of 28 phrases weld two concepts. In `detailed`, `"randomised controlled trials"` entered a setting block in British spelling, so American-spelled records depend on the other query. Separately, after the campaign the day's keyless OpenAlex budget was exhausted (search requests returned 429 with `x-ratelimit-remaining: 0`, reset in about 8.4 h); no product search in the campaign was refused, but a heavy day of use can reach the same wall.
 
 **Return to:** slices 04a / 04d (phrase extraction and labelling): cut phrases at verbs and prepositions before labelling; and a note for the provider settings on OpenAlex's daily budget.
+
+## SW26 — A trial protocol that reports no results is read as `include`
+
+**Status:** open finding from the slice 25 plan (record only); not implemented. **Date:** 2026-09-26.
+
+**Finding:** Of the 17 unique works the five medicine `sw` researches of slice 24a included, 3 are trial protocols that report no results (a model reading of the stored abstracts and the design part's stored quote in the slice 25 plan session; not blind, not a human check, no PDF page opened). Two of them would also fail the new comparator part of SW23; the third (a PCOS protocol) meets the population and the comparator, so SW23 does not catch it. The outcome part was met by a planned outcome, not a reported one.
+
+**Return to:** the full-text reading's outcome part (slice 09, D85): a part about a result is met only by a result the paper reports, not by one it plans to measure.

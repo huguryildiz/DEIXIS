@@ -766,7 +766,7 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v1",
+    "schema_version": "deixis.criterion_proposal.v2",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -797,6 +797,7 @@
       ]
      }
     ],
+    "question_elements": [],
     "exclusion_title_words": [
      "review",
      "protocol",
@@ -812,7 +813,7 @@
     "schema_invalid"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v1",
+    "schema_version": "deixis.criterion_proposal.v2",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -831,6 +832,7 @@
       ]
      }
     ],
+    "question_elements": [],
     "exclusion_title_words": []
    }
   },
@@ -842,7 +844,7 @@
     "schema_invalid"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v1",
+    "schema_version": "deixis.criterion_proposal.v2",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -883,6 +885,7 @@
       ]
      }
     ],
+    "question_elements": [],
     "exclusion_title_words": []
    }
   },
@@ -894,7 +897,7 @@
     "criterion_phrase_too_long"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v1",
+    "schema_version": "deixis.criterion_proposal.v2",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -925,6 +928,7 @@
       ]
      }
     ],
+    "question_elements": [],
     "exclusion_title_words": []
    }
   },
@@ -936,7 +940,7 @@
     "duplicate_criterion_part"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v1",
+    "schema_version": "deixis.criterion_proposal.v2",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -967,7 +971,416 @@
       ]
      }
     ],
+    "question_elements": [],
     "exclusion_title_words": []
+   }
+  },
+  {
+   "name": "criterion_proposal_valid_with_elements",
+   "step_input": "E_criterion_proposal_steered",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.criterion_proposal.v2",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme to adults after chemotherapy, compares it with usual care and reports a fatigue outcome measured with a named scale.",
+    "parts": [
+     {
+      "name": "adults after chemotherapy",
+      "definition": "SYNTHETIC: the paper states that its own participants are adults who have completed chemotherapy.",
+      "phrases": [
+       "after chemotherapy",
+       "cancer survivors",
+       "completed chemotherapy",
+       "adult participants",
+       "post-treatment",
+       "adult survivors"
+      ]
+     },
+     {
+      "name": "supervised exercise programme",
+      "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+      "phrases": [
+       "supervised exercise",
+       "exercise programme",
+       "aerobic training",
+       "resistance training",
+       "training sessions",
+       "supervised sessions"
+      ]
+     },
+     {
+      "name": "usual care comparison",
+      "definition": "SYNTHETIC: the paper's own comparison group receives usual care and no other programme.",
+      "phrases": [
+       "usual care",
+       "control group",
+       "standard care",
+       "wait-list control",
+       "no exercise",
+       "care as usual"
+      ]
+     },
+     {
+      "name": "fatigue outcome",
+      "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+      "phrases": [
+       "fatigue score",
+       "fatigue severity",
+       "facit-f",
+       "validated scale",
+       "fatigue outcome",
+       "we measured fatigue"
+      ]
+     }
+    ],
+    "question_elements": [
+     {
+      "role": "population",
+      "words": "adults after chemotherapy",
+      "part": "adults after chemotherapy"
+     },
+     {
+      "role": "comparator",
+      "words": "usual care",
+      "part": "usual care comparison"
+     }
+    ],
+    "exclusion_title_words": [
+     "review",
+     "protocol",
+     "commentary"
+    ]
+   }
+  },
+  {
+   "name": "criterion_proposal_element_unknown_part",
+   "step_input": "E_criterion_proposal_steered",
+   "expect_ok": false,
+   "expect_codes": [
+    "question_element_unknown_part"
+   ],
+   "output": {
+    "schema_version": "deixis.criterion_proposal.v2",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme to adults after chemotherapy, compares it with usual care and reports a fatigue outcome measured with a named scale.",
+    "parts": [
+     {
+      "name": "adults after chemotherapy",
+      "definition": "SYNTHETIC: the paper states that its own participants are adults who have completed chemotherapy.",
+      "phrases": [
+       "after chemotherapy",
+       "cancer survivors",
+       "completed chemotherapy",
+       "adult participants",
+       "post-treatment",
+       "adult survivors"
+      ]
+     },
+     {
+      "name": "supervised exercise programme",
+      "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+      "phrases": [
+       "supervised exercise",
+       "exercise programme",
+       "aerobic training",
+       "resistance training",
+       "training sessions",
+       "supervised sessions"
+      ]
+     },
+     {
+      "name": "usual care comparison",
+      "definition": "SYNTHETIC: the paper's own comparison group receives usual care and no other programme.",
+      "phrases": [
+       "usual care",
+       "control group",
+       "standard care",
+       "wait-list control",
+       "no exercise",
+       "care as usual"
+      ]
+     },
+     {
+      "name": "fatigue outcome",
+      "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+      "phrases": [
+       "fatigue score",
+       "fatigue severity",
+       "facit-f",
+       "validated scale",
+       "fatigue outcome",
+       "we measured fatigue"
+      ]
+     }
+    ],
+    "question_elements": [
+     {
+      "role": "population",
+      "words": "adults after chemotherapy",
+      "part": "adults after chemotherapy"
+     },
+     {
+      "role": "comparator",
+      "words": "usual care",
+      "part": "comparison arm"
+     }
+    ],
+    "exclusion_title_words": [
+     "review",
+     "protocol",
+     "commentary"
+    ]
+   }
+  },
+  {
+   "name": "criterion_proposal_element_not_in_question",
+   "step_input": "E_criterion_proposal_steered",
+   "expect_ok": false,
+   "expect_codes": [
+    "question_element_not_in_question"
+   ],
+   "output": {
+    "schema_version": "deixis.criterion_proposal.v2",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme to adults after chemotherapy, compares it with usual care and reports a fatigue outcome measured with a named scale.",
+    "parts": [
+     {
+      "name": "adults after chemotherapy",
+      "definition": "SYNTHETIC: the paper states that its own participants are adults who have completed chemotherapy.",
+      "phrases": [
+       "after chemotherapy",
+       "cancer survivors",
+       "completed chemotherapy",
+       "adult participants",
+       "post-treatment",
+       "adult survivors"
+      ]
+     },
+     {
+      "name": "supervised exercise programme",
+      "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+      "phrases": [
+       "supervised exercise",
+       "exercise programme",
+       "aerobic training",
+       "resistance training",
+       "training sessions",
+       "supervised sessions"
+      ]
+     },
+     {
+      "name": "usual care comparison",
+      "definition": "SYNTHETIC: the paper's own comparison group receives usual care and no other programme.",
+      "phrases": [
+       "usual care",
+       "control group",
+       "standard care",
+       "wait-list control",
+       "no exercise",
+       "care as usual"
+      ]
+     },
+     {
+      "name": "fatigue outcome",
+      "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+      "phrases": [
+       "fatigue score",
+       "fatigue severity",
+       "facit-f",
+       "validated scale",
+       "fatigue outcome",
+       "we measured fatigue"
+      ]
+     }
+    ],
+    "question_elements": [
+     {
+      "role": "population",
+      "words": "older adults with cancer",
+      "part": "adults after chemotherapy"
+     },
+     {
+      "role": "comparator",
+      "words": "usual care",
+      "part": "usual care comparison"
+     }
+    ],
+    "exclusion_title_words": [
+     "review",
+     "protocol",
+     "commentary"
+    ]
+   }
+  },
+  {
+   "name": "criterion_proposal_duplicate_element",
+   "step_input": "E_criterion_proposal_steered",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_question_element"
+   ],
+   "output": {
+    "schema_version": "deixis.criterion_proposal.v2",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme to adults after chemotherapy, compares it with usual care and reports a fatigue outcome measured with a named scale.",
+    "parts": [
+     {
+      "name": "adults after chemotherapy",
+      "definition": "SYNTHETIC: the paper states that its own participants are adults who have completed chemotherapy.",
+      "phrases": [
+       "after chemotherapy",
+       "cancer survivors",
+       "completed chemotherapy",
+       "adult participants",
+       "post-treatment",
+       "adult survivors"
+      ]
+     },
+     {
+      "name": "supervised exercise programme",
+      "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+      "phrases": [
+       "supervised exercise",
+       "exercise programme",
+       "aerobic training",
+       "resistance training",
+       "training sessions",
+       "supervised sessions"
+      ]
+     },
+     {
+      "name": "usual care comparison",
+      "definition": "SYNTHETIC: the paper's own comparison group receives usual care and no other programme.",
+      "phrases": [
+       "usual care",
+       "control group",
+       "standard care",
+       "wait-list control",
+       "no exercise",
+       "care as usual"
+      ]
+     },
+     {
+      "name": "fatigue outcome",
+      "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+      "phrases": [
+       "fatigue score",
+       "fatigue severity",
+       "facit-f",
+       "validated scale",
+       "fatigue outcome",
+       "we measured fatigue"
+      ]
+     }
+    ],
+    "question_elements": [
+     {
+      "role": "population",
+      "words": "adults after chemotherapy",
+      "part": "adults after chemotherapy"
+     },
+     {
+      "role": "population",
+      "words": "adults",
+      "part": "usual care comparison"
+     }
+    ],
+    "exclusion_title_words": [
+     "review",
+     "protocol",
+     "commentary"
+    ]
+   }
+  },
+  {
+   "name": "criterion_proposal_elements_share_part",
+   "step_input": "E_criterion_proposal_steered",
+   "expect_ok": false,
+   "expect_codes": [
+    "question_elements_share_part"
+   ],
+   "output": {
+    "schema_version": "deixis.criterion_proposal.v2",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "criterion": "SYNTHETIC: the paper delivers a supervised exercise programme to adults after chemotherapy, compares it with usual care and reports a fatigue outcome measured with a named scale.",
+    "parts": [
+     {
+      "name": "adults after chemotherapy",
+      "definition": "SYNTHETIC: the paper states that its own participants are adults who have completed chemotherapy.",
+      "phrases": [
+       "after chemotherapy",
+       "cancer survivors",
+       "completed chemotherapy",
+       "adult participants",
+       "post-treatment",
+       "adult survivors"
+      ]
+     },
+     {
+      "name": "supervised exercise programme",
+      "definition": "SYNTHETIC: the paper delivers a supervised exercise programme to its participants.",
+      "phrases": [
+       "supervised exercise",
+       "exercise programme",
+       "aerobic training",
+       "resistance training",
+       "training sessions",
+       "supervised sessions"
+      ]
+     },
+     {
+      "name": "usual care comparison",
+      "definition": "SYNTHETIC: the paper's own comparison group receives usual care and no other programme.",
+      "phrases": [
+       "usual care",
+       "control group",
+       "standard care",
+       "wait-list control",
+       "no exercise",
+       "care as usual"
+      ]
+     },
+     {
+      "name": "fatigue outcome",
+      "definition": "SYNTHETIC: the paper reports fatigue measured with a named scale.",
+      "phrases": [
+       "fatigue score",
+       "fatigue severity",
+       "facit-f",
+       "validated scale",
+       "fatigue outcome",
+       "we measured fatigue"
+      ]
+     }
+    ],
+    "question_elements": [
+     {
+      "role": "population",
+      "words": "adults after chemotherapy",
+      "part": "adults after chemotherapy"
+     },
+     {
+      "role": "comparator",
+      "words": "usual care",
+      "part": "adults after chemotherapy"
+     }
+    ],
+    "exclusion_title_words": [
+     "review",
+     "protocol",
+     "commentary"
+    ]
    }
   },
   {

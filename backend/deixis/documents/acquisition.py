@@ -12,7 +12,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-from deixis.documents import fetch, pdf
+from deixis.documents import fetch, jats, pdf
 from deixis.providers import core, crossref
 from deixis.providers.common import ProviderRecord, normalize_doi
 from deixis.storage import db
@@ -21,6 +21,9 @@ from deixis.workflow.store import Store
 OPENALEX_URL = "https://api.openalex.org/works"
 CROSSREF_URL = "https://api.crossref.org/works"
 SERPAPI_URL = "https://serpapi.com/search.json"
+EUROPEPMC_SEARCH_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+EUROPEPMC_LANDING_URL = "https://europepmc.org/article/PMC/{pmcid}"
+XML_MEDIA_TYPES = ("application/xml", "text/xml")
 UNPAYWALL_URL = "https://api.unpaywall.org/v2"
 OPENALEX_SELECT = "doi,display_name,primary_location,best_oa_location,locations"
 # Crossref's IEEE text-mining links redirect to the paywalled IEEE document page instead of a PDF: all 6 tried on
@@ -202,6 +205,80 @@ async def core_lookup(client: httpx.AsyncClient, doi: str, api_key: str | None) 
         return Lookup("parse_error", [], 200, type(exc).__name__)
 
 
+async def europepmc_lookup(client: httpx.AsyncClient, doi: str, source_version: str | None) -> Lookup:
+    """This DOI's work in Europe PMC's open-access subset, as a `fullTextXML` candidate (SW21, D106).
+
+    Only a result whose DOI is the record's, with a PMCID, open access, in Europe PMC and not an author manuscript is
+    a candidate: the subset holds the copy the publisher deposited (`publishedVersion`), `fullTextXML` gives nothing
+    for an author manuscript, and an accepted manuscript's identity is another piece of work. The version check is
+    the other lookups' (D4, D22, D35).
+    """
+    try:
+        async with fetch.host_gate(EUROPEPMC_SEARCH_URL):  # one request per host at a time (slice 13e)
+            response = await client.get(EUROPEPMC_SEARCH_URL, params={
+                "query": f'DOI:"{doi}"', "resultType": "core", "format": "json"}, timeout=30)
+    except httpx.TimeoutException:
+        return Lookup("timeout", [], error_code="timeout")
+    except httpx.HTTPError as exc:
+        return Lookup("failed", [], error_code=type(exc).__name__)
+    if response.status_code == 404:
+        return Lookup("zero_results", [], 404)
+    if response.status_code == 429:
+        return Lookup("rate_limited", [], 429, "rate_limited")
+    if response.status_code in (401, 403):
+        return Lookup("auth_required", [], response.status_code, "auth_required")
+    if response.status_code != 200:
+        return Lookup("failed", [], response.status_code, f"http_{response.status_code}")
+    try:
+        candidates = []
+        for result in response.json()["resultList"]["result"]:
+            pmcid = result.get("pmcid") or ""
+            if normalize_doi(result.get("doi")) != doi or not re.fullmatch(r"PMC\d+", pmcid):
+                continue
+            if (result.get("isOpenAccess"), result.get("inEPMC"), result.get("authMan")) != ("Y", "Y", "N"):
+                continue
+            candidates.append(Candidate("europepmc", jats.FULLTEXT_URL.format(pmcid=pmcid),
+                                        EUROPEPMC_LANDING_URL.format(pmcid=pmcid), "publishedVersion",
+                                        result.get("license"), "doi_verified",
+                                        _version_status("publishedVersion", source_version)))
+        return Lookup("completed" if candidates else "zero_results", _unique(candidates), 200)
+    except (json.JSONDecodeError, TypeError, KeyError, AttributeError) as exc:
+        return Lookup("parse_error", [], 200, type(exc).__name__)
+
+
+def fetch_xml(url: str) -> Awaitable[fetch.FetchResult]:
+    """Europe PMC's full text through `fetch_file`'s protections; an answer of another type comes back `wrong_type`."""
+    return fetch.fetch_file(url, XML_MEDIA_TYPES)
+
+
+async def _render_candidate(store: Store, candidate: dict[str, Any],
+                            xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]]) -> bytes | None:
+    """A Europe PMC candidate's XML fetched and drawn as a PDF, or None; the attempt is recorded either way.
+
+    A refusal or a failed drawing is recorded on the candidate as `failed` with its own error code and never raises,
+    so the caller goes on to the next candidate.
+    """
+    url = candidate["candidate_url"]
+    result = await xml_fetcher(url)
+    if result.status != "ok":
+        store.record_pdf_attempt(candidate["id"], result)
+        return None
+    rendition = await asyncio.to_thread(jats.render_pdf, result.data)
+    status, error = ("ok", None) if rendition.status == "ok" else ("failed", rendition.status)
+    store.record_pdf_attempt(candidate["id"], fetch.FetchResult(status, final_url=result.final_url or url,
+                                                                 http_status=result.http_status, error=error))
+    return rendition.data if rendition.status == "ok" else None
+
+
+async def _attach_rendition(store: Store, source_version_id: str, candidate: dict[str, Any], data: bytes,
+                            papers_dir: Any) -> str:
+    # The asset names the fullTextXML address it was drawn from, not the address the XML finally came from, and the
+    # file name code gives it, so the rendition is recognised on every surface (`jats.RENDITION_SQL`).
+    url = candidate["candidate_url"]
+    return await _attach_pdf(store, source_version_id, data, papers_dir, "download", url,
+                             filename=jats.filename(url.rsplit("/", 2)[-2]))
+
+
 def _title_key(text: str | None) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", (text or "").casefold()))
 
@@ -254,8 +331,12 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                              papers_dir: Any, contact_email: str | None, serpapi_key: str | None,
                              fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch.fetch_pdf,
                              core_key: str | None = None, web_search: bool = True,
-                             other_versions: bool = False) -> dict[str, Any]:
+                             other_versions: bool = False,
+                             xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch_xml) -> dict[str, Any]:
     """Look this record's DOI up in Unpaywall, OpenAlex, Crossref and CORE and retrieve a copy of its own version.
+
+    When none of their verified copies gave a file, Europe PMC is asked once (SW21, D106): its open-access full text
+    is drawn as a PDF labelled as a rendition and attached by the same version rule.
 
     `other_versions` is the full-text retrieval run's one addition (D83): when the record's own version gave no
     file, a verified copy of a *different declared* version opens its own row under the same work and is attached
@@ -286,6 +367,8 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
         for candidate in store.pdf_candidates(source_version_id):
             if candidate["identity_status"] != "doi_verified" or candidate["version_status"] != "match":
                 continue
+            if candidate["provider"] == "europepmc":
+                continue  # an XML full text, tried below only when no PDF came
             if candidate["candidate_url"] in attempted_urls:
                 continue
             attempted_urls.add(candidate["candidate_url"])
@@ -297,10 +380,26 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                                          result.final_url or candidate["candidate_url"])
             break
 
+    # Europe PMC only for a record still without a file, after the four lookups and their verified copies (SW21).
+    if not store.has_asset(source_version_id):
+        europepmc = await europepmc_lookup(client, doi, source.get("version_label"))
+        run_id = store.record_pdf_discovery(research_id, source_version_id, "europepmc", doi, europepmc)
+        store.record_pdf_candidates(source_version_id, run_id, europepmc.candidates)
+        lookups.append(("europepmc", doi, europepmc))
+        tried: set[str] = set()
+        for candidate in store.pdf_candidates(source_version_id):
+            if (candidate["provider"] != "europepmc" or candidate["identity_status"] != "doi_verified"
+                    or candidate["version_status"] != "match" or candidate["candidate_url"] in tried):
+                continue
+            tried.add(candidate["candidate_url"])
+            if (data := await _render_candidate(store, candidate, xml_fetcher)) is not None:
+                asset_id = await _attach_rendition(store, source_version_id, candidate, data, papers_dir)
+                break
+
     lookup_version_id = None
     if other_versions and not store.has_asset(source_version_id):
         asset_id, lookup_version_id = await _attach_other_version(
-            store, research_id, source_version_id, papers_dir, fetcher)
+            store, research_id, source_version_id, papers_dir, fetcher, xml_fetcher)
 
     # A listed URL is not a found PDF: it may be gated, dead, HTML, or a different version. Make the fallback explicit
     # and retain its uncertain-version candidates for manual review/upload; never silently attach them.
@@ -325,7 +424,9 @@ VERSION_ORDER = ("publishedVersion", "acceptedVersion", "submittedVersion")
 
 
 async def _attach_other_version(store: Store, research_id: str, source_version_id: str, papers_dir: Any,
-                                fetcher: Callable[[str], Awaitable[fetch.FetchResult]]) -> tuple[str | None, str | None]:
+                                fetcher: Callable[[str], Awaitable[fetch.FetchResult]],
+                                xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch_xml
+                                ) -> tuple[str | None, str | None]:
     """Attach a verified copy of another declared version to its own row under the same work; (asset, row) or (None, None).
 
     Only a candidate whose DOI was verified and whose version the provider named is taken: an `uncertain` copy is
@@ -343,6 +444,13 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
             # and the file is not asked for again.
             store.open_lookup_version(research_id, source_version_id, candidate["version_label"], candidate["landing_url"])
             return None, existing
+        if candidate["provider"] == "europepmc":
+            # Europe PMC's copy under the same rule; its row is opened only for a drawing that succeeded.
+            if (data := await _render_candidate(store, candidate, xml_fetcher)) is None:
+                continue
+            version_id = store.open_lookup_version(research_id, source_version_id, candidate["version_label"],
+                                                   candidate["landing_url"])
+            return await _attach_rendition(store, version_id, candidate, data, papers_dir), version_id
         result = await fetcher(candidate["candidate_url"])
         store.record_pdf_attempt(candidate["id"], result)
         if result.status != "ok":
@@ -356,14 +464,14 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
 
 
 async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_dir: Any, origin: str,
-                      retrieved_from: str | None) -> str:
+                      retrieved_from: str | None, filename: str | None = None) -> str:
     sha = hashlib.sha256(data).hexdigest()
     papers_dir.mkdir(parents=True, exist_ok=True)
     path = papers_dir / f"{sha}.pdf"
     if not path.exists():
         path.write_bytes(data)
     extraction = await asyncio.to_thread(pdf.extract_pdf, path)
-    return store.add_asset_with_pages(source_version_id, sha, len(data), path.name, origin, retrieved_from, None,
+    return store.add_asset_with_pages(source_version_id, sha, len(data), path.name, origin, retrieved_from, filename,
                                       extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
 
 

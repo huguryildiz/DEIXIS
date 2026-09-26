@@ -198,7 +198,7 @@ def _verified_quotes(store: Store, svid: str, step_id: str | None) -> list[dict[
     seen: set[tuple[str, str]] = set()
     quotes = []
     for row in store.conn.execute(
-            "SELECT criterion_part, quote, quote_page FROM model_proposals WHERE source_version_id = ?"
+            "SELECT criterion_part, quote, quote_page, quote_passage_id FROM model_proposals WHERE source_version_id = ?"
             " AND stage = 'fulltext' AND quote_verified = 1 AND step_id IN"
             " (SELECT id FROM run_steps WHERE run_id = (SELECT run_id FROM run_steps WHERE id = ?))"
             " ORDER BY run_no, criterion_part", (svid, step_id)):
@@ -206,7 +206,8 @@ def _verified_quotes(store: Store, svid: str, step_id: str | None) -> list[dict[
         if key in seen:
             continue
         seen.add(key)
-        quotes.append({"part": row["criterion_part"], "quote": row["quote"], "page": row["quote_page"]})
+        quotes.append({"part": row["criterion_part"], "quote": row["quote"], "page": row["quote_page"],
+                       "rendition": store.passage_rendition(row["quote_passage_id"])})
     return quotes
 
 

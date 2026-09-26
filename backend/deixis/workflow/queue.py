@@ -474,7 +474,8 @@ def _page_passages(store: Store, svid: str) -> dict[int, str]:
     return found
 
 
-def _closest(quote: str, pages: dict[int, str], shown: list[int], opens: dict[int, str]) -> dict[str, Any] | None:
+def _closest(store: Store, quote: str, pages: dict[int, str], shown: list[int],
+             opens: dict[int, str]) -> dict[str, Any] | None:
     """The nearest text to a quote code did not verify, looked for only on the pages that run was shown."""
     best = None
     for page in shown:
@@ -482,6 +483,8 @@ def _closest(quote: str, pages: dict[int, str], shown: list[int], opens: dict[in
         if match is not None and (best is None or match.ratio > best["ratio"]):
             best = {"page": page, "text": match.text, "kind": match.kind, "ratio": match.ratio,
                     "passage_id": opens.get(page)}
+    if best is not None:
+        best["rendition"] = store.passage_rendition(best["passage_id"])
     return best
 
 
@@ -506,7 +509,8 @@ def _cues(ctx: _Context, part: str | None, pages: dict[int, str], opens: dict[in
     for page in sorted(pages):
         for sentence in _sentences(pages[page]):
             if any(pattern.search(sentence) for _, pattern in patterns):
-                found.append({"page": page, "sentence": sentence, "passage_id": opens.get(page)})
+                found.append({"page": page, "sentence": sentence, "passage_id": opens.get(page),
+                              "rendition": ctx.store.passage_rendition(opens.get(page))})
     return {"phrases": [phrase for phrase, _ in patterns], "sentences": found[:CUE_SENTENCES], "total": len(found),
             "note": None if found else "no cue found"}
 
@@ -532,11 +536,14 @@ def _runs(ctx: _Context, svid: str, decision: dict[str, Any], pages: dict[int, s
             passage = store.conn.execute("SELECT text FROM passages WHERE id = ?",
                                          (found["quote_passage_id"],)).fetchone() if found["quote_passage_id"] else None
             unverified = found["label"] == "present" and not found["quote_verified"] and found["quote"]
-            closest = _closest(found["quote"], pages, shown[run_no], opens) if unverified else None
+            closest = _closest(store, found["quote"], pages, shown[run_no], opens) if unverified else None
             verified = bool(found["quote_verified"]) and found["quote_page"] is not None
             parts.append({"part": name, "label": found["label"], "quote": found["quote"],
                           "quote_verified": None if found["quote_verified"] is None else bool(found["quote_verified"]),
                           "page": found["quote_page"], "passage": passage[0] if passage else None,
+                          # The page names the file it is a page of: a quote read on Europe PMC's drawn text says so.
+                          "rendition": store.passage_rendition(found["quote_passage_id"]
+                                                               or opens.get(found["quote_page"])),
                           # A verified quote opens the page it was found on; any other the passage the model named.
                           "passage_id": opens.get(found["quote_page"]) if verified else found["quote_passage_id"],
                           "anchor_text": _anchor(found["quote"], pages.get(found["quote_page"])) if verified else None,
@@ -555,7 +562,8 @@ def _detail(ctx: _Context, row: dict[str, Any]) -> dict[str, Any]:
     asset = ctx.assets.get(svid)
     detail: dict[str, Any] = {"runs": _runs(ctx, svid, decision, pages, opens),
                               "cues": _cues(ctx, (row["question"] or {}).get("part"), pages, opens),
-                              "asset_id": asset["id"] if asset else None}
+                              "asset_id": asset["id"] if asset else None,
+                              "rendition": store.asset_rendition(asset["id"]) if asset else False}
     if row["kind"] == "choose_version":
         detail["versions"] = _versions(ctx, row)
     if row["kind"] == "confirm_pdf":

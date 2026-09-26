@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Evidence, type Limitation, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
-import { accessParts, citedText, fetchReasonText, locatorText, pauseReasonText, providerName, queueAnsweredText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, stepLabel, verdictLabels, versionText, versionTones } from './labels'
+import { accessParts, citedText, fetchReasonText, locatorText, pageLocator, pauseReasonText, providerName, queueAnsweredText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { Elapsed, EvidenceTab, TABLE_RUN_KINDS } from './EvidenceTable'
 import { MathText } from './MathText'
@@ -208,7 +208,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         if (current.kind === 'discovery') toast('success', t('Search & screening finished. Review the sources and include the ones to use.'))
         else if (answer?.status === 'structurally_valid') toast('success', t('Answer ready.'))
         else if (answer?.status === 'clarification') toast('warning', t('The model needs a clarification before it can answer.'))
-        else if (answer?.status === 'no_evidence') toast('warning', t('No answer: no text passages were available for the included sources.'))
+        else if (answer?.status === 'no_evidence') toast('warning', answer.validation.reason === 'no_includable_source'
+          ? t('No answer: no work was included at full text when this answer started.')
+          : t('No answer: no text passages were available for the included sources.'))
         else toast('warning', t('The answer failed validation; it is kept as an unverified draft.'))
         break
       }
@@ -379,6 +381,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
   // The human queue is an sw research's own surface (slice 17); a legacy research has no such tab.
   const hasQueue = view.scope.search_workflow === 'sw'
+  // An sw research whose current search finished may answer with nothing included: the answer records that (SW22).
+  const answersWithoutInclude = hasQueue && view.scope.discovery_completed === true
   const queueCount = (view.counts.queue ?? 0) + (view.counts.look_again ?? 0)
   const showQueue = () => { goTab('queue'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
   // Files dropped on the PDF panel of an sw research go to the waiting view's version-checked match (slice 18a).
@@ -488,7 +492,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
            While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */
         active ? null : <><div className="answer-actions">
-          <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !included} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
+          <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
           {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
           {hasAcademic && (view.search_runs.length
             ? <Button className="quiet-action" variant="ghost" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}>{t('Search again')}</Button>
@@ -628,6 +632,9 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
   if (answer.status === 'clarification' && answer.clarification) {
     return <div className="legacy-answer"><div className="section-label">{t('Clarification needed')}</div><h2>{answer.clarification.question}</h2><p>{answer.clarification.why_it_matters}</p>{answer.clarification.options.length > 0 && <ul className="plain-list">{answer.clarification.options.map(o => <li key={o}>{o}</li>)}</ul>}<p className="legacy-mini-note">{t('Revise the question below to continue.')}</p></div>
   }
+  if (answer.status === 'no_evidence' && answer.validation.reason === 'no_includable_source') {
+    return <><Notice tone="attention">{t('No work was included at full text when this answer started, so no answer was written and no model was asked. The line below says where the works stand.')}</Notice><AnswerFlowNote answer={answer} /></>
+  }
   if (answer.status === 'no_evidence') {
     return <><Notice tone="attention">{t('No text passages were available for the included sources (no abstract, no retrievable PDF text). No answer was generated.')}</Notice><AnswerFlowNote answer={answer} /></>
   }
@@ -641,7 +648,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
   const citeLabel = (claim: Answer['claims'][number], e: Evidence) => {
     if (!e.source_key) return `${refs.get(e.passage_id)?.n}`
     const repeated = claim.evidence.filter(x => x.source_version_id === e.source_version_id).length > 1
-    return repeated ? `${e.source_key}, ${e.kind === 'abstract' ? t('abstract') : e.physical_page ? t('p. {page}', { page: e.physical_page }) : t('section')}` : e.source_key
+    return repeated ? `${e.source_key}, ${e.kind === 'abstract' ? t('abstract') : e.physical_page ? pageLocator(e.physical_page, e.rendition) : t('section')}` : e.source_key
   }
   // Consecutive claims with the same heading form one report section; answers saved before sections have no heading.
   const sections: { heading: string | null; claims: Answer['claims'] }[] = []
@@ -1083,7 +1090,7 @@ function PdfLookupTable({ source, busy, onAttachCandidate }: { source: Source; b
         <td className={result.tone && `is-${result.tone}`}>{result.text}</td>
         <td className="pdf-lookup-count">{checks.length}</td>
         <td>{files.length ? files.map(candidate => <span className="pdf-lookup-file" key={candidate.id}>
-          {t(candidate.version_status === 'match' ? 'version verified' : candidate.version_status === 'different' ? 'different version' : 'version uncertain')} · {candidate.access_status === 'http_error' ? `HTTP ${candidate.http_status ?? '?'}` : t(candidate.access_status.replace('_', ' '))}{candidate.identity_status === 'unverified' && ` · ${t('title does not match')}`}{' · '}<a href={candidate.candidate_url} target="_blank" rel="noreferrer">{t('Open file')}</a>{candidate.version_status === 'uncertain' && (candidate.identity_status === 'doi_verified' || candidate.identity_status === 'title_verified') && !source.access.assets.length && <>{' · '}<button disabled={busy} onClick={() => onAttachCandidate(candidate.id)} title={t('Open the file first and check that it is this version of the work, not a preprint or another edition. An attached file’s pages can be cited in answers.')}>{t('Same version, attach')}</button></>}
+          {t(candidate.version_status === 'match' ? 'version verified' : candidate.version_status === 'different' ? 'different version' : 'version uncertain')} · {candidate.access_status === 'http_error' ? `HTTP ${candidate.http_status ?? '?'}` : t(candidate.access_status.replace('_', ' '))}{candidate.identity_status === 'unverified' && ` · ${t('title does not match')}`}{' · '}<a href={candidate.candidate_url} target="_blank" rel="noreferrer">{t('Open file')}</a>{candidate.version_status === 'uncertain' && candidate.provider !== 'europepmc' && (candidate.identity_status === 'doi_verified' || candidate.identity_status === 'title_verified') && !source.access.assets.length && <>{' · '}<button disabled={busy} onClick={() => onAttachCandidate(candidate.id)} title={t('Open the file first and check that it is this version of the work, not a preprint or another edition. An attached file’s pages can be cited in answers.')}>{t('Same version, attach')}</button></>}
         </span>) : notes.join('; ')}</td>
       </tr>
     })}</tbody>

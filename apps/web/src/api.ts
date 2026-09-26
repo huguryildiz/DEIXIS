@@ -7,6 +7,8 @@ export type Effort = 'quick' | 'standard' | 'detailed'
 export type Scope = {
   research_id: string; revision: number; question: string; language_hint: string | null; source_scope: SourceScope
   seed_mode: 'question_only' | 'uploaded_seed'; seed_status: 'question_only' | 'missing' | 'ready' | 'stale'
+  // The current revision's search finished; an sw research may then answer with no included work (SW22).
+  discovery_completed?: boolean
   seed: { source_version_id: string; asset_id: string; asset_sha256: string; extraction_version: string
     title: string; title_basis: string; page_count: number | null; text_pages: number; passage_count: number } | null
   providers: string[]; search_providers: string[]; effort: Effort; model_connection: string; requested_model: string | null; reasoning_effort: string | null
@@ -250,6 +252,8 @@ export type SearchRun = {
 }
 export type Asset = {
   id: string; extraction_status: string; extraction_version?: string | null; page_count: number | null; origin: string; byte_size: number; original_filename: string | null
+  // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
+  rendition?: boolean
   // Sources only (D45): whether the text comes from the current extractor, and a later extraction that was not taken.
   current_extraction?: boolean; rejected_extraction?: { extraction_version: string; rejection_reason: string; created_at: string } | null
   // Sources only (D52): whether Marker has read the PDF's pages with mathematics.
@@ -286,13 +290,13 @@ export type AssetText = {
 // A figure found from its caption on a PDF page (D58); its picture is cut from the page by the server.
 export type AssetFigure = { page: number; label: string; width: number; height: number }
 export type PdfCandidate = {
-  id: string; provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'web_search'; candidate_url: string; landing_url: string | null
+  id: string; provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'europepmc' | 'web_search'; candidate_url: string; landing_url: string | null
   version_label: string | null; license: string | null; identity_status: 'doi_verified' | 'title_verified' | 'unverified' | 'mismatch'
-  version_status: 'match' | 'different' | 'uncertain'; access_status: 'not_attempted' | 'downloaded' | 'http_error' | 'not_pdf' | 'too_large' | 'timeout' | 'blocked_url' | 'failed'
+  version_status: 'match' | 'different' | 'uncertain'; access_status: 'not_attempted' | 'downloaded' | 'http_error' | 'not_pdf' | 'too_large' | 'timeout' | 'blocked_url' | 'wrong_type' | 'failed'
   http_status: number | null; error_code: string | null; final_url: string | null; discovered_at: string; attempted_at: string | null
 }
 export type PdfDiscovery = {
-  provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'web_search'; query_text: string; status: string; result_count: number; other_title_count: number
+  provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'europepmc' | 'web_search'; query_text: string; status: string; result_count: number; other_title_count: number
   http_status: number | null; error_code: string | null; created_at: string; finished_at: string | null
 }
 export type PdfMatch = { filename: string; source_version_id: string | null; basis: 'doi' | 'title' | null }
@@ -323,7 +327,7 @@ export type PersonFile = {
   work_id: string; head: string; source_version_id: string; asset_id: string; title: string; version_label: string | null
   filename: string | null; added_at: string; state: PersonFileState; request_id: string | null; attempt: number
   unread_reason: 'run_cancelled' | 'run_failed' | 'no_decision' | 'file_changed' | null; reason_code: string | null
-  quotes: { part: string; quote: string; page: number | null }[]; after_run: boolean; decided_code: string | null
+  quotes: { part: string; quote: string; page: number | null; rendition?: boolean }[]; after_run: boolean; decided_code: string | null
 }
 export type PersonFiles = { rows: PersonFile[]; reading_on: boolean; paused_run: { id: string; kind: string; status: string; pause_reason: string | null } | null }
 export type Source = {
@@ -355,6 +359,8 @@ export type Evidence = {
   // numbered display equations matched to the page by their numbers, from the arXiv source of this version (D104).
   text_source: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | null
   removed_from_research: boolean  // the source was removed from this research later; the quote still opens (D50)
+  // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
+  rendition?: boolean
 }
 export type Claim = {
   id: string; label: string; section: string | null; text: string; support_type: 'source_stated' | 'analyst_inference'; semantic_review: string; evidence: Evidence[]
@@ -369,7 +375,7 @@ export type Answer = {
   claims: Claim[]; limitations: Limitation[]; unanswered_aspects: string[]; capability_notice: string | null
   clarification: { question: string; ambiguity: string; why_it_matters: string; options: string[] } | null
   unverified_draft: { claims?: { claim_label: string; text: string }[] } | null
-  validation: { ok?: boolean; issues?: ValidationIssue[]; warnings?: ValidationIssue[]; note?: string }
+  validation: { ok?: boolean; issues?: ValidationIssue[]; warnings?: ValidationIssue[]; note?: string; reason?: 'no_includable_source' }
   model: { connection: string; requested_model: string | null; resolved_model: string | null; token_usage: unknown } | null
   inputs_given: { sources: number; passages: number; source_ids: string[] } | null
   source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D45)
@@ -465,14 +471,15 @@ export type QueuePart = {
   page: number | null; passage: string | null; rationale: string | null
   // The passage that opens this quote's page, and the page's own text a verified quote was found as: the only span
   // the screen marks. Null for an unverified quote; a fuzzy match is never an anchor.
-  passage_id: string | null; anchor_text: string | null
-  closest?: { page: number; text: string; kind: 'exact' | 'normalized' | 'fuzzy'; ratio: number; passage_id: string | null } | null; closest_note?: string | null
+  passage_id: string | null; anchor_text: string | null; rendition?: boolean
+  closest?: { page: number; text: string; kind: 'exact' | 'normalized' | 'fuzzy'; ratio: number; passage_id: string | null; rendition?: boolean } | null; closest_note?: string | null
 }
 export type QueueRun = { run_no: number; shown_pages: number[]; parts: QueuePart[] }
 export type QueueDetail = {
   runs: QueueRun[]
-  cues: { phrases: string[]; sentences: { page: number; sentence: string; passage_id: string | null }[]; total: number; note: string | null }
+  cues: { phrases: string[]; sentences: { page: number; sentence: string; passage_id: string | null; rendition?: boolean }[]; total: number; note: string | null }
   asset_id: string | null  // the file in use for the row's version
+  rendition?: boolean  // that file is Europe PMC's text drawn by DEIXIS (SW21)
   // A `choose_version` row: every version with a fresh full-text decision, the named one first.
   versions?: { source_version_id: string; title: string; version_label: string | null; asset_id: string | null
     decision: { id: string; reason_code: string; outcome: string; decided_by: string }; runs: QueueRun[] }[]
@@ -522,6 +529,8 @@ export type Passage = {
   // The equation numbers placed from the arXiv source in this passage (D104); empty outside a 'latex_source' passage.
   source_equations?: string[]
   reading_depth: string; asset_id: string | null
+  // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
+  rendition?: boolean
   evidence_status: EvidenceStatus
   removed_from_research: boolean
   source: { id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; landing_url: string | null; version_label: string | null; origin: string; cited_by_count: number | null; cited_by_count_at: string | null }

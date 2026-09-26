@@ -23,7 +23,7 @@ from deixis.domain import phrasebank
 from deixis.paths import CONTRACTS_DIR, SKILL_DIR
 from deixis.providers import query_compiler
 from deixis.workflow.criterion import (MAX_PHRASE_WORDS, PARTS_PER_PROPOSAL, PHRASES_PER_PART,
-                                       norm as normalize_phrase)
+                                       holds as criterion_holds, norm as normalize_phrase)
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, InvalidTableInput, check_value, column_spec
 
 SCHEMA_FILES = {
@@ -57,7 +57,7 @@ SCHEMA_VERSIONS = {
     "TableColumnProposal": "deixis.table_column_proposal.v1",
     "ResearchTitle": "deixis.research_title.v1",
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
-    "CriterionProposal": "deixis.criterion_proposal.v1",
+    "CriterionProposal": "deixis.criterion_proposal.v2",
     "TermSuggestions": "deixis.term_suggestions.v1",
     "SearchQuery": "deixis.search_query.v1",
     "AbstractScreening": "deixis.abstract_screening.v1",
@@ -493,7 +493,7 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
     elif output_type == "VocabularyLabels":
         _check_vocabulary_labels(allow, result, report)
     elif output_type == "CriterionProposal":
-        _check_criterion_proposal(result, report)
+        _check_criterion_proposal(step_input, result, report)
     elif output_type == "TermSuggestions":
         _check_term_suggestions(allow, result, report)
     elif output_type == "SearchQuery":
@@ -895,13 +895,17 @@ def _check_vocabulary_labels(allow: dict[str, set[str]], draft: dict[str, Any], 
         report.issues.append(Issue("phrase_label_incomplete", "/labels", f"{phrase!r} was labelled more than once"))
 
 
-def _check_criterion_proposal(draft: dict[str, Any], report: ValidationReport) -> None:
+def _check_criterion_proposal(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
     """The bounds one proposal must hold, enforced in code rather than left to the prompt (SW15.1).
 
     All of them are errors: a proposal that breaks one is not half-used, because the consensus over three runs would
     then count a part or a phrase that the step was not allowed to write. A phrase appearing in two parts is not an
     error; the consensus gives it the first part it stands in.
+
+    A population or comparator the proposal names (SW23) must point at one of its own parts and must be words the
+    question or the user's steering holds: an element the model worded itself is not the question's.
     """
+    _check_question_elements(step_input, draft, report)
     low, high = PARTS_PER_PROPOSAL
     if not low <= len(draft["parts"]) <= high:
         report.issues.append(Issue("criterion_part_count", "/parts", f"expected {low} to {high}, got {len(draft['parts'])}"))
@@ -925,6 +929,30 @@ def _check_criterion_proposal(draft: dict[str, Any], report: ValidationReport) -
             seen[normalized] += 1
         for normalized in sorted(p for p, count in seen.items() if count > 1):
             report.issues.append(Issue("duplicate_criterion_phrase", f"/parts/{index}/phrases", normalized))
+
+
+def _check_question_elements(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
+    parts = {normalize_phrase(part["name"]) for part in draft["parts"]}
+    texts = [normalize_phrase(step_input["question"]["text"])]
+    texts += [normalize_phrase(entry) for entry in step_input.get("user_steering") or [] if isinstance(entry, str)]
+    roles: Counter[str] = Counter()
+    pointed: dict[str, list[str]] = {}
+    for index, element in enumerate(draft.get("question_elements", [])):
+        path = f"/question_elements/{index}"
+        roles[element["role"]] += 1
+        part = normalize_phrase(element["part"])
+        if part not in parts:
+            report.issues.append(Issue("question_element_unknown_part", f"{path}/part", element["part"]))
+        else:
+            pointed.setdefault(part, []).append(element["role"])
+        words = normalize_phrase(element["words"])
+        if not words or not any(criterion_holds(words, text) for text in texts):
+            report.issues.append(Issue("question_element_not_in_question", f"{path}/words", element["words"]))
+    for role in sorted(r for r, count in roles.items() if count > 1):
+        report.issues.append(Issue("duplicate_question_element", "/question_elements", f"{role!r} is named more than once"))
+    for part in sorted(p for p, named in pointed.items() if len(set(named)) > 1):
+        report.issues.append(Issue("question_elements_share_part", "/question_elements",
+                                   f"population and comparator both point at {part!r}"))
 
 
 def _check_term_suggestions(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:

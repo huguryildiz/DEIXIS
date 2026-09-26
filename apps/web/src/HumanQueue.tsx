@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronRight, ExternalLink, FileText, NotebookPen, RotateCcw
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api, ApiError, type QueueAnswer, type QueueDecided, type QueueDetail, type QueueKind, type QueuePart, type QueueRow, type QueueRowView, type QueueRun, type QueueView, type ResearchView } from './api'
-import { partLabelText, queueAnsweredText, queueAnswerLabels, queueAnswerOfCode, queueKindLabels, queueReasonText, queueStateOf, versionText, versionTones } from './labels'
+import { pageLocator, partLabelText, queueAnsweredText, queueAnswerLabels, queueAnswerOfCode, queueKindLabels, queueReasonText, queueStateOf, versionText, versionTones } from './labels'
 import { PassageSheet } from './PassageSheet'
 import type { CitationLabels } from './PdfTextDocument'
 import { ConnectionIcon } from './connectionIcons'
@@ -29,7 +29,7 @@ const toastText: Record<QueueAnswer, string> = {
 }
 
 // Where a row opens: the page its question points at, found in the order of decision 2.
-type PageChoice = { page: number; passageId: string | null; anchor: string | null; kind: 'quote' | 'closest' | 'cue' | 'page' }
+type PageChoice = { page: number; passageId: string | null; anchor: string | null; kind: 'quote' | 'closest' | 'cue' | 'page'; rendition?: boolean }
 type SheetTarget = { passageId: string | null; assetId: string | null; page: number; view: 'text' | 'pdf'; anchor: string | null; expect: boolean; labels: CitationLabels } | { source: string }
 
 function questionParts(runs: QueueRun[], part: string | undefined) {
@@ -37,31 +37,32 @@ function questionParts(runs: QueueRun[], part: string | undefined) {
 }
 
 function rowPage(row: QueueRow, detail: QueueDetail): PageChoice | null {
-  if (row.kind === 'confirm_pdf') return detail.asset_id ? { page: 1, passageId: null, anchor: null, kind: 'page' } : null
+  if (row.kind === 'confirm_pdf') return detail.asset_id ? { page: 1, passageId: null, anchor: null, kind: 'page', rendition: detail.rendition } : null
   const parts = questionParts(detail.runs, row.question?.part)
   const quoted = parts.find(p => p.quote_verified && p.page !== null && p.passage_id)
-  if (quoted) return { page: quoted.page!, passageId: quoted.passage_id, anchor: quoted.anchor_text, kind: 'quote' }
+  if (quoted) return { page: quoted.page!, passageId: quoted.passage_id, anchor: quoted.anchor_text, kind: 'quote', rendition: quoted.rendition }
   const near = parts.find(p => p.closest?.passage_id)?.closest
-  if (near) return { page: near.page, passageId: near.passage_id, anchor: null, kind: 'closest' }
+  if (near) return { page: near.page, passageId: near.passage_id, anchor: null, kind: 'closest', rendition: near.rendition }
   const cue = detail.cues.sentences.find(s => s.passage_id)
-  if (cue) return { page: cue.page, passageId: cue.passage_id, anchor: null, kind: 'cue' }
+  if (cue) return { page: cue.page, passageId: cue.passage_id, anchor: null, kind: 'cue', rendition: cue.rendition }
   const shown = detail.runs[0]?.shown_pages[0]
-  return detail.asset_id ? { page: shown ?? 1, passageId: null, anchor: null, kind: 'page' } : null
+  return detail.asset_id ? { page: shown ?? 1, passageId: null, anchor: null, kind: 'page', rendition: detail.rendition } : null
 }
 
 // The strip over the plain text says why the page was opened and whether anything is marked.
-function labelsFor(kind: PageChoice['kind'], page: number): CitationLabels {
+function labelsFor(kind: PageChoice['kind'], page: number, rendition?: boolean): CitationLabels {
   const mark = t(MARK_NAME)
+  const locator = pageLocator(page, rendition)
   if (kind === 'quote') return {
-    marked: t('The model’s quote, found in the text of PDF p. {page}. Only the text found on the page is marked.', { page }),
-    unmarked: t('The quote could not be marked exactly in the text of PDF p. {page}, so nothing is marked. Check the page in the PDF.', { page }),
+    marked: t('The model’s quote, found in the text of {locator}. Only the text found on the page is marked.', { locator }),
+    unmarked: t('The quote could not be marked exactly in the text of {locator}, so nothing is marked. Check the page in the PDF.', { locator }),
     mark,
   }
   if (kind === 'closest') {
-    const text = t('The model’s quote was not found in the text, so nothing on PDF p. {page} is marked. Check the page in the PDF.', { page })
+    const text = t('The model’s quote was not found in the text, so nothing on {locator} is marked. Check the page in the PDF.', { locator })
     return { marked: text, unmarked: text, mark }
   }
-  const text = t(kind === 'cue' ? 'PDF p. {page}: a sentence on this page holds a phrase of this part. Nothing is marked.' : 'PDF p. {page}. Nothing is marked.', { page })
+  const text = t(kind === 'cue' ? '{locator}: a sentence on this page holds a phrase of this part. Nothing is marked.' : '{locator}. Nothing is marked.', { locator })
   return { marked: text, unmarked: text, mark }
 }
 
@@ -195,7 +196,7 @@ export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources 
     const choice = rowPage(row, found)
     if (!choice) return
     setSheet({ passageId: choice.passageId, assetId: choice.passageId ? null : found.asset_id, page: choice.page, view,
-      anchor: choice.anchor, expect: choice.kind !== 'cue' && choice.kind !== 'page', labels: labelsFor(choice.kind, choice.page) })
+      anchor: choice.anchor, expect: choice.kind !== 'cue' && choice.kind !== 'page', labels: labelsFor(choice.kind, choice.page, choice.rendition) })
   }, [])
   // Enter on a row whose detail is still loading opens that row's page once its detail arrives, and no other row's.
   useEffect(() => {
@@ -206,9 +207,9 @@ export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources 
 
   const openPart = (part: QueuePart) => {
     if (part.quote_verified && part.page !== null && part.passage_id) {
-      setSheet({ passageId: part.passage_id, assetId: null, page: part.page, view: 'text', anchor: part.anchor_text, expect: true, labels: labelsFor('quote', part.page) })
+      setSheet({ passageId: part.passage_id, assetId: null, page: part.page, view: 'text', anchor: part.anchor_text, expect: true, labels: labelsFor('quote', part.page, part.rendition) })
     } else if (part.closest?.passage_id) {
-      setSheet({ passageId: part.closest.passage_id, assetId: null, page: part.closest.page, view: 'text', anchor: null, expect: true, labels: labelsFor('closest', part.closest.page) })
+      setSheet({ passageId: part.closest.passage_id, assetId: null, page: part.closest.page, view: 'text', anchor: null, expect: true, labels: labelsFor('closest', part.closest.page, part.closest.rendition) })
     } else if (part.passage_id) {
       const text = t('The model’s quote was not found in the text of the page it named, so nothing is marked. Check the page in the PDF.')
       setSheet({ passageId: part.passage_id, assetId: null, page: 1, view: 'text', anchor: null, expect: true, labels: { marked: text, unmarked: text, mark: t(MARK_NAME) } })
@@ -369,7 +370,7 @@ export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources 
         {current ? <RowDetail row={current} rowView={currentView} detailError={detailError} titleRef={titleRef}
           onOpenPage={() => detail && openPage(current, detail, 'pdf')} onOpenPart={openPart}
           onOpenSource={() => setSheet({ source: current.source_version_id })}
-          onOpenCue={(passageId, page) => setSheet({ passageId, assetId: null, page, view: 'text', anchor: null, expect: false, labels: labelsFor('cue', page) })} />
+          onOpenCue={(passageId, page, rendition) => setSheet({ passageId, assetId: null, page, view: 'text', anchor: null, expect: false, labels: labelsFor('cue', page, rendition) })} />
           : !gone && <p className="empty-inline">{t('Choose a row to see its question.')}</p>}
         {(current || (gone && note.text)) && <footer className="queue-foot">
           {actionError && <Notice tone="error">{actionError}</Notice>}
@@ -400,7 +401,7 @@ export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources 
 
 function RowDetail({ row, rowView, detailError, titleRef, onOpenPage, onOpenPart, onOpenSource, onOpenCue }: {
   row: QueueRow; rowView: QueueRowView | undefined; detailError: string; titleRef: RefObject<HTMLHeadingElement | null>
-  onOpenPage: () => void; onOpenPart: (part: QueuePart) => void; onOpenSource: () => void; onOpenCue: (passageId: string, page: number) => void
+  onOpenPage: () => void; onOpenPart: (part: QueuePart) => void; onOpenSource: () => void; onOpenCue: (passageId: string, page: number, rendition?: boolean) => void
 }) {
   const detail = rowView?.detail
   const choice = detail ? rowPage(row, detail) : null
@@ -453,7 +454,7 @@ function RowDetail({ row, rowView, detailError, titleRef, onOpenPage, onOpenPart
               : t('Run {run}: the model’s quote was not found in the text, and the pages this run was shown hold no close text.', { run })}</Notice>
             {p.closest && <div className="queue-pair">
               <div><h5>{t('The model’s quote')}</h5><blockquote className="queue-quote">{p.quote}</blockquote></div>
-              <div><h5>{t('The closest text · PDF p. {page}', { page: p.closest.page })}</h5><blockquote className="queue-quote">{p.closest.text}</blockquote></div>
+              <div><h5>{t('The closest text · {locator}', { locator: pageLocator(p.closest.page, p.closest.rendition) })}</h5><blockquote className="queue-quote">{p.closest.text}</blockquote></div>
             </div>}
           </div>)}
         </section>}
@@ -461,7 +462,7 @@ function RowDetail({ row, rowView, detailError, titleRef, onOpenPage, onOpenPart
           <h4>{t('Sentences with this part’s phrases')}</h4>
           {detail.cues.sentences.length ? <>
             <ul>{detail.cues.sentences.map((cue, i) => <li key={i}><p className="queue-serif">{cue.sentence}</p>
-              {cue.passage_id && <button type="button" className="queue-page-link" onClick={() => onOpenCue(cue.passage_id!, cue.page)}>{t('PDF p. {page}', { page: cue.page })}<ChevronRight size={13} aria-hidden /></button>}</li>)}</ul>
+              {cue.passage_id && <button type="button" className="queue-page-link" onClick={() => onOpenCue(cue.passage_id!, cue.page, cue.rendition)}>{pageLocator(cue.page, cue.rendition)}<ChevronRight size={13} aria-hidden /></button>}</li>)}</ul>
             {detail.cues.total > detail.cues.sentences.length && <p className="queue-muted">{t('{shown} of {total} sentences shown', { shown: detail.cues.sentences.length, total: detail.cues.total })}</p>}
           </> : <p className="queue-muted">{t('This part’s phrases do not occur in the text.')}</p>}
         </section>}
@@ -476,7 +477,7 @@ function RunParts({ run, part, onOpenPart }: { run: QueueRun; part: string | und
       <p className="queue-part-head"><span>{p.part}</span><span className="ref-pill">{partLabelText(p.label)}</span>{p.part === part && <small className="queue-part-asked">{t('this row’s question')}</small>}</p>
       {p.quote && <blockquote className="queue-quote">{p.quote}</blockquote>}
       {p.label === 'present' && <p className="queue-part-note">{p.quote_verified ? t('Found on the page.') : t('Not found in the text.')}
-        {(p.passage_id || p.closest?.passage_id) && <button type="button" className="queue-page-link" onClick={() => onOpenPart(p)}>{p.quote_verified && p.page !== null ? t('PDF p. {page}', { page: p.page }) : t('Open the page')}<ChevronRight size={13} aria-hidden /></button>}</p>}
+        {(p.passage_id || p.closest?.passage_id) && <button type="button" className="queue-page-link" onClick={() => onOpenPart(p)}>{p.quote_verified && p.page !== null ? pageLocator(p.page, p.rendition) : t('Open the page')}<ChevronRight size={13} aria-hidden /></button>}</p>}
       {p.rationale && <p className="queue-rationale">{p.rationale}</p>}
     </div>)}
   </>

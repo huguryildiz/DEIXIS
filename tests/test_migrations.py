@@ -345,3 +345,54 @@ def test_the_adjudication_migration_keeps_every_run_it_found_and_accepts_the_new
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     with sqlite3.connect(tmp_path / "library.sqlite") as reopened:
         assert reopened.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == len(PRE_ADJUDICATION_KINDS) + 1
+
+
+def test_the_europepmc_migration_keeps_every_pdf_lookup_row_and_accepts_the_new_provider_and_status(tmp_path, monkeypatch):
+    """0055 (SW21, D106): the two PDF lookup tables are rebuilt with Europe PMC and `wrong_type`; nothing is lost."""
+    from deixis.documents.acquisition import Candidate, Lookup
+    from deixis.documents.fetch import FetchResult
+    from deixis.providers.common import ProviderRecord
+    from deixis.workflow.store import Store
+
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    for path in db.MIGRATIONS_DIR.glob("*.sql"):
+        if int(path.name.split("_", 1)[0]) < 55:
+            shutil.copy(path, migrations / path.name)
+    real = db.MIGRATIONS_DIR
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    store = Store(conn)
+    rid = store.create_research("SYNTHETIC question?", "academic", "quick", ["openalex"], "fake", "m", "en")
+    record = ProviderRecord("W1", "SYNTHETIC title", [], 2020, "J", "article", "10.1/x", None, None, None,
+                            "publishedVersion", None, None, {}, {})
+    svid, _ = store.upsert_provider_source("openalex", record, None)
+    for provider in ("unpaywall", "openalex", "crossref", "core", "web_search"):
+        candidate = Candidate(provider, f"https://{provider}.example/a.pdf", None, "publishedVersion", None,
+                              "doi_verified", "match")
+        run_id = store.record_pdf_discovery(rid, svid, provider, "10.1/x", Lookup("completed", [candidate], 200,
+                                                                                  other_title_count=2))
+        store.record_pdf_candidates(svid, run_id, [candidate])
+    first = store.pdf_candidates(svid)[0]
+    store.record_pdf_attempt(first["id"], FetchResult("not_pdf", final_url="https://unpaywall.example/a.pdf", http_status=200))
+    before = {table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")]
+              for table in ("pdf_discovery_runs", "pdf_candidates")}
+    with pytest.raises(sqlite3.IntegrityError):  # not accepted before 0055
+        store.record_pdf_discovery(rid, svid, "europepmc", "10.1/x", Lookup("zero_results", [], 200))
+
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
+    assert db.migrate(conn) == [55]
+    after = {table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")]
+             for table in ("pdf_discovery_runs", "pdf_candidates")}
+    assert after == before  # every row and column value kept, other_title_count included
+    candidate = Candidate("europepmc", "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC1/fullTextXML", None,
+                          "publishedVersion", None, "doi_verified", "match")
+    run_id = store.record_pdf_discovery(rid, svid, "europepmc", "10.1/x", Lookup("completed", [candidate], 200))
+    (row,) = [c for c in store.record_pdf_candidates(svid, run_id, [candidate]) if c["provider"] == "europepmc"]
+    store.record_pdf_attempt(row["id"], FetchResult("wrong_type", final_url=candidate.url, media_type="text/html",
+                                                    http_status=200))
+    assert conn.execute("SELECT access_status FROM pdf_candidates WHERE id = ?", (row["id"],)).fetchone()[0] == "wrong_type"
+    names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+    assert {"pdf_discovery_source", "pdf_candidates_source"} <= names
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []

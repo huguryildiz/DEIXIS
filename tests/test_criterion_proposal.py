@@ -33,15 +33,16 @@ def part(name, phrases, definition="SYNTHETIC: what the paper must contain."):
     return {"name": name, "definition": definition, "phrases": list(phrases)}
 
 
-def proposal(criterion, parts, exclusion=()):
-    return {"criterion": criterion, "parts": list(parts), "exclusion_title_words": list(exclusion)}
+def proposal(criterion, parts, exclusion=(), elements=()):
+    return {"criterion": criterion, "parts": list(parts), "question_elements": list(elements),
+            "exclusion_title_words": list(exclusion)}
 
 
 # ---- Task 1: the contract of one proposal -------------------------------------------------------------------
 
 def test_the_new_task_is_registered_with_its_schema_its_method_files_and_its_repair():
     assert contracts.TASK_OUTPUTS["criterion_proposal"] == ("CriterionProposal",)
-    assert contracts.SCHEMA_VERSIONS["CriterionProposal"] == "deixis.criterion_proposal.v1"
+    assert contracts.SCHEMA_VERSIONS["CriterionProposal"] == "deixis.criterion_proposal.v2"
     assert RUNTIME_FILES["criterion_proposal"] == ("SKILL.md", "references/criterion-proposal.md")
     assert "criterion_proposal" in LITERATURE_TASKS  # the literature model proposes it, as it screens
     # Nothing in the output is an identifier a repair could invent, so the one repair attempt stays open.
@@ -71,33 +72,40 @@ def test_the_fake_adapter_answers_the_new_task_with_a_valid_proposal():
     ("criterion_proposal_sixteen_phrases", ["schema_invalid"]),
     ("criterion_proposal_five_word_phrase", ["criterion_phrase_too_long"]),
     ("criterion_proposal_repeated_part_name", ["duplicate_criterion_part"]),
+    ("criterion_proposal_valid_with_elements", []),
+    ("criterion_proposal_element_unknown_part", ["question_element_unknown_part"]),
+    ("criterion_proposal_element_not_in_question", ["question_element_not_in_question"]),
+    ("criterion_proposal_duplicate_element", ["duplicate_question_element"]),
+    ("criterion_proposal_elements_share_part", ["question_elements_share_part"]),
 ])
 def test_the_fixture_cases_are_judged_as_the_slice_says(name, codes):
     cases = json.loads((FIXTURES / "fake-outputs.json").read_text())["cases"]
     case = next(c for c in cases if c["name"] == name)
-    report = contracts.validate_model_output(STEP_INPUT, case["output"])
+    step_input = json.loads((FIXTURES / "step-inputs.json").read_text())[case["step_input"]]
+    report = contracts.validate_model_output(step_input, case["output"])
     assert report.codes() == codes and report.ok is (codes == [])
 
 
 def test_the_bounds_are_enforced_in_code_as_well_as_in_the_schema():
     """A structured-output implementation may drop array bounds; the check is the floor under that (`step_output_schema`)."""
     report = contracts.ValidationReport()
-    contracts._check_criterion_proposal(proposal("SYNTHETIC", [part("only", ["a", "b"])]), report)
+    contracts._check_criterion_proposal(STEP_INPUT, proposal("SYNTHETIC", [part("only", ["a", "b"])]), report)
     assert sorted(report.codes()) == ["criterion_part_count", "criterion_phrase_count"]
 
 
 def test_an_empty_phrase_and_a_phrase_written_twice_in_one_part_are_errors():
     phrases = ["fatigue score", "Fatigue Score", "  ", "facit-f", "validated scale", "fatigue outcome"]
     report = contracts.ValidationReport()
-    contracts._check_criterion_proposal(proposal("SYNTHETIC", [part("one", phrases), part("two", phrases[:1] * 6)]),
-                                        report)
+    contracts._check_criterion_proposal(STEP_INPUT, proposal("SYNTHETIC", [part("one", phrases),
+                                                                         part("two", phrases[:1] * 6)]), report)
     assert "criterion_phrase_empty" in report.codes() and "duplicate_criterion_phrase" in report.codes()
 
 
 def test_a_phrase_standing_in_two_parts_is_not_an_error():
     shared = ["fatigue score", "fatigue severity", "facit-f", "validated scale", "fatigue outcome", "fatigue scale"]
     report = contracts.ValidationReport()
-    contracts._check_criterion_proposal(proposal("SYNTHETIC", [part("one", shared), part("two", shared)]), report)
+    contracts._check_criterion_proposal(STEP_INPUT, proposal("SYNTHETIC", [part("one", shared), part("two", shared)]),
+                                        report)
     assert report.codes() == []
 
 
@@ -107,7 +115,7 @@ def test_the_method_package_still_passes_its_integrity_check_and_loads_the_new_f
     assert integrity_issues() == []
     text = load_skill_package().runtime_text("criterion_proposal")
     assert '<method-file path="references/criterion-proposal.md">' in text
-    assert "deixis.criterion_proposal.v1" in text  # the envelope line the DeepSeek adapter needs (slice 04d)
+    assert "deixis.criterion_proposal.v2" in text  # the envelope line the DeepSeek adapter needs (slice 04d)
 
 
 def test_the_method_file_names_no_topic_and_carries_no_worked_example():
@@ -265,3 +273,120 @@ def test_the_record_of_whether_the_criterion_named_the_thing_sought_takes_all_th
 
 def test_the_phrase_word_limit_is_the_one_the_method_file_asks_for():
     assert MAX_PHRASE_WORDS == 4
+
+
+# ---- Slice 25 (SW23, D106): the population and the comparator the question names -----------------------------
+
+def test_the_schema_requires_the_question_elements_and_closes_them():
+    schema = contracts.load_schema("CriterionProposal")
+    assert "question_elements" in schema["required"]
+    elements = schema["properties"]["question_elements"]
+    assert (elements["minItems"], elements["maxItems"]) == (0, 2)
+    item = elements["items"]
+    assert item["additionalProperties"] is False and set(item["required"]) == {"role", "words", "part"}
+    assert item["properties"]["role"]["enum"] == ["population", "comparator"]
+    assert (item["properties"]["words"]["minLength"], item["properties"]["words"]["maxLength"]) == (1, 300)
+    assert (item["properties"]["part"]["minLength"], item["properties"]["part"]["maxLength"]) == (1, 60)
+
+
+def test_the_method_file_takes_the_population_out_of_the_setting_and_asks_for_the_elements():
+    body = (Path(load_skill_package().root) / "references" / "criterion-proposal.md").read_text()
+    setting = body.split("**setting** is", 1)[1].split(".", 1)[0]
+    assert "population" not in setting.lower()
+    assert "8. When the question names the **population**" in body and "question_elements" in body
+    assert "9. Echo" in body
+    for topic in ("time-restricted", "fasting", "obes", "quantum", "network coding"):
+        assert topic not in body.lower()
+
+
+def test_an_element_is_found_in_the_steering_as_well_as_in_the_question():
+    steered = dict(STEP_INPUT, user_steering=["SYNTHETIC: only trials compared with Usual Care."])
+    draft = proposal("SYNTHETIC", [part("usual care arm", ["a", "b", "c", "d", "e", "f"]),
+                                   part("two", ["g", "h", "i", "j", "k", "l"])],
+                     elements=[{"role": "comparator", "words": "usual care", "part": "Usual Care Arm"}])
+    report = contracts.ValidationReport()
+    contracts._check_criterion_proposal(steered, draft, report)
+    assert report.codes() == []
+    report = contracts.ValidationReport()
+    contracts._check_criterion_proposal(STEP_INPUT, draft, report)  # the question alone does not hold it
+    assert report.codes() == ["question_element_not_in_question"]
+
+
+def test_words_must_stand_at_a_word_boundary_of_the_question():
+    draft = proposal("SYNTHETIC", [part("adults", ["a", "b", "c", "d", "e", "f"]),
+                                   part("two", ["g", "h", "i", "j", "k", "l"])],
+                     elements=[{"role": "population", "words": "dults after", "part": "adults"}])
+    report = contracts.ValidationReport()
+    contracts._check_criterion_proposal(STEP_INPUT, draft, report)
+    assert report.codes() == ["question_element_not_in_question"]
+
+
+# The output of the consensus before slice 25 for `three_runs()`, written out by hand so the invariance is checked
+# against a fixed value and not against the code under test (plan decision 4 (i)).
+BEFORE_SLICE_25 = (
+    '{"base_run":1,"criterion":"SYNTHETIC: the paper runs a supervised programme and reports a fatigue score.",'
+    '"cue_phrases":[{"part":"programme","phrase":"aerobic training","runs":[1,2]},'
+    '{"part":"programme","phrase":"exercise programme","runs":[1,2]},{"part":"fatigue","phrase":"facit-f","runs":[1,2]},'
+    '{"part":"fatigue","phrase":"fatigue score","runs":[1,3]},{"part":"fatigue","phrase":"fatigue severity","runs":[1,3]},'
+    '{"part":"programme","phrase":"resistance training","runs":[1,2]},'
+    '{"part":"programme","phrase":"supervised exercise","runs":[1,2]},'
+    '{"part":"programme","phrase":"training sessions","runs":[1,2]},'
+    '{"part":"fatigue","phrase":"validated scale","runs":[1,3]},{"part":null,"phrase":"walking programme","runs":[2,3]}],'
+    '"dropped_exclusion_title_words":[],"exclusion_title_words":["editorial","review"],'
+    '"parts":[{"definition":"SYNTHETIC: what the paper must contain.","name":"programme"},'
+    '{"definition":"SYNTHETIC: what the paper must contain.","name":"fatigue"}],"runs_ok":[1,2,3],'
+    '"sought_term_in_criterion":true}')
+
+
+def population(part_name="exercise"):
+    return {"role": "population", "words": "adults after chemotherapy", "part": part_name}
+
+
+def comparator(part_name="fatigue"):
+    return {"role": "comparator", "words": "fatigue scale", "part": part_name}
+
+
+def with_elements(runs, by_run):
+    return {number: runs[number] | {"question_elements": by_run.get(number, [])} for number in runs}
+
+
+def test_i_with_no_role_in_the_majority_the_result_is_what_it_was_before_the_slice():
+    runs = with_elements(three_runs(), {3: [population("something else")]})  # one run alone is no majority
+    result = consensus(FATIGUE, runs, ["supervised programme"])
+    assert result["question_elements"] == [] and result["required_roles"] == []
+    rest = {k: v for k, v in result.items() if k not in ("question_elements", "required_roles")}
+    assert canonical_json(rest) == BEFORE_SLICE_25
+
+
+def test_ii_a_role_two_runs_name_moves_the_base_to_a_run_that_holds_it():
+    runs = with_elements(three_runs(), {2: [population()], 3: [population("something else")]})
+    result = consensus(FATIGUE, runs)
+    assert result["required_roles"] == ["population"]
+    assert result["base_run"] == 2  # run 1 shares the most phrases but names no population
+    assert result["criterion"] == three_runs()[2]["criterion"]
+    assert result["question_elements"] == [population()]
+
+
+def test_iii_two_roles_held_by_different_pairs_of_runs_choose_the_run_holding_both():
+    runs = with_elements(three_runs(), {2: [population()], 3: [comparator(), population("something else")],
+                                        1: [comparator("programme")]})
+    result = consensus(FATIGUE, runs)
+    assert result["required_roles"] == ["comparator", "population"]
+    assert result["base_run"] == 3
+    assert [e["role"] for e in result["question_elements"]] == ["comparator", "population"]
+
+
+def test_iv_neither_the_order_of_the_runs_nor_of_the_elements_changes_the_result():
+    runs = with_elements(three_runs(), {2: [comparator(), population()], 3: [population("something else")],
+                                        1: [comparator("programme")]})
+    reordered = {number: runs[number] | {"question_elements": list(reversed(runs[number]["question_elements"]))}
+                 for number in (3, 2, 1)}
+    assert canonical_json(consensus(FATIGUE, runs)) == canonical_json(consensus(FATIGUE, reordered))
+
+
+def test_v_a_stored_v1_proposal_without_the_field_reads_as_naming_nothing():
+    runs = {number: {k: v for k, v in body.items() if k != "question_elements"} for number, body in three_runs().items()}
+    result = consensus(FATIGUE, runs, ["supervised programme"])
+    assert result["question_elements"] == [] and result["required_roles"] == []
+    rest = {k: v for k, v in result.items() if k not in ("question_elements", "required_roles")}
+    assert canonical_json(rest) == BEFORE_SLICE_25

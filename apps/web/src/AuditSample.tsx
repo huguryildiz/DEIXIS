@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ChevronRight, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api, ApiError, type AuditAbstractRow, type AuditAnswer, type AuditRow, type AuditRowView, type AuditView } from './api'
-import { auditStratumLabels, queueAnswerLabels, queueAnsweredText, versionText, versionTones } from './labels'
+import { auditStratumLabels, pageLocator, queueAnswerLabels, queueAnsweredText, versionText, versionTones } from './labels'
 import { Notice } from './Notice'
 import { useToast } from './Toast'
 import { t, uiLocale } from './i18n'
@@ -92,7 +92,7 @@ function AuditRowItem({ researchId, row, busy, onOpen, onAnswer, onUndo }: {
       <button type="button" className="queue-link" aria-expanded={open} onClick={show}>{t(open ? 'Hide what the runs said' : 'Show what the runs said')}</button>
       {open && detail?.detail && <ul className="audit-runs">{detail.detail.runs.map(run => <li key={run.run_no}>
         <strong>{t('Run {n}', { n: run.run_no })}</strong>
-        {run.parts.map(part => <p key={part.part}>{part.part}: {part.label}{part.quote ? <> — <q>{part.quote}</q>{part.page !== null ? ` (${t('PDF p. {page}', { page: part.page })})` : ''}{part.quote_verified ? '' : ` · ${t('quote not found in the text')}`}</> : ''}</p>)}
+        {run.parts.map(part => <p key={part.part}>{part.part}: {part.label}{part.quote ? <> — <q>{part.quote}</q>{part.page !== null ? ` (${pageLocator(part.page, part.rendition)})` : ''}{part.quote_verified ? '' : ` · ${t('quote not found in the text')}`}</> : ''}</p>)}
       </li>)}</ul>}
     </div>
     {row.answered

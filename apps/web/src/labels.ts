@@ -143,7 +143,7 @@ export const verdictLabels: Record<Verdict, string> = {
 }
 
 const providerNames: Record<string, string> = {
-  unpaywall: 'Unpaywall', openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', pubmed: 'PubMed', ieee_xplore: 'IEEE Xplore', scopus: 'Scopus', core: 'CORE', serpapi: 'SerpApi', web_search: 'Web Search', zotero: 'Zotero',
+  unpaywall: 'Unpaywall', openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', pubmed: 'PubMed', ieee_xplore: 'IEEE Xplore', scopus: 'Scopus', core: 'CORE', europepmc: 'Europe PMC', serpapi: 'SerpApi', web_search: 'Web Search', zotero: 'Zotero',
 }
 export const providerName = (id: string) => providerNames[id] ?? id
 
@@ -200,9 +200,16 @@ export function fetchReasonText(code: string | null | undefined, httpStatus?: nu
   return httpStatus ? t('server refused · HTTP {status}', { status: httpStatus }) : t('server refused')
 }
 
-export function locatorText(e: Pick<Evidence, 'kind' | 'physical_page' | 'printed_label'>) {
+// The one way a page is named (SW21): a page of Europe PMC's text drawn by DEIXIS is never written as a PDF page of
+// the publisher's file, on any surface.
+export function pageLocator(page: number | string, rendition?: boolean | null, printed?: string | null) {
+  if (rendition) return t('Europe PMC text, rendered p. {page}', { page })
+  return printed ? t('PDF p. {page} (printed {label})', { page, label: printed }) : t('PDF p. {page}', { page })
+}
+
+export function locatorText(e: Pick<Evidence, 'kind' | 'physical_page' | 'printed_label' | 'rendition'>) {
   if (e.kind === 'abstract') return t('abstract')
-  if (e.physical_page) return e.printed_label ? t('PDF p. {page} (printed {label})', { page: e.physical_page, label: e.printed_label }) : t('PDF p. {page}', { page: e.physical_page })
+  if (e.physical_page) return pageLocator(e.physical_page, e.rendition, e.printed_label)
   return t('section')
 }
 

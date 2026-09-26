@@ -104,6 +104,8 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const status = passage?.evidence_status ?? 'current'
   const removed = pdfRemoved || status === 'pdf_removed'
   const pdfAssetId = removed ? null : passage?.asset_id ?? assetText?.asset.id ?? null
+  // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): every page it names says "rendered".
+  const rendition = Boolean(passage ? passage.rendition : assetText?.asset.rendition)
   const row = source ? sources?.find(s => s.source_version_id === source.id) : undefined
   // The arXiv source version a 'latex_source' passage's equations came from (D104); omitted gracefully if not found.
   const sourceAsset = passage?.asset_id ? row?.access.assets.find(a => a.id === passage.asset_id) : undefined
@@ -171,10 +173,11 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
           {/* OCR text (D51) is read from the page image and never checked against it; the PDF view opens on the same page. */}
           {viewMode === 'text' && passage?.text_source === 'ocr' && <p className="source-notice"><TriangleAlert size={15} aria-hidden /><span>{t('This page was read from its scanned image with OCR (Tesseract) on this computer. Letters, numbers and equations may be misread; check them against the PDF page.')}
             {pdfAssetId && <> <button type="button" className="source-notice-action" onClick={() => { setViewMode('pdf'); setFull(true) }}><FileText size={13} aria-hidden />{t('Show this page in the PDF')}</button></>}</span></p>}
+          {rendition && <p className="source-notice"><Info size={15} aria-hidden />{t('This PDF was drawn by DEIXIS from Europe PMC’s open-access text. Its pages are not the publisher’s pages.')}</p>}
           {viewMode === 'text' ? passage && passageDocument !== null ? <div id="source-text-view" role="tabpanel" className="asset-text-view">
             {passageDocument ? <>
               <h3 className="source-section">{t('Extracted PDF text')}{passageDocument.passages.some(item => item.text.split(/\n{2,}/).some(p => AUTHOR_NOTE.test(p.trim()))) && <button type="button" className="pdf-text-notes-toggle" onClick={() => setShowNotes(v => !v)}>{t(showNotes ? 'Hide author notes' : 'Show author notes')}</button>}</h3>
-              <PdfTextDocument researchId={researchId} assetId={passageDocument.asset.id} passages={passageDocument.passages} showNotes={showNotes} sourceTitle={passageDocument.source.title} citation={citation} />
+              <PdfTextDocument researchId={researchId} assetId={passageDocument.asset.id} passages={passageDocument.passages} showNotes={showNotes} sourceTitle={passageDocument.source.title} citation={citation} rendition={rendition} />
             </> : <p>{t('Loading PDF text…')}</p>}
           </div> : passage ? <div id="source-text-view" role="tabpanel">
             {abstract && !pdfAssetId && <p className="source-notice"><Info size={15} aria-hidden />{t('No PDF is attached, so only the abstract can be inspected. Claims citing this source rest on the abstract alone.')}</p>}
@@ -183,9 +186,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
             <p className="passage-text"><HighlightedPassageText passage={passage} highlightTexts={highlights} markLabel={citationLabels?.mark} /></p>
           </div> : assetText ? <div id="source-text-view" role="tabpanel" className="asset-text-view">
             <h3 className="source-section">{t('Extracted PDF text')}{assetText.passages.some(item => item.text.split(/\n{2,}/).some(p => AUTHOR_NOTE.test(p.trim()))) && <button type="button" className="pdf-text-notes-toggle" onClick={() => setShowNotes(v => !v)}>{t(showNotes ? 'Hide author notes' : 'Show author notes')}</button>}</h3>
-            {assetText.passages.length ? <PdfTextDocument researchId={researchId} assetId={assetText.asset.id} passages={assetText.passages} showNotes={showNotes} sourceTitle={assetText.source.title} /> : <Notice tone="info">{t('No text was extracted from this PDF.')}</Notice>}
+            {assetText.passages.length ? <PdfTextDocument researchId={researchId} assetId={assetText.asset.id} passages={assetText.passages} showNotes={showNotes} sourceTitle={assetText.source.title} rendition={rendition} /> : <Notice tone="info">{t('No text was extracted from this PDF.')}</Notice>}
           </div> : <p className="source-notice"><Info size={15} aria-hidden />{t('No abstract or PDF text is stored for this source.')}</p> : pdfAssetId && <div id="source-pdf-view" role="tabpanel" className="source-pdf-view">
-            <PdfViewer url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? initialPage} title={source.title} />
+            <PdfViewer url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? initialPage} title={source.title} rendition={rendition} />
           </div>}
         </>}
       </div>

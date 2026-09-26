@@ -72,6 +72,8 @@ CRITERION = {
     "exclusion_title_words": ["editorial", "review"],
     "dropped_exclusion_title_words": ["soils"],
     "base_run": 2, "runs_ok": [1, 2, 3], "sought_term_in_criterion": True, "origin": "model",
+    "question_elements": [{"role": "population", "words": "SYNTHETIC plots", "part": "field trial"}],
+    "required_roles": ["population"],
 }
 
 
@@ -182,12 +184,16 @@ def test_a_written_criterion_keeps_the_runs_of_a_phrase_the_proposal_also_held()
     assert applied["base_run"] == 2 and applied["runs_ok"] == [1, 2, 3]
     assert applied["dropped_exclusion_title_words"] == ["soils"]
     assert applied["origin"] == "user"
+    # SW23: what the proposal named travels as its record, even when the user's parts no longer hold it.
+    assert applied["question_elements"] == CRITERION["question_elements"]
+    assert applied["required_roles"] == ["population"]
 
 
 def test_a_criterion_written_where_the_model_proposed_none_carries_no_provenance():
     applied = approval.apply_criterion(None, written())
     assert applied["base_run"] is None and applied["runs_ok"] == []
     assert applied["sought_term_in_criterion"] is None and applied["origin"] == "user"
+    assert applied["question_elements"] == [] and applied["required_roles"] == []
     assert [c["runs"] for c in applied["cue_phrases"]] == [[]]
 
 

@@ -315,3 +315,67 @@ Measurement evidence (untracked): `.local/quantum-work-adjudication-2026-09-18/`
 This narrows SW2 point 5, which keeps the model as a conditional step that proposes *terms*. This entry adds a second model role that is unconditional but proposes no term at all: it only sorts phrases code already found. The conditional term-proposing step of SW2 points 5 and 6 is unchanged and stays in slice 08.
 
 **Limits:** 8 questions and 28 phrases; one model, one prompt, one wording. The expected labels were written by a single annotator (the session that ran the trial) after seeing the rule's output, so they are not an independent reference. Only one phrase in the set is a genuine claim (`mixed-integer linear programming`, labelled correctly in all six runs), so "a real claim leaks into the query" is essentially unmeasured, and it is the risk this entry accepts in exchange for dropping the preposition veto. Every question is well-formed English; broken, multi-sentence and keyword-list inputs were not tried, and no non-English question was tried at all. Model failure was never exercised: 24 of 24 calls passed on the first attempt, so the fall-back path of point 5 is untested outside unit tests. Three of the 28 phrases weld two concepts into one (`packet size affect energy consumption`); labelling cannot repair that, and extraction was not changed. Three runs per question triple the cost of a step that runs once per research, and nothing measured whether one run would do. Nothing here was measured against search results: better blocks were not shown to find more positives. That is slice 24.
+
+## SW18 — A medicine reference set built from the three newest meta-analysis tables is too small for the workflow gate
+
+**Status:** open finding from slice 24a; not implemented. **Date:** 2026-09-26. Evidence: `.local/sw-slice24-campaign-2026-09-26-134050/` (`reference-tre.jsonl`, `ledger.jsonl` kinds `tre_step*`).
+
+**Finding:** The slice 24 plan (decision 6) builds the medicine reference set R from the included-studies tables of the three newest eligible meta-analyses found by one exact PubMed query. On 2026-09-26 the query returned 90 records; of the first 10, two eligible meta-analyses had no table we could open (publisher 403, paywall), three were network meta-analyses, two did not pool body weight, and three tables were read. Their rows reduced to **4** unique trials in R, 10 with a different comparator (mostly calorie restriction), 11 rows outside the population (trained athletes, healthy men) and 4 outside the intervention (5:2 or alternate-day fasting). Gate 2 needs |R| ≥ 10, so the medicine half of the gate could not be read before a single run started. The frozen expectation was 10–40 (marked weak). Recent meta-analyses in this field pool narrow subgroups (TRE plus exercise, PCOS, MASLD), so "the three newest" picks specialised tables, not the core trials of the question; none of Elicit's five works was in any of the three tables.
+
+**Return to:** before a second medicine campaign (slice 24b re-plan or a new slice). Options to decide there: take the tables of the newest meta-analyses whose population and comparator match the question rather than the newest three; allow network meta-analyses' trial lists; or build R from a trial registry search. Whatever rule is chosen must be frozen before any run and must reach |R| ≥ 10 on paper first.
+
+## SW19 — The block-labelling constants are not written to the protocol's thresholds
+
+**Status:** open code finding from the slice 24 plan; confirmed unchanged at `65a7ec8`; not fixed (slice 24b point 11 fixes it only if 24b runs). **Date:** 2026-09-26.
+
+**Finding:** `LABEL_RUNS = 3`, `LABEL_MAJORITY = 2` and `MAX_LABELLED_PHRASES = 40` (`workflow/vocabulary.py:24-26`, SW17's three runs and majority) are hand-picked thresholds, but `vocabulary.THRESHOLDS` (`:30-36`) does not list them, so the frozen protocol's `thresholds` block does not carry them. The main plan's §2.7 asks for every hand-picked threshold there. In the campaign all 10 `sw` researches ran the labelling with three valid runs, so the values were in force but not recorded.
+
+**Return to:** slice 24b point 11 (add the three to `vocabulary.THRESHOLDS`; protocol-body tests follow; no migration, skill hash unchanged).
+
+## SW20 — `routing.THRESHOLDS` is never read
+
+**Status:** open code finding from the slice 24 plan; confirmed unchanged at `65a7ec8`; not fixed. **Date:** 2026-09-26.
+
+**Finding:** `workflow/routing.py:22-23` defines `THRESHOLDS`, but `route()` never reads it; the value written to the protocol comes from `route()`'s own return (`routing.py:105-107`), which uses `rules.ROUTE_SHARE`. Two sources for one number can drift. In the campaign the share was far from 0.25 on both questions (chosen sources 0.85–0.98, left-out 0–0.005), so the duplication changed nothing measured.
+
+**Return to:** slice 24b point 11 (make `route()` read the dict or delete it).
+
+## SW21 — On a clinical question `sw` reads almost none of the relevant trials because it finds no open PDF; Europe PMC holds some of them
+
+**Status:** open finding from slice 24a; not implemented; Europe PMC is still absent from the code. **Date:** 2026-09-26.
+
+**Finding:** In the five medicine `sw` researches (one M1 Pro, Luna medium, one run per cell, two for `standard`), 0 of the 4 reference trials and 0 of Elicit's 5 works reached a PDF: the ones that were routed were planned and then ended `planned_no_pdf` (`no_fulltext`). Of 112 planned works, 29 and 19 had a PDF in the two `standard` runs (quantum: 54 and 54), with 40 and 42 `fetch_http_error` steps. `legacy` cited two of Elicit's five from abstracts. One read-only Europe PMC request per reference trial without a PDF: 2 of 4 (Kotarsky 2021 PMC8157764, Feehan 2023 PMC10708421) have open full text in PMC. That is the upper bound of what a PMC full-text source would have added here. The share of open-access records among abstracts the model read was higher in medicine (86/150, 94/150) than in quantum (61/150, 57/150), so the loss is in fetching, not in availability.
+
+**Return to:** a new slice after 24 (the Europe PMC full-text source that slice 10 left to slice 14 and slice 14 did not build): fetch PMC OA full text by PMCID before the publisher, and measure on the same reference set.
+
+## SW22 — An `sw` research whose reading includes nothing ends with no answer
+
+**Status:** open finding from slice 24a; not implemented. **Date:** 2026-09-26.
+
+**Finding:** `qtre-sw-standard-emb-r1` finished discovery (7,565 works in the pool) and full-text reading (24 PDFs read, 5 `criterion_not_met`, 47 `unresolved`, 0 `include`). The campaign then asked for the answer, as a person would, and the API refused it with 422 "Include at least one source before generating an answer". The research has no answer at all, not even one that says nothing was confirmed. This single case failed gate 1. The other nine `sw` researches had 3–42 includes. A clinical question where no PDF is open (SW21) will hit this more often.
+
+**Return to:** a slice on the answer run's precondition: when full text includes nothing, the answer should still run on abstract-level evidence with its depth shown, or state that no source met the criterion, instead of refusing.
+
+## SW23 — The proposed inclusion criterion drops the population and folds the comparator into the design part
+
+**Status:** open finding from slice 24a; not implemented. **Date:** 2026-09-26. Narrows SW15.
+
+**Finding:** For the question "In adults with overweight or obesity, does time-restricted eating reduce body weight compared with unrestricted eating or usual diet? (randomised controlled trials)", all five medicine `sw` criteria had the same three parts: TRE intervention, randomised design, body-weight outcome. No run made the population a part; `sw` r1's criterion sentence does not mention it at all. The comparator appeared only inside the design part. Full-text reading asks one question per part, so neither was checked. The analyst reading (8 unique `include`s from the two `standard` runs) found 3 serious errors: a trial in "healthy volunteers without obesity", a trial comparing 14:10 TRE with 12:12 TRE (both on a calorie-controlled diet), and a trial comparing TRE with an individualised dietitian programme (the blind second reader called this one debatable). The quantum criterion had no such gap (0 of 10). The frozen expectation named the comparator as the likely error, at 0–1 in 10.
+
+**Return to:** slice 06's criterion proposal (D78, D96): every PICO element the question states (population, intervention, comparator, outcome, design) becomes its own part, and code checks that the question's population and comparator words appear in some part before the protocol freezes.
+
+## SW24 — In quantum `standard` the full-text work limit is the largest single loss, and the time targets still miss
+
+**Status:** open finding from slice 24a; thresholds unchanged. **Date:** 2026-09-26.
+
+**Finding:** Quantum `standard` (two runs, 31 reference works): 10 and 12 works were routed to full text but not planned because of `FULLTEXT_WORK_LIMIT` = 100, more than any other stage (N for abstract reading: 6 and 6; no PDF: 2 and 1). `detailed` (limit 300) planned 23 and read 22. Wall time from create to answer: `quick` 12.2 min (target 10), `standard` 17.7 and 19.9 min (target 15; a third run took 29.2 with a 10-minute timeout wait), `detailed` 35.9 min (target 20); medicine `standard` 12.8 and 13.1, `detailed` 30.2. All within the frozen time expectation, all above the quantum targets.
+
+**Return to:** slice 13c's effort limits (D88): whether `standard`'s fetch limit should rise, and what it costs in time, measured on the same two questions.
+
+## SW25 — The code query welds a verb into a searched phrase
+
+**Status:** open finding from slice 24a; not implemented. **Date:** 2026-09-26. Narrows SW17's Limits.
+
+**Finding:** In all five medicine `sw` researches the code-built query searched the phrase `"time-restricted eating reduce body weight"` in the task block, next to `"usual diet"` and `unrestricted`. The phrase is the question's words run together, so it matches almost nothing; the model's query carried the search. SW17's Limits already noted that 3 of 28 phrases weld two concepts. In `detailed`, `"randomised controlled trials"` entered a setting block in British spelling, so American-spelled records depend on the other query. Separately, after the campaign the day's keyless OpenAlex budget was exhausted (search requests returned 429 with `x-ratelimit-remaining: 0`, reset in about 8.4 h); no product search in the campaign was refused, but a heavy day of use can reach the same wall.
+
+**Return to:** slices 04a / 04d (phrase extraction and labelling): cut phrases at verbs and prepositions before labelling; and a note for the provider settings on OpenAlex's daily budget.

@@ -1204,9 +1204,13 @@ class Store:
         return svid, wid
 
     def enrich_source(self, provider: str, svid: str, record: Any) -> None:
-        """Fill absent citation fields from an exact-identity provider lookup; never replace existing metadata."""
+        """Fill absent citation fields from an exact-identity provider lookup; never replace existing metadata.
+
+        The only path that changes a record's identity fields after insert (an empty `landing_url` filled): the arXiv
+        source eligibility of the record's PDFs is decided again in the same transaction (D104)."""
         ts = now()
         with transaction(self.conn):
+            had_landing = self.conn.execute("SELECT landing_url FROM source_versions WHERE id = ?", (svid,)).fetchone()
             self.conn.execute(
                 "UPDATE source_versions SET"
                 " authors_json = CASE WHEN authors_json = '[]' AND ? <> '[]' THEN ? ELSE authors_json END,"
@@ -1223,6 +1227,47 @@ class Store:
             )
             # A key taken from the title gives way to the author an enrichment brings; an author key is never changed (D59).
             self._assign_source_key(self.source(svid)["work_id"], replace_title_key=True)
+            if had_landing is not None and had_landing["landing_url"] is None and record.landing_url:
+                self._recheck_arxiv_eligibility(svid)
+
+    def _recheck_arxiv_eligibility(self, svid: str) -> None:
+        """Decision 1's record rows again, from the stored file version (no PDF is opened), for each PDF of the record in
+        use that has an eligibility row. A refusal on a PDF whose current text is a source reading withdraws that reading:
+        the route's extraction row is superseded first, then the row current just before it is current again with the
+        asset's four mirrored fields (the one-current index holds throughout); its passages stay, shadowed (D45)."""
+        from deixis.documents import arxiv_source
+
+        record = dict(self.conn.execute("SELECT doi, landing_url, oa_pdf_url, version_label FROM source_versions WHERE id = ?",
+                                        (svid,)).fetchone())
+        researches = [r[0] for r in self.conn.execute("SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (svid,))]
+        for row in self.conn.execute(
+            "SELECT v.asset_id, v.arxiv_key, v.eligibility, a.extraction_version FROM asset_arxiv_versions v"
+            " JOIN source_assets a ON a.id = v.asset_id WHERE a.source_version_id = ? AND a.removed_at IS NULL AND v.arxiv_key IS NOT NULL",
+            (svid,)).fetchall():
+            result = arxiv_source.record_eligibility(row["arxiv_key"], record)
+            if result == row["eligibility"]:
+                continue
+            self.conn.execute("UPDATE asset_arxiv_versions SET eligibility = ?, record_label = ?, checked_at = ? WHERE asset_id = ?",
+                              (result, record["version_label"], now(), row["asset_id"]))
+            current = row["extraction_version"] or ""
+            if result == "eligible" or not current.endswith("+" + arxiv_source.SOURCE_VERSION):
+                continue
+            previous = self.conn.execute(
+                "SELECT * FROM asset_extractions WHERE asset_id = ? AND outcome = 'superseded' AND created_at <="
+                " (SELECT created_at FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?)"
+                " AND extraction_version <> ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (row["asset_id"], row["asset_id"], current, current)).fetchone()
+            if previous is None:
+                continue
+            self.conn.execute("UPDATE asset_extractions SET outcome = 'superseded' WHERE asset_id = ? AND extraction_version = ?",
+                              (row["asset_id"], current))
+            self.conn.execute("UPDATE asset_extractions SET outcome = 'current' WHERE id = ?", (previous["id"],))
+            self.conn.execute("UPDATE source_assets SET extraction_version = ?, extraction_status = ?, extraction_error = ?, page_count = ?"
+                              " WHERE id = ?", (previous["extraction_version"], previous["status"], previous["error"],
+                                                previous["page_count"], row["asset_id"]))
+            for research_id in researches:
+                self._event(research_id, "arxiv_source_withdrawn", {"asset_id": row["asset_id"], "source_version_id": svid,
+                                                                    "eligibility": result, "restored_version": previous["extraction_version"]})
 
     def _insert_mappings(self, svid: str, provider: str, record: Any, ts: str) -> None:
         mappings = [(provider, record.provider_record_id)]
@@ -1337,10 +1382,14 @@ class Store:
                           outcome: str, rejection_reason: str | None = None) -> None:
         passage_ids = []
         for page in extraction.pages:
+            # A chunk holding a display equation placed from the arXiv source is labelled per chunk (D104): the rest of
+            # the page, and the chunk's other text, is the PDF's own text layer.
+            placed = getattr(page, "latex_blocks", None) or ()
             for start, end, text in chunker(page.text):
+                label = "latex_source" if any(start <= s and e <= end for s, e, _ in placed) else getattr(page, "text_source", "text_layer")
                 passage_ids.append((page.physical_page, self._insert_passage(
                     svid, aid, "pdf_page", page.physical_page, page.printed_label, None, f"chars:{start}-{end}", extraction_version, text,
-                    getattr(page, "text_source", "text_layer"))))
+                    label)))
         math, ocr = getattr(extraction, "math", None), getattr(extraction, "ocr", None)
         self.conn.execute(
             "INSERT INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages, passage_count,"
@@ -1351,12 +1400,16 @@ class Store:
         )
 
     def reextract_asset(self, asset_id: str, extraction: Any, extraction_version: str, chunker: Any,
-                        dry_run: bool = False, allow_run_id: str | None = None) -> dict[str, Any]:
+                        dry_run: bool = False, allow_run_id: str | None = None, guard: Any = None) -> dict[str, Any]:
         """Write a new text extraction of a PDF in use; it becomes current only if it loses nothing visible (D45).
 
         Current: its status is not worse, its page count is equal and it has text on no fewer pages. Otherwise it is
         recorded as rejected and the old text stays in use. Old passages are shadowed, never deleted. An OCR reading (D51)
         that found text on no page is rejected too, and is reported as `asset_ocr_read` with its page counts.
+
+        `guard(conn)` (the arXiv source route's last-write check, D104) runs inside this write's own `BEGIN IMMEDIATE`
+        transaction before its first write; a reason it returns refuses the write: no passage is written and the current
+        extraction stays (whatever the guard itself wrote in the transaction is kept).
         """
         asset = self.asset(asset_id)
         if asset["removed_at"] is not None:
@@ -1389,6 +1442,8 @@ class Store:
         researches = [r[0] for r in self.conn.execute(
             "SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (asset["source_version_id"],))]
         with transaction(self.conn):
+            if guard is not None and (refusal := guard(self.conn)):
+                return {"asset_id": asset_id, "source_version_id": asset["source_version_id"], "outcome": "refused", "reason": refusal}
             # The run that asked for this extraction (an answer waiting for its sources' equations, D52) does not block it.
             active = self.conn.execute(
                 f"SELECT 1 FROM runs WHERE research_id IN ({', '.join('?' * len(researches))}) AND status IN"

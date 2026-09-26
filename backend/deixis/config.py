@@ -47,6 +47,11 @@ class Settings:
     # or a script that builds its own settings sends no chain request unless it asks for one. The setting is written
     # into a discovery run's budget when the run is queued and is frozen there for that run.
     citation_chaining: str = "off"
+    # Whether PDFs that are arXiv versions get the numbered display equations of their authors' LaTeX source while the
+    # equation reader (Marker) is not installed (D104, slice 22). `off` in this dataclass and in `load_settings` until
+    # slice 24 measures it; `auto` turns the route on (POSIX only). With `off` no source is requested and no PDF
+    # extraction changes; readings already stored stay.
+    arxiv_source: str = "off"
 
     @property
     def db_path(self) -> Path:
@@ -124,6 +129,9 @@ def load_settings() -> Settings:
     citation_chaining = os.environ.get("DEIXIS_CITATION_CHAINING", "auto")
     if citation_chaining not in ("auto", "off"):
         raise ValueError("DEIXIS_CITATION_CHAINING must be auto or off")
+    arxiv_source = os.environ.get("DEIXIS_ARXIV_SOURCE", "off")
+    if arxiv_source not in ("auto", "off"):
+        raise ValueError("DEIXIS_ARXIV_SOURCE must be auto or off")
     return Settings(
         data_dir=default_data_dir(),
         host=os.environ.get("DEIXIS_HOST", "127.0.0.1"),
@@ -136,4 +144,5 @@ def load_settings() -> Settings:
         fulltext_adjudication=fulltext_adjudication,
         search_query=search_query,
         citation_chaining=citation_chaining,
+        arxiv_source=arxiv_source,
     )

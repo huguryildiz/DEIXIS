@@ -55,7 +55,7 @@ from deixis.workflow import person_reading
 from deixis.workflow import waiting as pdf_waiting
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import english_question
-from deixis.workflow.equations import EquationService, equation_state, equations_to_check
+from deixis.workflow.equations import EquationService, chunk_numbers, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.local_embedding_service import EmbeddingService, ServiceError
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.report.store import ReportStore
@@ -378,6 +378,8 @@ def create_app(
         package = skill.load_skill_package()
         equations = equation_service if equation_service is not None else EquationService(
             store, math_reader.MathReader(math_reader.runtime_paths(settings.data_dir)), settings.papers_dir)
+        if equation_service is None:
+            equations.configure_arxiv_source(settings.arxiv_source, settings.data_dir)  # D104, off unless the flag says auto
         # The built-in embedding model (slice 21): a test injects its own embedder and never starts a real runner.
         builtin_paths = local_embedding.builtin_paths(settings.data_dir)
         embedder = local_embedder if local_embedder is not None else local_embedding.LocalEmbedder(builtin_paths)
@@ -1542,10 +1544,14 @@ def create_app(
         source = store.source(asset["source_version_id"])
         passages = [p for p in store.passages_for(asset["source_version_id"]) if p["asset_id"] == asset_id]
         to_check = equations_to_check(store, asset_id, asset["extraction_version"])
+        source_numbers = {version: latex_numbers(store, asset_id, version)
+                          for version in {p["extraction_version"] for p in passages if p["text_source"] == "latex_source"}}
         return {
             "asset": {k: asset[k] for k in ("id", "extraction_status", "page_count", "origin", "byte_size", "original_filename")},
             "passages": [{k: passage[k] for k in ("id", "kind", "text", "physical_page", "printed_label", "extraction_version", "payload_ref", "text_source")}
-                         | {"equations_to_check": to_check.get(passage["physical_page"], 0) if passage["text_source"] == "marker" else 0}
+                         | {"equations_to_check": to_check.get(passage["physical_page"], 0) if passage["text_source"] == "marker" else 0,
+                            "source_equations": chunk_numbers(source_numbers[passage["extraction_version"]], passage["physical_page"],
+                                                              passage["payload_ref"]) if passage["text_source"] == "latex_source" else []}
                          for passage in passages],
             "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
                                                 "cited_by_count", "cited_by_count_at")}

@@ -120,14 +120,14 @@ def valid_response(si: dict[str, Any]) -> str:
         })
     if task == "report_section":
         if not si["passages"]:
-            return json.dumps(envelope(si, "deixis.report_section_draft.v1") | {
+            return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
                 "section_id": si["report_target"]["section_id"], "claims": [], "citation_anchors": [],
                 "subsections": [], "gaps": [],
                 "insufficient_evidence": [{"context": si["report_target"]["section_id"],
                                            "reason": "It is beyond the scope of this synthetic fixture to add a claim."}],
             })
         first = si["passages"][0]
-        return json.dumps(envelope(si, "deixis.report_section_draft.v1") | {
+        return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
             "section_id": si["report_target"]["section_id"],
             "claims": [{"claim_key": f"{si['report_target']['section_id']}.1", "text": "It has been reported that the fake claim holds.",
                         "support_type": "source_stated", "passage_ids": [first["passage_id"]], "cell_ids": [], "paragraph": 1,

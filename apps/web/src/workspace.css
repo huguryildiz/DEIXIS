@@ -392,6 +392,7 @@ button.chat-step-title svg{color:var(--muted)}
 .claim.is-unverified{color:var(--muted)!important;text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--muted),transparent 60%)}
 .cite-chip{display:inline-flex;align-items:center;margin-left:4px;padding:0 5px;border-radius:4px;color:var(--accent);font-family:'DM Sans Variable',sans-serif;font-size:11.5px;font-weight:600;white-space:nowrap;vertical-align:baseline;background:color-mix(in srgb,var(--accent),transparent 91%)}
 .cite-chip:hover{background:color-mix(in srgb,var(--accent),transparent 80%)}
+.cite-chip-origin{display:inline-flex;align-items:center;margin-left:3px;opacity:.85}
 .support-badge{margin-left:8px;padding:1px 6px;border:1px solid var(--line);border-radius:4px;font-size:10px;color:var(--muted);letter-spacing:.3px;vertical-align:middle}
 .review-badge{--tone:var(--muted);display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--tone),transparent 88%);color:color-mix(in srgb,var(--tone),var(--ink) 25%);font-size:10px;letter-spacing:.2px;line-height:1.6;vertical-align:middle}
 .review-badge.is-supported{--tone:var(--tone-include)}

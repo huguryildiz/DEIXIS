@@ -514,7 +514,7 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.report_section_draft.v1",
+    "schema_version": "deixis.report_section_draft.v2",
     "step_input_id": "sti_SYNTHR0002",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -591,7 +591,7 @@
     "unknown_gap_ref"
    ],
    "output": {
-    "schema_version": "deixis.report_section_draft.v1",
+    "schema_version": "deixis.report_section_draft.v2",
     "step_input_id": "sti_SYNTHR0005",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",

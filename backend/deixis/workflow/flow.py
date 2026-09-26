@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import math
 import re
 from collections import Counter
@@ -61,9 +62,11 @@ from deixis.workflow import search_query as search_query_rules
 from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
-from deixis.workflow.equations import equation_state
+from deixis.workflow.equations import EXTRACTION_FAILED, MAX_ATTEMPTS as EQUATION_ATTEMPTS, equation_state
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, NotFound, RunInProgress, Store
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
+
+log = logging.getLogger(__name__)
 
 CAPABILITIES = {
     "supported_tasks": ["search_plan", "screening", "grounded_answer", "answer_review", "cell_extraction", "table_columns", "research_title"],
@@ -2636,9 +2639,16 @@ class ResearchFlow:
 
         Without the equation reader nothing waits. A failed read pauses the run with its reason; resuming continues
         with that PDF's text layer, since its step stays failed.
+
+        Without Marker and with the arXiv source route on (D104), a PDF the route may read is read once per run through
+        it; no outcome of the route pauses the run: the step ends `succeeded` with the PDF's state in its output.
         """
         service = self.deps.equations
-        if service is None or not service.available():
+        if service is None:
+            return
+        if not service.available():
+            if service.route_active():
+                await self._read_source_equations(run, svids)
             return
         run_id = run["id"]
         assets = [r[0] for svid in svids for r in self.store.conn.execute(
@@ -2661,6 +2671,36 @@ class ResearchFlow:
                 self.store.finish_step(step["id"], "failed", error_code="equations_failed", error={"asset_id": asset_id, **state})
                 self._pause(run_id, "equations_failed", {"asset_id": asset_id, **state})
             self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, **state})
+
+    async def _read_source_equations(self, run: dict[str, Any], svids: list[str]) -> None:
+        """The arXiv source route's step per PDF (D104): tried at most once per run, never pausing it."""
+        service = self.deps.equations
+        run_id = run["id"]
+        assets = [r[0] for svid in svids for r in self.store.conn.execute(
+            "SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,))]
+        for asset_id in assets:
+            state = equation_state(self.store, asset_id)
+            again = (state["state"] == "failed" and state.get("reason") == EXTRACTION_FAILED
+                     and state.get("attempts", EQUATION_ATTEMPTS) < EQUATION_ATTEMPTS)
+            waiting = state["state"] == "source_waiting"  # rule 3's table: the step records the wait and does not wait
+            if not service.route_target(asset_id) or (state["state"] != "pending" and not again and not waiting):
+                continue  # read, refused, permanently absent or failed for good: nothing to ask, no request
+            step = self.store.step(run_id, f"equations:{asset_id}", "read_equations")
+            if step["status"] in ("succeeded", "failed"):
+                continue
+            self._checkpoint(run_id)
+            self.store.start_step(step["id"])
+            if waiting:
+                self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, "route": "arxiv_source", **state})
+                continue
+            try:
+                state = await service.read_asset(asset_id, run_id)
+            except RunInProgress:
+                state = {"state": "pending", "outcome": "blocked_by_run"}
+            except Exception as exc:  # noqa: BLE001 - a gain, never a requirement: the run goes on with the current text
+                log.exception("arXiv source reading failed for %s", asset_id)
+                state = {"state": "pending", "outcome": "error", "error": f"{type(exc).__name__}: {exc}"[:300]}
+            self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, "route": "arxiv_source", **state})
 
     async def _acquire_pdf(self, run: dict[str, Any], svid: str, downloads: int, limit: int | None,
                            other_versions: bool = False) -> int:

@@ -5,6 +5,13 @@ older passages stay resolvable. Pages without mathematics are not sent to Marker
 (D51) keeps them: its OCR text is rebuilt from the stored passages, and every OCR page is read by Marker too, since OCR
 text cannot show whether a page has equations. A PDF without such pages, and a failed read, are recorded as a rejected extraction without passages. A
 failed read is tried again automatically up to MAX_ATTEMPTS times, or again on request.
+
+Without Marker (D104, slice 22): with `DEIXIS_ARXIV_SOURCE=auto` and on POSIX, a PDF that is an arXiv version gets the
+numbered display equations of the authors' LaTeX source of that version, matched to the page by their numbers
+(`documents/arxiv_source.py`). Target and state follow four precedence rules, first match wins: (1) Marker installed or
+installing: today's code, unchanged; (2) no Marker and the current text is a source reading: `read`; (3) no Marker, the
+flag `auto`, POSIX and a current text not read by Marker: the source route's states, all from stored rows; (4) otherwise
+today's code. No outcome of the route pauses a run.
 """
 
 from __future__ import annotations
@@ -16,13 +23,14 @@ import os
 import re
 import shutil
 import subprocess
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from deixis.documents import math_reader, pdf
+from deixis.documents import arxiv_source, math_reader, pdf
 from deixis.storage.db import new_id, now, transaction
-from deixis.workflow.store import RunInProgress, Store
+from deixis.workflow.store import NotFound, RunInProgress, Store
 
 log = logging.getLogger(__name__)
 NO_MATH = "no pages with mathematics"
@@ -31,7 +39,12 @@ MAX_ATTEMPTS = 3  # a failed read is tried again in the background until this ma
 RETRY_AFTER = timedelta(minutes=10)
 INSTALL_TIMEOUT_SECONDS = 60 * 60  # the models are about 3.3 GB
 OUTPUT_TAIL_CHARS = 4000
-OCR_SUFFIX = re.compile(r"\+ocr-.+?-v\d+(?=\+marker-|$)")
+OCR_SUFFIX = re.compile(r"\+ocr-.+?-v\d+(?=\+marker-|\+arxiv-latex-|$)")
+SOURCE_SUFFIX = "+" + arxiv_source.SOURCE_VERSION
+NOTHING_PLACED = "nothing_placed"
+OFFSETS_UNRESOLVED = "offsets_unresolved"
+RECORD_VERSION_CHANGED = "record_version_changed"
+EXTRACTION_FAILED = "extraction_failed"  # the PDF's text layer could not be extracted again with the placements
 # The PDF Marker is reading now, for views: {"asset_id", "title", "pages", "started_at"}. One reader serves the process.
 reading: dict[str, Any] | None = None
 
@@ -42,9 +55,108 @@ def target_version(current: str | None = None) -> str:
     return math_reader.target_version(pdf.EXTRACTION_VERSION + (ocr.group(0) if ocr else ""))
 
 
+def source_target_version(current: str | None) -> str:
+    """The version a source reading of a PDF gets: its text layer, its OCR reading if any, then the arXiv source."""
+    ocr = OCR_SUFFIX.search(current or "")
+    return pdf.EXTRACTION_VERSION + (ocr.group(0) if ocr else "") + SOURCE_SUFFIX
+
+
+def source_summary(math: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What the equation state says of a source reading: the version and how many equations were placed on which pages."""
+    source = (math or {}).get("source")
+    if not source:
+        return None
+    return {"arxiv_id": source.get("arxiv_id"), "version": source.get("version"), "version_from": source.get("version_from"),
+            "record_label": source.get("record_label"), "placed": len(source.get("placed", [])),
+            "pages": sorted({p["page"] for p in source.get("placed", [])}), "not_placed": source.get("not_placed", {})}
+
+
+def latex_numbers(store: Store, asset_id: str | None, extraction_version: str | None) -> dict[int, list[tuple[int, int, str]]]:
+    """Per page of a source reading, its placed equations as (start, end, number) in the chunk offset space."""
+    if not asset_id or not (extraction_version or "").endswith(SOURCE_SUFFIX):
+        return {}
+    row = store.conn.execute("SELECT math_json FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?",
+                             (asset_id, extraction_version)).fetchone()
+    found: dict[int, list[tuple[int, int, str]]] = {}
+    for item in (json.loads(row["math_json"] or "{}").get("source") or {}).get("placed", []) if row else []:
+        found.setdefault(item["page"], []).append((item["start"], item["end"], item["n"]))
+    return found
+
+
+def chunk_numbers(placed: dict[int, list[tuple[int, int, str]]], page: int | None, payload_ref: str | None) -> list[str]:
+    """The source equation numbers a chunk holds: a block lies in the chunk when start ≤ block.start and block.end ≤ end."""
+    m = re.fullmatch(r"chars:(\d+)-(\d+)", payload_ref or "")
+    if not m or page not in placed:
+        return []
+    start, end = int(m.group(1)), int(m.group(2))
+    return [n for s, e, n in placed[page] if start <= s and e <= end]
+
+
+def source_chunker(text: str) -> list[tuple[int, int, str]]:
+    return pdf.chunk_page(text, keep_display_math=True)
+
+
 def equation_state(store: Store, asset_id: str) -> dict[str, Any]:
-    """read, no_math, failed (with reason and attempts), reading or pending (not read yet)."""
+    """read, no_math, failed (with reason and attempts), reading or pending (not read yet); without Marker and with the
+    arXiv source route on also no_source (with reason) and source_waiting (D104)."""
     asset = store.asset(asset_id)
+    service = getattr(store, "equation_route", None)
+    current = asset["extraction_version"] or ""
+    if service is not None and not service.marker_present():
+        if current.endswith(SOURCE_SUFFIX):  # rule 2, whatever the flag says
+            row = store.conn.execute("SELECT math_json FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'",
+                                     (asset_id,)).fetchone()
+            return {"state": "read", "to_check": [], "equations_to_check": 0, "route": arxiv_source.ENGINE,
+                    "source": source_summary(json.loads(row["math_json"] or "{}") if row else None)}
+        if service.route_flag() and "+marker-" not in current:
+            if not arxiv_source.posix_available():
+                return {"state": "no_source", "reason": "not_available_on_this_system", "route": arxiv_source.ENGINE}
+            return _source_state(store, asset)  # rule 3
+    return _marker_state(store, asset)  # rules 1 and 4: today's code
+
+
+def _source_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
+    """Rule 3's table, from stored rows only (no PDF is opened)."""
+    route = {"route": arxiv_source.ENGINE}
+    if reading and reading["asset_id"] == asset["id"]:
+        return {"state": "reading", "pages": reading["pages"], "started_at": reading["started_at"]} | route
+    target = source_target_version(asset["extraction_version"])
+    version = store.conn.execute("SELECT * FROM asset_arxiv_versions WHERE asset_id = ?", (asset["id"],)).fetchone()
+    if version is None:
+        return {"state": "pending"} | route
+    if version["eligibility"] != "eligible":
+        return {"state": "no_source", "reason": version["eligibility"]} | route
+    extraction = store.conn.execute(
+        "SELECT outcome, rejection_reason, created_at, math_json FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?",
+        (asset["id"], target)).fetchone()
+    if extraction is not None and extraction["rejection_reason"] != RECORD_VERSION_CHANGED:
+        if extraction["rejection_reason"] == NOTHING_PLACED:
+            return {"state": "no_source", "reason": NOTHING_PLACED} | route
+        if extraction["rejection_reason"] == EXTRACTION_FAILED:  # a time or memory limit: tried again like a failed Marker read
+            attempts = json.loads(extraction["math_json"] or "{}").get("attempts", MAX_ATTEMPTS)
+            return {"state": "failed", "reason": EXTRACTION_FAILED, "attempts": attempts, "at": extraction["created_at"]} | route
+        if extraction["outcome"] == "rejected":
+            return {"state": "failed", "reason": extraction["rejection_reason"], "at": extraction["created_at"]} | route
+        return {"state": "no_source", "reason": "withdrawn"} | route
+    row = store.conn.execute("SELECT * FROM arxiv_sources WHERE arxiv_key = ?", (version["arxiv_key"],)).fetchone()
+    if row is None:
+        return {"state": "pending"} | route
+    row = dict(row)
+    if row["status"] == "not_settled":
+        if arxiv_source.SourceStore.exhausted(row):
+            return {"state": "no_source", "reason": "not_settled", "attempts": row["attempts"]} | route
+        if (until := arxiv_source.SourceStore.waiting_until(row)) is not None:
+            return {"state": "source_waiting", "attempts": row["attempts"], "next_at": arxiv_source.iso(until)} | route
+        return {"state": "pending"} | route
+    if row["status"] == "downloaded":
+        if row["content"] in (None, "tex"):
+            return {"state": "pending"} | route  # not inspected yet, or inspected and not written (a crash in between)
+        return {"state": "no_source", "reason": row["content"]} | route
+    return {"state": "no_source", "reason": row["error"] if row["error"] == "cache_corrupt" else row["status"]} | route
+
+
+def _marker_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
+    asset_id = asset["id"]
     version = target_version(asset["extraction_version"])
     if asset["extraction_version"] == version:
         row = store.conn.execute("SELECT math_json FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'", (asset_id,)).fetchone()
@@ -75,8 +187,13 @@ def equations_to_check(store: Store, asset_id: str | None, extraction_version: s
 
 
 class EquationService:
-    def __init__(self, store: Store, reader: math_reader.MathReader, papers_dir: Path):
+    def __init__(self, store: Store, reader: math_reader.MathReader, papers_dir: Path, arxiv_mode: str = "off",
+                 data_dir: Path | None = None, fetch_file: Any = None, http_client: Any = None):
         self.store, self.reader, self.papers_dir = store, reader, papers_dir
+        # The arXiv source route (D104): its flag, and the stored sources under the data directory.
+        self.arxiv_mode = arxiv_mode
+        self.sources = arxiv_source.SourceStore(store, data_dir or papers_dir.parent, fetch_file=fetch_file, client=http_client)
+        store.equation_route = self  # equation_state reads the route's rules from the store it is given
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
         self._retries: set[asyncio.Task] = set()
@@ -87,8 +204,28 @@ class EquationService:
         self._background_reading = False
         self._preempted = False
 
+    def configure_arxiv_source(self, mode: str, data_dir: Path, fetch_file: Any = None) -> None:
+        self.arxiv_mode = mode
+        self.sources = arxiv_source.SourceStore(self.store, data_dir, fetch_file=fetch_file or self.sources.fetch_file,
+                                                client=self.sources.client)
+
     def available(self) -> bool:
         return self.reader.available()
+
+    def marker_present(self) -> bool:
+        """Marker installed or being installed: the route never runs then (D3)."""
+        return self.available() or self.installing()
+
+    def route_flag(self) -> bool:
+        return self.arxiv_mode == "auto"
+
+    def route_active(self) -> bool:
+        """Whether PDFs without Marker's reading may be read from their arXiv source now."""
+        return self.route_flag() and arxiv_source.posix_available() and not self.marker_present()
+
+    def route_target(self, asset_id: str) -> bool:
+        asset = self.store.asset(asset_id)
+        return self.route_active() and "+marker-" not in (asset["extraction_version"] or "")
 
     async def read_asset(self, asset_id: str, run_id: str | None = None, retry: bool = False, background: bool = False) -> dict[str, Any]:
         """Read one PDF's equations and apply them; returns its state. One PDF is read at a time; a caller waits for the
@@ -110,6 +247,8 @@ class EquationService:
         global reading
         async with self._lock:
             state = equation_state(self.store, asset_id)
+            if state.get("route") == arxiv_source.ENGINE:
+                return await self._read_source(asset_id, run_id, retry, state)
             attempts = 0
             if state["state"] == "failed" and (retry or state["attempts"] < MAX_ATTEMPTS):
                 attempts = state["attempts"]
@@ -152,6 +291,175 @@ class EquationService:
             extraction = math_reader.merge(base, read.pages, selected, unchecked)
             self.store.reextract_asset(asset_id, extraction, extraction.extraction_version, pdf.chunk_page, allow_run_id=run_id)
             return equation_state(self.store, asset_id)
+
+    # ---- the arXiv source route (D104) -------------------------------------------------------------------------------
+    async def _eligibility(self, asset: dict[str, Any]) -> dict[str, Any]:
+        """Decision 1, decided once per PDF and stored, so the view never opens a PDF to show the state. The PDF's first
+        pages are read for the stamp in a worker thread; the row is written on the event loop."""
+        row = self.store.conn.execute("SELECT * FROM asset_arxiv_versions WHERE asset_id = ?", (asset["id"],)).fetchone()
+        if row is not None:
+            return dict(row)
+        try:
+            stamp = await asyncio.to_thread(arxiv_source.stamp_key, self.papers_dir / asset["storage_path"])
+        except Exception:  # noqa: BLE001 - an unreadable PDF has no stamp
+            stamp = None
+        # The row check, the record read, the decision and the insert are one BEGIN IMMEDIATE transaction: no other process
+        # can enrich the record between the read and the insert, and an enrichment committed before it is read here. One
+        # committed after it finds this row and re-checks it (`store._recheck_arxiv_eligibility`).
+        with transaction(self.store.conn):
+            row = self.store.conn.execute("SELECT * FROM asset_arxiv_versions WHERE asset_id = ?", (asset["id"],)).fetchone()
+            if row is None:
+                record = dict(self.store.conn.execute(
+                    "SELECT doi, landing_url, oa_pdf_url, version_label FROM source_versions WHERE id = ?",
+                    (asset["source_version_id"],)).fetchone())
+                found = arxiv_source.eligibility(arxiv_source.url_key(asset["retrieved_from"]), stamp, record)
+                self.store.conn.execute(
+                    "INSERT INTO asset_arxiv_versions (asset_id, eligibility, arxiv_key, version_from, record_label, checked_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?)", (asset["id"], found["eligibility"], found["arxiv_key"], found["version_from"],
+                                                   found["record_label"], now()))
+        return dict(self.store.conn.execute("SELECT * FROM asset_arxiv_versions WHERE asset_id = ?", (asset["id"],)).fetchone())
+
+    def _events(self, asset: dict[str, Any], kind: str, payload: dict[str, Any]) -> None:
+        researches = [r[0] for r in self.store.conn.execute(
+            "SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (asset["source_version_id"],))]
+        with transaction(self.store.conn):
+            for research_id in researches:
+                self.store._event(research_id, kind, {"asset_id": asset["id"], "source_version_id": asset["source_version_id"]} | payload)
+
+    def _record_source_rejection(self, asset: dict[str, Any], version: str, reason: str, source: dict[str, Any] | None,
+                                 extra: dict[str, Any] | None = None) -> None:
+        """A source reading that writes no text (nothing placed, offsets unresolved, the extraction failed): a rejected row
+        without passages; `extra` carries a failed extraction's attempt count and error."""
+        with transaction(self.store.conn):
+            self.store.conn.execute(
+                "INSERT OR IGNORE INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages,"
+                " passage_count, outcome, rejection_reason, created_at, math_json) VALUES (?, ?, ?, ?, NULL, ?, 0, 0, 'rejected', ?, ?, ?)",
+                (new_id("ext"), asset["id"], version, asset["extraction_status"], asset["page_count"], reason, now(),
+                 json.dumps({"engine": arxiv_source.ENGINE} | ({"source": source} if source else {}) | (extra or {}))),
+            )
+
+    async def _read_source(self, asset_id: str, run_id: str | None, retry: bool, state: dict[str, Any]) -> dict[str, Any]:
+        """One PDF through the route. Every outcome returns the PDF's state; RunInProgress propagates."""
+        global reading
+        asset = self.store.asset(asset_id)
+        if not self.route_active():
+            return state
+        version = await self._eligibility(asset) if state["state"] in ("pending", "no_source", "failed") else None
+        # A failed extraction keeps its attempt count across the next attempt (as a failed Marker read does).
+        attempts = state.get("attempts", 0) if state.get("reason") == EXTRACTION_FAILED else 0
+        if retry and version and version["arxiv_key"] and state["state"] in ("no_source", "failed"):
+            self.sources.reset(version["arxiv_key"])  # the person's retry
+            self._forget_failure(asset_id, source_target_version(asset["extraction_version"]))
+            state = equation_state(self.store, asset_id)
+        elif state["state"] == "failed" and state.get("reason") == EXTRACTION_FAILED and attempts < MAX_ATTEMPTS:
+            self._forget_failure(asset_id, source_target_version(asset["extraction_version"]))
+            state = equation_state(self.store, asset_id)
+        if state["state"] != "pending" or version is None or version["eligibility"] != "eligible":
+            return equation_state(self.store, asset_id)
+        start_version = asset["extraction_version"]
+        target = source_target_version(start_version)
+        key = version["arxiv_key"]
+        self._forget_failure(asset_id, target)  # a record_version_changed row whose record is eligible again
+        row = await self.sources.ensure(key)
+        if row.get("outcome") == "rate_gate_busy":
+            return equation_state(self.store, asset_id) | {"outcome": "rate_gate_busy"}
+        if row["status"] != "downloaded":
+            return equation_state(self.store, asset_id)
+        data, problem = await self.sources.read(key)
+        if problem == "busy":
+            return equation_state(self.store, asset_id) | {"outcome": "rate_gate_busy"}
+        if problem == "repair":
+            self._events(asset, "arxiv_source_corrupt", {"arxiv_key": key, "repair": True})
+            row = await self.sources.ensure(key)
+            if row.get("outcome") == "rate_gate_busy" or row["status"] != "downloaded":
+                return equation_state(self.store, asset_id) | ({"outcome": row["outcome"]} if row.get("outcome") else {})
+            data, problem = await self.sources.read(key)
+        if problem == "busy":
+            return equation_state(self.store, asset_id) | {"outcome": "rate_gate_busy"}
+        if problem:
+            self._events(asset, "arxiv_source_corrupt", {"arxiv_key": key, "repair": False})
+            return equation_state(self.store, asset_id)
+        path = self.papers_dir / asset["storage_path"]
+        ocr_pages = self._ocr_pages(asset) if OCR_SUFFIX.search(start_version or "") else {}
+        title = self.store.conn.execute("SELECT title FROM source_versions WHERE id = ?", (asset["source_version_id"],)).fetchone()
+        reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": asset["page_count"], "started_at": now(),
+                   "route": arxiv_source.ENGINE}
+        base = None
+        try:
+            found = await arxiv_source.read_source(data, path, set(ocr_pages))
+            with transaction(self.store.conn):
+                self.store.conn.execute("UPDATE arxiv_sources SET content = ?, inspected_at = ?, error = ? WHERE arxiv_key = ?",
+                                        (found["content"], now(), found.get("error"), key))
+            if found["content"] == "tex" and found["placements"]:
+                base = await asyncio.to_thread(pdf.extract_pdf, path, placements=found["placements"])
+        finally:
+            reading = None
+        if found["content"] != "tex":
+            return equation_state(self.store, asset_id)
+        arxiv_id, number = arxiv_source.split_key(key)
+        summary = {"arxiv_id": arxiv_id, "version": number, "version_from": version["version_from"],
+                   "record_label": version["record_label"], "status": row["status"], "content": "tex", "sha256": row["sha256"],
+                   "params": arxiv_source.PARAMS, "number_lines": found["number_lines"], "candidates": found["candidates"],
+                   "child_seconds": found.get("child_seconds")}
+        not_placed = Counter(found["not_placed"])
+        if base is not None and base.status == "failed":  # a time or memory limit, not an absence of matches
+            self._record_source_rejection(asset, target, EXTRACTION_FAILED, summary | {"placed": [], "not_placed": dict(not_placed)},
+                                          {"attempts": attempts + 1, "error": (base.error or "")[:400]})
+            self._events(asset, "equations_failed", {"reason": EXTRACTION_FAILED, "attempts": attempts + 1, "route": arxiv_source.ENGINE})
+            return equation_state(self.store, asset_id)
+        if base is None:
+            self._record_source_rejection(asset, target, NOTHING_PLACED, summary | {"placed": [], "not_placed": dict(not_placed)})
+            return equation_state(self.store, asset_id)
+        placement = base.placement or {"placed": [], "refused": []}
+        not_placed.update(r["reason"] for r in placement["refused"])
+        details = {(p["page"], p["n"]): p for p in found["placements"]}
+        placed = [{"page": p["page"], "n": p["n"], "start": p["start"], "end": p["end"]}
+                  | {k: details[(p["page"], p["n"])][k] for k in ("group", "recall", "f1", "window_margin", "paper_margin")}
+                  for p in placement["placed"]]
+        summary |= {"placed": placed, "not_placed": dict(not_placed)}
+        if any(r["reason"] == OFFSETS_UNRESOLVED for r in placement["refused"]):
+            self._record_source_rejection(asset, target, OFFSETS_UNRESOLVED, summary)
+            return equation_state(self.store, asset_id)
+        if not placed:
+            self._record_source_rejection(asset, target, NOTHING_PLACED, summary)
+            return equation_state(self.store, asset_id)
+        if ocr_pages:
+            base.pages = sorted(base.pages + [pdf.PageText(n, None, text, "ocr") for n, text in ocr_pages.items()
+                                              if n not in {p.physical_page for p in base.pages}], key=lambda p: p.physical_page)
+            base.status = "succeeded" if len(base.pages) == base.page_count else "partial"
+        base.extraction_version, base.math = target, {"engine": arxiv_source.ENGINE, "source": summary}
+
+        def guard(conn: Any) -> str | None:
+            """Decision 6's last-write check, inside the write's BEGIN IMMEDIATE transaction, before its first write."""
+            now_asset = conn.execute("SELECT removed_at, extraction_version FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
+            if now_asset["removed_at"] is not None:
+                return "asset_removed"
+            record = dict(conn.execute("SELECT doi, landing_url, oa_pdf_url, version_label FROM source_versions WHERE id = ?",
+                                       (asset["source_version_id"],)).fetchone())
+            if (result := arxiv_source.record_eligibility(key, record)) != "eligible":
+                conn.execute("UPDATE asset_arxiv_versions SET eligibility = ?, record_label = ?, checked_at = ? WHERE asset_id = ?",
+                             (result, record["version_label"], now(), asset_id))
+                conn.execute(
+                    "INSERT OR IGNORE INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages,"
+                    " passage_count, outcome, rejection_reason, created_at, math_json) VALUES (?, ?, ?, ?, NULL, ?, 0, 0, 'rejected', ?, ?, ?)",
+                    (new_id("ext"), asset_id, target, asset["extraction_status"], asset["page_count"], RECORD_VERSION_CHANGED, now(),
+                     json.dumps({"engine": arxiv_source.ENGINE, "eligibility": result})))
+                for research_id in [r[0] for r in conn.execute("SELECT research_id FROM corpus_memberships WHERE source_version_id = ?",
+                                                                (asset["source_version_id"],))]:
+                    self.store._event(research_id, "arxiv_source_refused", {"asset_id": asset_id, "reason": RECORD_VERSION_CHANGED,
+                                                                            "eligibility": result})
+                return RECORD_VERSION_CHANGED
+            if now_asset["extraction_version"] != start_version or "+marker-" in (now_asset["extraction_version"] or ""):
+                return "superseded"
+            if not self.route_flag() or self.marker_present():
+                return "superseded_by_marker"
+            return None
+
+        try:
+            report = self.store.reextract_asset(asset_id, base, target, source_chunker, allow_run_id=run_id, guard=guard)
+        except NotFound:  # removed before the write began; the guard covers a removal racing the write itself
+            return equation_state(self.store, asset_id) | {"outcome": "asset_removed"}
+        return equation_state(self.store, asset_id) | {"outcome": report.get("reason") or report["outcome"]}
 
     def _ocr_pages(self, asset: dict[str, Any]) -> dict[int, str]:
         """The current OCR text of each page, rebuilt from its passages (chunks of one page follow each other)."""
@@ -210,7 +518,8 @@ class EquationService:
             " a.retrieved_at DESC", ("%+" + math_reader.MATH_VERSION,)
         ):
             state = equation_state(self.store, row[0])
-            if state["state"] == "pending" or (state["state"] == "failed" and state["attempts"] < MAX_ATTEMPTS and state["at"] < retry_before):
+            if state["state"] == "pending" or (state["state"] == "failed" and state.get("attempts", MAX_ATTEMPTS) < MAX_ATTEMPTS
+                                               and state["at"] < retry_before):
                 return row[0]
         return None
 
@@ -219,12 +528,15 @@ class EquationService:
             if self._waiting:
                 await asyncio.sleep(1)  # a run or request goes first
                 continue
-            asset_id = self.next_asset() if self.available() and not self.installing() else None
+            # Marker's reader when it is installed; else the arXiv source route when its flag is on (D104).
+            asset_id = self.next_asset() if (self.available() and not self.installing()) or self.route_active() else None
             if asset_id is None:
                 await asyncio.sleep(RETRY_SECONDS)
                 continue
             try:
-                await self.read_asset(asset_id, background=True)
+                state = await self.read_asset(asset_id, background=True)
+                if state.get("route") and state["state"] == "pending":
+                    await asyncio.sleep(RETRY_SECONDS)  # the rate gate was busy: give way before trying again
             except RunInProgress:
                 await asyncio.sleep(RETRY_SECONDS)  # applied after the run that uses the source ends
             except math_reader.MathReaderUnavailable as exc:
@@ -236,6 +548,10 @@ class EquationService:
 
     def start(self) -> None:
         if self._task is None:
+            if self.route_flag() and arxiv_source.posix_available():
+                self.sources.remove_stale_parts()
+            elif self.route_flag():
+                log.warning("DEIXIS_ARXIV_SOURCE=auto: the arXiv source route needs file locks (POSIX) and is off on this system")
             self._task = asyncio.create_task(self.run_forever())
 
     async def stop(self) -> None:

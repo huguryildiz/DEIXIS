@@ -146,6 +146,12 @@ access and scope limits are stated.
    Copy numbers and equations from `marker` or `ocr` passages as written, and
    when a claim rests on an equation or number from such a passage, say in the
    claim that it should be checked against the PDF page.
+   `latex_source` is the PDF's own text of a passage in which one or
+   more displayed equations numbered on the page were replaced by the authors'
+   LaTeX from the arXiv source of the same version; code matched each one to the
+   page by its number and letters and did not check that the source compiles to
+   this page. Copy those equations as written. Everything else in the passage,
+   including other mathematics, is the PDF's text layer.
    Distinguish variables optimized inside a displayed formulation from fixed
    inputs, choices computed by a separate local problem, and candidates
    compared by solving the formulation repeatedly. A source's title or abstract

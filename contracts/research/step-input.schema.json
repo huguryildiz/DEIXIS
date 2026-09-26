@@ -326,9 +326,10 @@
               "text_layer",
               "ocr",
               "marker",
+              "latex_source",
               null
             ],
-            "description": "How a PDF passage's text was obtained: the PDF's own text layer, local OCR of a scanned page, or Marker's reading of a page with mathematics (equations as LaTeX). OCR and Marker text can misread characters and symbols. Null for abstracts."
+            "description": "How a PDF passage's text was obtained: the PDF's own text layer, local OCR of a scanned page, Marker's reading of a page with mathematics (equations as LaTeX), or latex_source: the PDF's own text in which one or more displayed equations numbered on the page were replaced by the authors' LaTeX from the arXiv source of the same version, matched to the page by number and letters. OCR and Marker text can misread characters and symbols. Null for abstracts."
           },
           "text": {
             "type": "string"

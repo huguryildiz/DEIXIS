@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { BadgeCheck, BookOpenText, ExternalLink, FileText, Info, Link2, ListMinus, Maximize2, Minimize2, RotateCcw, ScanText, TriangleAlert } from 'lucide-react'
+import { BadgeCheck, BookOpenText, ExternalLink, FileText, Info, Link2, ListMinus, Maximize2, Minimize2, RotateCcw, ScanText, Sigma, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/tooltip'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -105,6 +105,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const removed = pdfRemoved || status === 'pdf_removed'
   const pdfAssetId = removed ? null : passage?.asset_id ?? assetText?.asset.id ?? null
   const row = source ? sources?.find(s => s.source_version_id === source.id) : undefined
+  // The arXiv source version a 'latex_source' passage's equations came from (D104); omitted gracefully if not found.
+  const sourceAsset = passage?.asset_id ? row?.access.assets.find(a => a.id === passage.asset_id) : undefined
+  const arxivVersion = sourceAsset?.equations?.route === 'arxiv_source' ? sourceAsset.equations.source?.version ?? null : null
   const pdfUnavailable = removed ? 'The PDF was removed from this source; its passages still open as text.' : 'PDF is not available for this source.'
   const selectionText = { included: 'Included', excluded: 'Excluded', pending: 'Undecided' } as const
   return <Sheet open={openPassageId !== null || openAssetId !== null || detailsOnly} onOpenChange={open => { if (!open) onClose() }}>
@@ -126,6 +129,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
               : abstract ? <span className="ref-pill is-abstract"><BookOpenText size={12} aria-hidden />{t('Abstract only')}</span>
               : <span className="ref-pill is-text"><FileText size={12} aria-hidden />{t('PDF text passage')}</span>}
             {passage?.text_source === 'ocr' && <span className="ref-pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}
+            {passage?.text_source === 'latex_source' && <span className="ref-pill is-text"><Sigma size={12} aria-hidden />{t('arXiv source')}</span>}
             {source.origin === 'user_upload' && <span className="ref-pill">{t('uploaded by you')}</span>}
             {source.doi ? <a className="source-link-chip" href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer" title={t('Open DOI')}><ConnectionIcon id="doi" /><span>{source.doi}</span><ExternalLink size={12} aria-hidden /></a>
               : source.landing_url && <a className="source-link-chip" href={source.landing_url} target="_blank" rel="noreferrer"><Link2 size={13} aria-hidden /><span>{t('Publisher page')}</span><ExternalLink size={12} aria-hidden /></a>}
@@ -150,6 +154,20 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
           {viewMode === 'text' && passage?.text_source === 'marker' && (passage.equations_to_check
             ? <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(passage.equations_to_check === 1 ? 'Page read from the page image (Marker). {n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : 'Page read from the page image (Marker). {n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: passage.equations_to_check })}</p>
             : <p className="source-notice"><Info size={15} aria-hidden />{t('Page read from the page image (Marker). Equations are LaTeX and tables are rebuilt as tables; check them against the PDF page.')}</p>)}
+          {/* The arXiv source route (D104): numbered display equations matched to the page by their numbers, from the
+              authors' own LaTeX of this arXiv version. The rest of the passage, including other mathematics, stays the
+              PDF's own text layer; the route never checks that the source compiles to this page. */}
+          {viewMode === 'text' && passage?.text_source === 'latex_source' && passage.source_equations?.length ? (
+            <p className="source-notice"><Info size={15} aria-hidden />{arxivVersion
+              ? t(passage.source_equations.length === 1
+                  ? 'Equation ({a}) in this passage is the authors’ LaTeX from the arXiv source (v{version}), matched to the page by its number. The rest of this passage, including other mathematics, is the PDF’s own text.'
+                  : 'Equations {numbers} in this passage are the authors’ LaTeX from the arXiv source (v{version}), matched to the page by their numbers. The rest of this passage, including other mathematics, is the PDF’s own text.',
+                { a: passage.source_equations[0], version: arxivVersion, numbers: passage.source_equations.map(n => `(${n})`).join(', ') })
+              : t(passage.source_equations.length === 1
+                  ? 'Equation ({a}) in this passage is the authors’ LaTeX from the arXiv source, matched to the page by its number. The rest of this passage, including other mathematics, is the PDF’s own text.'
+                  : 'Equations {numbers} in this passage are the authors’ LaTeX from the arXiv source, matched to the page by their numbers. The rest of this passage, including other mathematics, is the PDF’s own text.',
+                { a: passage.source_equations[0], numbers: passage.source_equations.map(n => `(${n})`).join(', ') })}</p>
+          ) : null}
           {/* OCR text (D51) is read from the page image and never checked against it; the PDF view opens on the same page. */}
           {viewMode === 'text' && passage?.text_source === 'ocr' && <p className="source-notice"><TriangleAlert size={15} aria-hidden /><span>{t('This page was read from its scanned image with OCR (Tesseract) on this computer. Letters, numbers and equations may be misread; check them against the PDF page.')}
             {pdfAssetId && <> <button type="button" className="source-notice-action" onClick={() => { setViewMode('pdf'); setFull(true) }}><FileText size={13} aria-hidden />{t('Show this page in the PDF')}</button></>}</span></p>}

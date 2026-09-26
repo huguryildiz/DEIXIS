@@ -254,7 +254,16 @@ export type Asset = {
   current_extraction?: boolean; rejected_extraction?: { extraction_version: string; rejection_reason: string; created_at: string } | null
   // Sources only (D52): whether Marker has read the PDF's pages with mathematics.
   // A read's `equations_to_check` counts display equations that did not match the PDF's text layer, on pages `to_check`.
-  equations?: { state: 'read' | 'no_math' | 'failed' | 'reading' | 'pending'; reason?: string | null; attempts?: number; pages?: number; started_at?: string; to_check?: number[]; equations_to_check?: number }
+  // Without Marker and with the arXiv source route on (D104), `route: 'arxiv_source'` and its own states/fields.
+  equations?: {
+    state: 'read' | 'no_math' | 'failed' | 'reading' | 'pending' | 'no_source' | 'source_waiting'
+    reason?: string | null; attempts?: number; pages?: number; started_at?: string; to_check?: number[]; equations_to_check?: number
+    route?: 'arxiv_source'; next_at?: string
+    source?: {
+      arxiv_id: string | null; version: number | null; version_from: 'url' | 'stamp' | 'both' | null; record_label: string | null
+      placed: number; pages: number[]; not_placed: Record<string, number>
+    } | null
+  }
   // Sources only (D51): pages of the text in use without text (blank pages included), pages read with OCR, the latest OCR reading.
   ocr?: { pages_without_text: number; ocr_pages: number; last_read: OcrRead | null }
 }
@@ -271,7 +280,7 @@ export type AssetImpact = { asset_id: string; researches: { id: string; title: s
 export type Reextraction = { asset_id: string; outcome: 'current' | 'rejected' | 'unchanged'; rejection_reason?: string | null }
 export type AssetText = {
   asset: Asset
-  passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker'; equations_to_check?: number }[]
+  passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source'; equations_to_check?: number; source_equations?: string[] }[]
   source: Passage['source']
 }
 // A figure found from its caption on a PDF page (D58); its picture is cut from the page by the server.
@@ -342,7 +351,9 @@ export type Evidence = {
   passage_id: string; source_version_id: string; source_key: string | null; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
   printed_label: string | null; reading_depth: string; title: string; version_label: string | null; anchor_text: string | null
   evidence_status: EvidenceStatus
-  text_source: 'text_layer' | 'ocr' | 'marker' | null  // null for abstracts; 'ocr' text was not checked against the page (D51)
+  // null for abstracts; 'ocr' text was not checked against the page (D51); 'latex_source' holds the authors' LaTeX of
+  // numbered display equations matched to the page by their numbers, from the arXiv source of this version (D104).
+  text_source: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | null
   removed_from_research: boolean  // the source was removed from this research later; the quote still opens (D50)
 }
 export type Claim = {
@@ -507,7 +518,10 @@ export type TrashedTemplate = { id: string; name: string; trashed_at: string; co
 export type Trash = { researches: TrashedResearch[]; tables: TrashedTable[]; sources: RemovedSource[]; templates: TrashedTemplate[] }
 export type Passage = {
   id: string; kind: Evidence['kind']; text: string; physical_page: number | null; printed_label: string | null
-  abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker'; equations_to_check?: number; reading_depth: string; asset_id: string | null
+  abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source'; equations_to_check?: number
+  // The equation numbers placed from the arXiv source in this passage (D104); empty outside a 'latex_source' passage.
+  source_equations?: string[]
+  reading_depth: string; asset_id: string | null
   evidence_status: EvidenceStatus
   removed_from_research: boolean
   source: { id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; landing_url: string | null; version_label: string | null; origin: string; cited_by_count: number | null; cited_by_count_at: string | null }
@@ -622,7 +636,7 @@ export type CellValue = { option_ids?: string[]; number?: number; unit?: string 
 export type CellEvidence = {
   passage_id: string; anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null; kind: Evidence['kind']
   physical_page: number | null; printed_label: string | null; asset_id: string | null; evidence_status: EvidenceStatus
-  text_source: 'text_layer' | 'ocr' | 'marker' | null
+  text_source: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | null
 }
 export type CellRevision = {
   id: string; kind: 'model_fill' | 'model_proposal' | 'system_fill' | 'human_edit' | 'accept_proposal' | 'dismiss_proposal'

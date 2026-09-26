@@ -663,7 +663,7 @@ def test_an_older_library_migrates_with_no_sentences(tmp_path):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     assert conn.execute("SELECT COUNT(*) FROM scope_english_questions").fetchone()[0] == 0
-    assert max(int(row[0]) for row in conn.execute("SELECT version FROM schema_migrations")) == 53
+    assert max(int(row[0]) for row in conn.execute("SELECT version FROM schema_migrations")) >= 53  # 0054 (slice 22) came after
 
 
 # ---- task 7: the view, the uploaded-PDF line and the protocol ------------------------------------------

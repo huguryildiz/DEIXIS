@@ -16,7 +16,7 @@ from deixis.workflow import probes as probe_rules
 from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy
 from deixis.workflow import suggestions as suggestions_rules
 from deixis.workflow import vocabulary as vocabulary_rules
-from deixis.workflow.equations import equation_state, equations_to_check
+from deixis.workflow.equations import chunk_numbers, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow import waiting as waiting_rules
@@ -434,12 +434,13 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     ):
         svid = row["id"]
         # The PDF in use, whether its text comes from the current extractor, and a later extraction that was not taken (D45).
-        # A math extraction (D52) builds on the current extractor's text; its own "nothing to read" or failed attempts are
-        # reported as the PDF's equation state, not as a rejected re-extraction.
+        # A math extraction (D52) or an arXiv source reading (D104) builds on the current extractor's text; its own
+        # "nothing to read" or failed attempts are reported as the PDF's equation state, not as a rejected re-extraction.
         assets = [dict(r) | {"current_extraction": (r["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION,
                              "equations": equation_state(store, r["id"]), "ocr": ocr_state(store, r["id"]), "rejected_extraction": dict(rejected) if (rejected := conn.execute(
             "SELECT extraction_version, rejection_reason, created_at FROM asset_extractions WHERE asset_id = ? AND outcome = 'rejected'"
-            " AND extraction_version NOT LIKE '%+marker-%' ORDER BY created_at DESC, rowid DESC LIMIT 1", (r["id"],)).fetchone()) else None} for r in conn.execute(
+            " AND extraction_version NOT LIKE '%+marker-%' AND extraction_version NOT LIKE '%+arxiv-latex-%'"
+            " ORDER BY created_at DESC, rowid DESC LIMIT 1", (r["id"],)).fetchone()) else None} for r in conn.execute(
             "SELECT id, extraction_status, extraction_version, page_count, origin, byte_size, original_filename FROM source_assets"
             " WHERE source_version_id = ? AND removed_at IS NULL", (svid,)
         )]
@@ -827,6 +828,9 @@ def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, A
         "extraction_version": passage["extraction_version"], "payload_ref": passage["payload_ref"], "text_source": passage["text_source"],
         "equations_to_check": equations_to_check(store, passage["asset_id"], passage["extraction_version"]).get(passage["physical_page"], 0)
         if passage["text_source"] == "marker" else 0,
+        # The equation numbers in this chunk placed from the arXiv source (D104); the rest of the chunk is the PDF's text.
+        "source_equations": chunk_numbers(latex_numbers(store, passage["asset_id"], passage["extraction_version"]),
+                                          passage["physical_page"], passage["payload_ref"]) if passage["text_source"] == "latex_source" else [],
         "reading_depth": "abstract" if passage["kind"] == "abstract" else "selected_sections",
         "asset_id": passage["asset_id"],
         "evidence_status": store.evidence_statuses([passage_id])[passage_id],

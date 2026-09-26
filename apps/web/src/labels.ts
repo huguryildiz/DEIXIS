@@ -213,6 +213,50 @@ export const versionText = (label: string | null) => (label ? t(versionNames[lab
 // OpenAlex's count; other indexes (Google Scholar, Scopus) report different numbers.
 export const citedText = (count: number | null) => (count === null ? '' : t('cited by {count} (OpenAlex)', { count: count.toLocaleString(uiLocale()) }))
 
+// The arXiv source route's reason codes (D104), in plain words. Never "verified", "exact", "reliable" or "correct":
+// the route matches a numbered equation to the page by its number and letters; it does not check that the source
+// compiles to this page.
+const arxivSourceReasons: Record<string, string> = {
+  no_version: 'no arXiv version could be read from the PDF or its record',
+  version_conflict: 'the PDF’s address and its printed stamp name different versions',
+  record_identity_unknown: 'the record does not name an arXiv identifier',
+  record_identity_conflict: 'the record names more than one arXiv identifier',
+  record_version_conflict: 'the record names a different arXiv version',
+  not_settled: 'the arXiv source could not be retrieved after 3 attempts',
+  pdf_only: 'the arXiv source has no LaTeX, only a PDF',
+  no_tex: 'the arXiv source archive has no LaTeX file',
+  too_large: 'the arXiv source archive is too large',
+  unreadable: 'the arXiv source could not be read',
+  version_mismatch: 'the file retrieved did not name this version',
+  cache_corrupt: 'the stored arXiv source file did not check out and could not be retrieved again',
+  withdrawn: 'the record’s identity or version changed since this was read',
+  nothing_placed: 'no equation could be matched to the page',
+  offsets_unresolved: 'a matched equation could not be located in the page text',
+  extraction_failed: 'the PDF’s text could not be extracted again within its time or memory limit',
+  not_available_on_this_system: 'not available on this system',
+}
+const arxivSourceReasonText = (reason: string | null | undefined) => t(arxivSourceReasons[reason ?? ''] ?? reason ?? 'unavailable')
+
+function arxivSourcePart(equations: NonNullable<Source['access']['assets'][number]['equations']>): { tone: 'text' | 'unstated'; text: string } {
+  if (equations.state === 'read' && equations.source) {
+    const { version, placed, pages } = equations.source
+    return { tone: 'text', text: t(placed === 1 && pages.length === 1
+      ? 'Equations from the arXiv source (v{version}) · {n} matched to {p} page by its number'
+      : placed === 1
+        ? 'Equations from the arXiv source (v{version}) · {n} matched to {p} pages by its number'
+        : pages.length === 1
+          ? 'Equations from the arXiv source (v{version}) · {n} matched to {p} page by their numbers'
+          : 'Equations from the arXiv source (v{version}) · {n} matched to {p} pages by their numbers',
+      { version: version ?? '?', n: placed, p: pages.length }) }
+  }
+  if (equations.state === 'source_waiting') return { tone: 'unstated', text: t('arXiv source not received yet · tried {n} times · next try after {time}',
+    { n: equations.attempts ?? 0, time: equations.next_at ? new Date(equations.next_at).toLocaleTimeString(uiLocale()) : '?' }) }
+  if (equations.state === 'no_source') return { tone: 'unstated', text: t('No equations from the arXiv source · {reason}', { reason: arxivSourceReasonText(equations.reason) }) }
+  if (equations.state === 'failed') return { tone: 'unstated', text: t('Equations from the arXiv source could not be used · {reason}', { reason: arxivSourceReasonText(equations.reason) }) }
+  if (equations.state === 'reading') return { tone: 'unstated', text: t('Reading the arXiv source · {n} pages', { n: equations.pages ?? '?' }) }
+  return { tone: 'unstated', text: t('Equations not read yet') }
+}
+
 // Each part carries a tone so the source list can colour usable text apart from gaps.
 export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unstated' | 'ocr'; text: string }[] {
   const parts: { tone: 'text' | 'abstract' | 'unstated' | 'ocr'; text: string }[] = []
@@ -227,7 +271,8 @@ export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unst
   // OCR pages are named apart from the text layer and are not checked against the page (D51).
   if (asset?.ocr?.ocr_pages) parts.push({ tone: 'ocr', text: t('OCR text on {k} of {n} pages · check against the page', { k: asset.ocr.ocr_pages, n: asset.page_count ?? '?' }) })
   const equations = asset?.equations
-  if (equations?.state === 'reading') parts.push({ tone: 'unstated', text: t('Reading equations · {n} pages', { n: equations.pages ?? '?' }) })
+  if (equations?.route === 'arxiv_source') parts.push(arxivSourcePart(equations))
+  else if (equations?.state === 'reading') parts.push({ tone: 'unstated', text: t('Reading equations · {n} pages', { n: equations.pages ?? '?' }) })
   else if (equations?.state === 'pending') parts.push({ tone: 'unstated', text: t('Equations not read yet') })
   else if (equations?.state === 'read') parts.push(equations.equations_to_check
     ? { tone: 'unstated', text: t(equations.equations_to_check === 1 ? 'Equations read (LaTeX) · {n} to check against the page' : 'Equations read (LaTeX) · {n} to check against the pages', { n: equations.equations_to_check }) }

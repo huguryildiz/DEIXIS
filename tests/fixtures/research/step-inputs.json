@@ -619,7 +619,7 @@
    "references/phrases.md"
   ],
   "output_schema_versions": [
-   "deixis.report_section_draft.v1"
+   "deixis.report_section_draft.v2"
   ],
   "question": {
    "text": "SYNTHETIC: How is operations research used in molecular communication, and what decision variables, objectives and constraints do published models use?",
@@ -1318,7 +1318,7 @@
    "references/phrases.md"
   ],
   "output_schema_versions": [
-   "deixis.report_section_draft.v1"
+   "deixis.report_section_draft.v2"
   ],
   "question": {
    "text": "SYNTHETIC: How is operations research used in molecular communication, and what decision variables, objectives and constraints do published models use?",

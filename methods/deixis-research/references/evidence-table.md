@@ -61,6 +61,12 @@ Goal: answer every column in `extraction_target.columns` for the one source
    misread a symbol, subscript or digit while still looking correct; copy it as
    written and, when the value rests on such a passage, say in `note` that it
    should be checked against the PDF page.
+   `latex_source` is the PDF's own text of a passage in which one or
+   more displayed equations numbered on the page were replaced by the authors'
+   LaTeX from the arXiv source of the same version; code matched each one to the
+   page by its number and letters and did not check that the source compiles to
+   this page. Copy those equations as written. Everything else in the passage,
+   including other mathematics, is the PDF's text layer.
 6. Keep `note` to a short reason, or null. Do not put page, equation, table,
    figure or section numbers in it; the application shows locators from its own
    records.

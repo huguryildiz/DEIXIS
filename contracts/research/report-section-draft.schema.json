@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "step_input_id", "scope_revision", "skill_package_hash", "section_id", "claims", "citation_anchors", "subsections", "gaps", "insufficient_evidence"],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.report_section_draft.v1" },
+    "schema_version": { "type": "string", "const": "deixis.report_section_draft.v2" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
@@ -81,12 +81,12 @@
                 "required": ["passage_id", "text_source"],
                 "properties": {
                   "passage_id": { "$ref": "common.schema.json#/$defs/passage_id" },
-                  "text_source": { "type": "string", "enum": ["text_layer", "ocr", "marker"] }
+                  "text_source": { "type": "string", "enum": ["text_layer", "ocr", "marker", "latex_source"] }
                 }
               },
               { "type": "null" }
             ],
-            "description": "Set on a claim carrying a displayed equation; the named passage must be in the StepInput and must itself contain a math span (checked in code)."
+            "description": "Set on a claim carrying a displayed equation; the named passage must be in the StepInput and among the claim's own passage_ids, and text_source must equal that passage's text_source (checked in code). That the passage itself contains a math span is not checked yet."
           },
           "gap_refs": {
             "type": "array",

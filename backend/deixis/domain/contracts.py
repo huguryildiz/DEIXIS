@@ -63,7 +63,7 @@ SCHEMA_VERSIONS = {
     "AbstractScreening": "deixis.abstract_screening.v1",
     "FulltextAdjudication": "deixis.fulltext_adjudication.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
-    "ReportSectionDraft": "deixis.report_section_draft.v1",
+    "ReportSectionDraft": "deixis.report_section_draft.v2",
     "ReportPhraseRepairDraft": "deixis.report_phrase_repair_draft.v1",
     "ReportReview": "deixis.report_review.v1",
 }
@@ -1072,6 +1072,17 @@ def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]]
         for j, gap_id in enumerate(claim["gap_refs"]):
             if gap_id not in allow.get("gap_ids", set()):
                 report.issues.append(Issue("unknown_gap_ref", f"/claims/{i}/gap_refs/{j}", gap_id))
+        # An equation's origin (D104): a passage of the StepInput, cited by this same claim, whose text_source it repeats.
+        origin = claim.get("equation_origin")
+        if origin is not None:
+            passage = next((p for p in step_input.get("passages", []) if p["passage_id"] == origin["passage_id"]), None)
+            if passage is None or origin["passage_id"] not in allow["passage_ids"]:
+                report.issues.append(Issue("unknown_passage_id", f"/claims/{i}/equation_origin/passage_id", origin["passage_id"]))
+            elif origin["passage_id"] not in claim["passage_ids"]:
+                report.issues.append(Issue("equation_origin_not_cited", f"/claims/{i}/equation_origin/passage_id", origin["passage_id"]))
+            elif origin["text_source"] != passage.get("text_source"):
+                report.issues.append(Issue("equation_origin_mismatch", f"/claims/{i}/equation_origin/text_source",
+                                           f"passage text_source is {passage.get('text_source')!r}"))
 
 
 def _check_report_phrase_repair(step_input: dict[str, Any], draft: dict[str, Any],

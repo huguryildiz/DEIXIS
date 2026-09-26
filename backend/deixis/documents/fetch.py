@@ -17,6 +17,7 @@ import ipaddress
 import socket
 import weakref
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
@@ -35,6 +36,7 @@ class FetchResult:
     media_type: str | None = None
     http_status: int | None = None
     error: str | None = None
+    content_disposition: str | None = None  # read by fetch_file only (the arXiv source's file name names its version)
 
 
 class BlockedUrl(Exception):
@@ -144,6 +146,73 @@ async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None) -> FetchR
         return FetchResult("timeout", final_url=url, error=type(exc).__name__)
     except httpx.HTTPError as exc:
         return FetchResult("failed", final_url=url, error=type(exc).__name__)
+    finally:
+        if own_client:
+            await client.aclose()
+
+
+async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, client: httpx.AsyncClient | None = None,
+                     deadline: float = TIMEOUT_SECONDS) -> FetchResult:
+    """A file of one of `media_types`, through fetch_pdf's protections: public addresses only, the checked address
+    pinned, at most MAX_REDIRECTS redirects, MAX_BYTES, the User-Agent and `host_gate`.
+
+    `gate` (the arXiv source route, D104) is called before and after every HTTP request, redirect hops included:
+    `await gate.before()` may wait and stamps the request's start, `gate.after()` stamps its end. The whole fetch, from
+    the first address check to the last byte and including the gate's waits between hops, runs inside one
+    `asyncio.timeout(deadline)`; the gate's wait before the first hop is outside it. Past the deadline the stream is
+    closed and the result is `timeout`. fetch_pdf has no such deadline and calls no gate."""
+    own_client = client is None
+    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}, trust_env=False)
+    current = url
+    try:
+        if gate is not None:
+            await gate.before()
+        first = True
+        async with asyncio.timeout(deadline):
+            for _ in range(MAX_REDIRECTS + 1):
+                if gate is not None and not first:
+                    await gate.before()
+                first = False
+                try:
+                    async with host_gate(current):
+                        try:
+                            address = await check_public_url(current)
+                        except BlockedUrl as exc:
+                            return FetchResult("blocked_url", final_url=current, error=str(exc))
+                        target, headers, extensions = _pinned_request(current, address)
+                        async with client.stream("GET", target, headers=headers, extensions=extensions, follow_redirects=False) as response:
+                            if response.is_redirect:
+                                location = response.headers.get("location")
+                                if not location:
+                                    return FetchResult("http_error", final_url=current, http_status=response.status_code, error="redirect without location")
+                                current = urljoin(current, location)
+                                continue
+                            if response.status_code != 200:
+                                return FetchResult("http_error", final_url=current, http_status=response.status_code)
+                            media_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+                            if media_type not in media_types:
+                                return FetchResult("wrong_type", final_url=current, media_type=media_type, http_status=200)
+                            declared = response.headers.get("content-length")
+                            if declared and declared.isdigit() and int(declared) > MAX_BYTES:
+                                return FetchResult("too_large", final_url=current, http_status=200)
+                            chunks, size = [], 0
+                            async for chunk in response.aiter_bytes():
+                                size += len(chunk)
+                                if size > MAX_BYTES:
+                                    return FetchResult("too_large", final_url=current, http_status=200)
+                                chunks.append(chunk)
+                            return FetchResult("ok", data=b"".join(chunks), final_url=current, media_type=media_type, http_status=200,
+                                               content_disposition=response.headers.get("content-disposition"))
+                finally:
+                    if gate is not None:
+                        gate.after()
+            return FetchResult("http_error", final_url=current, error="too many redirects")
+    except TimeoutError:
+        return FetchResult("timeout", final_url=current, error="deadline")
+    except httpx.TimeoutException as exc:
+        return FetchResult("timeout", final_url=current, error=type(exc).__name__)
+    except httpx.HTTPError as exc:
+        return FetchResult("failed", final_url=current, error=type(exc).__name__)
     finally:
         if own_client:
             await client.aclose()

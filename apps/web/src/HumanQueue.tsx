@@ -410,6 +410,7 @@ function RowDetail({ row, rowView, detailError, titleRef, onOpenPage, onOpenPart
   const question = row.question
     ? t('Does this paper have the part “{part}”?', { part: row.question.part })
     : row.kind === 'confirm_pdf' ? t('Is this PDF the work named here?')
+    : row.kind === 'confirm_results' ? t('The title names a study protocol. Does this paper report results for every part, rather than only planning to measure them?')
     : row.kind === 'choose_version' ? t('The versions of this work were read to opposite decisions. Which one holds?')
     : t('You decided this work under an earlier question. Does your decision still hold?')
   const unverified = detail ? detail.runs.flatMap(run => run.parts.filter(p => p.part === part && p.label === 'present' && p.quote_verified === false && p.quote)

@@ -1,8 +1,11 @@
 """The search phrases a question holds, read by code alone (SW2.1, SW2.2).
 
 Pure: no network, no database, no clock. The question is stripped of its asking frame, split at function words,
-punctuation and cue words, and what stands between two splits is a candidate phrase (RAKE's candidate step). The word
-immediately before a phrase names the block it goes in; that assignment is a rule, it is unreliable, and the user
+punctuation and cue words, and what stands between two splits is a candidate phrase (RAKE's candidate step). In a clause
+a question inverted with an auxiliary ("does X reduce Y", "how does X affect Y"), a candidate phrase is cut once at the
+last listed effect verb with a content word on each side: the verb is dropped, the left part keeps the phrase's
+position and the right part is the outcome (slice 26, SW25). The word immediately before a phrase names the block it
+goes in; that assignment is a rule, it is unreliable, and the user
 confirms or replaces it through `key_terms` (the screen for it is slice 08).
 
 Two lists never reach a query. A phrase in a method position is a claim word: code cannot widen "ILP" into
@@ -17,8 +20,8 @@ import re
 import unicodedata
 from dataclasses import dataclass, field, replace
 
-from deixis.domain.vocabulary_words import (CUE_WORDS, ENGLISH_FUNCTION_WORDS, GENERAL_WORDS, MAX_CUE_WORDS,
-                                            QUESTION_FRAMES)
+from deixis.domain.vocabulary_words import (AUXILIARIES, CUE_WORDS, EFFECT_VERBS, ENGLISH_FUNCTION_WORDS,
+                                            GENERAL_WORDS, MAX_CUE_WORDS, QUESTION_FRAMES)
 
 ENGLISH_FUNCTION_WORD_SHARE = 0.2  # a question with accented letters is English only at or above this share
 LONG_QUESTION_WORDS = 8  # a text this long without one English function word is not an English sentence
@@ -142,6 +145,24 @@ def _strip_frames(sentence: str) -> str:
     return sentence
 
 
+def _frame_inverts(sentence: str) -> bool:
+    """Whether the question frame stripped from this sentence ends in an auxiliary ("how does", "why do")."""
+    lowered = [w.lower() for w in sentence.split()]
+    for frame in QUESTION_FRAMES:
+        parts = frame.split()
+        if lowered[: len(parts)] == parts:
+            return parts[-1] in AUXILIARIES
+    return False
+
+
+def _verb_cut(words: list[str]) -> int | None:
+    """The index of the last effect verb with a word on each side, or None."""
+    for index in range(len(words) - 2, 0, -1):
+        if words[index] in EFFECT_VERBS:
+            return index
+    return None
+
+
 def _trim(words: list[str]) -> list[str]:
     """A phrase loses a general word at either end; a phrase of general words alone loses everything (SW2.2)."""
     start, end = 0, len(words)
@@ -158,12 +179,21 @@ def _phrases(question: str) -> list[Phrase]:
         tokens = [t.lower() for t in _TOKEN.findall(_strip_frames(sentence.strip()))]
         buffer: list[str] = []
         cue: str | None = None
+        inverted = _frame_inverts(sentence.strip())
         index = 0
+
+        def emit(words: list[str], position: str) -> None:
+            if words := _trim(words):
+                phrases.append(Phrase(" ".join(words), position, "question"))
 
         def close(next_cue: str | None) -> None:
             nonlocal buffer, cue
-            if words := _trim(buffer):
-                phrases.append(Phrase(" ".join(words), cue or "task", "question"))
+            cut = _verb_cut(buffer) if inverted else None
+            if cut is None:
+                emit(buffer, cue or "task")
+            else:
+                emit(buffer[:cut], cue or "task")
+                emit(buffer[cut + 1:], "outcome")
             # A cue is spent on the phrase that followed it; with nothing between them it still stands, so
             # "in the wireless sensor networks" keeps its setting position across the article.
             if buffer or next_cue is not None:
@@ -178,9 +208,11 @@ def _phrases(question: str) -> list[Phrase]:
                 index += len(matched)
             elif tokens[index] in ENGLISH_FUNCTION_WORDS:
                 close(None)
+                inverted = inverted or tokens[index] in AUXILIARIES
                 index += 1
             elif not _WORD.fullmatch(tokens[index]):  # punctuation ends the clause and the cue with it
                 close(None)
+                inverted = False
                 index += 1
             else:
                 buffer.append(tokens[index])

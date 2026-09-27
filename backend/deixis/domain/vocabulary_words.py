@@ -1,7 +1,8 @@
 """The word lists code reads a question with (SW2.2). Lists only; no logic lives here.
 
-Every entry is an English function word, a question frame, a preposition or a word that is frequent in general
-language and in research prose whatever the field. No field's own term belongs here: a list that needs a topic word
+Every entry is an English function word, a question frame, a preposition, a word that is frequent in general
+language and in research prose whatever the field, or a verb a question uses to join what it asks about to what that
+changes. No field's own term belongs here: a list that needs a topic word
 to make a question parse is the wrong rule for that question, and the user's `key_terms` field corrects it instead.
 The lists are hand-written and short; nothing measured their coverage.
 """
@@ -63,3 +64,15 @@ different various several recent new current existing common general main major 
 better best good known typical overall
 abstract
 """.split())
+
+# The auxiliaries that invert a question's clause ("does X reduce Y"); all are function words already (slice 26, SW25).
+AUXILIARIES = frozenset("does do did can could will would may might should must".split())
+
+# Verbs a research question uses to join the thing sought to what it changes. Inside a clause an auxiliary inverted,
+# a candidate phrase is cut once at the last of these (slice 26, SW25). Base and third-person forms only; a past
+# participle ("reduced") is an adjective in a title phrase as often as a verb, so it is not listed.
+_EFFECT_VERB_BASES = """affect influence reduce increase decrease improve lower raise change alter enhance impair prevent
+cause promote predict modulate determine mitigate worsen delay extend shorten boost limit suppress induce inhibit
+accelerate slow protect outperform differ""".split()
+EFFECT_VERBS = frozenset(_EFFECT_VERB_BASES + [word + ("es" if word.endswith(("ss", "sh", "ch", "x")) else "s")
+                                               for word in _EFFECT_VERB_BASES])

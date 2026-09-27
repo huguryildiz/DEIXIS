@@ -75,7 +75,8 @@ def test_provenance_records_pinned_upstream_without_runtime_dependency():
 
 
 def test_fulltext_adjudication_method_text_is_the_slice_text_and_the_hash_changed():
-    """The method file is the slice text, unchanged, and loading it moves the package hash (slice 12)."""
+    """The method file is the slice text (slice 12, with slice 26's reported-result sentence), and loading it moves the
+    package hash."""
     before = "sha256:8f0e6cfb9116b5fba081d5959a45d04d9704b12ff38671f54b0400e540664d47"
     assert skill.package_hash() != before
     assert skill.integrity_issues() == []
@@ -86,7 +87,10 @@ def test_fulltext_adjudication_method_text_is_the_slice_text_and_the_hash_change
         "`present`: a passage states it. Copy one continuous quote from that passage, character for character, at most 600 characters, and name the passage. Do not join text from two places, do not correct, translate or complete it. An equation may be quoted as it is printed.\n"
         "`absent`: the passages describe what the paper does and this part is not among it. No quote.\n"
         "`unclear`: the passages do not let you tell. No quote. Passages are a selection, not the whole paper: when the part could be elsewhere in the paper, say `unclear`, not `absent`.\n"
-        "What the paper cites, surveys or plans as future work is not something the paper contains. Judge only the passages given; use nothing you remember about this paper. Give one sentence of rationale per part. Do not state a confidence.\n"
+        "What the paper cites, surveys or plans as future work is not something the paper contains. "
+        "A part about a result, an effect or a measured outcome is `present` only when a passage reports that result, or an analysis of it, as a finding of this paper, whatever its source: an experiment or trial, a re-analysis, a review's pooled estimate, a derivation or a simulation. "
+        "A result the paper only plans to measure is not reported: a protocol, a trial registration or a design paper that says it will measure an outcome does not contain that result. "
+        "Label such a part `absent` when the passages show that no result is reported yet, and `unclear` when they cannot tell. Judge only the passages given; use nothing you remember about this paper. Give one sentence of rationale per part. Do not state a confidence.\n"
     )
     loaded = skill.load_skill_package().runtime_text("fulltext_adjudication")
     assert '<method-file path="references/fulltext-adjudication.md">' in loaded

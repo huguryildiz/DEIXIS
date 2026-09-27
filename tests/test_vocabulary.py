@@ -106,6 +106,67 @@ def test_malformed_key_terms_are_refused(key_terms):
         vocabulary.parse_key_terms(key_terms)
 
 
+def phrases(question):
+    return [(p.text, p.position) for p in vocabulary._phrases(question)]
+
+
+# ---- the verb cut in an inverted clause (slice 26, SW25) ------------------------------------------------------
+
+@pytest.mark.parametrize(("question", "expected"), [
+    # The four measured welds' shape, in other fields: an auxiliary, a phrase, an effect verb, a phrase.
+    ("Does cover cropping reduce soil erosion in hillside vineyards?",
+     [("cover cropping", "task"), ("soil erosion", "outcome"), ("hillside vineyards", "setting")]),
+    ("Does road traffic noise increase blood pressure in children?",
+     [("road traffic noise", "task"), ("blood pressure", "outcome"), ("children", "setting")]),
+    ("Can mulch colour influence fruit ripening time in orchards?",
+     [("mulch colour", "task"), ("fruit ripening time", "outcome"), ("orchards", "setting")]),
+    # The auxiliary only in the stripped frame.
+    ("How does class size affect reading achievement in primary schools?",
+     [("class size", "task"), ("reading achievement", "outcome"), ("primary schools", "setting")]),
+])
+def test_an_inverted_clause_is_cut_once_at_its_effect_verb_and_the_right_part_is_the_outcome(question, expected):
+    assert phrases(question) == expected
+    extraction = vocabulary.extract(question)
+    assert extraction.blocks["outcome"] == [expected[1][0]] and expected[0][0] in extraction.blocks["task"]
+
+
+@pytest.mark.parametrize(("question", "expected"), [
+    ("Does climate change affect crop yield in highland farms?",
+     [("climate change", "task"), ("crop yield", "outcome"), ("highland farms", "setting")]),
+    ("Does weight change predict mortality in older adults?",
+     [("weight change", "task"), ("mortality", "outcome"), ("older adults", "setting")]),
+    ("Does a minimum wage increase affect youth employment?",
+     [("minimum wage increase", "task"), ("youth employment", "outcome")]),
+])
+def test_a_listed_word_used_as_a_noun_stays_in_its_compound_because_the_cut_is_at_the_last_verb(question, expected):
+    assert phrases(question) == expected
+
+
+def test_a_listed_word_at_the_end_of_a_phrase_is_no_cut_point():
+    assert phrases("Does screen time reduce weight change in teenagers?") == [
+        ("screen time", "task"), ("weight change", "outcome"), ("teenagers", "setting")]
+
+
+def test_a_clause_without_an_auxiliary_is_not_cut():
+    assert ("caffeine intake reduces sleep quality", "task") in phrases(
+        "Which studies report that caffeine intake reduces sleep quality in students?")
+    assert phrases("Is there evidence that caffeine intake reduces sleep quality?") == [
+        ("caffeine intake reduces sleep quality", "task")]
+
+
+def test_punctuation_ends_the_inverted_clause():
+    assert phrases("Do farmers irrigate at night, or soil moisture sensors reduce water use?")[-1] == (
+        "soil moisture sensors reduce water", "task")
+    assert phrases("Does road traffic noise, in children, increase blood pressure?") == [
+        ("road traffic noise", "task"), ("children", "setting"), ("increase blood pressure", "task")]
+
+
+def test_the_verb_lists_hold_auxiliaries_that_are_function_words_and_base_and_third_person_verbs():
+    assert vocabulary_words.AUXILIARIES <= vocabulary_words.ENGLISH_FUNCTION_WORDS
+    assert {"affect", "affects", "reduce", "reduces", "influence", "influences"} <= vocabulary_words.EFFECT_VERBS
+    assert not {"reduced", "affected"} & vocabulary_words.EFFECT_VERBS
+
+
 def test_no_word_list_holds_a_term_of_any_field_used_in_these_questions():
     """The guard of the slice: a list may hold function words and general words, never a topic's own word."""
     listed = (vocabulary_words.ENGLISH_FUNCTION_WORDS | vocabulary_words.GENERAL_WORDS

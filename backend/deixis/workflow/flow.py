@@ -3850,6 +3850,9 @@ class ResearchFlow:
                                        quote_page=row["page"])
             views.append(adjudication.run_view(proposals))
         code = adjudication.combine(views[0] if views else None, views[1] if len(views) > 1 else None)
+        # Two agreeing runs on a version whose own title names a study protocol decide nothing by themselves: the
+        # work goes to the queue with the combined code in the note (slice 26).
+        code, note = adjudication.with_title(code, self.store.source(read)["title"])
         if code is None or not self._file_holds(item):
             # The file the plan froze moved while the calls were out: nothing is decided from its reading (decision 6).
             return
@@ -3859,7 +3862,7 @@ class ResearchFlow:
         renew = ({read} if item.get("asset_id") and earlier is not None
                  and self.store.decision_read_file(earlier) != (item["asset_id"], item["page_digest"]) else set())
         with transaction(self.store.conn):
-            self._write_adjudication_codes(run, last_step, [(read, code)], renew)
+            self._write_adjudication_codes(run, last_step, [(read, code)], renew, {read: note} if note else None)
             # The decision and its person's request move together (decision 4).
             current = decisions.current(run["research_id"], read, "fulltext")
             if current is not None and current["step_id"] == last_step:
@@ -3868,9 +3871,11 @@ class ResearchFlow:
                 decisions.derive_selection(run["research_id"], self.store.source(read)["work_id"])
 
     def _write_adjudication_codes(self, run: dict[str, Any], step_id: str | None,
-                                  writes: list[tuple[str, str]], renew: set[str] | None = None) -> None:
+                                  writes: list[tuple[str, str]], renew: set[str] | None = None,
+                                  notes: dict[str, str] | None = None) -> None:
         """Write these full-text decisions and derive each work's selection. The user's decision is left as it is;
-        a version in `renew` is written even over the same code (slice 18b)."""
+        a version in `renew` is written even over the same code (slice 18b). A version in `notes` is written with
+        that note (`protocol_title`, slice 26); every other decision carries none, as before."""
         rid = run["research_id"]
         decisions = DecisionStore(self.store)
         stale_key = decisions.staleness_key(rid)
@@ -3883,7 +3888,7 @@ class ResearchFlow:
                                                                           or svid in (renew or ()))):
                 continue
             try:
-                decisions.record(rid, svid, code, step_id=step_id)
+                decisions.record(rid, svid, code, step_id=step_id, note=(notes or {}).get(svid))
             except HumanDecisionStands:
                 continue
             touched.add(self.store.source(svid)["work_id"])

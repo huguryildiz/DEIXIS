@@ -5,12 +5,14 @@ the limit. A quote is verified only when `locate_anchor` finds it `exact` or `no
 shown. A label writes nothing by itself.
 
 The model is shown a selection of passages, so `criterion_absent` means "absent from the passages shown", and code
-may exclude on that. A work is included without the user only when both runs label every part `present` and every
-quote verifies.
+may exclude on that. A work is included without the user only when both runs label every part `present`, every
+quote verifies and its read version's title names no study protocol; a work whose title names one is neither included
+nor excluded by code, it goes to the queue (`protocol_title`, slice 26).
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from deixis.domain.contracts import locate_anchor
@@ -35,6 +37,7 @@ FRESH_MODEL_CODES = (
     "part_without_evidence",
     "fulltext_runs_agree_unresolved",
     "pdf_identity_unconfirmed",
+    "protocol_title",
 )
 # Codes this stage may replace. A fresh `text_unreadable` or `no_fulltext` belongs to retrieval and is left alone.
 OWNED_CODES = ("not_read_yet", *FRESH_MODEL_CODES)
@@ -304,6 +307,38 @@ def combine(first: dict[str, Any] | None, second: dict[str, Any] | None) -> str 
     if view == "partial":
         return "part_without_evidence"
     return "fulltext_runs_agree_unresolved"
+
+
+# A title that names a study protocol, a trial protocol or a "rationale and design" paper (slice 26, SW26). English and
+# hand-written; its coverage is what the slice 26 plan measured on stored medicine, quantum and packet libraries and
+# nothing more. The trial/study anchor after "protocol for the" keeps "... swapping protocol for the quantum Internet"
+# out.
+PROTOCOL_TITLE = re.compile(
+    r"\b(?:study|trial|review|research|clinical|intervention)\s+protocol\b"
+    r"|\bprotocol\s+(?:for|of)\s+(?:a|an|the)\b[^:;.?]*\b(?:trial|study)\b"
+    r"|\bprotocol\s+overview\b"
+    r"|\brationale\s+and\s+design\b|\bdesign\s+and\s+rationale\b",
+    re.IGNORECASE)
+# The two agreeing codes a protocol title withholds: an automatic include and an automatic exclusion alike.
+TITLE_WITHHELD_CODES = ("all_parts_verified", "criterion_absent")
+
+
+def protocol_title(title: str | None) -> str | None:
+    """The words of `title` that name a study protocol, or None."""
+    match = PROTOCOL_TITLE.search(title or "")
+    return match.group(0) if match else None
+
+
+def with_title(code: str | None, title: str | None) -> tuple[str | None, str | None]:
+    """`(code, note)`: `combine`'s code, unless the read version's title names a study protocol.
+
+    Then two agreeing runs (every part found, or the criterion absent) decide nothing by themselves: the code is
+    `protocol_title` and the note keeps the combined code and the matched words. Every other code passes through
+    with no note; they already go to the queue.
+    """
+    if code in TITLE_WITHHELD_CODES and (words := protocol_title(title)) is not None:
+        return "protocol_title", f"protocol_title:{code}:{words}"
+    return code, None
 
 
 def proposals_of(parts: list[dict[str, Any]], records: list[dict[str, Any]], shown: dict[str, dict[str, Any]],

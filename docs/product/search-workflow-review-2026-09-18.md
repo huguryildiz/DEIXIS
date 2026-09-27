@@ -374,7 +374,7 @@ This narrows SW2 point 5, which keeps the model as a conditional step that propo
 
 ## SW25 — The code query welds a verb into a searched phrase
 
-**Status:** open finding from slice 24a; not implemented. **Date:** 2026-09-26. Narrows SW17's Limits.
+**Status:** implemented in slice 26 (D107). In a clause the question inverted with an auxiliary, code cuts a candidate phrase once at its last listed effect verb (the right part is `outcome`); declarative clauses are not cut. Spelling: code writes no spelling variant, so a British form in the question ("randomised", "labour") reaches the code query only in that spelling, and the model-written query (D92) is the only place another spelling can come from; whether a provider matches the other spelling was not measured. OpenAlex's keyless daily budget is a note in `providers.env.example`, no code. **Date:** 2026-09-26. Narrows SW17's Limits.
 
 **Finding:** In all five medicine `sw` researches the code-built query searched the phrase `"time-restricted eating reduce body weight"` in the task block, next to `"usual diet"` and `unrestricted`. The phrase is the question's words run together, so it matches almost nothing; the model's query carried the search. SW17's Limits already noted that 3 of 28 phrases weld two concepts. In `detailed`, `"randomised controlled trials"` entered a setting block in British spelling, so American-spelled records depend on the other query. Separately, after the campaign the day's keyless OpenAlex budget was exhausted (search requests returned 429 with `x-ratelimit-remaining: 0`, reset in about 8.4 h); no product search in the campaign was refused, but a heavy day of use can reach the same wall.
 
@@ -382,7 +382,7 @@ This narrows SW2 point 5, which keeps the model as a conditional step that propo
 
 ## SW26 — A trial protocol that reports no results is read as `include`
 
-**Status:** open finding from the slice 25 plan (record only); not implemented. **Date:** 2026-09-26.
+**Status:** implemented in slice 26 (D107): a method sentence (a result part needs a reported result, not a planned one) and a code rule that sends two agreeing runs on a version whose title names a study protocol to the queue (`protocol_title`, kind `confirm_results`) instead of including or excluding it. **Date:** 2026-09-26.
 
 **Finding:** Of the 17 unique works the five medicine `sw` researches of slice 24a included, 3 are trial protocols that report no results (a model reading of the stored abstracts and the design part's stored quote in the slice 25 plan session; not blind, not a human check, no PDF page opened). Two of them would also fail the new comparator part of SW23; the third (a PCOS protocol) meets the population and the comparator, so SW23 does not catch it. The outcome part was met by a planned outcome, not a reported one.
 

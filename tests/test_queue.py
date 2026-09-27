@@ -246,7 +246,7 @@ def queued(lib, code="part_without_evidence"):
 def test_each_human_queue_code_is_one_row_per_work_and_no_other_code_is(store, field):
     lib = Lib(store, field)
     routed = [code for code, entry in REASON_CODES.items() if entry.next_step == "human_queue"]
-    assert set(routed) == set(queue.QUEUE_CODES) and len(routed) == 6
+    assert set(routed) == set(queue.QUEUE_CODES) and len(routed) == 7
     by_code = {}
     for code in routed:
         svid = lib.work()
@@ -274,7 +274,7 @@ def test_each_human_queue_code_is_one_row_per_work_and_no_other_code_is(store, f
     assert sorted(row["reason_code"] for row in found["rows"]) == sorted(routed + ["fulltext_runs_disagree"])
     assert {row["source_version_id"] for row in found["rows"]} == set(by_code.values()) | {published}
     assert len({row["work_id"] for row in found["rows"]}) == len(found["rows"])
-    assert found["counts"]["open"] == 7 and found["counts"]["decided"] == {"human_include": 1}
+    assert found["counts"]["open"] == 8 and found["counts"]["decided"] == {"human_include": 1}
     assert found["order"] == "fused_rank"
 
 
@@ -333,6 +333,26 @@ def test_part_without_evidence_splits_into_confirm_absent_and_find_part(store):
     rows = {row["source_version_id"]: row for row in lib.rows()["rows"]}
     assert rows[absent]["kind"] == "confirm_absent" and rows[absent]["question"]["part"] == second
     assert rows[open_part]["kind"] == "find_part" and rows[open_part]["question"]["part"] == second
+
+
+@pytest.mark.parametrize("labels", ["present", "absent"])
+def test_a_protocol_title_row_asks_to_confirm_the_results_and_names_no_part(store, labels):
+    """Two agreeing runs held back by a protocol title (slice 26): kind `confirm_results`, no question, and the
+    answers work and undo as for any row."""
+    lib = Lib(store)
+    svid = lib.work()
+    lib.text(svid, [lib.field["page"]])
+    lib.read(svid, "protocol_title", labels={name: (labels, labels) for name in lib.parts})
+    row = lib.row(svid)
+    assert (row["reason_code"], row["kind"], row["question"]) == ("protocol_title", "confirm_results", None)
+    assert lib.selection(svid) == ("pending", "code_rule")
+    result = queue.decide(store, lib.rid, svid, "include", None, row["row_token"])
+    assert result["row"] is None and lib.selection(svid) == ("included", "user")
+    undone = queue.undo(store, lib.rid, svid, result["undo_token"])
+    assert lib.code(svid) == "protocol_title" and undone["row"]["kind"] == "confirm_results"
+    assert lib.selection(svid) == ("pending", "code_rule")
+    result = queue.decide(store, lib.rid, svid, "criterion_not_met", None, undone["row"]["row_token"])
+    assert lib.selection(svid) == ("excluded", "user") and lib.rows()["rows"] == []
 
 
 def test_the_closest_passage_is_searched_only_on_the_pages_that_run_was_shown(store):

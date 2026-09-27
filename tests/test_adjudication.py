@@ -424,3 +424,71 @@ def test_a_stale_code_decision_no_longer_speaks_and_a_stale_human_decision_still
     decisions.record(rid_h, svid_h, "both_blocks_missing")
     human = decisions.work_outcome(rid_h, work_h)
     assert human["reason_code"] == "human_include" and human["decided_by"] == "human"
+
+
+# ---- a study-protocol title (slice 26, SW26) ------------------------------------------------------------------------
+
+# SYNTHETIC titles of the shapes the slice 26 plan measured, from more than one field.
+PROTOCOL_TITLES = [
+    ("Effects of SYNTHETIC evening irrigation on greenhouse tomato yield: a study protocol", "study protocol"),
+    ("SYNTHETIC delivery rounds for small-town bakeries: A randomized controlled trial study protocol",
+     "study protocol"),
+    ("SYNTHETIC drip timing in open fields: protocol for the DRIPS randomized controlled trial",
+     "protocol for the DRIPS randomized controlled trial"),
+    ("Rationale and design of a SYNTHETIC bakery staffing study", "Rationale and design"),
+]
+PLAIN_TITLES = [
+    "SYNTHETIC evening irrigation and fruit set: per-protocol analysis of a randomized trial",
+    "A SYNTHETIC Time-Restricted Watering Protocol for Improving Tomato Yield: A Randomized Controlled Trial",
+    "SYNTHETIC entanglement swapping protocol for the quantum Internet",
+    "An Energy-Efficient Link Layer Protocol for SYNTHETIC sensor networks",
+    "SYNTHETIC bakery opening hours (16/8 protocol) and daily sales",
+    "",
+    None,
+]
+
+
+@pytest.mark.parametrize(("title", "words"), PROTOCOL_TITLES)
+def test_a_title_that_names_a_study_protocol_is_found_with_its_words(title, words):
+    assert adjudication.protocol_title(title) == words
+
+
+@pytest.mark.parametrize("title", PLAIN_TITLES)
+def test_a_results_title_or_a_technical_protocol_is_not_a_study_protocol(title):
+    assert adjudication.protocol_title(title) is None
+
+
+@pytest.mark.parametrize("code", ["all_parts_verified", "criterion_absent"])
+def test_a_protocol_title_withholds_both_an_include_and_an_exclusion(code):
+    title, words = PROTOCOL_TITLES[0]
+    assert adjudication.with_title(code, title) == ("protocol_title", f"protocol_title:{code}:{words}")
+    for plain in PLAIN_TITLES:
+        assert adjudication.with_title(code, plain) == (code, None)
+
+
+@pytest.mark.parametrize("code", ["part_without_evidence", "fulltext_runs_disagree", "include_quote_unverified",
+                                  "fulltext_runs_agree_unresolved", "pdf_identity_unconfirmed", None])
+def test_every_other_code_passes_a_protocol_title_through(code):
+    for title, _ in PROTOCOL_TITLES:
+        assert adjudication.with_title(code, title) == (code, None)
+
+
+def test_a_single_result_part_absent_in_both_runs_on_a_protocol_title_goes_to_the_queue():
+    """Sol r1: with one part, a result part, two `absent` runs would exclude; a protocol title stops that."""
+    run = adjudication.run_view({"measured outcome": {"label": "absent", "quote_verified": False}})
+    code = adjudication.combine(run, run)
+    assert code == "criterion_absent"
+    assert adjudication.with_title(code, PROTOCOL_TITLES[1][0])[0] == "protocol_title"
+    assert adjudication.with_title(code, PLAIN_TITLES[0]) == ("criterion_absent", None)
+
+
+def test_the_protocol_title_code_is_a_fresh_queue_code_and_never_an_exclusion(library):
+    row = reason("protocol_title")
+    assert (row.stage, row.outcome, row.decided_by, row.next_step) == ("fulltext", "unresolved", "code", "human_queue")
+    assert "protocol_title" in adjudication.FRESH_MODEL_CODES and "protocol_title" in adjudication.OWNED_CODES
+    rid, run_id = research(library)
+    svid, work_id = one_record(library, rid, run_id)
+    decisions = DecisionStore(library)
+    decisions.record(rid, svid, "protocol_title", note="protocol_title:all_parts_verified:study protocol")
+    assert decisions.derive_selection(rid, work_id) == "pending"
+    assert not adjudication.should_write(decisions.current(rid, svid, "fulltext"), "protocol_title")

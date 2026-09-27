@@ -446,7 +446,7 @@ export type EffortLimits = { search_workflow: 'sw' | 'legacy'
   efforts: Record<'quick' | 'standard' | 'detailed', { read: number; abstracts: number; fetch: number; reads: number; runs: number
     chain_seeds: number; chain_abstracts: number; passages: number }> | null }
 // The human queue of an sw research (slice 16, D96). Rows are derived from stored decisions each time they are read.
-export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'confirm_absent' | 'find_part' | 'look_again'
+export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'confirm_absent' | 'find_part' | 'confirm_results' | 'look_again'
 export type QueueAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong' | 'pdf_confirmed'
 export type QueueRow = {
   source_version_id: string; head: string; work_id: string; title: string; year: number | null; doi: string | null

@@ -78,6 +78,9 @@ REASON_CODES: dict[str, ReasonCode] = _table(
     # The PDF's first pages name neither this work's DOI nor a long enough title (slice 12). The text stays;
     # the work is not read until a person confirms it, and a file the user uploaded is never given this code.
     ReasonCode("pdf_identity_unconfirmed", "fulltext", "unresolved", "code", "human_queue"),
+    # The two runs agreed (every part found, or the criterion absent), but the read version's title names a study
+    # protocol, so code neither includes nor excludes the work; a person answers (slice 26). Never an exclusion.
+    ReasonCode("protocol_title", "fulltext", "unresolved", "code", "human_queue"),
     # ---- what the user decided (SW11.7, SW11.11) ---------------------------------------
     ReasonCode("human_include", "fulltext", "include", "human", "answer"),
     ReasonCode("human_criterion_not_met", "fulltext", "criterion_not_met", "human", "none"),

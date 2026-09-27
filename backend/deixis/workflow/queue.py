@@ -39,6 +39,9 @@ VERSIONS_DISAGREE = "versions_disagree"
 KIND_OF = {"include_quote_unverified": "confirm_quote", "fulltext_runs_disagree": "choose_run",
            VERSIONS_DISAGREE: "choose_version", "pdf_identity_unconfirmed": "confirm_pdf",
            "fulltext_runs_agree_unresolved": "find_part",
+           # Two agreeing runs on a version whose title names a study protocol (slice 26): no one part is asked; the
+           # person confirms whether the paper reports results at all.
+           "protocol_title": "confirm_results",
            # Unreachable today (no stage writes it); its question is whether the promised part is in the text.
            "abstract_promise_absent": "find_part"}
 LOOK_AGAIN = "look_again"
@@ -194,6 +197,8 @@ def _token(ctx: _Context, work_id: str, svid: str, reason_code: str | None, head
 def _question(ctx: _Context, kind: str, proposals: dict[str, dict[int, dict[str, Any]]]) -> dict[str, Any] | None:
     """The one part the row asks about: the first, in the criterion's order, the two runs did not settle."""
     if kind in ("confirm_pdf", "choose_version", LOOK_AGAIN) and not proposals:
+        return None
+    if kind == "confirm_results":
         return None
     for name in ctx.part_names(proposals):
         runs = proposals.get(name, {})

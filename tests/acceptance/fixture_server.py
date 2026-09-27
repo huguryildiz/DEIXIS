@@ -8,7 +8,9 @@ fails before sending), "[invent-locator]" (every answer draft asserts a page and
 extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs), "[suggest-down]" (every
 term-suggestion call fails, so the approval card shows the failure and its retry), "[query-down]" (every call that
 writes the search query fails, so the run stops for the model query, D92), "[queue]" (the reading model answers each
-queue work by a script, so case J finds one row of each kind it needs), "[read-fails]" (the first reading run of the
+queue work by a script, so case J finds one row of each kind it needs), "[protocol-title]" (with
+`DEIXIS_FIXTURE_PROTOCOL=on`, case R, slice 26: both reading runs find every part of the work whose title names a study
+protocol, so it is a `confirm_results` row), "[read-fails]" (the first reading run of the
 person's file of case L answers nothing usable, so the file is not read until the person asks again).
 
 `DEIXIS_FIXTURE_QUEUE=on` (case J, slice 17) switches on retrieval and reading and serves the queue works below instead
@@ -183,6 +185,20 @@ if QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_AUDIT") == "on":
     QUEUE_PDFS["https://fixture.example/q956.pdf"] = [
         f"SYNTHETIC queue-agree https://doi.org/10.5555/q956 first page.\n{AGREE_SENTENCES[0]}",
         f"SYNTHETIC queue-agree second page.\n{AGREE_SENTENCES[1]}"]
+# Case R (slice 26, SW26): one more work whose title names a study protocol. With "[protocol-title]" in the question
+# both reading runs find every part with the page's own words, and code still neither includes nor excludes it: the
+# queue shows it as a `confirm_results` row. Every sentence is SYNTHETIC.
+PROTOCOL_SENTENCES = ("We propose a release window rule that each relay applies to its molecule bursts.",
+                      "Results show that the release window rule keeps every relay within its molecule budget.")
+PROTOCOL_TITLE = "SYNTHETIC release windows for molecular relay chains: a study protocol"
+PROTOCOL_WORK = work("W959", PROTOCOL_TITLE, "A release window rule for molecular relay chains is described.",
+                     "publishedVersion", {"pdf_url": "https://fixture.example/q959.pdf", "version": "publishedVersion"},
+                     "https://doi.org/10.5555/q959")
+if QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_PROTOCOL") == "on":
+    QUEUE_WORKS = [*QUEUE_WORKS, PROTOCOL_WORK]
+    QUEUE_PDFS["https://fixture.example/q959.pdf"] = [
+        f"SYNTHETIC queue-protocol https://doi.org/10.5555/q959 first page.\n{PROTOCOL_SENTENCES[0]}",
+        f"SYNTHETIC queue-protocol second page.\n{PROTOCOL_SENTENCES[1]}"]
 # Case P (SW21): the queue works whose own PDF is withheld and whose text Europe PMC gives instead, by DOI.
 EUROPEPMC_MODE = QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_EUROPEPMC") == "on"
 EUROPEPMC_WORKS = {work["doi"].removeprefix("https://doi.org/"): (f"PMC9000{work['id'][-3:]}", work)
@@ -219,10 +235,12 @@ async def europepmc_xml(url: str) -> FetchResult:
 WAITING_READ_SECONDS = 3.0
 
 
-def queue_reading(si: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
+def queue_reading(si: dict[str, Any], output: dict[str, Any], question: str = "") -> dict[str, Any]:
     """The scripted reading of case J: by the marker on the shown pages, one row kind per work."""
     passages = si["passages"]
     sentences = {**QUEUE_SENTENCES, "agree": AGREE_SENTENCES}
+    if "[protocol-title]" in question:  # case R: the protocol work is read as an agreeing include
+        sentences["protocol"] = PROTOCOL_SENTENCES
     key = next((k for k in sentences if any(f"queue-{k}" in p["text"] for p in passages)), None)
     if key is None:
         return output
@@ -239,7 +257,7 @@ def queue_reading(si: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
         method = part is output["parts"][0]
         if key == "runs":  # run 1 finds both parts, run 2 neither: the runs disagree
             found = present(sentence) if run == 1 else {"label": "absent", "quote": "", "passage_id": None}
-        elif key == "agree":  # both runs find both parts with the page's own words: an include by agreement
+        elif key in ("agree", "protocol"):  # both runs find both parts with the page's own words: an include by agreement
             found = present(sentence)
         elif key == "quote":  # both runs include, one quote a few letters off the page
             found = present(sentence, QUEUE_MISQUOTE if method else None)
@@ -350,7 +368,7 @@ class ScriptedCodex:
                                 {"term": "bisection search", "kind": "method", "why": "SYNTHETIC: the method named"}],
                        "setting_backup": [{"term": "molecular relays"}], "task_backup": [{"term": "release timing"}]}
         elif si["task_type"] == "fulltext_adjudication" and "[queue]" in question:
-            output = queue_reading(si, output)
+            output = queue_reading(si, output, question)
         elif si["task_type"] == "abstract_screening":
             # `valid_response` already quotes each abstract's own first words, which is what the code stage
             # verifies; only the keyword false positive of case D is labelled apart, as screening does.

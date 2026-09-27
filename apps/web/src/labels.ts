@@ -295,6 +295,7 @@ export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unst
 export const queueKindLabels: Record<Exclude<QueueKind, 'look_again'>, string> = {
   confirm_quote: 'Confirm the quote', choose_run: 'Choose one of the runs', choose_version: 'Choose one of the versions',
   confirm_pdf: 'Confirm the PDF', confirm_absent: 'Confirm the absence', find_part: 'Find the part',
+  confirm_results: 'Confirm the results',
 }
 // Why a work is in the queue, by the reason code the backend stored. The code itself is shown only beside this, small.
 const queueReasons: Record<string, string> = {
@@ -302,6 +303,7 @@ const queueReasons: Record<string, string> = {
   fulltext_runs_disagree: 'The two reading runs came to different readings of the text.',
   versions_disagree: 'Two versions of this work were read, and their decisions are opposite.',
   pdf_identity_unconfirmed: 'The first page of the PDF does not name this work, so the model has not read it.',
+  protocol_title: 'The title names a study protocol, so the reading neither included nor excluded this work.',
   fulltext_runs_agree_unresolved: 'Neither run could tell from the text whether the parts are there.',
   abstract_promise_absent: 'The abstract promises a part the text does not show.',
   part_without_evidence: 'The runs found some of the criterion’s parts, but not this one.',

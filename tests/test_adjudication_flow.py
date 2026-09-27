@@ -862,3 +862,107 @@ def test_a_reading_call_cut_off_with_no_call_left_in_the_budget_is_not_sent_agai
     assert (reading["status"], reading["pause_reason"]) == ("paused", "model_call_failed")
     assert (step["status"], step["error_code"], step["attempt"]) == ("outcome_unknown", "model_failed", 1)
     assert len(adj_calls(adapter, reading["id"])) == 2
+
+
+# ---- a study-protocol title (slice 26, SW26) ----------------------------------------------------------------------
+
+PROTOCOL = "SYNTHETIC irrigation scheduling of an open field crop: a study protocol"
+
+
+def protocol_paper(title=PROTOCOL):
+    """One work whose read version's title names a study protocol; its PDF names its DOI, so identity holds."""
+    return [work(1, pdf_url="https://example.org/w1.pdf", title=title)], \
+        Fetcher({"https://example.org/w1.pdf": ok(named_pdf("10.1/oa.1"))})
+
+
+def only_the_result_part(monkeypatch):
+    """A criterion whose one part is a result part. The proposal contract asks for two parts or more, so the stored
+    criterion is narrowed where the reading plan reads it (Sol r1's single-result-part case)."""
+    from deixis.workflow.store import Store
+    frozen = Store.frozen_criterion
+
+    def narrowed(self, *args, **kwargs):
+        criterion = frozen(self, *args, **kwargs)
+        if criterion is None:
+            return None
+        parts = [part for part in criterion["parts"] if part["name"] == "measured outcome"]
+        return {**criterion, "parts": parts,
+                "cue_phrases": [p for p in criterion["cue_phrases"] if p.get("part") in (None, "measured outcome")]}
+    monkeypatch.setattr(Store, "frozen_criterion", narrowed)
+
+
+def read_once(tmp_path, monkeypatch, works, fetcher, adapter):
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        head = records_of(store, rid)["W1"]
+        decision = DecisionStore(store).current(rid, head, "fulltext")
+        plan = step_output(store, reading["id"], "adjudication_plan")
+        found = (reading["status"], decision["reason_code"], decision["note"], selection(store, rid, head),
+                 len(plan["criterion"]["parts"]))
+    finally:
+        client.__exit__(None, None, None)
+    return found
+
+
+def test_an_all_present_reading_of_a_protocol_title_goes_to_the_queue_and_is_not_read_again(tmp_path, monkeypatch):
+    works, fetcher = protocol_paper()
+    adapter = FakeAdapter(valid_response)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        head = records_of(store, rid)["W1"]
+        written = DecisionStore(store).current(rid, head, "fulltext")
+        chosen = selection(store, rid, head)
+        summary = step_output(store, reading["id"], "adjudication_summary")
+        row = client.get(f"/api/researches/{rid}/queue").json()["rows"][0]
+        again = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
+        _, reread = wait(client, rid, again)
+        reread_calls = len(adj_calls(adapter, again))
+        DecisionStore(store).record(rid, head, "human_include")
+        DecisionStore(store).derive_selection(rid, store.source(head)["work_id"])
+        research = client.get(f"/api/researches/{rid}").json()["research"]
+        client.post(f"/api/researches/{rid}/scope", json={"question": f"{QUESTION} under a SYNTHETIC drip line",
+                                                          "expected_version": research["version"]})
+        later = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
+        wait(client, rid, later)
+        kept = fulltext_code(store, rid, head)
+    finally:
+        client.__exit__(None, None, None)
+    assert reading["status"] == "completed" and len(adj_calls(adapter, reading["id"])) == 2
+    assert (written["reason_code"], written["note"]) == ("protocol_title",
+                                                         "protocol_title:all_parts_verified:study protocol")
+    assert chosen == ("pending", "code_rule") and summary["include"] == 0
+    assert (row["reason_code"], row["kind"], row["question"]) == ("protocol_title", "confirm_results", None)
+    assert reread["status"] == "completed" and reread_calls == 0
+    assert kept == "human_include"
+
+
+def test_a_plain_title_read_the_same_way_is_still_included(tmp_path, monkeypatch):
+    works, fetcher = protocol_paper(title="SYNTHETIC irrigation scheduling of an open field crop: a randomized trial")
+    found = read_once(tmp_path, monkeypatch, works, fetcher, FakeAdapter(valid_response))
+    assert found == ("completed", "all_parts_verified", None, ("included", "code_rule"), 2)
+
+
+def test_a_single_result_part_absent_in_both_runs_is_not_excluded_on_a_protocol_title(tmp_path, monkeypatch):
+    only_the_result_part(monkeypatch)
+    works, fetcher = protocol_paper()
+    found = read_once(tmp_path / "protocol", monkeypatch, works, fetcher, FakeAdapter(absent_response))
+    assert found == ("completed", "protocol_title", "protocol_title:criterion_absent:study protocol",
+                     ("pending", "code_rule"), 1)
+    works, fetcher = protocol_paper(title="SYNTHETIC irrigation scheduling of an open field crop")
+    found = read_once(tmp_path / "plain", monkeypatch, works, fetcher, FakeAdapter(absent_response))
+    assert found == ("completed", "criterion_absent", None, ("excluded", "code_rule"), 1)
+
+
+def test_every_part_absent_on_a_protocol_title_goes_to_the_queue(tmp_path, monkeypatch):
+    works, fetcher = protocol_paper()
+    found = read_once(tmp_path, monkeypatch, works, fetcher, FakeAdapter(absent_response))
+    assert found == ("completed", "protocol_title", "protocol_title:criterion_absent:study protocol",
+                     ("pending", "code_rule"), 2)

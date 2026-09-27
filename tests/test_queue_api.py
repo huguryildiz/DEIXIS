@@ -18,7 +18,7 @@ from deixis.workflow.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
 from test_abstract_flow import records_of, responder
 from test_adjudication_flow import (adj_calls, app_for, client_of, discover, disagree_response, papers,
-                                    step_output, wait, wait_kind)
+                                    protocol_paper, step_output, wait, wait_kind)
 from test_fulltext_flow import Transport
 
 
@@ -83,6 +83,33 @@ def test_a_human_include_reaches_selections_as_the_users_and_a_later_reading_run
     assert later["status"] == "completed" and adj_calls(adapter, later["id"]) == []
     assert (after["reason_code"], after["decided_by"], after["note"]) == ("human_include", "human",
                                                                         "SYNTHETIC both parts are on page 1.")
+
+
+def test_a_protocol_title_row_is_answered_and_undone_through_the_api(tmp_path, monkeypatch):
+    """Slice 26: two agreeing runs on a protocol-titled version are a `confirm_results` row with no part asked."""
+    works, fetcher = protocol_paper()
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=FakeAdapter(valid_response))
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        head = records_of(store, rid)["W1"]
+        row = queue_of(client, rid)["rows"][0]
+        decided = answer(client, rid, row, "include")
+        included = DecisionStore(store).current(rid, head, "fulltext")["reason_code"]
+        undone = client.post(f"/api/researches/{rid}/queue/{head}/undo", json={"row_token": decided.json()["undo_token"]})
+        back = DecisionStore(store).current(rid, head, "fulltext")
+        excluded = answer(client, rid, undone.json()["row"], "criterion_not_met")
+    finally:
+        client.__exit__(None, None, None)
+    assert (row["reason_code"], row["kind"], row["question"]) == ("protocol_title", "confirm_results", None)
+    assert decided.status_code == 200 and decided.json()["selection"]["state"] == "included"
+    assert included == "human_include"
+    assert undone.status_code == 200 and undone.json()["row"]["kind"] == "confirm_results"
+    # Undo brings the code back as a new row with the restore note, as for every code; the first row keeps its note.
+    assert back["reason_code"] == "protocol_title" and back["note"] == "restored after an undone human decision"
+    assert excluded.status_code == 200 and excluded.json()["selection"]["state"] == "excluded"
 
 
 def test_research_view_counts_the_queue(tmp_path, monkeypatch):

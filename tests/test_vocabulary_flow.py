@@ -214,6 +214,9 @@ def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_secon
     assert body["concept_blocks"]["setting"] and body["concept_blocks"]["task"]
     assert body["claim_words"] == [] and body["exclusion_words"] == []
     assert body["thresholds"]["vocabulary"]["manageable_total"]
+    # SW19: the labelling's hand-picked thresholds are written with the others.
+    assert {k: body["thresholds"]["vocabulary"][k] for k in ("label_runs", "label_majority", "max_labelled_phrases")} \
+        == {"label_runs": 3, "label_majority": 2, "max_labelled_phrases": 40}
     assert body["vocabulary"] and all(term["origin"] == "question" for term in body["vocabulary"])
     assert body["code_version"].endswith("deixis.query_compiler.v4.blocks")
 

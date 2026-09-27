@@ -326,7 +326,7 @@ This narrows SW2 point 5, which keeps the model as a conditional step that propo
 
 ## SW19 — The block-labelling constants are not written to the protocol's thresholds
 
-**Status:** open code finding from the slice 24 plan; confirmed unchanged at `65a7ec8`; not fixed (slice 24b point 11 fixes it only if 24b runs). **Date:** 2026-09-26.
+**Status:** fixed 2026-09-28 outside a slice: the three constants are in `vocabulary.THRESHOLDS`, so new `sw` protocols carry them (earlier protocols keep their stored body); test in `test_vocabulary_flow.py`; gpt-6-sol high one round, hazır. **Date:** 2026-09-26.
 
 **Finding:** `LABEL_RUNS = 3`, `LABEL_MAJORITY = 2` and `MAX_LABELLED_PHRASES = 40` (`workflow/vocabulary.py:24-26`, SW17's three runs and majority) are hand-picked thresholds, but `vocabulary.THRESHOLDS` (`:30-36`) does not list them, so the frozen protocol's `thresholds` block does not carry them. The main plan's §2.7 asks for every hand-picked threshold there. In the campaign all 10 `sw` researches ran the labelling with three valid runs, so the values were in force but not recorded.
 
@@ -334,7 +334,7 @@ This narrows SW2 point 5, which keeps the model as a conditional step that propo
 
 ## SW20 — `routing.THRESHOLDS` is never read
 
-**Status:** open code finding from the slice 24 plan; confirmed unchanged at `65a7ec8`; not fixed. **Date:** 2026-09-26.
+**Status:** fixed 2026-09-28 outside a slice: the unread dict is deleted; the protocol's value still comes from `route()`'s return. gpt-6-sol high one round, hazır. **Date:** 2026-09-26.
 
 **Finding:** `workflow/routing.py:22-23` defines `THRESHOLDS`, but `route()` never reads it; the value written to the protocol comes from `route()`'s own return (`routing.py:105-107`), which uses `rules.ROUTE_SHARE`. Two sources for one number can drift. In the campaign the share was far from 0.25 on both questions (chosen sources 0.85–0.98, left-out 0–0.005), so the duplication changed nothing measured.
 

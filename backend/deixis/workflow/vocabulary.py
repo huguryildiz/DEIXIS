@@ -31,6 +31,9 @@ THRESHOLDS = {
     "english_function_word_share": ENGLISH_FUNCTION_WORD_SHARE,
     "long_question_words": LONG_QUESTION_WORDS,
     "max_probes": MAX_PROBES,
+    "label_runs": LABEL_RUNS,
+    "label_majority": LABEL_MAJORITY,
+    "max_labelled_phrases": MAX_LABELLED_PHRASES,
     "very_large_count": VERY_LARGE_COUNT,
     "manageable_total": MANAGEABLE_TOTAL,
 }

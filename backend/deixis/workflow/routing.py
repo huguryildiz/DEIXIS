@@ -19,10 +19,6 @@ from deixis.providers.query_compiler import quoted
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.vocabulary import GATE_BLOCKS
 
-THRESHOLDS = {"route_share": ROUTE_SHARE, "table_version": SOURCE_ROUTES_VERSION,
-              "always_searched": list(ALWAYS_SEARCHED), "routes": {k: list(v) for k, v in SOURCE_ROUTES.items()}}
-
-
 def gate_query(vocabulary: dict[str, Any] | None) -> str | None:
     """The gate query of a vocabulary: each gate block's searched terms in one OR group, the groups joined by AND.
 

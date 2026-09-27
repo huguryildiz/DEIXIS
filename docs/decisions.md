@@ -2,6 +2,24 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D108 — The medicine re-measurement at `142dfa1` passes gates 1 and 3 and fails gates 2 and 4; the default still stays `legacy`
+
+**Status:** accepted 2026-09-27 as the recorded result of slice 27 (plan `docs/product/sw-slice27-medicine-remeasure.md`, commit `bc64236`, the owner's (b) decision, A1, B1, C1, D1, E1 and F1 as proposed). Run folder `.local/sw-slice27-remeasure-2026-09-27-043237/`; results `docs/product/sw-slice27-remeasure-results.md`. No product file changed; no migration.
+
+**Context:** 25b stopped before any research because the frozen medicine reference rule gave |R| = 7. The owner then chose to count BMI as body weight in condition (b), after 25b's stop and after seeing a what-if estimate: a post-hoc widening. Rebuilt from 25b's copied decisions plus the plan's pre-work, R has 12 trials, 8 with a different comparator and 4 unknown (25.0%, the paper-check limit with no margin). Cienfuegos 2020 is counted as two units (E1: its sleep report and its main report share no registration number); counted once, |R| = 11 and the unknown share 26.7% would have stopped the paper check.
+
+**Decision:** The seven medicine researches ran at `142dfa1` (`skill_package_hash` `sha256:a633e9c7…`), Codex `gpt-5.6-luna` medium, one at a time; all seven answered. The quantum half of every gate is carried from slice 24 (`65a7ec8`), so each verdict joins two commits.
+
+- *Gate 1, completion:* **passes**. 10 of 10 `sw` researches answered `structurally_valid` (5 medicine here, 5 quantum from 24a); two medicine researches used the one allowed `client_timeout` resume.
+- *Gate 2, workflow comparison:* **fails** on medicine, a descriptive verdict conditional on the post-hoc rule. Two units (|R| = 12): pool mean `sw` 11.5 vs `legacy` 8.0 (passes, threshold 2); cited mean `sw` 1.0 vs `legacy` 3.5 (fails: 1.0 < 2.5). One unit (|R| = 11): pool 11.0 vs 8.0, cited 1.0 vs 3.5, the same failure. Quantum passed in 24a.
+- *Gate 3, evidence integrity:* **passes** (0 bad links, 0 isolation violations, 0 other-model sessions in the five medicine `sw` answers; quantum from 24a).
+- *Gate 4, analyst reading:* **fails** on medicine: 3 serious errors in 10 sampled includes (limit 1), all three a comparator that was the same calorie restriction in both arms; one of the three is serious only because the blind second reader disagreed. 0 serious in 10 `sw` claims. Quantum 0/10 and 0/10 from 24a.
+- The default still stays `legacy`.
+
+**Measured (one M1 Pro, Python 3.12 arm64, one run per cell):** 766 Luna calls, 8.26 M input / 0.77 M output tokens, 2 h 58 min wall time including two 10-minute resume waits. Europe PMC supplied full text for 29 and 28 of the 112 works each `standard` run planned to read. Includes per `standard` run 9 and 9 (13 unique). Every `sw` criterion named population and comparator (5 of 5); the code query kept `time-restricted eating` and `body weight` apart (0 of 256 search rows carry the welded phrase); none of 24a's three protocol works was included. The gate 2 loss sits at the PDF stage: of R's 10 units without a PDF in the `sw` runs, only one is in Europe PMC's open-access subset, so the loss is outside that subset.
+
+**Limits:** R rests on two choices made after numbers were seen (BMI as body weight; Cienfuegos 2020 as two units), is a model session's reading, and is a list to compare against, not ground truth. PubMed's search backend was down from the second research on (HTTP 500 or `esearchresult.ERROR`): only `sw` `standard` r1 received PubMed records, so the other six researches ran without PubMed; its effect on pools was not measured. The analyst reading is two model readings, the first not blind. A full quantum research at `142dfa1` was not run (F2 open). Two runs per side make gate 2 a descriptive rule, not a statistical test.
+
 ## D107 — A result part needs a reported result, a study-protocol title keeps a work for a person, and the code query cuts an inverted question at its verb
 
 **Status:** accepted 2026-09-27; implemented in slice 26 (plan `docs/product/sw-slice26-protocol-results-and-phrases.md`, commit `2c3acf2`, A1, B1, C1, D1, E1 and F1 as proposed). Not yet reviewed by Sol at the time of writing; no migration (highest stays `0055`); `skill_package_hash` becomes `sha256:a633e9c7091ed3338b0a51d3c7bdb99e524678f5cc4bdb60e1049d8b4a68028a`.

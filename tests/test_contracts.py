@@ -509,3 +509,16 @@ def test_stale_edit_cannot_overwrite_newer_human_version():
     check_expected_version(4, 4)
     with pytest.raises(RevisionConflict):
         check_expected_version(3, 4)
+
+
+@pytest.mark.parametrize(("role", "valid"), [(None, True), ("comparator", True), ("population", False),
+                                             ("Comparator", False), ("", False)])
+def test_a_reading_part_may_carry_only_the_comparator_role(role, valid):
+    """Slice 28: code marks the comparator part with `role: "comparator"`; no other role value is a StepInput."""
+    si = json.loads(json.dumps(STEP_INPUTS["H_fulltext_adjudication"]))
+    if role is not None:
+        si["adjudication_target"]["parts"][-1]["role"] = role
+    codes = [issue.code for issue in contracts.check_step_input(si)]
+    assert (codes == []) is valid, codes
+    if not valid:
+        assert codes == ["step_input_schema_invalid"]

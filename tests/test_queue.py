@@ -51,13 +51,17 @@ def store(tmp_path):
     connection.close()
 
 
-def body(field, question=None):
+def body(field, question=None, elements=None):
+    origin = {"origin": "model", "base_run": 1, "runs_ok": [1, 2], "dropped_exclusion_title_words": [],
+              "sought_term_in_criterion": True}
+    if elements is not None:
+        # A criterion with question elements (slice 25a); every other body is written as before.
+        origin |= {"question_elements": elements, "required_roles": sorted({e["role"] for e in elements})}
     return {"schema": "deixis.protocol.v1", "search_workflow": "sw", "question": question or field["question"],
             "steering": None, "inclusion_criterion": "SYNTHETIC the paper states both parts.",
             "criterion_parts": field["parts"],
             "cue_phrases": [dict(row, runs=[1, 2]) for row in field["phrases"]], "exclusion_title_words": ["survey"],
-            "criterion_origin": {"origin": "model", "base_run": 1, "runs_ok": [1, 2],
-                                 "dropped_exclusion_title_words": [], "sought_term_in_criterion": True}}
+            "criterion_origin": origin}
 
 
 def provider_record(record_id, title, doi, version_label="publishedVersion", merge_by_doi=True, **identifiers):
@@ -70,13 +74,13 @@ def provider_record(record_id, title, doi, version_label="publishedVersion", mer
 class Lib:
     """One SYNTHETIC `sw` research and the rows a reading run would have left in it."""
 
-    def __init__(self, store, field="channels", workflow="sw"):
+    def __init__(self, store, field="channels", workflow="sw", elements=None):
         self.store, self.field = store, FIELDS[field]
         self.ds = DecisionStore(store)
         self.rid = store.create_research(self.field["question"], "academic", "standard", ["openalex", "arxiv"],
                                          "fake", "m", "en", search_workflow=workflow)
         self.run = self.new_run("discovery")
-        store.freeze_protocol(self.rid, 1, body(self.field))
+        store.freeze_protocol(self.rid, 1, body(self.field, elements=elements))
         self.n = 0
         self.reading: str | None = None
 
@@ -246,7 +250,7 @@ def queued(lib, code="part_without_evidence"):
 def test_each_human_queue_code_is_one_row_per_work_and_no_other_code_is(store, field):
     lib = Lib(store, field)
     routed = [code for code, entry in REASON_CODES.items() if entry.next_step == "human_queue"]
-    assert set(routed) == set(queue.QUEUE_CODES) and len(routed) == 7
+    assert set(routed) == set(queue.QUEUE_CODES) and len(routed) == 8
     by_code = {}
     for code in routed:
         svid = lib.work()
@@ -274,7 +278,7 @@ def test_each_human_queue_code_is_one_row_per_work_and_no_other_code_is(store, f
     assert sorted(row["reason_code"] for row in found["rows"]) == sorted(routed + ["fulltext_runs_disagree"])
     assert {row["source_version_id"] for row in found["rows"]} == set(by_code.values()) | {published}
     assert len({row["work_id"] for row in found["rows"]}) == len(found["rows"])
-    assert found["counts"]["open"] == 8 and found["counts"]["decided"] == {"human_include": 1}
+    assert found["counts"]["open"] == 9 and found["counts"]["decided"] == {"human_include": 1}
     assert found["order"] == "fused_rank"
 
 
@@ -352,6 +356,29 @@ def test_a_protocol_title_row_asks_to_confirm_the_results_and_names_no_part(stor
     assert lib.code(svid) == "protocol_title" and undone["row"]["kind"] == "confirm_results"
     assert lib.selection(svid) == ("pending", "code_rule")
     result = queue.decide(store, lib.rid, svid, "criterion_not_met", None, undone["row"]["row_token"])
+    assert lib.selection(svid) == ("excluded", "user") and lib.rows()["rows"] == []
+
+
+@pytest.mark.parametrize("field", sorted(FIELDS))
+def test_a_withheld_exclusion_asks_to_confirm_the_absence_of_the_comparator_part(store, field):
+    """Two all-negative runs on a criterion with a comparator part (slice 28): kind `confirm_absent`, the question
+    names the comparator part (not the first part), and the answers work and undo as for any row."""
+    comparator = FIELDS[field]["parts"][1]
+    lib = Lib(store, field, elements=[{"role": "comparator", "words": "SYNTHETIC", "part": comparator["name"]}])
+    svid = lib.work()
+    lib.text(svid, [lib.field["page"]])
+    lib.read(svid, "comparator_exclusion_withheld", labels={name: ("absent", "absent") for name in lib.parts})
+    row = lib.row(svid)
+    assert (row["reason_code"], row["kind"]) == ("comparator_exclusion_withheld", "confirm_absent")
+    assert row["question"] == {"part": comparator["name"], "definition": comparator["definition"]}
+    assert lib.selection(svid) == ("pending", "code_rule")
+    result = queue.decide(store, lib.rid, svid, "include", None, row["row_token"])
+    assert result["row"] is None and lib.selection(svid) == ("included", "user")
+    undone = queue.undo(store, lib.rid, svid, result["undo_token"])
+    assert lib.code(svid) == "comparator_exclusion_withheld" and undone["row"]["kind"] == "confirm_absent"
+    assert undone["row"]["question"]["part"] == comparator["name"]
+    assert lib.selection(svid) == ("pending", "code_rule")
+    queue.decide(store, lib.rid, svid, "criterion_not_met", None, undone["row"]["row_token"])
     assert lib.selection(svid) == ("excluded", "user") and lib.rows()["rows"] == []
 
 

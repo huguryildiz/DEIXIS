@@ -2028,6 +2028,7 @@ const tr: Record<string, string> = {
   'Two versions of this work were read, and their decisions are opposite.': 'Bu eserin iki sürümü okundu ve kararları zıt.',
   'The first page of the PDF does not name this work, so the model has not read it.': 'PDF’nin ilk sayfası bu eseri anmıyor, bu yüzden model onu okumadı.',
   'The title names a study protocol, so the reading neither included nor excluded this work.': 'Başlık bir çalışma protokolünü adlandırıyor, bu yüzden okuma bu eseri ne dahil etti ne dışarıda bıraktı.',
+  'Both runs found parts missing, but the criterion has a comparison group, so the reading did not exclude this work.': 'İki koşu da bazı parçaları bulamadı, ama ölçütte bir karşılaştırma grubu var, bu yüzden okuma bu eseri dışarıda bırakmadı.',
   'Neither run could tell from the text whether the parts are there.': 'İki koşu da parçaların metinde olup olmadığını söyleyemedi.',
   'The abstract promises a part the text does not show.': 'Özet, metnin göstermediği bir parçayı vaat ediyor.',
   'The runs found some of the criterion’s parts, but not this one.': 'Koşular ölçütün bazı parçalarını buldu, bunu bulmadı.',

@@ -37,7 +37,13 @@ blocks.
    usual care, a placebo or another named alternative), give each its own part.
    Its `definition` says what the paper must state about its own participants
    or its own comparison group, so that a study done in other participants, or
-   compared with something else, does not meet it. List each such part in
+   compared with something else, does not meet it. The comparator part's
+   `definition` names what the comparison group must receive, in the
+   question's words, not only that it does not receive the thing sought, and
+   adds no alternative the question does not name (no "or a comparable ...").
+   It says that a comparison group that also receives an addition making it
+   something other than the named comparator, such as the same restriction
+   the intervention group follows, does not meet it. List each such part in
    `question_elements`: its `role` (`population` or `comparator`), the
    question's own `words` that name it, copied exactly, and the `part` name.
    Give an empty list when the question names neither.
@@ -62,8 +68,9 @@ Hard cases:
   a population, even when the question says "in".
 - A comparator named as no treatment, usual care or an unrestricted
   alternative is not met by a comparison group that receives something the
-  question's comparator does not name, such as another active treatment or
-  another variant of the same one.
+  question's comparator does not name, such as another active treatment,
+  another variant of the same one, or the same added treatment or restriction
+  as the intervention group.
 
 Do not search and do not explain your proposal: there is no field for a
 rationale and none is wanted.

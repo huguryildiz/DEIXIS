@@ -17,8 +17,8 @@ from deixis.workflow import flow as flow_module
 from deixis.workflow.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
 from test_abstract_flow import records_of, responder
-from test_adjudication_flow import (adj_calls, app_for, client_of, discover, disagree_response, papers,
-                                    protocol_paper, step_output, wait, wait_kind)
+from test_adjudication_flow import (absent_response, adj_calls, app_for, client_of, discover, disagree_response,
+                                    papers, protocol_paper, step_output, wait, wait_kind, with_a_comparator)
 from test_fulltext_flow import Transport
 
 
@@ -110,6 +110,34 @@ def test_a_protocol_title_row_is_answered_and_undone_through_the_api(tmp_path, m
     # Undo brings the code back as a new row with the restore note, as for every code; the first row keeps its note.
     assert back["reason_code"] == "protocol_title" and back["note"] == "restored after an undone human decision"
     assert excluded.status_code == 200 and excluded.json()["selection"]["state"] == "excluded"
+
+
+def test_a_withheld_comparator_exclusion_is_answered_and_undone_through_the_api(tmp_path, monkeypatch):
+    """Slice 28: two all-negative runs on a comparator criterion are a `confirm_absent` row naming the comparator."""
+    with_a_comparator(monkeypatch)
+    works, fetcher = protocol_paper(title="SYNTHETIC irrigation scheduling of an open field crop")
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=FakeAdapter(absent_response))
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        head = records_of(store, rid)["W1"]
+        row = queue_of(client, rid)["rows"][0]
+        decided = answer(client, rid, row, "criterion_not_met")
+        excluded = DecisionStore(store).current(rid, head, "fulltext")["reason_code"]
+        undone = client.post(f"/api/researches/{rid}/queue/{head}/undo", json={"row_token": decided.json()["undo_token"]})
+        back = DecisionStore(store).current(rid, head, "fulltext")
+        included = answer(client, rid, undone.json()["row"], "include")
+    finally:
+        client.__exit__(None, None, None)
+    assert (row["reason_code"], row["kind"], row["question"]["part"]) == (
+        "comparator_exclusion_withheld", "confirm_absent", "measured outcome")
+    assert decided.status_code == 200 and decided.json()["selection"]["state"] == "excluded"
+    assert excluded == "human_criterion_not_met"
+    assert undone.status_code == 200 and undone.json()["row"]["question"]["part"] == "measured outcome"
+    assert back["reason_code"] == "comparator_exclusion_withheld"
+    assert included.status_code == 200 and included.json()["selection"]["state"] == "included"
 
 
 def test_research_view_counts_the_queue(tmp_path, monkeypatch):

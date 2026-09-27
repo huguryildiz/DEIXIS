@@ -966,3 +966,141 @@ def test_every_part_absent_on_a_protocol_title_goes_to_the_queue(tmp_path, monke
     found = read_once(tmp_path, monkeypatch, works, fetcher, FakeAdapter(absent_response))
     assert found == ("completed", "protocol_title", "protocol_title:criterion_absent:study protocol",
                      ("pending", "code_rule"), 2)
+
+
+# ---- a criterion with a comparator part (slice 28, D109) ----------------------------------------------------------
+
+def with_a_comparator(monkeypatch, part="measured outcome"):
+    """The frozen criterion gains a `comparator` question element naming `part`, with the role required (slice 25a
+    shape). The fake proposal names no element, so the element is added where the plan and the queue read it."""
+    from deixis.workflow.store import Store
+    frozen = Store.frozen_criterion
+
+    def with_element(self, *args, **kwargs):
+        criterion = frozen(self, *args, **kwargs)
+        if criterion is None:
+            return None
+        return {**criterion, "question_elements": [{"role": "comparator", "words": "SYNTHETIC usual", "part": part}],
+                "required_roles": ["comparator"]}
+    monkeypatch.setattr(Store, "frozen_criterion", with_element)
+
+
+def labelled_response(labels):
+    """Every reading run labels each part as `labels` says; a `present` part keeps the fake's verified quote."""
+    def respond(si):
+        if si["task_type"] != "fulltext_adjudication":
+            return valid_response(si)
+        body = json.loads(valid_response(si))
+        for part in body["parts"]:
+            label = labels.get(part["part"], "present")
+            if label != "present":
+                part.update(label=label, quote="", passage_id=None)
+        return json.dumps(body)
+    return respond
+
+
+def read_with_targets(tmp_path, monkeypatch, adapter, title=None):
+    works, fetcher = protocol_paper(title=title or "SYNTHETIC irrigation scheduling of an open field crop")
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        head = records_of(store, rid)["W1"]
+        decision = DecisionStore(store).current(rid, head, "fulltext")
+        rows = client.get(f"/api/researches/{rid}/queue").json()["rows"]
+        found = {"status": reading["status"], "code": decision["reason_code"], "note": decision["note"],
+                 "selection": selection(store, rid, head), "rows": rows,
+                 "targets": [call["adjudication_target"]["parts"]
+                             for call in adj_calls(adapter, reading["id"])]}
+    finally:
+        client.__exit__(None, None, None)
+    return found
+
+
+def test_the_reading_marks_the_comparator_part_only_and_a_plain_criterion_is_sent_as_before(tmp_path, monkeypatch):
+    plain = read_with_targets(tmp_path / "plain", monkeypatch, FakeAdapter(valid_response))
+    with_a_comparator(monkeypatch)
+    marked = read_with_targets(tmp_path / "marked", monkeypatch, FakeAdapter(valid_response))
+    assert len(plain["targets"]) == len(marked["targets"]) == 2
+    for parts in plain["targets"]:
+        assert [set(part) for part in parts] == [{"name", "definition"}, {"name", "definition"}]
+    for before, after in zip(plain["targets"], marked["targets"]):
+        assert after == [before[0], before[1] | {"role": "comparator"}]
+    assert plain["code"] == marked["code"] == "all_parts_verified"
+
+
+def test_the_comparator_absent_and_every_other_part_unclear_is_withheld_not_excluded(tmp_path, monkeypatch):
+    with_a_comparator(monkeypatch)
+    found = read_with_targets(tmp_path, monkeypatch, FakeAdapter(labelled_response(
+        {"method of its own": "unclear", "measured outcome": "absent"})))
+    assert (found["status"], found["code"], found["note"], found["selection"]) == (
+        "completed", "comparator_exclusion_withheld", "comparator_exclusion_withheld:criterion_absent:measured outcome",
+        ("pending", "code_rule"))
+    row = found["rows"][0]
+    assert (row["reason_code"], row["kind"], row["question"]["part"]) == (
+        "comparator_exclusion_withheld", "confirm_absent", "measured outcome")
+
+
+def test_another_part_and_the_comparator_absent_in_both_runs_is_withheld_only_on_a_comparator_criterion(
+        tmp_path, monkeypatch):
+    """Sol r1's case: nothing `present`, another part and the comparator `absent` in both runs."""
+    labels = {"method of its own": "absent", "measured outcome": "absent"}
+    plain = read_with_targets(tmp_path / "plain", monkeypatch, FakeAdapter(labelled_response(labels)))
+    assert (plain["code"], plain["note"], plain["selection"]) == ("criterion_absent", None, ("excluded", "code_rule"))
+    with_a_comparator(monkeypatch)
+    marked = read_with_targets(tmp_path / "marked", monkeypatch, FakeAdapter(labelled_response(labels)))
+    assert (marked["code"], marked["note"], marked["selection"]) == (
+        "comparator_exclusion_withheld", "comparator_exclusion_withheld:criterion_absent:measured outcome",
+        ("pending", "code_rule"))
+
+
+def test_the_comparator_absent_with_the_other_part_present_is_still_a_part_without_evidence(tmp_path, monkeypatch):
+    with_a_comparator(monkeypatch)
+    found = read_with_targets(tmp_path, monkeypatch, FakeAdapter(labelled_response({"measured outcome": "absent"})))
+    assert (found["code"], found["note"], found["selection"]) == ("part_without_evidence", None,
+                                                                  ("pending", "code_rule"))
+    row = found["rows"][0]
+    assert (row["kind"], row["question"]["part"]) == ("confirm_absent", "measured outcome")
+
+
+def test_an_all_negative_comparator_reading_of_a_protocol_title_is_withheld_for_the_comparator(tmp_path, monkeypatch):
+    with_a_comparator(monkeypatch)
+    found = read_with_targets(tmp_path, monkeypatch, FakeAdapter(absent_response), title=PROTOCOL)
+    assert (found["code"], found["note"], found["selection"]) == (
+        "comparator_exclusion_withheld", "comparator_exclusion_withheld:criterion_absent:measured outcome",
+        ("pending", "code_rule"))
+
+
+def test_a_persons_decision_on_a_comparator_criterion_is_not_overwritten(tmp_path, monkeypatch):
+    with_a_comparator(monkeypatch)
+    works, fetcher = protocol_paper(title="SYNTHETIC irrigation scheduling of an open field crop")
+    adapter = FakeAdapter(absent_response)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        head = records_of(store, rid)["W1"]
+        DecisionStore(store).record(rid, head, "human_include")
+        DecisionStore(store).derive_selection(rid, store.source(head)["work_id"])
+        again = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
+        wait(client, rid, again)
+        kept = fulltext_code(store, rid, head)
+        calls = len(adj_calls(adapter, again))
+    finally:
+        client.__exit__(None, None, None)
+    assert kept == "human_include" and calls == 0
+
+
+def test_an_element_naming_its_part_in_another_case_still_withholds_the_exclusion(tmp_path, monkeypatch):
+    """Sol code r1: an element pointing at "Measured Outcome." for the part "measured outcome" is the same part."""
+    with_a_comparator(monkeypatch, part="Measured Outcome.")
+    found = read_with_targets(tmp_path, monkeypatch, FakeAdapter(absent_response))
+    assert (found["code"], found["note"], found["selection"]) == (
+        "comparator_exclusion_withheld", "comparator_exclusion_withheld:criterion_absent:measured outcome",
+        ("pending", "code_rule"))
+    assert found["rows"][0]["question"]["part"] == "measured outcome"
+    assert all(parts[1].get("role") == "comparator" for parts in found["targets"])

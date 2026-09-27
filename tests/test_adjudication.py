@@ -492,3 +492,93 @@ def test_the_protocol_title_code_is_a_fresh_queue_code_and_never_an_exclusion(li
     decisions.record(rid, svid, "protocol_title", note="protocol_title:all_parts_verified:study protocol")
     assert decisions.derive_selection(rid, work_id) == "pending"
     assert not adjudication.should_write(decisions.current(rid, svid, "fulltext"), "protocol_title")
+
+
+# ---- slice 28: the comparator marker and the exclusion guard (D109) --------------------------------------------------
+
+SENT = [{"name": "SYNTHETIC evening watering", "definition": "The plots are watered in the evening."},
+        {"name": "SYNTHETIC usual watering arm", "definition": "The comparison plots are watered as usual."},
+        {"name": "SYNTHETIC fruit set", "definition": "Fruit set is reported."}]
+ELEMENTS = [{"role": "comparator", "words": "usual watering", "part": "SYNTHETIC usual watering arm"},
+            {"role": "population", "words": "tomato plots", "part": "SYNTHETIC evening watering"}]
+
+
+def test_the_marker_marks_exactly_the_part_the_comparator_element_names():
+    marked = adjudication.mark_comparator(SENT, ELEMENTS, ["comparator", "population"])
+    assert marked == [SENT[0], SENT[1] | {"role": "comparator"}, SENT[2]]
+    assert SENT[1] == {"name": "SYNTHETIC usual watering arm", "definition": "The comparison plots are watered as usual."}
+    assert adjudication.comparator_part(marked) == "SYNTHETIC usual watering arm"
+
+
+@pytest.mark.parametrize(("elements", "required"), [
+    (ELEMENTS, ["population"]),  # the role is not required
+    (ELEMENTS, []),
+    ([], ["comparator"]),  # no elements
+    ([{"role": "comparator", "words": "usual watering", "part": "SYNTHETIC not sent"}], ["comparator"]),
+])
+def test_the_marker_leaves_every_part_as_it_was_otherwise(elements, required):
+    marked = adjudication.mark_comparator(SENT, elements, required)
+    assert marked == SENT
+    assert adjudication.comparator_part(marked) is None
+
+
+def _run(**labels):
+    return adjudication.run_view({name: {"label": label, "quote_verified": label == "present"}
+                                  for name, label in labels.items()})
+
+
+@pytest.mark.parametrize("runs", [
+    # the comparator the only `absent` part, the others `unclear`
+    (_run(a="unclear", comparator="absent"), _run(a="unclear", comparator="absent")),
+    # Sol r1: another part `absent` in both runs, and the comparator too
+    (_run(a="absent", comparator="absent"), _run(a="absent", comparator="absent")),
+    # the comparator `unclear` in both runs while another part is `absent`
+    (_run(a="absent", comparator="unclear"), _run(a="absent", comparator="unclear")),
+])
+def test_the_guard_withholds_every_all_negative_reading_on_a_comparator_criterion(runs):
+    code = adjudication.combine(*runs)
+    assert code == "criterion_absent"
+    assert adjudication.with_comparator(code, "comparator") == (
+        "comparator_exclusion_withheld", "comparator_exclusion_withheld:criterion_absent:comparator")
+    assert adjudication.with_comparator(code, None) == ("criterion_absent", None)
+
+
+@pytest.mark.parametrize("code", ["all_parts_verified", "part_without_evidence", "fulltext_runs_disagree",
+                                  "include_quote_unverified", "fulltext_runs_agree_unresolved",
+                                  "pdf_identity_unconfirmed", None])
+def test_the_guard_passes_every_other_code_through(code):
+    assert adjudication.with_comparator(code, "comparator") == (code, None)
+    assert adjudication.with_comparator(code, None) == (code, None)
+
+
+def test_a_protocol_title_does_not_undo_the_guard_and_still_withholds_an_include():
+    title = PROTOCOL_TITLES[0][0]
+    code, note = adjudication.with_comparator("criterion_absent", "comparator")
+    assert adjudication.with_title(code, title) == ("comparator_exclusion_withheld", None)
+    assert note == "comparator_exclusion_withheld:criterion_absent:comparator"
+    code, note = adjudication.with_comparator("all_parts_verified", "comparator")
+    assert (code, note) == ("all_parts_verified", None)
+    assert adjudication.with_title(code, title)[0] == "protocol_title"
+
+
+def test_the_withheld_exclusion_is_a_fresh_queue_code_and_never_an_exclusion(library):
+    row = reason("comparator_exclusion_withheld")
+    assert (row.stage, row.outcome, row.decided_by, row.next_step) == ("fulltext", "unresolved", "code", "human_queue")
+    assert "comparator_exclusion_withheld" in adjudication.FRESH_MODEL_CODES
+    assert "comparator_exclusion_withheld" in adjudication.OWNED_CODES
+    rid, run_id = research(library)
+    svid, work_id = one_record(library, rid, run_id)
+    decisions = DecisionStore(library)
+    decisions.record(rid, svid, "comparator_exclusion_withheld",
+                     note="comparator_exclusion_withheld:criterion_absent:comparator")
+    assert decisions.derive_selection(rid, work_id) == "pending"
+    assert not adjudication.should_write(decisions.current(rid, svid, "fulltext"), "comparator_exclusion_withheld")
+
+
+@pytest.mark.parametrize("named", ["synthetic usual watering arm", "SYNTHETIC  Usual Watering Arm.", "(synthetic usual watering arm)"])
+def test_the_marker_compares_part_names_as_the_criterion_check_does(named):
+    """Sol code r1: the criterion check accepts an element whose part differs by case, spacing or edge punctuation, so
+    the marker must find that part too, or its criterion would keep D85's automatic exclusion."""
+    elements = [{"role": "comparator", "words": "usual watering", "part": named}]
+    marked = adjudication.mark_comparator(SENT, elements, ["comparator"])
+    assert marked == [SENT[0], SENT[1] | {"role": "comparator"}, SENT[2]]

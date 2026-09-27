@@ -304,6 +304,7 @@ const queueReasons: Record<string, string> = {
   versions_disagree: 'Two versions of this work were read, and their decisions are opposite.',
   pdf_identity_unconfirmed: 'The first page of the PDF does not name this work, so the model has not read it.',
   protocol_title: 'The title names a study protocol, so the reading neither included nor excluded this work.',
+  comparator_exclusion_withheld: 'Both runs found parts missing, but the criterion has a comparison group, so the reading did not exclude this work.',
   fulltext_runs_agree_unresolved: 'Neither run could tell from the text whether the parts are there.',
   abstract_promise_absent: 'The abstract promises a part the text does not show.',
   part_without_evidence: 'The runs found some of the criterion’s parts, but not this one.',

@@ -75,9 +75,9 @@ def test_provenance_records_pinned_upstream_without_runtime_dependency():
 
 
 def test_fulltext_adjudication_method_text_is_the_slice_text_and_the_hash_changed():
-    """The method file is the slice text (slice 12, with slice 26's reported-result sentence), and loading it moves the
-    package hash."""
-    before = "sha256:8f0e6cfb9116b5fba081d5959a45d04d9704b12ff38671f54b0400e540664d47"
+    """The method file is the slice text (slice 12, with slice 26's reported-result sentence and slice 28's comparator
+    line), and loading it moves the package hash."""
+    before = "sha256:a633e9c7091ed3338b0a51d3c7bdb99e524678f5cc4bdb60e1049d8b4a68028a"
     assert skill.package_hash() != before
     assert skill.integrity_issues() == []
     assert skill.RUNTIME_FILES["fulltext_adjudication"] == ("SKILL.md", "references/fulltext-adjudication.md")
@@ -91,7 +91,31 @@ def test_fulltext_adjudication_method_text_is_the_slice_text_and_the_hash_change
         "A part about a result, an effect or a measured outcome is `present` only when a passage reports that result, or an analysis of it, as a finding of this paper, whatever its source: an experiment or trial, a re-analysis, a review's pooled estimate, a derivation or a simulation. "
         "A result the paper only plans to measure is not reported: a protocol, a trial registration or a design paper that says it will measure an outcome does not contain that result. "
         "Label such a part `absent` when the passages show that no result is reported yet, and `unclear` when they cannot tell. Judge only the passages given; use nothing you remember about this paper. Give one sentence of rationale per part. Do not state a confidence.\n"
+        "A part marked `\"role\": \"comparator\"` names what the thing sought must be compared with. "
+        "It is `present` only when a passage shows that the comparison group receives what the part names; quote that passage. "
+        "Judge the comparison group by everything it receives, not only by what it lacks: a group described only as not receiving the thing sought does not show what it receives. "
+        "When the passages show that both groups receive the same added treatment, restriction or prescribed regimen, and that addition makes the comparison group something the part does not name, label the part `absent`: a comparator named as unrestricted or usual X is not met when both groups follow the same restriction of X. "
+        "An addition that leaves the comparison group what the part names does not matter: the same Y given to both groups does not change a part that names only X. "
+        "With several arms, the part is met when an arm that receives what the part names is compared with an arm that receives the thing sought. "
+        "Otherwise, when no passage shows that the comparison group receives what the part names, label the part `unclear`. "
+        "A part without that role is read as the lines above say.\n"
     )
     loaded = skill.load_skill_package().runtime_text("fulltext_adjudication")
     assert '<method-file path="references/fulltext-adjudication.md">' in loaded
     assert "You are given one paper's selected passages" in loaded
+
+
+def test_the_comparator_line_names_no_field_and_the_criterion_rule_names_what_the_comparison_group_receives():
+    """Slice 28 (D109): the reading's comparator line carries no field word, and rule 8 of the criterion proposal asks
+    the comparator's definition to name what the comparison group receives and forbids widening it."""
+    reading = (SKILL_DIR / "references/fulltext-adjudication.md").read_text().splitlines()[-1].lower()
+    for word in ("time", "eating", "calori", "weight", "diet", "trial", "placebo"):
+        assert word not in reading
+    body = " ".join((SKILL_DIR / "references/criterion-proposal.md").read_text().split())
+    assert ("The comparator part's `definition` names what the comparison group must receive, in the question's words, "
+            "not only that it does not receive the thing sought, and adds no alternative the question does not name "
+            "(no \"or a comparable ...\").") in body
+    assert ("It says that a comparison group that also receives an addition making it something other than the named "
+            "comparator, such as the same restriction the intervention group follows, does not meet it.") in body
+    assert ("such as another active treatment, another variant of the same one, or the same added treatment or "
+            "restriction as the intervention group.") in body

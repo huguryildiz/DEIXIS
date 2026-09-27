@@ -10,7 +10,9 @@ term-suggestion call fails, so the approval card shows the failure and its retry
 writes the search query fails, so the run stops for the model query, D92), "[queue]" (the reading model answers each
 queue work by a script, so case J finds one row of each kind it needs), "[protocol-title]" (with
 `DEIXIS_FIXTURE_PROTOCOL=on`, case R, slice 26: both reading runs find every part of the work whose title names a study
-protocol, so it is a `confirm_results` row), "[read-fails]" (the first reading run of the
+protocol, so it is a `confirm_results` row), "[comparator]" (with `DEIXIS_FIXTURE_COMPARATOR=on`, case S, slice 28: the
+criterion names a comparator and both reading runs find no part of one more work, so code does not exclude it and it is
+a `comparator_exclusion_withheld` row), "[read-fails]" (the first reading run of the
 person's file of case L answers nothing usable, so the file is not read until the person asks again).
 
 `DEIXIS_FIXTURE_QUEUE=on` (case J, slice 17) switches on retrieval and reading and serves the queue works below instead
@@ -199,6 +201,19 @@ if QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_PROTOCOL") == "on":
     QUEUE_PDFS["https://fixture.example/q959.pdf"] = [
         f"SYNTHETIC queue-protocol https://doi.org/10.5555/q959 first page.\n{PROTOCOL_SENTENCES[0]}",
         f"SYNTHETIC queue-protocol second page.\n{PROTOCOL_SENTENCES[1]}"]
+# Case S (slice 28, SW27): one more work both reading runs find no part of. With "[comparator]" in the question the
+# criterion names a comparator, so code does not exclude the work: the queue shows it as a `confirm_absent` row whose
+# reason is `comparator_exclusion_withheld`. Every sentence is SYNTHETIC.
+COMPARATOR_WORDS = "a fixed release"
+COMPARATOR_TITLE = "SYNTHETIC relay release bursts beside a fixed schedule"
+COMPARATOR_WORK = work("W960", COMPARATOR_TITLE, "Relay release bursts are described beside a fixed schedule.",
+                       "publishedVersion", {"pdf_url": "https://fixture.example/q960.pdf", "version": "publishedVersion"},
+                       "https://doi.org/10.5555/q960")
+if QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_COMPARATOR") == "on":
+    QUEUE_WORKS = [*QUEUE_WORKS, COMPARATOR_WORK]
+    QUEUE_PDFS["https://fixture.example/q960.pdf"] = [
+        "SYNTHETIC queue-comparator https://doi.org/10.5555/q960 first page.\nThe relays are listed with their burst sizes.",
+        "SYNTHETIC queue-comparator second page.\nThe schedule table is printed without further text."]
 # Case P (SW21): the queue works whose own PDF is withheld and whose text Europe PMC gives instead, by DOI.
 EUROPEPMC_MODE = QUEUE_MODE and os.environ.get("DEIXIS_FIXTURE_EUROPEPMC") == "on"
 EUROPEPMC_WORKS = {work["doi"].removeprefix("https://doi.org/"): (f"PMC9000{work['id'][-3:]}", work)
@@ -242,6 +257,12 @@ def queue_reading(si: dict[str, Any], output: dict[str, Any], question: str = ""
     if "[protocol-title]" in question:  # case R: the protocol work is read as an agreeing include
         sentences["protocol"] = PROTOCOL_SENTENCES
     key = next((k for k in sentences if any(f"queue-{k}" in p["text"] for p in passages)), None)
+    if key is None and any("queue-comparator" in p["text"] for p in passages):
+        # case S: both runs find no part, so the criterion is absent from the passages shown
+        for part in output["parts"]:
+            part.update(label="absent", quote="", passage_id=None,
+                        rationale=f"SYNTHETIC run {si['adjudication_target']['run']} on {part['part']}.")
+        return output
     if key is None:
         return output
     first, second = sentences[key]
@@ -367,6 +388,9 @@ class ScriptedCodex:
                        "task": [{"term": "molecule release", "kind": "topic", "why": "SYNTHETIC: the process studied"},
                                 {"term": "bisection search", "kind": "method", "why": "SYNTHETIC: the method named"}],
                        "setting_backup": [{"term": "molecular relays"}], "task_backup": [{"term": "release timing"}]}
+        elif si["task_type"] == "criterion_proposal" and "[comparator]" in question:
+            # Case S: the question names a comparator, and the criterion's second part is it.
+            output["question_elements"] = [{"role": "comparator", "words": COMPARATOR_WORDS, "part": "measured outcome"}]
         elif si["task_type"] == "fulltext_adjudication" and "[queue]" in question:
             output = queue_reading(si, output, question)
         elif si["task_type"] == "abstract_screening":

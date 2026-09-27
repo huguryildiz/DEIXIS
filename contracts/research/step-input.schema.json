@@ -546,7 +546,12 @@
             "required": ["name", "definition"],
             "properties": {
               "name": { "type": "string", "minLength": 1, "maxLength": 200 },
-              "definition": { "type": "string", "minLength": 1 }
+              "definition": { "type": "string", "minLength": 1 },
+              "role": {
+                "type": "string",
+                "enum": ["comparator"],
+                "description": "Set by code on the part the question names as the comparator (slice 28); the method reads that part by what the comparison group receives."
+              }
             }
           }
         },

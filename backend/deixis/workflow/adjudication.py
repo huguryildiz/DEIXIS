@@ -7,7 +7,8 @@ shown. A label writes nothing by itself.
 The model is shown a selection of passages, so `criterion_absent` means "absent from the passages shown", and code
 may exclude on that. A work is included without the user only when both runs label every part `present`, every
 quote verifies and its read version's title names no study protocol; a work whose title names one is neither included
-nor excluded by code, it goes to the queue (`protocol_title`, slice 26).
+nor excluded by code, it goes to the queue (`protocol_title`, slice 26). On a criterion with a comparator part code
+never excludes: two all-negative runs go to the queue (`comparator_exclusion_withheld`, slice 28).
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ FRESH_MODEL_CODES = (
     "fulltext_runs_agree_unresolved",
     "pdf_identity_unconfirmed",
     "protocol_title",
+    "comparator_exclusion_withheld",
 )
 # Codes this stage may replace. A fresh `text_unreadable` or `no_fulltext` belongs to retrieval and is left alone.
 OWNED_CODES = ("not_read_yet", *FRESH_MODEL_CODES)
@@ -338,6 +340,41 @@ def with_title(code: str | None, title: str | None) -> tuple[str | None, str | N
     """
     if code in TITLE_WITHHELD_CODES and (words := protocol_title(title)) is not None:
         return "protocol_title", f"protocol_title:{code}:{words}"
+    return code, None
+
+
+def mark_comparator(parts: list[dict[str, Any]], question_elements: list[dict[str, Any]],
+                    required_roles: list[str]) -> list[dict[str, Any]]:
+    """The parts a reading is sent, with `"role": "comparator"` on the part a `comparator` question element names.
+
+    Only when `comparator` is one of the criterion's `required_roles` (slice 25a, D106). The element names its part
+    in the form the criterion check accepts, so names are compared as that check compares them (`criterion.norm`:
+    case, spacing and edge punctuation do not count). Every other part, and every part of a criterion without that
+    role, comes back exactly as it was sent, in order (slice 28, D109).
+    """
+    if "comparator" not in (required_roles or []):
+        return list(parts)
+    names = {norm(element.get("part") or "") for element in question_elements or []
+             if element.get("role") == "comparator"}
+    names.discard("")
+    return [part | {"role": "comparator"} if norm(part["name"]) in names else part for part in parts]
+
+
+def comparator_part(parts: list[dict[str, Any]]) -> str | None:
+    """The name of the part `mark_comparator` marked, or None. A plan frozen before slice 28 has none."""
+    return next((part["name"] for part in parts if part.get("role") == "comparator"), None)
+
+
+def with_comparator(code: str | None, part: str | None) -> tuple[str | None, str | None]:
+    """`(code, note)`: `combine`'s code, unless it is `criterion_absent` on a criterion with a comparator part.
+
+    Then the reading excludes nothing by itself: the comparator's label may have decided that no part was found, and
+    the code is `comparator_exclusion_withheld` with the combined code and the part in the note, for a person to
+    answer (slice 28, D109). Every other code, and every code on a criterion without a comparator part, passes through
+    with no note.
+    """
+    if code == "criterion_absent" and part is not None:
+        return "comparator_exclusion_withheld", f"comparator_exclusion_withheld:criterion_absent:{part}"
     return code, None
 
 

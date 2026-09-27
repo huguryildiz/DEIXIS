@@ -28,6 +28,7 @@ from deixis.domain.contracts import locate_anchor
 from deixis.domain.reason_codes import REASON_CODES
 from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import now, transaction
+from deixis.workflow import adjudication
 from deixis.workflow.criterion_passages import compile_phrases
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.store import NotASource, Store
@@ -42,6 +43,9 @@ KIND_OF = {"include_quote_unverified": "confirm_quote", "fulltext_runs_disagree"
            # Two agreeing runs on a version whose title names a study protocol (slice 26): no one part is asked; the
            # person confirms whether the paper reports results at all.
            "protocol_title": "confirm_results",
+           # Two all-negative runs on a criterion with a comparator part (slice 28): code did not exclude; the person
+           # confirms the missing parts, and the question names the comparator.
+           "comparator_exclusion_withheld": "confirm_absent",
            # Unreachable today (no stage writes it); its question is whether the promised part is in the text.
            "abstract_promise_absent": "find_part"}
 LOOK_AGAIN = "look_again"
@@ -123,6 +127,9 @@ class _Context:
         self.criterion = frozen
         self.parts = ([{"name": part["name"], "definition": part["definition"]} for part in parts] if parts
                       else [{"name": "criterion", "definition": frozen["criterion"]}] if frozen else [])
+        # The part the reading marked as the comparator (slice 28), named by a `comparator_exclusion_withheld` row.
+        self.comparator = adjudication.comparator_part(adjudication.mark_comparator(
+            self.parts, (frozen or {}).get("question_elements") or [], (frozen or {}).get("required_roles") or []))
         self.chained = store.chain_only_works(research_id, self.revision)
         self._place: dict[str, int] | None = None
         self._runs: dict[str, str] | None = None
@@ -194,12 +201,17 @@ def _token(ctx: _Context, work_id: str, svid: str, reason_code: str | None, head
     })
 
 
-def _question(ctx: _Context, kind: str, proposals: dict[str, dict[int, dict[str, Any]]]) -> dict[str, Any] | None:
-    """The one part the row asks about: the first, in the criterion's order, the two runs did not settle."""
+def _question(ctx: _Context, kind: str, proposals: dict[str, dict[int, dict[str, Any]]],
+              reason_code: str | None = None) -> dict[str, Any] | None:
+    """The one part the row asks about: the first, in the criterion's order, the two runs did not settle.
+
+    A withheld exclusion on a comparator criterion asks about the comparator part (slice 28)."""
     if kind in ("confirm_pdf", "choose_version", LOOK_AGAIN) and not proposals:
         return None
     if kind == "confirm_results":
         return None
+    if reason_code == "comparator_exclusion_withheld" and ctx.comparator is not None:
+        return {"part": ctx.comparator, "definition": ctx.definition(ctx.comparator)}
     for name in ctx.part_names(proposals):
         runs = proposals.get(name, {})
         if kind == "confirm_quote":
@@ -266,7 +278,7 @@ def _row(ctx: _Context, work_id: str, found: dict[str, Any]) -> dict[str, Any]:
         "source_version_id": svid, "head": head, "work_id": work_id, "title": source["title"],
         "year": source["year"], "doi": source["doi"], "version_label": source["version_label"],
         "publication_type": source["publication_type"], "reason_code": found["reason_code"], "kind": kind,
-        "question": _question(ctx, kind, proposals), "place": ctx.place().get(work_id),
+        "question": _question(ctx, kind, proposals, found["reason_code"]), "place": ctx.place().get(work_id),
         "arm": "chain" if work_id in ctx.chained else "keyword", "stale": found["stale"],
         "decision_id": decision["id"], "row_token": _token(ctx, work_id, svid, found["reason_code"], head),
     }

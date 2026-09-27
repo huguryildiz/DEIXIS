@@ -3707,6 +3707,9 @@ class ResearchFlow:
         parts = frozen["parts"] or []
         sent = ([{"name": "criterion", "definition": frozen["criterion"]}] if not parts
                 else [{"name": part["name"], "definition": part["definition"]} for part in parts])
+        # The part the question names as the comparator is marked, so the reading applies its comparator line to it
+        # (slice 28). A criterion without that required role is sent exactly as before.
+        sent = adjudication.mark_comparator(sent, frozen["question_elements"], frozen["required_roles"])
         criterion = {"criterion": frozen["criterion"], "parts": sent, "cue_phrases": frozen["cue_phrases"],
                      "protocol_revision": frozen["protocol_revision"]}
         # Chained works are read after the keyword order, in the chain's own order (D95); the limit is the same.
@@ -3850,9 +3853,12 @@ class ResearchFlow:
                                        quote_page=row["page"])
             views.append(adjudication.run_view(proposals))
         code = adjudication.combine(views[0] if views else None, views[1] if len(views) > 1 else None)
+        # On a criterion with a comparator part, two all-negative runs exclude nothing by themselves (slice 28).
+        code, comparator_note = adjudication.with_comparator(code, adjudication.comparator_part(parts))
         # Two agreeing runs on a version whose own title names a study protocol decide nothing by themselves: the
         # work goes to the queue with the combined code in the note (slice 26).
-        code, note = adjudication.with_title(code, self.store.source(read)["title"])
+        code, title_note = adjudication.with_title(code, self.store.source(read)["title"])
+        note = title_note or comparator_note
         if code is None or not self._file_holds(item):
             # The file the plan froze moved while the calls were out: nothing is decided from its reading (decision 6).
             return
@@ -3875,7 +3881,8 @@ class ResearchFlow:
                                   notes: dict[str, str] | None = None) -> None:
         """Write these full-text decisions and derive each work's selection. The user's decision is left as it is;
         a version in `renew` is written even over the same code (slice 18b). A version in `notes` is written with
-        that note (`protocol_title`, slice 26); every other decision carries none, as before."""
+        that note (`protocol_title`, slice 26; `comparator_exclusion_withheld`, slice 28); every other decision carries
+        none, as before."""
         rid = run["research_id"]
         decisions = DecisionStore(self.store)
         stale_key = decisions.staleness_key(rid)

@@ -2,6 +2,30 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D111 — `standard` keeps its full-text limits of 100 fetched and 50 read works; 75% of the quantum gain is reached only at `detailed`'s limit, at about `detailed`'s cost (estimated)
+
+**Status:** accepted 2026-09-28 (owner's answers to slice 29: A1, B1, D1; C does not apply because nothing changes; the owner answered "Ok" to "limit stays 100, record as D111, close SW24"). Plan `docs/product/sw-slice29-fetch-limit.md`. No code change, no migration; the dated comment above `FULLTEXT_WORK_LIMIT` that the plan's A1 outline proposed was not added. Closes SW24 as measured and not changed.
+
+**Context:** SW24 (slice 24a) found that in quantum `standard` the full-text work limit loses more reference works than any other stage: 10 and 12 of 31 were routed to full text but not planned under `FULLTEXT_WORK_LIMIT["standard"]` = 100, while `detailed` (limit 300) planned 23. The same runs took 17.7 and 19.9 minutes from create to answer (a third took 29.2 with a 10-minute timeout wait) against the 15-minute `standard` target (D88, as revised by the owner on 2026-09-22).
+
+**Decision:** Both `standard` limits stay: 100 works fetched, 50 read (`backend/deixis/domain/rules.py`). The basis is a model-free replay (`.local/sw-slice29-fetch-limit-replay-2026-09-28/`, protocol frozen before any number) of the 12 stored `sw` libraries of slices 24a and 27: quantum `standard` r1, r2 and embedding plus `detailed`, and medicine `standard` r1, r2 and embedding plus `detailed` from each of the two slices. The replay reproduced every stored fetch plan exactly. For quantum `standard` (31 reference works, mean of three runs, read limit at half the fetch limit):
+
+| fetch / read | reference works planned | est. read | est. added min per run |
+|---|---|---|---|
+| 100 / 50 (today) | 13.0 | 10.3 | 0 |
+| 150 / 75 | 16.7 | 14.0 | 4.3 (2.8–6.0) |
+| 200 / 100 | 18.7 | 17.0 | 8.6 (5.6–12.0) |
+| 300 / 150 | 22.7 | 20.3–21.0 | 17.2 (11.2–24.0) |
+| 300 / 50 | 22.7 | 10.3 | 4.6–4.8 |
+
+The frozen rule said: change only if the gain at 300 is at least 3 works, then take the smallest limit reaching 75% of that gain whose added time is at most 5.0 minutes. Each step up plans more reference works (+3.7 at 150, +5.7 at 200, +9.7 at 300), but even 300 plans 22.7 of 31, not all of them. Only 300 reaches 75% of the 9.7 gain (150 gives 38%, 200 gives 59%), and 300 adds about 17 minutes, so the rule gives no change. At 300 / 150 `standard` would plan what `detailed` plans and take about as long as `detailed` takes today (35.9 minutes); a user who wants those works can choose `detailed`.
+
+The read limit binds: with it held at 50, a fetch of 300 leaves the estimated reference works read at a mean of 10.3 (per run 10 → 10, 10 → 11, 11 → 10, so the run mix shifts but the total does not rise), because the reading already stops at 50 with text left over in r1 and r2 (the embedding run had 47 works with text, so its estimate reads three more works, while its reference works read go from 11 to 10). So a fetch change without a read change is estimated to add no reference works read on average, though it changes which ones are read (B1: no read-only change either; at fetch 100 a larger read limit could reach at most 3 / 1 / 0 more quantum reference works, about a minute, seen after the numbers). Medicine gains little at any limit: planned reference units go from 9, 5, 5 (slice 27) and 8, 8, 4 (slice 24a) at 100 to 11, 9, 8 and 10, 11, 8 at 300, but only 3 of the 12 units got a PDF in any stored medicine run, so the lower bound of units read stays at 2 (slice 27) and 0 (slice 24a). More room adds planned medicine units but leaves that lower bound where it is: medicine's loss is the missing open PDF (D108), not room.
+
+The 15-minute `standard` target stays a target (D1). `standard` misses it by about 3–5 minutes today (17.7 and 19.9 minutes in slice 24a, not counting the run with a timeout wait), and no fetch or read change estimated here brings it closer: every step up adds estimated time (from stored stage durations, not measured at the higher limits).
+
+**Limits:** Measured: the fetch plan at each limit, replayed exactly on stored candidates. Measured: the stored create-to-answer times quoted here (17.7, 19.9, 29.2 and 35.9 minutes), each from one earlier run. Estimated, not measured: which added works would get a PDF (from each run's own PDF yield and from other stored runs), the reading's reference works, and every added-time figure, which comes from the stored stage durations of the same runs (per added fetched work about 0.023 minutes of wall time, per added read work 0.08–0.19 minutes; r1's rate includes a 5-minute call that ended `outcome_unknown`). The fetch time is an upper bound: none of it is credited to the overlap with discovery. No live run was made, so none of the estimates was checked against a real `standard` run at a higher limit. Two questions only, three stored runs each, all one model (`gpt-5.6-luna` · medium); run-to-run variation beyond that is unknown, and so is any third field. Whether a read reference work would be included or cited was not measured. The quantum reference list is a model-derived subset of earlier runs, not a human truth, and the medicine list rests on a rule widened after the fact. The rule's 3-work floor, 75% share and 5-minute ceiling were picked by hand, not derived; 150 / 75 is the only step under 5 minutes on average (+3.7 planned, about +3.7 read) and was seen only after the numbers.
+
 ## D110 — The user-approved code gate (slice 23) is not built
 
 **Status:** accepted 2026-09-27 (owner's choice A3, the coordinator's recommendation, confirmed explicitly: "önerdiğin şekilde yap"). Plan `docs/product/sw-slice23-code-gate.md` kept as the record of the measurement; no Sol plan round ran, no code, no migration.

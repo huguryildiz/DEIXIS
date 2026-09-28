@@ -366,7 +366,7 @@ This narrows SW2 point 5, which keeps the model as a conditional step that propo
 
 ## SW24 — In quantum `standard` the full-text work limit is the largest single loss, and the time targets still miss
 
-**Status:** open finding from slice 24a; thresholds unchanged. **Date:** 2026-09-26.
+**Status:** closed by D111 (slice 29, 2026-09-28): measured, no change. A model-free replay of 12 stored libraries plans more quantum reference works at each higher limit (mean 13.0 of 31 at 100, 16.7 at 150, 18.7 at 200, 22.7 at 300); only 300 / 150, `detailed`'s limit, reaches 75% of that gain, for about 17 more minutes per run (estimated from stored stage durations, not a live run); with the read limit held at 50 a larger fetch leaves the estimated works read at a mean of 10.3; medicine's loss is missing PDFs. `standard` stays 100 / 50 and its 15-minute target stays, missed by about 3–5 minutes. **Date:** 2026-09-26.
 
 **Finding:** Quantum `standard` (two runs, 31 reference works): 10 and 12 works were routed to full text but not planned because of `FULLTEXT_WORK_LIMIT` = 100, more than any other stage (N for abstract reading: 6 and 6; no PDF: 2 and 1). `detailed` (limit 300) planned 23 and read 22. Wall time from create to answer: `quick` 12.2 min (target 10), `standard` 17.7 and 19.9 min (target 15; a third run took 29.2 with a 10-minute timeout wait), `detailed` 35.9 min (target 20); medicine `standard` 12.8 and 13.1, `detailed` 30.2. All within the frozen time expectation, all above the quantum targets.
 

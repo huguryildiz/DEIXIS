@@ -1,7 +1,7 @@
 # SW slice 29 — `standard`'s full-text fetch limit (SW24)
 
-**Date:** 28 September 2026. **Status:** plan written; owner choices open, proposed defaults A1, B1, C1, D1 (see
-"Owner choices"). **Review rule (owner, D105):** Sol (`gpt-6-sol` · high) blocks only on a **high** finding; at most
+**Date:** 28 September 2026. **Status:** closed as a record (D111): owner's answers 2026-09-28 A1, B1, D1, C not
+applicable (see "Owner choices"); no code change, no migration; SW24 closed as measured and not changed. **Review rule (owner, D105):** Sol (`gpt-6-sol` · high) blocks only on a **high** finding; at most
 **3** plan rounds and **4** code rounds. **Prompt:** [sw-slice29-prompt.md](sw-slice29-prompt.md). **Main file:**
 [sw-status.md](sw-status.md). **Decision:** D111 (highest today D110; if another slice has taken D111 by the time this
 one is built, the next free number). **Migration:** none (the limits are constants; a run's budget is JSON on its row).
@@ -18,8 +18,8 @@ library were not touched. One M1 Pro, Python 3.12 arm64 through `uv`.
 
 **Goal:** SW24 says quantum `standard` loses more reference works at the full-text fetch limit than anywhere else (10
 and 12 of 31 routed to full text but not planned in slice 24a) and still misses its time target. This slice answers
-whether `standard`'s limits should rise and what that costs. The replay says the works come back only at the `detailed`
-limit, and reading them costs about 17 more minutes per run. The proposed default is to change nothing and record why.
+whether `standard`'s limits should rise and what that costs. The replay says each higher limit plans more of them, but
+only the `detailed` limit (300) brings back 75% of the gain, and reading them costs about 17 more minutes per run. The proposed default is to change nothing and record why.
 
 ## What the code does today
 
@@ -57,14 +57,16 @@ exactly in all 12 libraries.
 
 1. **The loss is where SW24 says.** 664 / 818 / 639 eligible keyword works compete for 100 places. At 300 the plan holds
    22.7 of 31 on average, the same as `detailed` (23 planned in slice 24a).
-2. **The read limit binds.** With the read limit held at 50, a larger fetch brings no more reference works to the
-   reading in any of the three runs. The reading already stops at 50 with text left over (r1: 8 not reached, r2: 5).
+2. **The read limit binds.** With the read limit held at 50, a larger fetch leaves the estimated reference works read
+   at a mean of 10.3 (per run 10 → 10, 10 → 11, 11 → 10; corrected 2026-09-28 at D111's review, first written as "no
+   more in any of the three runs"). The reading already stops at 50 with text left over (r1: 8 not reached, r2: 5).
 3. **The cost is the reading.** Per added fetched work about 0.023 minutes of wall time (mean work 0.09 min at a
    parallelism of 3.9); per added read work 0.08–0.19 minutes (r1's figure includes a 5-minute call that ended
    `outcome_unknown`). At 300 / 150 that is 4.6 minutes of fetch (an upper bound: none of it is credited to the overlap
    with discovery) and 6.8–19.4 minutes of reading, and up to 200 more model calls per run.
 4. **Time today.** Quantum `standard` took 17.7 and 19.9 minutes create to answer (r1 29.2 with a 10-minute wait);
-   `detailed` 35.9. The target (K7, D88) is 15. At 300 / 150 the estimate puts `standard` at 35–37 minutes, where
+   `detailed` 35.9. The target (K7, D88) is 15. At 300 / 150 the estimate puts `standard` at 35–37 minutes (today's times plus the mean 17.2; paired per run, the
+   two runs without a timeout wait give about 34.1 and 31.2), near where
    `detailed` is now.
 5. **Medicine gains little.** Planned reference units at 100 → 300: 9 → 11, 5 → 9, 5 → 8 (slice 27); 8 → 10, 8 → 11,
    4 → 8 (24a). Only 3 of 12 units (t02, t07, t09) got a PDF in any stored medicine run, so the lower bound of units read
@@ -87,11 +89,11 @@ A3 as changed.
 
 ## Decisions
 
-1. **Limits (A).** Proposed A1: both `standard` limits stay 100 / 50. The rule says the works come back only at 300,
-   which is `detailed`'s limit and costs about what `detailed` costs; a user who wants them has `detailed`. D111 records
+1. **Limits (A).** Proposed A1: both `standard` limits stay 100 / 50. Each step plans more works, but only 300 reaches the rule's
+   75% of the gain, and 300 is `detailed`'s limit and costs about what `detailed` costs; a user who wants them has `detailed`. D111 records
    the replay, the rule and the cost, so the next person who asks does not repeat it.
 2. **Read follows fetch (fixed).** If a fetch limit rises, the read limit rises with it at half (D94's rule). The replay
-   shows a fetch change alone reads nothing more (300 / 50 row).
+   shows a fetch change alone leaves the mean read at 10.3 (300 / 50 row).
 3. **`quick` and `detailed` do not change.** `quick` was set by D94; `detailed` already plans what the candidates allow.
    Chain room (12) does not change.
 4. **Frozen budgets.** A run queued before the change keeps its budget; only runs queued afterwards get the new limits.
@@ -106,7 +108,15 @@ Quantum reference units planned: A2 15–18, A3 21–24; read: A2 12–16, A3 18
 minutes, A3 28–35; medicine reference units read: 1–3 under either (PDF-bound). Model calls: quantum A2 150–185, A3
 280–330; medicine A2 150–180, A3 230–300 (slice 27's runs made 122, 124 and 90).
 
-## Owner choices (open; proposed defaults A1, B1, C1, D1)
+## Owner choices (answered 2026-09-28: A1, B1, C not applicable, D1)
+
+**Owner's answers (28 September 2026).** A1: `FULLTEXT_WORK_LIMIT["standard"]` stays 100 and
+`FULLTEXT_READ_LIMIT["standard"]` stays 50. B1: the read limit does not change on its own either. C: not applicable,
+there is no live acceptance under A1. D1: the 15-minute `standard` target stays; D111 records that `standard` misses it
+by about 3–5 minutes today. The owner answered "Ok" to the summary "limit stays 100, record as D111, close SW24". Done
+under A1: D111, SW24's status, row 29. Not done: the dated comment above `FULLTEXT_WORK_LIMIT` (task outline, A1 step
+1); the record was kept to docs, so the code is untouched and pytest was not re-run.
+
 
 - **A — limits.** **A1 (proposed):** no change; D111 records the replay and closes SW24. A2: 150 / 75, the only step
   under 5 minutes on average; chosen after the numbers, 38% of the gain at 300, fails the frozen rule. A3: 300 / 150,
@@ -136,7 +146,7 @@ Answers A–D (or says "önerildiği gibi"). The answers go into row 29 of `sw-s
 **Under A1 (and B1, D1):**
 
 1. `rules.py`: a dated comment above `FULLTEXT_WORK_LIMIT`: "2026-09-28 (D111, slice 29): `standard` kept at 100 / 50; a
-   model-free replay (`.local/sw-slice29-fetch-limit-replay-2026-09-28`) brings the quantum works back only at 300, at
+   model-free replay (`.local/sw-slice29-fetch-limit-replay-2026-09-28`) reaches 75% of the quantum gain only at 300, at
    about +17 min per run; medicine's loss is PDFs." No value changes.
 2. D111 at the top of `docs/decisions.md` (Status / Date / Context / Decision / Limits): the replay, the frozen rule and
    its result, the 300 / 50 row, the medicine finding, the time target note. Limits: two questions, three runs each, time

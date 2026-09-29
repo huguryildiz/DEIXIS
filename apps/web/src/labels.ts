@@ -21,8 +21,13 @@ export const runStatusLabels: Record<RunStatus, string> = {
 }
 
 export const runKindLabels: Record<RunKind, string> = {
-  discovery: 'Search & screening', answer: 'Answer', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
+  discovery: 'Search & screening', answer: 'Answer', report: 'Evidence report', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
 }
+
+export const reportSupportLabels: Record<string, string> = { source_stated: 'Stated by the source', analyst_inference: 'Analyst inference' }
+export const reportRevisionLabels: Record<string, string> = { human_edit: 'Your edit', human_restore: 'Restored' }
+export const reportChangeLabels: Record<string, string> = { cell_changed: 'a cited cell changed', source_removed: 'a cited source left the table or the research' }
+export const reportChangeViaLabels: Record<string, string> = { body_ref: '(through the section it summarises)', gap_ref: '(through a candidate aspect)' }
 
 const pauseReasons: Record<string, string> = {
   user_requested: 'You paused this run.',
@@ -30,6 +35,8 @@ const pauseReasons: Record<string, string> = {
   model_connection_not_ready: 'The selected model connection is not ready. Nothing was sent to another model.',
   model_connection_unavailable: 'The selected model connection is not available. Nothing was sent to another model.',
   model_call_failed: 'The model call did not complete. Completed work is saved.',
+  section_must_be_rewritten: 'A section must be written again.',
+  section_failed: 'A section could not be written.',
   model_isolation_violation: 'The model session reported tool use or loaded instructions, so its output was rejected.',
   provider_rate_limited: 'A scholarly provider rate-limited a search. Completed searches are kept; no other provider was used in its place.',
   provider_auth_required: 'A scholarly provider requires authentication for this search.',

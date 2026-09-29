@@ -730,12 +730,19 @@ class TableStore:
     # ---- views ------------------------------------------------------------------------
     def tables(self, research_id: str) -> list[dict[str, Any]]:
         self.store.research(research_id)
-        return [dict(r) for r in self.conn.execute(
+        rows = [dict(r) for r in self.conn.execute(
             "SELECT et_outer.id, et_outer.title, et_outer.version, et_outer.created_at, et_outer.updated_at,"
             f" (SELECT COUNT(*) FROM table_rows t WHERE t.table_id = et_outer.id AND t.removed_at IS NULL AND {SOURCE_ACTIVE_SQL}) AS rows,"
             " (SELECT COUNT(*) FROM table_columns c WHERE c.table_id = et_outer.id AND c.removed_at IS NULL) AS columns"
             " FROM evidence_tables et_outer WHERE et_outer.research_id = ? AND et_outer.trashed_at IS NULL ORDER BY et_outer.created_at", (research_id,)
         )]
+        included_count = len(self.store.included_sources(research_id))
+        for row in rows:
+            readiness = report_ready(self.store, research_id, row["id"])
+            row["report_ready"] = {"ready": readiness["ready"], "cells_left": len(readiness["missing"]),
+                                   "cells_total": included_count * row["columns"],
+                                   "failed_rows": len(readiness["failed_rows"])}
+        return rows
 
     def _revision_view(self, revision: dict[str, Any]) -> dict[str, Any]:
         # A page of Europe PMC's drawn text says so on every surface (SW21).

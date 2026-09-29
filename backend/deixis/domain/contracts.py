@@ -1090,6 +1090,17 @@ def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]]
                 "citation_anchor_target_count", f"/citation_anchors/{i}",
                 "expected exactly one of passage_id/cell_id to be non-null",
             ))
+        if anchor["passage_id"] in allow["passage_ids"]:
+            passage = next((p for p in step_input["passages"] if p["passage_id"] == anchor["passage_id"]), None)
+            if passage is None or locate_anchor(anchor["quote"], passage["text"]) is None:
+                report.issues.append(Issue("anchor_not_in_passage", f"/citation_anchors/{i}/quote",
+                                           "the quote was not found in the cited passage"))
+        if anchor["cell_id"] in allow.get("cell_ids", set()):
+            cell = next((c for c in step_input["report_target"]["cells"] if c["cell_id"] == anchor["cell_id"]), None)
+            if cell is None or not any(locate_anchor(anchor["quote"], e["quote"]) is not None
+                                       for e in cell.get("evidence", []) if e.get("quote")):
+                report.issues.append(Issue("anchor_not_in_cell_evidence", f"/citation_anchors/{i}/quote",
+                                           "the quote was not found in one stored cell evidence quote"))
     for i, claim in enumerate(draft["claims"]):
         for j, passage_id in enumerate(claim["passage_ids"]):
             if passage_id not in allow["passage_ids"]:

@@ -13,7 +13,7 @@ from deixis.storage import db
 from deixis.storage.db import dumps, new_id
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
-from deixis.workflow.report.sections import run_report
+from deixis.workflow.report.sections import _citation_links, run_report
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.store import Store
 from deixis.workflow.tables import TableStore
@@ -38,6 +38,21 @@ FUTURE_WORK_COLUMN = COLUMN | {
 }
 PASSAGE = "SYNTHETIC evidence states that molecule release scheduling uses a bounded formulation."
 CELL_QUOTE = "SYNTHETIC evidence states that molecule release scheduling"
+
+
+def test_report_links_store_source_owned_anchor_text():
+    payload = {"step_input_id": "sti_test", "passages": [{"passage_id": "p1", "source_id": "s1",
+               "text": "The Source  states a measured result."}], "report_target": {"cells": [{"cell_id": "c1",
+               "source_version_id": "s1", "evidence": [{"quote": "The Stored  CELL quote."}]}]}}
+    draft = {"citation_anchors": [
+        {"claim_key": "IV.1", "passage_id": "p1", "cell_id": None, "quote": "the source states a measured result."},
+        {"claim_key": "IV.1", "passage_id": None, "cell_id": "c1", "quote": "the stored cell quote."},
+    ]}
+    links = _citation_links(payload, draft)
+    assert [(link["anchor_text"], link["anchor_match"]) for link in links] == [
+        ("The Source  states a measured result", "normalized"),
+        ("The Stored  CELL quote", "normalized"),
+    ]
 
 
 def _add_pdf(store, source_id, pages):

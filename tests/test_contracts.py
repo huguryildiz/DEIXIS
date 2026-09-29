@@ -96,6 +96,47 @@ def test_report_citation_anchor_names_exactly_one_target(passage_id, cell_id, ex
         assert report.issues[0].path == "/citation_anchors/0"
 
 
+def test_report_passage_anchor_must_be_located():
+    si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
+    draft = json.loads(json.dumps(next(case for case in CASES if case["name"] == "report_section_valid")["output"]))
+    draft["citation_anchors"][0]["quote"] = "SYNTHETIC words absent from every passage"
+    assert "anchor_not_in_passage" in contracts.validate_model_output(si, draft).codes()
+
+
+def test_report_cell_anchor_must_be_in_one_stored_quote():
+    si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
+    draft = json.loads(json.dumps(next(case for case in CASES if case["name"] == "report_section_valid")["output"]))
+    cell_id = "cel_SYNTHR0001"
+    si["report_target"]["cells"] = [{"cell_id": cell_id, "cell_revision_id": "crv_SYNTHR0001",
+        "column_id": "col_SYNTHR0001", "source_version_id": si["passages"][0]["source_id"],
+        "state": "value", "value": {"text": "value"}, "reading_depth": "abstract",
+        "evidence": [{"passage_id": si["passages"][0]["passage_id"], "quote": "first words"},
+                     {"passage_id": si["passages"][0]["passage_id"], "quote": "second words"}]}]
+    si["allowlist"]["cell_ids"] = [cell_id]
+    draft["claims"][0]["cell_ids"] = [cell_id]
+    draft["citation_anchors"].append({"claim_key": draft["claims"][0]["claim_key"],
+        "passage_id": None, "cell_id": cell_id, "quote": "words second"})
+    assert "anchor_not_in_cell_evidence" in contracts.validate_model_output(si, draft).codes()
+
+
+def test_acceptance_report_fixture_adds_a_located_cell_citation_only_for_report_sections():
+    from acceptance.fixture_server import ScriptedCodex
+
+    si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
+    passage = si["passages"][0]
+    cell_id = "cel_SYNTHR0001"
+    si["report_target"]["cells"] = [{"cell_id": cell_id, "cell_revision_id": "crv_SYNTHR0001",
+        "column_id": "col_SYNTHR0001", "source_version_id": passage["source_id"], "state": "value",
+        "value": {"text": "SYNTHETIC value"}, "reading_depth": "abstract",
+        "evidence": [{"passage_id": passage["passage_id"], "quote": passage["text"][:50]}]}]
+    si["allowlist"]["cell_ids"] = [cell_id]
+    si["allowlist"]["column_ids"] = ["col_SYNTHR0001"]
+    output = ScriptedCodex().respond(si, si["question"]["text"])
+    assert output["claims"][-1]["cell_ids"] == [cell_id]
+    assert output["citation_anchors"][-1]["quote"] == passage["text"][:50]
+    assert contracts.validate_model_output(si, output).ok
+
+
 def test_report_cell_must_be_present_in_the_step_input_allowlist_and_records():
     si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
     cell = {

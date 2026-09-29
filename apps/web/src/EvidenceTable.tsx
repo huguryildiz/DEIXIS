@@ -223,6 +223,12 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
   const activeRun = run && ACTIVE.has(run.status) ? run : null
   const model = modelText(view.scope.requested_model, view.scope.reasoning_effort)
   const tableRun = run && TABLE_RUN_KINDS.has(run.kind) && (activeRun || run.status === 'paused') ? run : null
+  const reportState = tables?.find(item => item.id === table?.table.id)?.report_ready
+  const reportReason = view.runs.some(item => ACTIVE.has(item.status) || item.status === 'paused')
+    ? t('Available when the active run finishes')
+    : !table?.columns.length ? t('Add a column and fill its cells before writing a report.')
+    : reportState?.cells_total === 0 ? t('A report needs included sources and a filled column.')
+    : !reportState?.ready ? t('A report needs a filled evidence table: {n} cells left in “{table}”.', { n: reportState?.cells_left ?? 0, table: table?.table.title ?? '' }) : ''
   const control = (target: Run, action: 'pause' | 'resume' | 'cancel') => act(() => api.controlRun(target.id, action))
   const cancelDialog = <ConfirmDialog open={Boolean(cancelling)} dark={dark} title={t('Cancel this run?')}
     description={t('The run stops. Values already written stay in the table; the answer of a model call still in progress is not written. A cancelled run cannot be resumed; empty cells can be filled again later.')}
@@ -340,6 +346,8 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
       {columns.length > 0 && <><span className="evidence-toolbar-sep" aria-hidden />
         <Button variant="ghost" disabled={busy || Boolean(activeRun)} onClick={suggestColumns} title={t('{model} · 1–2 calls', { model })}><Sparkles size={15} aria-hidden />{t('Suggest columns')}</Button></>}
       <span className="evidence-toolbar-end">
+        <Button variant="outline" disabled={busy || Boolean(reportReason)} title={reportReason || undefined} aria-describedby={reportReason ? 'evidence-report-reason' : undefined}
+          onClick={() => act(async () => { await api.startReport(researchId, tableId, newKey()); onRunStarted() })}><FileText size={15} aria-hidden />{t('Write report')}</Button>
         <Button variant="ghost" disabled={!columns.length || !rows.length} title={t('Current values and their quotes as a CSV file; proposals waiting for a decision are left out.')} onClick={() => downloadTableCsv(table, view.sources)}><Download size={15} aria-hidden />{t('Export CSV')}</Button>
         <Button variant="ghost" disabled={busy || !columns.length} aria-expanded={templateName !== null} onClick={() => setTemplateName(name => (name === null ? table.table.title : null))}><Save size={15} aria-hidden />{t('Save as template')}</Button>
         <Button variant={fillable ? 'default' : 'outline'} disabled={busy || !fillable}
@@ -348,6 +356,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
         </Button>
       </span>
     </div>
+    {reportReason && <span id="evidence-report-reason" className="sr-only">{reportReason}</span>}
     {runLine(fillProgress ? [t('{done} / {n} sources', fillProgress)] : suggesting ? [t('From the question and the rows’ abstracts')] : [])}
     {fillable && <UploadedTextNote semantic={view.semantic} />}
     {cancelDialog}

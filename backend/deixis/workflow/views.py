@@ -8,6 +8,7 @@ from typing import Any
 
 from deixis.documents import embeddings, local_embedding, pdf
 from deixis.documents.jats import RENDITION_SQL
+from deixis.domain.contracts import locate_anchor
 from deixis.domain.rules import SUGGESTION_CALLS, effective_reviewer, result_applicability
 from deixis.workflow import english_question as english_question_rules
 from deixis.workflow import approval as approval_rules
@@ -259,28 +260,51 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
         raise NotFound(report_id)
 
     changes = reports.evidence_changes(report_id)
+    try:
+        frozen = reports.snapshot(report_id)
+    except NotFound:
+        frozen = None
+    frozen_cells = {cell["cell_id"]: cell for cell in frozen["cells"]} if frozen else {}
+    numbers: dict[str, int] = {}
+    first_passage: dict[str, str] = {}
+    cited_cells: dict[str, list[str]] = {}
     sections = []
     for section in reports.sections(report_id):
         claims = []
         for claim in store.conn.execute(
-            "SELECT id, claim_key, text, support_type, current_revision_id, version FROM report_claims"
+            "SELECT id, claim_key, text, support_type, paragraph, table_ref, equation_ref, current_revision_id, version FROM report_claims"
             " WHERE report_section_id = ? ORDER BY ordinal", (section["id"],),
         ):
             evidence = [
                 {"passage_id": link["passage_id"], "cell_id": link["cell_id"],
-                 "anchor_text": link["anchor_text"]}
+                 "source_version_id": link["source_version_id"], "ref_number": numbers.setdefault(
+                     link["source_version_id"], len(numbers) + 1),
+                 "anchor_text": link["anchor_text"], "anchor_match": link["anchor_match"]}
                 for link in store.conn.execute(
-                    "SELECT passage_id, cell_id, anchor_text FROM report_citation_links"
+                    "SELECT passage_id, cell_id, source_version_id, anchor_text, anchor_match FROM report_citation_links"
                     " WHERE claim_id = ? ORDER BY rowid", (claim["id"],),
                 )
             ]
+            for link in evidence:
+                # The passage to open: a passage link's own; for a cell link, the frozen evidence passage whose
+                # quote holds the located anchor (never merely the cell's first passage), else null.
+                link["open_passage_id"] = link["passage_id"] or next((
+                    item["passage_id"] for item in frozen_cells.get(link["cell_id"], {}).get("evidence", [])
+                    if link["anchor_match"] and item.get("quote") and link["anchor_text"]
+                    and locate_anchor(link["anchor_text"], item["quote"]) is not None), None)
+                if link["passage_id"]:
+                    first_passage.setdefault(link["source_version_id"], link["passage_id"])
+                if link["cell_id"]:
+                    cited_cells.setdefault(link["source_version_id"], []).append(link["cell_id"])
             revisions = reports.claim_revisions(claim["id"])
             current = next((revision for revision in revisions if revision["id"] == claim["current_revision_id"]), None)
             claims.append({"id": claim["id"], "claim_key": claim["claim_key"],
                            "version": claim["version"], "text": current["text"] if current else claim["text"],
                            "model_text": claim["text"], "edited": current is not None,
                            "warnings": current["warnings"] if current else [], "revisions": revisions,
-                           "support_type": claim["support_type"], "evidence": evidence})
+                           "support_type": claim["support_type"], "paragraph": claim["paragraph"],
+                           "table_ref": claim["table_ref"], "equation_ref": claim["equation_ref"],
+                           "evidence": evidence})
         sections.append({key: section[key] for key in (
             "section_id", "status", "word_count", "draft", "validation",
         )} | {"claims": claims, "evidence_changes": changes["sections"][section["section_id"]]})
@@ -288,8 +312,53 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
         "SELECT 1 FROM report_claim_revisions v JOIN report_claims c ON c.id = v.claim_id"
         " JOIN report_sections s ON s.id = c.report_section_id WHERE s.report_id = ? LIMIT 1", (report_id,),
     ).fetchone()
+    references = []
+    for source_id, number in numbers.items():
+        source = store.conn.execute(
+            "SELECT v.title, v.authors_json, v.year, v.venue, v.doi, v.version_label, w.source_key"
+            " FROM source_versions v JOIN works w ON w.id = v.work_id WHERE v.id = ?", (source_id,),
+        ).fetchone()
+        if source is None:
+            continue
+        fallback = next((e["passage_id"] for cell_id in cited_cells.get(source_id, [])
+                         for e in frozen_cells.get(cell_id, {}).get("evidence", [])), None)
+        references.append({"number": number, "source_version_id": source_id, "source_key": source["source_key"],
+                           "title": source["title"], "authors": json.loads(source["authors_json"]),
+                           "year": source["year"], "venue": source["venue"], "doi": source["doi"],
+                           "version_label": source["version_label"],
+                           "open_passage_id": first_passage.get(source_id) or fallback})
+    table_i = None
+    if frozen:
+        frozen_sources = {}
+        for row in frozen["rows"]:
+            source = store.conn.execute(
+                "SELECT v.title, w.source_key FROM source_versions v JOIN works w ON w.id = v.work_id WHERE v.id = ?",
+                (row["source_version_id"],),
+            ).fetchone()
+            frozen_sources[row["source_version_id"]] = source
+        table_i = {
+            "columns": [{**{key: column[key] for key in ("column_id", "name", "answer_format")},
+                         "options": json.loads(revision["options_json"]) if revision and revision["options_json"] else None}
+                        for column in frozen["columns"]
+                        for revision in [store.conn.execute(
+                            "SELECT options_json FROM column_revisions WHERE column_id = ? AND revision = ?",
+                            (column["column_id"], column["revision"]),
+                        ).fetchone()]],
+            "rows": [{"source_version_id": row["source_version_id"],
+                      "ref_number": numbers.get(row["source_version_id"]),
+                      "source_key": frozen_sources[row["source_version_id"]]["source_key"] if frozen_sources[row["source_version_id"]] else None,
+                      "title": frozen_sources[row["source_version_id"]]["title"] if frozen_sources[row["source_version_id"]] else None}
+                     for row in frozen["rows"]],
+            "cells": [{"cell_id": cell["cell_id"], "column_id": cell["column_id"], "source_version_id": cell["source_version_id"],
+                       "state": cell["state"], "value": cell["value"],
+                       "evidence_passage_ids": [e["passage_id"] for e in cell["evidence"]]}
+                      for cell in frozen["cells"]],
+        }
+    run = store.conn.execute("SELECT id, status, pause_reason FROM runs WHERE id = ?", (report["run_id"],)).fetchone()
     return report | {"sections": sections, "evidence_changes": {key: value for key, value in changes.items() if key != "sections"},
-                     "edited_after_version": report["report_version"] if edited else None}
+                     "edited_after_version": report["report_version"] if edited else None,
+                     "references": references, "table_i": table_i,
+                     "run": dict(run) if run else None}
 
 
 def research_view(store: Store, research_id: str) -> dict[str, Any]:

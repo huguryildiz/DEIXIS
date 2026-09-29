@@ -39,6 +39,9 @@ drawing and extraction turn into a rendition. No request leaves the machine.
 
 The sw research of case Q (slice 25, SW22) needs no marker: with retrieval and reading off, an sw search finishes with
 nothing included, which is the state its answer is asked from.
+
+Report-section steps alone add a second SYNTHETIC claim from a filled cell's own stored evidence quote. This gives
+the report UI acceptance case a cell citation whose later edit can be observed; other model tasks are unchanged.
 """
 
 from __future__ import annotations
@@ -366,6 +369,24 @@ class ScriptedCodex:
 
     def respond(self, si: dict[str, Any], question: str) -> dict[str, Any]:
         output = json.loads(valid_response(si))
+        if si["task_type"] == "report_section":
+            cell = next((cell for cell in si["report_target"]["cells"]
+                         if cell.get("value") and any(e.get("quote") for e in cell.get("evidence", []))), None)
+            if cell is not None:
+                section = si["report_target"]["section_id"]
+                claim_key = f"{section}.{len(output['claims']) + 1}"
+                output["claims"].append({
+                    "claim_key": claim_key,
+                    "text": ("It may be that this synthetic table cell records a value." if section == "VI"
+                             else "It has been reported that this synthetic table cell records a value."),
+                    "support_type": "analyst_inference" if section == "VI" else "source_stated",
+                    "passage_ids": [], "cell_ids": [cell["cell_id"]], "paragraph": 1, "table_ref": None,
+                    "equation_ref": None, "body_refs": [], "axis_id": None, "count": None,
+                    "equation_origin": None, "gap_refs": [],
+                })
+                quote = next(e["quote"] for e in cell["evidence"] if e.get("quote"))
+                output["citation_anchors"].append({"claim_key": claim_key, "passage_id": None,
+                                                    "cell_id": cell["cell_id"], "quote": quote})
         if si["task_type"] == "search_plan":
             core, family = ("rate limit", "probe") if "[rate-limit]" in question else ("molecule release", "schedule")
             output["search_plan"]["concepts"] = [{"label": core, "role": "core", "synonyms": [core]},

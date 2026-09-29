@@ -290,6 +290,7 @@ modelin yazdığıyla doluyor.
 **P9** — 1f: `report_review` ve destek-bozan onarımın geri alınması.
 **P10** — 1h: hazırlık panelinin dördüncü durumu.
 **P11** — 1i: okuma biçimli rapor görünümü, değişiklik bandı, zaman çizelgesi satırları.
+**29 Eylül: P10 ve P11 yapıldı** (D113, istem `p6-slice1-p10-p11-prompt.md`): rapor ekranda yazılır, okunur, iddia düzenlenir, bayat bölüm işaretlenir; rapor atıf çapası artık konumlandırılıyor. P6, P7, P9 ve P12 sonrası hâlâ açık.
 **P12** — 1j: Markdown dışa aktarma ve numaralandırma.
 **P13** — 1k: kesinti testleri (kota, çökme, iptal, kapsam değişimi, geç sonuç). Yukarıdaki
 "bölüm başarısızlığının nedeni kayboluyor" zayıflığı burada karara bağlanmalı.

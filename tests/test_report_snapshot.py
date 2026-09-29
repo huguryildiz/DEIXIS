@@ -64,6 +64,24 @@ def test_report_ready_requires_every_included_source_and_column_to_have_a_termin
     assert report_ready(store, research_id, table_id)["missing"] == [{"source_version_id": second, "column_id": column_id}]
 
 
+def test_table_list_reports_server_readiness_and_failed_rows(lib):
+    store, _, tables, research_id, source_id, _, table_id, column_id = lib
+    assert tables.tables(research_id)[0]["report_ready"] == {
+        "ready": False, "cells_left": 1, "cells_total": 1, "failed_rows": 0}
+    _fill(lib)
+    assert tables.tables(research_id)[0]["report_ready"] == {
+        "ready": True, "cells_left": 0, "cells_total": 1, "failed_rows": 0}
+    second = store.create_upload_source("Failed synthetic study")
+    store.add_to_corpus(research_id, second, "user_upload", selection_state="included", selection_origin="user")
+    tables.add_rows(research_id, table_id, [second], tables._table(research_id, table_id)["version"])
+    run = store.create_run(research_id, "table_fill", {}, None,
+                           {"table_id": table_id, "sources": [{"source_version_id": second, "column_ids": [column_id]}]})
+    step = store.step(run["id"], f"cell_extraction:{second}:0", "model:cell_extraction")
+    store.finish_step(step["id"], "failed", error_code="synthetic_failure")
+    assert tables.tables(research_id)[0]["report_ready"] == {
+        "ready": False, "cells_left": 1, "cells_total": 2, "failed_rows": 1}
+
+
 def test_report_ready_accepts_human_not_reported_decision(lib):
     store, _, tables, research_id, source_id, _, table_id, column_id = lib
     tables.edit_cell(research_id, table_id, column_id, source_id, "not_reported", None,

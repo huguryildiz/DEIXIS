@@ -72,17 +72,15 @@ def _citation_links(payload: dict[str, Any], draft: dict[str, Any]) -> list[dict
         else:
             cell = cells[cell_id]
             source_version_id = cell["source_version_id"]
-            stored_quote = " ".join(
-                evidence["quote"] for evidence in cell.get("evidence", []) if evidence.get("quote")
-            )
-            match = contracts.locate_anchor(anchor["quote"], stored_quote)
+            match = next((located for evidence in cell.get("evidence", []) if evidence.get("quote")
+                          if (located := contracts.locate_anchor(anchor["quote"], evidence["quote"])) is not None), None)
         links.append({
             "claim_key": anchor["claim_key"],
             "passage_id": passage_id,
             "cell_id": cell_id,
             "source_version_id": source_version_id,
             "step_input_id": payload["step_input_id"],
-            "anchor_text": anchor["quote"],
+            "anchor_text": match.text if match is not None else anchor["quote"],
             "anchor_match": match.kind if match is not None else None,
         })
     return links

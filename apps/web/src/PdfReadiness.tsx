@@ -295,7 +295,7 @@ function UnreadNote({ n, href }: { n: number; href: string }) {
   </p>
 }
 
-function Depth({ cells }: { cells: [number, string][] }) {
+export function Depth({ cells }: { cells: [number, string][] }) {
   return <div className="pdf-ready-depth">{cells.map(([n, label]) => <div key={label}><strong>{n}</strong><span>{label}</span></div>)}</div>
 }
 

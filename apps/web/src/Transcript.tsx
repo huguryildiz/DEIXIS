@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button'
 // The page's event stream refreshes the view; a one-second clock keeps running durations moving between events.
 // Pause, resume and cancel sit next to the tabs, so one set of controls serves every tab.
 
-type PhaseKey = 'plan' | 'search' | 'screen' | 'pdf' | 'ocr' | 'semantic' | 'answer' | 'review'
+type PhaseKey = 'plan' | 'search' | 'screen' | 'pdf' | 'ocr' | 'semantic' | 'answer' | 'review' | 'sections' | 'assembly'
 type PhaseState = 'done' | 'running' | 'attention' | 'waiting' | 'skipped'
 type Step = NonNullable<Run['steps']>[number]
 
@@ -31,6 +31,8 @@ const titles: Record<PhaseKey, [string, string, string]> = {
   semantic: ['Preparing semantic search', 'Prepared semantic search', 'Semantic search'],
   answer: ['Writing the answer', 'Wrote the answer', 'Source-linked answer'],
   review: ['Reviewing the claims', 'Reviewed the claims', 'Claim review'],
+  sections: ['Writing sections', 'Wrote the sections', 'Report sections'],
+  assembly: ['Checking the assembled report', 'Checked the assembled report', 'Assembled report'],
 }
 // Attached PDFs are already on this computer: the same phase reads them rather than downloading anything.
 const attachedTitles = (n: number): [string, string, string] => n === 1
@@ -42,11 +44,14 @@ const fulltextHeadings: Record<string, string> = { active: 'Retrieving the full 
 const readingHeadings: Record<string, string> = { active: 'Reading the full texts', completed: 'Read the full texts', paused: 'Full-text reading paused', failed: 'Full-text reading failed', cancelled: 'Full-text reading cancelled' }
 const ocrHeadings: Record<string, string> = { active: 'Reading a PDF with OCR', completed: 'Read a PDF with OCR', paused: 'OCR reading paused', failed: 'OCR reading failed', cancelled: 'OCR reading cancelled' }
 const answerHeadings: Record<string, string> = { active: 'Generating the answer', completed: 'Ran answer generation', paused: 'Answer generation paused', failed: 'Answer generation failed', cancelled: 'Answer generation cancelled' }
+const reportHeadings: Record<string, string> = { active: 'Writing the report', completed: 'Wrote the report', paused: 'Report paused', failed: 'Report failed', cancelled: 'Report cancelled' }
 // The run's stage names the phase it has reached before that phase records its first step.
 const stagePhases: Record<string, PhaseKey> = { screening: 'screen', inspection: 'pdf', answer: 'answer', claim_check: 'review' }
 const basisLabels: Record<string, string> = { metadata_only: 'metadata only', title_only: 'title only', title_and_abstract: 'title and abstract' }
 
 function phaseOf(kind: string): PhaseKey | null {
+  if (kind === 'model:report_plan') return 'plan'
+  if (kind === 'model:report_section' || kind === 'model:report_phrase_repair') return 'sections'
   if (kind === 'model:search_plan') return 'plan'
   // An sw run plans its search in code and asks the user before it searches; those steps are its plan phase, so the
   // phase does not read "waiting" while the run has counted its terms and is waiting for the user.
@@ -166,9 +171,9 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const steps = run.steps ?? []
   // An sw discovery run queued since slice 17a fetches the full text itself, beside its screening.
   const overlap = run.kind === 'discovery' && (run.budget.fulltext_fetch as unknown as { mode?: string } | undefined)?.mode === 'overlap'
-  const order: PhaseKey[] = run.kind === 'discovery' ? ['plan', 'search', 'screen', ...(overlap ? ['pdf' as const] : [])] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
+  const order: PhaseKey[] = run.kind === 'report' ? ['plan', 'sections', 'assembly'] : run.kind === 'discovery' ? ['plan', 'search', 'screen', ...(overlap ? ['pdf' as const] : [])] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
-  const reached = Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
+  const reached = run.kind === 'report' && !active ? 2 : Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
   // A citation chain's requests are not searches of the question; the screening phase reports them (D95).
   const searches = view.search_runs.filter(s => s.run_id === run.id && !s.query_text.startsWith('chain:'))
   const answer = view.answers.find(a => a.run_id === run.id)
@@ -201,6 +206,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const fetchSummary = steps.find(s => s.kind === 'code:fulltext_summary' && s.status === 'succeeded')?.output
   const fetchWorks = steps.filter(s => s.kind === 'code:fulltext_work')
   const stateOf = (i: number): PhaseState => {
+    if (run.kind === 'report' && order[i] === 'assembly') return active ? 'waiting' : run.status === 'completed' ? 'done' : 'attention'
+    if (run.kind === 'report' && order[i] === 'sections' && run.status === 'paused') return 'attention'
     const hasTrouble = groups[i].some(troubled)
     if (groups[i].some(step => step.status === 'running')) return 'running'
     if (overlap && active && order[i] === 'screen' && groups[i].length && !fetchPlanned) return 'running'
@@ -214,6 +221,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const attachedOnly = view.scope.source_scope === 'attached'
 
   const title = (key: PhaseKey, state: PhaseState, group: Step[]) => {
+    if (run.kind === 'report' && key === 'plan') return t(state === 'running' ? 'Planning the report' : state === 'done' ? 'Planned the report' : 'Report plan')
     const finished = searches.filter(s => s.status === 'completed' || s.status === 'zero_results').length
     if ((state === 'done' || state === 'attention') && key === 'search' && finished) return plural(finished, 'Conducted {n} search', 'Conducted {n} searches')
     // The fetch inside a discovery run counts works, not files: N of the M works it has claimed so far are settled.
@@ -316,6 +324,14 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
 
   // What the finished phase found, from the counts and fields the model already wrote; nothing is narrated for it.
   const report = (key: PhaseKey, state: PhaseState, group: Step[]): ReactNode => {
+    if (run.kind === 'report' && key === 'sections' && group.length) return <>{group.filter(step => step.kind === 'model:report_section').map(step => {
+      const section = step.operation_key.replace('report_section:', '')
+      const needsRewrite = run.pause_reason === 'section_must_be_rewritten' &&
+        Array.isArray((run.error as { sections?: string[] } | null)?.sections) &&
+        (run.error as { sections: string[] }).sections.includes(section)
+      const outcome = needsRewrite ? t('{section}: must be written again', { section }) : step.status === 'succeeded' ? t('{section} written', { section }) : step.status === 'failed' || step.status === 'outcome_unknown' ? t('{section} failed', { section }) : step.status === 'running' ? t('{section}: being written', { section }) : t('{section}: waiting', { section })
+      return <p key={step.id} className="chat-report-line">{outcome}</p>
+    })}</>
     // A search phase reports even when a provider failed: the totals of the providers that did answer still hold.
     if (state !== 'done' && !(key === 'search' && state === 'attention')) return null
     switch (key) {
@@ -451,7 +467,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const { connection: embeddingConnection, model: embeddingModel } = embeddingOf(embeddingStoredModel)
   const embeddingProviders: Record<string, string> = { gemini: 'Gemini', builtin: 'This computer · built-in', openai: 'OpenAI', ollama: 'Ollama', lm_studio: 'LM Studio' }
   const agents: Partial<Record<PhaseKey, { role: string; connection: string; model: string | null; effort: string | null }>> = {
-    plan: literature, screen: literature,
+    plan: run.kind === 'report' ? undefined : literature, screen: literature,
     semantic: embeddingStep ? { role: embeddingProviders[embeddingConnection], connection: embeddingConnection, model: embeddingModel, effort: null } : undefined,
     answer: { role: 'Answer', connection: answer?.model?.connection ?? scope.model_connection, model: answer?.model?.resolved_model ?? answer?.model?.requested_model ?? scope.requested_model, effort: scope.reasoning_effort },
     review: { role: 'Reviewer', connection: answer?.review?.model?.connection ?? view.reviewer.connection ?? scope.model_connection, model: answer?.review?.model?.resolved_model ?? view.reviewer.model, effort: view.reviewer.reasoning_effort },
@@ -459,7 +475,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const providers = new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(view.scope.search_providers.map(providerName))
   // Worded as what happened, so it reads apart from the run strip's status next to the tabs.
   const outcome = active ? 'active' : run.status
-  const label = t((run.kind === 'discovery' ? discoveryHeadings : run.kind === 'pdf_collection' ? collectionHeadings : run.kind === 'fulltext_fetch' ? fulltextHeadings : run.kind === 'fulltext_adjudication' ? readingHeadings : run.kind === 'pdf_ocr' ? ocrHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
+  const label = t((run.kind === 'discovery' ? discoveryHeadings : run.kind === 'pdf_collection' ? collectionHeadings : run.kind === 'fulltext_fetch' ? fulltextHeadings : run.kind === 'fulltext_adjudication' ? readingHeadings : run.kind === 'pdf_ocr' ? ocrHeadings : run.kind === 'report' ? reportHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
   const olderRevision = run.scope_revision !== view.research.current_scope_revision
   const tokens = totalTokens(answer?.model?.token_usage)
   // What the run spent against what it was allowed; the token figure is the answer step's own, and no cost is estimated.
@@ -487,7 +503,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
       {expanded && <>
         {latest && active && !collapsed && <div className="chat-run-plan" role="note">
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />
-          <div><p className="chat-run-plan-title">{run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'fulltext_fetch' ? t('Retrieve the open full text of the candidate works in rank order; nothing is included or excluded by this.') : run.kind === 'fulltext_adjudication' ? t('A model reads selected passages of each work twice; code checks every quote on the page and decides.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
+          <div><p className="chat-run-plan-title">{run.kind === 'report' ? t('Write a sectioned report from the evidence table, one model step per section.') : run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'fulltext_fetch' ? t('Retrieve the open full text of the candidate works in rank order; nothing is included or excluded by this.') : run.kind === 'fulltext_adjudication' ? t('A model reads selected passages of each work twice; code checks every quote on the page and decides.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
         </div>}
         <ol className="chat-steps">{order.map((key, i) => {
         const state = stateOf(i)

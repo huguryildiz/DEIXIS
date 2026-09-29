@@ -55,10 +55,11 @@ export type SearchPlan = {
   concepts: { label: string; role: string; synonyms: string[] }[]
   queries: { provider_id: string; query_text: string; rationale: string }[]
 }
-export type RunKind = 'discovery' | 'answer' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title'
+export type RunKind = 'discovery' | 'answer' | 'report' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   table_id: string; column_id?: string; source_version_id?: string; cell_version?: number
+  report_id?: string
   sources?: { source_version_id: string; column_ids: string[] }[]
   // pdf_ocr (D51): the PDF read and the Tesseract languages used.
   asset_id?: string; languages?: string[]
@@ -494,6 +495,7 @@ export type QueueAnswerResult = {
 export type ResearchView = {
   research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string }
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
+  reportRuns: ReportSummary[]
   // null for a legacy research (slice 19).
   probes?: Probes | null
   // The reviewer the next answer gets: the research's own setting, else the app-wide default. model null: no review.
@@ -669,7 +671,22 @@ export type TableView = {
   fill_estimate: { sources: number; sources_without_text: number; sources_beyond_limit: number; model_calls: number; max_model_calls: number }
   column_suggestions: { run_id: string; step_id: string; columns: ColumnSuggestion[]; notes: string } | null
 }
-export type TableSummary = { id: string; title: string; version: number; created_at: string; updated_at: string; rows: number; columns: number }
+export type TableSummary = { id: string; title: string; version: number; created_at: string; updated_at: string; rows: number; columns: number
+  report_ready: { ready: boolean; cells_left: number; cells_total: number; failed_rows: number } }
+export type ReportSummary = { id: string; status: 'in_progress' | 'valid' | 'draft'; report_version: number | null; created_at: string }
+export type ReportLink = { passage_id: string | null; cell_id: string | null; source_version_id: string; ref_number: number; open_passage_id: string | null
+  anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null }
+export type ReportClaim = { id: string; claim_key: string; version: number; text: string; model_text: string; edited: boolean
+  warnings: { kind: string; detail?: string }[]; revisions: { id: string; kind: string; text: string; note: string | null; created_at: string; warnings: { kind: string; detail?: string }[] }[]
+  support_type: 'source_stated' | 'analyst_inference'; paragraph: number; table_ref: string | null; equation_ref: string | null; evidence: ReportLink[] }
+export type ReportSection = { section_id: string; status: string; word_count: number | null; draft: { text?: string; insufficient_evidence?: { reason: string }[] } | null
+  validation: unknown; claims: ReportClaim[]; evidence_changes: { open: { key: string; kind: string; via: string; source_version_id?: string; column_id?: string }[]; acknowledged_count: number; unresolved_refs: number } }
+export type ReportDetail = ReportSummary & { language: string; updated_at: string; sections: ReportSection[]; edited_after_version: number | null
+  evidence_changes: { any: boolean; changed_cells: number; removed_sources: number; added_sources: number; revised_columns: number; not_checked: string[] }
+  references: { number: number; source_version_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; version_label: string | null; open_passage_id: string | null }[]
+  table_i: { columns: { column_id: string; name: string; answer_format: AnswerFormat; options: ColumnOption[] | null }[]; rows: { source_version_id: string; ref_number: number | null; source_key: string | null; title: string | null }[]
+    cells: { cell_id: string; column_id: string; source_version_id: string; state: CellState; value: CellValue | null; evidence_passage_ids: string[] }[] } | null
+  run: { id: string; status: RunStatus; pause_reason: string | null } | null }
 export type TableTemplate = { id: string; name: string; columns: ColumnSpec[]; created_at: string }
 export type CellEdit = { state: CellState; value: CellValue | null; note: string | null; keep_evidence_from: string | null; expected_version: number }
 
@@ -876,6 +893,12 @@ export const api = {
   saveEnglishQuestion: (id: string, body: { text: string; expected_version: number } | { use_question: true; expected_version: number }) =>
     request<ResearchView>(`/api/researches/${id}/english-question`, json('PUT', body)),
   tables: (id: string) => request<TableSummary[]>(`/api/researches/${id}/tables`),
+  startReport: (id: string, tableId: string, key: string) => request<Run>(`/api/researches/${id}/reports`, json('POST', { table_id: tableId }, { 'Idempotency-Key': key })),
+  report: (id: string, reportId: string) => request<ReportDetail>(`/api/researches/${id}/reports/${reportId}`),
+  editReportClaim: (id: string, reportId: string, claimId: string, body: { expected_version: number; text?: string; note?: string | null; restore_from?: string }) =>
+    request<ReportDetail>(`/api/researches/${id}/reports/${reportId}/claims/${claimId}`, json('PUT', body, { 'Idempotency-Key': crypto.randomUUID() })),
+  acknowledgeReportChanges: (id: string, reportId: string, sectionId: string, changeKeys: string[]) =>
+    request<ReportDetail>(`/api/researches/${id}/reports/${reportId}/sections/${sectionId}/acknowledge-changes`, json('POST', { change_keys: changeKeys })),
   table: (id: string, tableId: string) => request<TableView>(`/api/researches/${id}/tables/${tableId}`),
   // rows omitted: the table starts with the research's included sources; given, those sources in that order, included or not.
   createTable: (id: string, body: { title: string; template_id?: string; rows?: string[] }, idempotencyKey: string) =>

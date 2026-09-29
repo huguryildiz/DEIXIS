@@ -1,0 +1,46 @@
+.report-ready{margin-top:22px}
+.report-ready .pdf-ready-head{display:flex;align-items:center;gap:9px}
+.report-ready-choice+.report-ready-choice{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.report-ready-choice p{margin:8px 0 0;color:var(--muted);font-size:12px}
+.report-ready-bar{height:4px;margin:14px 0;background:var(--line)}
+.report-ready-bar span{display:block;height:100%;background:var(--accent)}
+.report-ready .text-link{border:0;background:none;color:var(--accent);font-size:13px;text-decoration:underline;cursor:pointer}
+.evidence-report-document .report-document-head small{display:block;margin-top:12px;color:var(--muted);font-size:12px}
+.evidence-report-content .evidence-report-section{margin:0 0 34px}
+.evidence-report-section h2{margin:0 0 13px;color:var(--ink);font-family:'DM Sans Variable',sans-serif;font-size:18px;font-weight:650;line-height:1.35;text-wrap:balance}
+.evidence-report-paragraph{margin:0 0 15px;color:var(--ink);font-family:'Newsreader Variable',serif;font-size:18px;line-height:1.72}
+.evidence-report-paragraph-group{margin-bottom:17px}
+.evidence-report-equation{display:block;text-align:right;font-family:'DM Sans Variable',sans-serif;font-size:12px}
+.evidence-report-fine,.evidence-report-provenance{font-family:'DM Sans Variable',sans-serif;font-size:11px;line-height:1.55;color:var(--muted)}
+.evidence-report-provenance{margin:35px 0 0;padding-top:18px;border-top:1px solid var(--line)}
+.evidence-report-claim-meta{padding:8px 0 10px 16px;border-left:1px solid var(--line);font-family:'DM Sans Variable',sans-serif;font-size:12px;color:var(--muted)}
+.evidence-report-claim-meta>span,.evidence-report-claim-meta>strong{display:inline-block;margin-right:12px}
+.evidence-report-claim-meta>div:not(.evidence-report-edit){display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.evidence-report-claim-meta button:not([data-slot=button]){max-width:100%;padding:0;border:0;background:none;color:var(--accent);text-align:left;font-size:12px;cursor:pointer;overflow-wrap:anywhere}
+.evidence-report-history{margin-top:7px}
+.evidence-report-history summary{display:flex;align-items:center;gap:4px;cursor:pointer}
+.evidence-report-history .opened,.evidence-report-history[open] .closed{display:none}
+.evidence-report-history[open] .opened{display:block}
+.evidence-report-history ol{margin:10px 0;padding-left:20px}
+.evidence-report-history li{padding:8px 0;border-top:1px solid var(--line)}
+.evidence-report-history p{margin:4px 0;color:var(--ink)}
+.evidence-report-edit{display:grid;gap:10px;margin:12px 0;padding:12px 0;border-top:1px solid var(--line)}
+.evidence-report-edit label{display:grid;gap:5px;color:var(--ink)}
+.evidence-report-edit textarea,.evidence-report-edit input{width:100%;padding:9px 10px;border:1px solid var(--strong-line);border-radius:6px;background:var(--field-surface);color:var(--ink);font-size:14px}
+.evidence-report-edit textarea{min-height:100px;resize:vertical}
+.evidence-report-edit>div{display:flex;flex-wrap:wrap;gap:8px}
+.evidence-report-edit [role=alert]{color:var(--tone-exclude)}
+.evidence-report-changes{margin:0 0 16px}
+.evidence-report-changes ul{padding-left:20px;font-size:12px;color:var(--muted)}
+.evidence-report-changes [data-slot=button]{margin-top:8px}
+.evidence-report-table-scroll{max-width:100%;margin:18px 0 24px;overflow-x:auto}
+.evidence-report-table{width:100%;min-width:520px;border-collapse:collapse;font-family:'DM Sans Variable',sans-serif;font-size:12px;line-height:1.45}
+.evidence-report-table caption{margin-bottom:8px;color:var(--muted);text-align:left;font-size:11px}
+.evidence-report-table th,.evidence-report-table td{min-width:120px;padding:9px 12px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
+.evidence-report-table thead th{font-weight:650}
+.evidence-report-references{padding-left:0;list-style:none;font-family:'Newsreader Variable',serif;font-size:16px;line-height:1.65}
+.evidence-report-references li{margin-bottom:8px}
+.evidence-report-references button{padding:0;border:0;background:none;color:var(--accent);font:inherit;text-align:left;text-decoration:underline;cursor:pointer}
+@media(max-width:760px){.evidence-report-paragraph{font-size:17px}.evidence-report-content .evidence-report-section{margin-bottom:28px}}
+@media(prefers-reduced-motion:reduce){.report-ready-bar span{transition:none}}
+.report-toolbar-actions [data-slot=button][aria-pressed=true]{background:var(--selected-surface)}

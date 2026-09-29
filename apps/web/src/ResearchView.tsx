@@ -13,6 +13,8 @@ import { Elapsed, EvidenceTab, TABLE_RUN_KINDS } from './EvidenceTable'
 import { MathText } from './MathText'
 import { Transcript } from './Transcript'
 import { PdfReadiness } from './PdfReadiness'
+import { ReportReadiness } from './report/ReportReadiness'
+import { ReportView } from './report/ReportView'
 import { ZoteroPanel } from './ZoteroPanel'
 import { useToast, type ToastAction } from './Toast'
 import { ConnectionIcon } from './connectionIcons'
@@ -90,7 +92,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [error, setError] = useState('')
   const toast = useToast()
   const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'queue' || initialTab === 'waiting' || initialTab === 'evidence' || initialTab === 'artifacts' || initialTab === 'activity' ? initialTab : 'answer')
-  const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean } | null>(null)
+  const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean; reportCitation?: boolean } | null>(null)
   const [pdfTarget, setPdfTarget] = useState<{ assetId: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [events, setEvents] = useState<ActivityEvent[]>([])
@@ -111,6 +113,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [replacePick, setReplacePick] = useState<{ source: Source; assetId: string } | null>(null)
   const [replaceTarget, setReplaceTarget] = useState<{ source: Source; assetId: string; file: File; impact: AssetImpact } | null>(null)
   const [openReportId, setOpenReportId] = useState<string | null>(null)
+  const [openEvidenceReportId, setOpenEvidenceReportId] = useState<string | null>(null)
   // Sources chosen for a table or for removal (D50). Kept only while the Sources tab is open.
   const [picked, setPicked] = useState<string[]>([])
   const [removal, setRemoval] = useState<{ ids: string[]; versions: number; elsewhere: number | null } | null>(null)
@@ -373,6 +376,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const showAnswer = () => { goTab('answer'); requestAnimationFrame(() => document.getElementById('research-answer')?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })) }
   // Reports are the research's artifacts: every answer that passed validation, newest first, with the number and title saved with it.
   const reports = view.answers.filter(a => a.status === 'structurally_valid').map(a => ({ answer: a, version: a.report_version ?? 0, title: a.report_title ?? heading }))
+  const latestEvidenceReportRun = view.runs.find(r => r.kind === 'report' && r.target?.report_id === view.reportRuns[0]?.id)
   // The latest report's sheet lives in its card on the Answer tab; from any other tab, or for an older version, it opens here.
   const olderReport = reports.find(r => r.answer.id === openReportId && (r.answer.id !== answer?.id || tab !== 'answer'))
   const openTable = (tableId: string) => { setFocusTable(tableId); goTab('evidence'); tabsRef.current?.scrollIntoView({ block: 'start' }) }
@@ -437,7 +441,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
     <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => { goTab(String(value)); setPicked([]) }}>
       <div className="research-tabs-bar">
-        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger>{hasQueue && <TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger>}{hasQueue && <TabsTrigger value="waiting">{t('Waiting for your PDF')} <span className="research-tab-count">{waitingCount}</span></TabsTrigger>}<TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
+        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger>{hasQueue && <TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger>}{hasQueue && <TabsTrigger value="waiting">{t('Waiting for your PDF')} <span className="research-tab-count">{waitingCount}</span></TabsTrigger>}<TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + view.reportRuns.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
         {/* The live run carries its own quiet Pause; these controls ride with the tabs so pause, resume and cancel stay reachable from every tab.
             A table run is controlled on the Evidence tab above its table; elsewhere the bar only links there. */}
         {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? tab !== 'evidence' && <button type="button" className="run-chip" title={t('Open the Evidence tab to control this run')} onClick={() => { goTab('evidence'); setPicked([]) }}>
@@ -456,7 +460,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
       <TabsContent value="answer">
         {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
-        <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'pdf_collection' || r.kind === 'fulltext_fetch' || r.kind === 'fulltext_adjudication' || r.kind === 'pdf_ocr' || r.kind === 'answer') }} modelText={modelText}
+        <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'pdf_collection' || r.kind === 'fulltext_fetch' || r.kind === 'fulltext_adjudication' || r.kind === 'pdf_ocr' || r.kind === 'answer' || r.kind === 'report') }} modelText={modelText}
           onRetryFailedSearches={target => act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.'))}
           onProtocolApproved={async () => { toast('success', t('Correction recorded. The run is queued again.')); await load(); onChanged() }}
           onChooseCodeQuery={target => act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.'))}
@@ -465,6 +469,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
           latestAnswer={answer ? <><AnswerBlock researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
         {!answer && tableCards}
+        {view.reportRuns[0] && <button type="button" className="report-artifact" onClick={() => setOpenEvidenceReportId(view.reportRuns[0].id)} aria-label={t('Open evidence report')}>
+          <span className="report-artifact-preview" aria-hidden="true"><strong>{heading}</strong></span>
+          <span className="report-artifact-copy"><span className="report-artifact-meta"><FileText size={13} aria-hidden />{view.reportRuns[0].status === 'valid' ? t('Evidence report · V{n}', { n: view.reportRuns[0].report_version ?? '' }) : view.reportRuns[0].status === 'draft' ? t('Evidence report · draft') : t('Evidence report · being written')}</span><strong>{heading}</strong>{view.reportRuns[0].status === 'in_progress' && <small role="status">{t(latestEvidenceReportRun?.status === 'paused' ? 'Report paused' : 'The report is being written.')}</small>}</span>
+          <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
+        </button>}
         {view.scope.source_scope === 'attached_and_academic' && <div className="research-seed">
           <div><strong>{t('PDF guiding the search')}</strong><p>{view.scope.seed_status === 'ready'
             ? t('{n} PDF passages were given to the search planner from {title}.', { n: view.scope.seed?.passage_count ?? 0, title: view.scope.seed?.title ?? '' })
@@ -498,6 +507,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
             ? <Button className="quiet-action" variant="ghost" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}>{t('Search again')}</Button>
             : <Button variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
         </div><UploadedTextNote semantic={view.semantic} /></>}
+        {tables && <ReportReadiness researchId={id} view={view} tables={tables} onTable={openTable} onChanged={async () => { await load(); onChanged() }} />}
       </TabsContent>
 
       <TabsContent value="sources">
@@ -544,7 +554,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       </TabsContent>
 
       <TabsContent value="artifacts">
-        {reports.length || tables?.length ? <ul className="artifact-list">{reports.map(({ answer: a, version, title }) => <li key={a.id}><button type="button" onClick={() => setOpenReportId(a.id)}>
+        {reports.length || tables?.length || view.reportRuns.length ? <ul className="artifact-list">{view.reportRuns.map(item => <li key={item.id}><button type="button" onClick={() => setOpenEvidenceReportId(item.id)}><FileText size={16} aria-hidden /><span><strong>{heading}</strong><small>{item.status === 'valid' ? t('Evidence report · V{n}', { n: item.report_version ?? '' }) : item.status === 'draft' ? t('Evidence report · draft') : t('Evidence report · being written')}</small></span><ArrowUpRight size={15} aria-hidden /></button></li>)}{reports.map(({ answer: a, version, title }) => <li key={a.id}><button type="button" onClick={() => setOpenReportId(a.id)}>
           <FileText size={16} aria-hidden /><span><strong>{title}</strong><small>{t('Report')} · V{version}{a.applicability !== 'current' ? ` · ${t('earlier')}` : ''} · {new Date(a.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'medium' })}</small></span><ArrowUpRight size={15} aria-hidden />
         </button></li>)}
           {tables?.map(table => <li key={table.id}><button type="button" onClick={() => openTable(table.id)}>
@@ -584,10 +594,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       description={replaceTarget ? `${t('{file} will be read in later answers and cells instead of the current file. The current file is not deleted: evidence that cites it keeps opening it.', { file: replaceTarget.file.name })} ${t(replaceTarget.impact.researches.length === 1 ? 'The source is used in {n} research;' : 'The source is used in {n} researches;', { n: replaceTarget.impact.researches.length })} ${t('{cells} evidence table cells and {quotes} answer quotes cite the current file.', { cells: replaceTarget.impact.cells, quotes: replaceTarget.impact.quotes })}` : ''}
       context={replaceTarget?.source.title} confirmLabel={t('Replace PDF')} cancelLabel={t('Cancel')} busy={busy}
       onConfirm={confirmReplacement} onOpenChange={open => { if (!open) setReplaceTarget(null) }} />
-    <PassageSheet researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : 'text'} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }}
-      onRestoreSource={svid => { setPassageTarget(null); void act(() => api.restoreSources(id, [svid]), t('Restored to this research.')) }} />
     {olderReport && <AnswerBlock researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
       reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf} />}
+    {openEvidenceReportId && <ReportView researchId={id} reportId={openEvidenceReportId} view={view} title={heading} dark={dark} onClose={() => setOpenEvidenceReportId(null)}
+      onOpenCitation={(passageId, highlightText, expectHighlight) => setPassageTarget({ passageId, highlightText, fromCitation: expectHighlight, reportCitation: true })}
+      onChanged={async () => { await load(); onChanged() }} />}
+    <PassageSheet researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : 'text'} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} citationLabels={passageTarget?.reportCitation ? { marked: t('Exact text cited in this report'), mark: t('Exact text cited in this report'), unmarked: t('This report citation has no located text anchor, so its passage opens without a mark.') } : undefined} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }}
+      onRestoreSource={svid => { setPassageTarget(null); void act(() => api.restoreSources(id, [svid]), t('Restored to this research.')) }} />
   </section>
 }
 

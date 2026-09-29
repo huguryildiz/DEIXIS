@@ -6,8 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.domain.rules import MAX_SCHEMA_REPAIRS
+from deixis.storage.db import new_id
 from deixis.workflow.report.sections import ROUNDS, run_report
 from deixis.workflow.report.store import REPORT_CALL_FLOOR, ReportStore
+from deixis.workflow.tables import TableStore
 from deixis.workflow.views import report_view, research_view
 from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
@@ -196,12 +198,66 @@ def test_report_view_returns_ordered_sections_claims_and_citation_anchors(tmp_pa
     cited_claims = [claim for section in view["sections"] for claim in section["claims"] if claim["evidence"]]
     assert cited_claims
     assert all({"id", "version", "claim_key", "text", "model_text", "edited", "warnings", "revisions",
-                "support_type", "evidence"} == set(claim) for claim in cited_claims)
-    assert all(set(link) == {"passage_id", "cell_id", "anchor_text"}
+                "support_type", "evidence", "paragraph", "table_ref", "equation_ref"} == set(claim) for claim in cited_claims)
+    assert all(set(link) == {"passage_id", "cell_id", "source_version_id", "ref_number", "anchor_text", "anchor_match", "open_passage_id"}
                for claim in cited_claims for link in claim["evidence"])
     assert all(link["anchor_text"] for claim in cited_claims for link in claim["evidence"])
     assert all(bool(link["passage_id"]) != bool(link["cell_id"])
                for claim in cited_claims for link in claim["evidence"])
+    assert view["run"] == {"id": run["id"], "status": "running", "pause_reason": None}
+    assert view["table_i"] is not None
+    assert all(row["source_key"] for row in view["table_i"]["rows"])
+    assert [ref["number"] for ref in view["references"]] == list(range(1, len(view["references"]) + 1))
+    assert {link["ref_number"] for claim in cited_claims for link in claim["evidence"]} == \
+        {ref["number"] for ref in view["references"]}
+
+
+def test_report_view_numbers_source_versions_and_keeps_frozen_table(tmp_path):
+    flow, store, _, _, run, scope, report_id = report_flow(tmp_path)
+    asyncio.run(run_report(flow, run, scope))
+    research_id = run["research_id"]
+    before = report_view(store, research_id, report_id)
+    frozen = before["table_i"]["cells"][0]
+    table_id = run["target"]["table_id"]
+    cell = TableStore(store).cell_view(research_id, table_id, frozen["column_id"], frozen["source_version_id"])
+    TableStore(store).edit_cell(research_id, table_id, frozen["column_id"], frozen["source_version_id"],
+                                "not_verified", {"text": "SYNTHETIC edited later"}, None, None,
+                                cell["version"], None)
+    assert report_view(store, research_id, report_id)["table_i"]["cells"][0]["value"] == frozen["value"]
+
+    other = store.create_upload_source("SYNTHETIC second source")
+    passage = store._insert_passage(other, None, "abstract", None, None, "synthetic_fixture", None, None,
+                                    "SYNTHETIC second passage")
+    claims = [claim for section in before["sections"] for claim in section["claims"] if claim["evidence"]]
+    assert len(claims) >= 3
+    first_link = store.conn.execute("SELECT * FROM report_citation_links WHERE claim_id = ? LIMIT 1",
+                                    (claims[0]["id"],)).fetchone()
+    store.conn.execute("DELETE FROM report_citation_links WHERE claim_id = ?", (claims[1]["id"],))
+    store.conn.execute("INSERT INTO report_citation_links"
+                       " (id, claim_id, passage_id, cell_id, source_version_id, step_input_id, anchor_text, anchor_match)"
+                       " VALUES (?, ?, ?, NULL, ?, ?, ?, 'exact')",
+                       (new_id("rcl"), claims[1]["id"], passage, other, first_link["step_input_id"],
+                        "SYNTHETIC second passage"))
+    store.conn.execute("DELETE FROM report_citation_links WHERE claim_id = ?", (claims[2]["id"],))
+    store.conn.execute("INSERT INTO report_citation_links"
+                       " (id, claim_id, passage_id, cell_id, source_version_id, step_input_id, anchor_text, anchor_match)"
+                       " VALUES (?, ?, NULL, ?, ?, ?, ?, 'exact')",
+                       (new_id("rcl"), claims[2]["id"], frozen["cell_id"], frozen["source_version_id"],
+                        first_link["step_input_id"], "SYNTHETIC"))
+    numbered = report_view(store, research_id, report_id)
+    links = [claim["evidence"] for section in numbered["sections"] for claim in section["claims"] if claim["evidence"]]
+    assert links[0][0]["ref_number"] == 1
+    assert links[1][0]["ref_number"] == 2
+    assert links[2][0]["ref_number"] == 1
+    assert links[2][0]["cell_id"] == frozen["cell_id"]
+    assert numbered["references"][1]["open_passage_id"] == passage
+    # A cell link opens the frozen evidence passage whose quote holds the located anchor, not just the first one.
+    from deixis.domain.contracts import locate_anchor
+    from deixis.workflow.report.store import ReportStore
+    evidence = next(c for c in ReportStore(store).snapshot(report_id)["cells"] if c["cell_id"] == frozen["cell_id"])["evidence"]
+    expected = next((e["passage_id"] for e in evidence if e["quote"] and locate_anchor("SYNTHETIC", e["quote"])), None)
+    assert links[2][0]["open_passage_id"] == expected
+    assert links[1][0]["open_passage_id"] == passage
 
 
 def test_research_view_has_an_empty_report_summary_list(tmp_path):

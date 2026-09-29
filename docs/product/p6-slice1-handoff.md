@@ -25,7 +25,7 @@ Uygulanmış olanlar:
 | 1e Task 0 | Migration 0036: `report_sections` artık `'II'` kabul ediyor | Tam (plan dışı, zorunluydu) |
 | 1e Task 1 | `review_methodology.py` — II. bölüm, model çağrısı yok | Tam |
 | 1e Task 3 | `gaps.py` — `corpus_absence` adayları | Tam |
-| 1e Task 4 (yarım) | `assembly.py`, kural 1, 2, 3, 4, 7, 10 | Tam (P1); kalan sekizi P7 |
+| 1e Task 4 | `assembly.py`, 14 kuralın hepsi | Tam (P1: 1, 2, 3, 4, 7, 10; P7: 5, 6, 8, 9, 11, 12, 13, 14, kural 7 yapılandırılmış sayılarla) |
 | 1g | `request_report`, üç rapor rotası, `report_view`, `reportRuns` | Tam (P3) |
 | — | **P3.5 plan pasajı düzeltmesi**: özeti olmayan kaynak ilk `pdf_page`'ini veriyor | Tam (plan dışı, zorunluydu) |
 | — | **P2.5 kök neden turu**: plan adımı kanıt tablosunun sütunlarını ve özet pasajları görüyor; plana `limitations_column_id`/`future_work_column_id`; boş bölüm artık `valid` değil | Tam (plan dışı, zorunluydu) |
@@ -291,7 +291,8 @@ modelin yazdığıyla doluyor.
 **P10** — 1h: hazırlık panelinin dördüncü durumu.
 **P11** — 1i: okuma biçimli rapor görünümü, değişiklik bandı, zaman çizelgesi satırları.
 **29 Eylül: P10 ve P11 yapıldı** (D113, istem `p6-slice1-p10-p11-prompt.md`): rapor ekranda yazılır, okunur, iddia düzenlenir, bayat bölüm işaretlenir; rapor atıf çapası artık konumlandırılıyor. P6, P7, P9 ve P12 sonrası hâlâ açık.
-**30 Eylül: P6 yapıldı** (D115, istem `p6-slice1-p6-prompt.md`): VIII'in sayıları kodun (`limitations_core`), II ve VIII'in sayıları `validation_json["numbers"]` içinde yapılandırılmış; kesilme kaydı `validation_json["truncated"]`'da kaldı ve VIII'de sayılıyor (üst sınır, bkz. D115 Limits); kural 7 henüz P7'de değişmedi.
+**30 Eylül: P6 yapıldı** (commit 7397963, D115, istem `p6-slice1-p6-prompt.md`): VIII'in sayıları kodun (`limitations_core`), II ve VIII'in sayıları `validation_json["numbers"]` içinde yapılandırılmış; kesilme kaydı `validation_json["truncated"]`'da kaldı ve VIII'de sayılıyor (üst sınır, bkz. D115 Limits); kural 7 P6'da değişmedi, P7'de değişti.
+**30 Eylül: P7 yapıldı** (D116, istem `p6-slice1-p7-prompt.md`): kalan sekiz montaj kuralı (5, 6, 8, 9, 11, 12, 13, 14) `assembly.py`'de; kural 12'de eşleşmeyen atıf artık hata (karar 1), kural 7 II ve VIII'in düzyazısını okumayı bıraktı, `validation_json["numbers"]`'ı dondurulmuş korpusla karşılaştırıyor. Kural 9'un VI girdisi koşulu ve VI'nın aday hücrelerinin girdiye girip girmediği açık soru olarak kaldı (D116 Limits).
 **P12** — 1j: Markdown dışa aktarma ve numaralandırma.
 **P13** — 1k: kesinti testleri (kota, çökme, iptal, kapsam değişimi, geç sonuç). Yukarıdaki
 "bölüm başarısızlığının nedeni kayboluyor" zayıflığı burada karara bağlanmalı.

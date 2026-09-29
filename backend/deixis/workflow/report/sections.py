@@ -266,8 +266,7 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
 
     issues = assembly.run_assembly_checks(flow.store, reports, report_id)
     errors = [issue for issue in issues if not (
-        issue["rule"] == "glossary_term_before_definition_warning"
-        and issue["detail"].startswith("WARNING:")
+        issue["rule"].endswith("_warning") and issue["detail"].startswith("WARNING:")
     )]
     if errors:
         reports.finalize(report_id, "draft")

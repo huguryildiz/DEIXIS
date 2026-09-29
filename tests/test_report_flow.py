@@ -15,6 +15,7 @@ from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
 from deixis.workflow.report.sections import _citation_links, run_report
 from deixis.workflow.report.assembly import run_assembly_checks
+from deixis.workflow.report import assembly
 from deixis.workflow.report.selection import SECTION_BUDGET_TOKENS
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.store import Store
@@ -136,7 +137,7 @@ class ReportAdapter(FakeAdapter):
             "text": "SYNTHETIC model-proposed limitation.",
             "basis_claim_keys": [],
             "basis_passage_ids": [],
-            "basis_cell_ids": [],
+            "basis_cell_ids": [step_input["report_target"]["cells"][0]["cell_id"]],
             "nearest_match": {"status": "not_searched", "source_id": None, "cell_id": None},
         }] if section_id == "VI" else []
         return json.dumps(envelope(step_input, "deixis.report_section_draft.v2") | {
@@ -328,6 +329,22 @@ def test_report_run_writes_every_section_and_finalizes_a_valid_report(tmp_path):
     assert reports.section(report_id, "VIII")["validation"]["numbers"] == before_numbers
 
 
+def test_equation_source_warning_alone_finalizes_valid(tmp_path, monkeypatch):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path)
+    observed = []
+
+    def checks_with_equation_warning(store_arg, reports_arg, report_id_arg):
+        assert run_assembly_checks(store_arg, reports_arg, report_id_arg) == []
+        observed.append(report_id_arg)
+        return [{"rule": "equation_text_source_warning", "section_id": "IV",
+                 "detail": "WARNING: IV.1 equation came from ocr text."}]
+
+    monkeypatch.setattr(assembly, "run_assembly_checks", checks_with_equation_warning)
+    asyncio.run(run_report(flow, run, scope))
+    assert observed == [report_id]
+    assert reports.report(report_id)["status"] == "valid"
+
+
 def test_viii_records_a_prior_section_budget_cut_in_the_full_run(tmp_path, monkeypatch):
     flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
     monkeypatch.setitem(SECTION_BUDGET_TOKENS, "III", 1)
@@ -349,14 +366,25 @@ def test_failed_viii_keeps_its_model_independent_numbers_without_text(tmp_path):
     assert viii["validation"]["numbers"]["corpus"] == reports.snapshot(report_id)["corpus"]
 
 
-def test_assembly_still_catches_a_wrong_corpus_count_in_viii_text(tmp_path):
+def test_assembly_still_catches_a_wrong_corpus_count_in_viii_numbers(tmp_path):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path)
+    asyncio.run(run_report(flow, run, scope))
+    section = reports.section(report_id, "VIII")
+    validation = section["validation"] | {"numbers": section["validation"]["numbers"] |
+                  {"corpus": section["validation"]["numbers"]["corpus"] | {"included": 999}}}
+    reports.save_section_draft(section["id"], section["step_id"], "valid", section["draft"],
+                               validation, section["word_count"])
+    assert "corpus_count_mismatch" in {issue["rule"] for issue in run_assembly_checks(store, reports, report_id)}
+
+
+def test_assembly_catches_viii_text_drift(tmp_path):
     flow, store, reports, _, run, scope, report_id = report_flow(tmp_path)
     asyncio.run(run_report(flow, run, scope))
     section = reports.section(report_id, "VIII")
     draft = section["draft"] | {"text": section["draft"]["text"] + " 999 included sources."}
     reports.save_section_draft(section["id"], section["step_id"], "valid", draft,
                                section["validation"], section["word_count"])
-    assert "corpus_count_mismatch" in {issue["rule"] for issue in run_assembly_checks(store, reports, report_id)}
+    assert "limitations_text_drift" in {issue["rule"] for issue in run_assembly_checks(store, reports, report_id)}
 
 
 def test_report_run_fails_when_the_evidence_table_is_not_ready(tmp_path):

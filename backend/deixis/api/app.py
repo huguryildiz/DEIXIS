@@ -249,6 +249,24 @@ class StartReport(BaseModel):
     table_id: str
 
 
+class ReportClaimEdit(BaseModel):
+    text: str | None = Field(default=None, max_length=4000)
+    restore_from: str | None = Field(default=None, max_length=40)
+    note: str | None = Field(default=None, max_length=1000)
+    expected_version: int
+
+
+class ReportChangesAcknowledgement(BaseModel):
+    change_keys: list[str] = Field(min_length=1, max_length=500)
+
+    @field_validator("change_keys")
+    @classmethod
+    def keys_fit(cls, keys: list[str]) -> list[str]:
+        if any(len(key) > 200 for key in keys):
+            raise ValueError("Each change key has at most 200 characters")
+        return keys
+
+
 class TableTitle(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     expected_version: int
@@ -1820,6 +1838,23 @@ def create_app(
     @app.get("/api/researches/{research_id}/reports")
     async def list_reports(research_id: str, request: Request) -> list[dict[str, Any]]:
         return research_view(store_of(request), research_id)["reportRuns"]
+
+    @app.put("/api/researches/{research_id}/reports/{report_id}/claims/{claim_id}")
+    async def edit_report_claim(research_id: str, report_id: str, claim_id: str, body: ReportClaimEdit,
+                                request: Request,
+                                idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        store = store_of(request)
+        ReportStore(store).edit_claim(research_id, report_id, claim_id, text=body.text, restore_from=body.restore_from,
+                                      note=body.note, expected_version=body.expected_version,
+                                      idempotency_key=idempotency_key)
+        return report_view(store, research_id, report_id)
+
+    @app.post("/api/researches/{research_id}/reports/{report_id}/sections/{section_id}/acknowledge-changes")
+    async def acknowledge_report_changes(research_id: str, report_id: str, section_id: str,
+                                         body: ReportChangesAcknowledgement, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        ReportStore(store).acknowledge_changes(research_id, report_id, section_id, body.change_keys)
+        return report_view(store, research_id, report_id)
 
     @app.patch(table_path + "/columns/{column_id}")
     async def revise_table_column(research_id: str, table_id: str, column_id: str, body: ColumnChange, request: Request) -> dict[str, Any]:

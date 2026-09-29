@@ -9,14 +9,19 @@ from deixis.workflow.store import Store
 from deixis.workflow.tables import TableStore
 
 
+def included_table_rows(store: Store, research_id: str, table_id: str) -> list[str]:
+    """Use the same active-row and included-source boundary for snapshots and later comparisons."""
+    included = set(store.included_sources(research_id))
+    return [source_id for source_id in TableStore(store).active_rows(table_id) if source_id in included]
+
+
 def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, Any]:
     """Copy current source, column, cell and quote records; this function does not write."""
     tables = TableStore(store)
     table = tables._table(research_id, table_id)
     columns = tables.target_columns(research_id, table_id)
     included = store.included_sources(research_id)
-    included_set = set(included)
-    source_ids = [source_id for source_id in tables.active_rows(table_id) if source_id in included_set]
+    source_ids = included_table_rows(store, research_id, table_id)
     column_ids = {column["id"] for column in columns}
     cells = []
     for row in store.conn.execute(

@@ -195,7 +195,8 @@ def test_report_view_returns_ordered_sections_claims_and_citation_anchors(tmp_pa
     ]
     cited_claims = [claim for section in view["sections"] for claim in section["claims"] if claim["evidence"]]
     assert cited_claims
-    assert all(set(claim) == {"claim_key", "text", "support_type", "evidence"} for claim in cited_claims)
+    assert all({"id", "version", "claim_key", "text", "model_text", "edited", "warnings", "revisions",
+                "support_type", "evidence"} == set(claim) for claim in cited_claims)
     assert all(set(link) == {"passage_id", "cell_id", "anchor_text"}
                for claim in cited_claims for link in claim["evidence"])
     assert all(link["anchor_text"] for claim in cited_claims for link in claim["evidence"])
@@ -210,3 +211,50 @@ def test_research_view_has_an_empty_report_summary_list(tmp_path):
     )
 
     assert research_view(store, research_id)["reportRuns"] == []
+
+
+def test_report_edit_and_acknowledgement_routes_require_current_state_and_csrf(tmp_path):
+    with TestClient(app_for(tmp_path, ReportAdapter())) as client:
+        session(client)
+        research_id = create(client, source_scope="attached", effort="quick")
+        upload_and_include(client, research_id)
+        table = create_table(client, research_id, with_columns=True)
+        fill_table(client, research_id, table)
+        started = client.post(f"/api/researches/{research_id}/reports",
+                              json={"table_id": table["table"]["id"]})
+        assert started.status_code == 202
+        report_id = started.json()["target"]["report_id"]
+        _, run = wait_run(client, research_id, started.json()["id"])
+        assert run["status"] == "completed"
+        report_url = f"/api/researches/{research_id}/reports/{report_id}"
+        view = client.get(report_url).json()
+        claim = next(c for s in view["sections"] for c in s["claims"]
+                     if any(link["cell_id"] for link in c["evidence"]))
+        section = next(s for s in view["sections"] if claim in s["claims"])
+        edit_url = f"{report_url}/claims/{claim['id']}"
+        body = {"text": "SYNTHETIC human correction", "expected_version": 1}
+        assert client.put(edit_url, json=body, headers={"x-deixis-csrf": ""}).status_code == 403
+        edited = client.put(edit_url, json=body)
+        assert edited.status_code == 200, edited.text
+        edited_claim = next(c for s in edited.json()["sections"] for c in s["claims"] if c["id"] == claim["id"])
+        assert edited_claim["evidence"] == claim["evidence"]
+        assert edited.json()["report_version"] == view["report_version"]
+        assert client.put(edit_url, json=body).status_code == 409
+        cell_id = next(link["cell_id"] for link in claim["evidence"] if link["cell_id"])
+        cell = client.app.state.store.conn.execute(
+            "SELECT table_id, column_id, source_version_id, version FROM evidence_cells WHERE id = ?", (cell_id,),
+        ).fetchone()
+        cell_url = (f"/api/researches/{research_id}/tables/{cell['table_id']}/cells/"
+                    f"{cell['column_id']}/{cell['source_version_id']}")
+        changed = client.put(cell_url, json={"state": "not_verified", "value": {"text": "SYNTHETIC changed"},
+                                             "expected_version": cell["version"]})
+        assert changed.status_code == 200, changed.text
+        key = client.get(report_url).json()["sections"][[s["section_id"] for s in view["sections"]].index(
+            section["section_id"])]["evidence_changes"]["open"][0]["key"]
+        ack_url = f"{report_url}/sections/{section['section_id']}/acknowledge-changes"
+        assert client.post(ack_url, json={"change_keys": [key]}, headers={"x-deixis-csrf": ""}).status_code == 403
+        acknowledged = client.post(ack_url, json={"change_keys": [key]})
+        assert acknowledged.status_code == 200, acknowledged.text
+        assert acknowledged.json()["sections"][[s["section_id"] for s in view["sections"]].index(
+            section["section_id"])]["evidence_changes"]["acknowledged_count"] == 1
+        assert client.post(ack_url, json={"change_keys": [key]}).status_code == 409

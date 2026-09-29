@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from deixis.domain.rules import MAX_SCHEMA_REPAIRS, TEST_EFFORT_BUDGETS, RevisionConflict
+from deixis.domain.contracts import _math_span_is_well_formed, _math_spans
+from deixis.domain.rules import MAX_SCHEMA_REPAIRS, TEST_EFFORT_BUDGETS, RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
-from deixis.workflow.report.snapshot import build_snapshot
+from deixis.workflow.report.snapshot import build_snapshot, included_table_rows
 from deixis.workflow.store import NotFound, Store
+from deixis.workflow.tables import InvalidTableInput, TableStore
 
 # The smallest model-call ceiling a report run may get, whatever the derived worst case is (owner, 2026-09-18).
 REPORT_CALL_FLOOR = 50
@@ -175,6 +177,11 @@ class ReportStore:
             section = self.conn.execute("SELECT report_id FROM report_sections WHERE id = ?", (report_section_id,)).fetchone()
             if section is None:
                 raise NotFound(report_section_id)
+            if self.conn.execute(
+                "SELECT 1 FROM report_claim_revisions v JOIN report_claims c ON c.id = v.claim_id"
+                " WHERE c.report_section_id = ? LIMIT 1", (report_section_id,),
+            ).fetchone():
+                raise RevisionConflict("A section with human-edited claims cannot be replaced")
             self.conn.execute(
                 "DELETE FROM report_citation_links WHERE claim_id IN"
                 " (SELECT id FROM report_claims WHERE report_section_id = ?)", (report_section_id,),
@@ -210,6 +217,226 @@ class ReportStore:
                      link["source_version_id"], link["step_input_id"], link.get("anchor_text"), link.get("anchor_match")),
                 )
             self._event(section["report_id"], "report_claims_saved", section_id=report_section_id)
+
+    def edit_claim(self, research_id: str, report_id: str, claim_id: str, *, text: str | None,
+                   restore_from: str | None, note: str | None, expected_version: int,
+                   idempotency_key: str | None) -> str:
+        """Keep model text and citation links fixed while recording one human revision."""
+        key = f"{research_id}:{idempotency_key}" if idempotency_key else None
+        with transaction(self.conn):
+            row = self.conn.execute(
+                "SELECT c.*, r.status AS report_status, r.run_id, s.section_id FROM report_claims c"
+                " JOIN report_sections s ON s.id = c.report_section_id JOIN reports r ON r.id = s.report_id"
+                " WHERE c.id = ? AND s.report_id = ? AND r.research_id = ?",
+                (claim_id, report_id, research_id),
+            ).fetchone()
+            if row is None:
+                raise NotFound(claim_id)
+            if key:
+                replay = self.conn.execute(
+                    "SELECT id, claim_id FROM report_claim_revisions WHERE idempotency_key = ?", (key,),
+                ).fetchone()
+                if replay:
+                    if replay["claim_id"] != claim_id:
+                        raise RevisionConflict("This idempotency key was used for another claim")
+                    return replay["id"]
+            run = self.store.run(row["run_id"])
+            if row["report_status"] not in ("valid", "draft") or run["status"] not in ("completed", "failed", "cancelled"):
+                raise RevisionConflict("A report can be edited once its run has finished")
+            check_expected_version(expected_version, row["version"])
+            if (text is None) == (restore_from is None):
+                raise InvalidTableInput("Give either text or a revision to restore")
+            if restore_from is not None:
+                if restore_from == "model":
+                    new_text = row["text"]
+                else:
+                    previous = self.conn.execute(
+                        "SELECT text FROM report_claim_revisions WHERE id = ? AND claim_id = ?",
+                        (restore_from, claim_id),
+                    ).fetchone()
+                    if previous is None:
+                        raise InvalidTableInput("Restore only a revision of this claim")
+                    new_text = previous["text"]
+            else:
+                new_text = text
+            new_text = new_text.strip()
+            current = self.conn.execute(
+                "SELECT text FROM report_claim_revisions WHERE id = ?", (row["current_revision_id"],),
+            ).fetchone() if row["current_revision_id"] else None
+            if not new_text or new_text == (current["text"] if current else row["text"]):
+                raise InvalidTableInput("The edited text must be non-empty and different from the current text")
+            warnings = [{"kind": "math_not_well_formed", "detail": span}
+                        for span in _math_spans(new_text) if not _math_span_is_well_formed(span)]
+            if row["count_json"] is not None:
+                warnings.append({"kind": "count_not_rechecked", "detail": "The count was not rechecked after this edit"})
+            revision_id = new_id("rcv")
+            self.conn.execute(
+                "INSERT INTO report_claim_revisions (id, claim_id, kind, restored_from, text, warnings_json, note,"
+                " idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (revision_id, claim_id, "human_restore" if restore_from else "human_edit", restore_from,
+                 new_text, dumps(warnings), (note or "").strip() or None, key, now()),
+            )
+            self.conn.execute("UPDATE report_claims SET current_revision_id = ?, version = version + 1 WHERE id = ?",
+                              (revision_id, claim_id))
+            self.conn.execute("UPDATE reports SET updated_at = ? WHERE id = ?", (now(), report_id))
+            self._event(report_id, "report_claim_edited", claim_id=claim_id, revision_id=revision_id,
+                        section_id=row["section_id"])
+        return revision_id
+
+    def claim_revisions(self, claim_id: str) -> list[dict[str, Any]]:
+        revisions = []
+        for row in self.conn.execute(
+            "SELECT id, claim_id, kind, restored_from, text, warnings_json, note, created_at"
+            " FROM report_claim_revisions WHERE claim_id = ? ORDER BY created_at, rowid", (claim_id,),
+        ):
+            revision = dict(row)
+            revision["warnings"] = json.loads(revision.pop("warnings_json"))
+            revisions.append(revision)
+        return revisions
+
+    def evidence_changes(self, report_id: str) -> dict[str, Any]:
+        """Compare stored cell and row identities with live records; passage extraction is not measured."""
+        report = self.report(report_id)
+        sections = [row["section_id"] for row in self.conn.execute(
+            "SELECT section_id FROM report_sections WHERE report_id = ?", (report_id,),
+        )]
+        empty = {section: {"open": [], "acknowledged_count": 0, "unresolved_refs": 0} for section in sections}
+        result = {"changed_cells": 0, "removed_sources": 0, "added_sources": 0,
+                  "revised_columns": 0, "any": False, "not_checked": ["passages"], "sections": empty}
+        saved = self.conn.execute(
+            "SELECT table_id, snapshot_json FROM report_snapshot WHERE report_id = ?", (report_id,),
+        ).fetchone()
+        if saved is None:
+            return result
+        snapshot = json.loads(saved["snapshot_json"])
+        table_id = saved["table_id"]
+        live_rows = set(included_table_rows(self.store, report["research_id"], table_id))
+        frozen_rows = {row["source_version_id"] for row in snapshot["rows"]}
+        removed = frozen_rows - live_rows
+        result["removed_sources"] = len(removed)
+        result["added_sources"] = len(live_rows - frozen_rows)
+        stamps = {row["source_version_id"]: row for row in self.conn.execute(
+            "SELECT t.source_version_id, t.removed_at AS row_removed_at, m.removed_at AS membership_removed_at,"
+            " s.state AS selection_state, s.updated_at AS selection_updated_at FROM table_rows t"
+            " LEFT JOIN corpus_memberships m ON m.research_id = ? AND m.source_version_id = t.source_version_id"
+            " LEFT JOIN selections s ON s.research_id = ? AND s.source_version_id = t.source_version_id"
+            " WHERE t.table_id = ?", (report["research_id"], report["research_id"], table_id),
+        )}
+        removed_changes = {}
+        for source_id in removed:
+            record = stamps.get(source_id)
+            departure = [] if record is None else [record["row_removed_at"], record["membership_removed_at"],
+                record["selection_updated_at"] if record["selection_state"] != "included" else None]
+            stamp = max((value for value in departure if value is not None), default="none")
+            removed_changes[source_id] = {"key": f"source:{source_id}:{stamp}", "kind": "source_removed",
+                                          "source_version_id": source_id}
+        live_cells = {row["id"]: row["current_revision_id"] for row in self.conn.execute(
+            "SELECT id, current_revision_id FROM evidence_cells WHERE table_id = ?", (table_id,),
+        )}
+        changed_cells = {}
+        for cell in snapshot["cells"]:
+            live_revision = live_cells.get(cell["cell_id"])
+            if live_revision != cell["cell_revision_id"]:
+                changed_cells[cell["cell_id"]] = {
+                    "key": f"cell:{cell['cell_id']}:{live_revision or 'none'}", "kind": "cell_changed",
+                    "source_version_id": cell["source_version_id"], "cell_id": cell["cell_id"],
+                    "column_id": cell["column_id"],
+                }
+        result["changed_cells"] = len(changed_cells)
+        # target_columns checks table visibility; a trashed table still has readable column revisions.
+        live_columns = {column["id"]: column["current_revision"] for column in
+                        TableStore(self.store)._columns(table_id)}
+        result["revised_columns"] = sum(live_columns.get(column["column_id"]) != column["revision"]
+                                        for column in snapshot["columns"])
+        result["any"] = any(result[field] for field in
+                            ("changed_cells", "removed_sources", "added_sources", "revised_columns"))
+
+        claims = [dict(row) for row in self.conn.execute(
+            "SELECT c.id, c.claim_key, s.section_id FROM report_claims c"
+            " JOIN report_sections s ON s.id = c.report_section_id WHERE s.report_id = ?", (report_id,),
+        )]
+        by_id = {claim["id"]: claim for claim in claims}
+        by_key: dict[str, list[dict[str, Any]]] = {}
+        for claim in claims:
+            by_key.setdefault(claim["claim_key"], []).append(claim)
+        direct: dict[str, dict[str, dict[str, Any]]] = {claim["id"]: {} for claim in claims}
+        for link in self.conn.execute(
+            "SELECT l.claim_id, l.cell_id, l.source_version_id FROM report_citation_links l"
+            " JOIN report_claims c ON c.id = l.claim_id JOIN report_sections s ON s.id = c.report_section_id"
+            " WHERE s.report_id = ?", (report_id,),
+        ):
+            if change := changed_cells.get(link["cell_id"]):
+                direct[link["claim_id"]][change["key"]] = change | {"via": "citation"}
+            if change := removed_changes.get(link["source_version_id"]):
+                direct[link["claim_id"]][change["key"]] = change | {"via": "citation"}
+        section_changes: dict[str, dict[str, dict[str, Any]]] = {section: {} for section in sections}
+        for claim in claims:
+            section_changes[claim["section_id"]].update(direct[claim["id"]])
+        gaps = {row["gap_id"]: json.loads(row["basis_json"]) for row in self.conn.execute(
+            "SELECT gap_id, basis_json FROM report_gaps WHERE report_id = ?", (report_id,),
+        )}
+        frozen_cell_ids = {cell["cell_id"] for cell in snapshot["cells"]}
+        for ref in self.conn.execute(
+            "SELECT f.claim_id, f.ref_kind, f.ref_value FROM report_claim_refs f"
+            " JOIN report_claims c ON c.id = f.claim_id JOIN report_sections s ON s.id = c.report_section_id"
+            " WHERE s.report_id = ?", (report_id,),
+        ):
+            section_id = by_id[ref["claim_id"]]["section_id"]
+            target = section_changes[section_id]
+            if ref["ref_kind"] == "body_ref":
+                matches = [claim for claim in by_key.get(ref["ref_value"], []) if claim["section_id"] != section_id]
+                if len(matches) != 1:
+                    result["sections"][section_id]["unresolved_refs"] += 1
+                    continue
+                indirect = direct[matches[0]["id"]].values()
+            else:
+                basis = gaps.get(ref["ref_value"])
+                if basis is None:
+                    result["sections"][section_id]["unresolved_refs"] += 1
+                    continue
+                indirect = []
+                for cell_id in basis.get("basis_cell_ids", []):
+                    if cell_id not in frozen_cell_ids:
+                        result["sections"][section_id]["unresolved_refs"] += 1
+                    elif cell_id in changed_cells:
+                        indirect.append(changed_cells[cell_id])
+                for claim_key in basis.get("basis_claim_keys", []):
+                    matches = by_key.get(claim_key, [])
+                    if len(matches) != 1:
+                        result["sections"][section_id]["unresolved_refs"] += 1
+                    else:
+                        indirect.extend(direct[matches[0]["id"]].values())
+            for change in indirect:
+                target.setdefault(change["key"], change | {"via": ref["ref_kind"]})
+        acknowledged = {(row["section_id"], row["change_key"]) for row in self.conn.execute(
+            "SELECT section_id, change_key FROM report_stale_acknowledgements WHERE report_id = ?", (report_id,),
+        )}
+        for section_id, changes in section_changes.items():
+            result["sections"][section_id]["open"] = [change for key, change in sorted(changes.items())
+                                                       if (section_id, key) not in acknowledged]
+            result["sections"][section_id]["acknowledged_count"] = sum(
+                (section_id, key) in acknowledged for key in changes)
+        return result
+
+    def acknowledge_changes(self, research_id: str, report_id: str, section_id: str,
+                            change_keys: list[str]) -> int:
+        with transaction(self.conn):
+            report = self.report(report_id)
+            if report["research_id"] != research_id:
+                raise NotFound(report_id)
+            self.section(report_id, section_id)
+            open_keys = {change["key"] for change in self.evidence_changes(report_id)["sections"][section_id]["open"]}
+            if not change_keys or not set(change_keys) <= open_keys:
+                raise RevisionConflict("The evidence changed again; reload this report")
+            inserted = 0
+            for key in change_keys:
+                inserted += self.conn.execute(
+                    "INSERT OR IGNORE INTO report_stale_acknowledgements"
+                    " (id, report_id, section_id, change_key, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (new_id("rsa"), report_id, section_id, key, now()),
+                ).rowcount
+            self._event(report_id, "report_changes_acknowledged", section_id=section_id, count=inserted)
+            return inserted
 
     def save_gaps(self, report_id: str, gaps: list[dict[str, Any]]) -> None:
         with transaction(self.conn):

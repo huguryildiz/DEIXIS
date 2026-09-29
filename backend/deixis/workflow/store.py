@@ -288,6 +288,32 @@ class Store:
                 (research_id,),
             )]
             self.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (research_id,))
+            self.conn.execute(
+                "DELETE FROM report_stale_acknowledgements WHERE report_id IN"
+                " (SELECT id FROM reports WHERE research_id = ?)", (research_id,),
+            )
+            self.conn.execute(
+                "UPDATE report_claims SET current_revision_id = NULL WHERE report_section_id IN"
+                " (SELECT s.id FROM report_sections s JOIN reports r ON r.id = s.report_id WHERE r.research_id = ?)",
+                (research_id,),
+            )
+            for table in ("report_claim_revisions", "report_citation_links", "report_claim_refs"):
+                self.conn.execute(
+                    f"DELETE FROM {table} WHERE claim_id IN (SELECT c.id FROM report_claims c"
+                    " JOIN report_sections s ON s.id = c.report_section_id JOIN reports r ON r.id = s.report_id"
+                    " WHERE r.research_id = ?)", (research_id,),
+                )
+            self.conn.execute(
+                "DELETE FROM report_claims WHERE report_section_id IN"
+                " (SELECT s.id FROM report_sections s JOIN reports r ON r.id = s.report_id WHERE r.research_id = ?)",
+                (research_id,),
+            )
+            for table in ("report_phrase_repairs", "report_gaps", "report_snapshot", "report_sections"):
+                self.conn.execute(
+                    f"DELETE FROM {table} WHERE report_id IN (SELECT id FROM reports WHERE research_id = ?)",
+                    (research_id,),
+                )
+            self.conn.execute("DELETE FROM reports WHERE research_id = ?", (research_id,))
             from deixis.workflow.tables import purge_tables  # tables builds on this module
             purge_tables(self.conn, research_id)  # cell revisions reference runs, step inputs and passages deleted below
             self.conn.execute("DELETE FROM evidence_links WHERE claim_id IN (SELECT id FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?))", (research_id,))

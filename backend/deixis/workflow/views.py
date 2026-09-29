@@ -250,18 +250,20 @@ def ocr_state(store: Store, asset_id: str) -> dict[str, Any]:
 
 
 def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any]:
-    """Return one report only through the research that owns it, with stored claim anchors."""
+    """An edited claim's text is working text, not revalidated; draft, validation, word_count and
+    report_version still describe the model-written version until a publish step exists."""
     store.research(research_id)
     reports = ReportStore(store)
     report = reports.report(report_id)
     if report["research_id"] != research_id:
         raise NotFound(report_id)
 
+    changes = reports.evidence_changes(report_id)
     sections = []
     for section in reports.sections(report_id):
         claims = []
         for claim in store.conn.execute(
-            "SELECT id, claim_key, text, support_type FROM report_claims"
+            "SELECT id, claim_key, text, support_type, current_revision_id, version FROM report_claims"
             " WHERE report_section_id = ? ORDER BY ordinal", (section["id"],),
         ):
             evidence = [
@@ -272,12 +274,22 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                     " WHERE claim_id = ? ORDER BY rowid", (claim["id"],),
                 )
             ]
-            claims.append({"claim_key": claim["claim_key"], "text": claim["text"],
+            revisions = reports.claim_revisions(claim["id"])
+            current = next((revision for revision in revisions if revision["id"] == claim["current_revision_id"]), None)
+            claims.append({"id": claim["id"], "claim_key": claim["claim_key"],
+                           "version": claim["version"], "text": current["text"] if current else claim["text"],
+                           "model_text": claim["text"], "edited": current is not None,
+                           "warnings": current["warnings"] if current else [], "revisions": revisions,
                            "support_type": claim["support_type"], "evidence": evidence})
         sections.append({key: section[key] for key in (
             "section_id", "status", "word_count", "draft", "validation",
-        )} | {"claims": claims})
-    return report | {"sections": sections}
+        )} | {"claims": claims, "evidence_changes": changes["sections"][section["section_id"]]})
+    edited = store.conn.execute(
+        "SELECT 1 FROM report_claim_revisions v JOIN report_claims c ON c.id = v.claim_id"
+        " JOIN report_sections s ON s.id = c.report_section_id WHERE s.report_id = ? LIMIT 1", (report_id,),
+    ).fetchone()
+    return report | {"sections": sections, "evidence_changes": {key: value for key, value in changes.items() if key != "sections"},
+                     "edited_after_version": report["report_version"] if edited else None}
 
 
 def research_view(store: Store, research_id: str) -> dict[str, Any]:

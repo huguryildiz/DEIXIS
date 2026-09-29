@@ -382,7 +382,7 @@ def test_the_europepmc_migration_keeps_every_pdf_lookup_row_and_accepts_the_new_
         store.record_pdf_discovery(rid, svid, "europepmc", "10.1/x", Lookup("zero_results", [], 200))
 
     monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
-    assert db.migrate(conn) == [55]
+    assert db.migrate(conn) == [55, 56]
     after = {table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")]
              for table in ("pdf_discovery_runs", "pdf_candidates")}
     assert after == before  # every row and column value kept, other_title_count included

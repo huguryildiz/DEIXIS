@@ -2,6 +2,23 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D114 — The last medicine measurement at `a04eaa0` passes only gate 3; the default stays `legacy` for good in this track, 24b closes undone and the SW track ends
+
+**Status:** accepted 2026-09-30 as the recorded result of slice 30 (plan `docs/product/sw-slice30-medicine-final.md`, commit `a04eaa0`; resume prompt `docs/product/sw-slice30-resume-prompt.md`). The plan named D112; P6 took D112 and D113 first, so this is D114. Run folder `.local/sw-slice30-medicine-final-2026-09-28/`; results `docs/product/sw-slice30-results.md`. No product file changed; no migration.
+
+**Context:** Slice 27 (D108) failed gates 2 and 4 on medicine. D109 then changed how full-text reading judges the comparator. Slice 30 re-ran slice 27's seven medicine researches, protocol, reference set (|R| = 12, the post-hoc BMI widening, Cienfuegos 2020 as two units) and gates unchanged at `a04eaa0` (`skill_package_hash` `sha256:1122205c…`), with a cap of 1,000 model sessions. The plan fixed the consequence in advance: all four gates pass → 24b unblocked; any gate fails or is unreadable → the default stays `legacy` for good, 24b closes as not done.
+
+**Decision:** All seven researches ran (Codex `gpt-5.6-luna` medium, 898 counted model sessions). The verdict rests on the owner's decision of 30 September to leave the 145 sessions in the five folders of four researches that first ran without provider keys (`invalid-noenv-*`) out of the cap. Counted with them the total is 1,043, and the frozen cap rule would have stopped the campaign with no verdict. Each verdict joins two commits (quantum from `65a7ec8`, medicine from `a04eaa0`), and the medicine half rests on a reference rule chosen after the numbers were seen.
+
+- *Gate 1, completion:* **fails**, 9 of 10. `qtre-sw-standard-r2`'s answer stayed `unverified_draft` (`anchor_not_in_passage`, not fixed by the bounded repair).
+- *Gate 2, workflow comparison:* **fails**, unreadable on medicine because one of the four `standard` runs has no valid answer. Its arithmetic fails too: pool mean `sw` 12.0 vs `legacy` 9.5 (passes), cited mean `sw` 1.0 (2 and 0) vs `legacy` 4.5 (4 and 5), below 3.5; the one-unit reading (|R| = 11) gives the same.
+- *Gate 3, evidence integrity:* **passes**.
+- *Gate 4, analyst reading:* **fails**, unreadable on medicine: 6 unique includes across the two `sw` `standard` runs (8 needed), 8 `sw` claims. None of the 6 includes, 8 `sw` claims or 10 `legacy` claims was read as serious by the run session, and the blind Sonnet second reader agreed on its 5 seeded units.
+
+The default stays `legacy` for good in this track. 24b is closed as not done, and the SW track ends; the `sw` workflow stays available behind its flags.
+
+**Limits:** One run per research on one machine and one model; the two readers are models, not a human check. The medicine reference rule is post hoc, so gate 2's medicine verdict is descriptive. No quantum research ran at this commit. The run deviated from the plan in ways recorded in the results file: `detailed` restarted after a `serverOverloaded` stop, the run moved to a worktree at `a04eaa0` and back, four researches first ran without provider keys and were re-run by the owner's decision (their folders are kept as `invalid-noenv-*` and not counted), the driver did not run the per-research diff check the plan named, and the last four researches ran on the owner's VPN while the first three did not, so the two `standard` repeats of each workflow were measured on different networks (effect not measured). How often `anchor_not_in_passage` leaves an `sw` answer unverified was not measured.
+
 ## D116 — The other eight assembly rules are in code, and rule 7 compares the stored numbers of II and VIII with the frozen corpus instead of reading label words in prose
 
 **Status:** accepted 2026-09-30 as P6 slice 1 batch P7 (prompt `docs/product/p6-slice1-p7-prompt.md`). Structural checks only; no report review (P9) yet.

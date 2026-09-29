@@ -14,7 +14,7 @@ ALLOWED_SUPPORT = {
     "V": ("source_stated", "analyst_inference"),
     "VI": ("analyst_inference",),
     "VII": ("analyst_inference", "source_stated"),
-    "VIII": ("source_stated", "analyst_inference"),
+    "VIII": ("analyst_inference",),
     "IX": ("source_stated", "analyst_inference"),
     "abstract": ("source_stated", "analyst_inference"),
     "index_terms": ("source_stated",),

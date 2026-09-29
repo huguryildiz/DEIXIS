@@ -103,6 +103,8 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
     evidence = selection.select_evidence(flow.store, snapshot, section_id, frozen_plan, prior_summaries)
     gap_candidates = gaps.generate_corpus_absence_candidates(snapshot, frozen_plan.get("axes", [])) \
         if section_id == "VI" else []
+    numbers = (review_methodology.limitations_core(flow.store, reports, report_id, snapshot)
+               if section_id == "VIII" else None)
     target = {
         "report_id": report_id,
         "section_id": section_id,
@@ -113,12 +115,14 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
         "prior_summaries": prior_summaries,
         "repair_request": None,
         "review_scope": None,
+        "limitations_core": numbers,
     }
     operation_key = f"report_section:{section_id}"
     step = flow.store.step(run["id"], operation_key, "model:report_section")
     reports.save_section_draft(
         section_key, step["id"], "running", None,
-        {"ok": False, "issues": [], "truncated": evidence["truncated"]}, None,
+        {"ok": False, "issues": [], "truncated": evidence["truncated"],
+         **({"numbers": numbers} if numbers is not None else {})}, None,
     )
 
     async def call() -> dict[str, Any]:
@@ -137,13 +141,14 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
         reports.save_section_draft(
             section_key, step["id"], "failed", None,
             {"ok": False, "issues": [{"code": exc.reason, "detail": exc.detail}],
-             "truncated": evidence["truncated"]}, None,
+             "truncated": evidence["truncated"], **({"numbers": numbers} if numbers is not None else {})}, None,
         )
         return "failed"
     if output.get("invalid"):
         reports.save_section_draft(
             section_key, step["id"], "failed", None,
-            {"ok": False, "issues": output["issues"], "truncated": evidence["truncated"]}, None,
+            {"ok": False, "issues": output["issues"], "truncated": evidence["truncated"],
+             **({"numbers": numbers} if numbers is not None else {})}, None,
         )
         return "failed"
 
@@ -156,14 +161,24 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
         flow.deps.package.files[phrasebank.PHRASEBANK], language,
     )
     draft, exceptions = await repair_section(flow, run, scope, report_id, section_id, draft, flagged)
+    limitations_issues = ([(i, issue) for i, claim in enumerate(draft["claims"])
+                           for issue in contracts.limitations_claim_issues(claim)]
+                          if section_id == "VIII" else [])
+    if numbers is not None:
+        language = (reports.report(report_id)["language"] or scope.get("language_hint") or "en").lower()
+        draft["text"] = review_methodology.render_limitations(numbers, language)
     issues = ([{"code": "empty_section", "detail": "section has no claims or insufficient-evidence entries"}]
               if empty else exceptions)
-    # A recorded phrase exception is an accepted evidence-first outcome; only an empty section remains a draft here.
-    status = "draft" if empty else "valid"
+    issues.extend({"code": issue.code, "detail": f"/claims/{i}{issue.path}: {issue.message}"}
+                  for i, issue in limitations_issues)
+    # Phrase exceptions are accepted; VIII claim violations require a rewritten section.
+    invalid = empty or bool(limitations_issues)
+    status = "draft" if invalid else "valid"
     reports.save_claims(section_key, draft["claims"], _citation_links(payload, draft))
     reports.save_section_draft(
         section_key, step["id"], status, draft,
-        {"ok": not empty, "issues": issues, "truncated": evidence["truncated"]}, _word_count(draft),
+        {"ok": not invalid, "issues": issues, "truncated": evidence["truncated"],
+         **({"numbers": numbers} if numbers is not None else {})}, _word_count(draft),
     )
     if section_id == "VI":
         candidate_ids = {candidate["gap_id"] for candidate in gap_candidates}
@@ -188,7 +203,8 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
         flow._fail(run_id, "table_not_ready", readiness)
     snapshot = reports.save_snapshot(report_id, table_id)
     target = {"report_id": report_id, "section_id": None, "columns": snapshot["columns"], "plan": None, "cells": [],
-              "gap_candidates": [], "prior_summaries": [], "repair_request": None, "review_scope": None}
+              "gap_candidates": [], "prior_summaries": [], "repair_request": None, "review_scope": None,
+              "limitations_core": None}
 
     source_ids = [row["source_version_id"] for row in snapshot["rows"]]
     # One passage per source for the plan's vocabulary: the abstract, or the first PDF page when a source has

@@ -84,6 +84,7 @@ def report_target(source_id, passage_id):
         "prior_summaries": [],
         "repair_request": None,
         "review_scope": None,
+        "limitations_core": None,
     }
 
 

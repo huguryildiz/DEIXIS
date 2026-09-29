@@ -61,6 +61,52 @@ def test_report_target_requires_frozen_cells_and_gap_candidates():
     assert "step_input_schema_invalid" in {issue.code for issue in contracts.check_step_input(si)}
 
 
+def test_report_target_requires_limitations_core_and_only_viii_may_receive_it():
+    si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
+    del si["report_target"]["limitations_core"]
+    assert "step_input_schema_invalid" in {issue.code for issue in contracts.check_step_input(si)}
+    si["report_target"]["limitations_core"] = None
+    assert contracts.check_step_input(si) == []
+    si["report_target"]["section_id"] = "VIII"
+    assert "limitations_core_mismatch" in {issue.code for issue in contracts.check_step_input(si)}
+    core = {
+        "version": 1, "kind": "limitations", "as_of": "before_viii",
+        "corpus": {"found": 1, "unique": 1, "screened": 1, "included": 1, "full_text": 0},
+        "recall_measurement": None, "open_access_bias_note": True, "included": 1, "full_text": 0,
+        "no_full_text_share": 1.0,
+        "analyst_inference_share": {"analyst_inference": 0, "total": 0, "share": None},
+        "kill_search_status": "not_run",
+        "phrase_repair_exceptions": {"repaired": 0, "reverted_exception": 0, "unframed_exception": 0},
+        "truncation": {"budget_cut": 0, "missing_evidence": 0, "by_section": {}},
+        "items": [{"number": i, "key": key, "text": "SYNTHETIC item"} for i, key in enumerate((
+            "recall_measurement", "open_access_bias_note", "no_full_text_share", "analyst_inference_share",
+            "kill_search_status", "phrase_repair_exceptions", "truncation"), 1)],
+    }
+    si["report_target"]["limitations_core"] = core
+    assert contracts.check_step_input(si) == []
+    si["report_target"]["section_id"] = "IV"
+    assert "limitations_core_mismatch" in {issue.code for issue in contracts.check_step_input(si)}
+
+
+def test_viii_claims_reject_numeric_restatement_and_source_stated_without_evidence():
+    si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
+    draft = json.loads(json.dumps(next(case for case in CASES if case["name"] == "report_section_valid")["output"]))
+    draft["section_id"] = "VIII"
+    draft["claims"][0]["text"] = "Item 3 is limited; 42 records were included."
+    draft["claims"][0]["support_type"] = "source_stated"
+    draft["claims"][0]["passage_ids"] = []
+    draft["citation_anchors"] = []
+    codes = contracts.validate_model_output(si, draft).codes()
+    assert "limitations_number_restated" in codes
+    assert "source_stated_without_evidence" in codes
+    draft["claims"][0]["text"] = "Item 3 limits interpretation."
+    draft["claims"][0]["support_type"] = "analyst_inference"
+    assert "limitations_number_restated" not in contracts.validate_model_output(si, draft).codes()
+    draft["section_id"] = "IV"
+    draft["claims"][0]["text"] = "42 records were included."
+    assert "limitations_number_restated" not in contracts.validate_model_output(si, draft).codes()
+
+
 def test_report_target_column_ids_are_unique():
     si = json.loads(json.dumps(STEP_INPUTS["C_report_plan"]))
     si["report_target"]["columns"].append(dict(si["report_target"]["columns"][0]))

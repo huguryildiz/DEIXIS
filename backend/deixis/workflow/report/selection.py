@@ -41,6 +41,9 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
     """
     if section_id not in SECTION_BUDGET_TOKENS:
         raise ValueError(f"Unknown report section: {section_id}")
+    if section_id == "VIII":
+        # VIII receives its numeric core and prior summaries; source limitation claims belong to VI.
+        return {"passages": [], "cells": [], "truncated": []}
 
     del prior_summaries
     source_ids = [row["source_version_id"] for row in snapshot.get("rows", [])]

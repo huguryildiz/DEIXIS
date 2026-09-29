@@ -79,6 +79,7 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await expect(sheet.getByRole('heading', { name: 'II. Review Methodology' })).toBeVisible()
     await expect(sheet.getByRole('heading', { name: 'IX. Conclusion' })).toBeVisible()
     await expect(sheet.locator('.evidence-report-section').first()).toContainText('Abstract')
+    await expect(section(page, 'VIII')).toContainText('Recall was not measured against a known source set.')
     await expect(sheet).toContainText('TABLE I')
     await expect(sheet.locator('.cite-chip').first()).toContainText('[1]')
     const report = await (await api.get(`/api/researches/${researchId}/reports/${reportId}`)).json()

@@ -601,7 +601,8 @@
    "gap_candidates": [],
    "prior_summaries": [],
    "repair_request": null,
-   "review_scope": null
+   "review_scope": null,
+   "limitations_core": null
   }
  },
  "C_report_section_IV": {
@@ -844,7 +845,8 @@
    "gap_candidates": [],
    "prior_summaries": [],
    "repair_request": null,
-   "review_scope": null
+   "review_scope": null,
+   "limitations_core": null
   }
  },
  "C_report_phrase_repair": {
@@ -1084,6 +1086,7 @@
    "cells": [],
    "gap_candidates": [],
    "prior_summaries": [],
+   "limitations_core": null,
    "repair_request": {
     "section_id": "IV",
     "sentences": [
@@ -1300,7 +1303,8 @@
    "repair_request": null,
    "review_scope": [
     "IV"
-   ]
+   ],
+   "limitations_core": null
   }
  },
  "C_report_section_VII": {
@@ -1552,7 +1556,8 @@
    "gap_candidates": [],
    "prior_summaries": [],
    "repair_request": null,
-   "review_scope": null
+   "review_scope": null,
+   "limitations_core": null
   }
  },
  "D_vocabulary_labels": {

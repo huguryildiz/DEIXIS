@@ -39,6 +39,119 @@ _CHAIN_TEMPLATES = {
 }
 
 
+def render_review_methodology(numbers: dict[str, Any], language: str, *, providers: str, queries: str,
+                              compiler_versions: str, screening_models: str,
+                              screening_criteria: str, chain_provenance: str) -> str:
+    return _TEMPLATES["tr" if language.startswith("tr") else "en"].format(
+        **numbers["corpus"], full_text_ratio=numbers["full_text_ratio"],
+        fetch_pdf=numbers["fetch_pdf"], pdf_other_copy=numbers["pdf_other_copy"],
+        providers=providers, queries=queries, compiler_versions=compiler_versions,
+        screening_models=screening_models, screening_criteria=screening_criteria,
+    ) + chain_provenance
+
+
+def render_limitations(numbers: dict[str, Any], language: str) -> str:
+    del language  # Item text was frozen in the report language with the numbers.
+    return " ".join(f"{item['number']}. {item['text']}" for item in numbers["items"])
+
+
+def limitations_core(store: Store, reports: ReportStore, report_id: str,
+                     snapshot: dict[str, Any]) -> dict[str, Any]:
+    corpus = dict(snapshot["corpus"])
+    included, full_text = corpus["included"], corpus["full_text"]
+    sections = {section["section_id"]: section for section in reports.sections(report_id)
+                if section["section_id"] in ("III", "IV", "V", "VI", "VII")}
+    valid_ids = [section["id"] for section in sections.values() if section["status"] == "valid"]
+    counts = {"analyst_inference": 0, "total": 0, "share": None}
+    if valid_ids:
+        marks = ",".join("?" for _ in valid_ids)
+        for row in store.conn.execute(
+            f"SELECT support_type, COUNT(*) AS n FROM report_claims WHERE report_section_id IN ({marks})"
+            " GROUP BY support_type", valid_ids,
+        ):
+            counts["total"] += row["n"]
+            if row["support_type"] == "analyst_inference":
+                counts["analyst_inference"] = row["n"]
+    if counts["total"]:
+        counts["share"] = counts["analyst_inference"] / counts["total"]
+
+    latest = {}
+    for row in store.conn.execute(
+        "SELECT section_id, sentence_id, outcome FROM report_phrase_repairs WHERE report_id = ?"
+        " AND section_id IN ('III','IV','V','VI','VII') ORDER BY rowid", (report_id,),
+    ):
+        latest[(row["section_id"], row["sentence_id"])] = row["outcome"]
+    repairs = {"repaired": 0, "reverted_exception": 0, "unframed_exception": 0}
+    for outcome in latest.values():
+        repairs["repaired" if outcome == "kept" else outcome] += 1
+
+    by_section = {}
+    for section_id in ("III", "IV", "V", "VI", "VII"):
+        section = sections.get(section_id)
+        kinds = {"passage": 0, "cell": 0, "cell_missing_evidence": 0}
+        for record in ((section or {}).get("validation") or {}).get("truncated", []):
+            if record["record_kind"] in kinds:
+                kinds[record["record_kind"]] += 1
+        if any(kinds.values()):
+            by_section[section_id] = kinds
+    truncation = {
+        "budget_cut": sum(k["passage"] + k["cell"] for k in by_section.values()),
+        "missing_evidence": sum(k["cell_missing_evidence"] for k in by_section.values()),
+        "by_section": by_section,
+    }
+    report = reports.report(report_id)
+    language = (report["language"] or store.scope(report["research_id"], report["scope_revision"])
+                .get("language_hint") or "en").lower()
+    tr = language.startswith("tr")
+    share = (included - full_text) / included if included else 0.0
+    section_cuts = ", ".join(
+        (f"{key}: {value['passage']} pasaj, {value['cell']} hücre, "
+         f"{value['cell_missing_evidence']} eksik kanıt" if tr else
+         f"{key}: {value['passage']} passage, {value['cell']} cell, {value['cell_missing_evidence']} missing")
+        for key, value in by_section.items()
+    ) or ("yok" if tr else "none")
+    texts = (
+        [
+            "Bilinen bir kaynak kümesiyle geri çağırma ölçümü yapılmadı.",
+            f"Dondurulmuş korpusta {corpus['found']} bulunan, {corpus['unique']} tekil, "
+            f"{corpus['screened']} taranan, {included} dahil kaynak vardı; {included} dahil kaynağın "
+            f"{full_text} tanesinde tam metin vardı ve açık erişim kaynaklara yönelme olasılığı vardır.",
+            f"{included} dahil kaynağın {included - full_text} tanesinde PDF metni yoktu ({share:.1%}).",
+            f"Geçerli III–VII bölümlerindeki {counts['total']} iddianın {counts['analyst_inference']} tanesi "
+            f"analist çıkarımıydı ({counts['share']:.1%})." if counts["share"] is not None else
+            "Geçerli III–VII bölümlerinde payı hesaplanacak iddia yoktu.",
+            "Araştırma boşluğu için kill-search çalıştırılmadı.",
+            f"VIII yazılmadan önceki cümle onarımları: {repairs['repaired']} korundu, "
+            f"{repairs['reverted_exception']} geri alındı, {repairs['unframed_exception']} kalıpsız kaldı.",
+            f"Bütçe nedeniyle {truncation['budget_cut']} kayıt kesildi; {truncation['missing_evidence']} hücrenin "
+            f"kanıt pasajı bulunamadı (bölümler: {section_cuts}).",
+        ] if tr else [
+            "Recall was not measured against a known source set.",
+            f"The frozen corpus had {corpus['found']} found, {corpus['unique']} unique, "
+            f"{corpus['screened']} screened, and {included} included sources; full text was available "
+            f"for {full_text}/{included} included sources and may favor open access sources.",
+            f"{included - full_text} of {included} included sources had no PDF text ({share:.1%}).",
+            f"In valid sections III–VII, {counts['analyst_inference']} of {counts['total']} claims were analyst "
+            f"inferences ({counts['share']:.1%})." if counts["share"] is not None else
+            "No claims in valid sections III–VII were available for an inference share.",
+            "A kill search for research gaps was not run.",
+            f"Before VIII was written, phrase repairs kept {repairs['repaired']}, reverted "
+            f"{repairs['reverted_exception']}, and left {repairs['unframed_exception']} unframed.",
+            f"{truncation['budget_cut']} records were cut for the budget; a cell's evidence passage was not found "
+            f"for {truncation['missing_evidence']} cells (by section: {section_cuts}).",
+        ]
+    )
+    keys = ("recall_measurement", "open_access_bias_note", "no_full_text_share", "analyst_inference_share",
+            "kill_search_status", "phrase_repair_exceptions", "truncation")
+    return {"version": 1, "kind": "limitations", "as_of": "before_viii", "corpus": corpus,
+            "recall_measurement": None, "open_access_bias_note": True, "included": included,
+            "full_text": full_text, "no_full_text_share": share,
+            "analyst_inference_share": counts, "kill_search_status": "not_run",
+            "phrase_repair_exceptions": repairs, "truncation": truncation,
+            "items": [{"number": i, "key": key, "text": sentence}
+                      for i, (key, sentence) in enumerate(zip(keys, texts), 1)]}
+
+
 def _chain_provenance(steps: list[dict[str, Any]], language: str) -> str:
     summaries = [step["output"] for step in steps
                  if step["kind"] == "code:chain_summary" and step["status"] == "succeeded" and step["output"]]
@@ -127,23 +240,16 @@ def write_review_methodology(store: Store, reports: ReportStore, report_id: str,
     corpus = snapshot["corpus"]
     included = corpus["included"]
     language = (report["language"] or store.scope(research_id, scope_revision).get("language_hint") or "en").lower()
-    template = _TEMPLATES["tr" if language.startswith("tr") else "en"]
-    text = template.format(
-        providers=providers,
-        queries=queries,
-        compiler_versions=compiler_versions,
-        found=corpus["found"],
-        unique=corpus["unique"],
-        screened=corpus["screened"],
-        included=included,
-        fetch_pdf=sum(step["kind"] == "fetch_pdf" for step in steps),
-        pdf_other_copy=sum(step["kind"] == "pdf_other_copy" for step in steps),
-        full_text=corpus["full_text"],
-        full_text_ratio=corpus["full_text"] / included if included else 0.0,
-        screening_models=screening_models,
-        screening_criteria=screening_criteria,
-    ) + _chain_provenance(steps, language)
+    numbers = {"version": 1, "kind": "review_methodology", "corpus": dict(corpus),
+               "full_text_ratio": corpus["full_text"] / included if included else 0.0,
+               "fetch_pdf": sum(step["kind"] == "fetch_pdf" for step in steps),
+               "pdf_other_copy": sum(step["kind"] == "pdf_other_copy" for step in steps)}
+    text = render_review_methodology(
+        numbers, language, providers=providers, queries=queries, compiler_versions=compiler_versions,
+        screening_models=screening_models, screening_criteria=screening_criteria,
+        chain_provenance=_chain_provenance(steps, language),
+    )
     section_id = reports.create_section(report_id, "II", 2)
     reports.save_section_draft(
-        section_id, None, "valid", {"text": text}, {"ok": True, "issues": []}, len(text.split())
+        section_id, None, "valid", {"text": text}, {"ok": True, "issues": [], "numbers": numbers}, len(text.split())
     )

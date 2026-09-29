@@ -14,6 +14,8 @@ from deixis.storage.db import dumps, new_id
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
 from deixis.workflow.report.sections import _citation_links, run_report
+from deixis.workflow.report.assembly import run_assembly_checks
+from deixis.workflow.report.selection import SECTION_BUDGET_TOKENS
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.store import Store
 from deixis.workflow.tables import TableStore
@@ -157,7 +159,7 @@ def _claim(section_id, passage_ids=None, cell_ids=None, body_refs=None):
     return {
         "claim_key": f"{section_id}.1",
         "text": text,
-        "support_type": "source_stated",
+        "support_type": "analyst_inference" if section_id == "VIII" else "source_stated",
         "passage_ids": passage_ids or [],
         "cell_ids": cell_ids or [],
         "paragraph": 1,
@@ -290,6 +292,18 @@ def test_report_run_writes_every_section_and_finalizes_a_valid_report(tmp_path):
         assert claim_count >= 1
     section_inputs = {call["report_target"]["section_id"]: call for call in adapter.calls
                       if call["task_type"] == "report_section"}
+    assert all(call["report_target"]["limitations_core"] is None for call in adapter.calls
+               if call["task_type"] == "report_plan")
+    assert all(call["report_target"]["limitations_core"] is None for section, call in section_inputs.items()
+               if section != "VIII")
+    viii = reports.section(report_id, "VIII")
+    core = section_inputs["VIII"]["report_target"]["limitations_core"]
+    assert core == viii["validation"]["numbers"]
+    assert core["corpus"] == reports.snapshot(report_id)["corpus"]
+    assert core["kind"] == "limitations"
+    assert viii["draft"]["text"].startswith("1. Recall was not measured")
+    assert section_inputs["VIII"]["passages"] == []
+    assert run_assembly_checks(store, reports, report_id) == []
     assert [cell["column_id"] for cell in section_inputs["VI"]["report_target"]["cells"]] == [
         section_inputs["VI"]["report_target"]["plan"]["limitations_column_id"]
     ]
@@ -306,6 +320,43 @@ def test_report_run_writes_every_section_and_finalizes_a_valid_report(tmp_path):
     ).fetchone()[0])
     vi_input_id = store.step(run["id"], "report_section:VI", "model:report_section")["output"]["step_input_id"]
     assert provenance == {"origin": "model", "section_id": "VI", "step_input_id": vi_input_id}
+    before_calls = len(adapter.calls)
+    before_numbers = reports.section(report_id, "VIII")["validation"]["numbers"]
+    asyncio.run(run_report(flow, store.run(run["id"]), scope))
+    assert len(adapter.calls) == before_calls
+    assert len([section for section in reports.sections(report_id) if section["section_id"] == "VIII"]) == 1
+    assert reports.section(report_id, "VIII")["validation"]["numbers"] == before_numbers
+
+
+def test_viii_records_a_prior_section_budget_cut_in_the_full_run(tmp_path, monkeypatch):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+    monkeypatch.setitem(SECTION_BUDGET_TOKENS, "III", 1)
+    asyncio.run(run_report(flow, run, scope))
+    viii = reports.section(report_id, "VIII")
+    assert viii["validation"]["numbers"]["truncation"]["by_section"]["III"]["passage"] >= 1
+    assert viii["validation"]["numbers"]["truncation"]["budget_cut"] >= 1
+    assert viii["validation"]["numbers"]["truncation"]["missing_evidence"] == 0
+    assert reports.report(report_id)["status"] == "valid"
+
+
+def test_failed_viii_keeps_its_model_independent_numbers_without_text(tmp_path):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, broken_section="VIII")
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    viii = reports.section(report_id, "VIII")
+    assert viii["status"] == "failed"
+    assert viii["draft"] is None
+    assert viii["validation"]["numbers"]["corpus"] == reports.snapshot(report_id)["corpus"]
+
+
+def test_assembly_still_catches_a_wrong_corpus_count_in_viii_text(tmp_path):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path)
+    asyncio.run(run_report(flow, run, scope))
+    section = reports.section(report_id, "VIII")
+    draft = section["draft"] | {"text": section["draft"]["text"] + " 999 included sources."}
+    reports.save_section_draft(section["id"], section["step_id"], "valid", draft,
+                               section["validation"], section["word_count"])
+    assert "corpus_count_mismatch" in {issue["rule"] for issue in run_assembly_checks(store, reports, report_id)}
 
 
 def test_report_run_fails_when_the_evidence_table_is_not_ready(tmp_path):
@@ -387,6 +438,46 @@ def test_an_unframed_section_is_repaired_and_the_report_completes(tmp_path):
         (report_id,),
     ).fetchone()
     assert dict(repair) == {"section_id": "IV", "sentence_id": "IV.1#1", "outcome": "kept"}
+
+
+def test_viii_repair_that_restates_a_number_pauses_for_rewrite(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+    original_response = adapter.responder
+
+    def scripted_response(step_input):
+        task = step_input["task_type"]
+        target = step_input["report_target"]
+        if task == "report_section" and target["section_id"] == "VIII":
+            draft = json.loads(original_response(step_input))
+            draft["claims"][0]["text"] = "Item 3 xqz unframed synthetic sentence."
+            return json.dumps(draft)
+        if task == "report_phrase_repair" and target["section_id"] == "VIII":
+            return json.dumps(envelope(step_input, "deixis.report_phrase_repair_draft.v1") | {
+                "repairs": [{"sentence_id": item["sentence_id"],
+                             "text": "3 studies xqz unframed synthetic sentence."}
+                            for item in target["repair_request"]["sentences"]],
+            })
+        return original_response(step_input)
+
+    adapter.responder = scripted_response
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+
+    assert store.run(run["id"])["status"] == "paused"
+    assert store.run(run["id"])["pause_reason"] == "section_must_be_rewritten"
+    viii = reports.section(report_id, "VIII")
+    assert viii["status"] == "draft"
+    assert viii["validation"]["ok"] is False
+    issues = viii["validation"]["issues"]
+    assert {issue["code"] for issue in issues} == {"unframed_exception", "limitations_number_restated"}
+    assert any(issue["detail"].startswith("/claims/0/text:") for issue in issues)
+    assert any(call["task_type"] == "report_phrase_repair" and
+               call["report_target"]["section_id"] == "VIII" for call in adapter.calls)
+    assert viii["draft"]["claims"][0]["text"] == "3 studies xqz unframed synthetic sentence."
+    assert viii["draft"]["text"].startswith("1. Recall was not measured")
+    assert viii["validation"]["numbers"]
+    assert not any(section["section_id"] == "VIII" and section["status"] == "valid"
+                   for section in reports.sections(report_id))
 
 
 def test_a_resumed_report_run_does_not_call_the_model_again_for_a_succeeded_section(tmp_path):

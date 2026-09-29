@@ -67,6 +67,14 @@ def test_missing_cell_evidence_is_not_recorded_as_budget_truncation():
     ]
 
 
+def test_section_viii_selects_no_records_or_truncation():
+    source = passage(1, "srv_source01")
+    snapshot = {"rows": [{"source_version_id": "srv_source01"}],
+                "cells": [cell(1, "srv_source01", "col_method01", [source])]}
+    assert select_evidence(PassageStore({"srv_source01": [source]}), snapshot, "VIII", {}, []) == {
+        "passages": [], "cells": [], "truncated": []}
+
+
 def test_section_rules_select_glossary_axis_and_plan_named_column_roles_without_language_heuristics():
     method = passage(1, "srv_source01")
     limitation = passage(2, "srv_source01")

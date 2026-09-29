@@ -146,7 +146,7 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
             {(section.status === 'draft' || section.status === 'failed') && <Notice tone="attention">{t('This section was not validated and must be written again.')}</Notice>}
             {id === 'VI' && <p className="evidence-report-fine">{t('Candidate aspects the model inferred from the evidence table; none was checked by a kill-search.')}</p>}
             {id === 'IV' && !hasTableRef && tableNode}
-            {id === 'II' && section.draft?.text && <p className="evidence-report-paragraph"><MathText text={section.draft.text} /></p>}
+            {(id === 'II' || id === 'VIII') && section.draft?.text && <p className="evidence-report-paragraph"><MathText text={section.draft.text} /></p>}
             {paragraphs.map(number => <div key={number} className="evidence-report-paragraph-group"><p className="evidence-report-paragraph">{section.claims.filter(claim => claim.paragraph === number).map((claim, i) => {
               const unique = claim.evidence.filter((link, i, all) => all.findIndex(other => other.ref_number === link.ref_number) === i)  // first link per number
               return <span key={claim.id}>{i > 0 && ' '}<MathText text={claim.text} />{claim.equation_ref && <span className="evidence-report-equation">({equationNumbers.get(claim.equation_ref)})</span>}{unique.map((link, j) => {

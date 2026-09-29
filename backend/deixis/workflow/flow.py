@@ -4760,6 +4760,8 @@ class ResearchFlow:
         pausing or failing the run; a user pause or cancel still stops the run. `budget_short="skip"` is the sw
         stages' rule (D86): a call the budget no longer holds is closed and returned as invalid instead of pausing
         the run, because those stages count what the budget did not reach and a later run reads it."""
+        if report_target is not None:
+            report_target = {"limitations_core": None, **report_target}
         run_id, rid = run["id"], run["research_id"]
         step = self.store.step(run_id, operation_key, f"model:{task_type}")
         if step["status"] == "succeeded":

@@ -348,6 +348,9 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
         issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
     elif report_target is not None:
+        wants_core = step_input["task_type"] == "report_section" and report_target["section_id"] == "VIII"
+        if (report_target["limitations_core"] is not None) != wants_core:
+            issues.append(Issue("limitations_core_mismatch", "/report_target/limitations_core", step_input["task_type"]))
         report_column_ids = [column["column_id"] for column in report_target["columns"]]
         if len(set(report_column_ids)) != len(report_column_ids):
             issues.append(Issue("duplicate_report_column", "/report_target/columns", "column_id must be unique"))
@@ -1080,6 +1083,18 @@ def _check_report_plan(step_input: dict[str, Any], allow: dict[str, set[str]],
             report.issues.append(Issue(code, f"/{field}", column_id))
 
 
+def limitations_claim_issues(claim: dict[str, Any]) -> list[Issue]:
+    issues = []
+    without_item_refs = re.sub(r"\b(?:item|öğe|madde)\s+\d+\b", "", claim["text"], flags=re.IGNORECASE)
+    if re.search(r"\d", without_item_refs):
+        issues.append(Issue("limitations_number_restated", "/text",
+                            "VIII claim restates a number outside an item reference"))
+    if claim["support_type"] == "source_stated" and not claim["passage_ids"] and not claim["cell_ids"]:
+        issues.append(Issue("source_stated_without_evidence", "/support_type",
+                            "source-stated claim has no passage or cell evidence"))
+    return issues
+
+
 def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]],
                           draft: dict[str, Any], report: ValidationReport) -> None:
     if draft["section_id"] != step_input["report_target"]["section_id"]:
@@ -1102,6 +1117,9 @@ def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]]
                 report.issues.append(Issue("anchor_not_in_cell_evidence", f"/citation_anchors/{i}/quote",
                                            "the quote was not found in one stored cell evidence quote"))
     for i, claim in enumerate(draft["claims"]):
+        if draft["section_id"] == "VIII":
+            report.issues.extend(Issue(issue.code, f"/claims/{i}{issue.path}", issue.message)
+                                 for issue in limitations_claim_issues(claim))
         for j, passage_id in enumerate(claim["passage_ids"]):
             if passage_id not in allow["passage_ids"]:
                 report.issues.append(Issue("unknown_passage_id", f"/claims/{i}/passage_ids/{j}", passage_id))

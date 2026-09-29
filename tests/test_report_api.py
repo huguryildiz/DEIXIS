@@ -191,6 +191,9 @@ def test_report_view_returns_ordered_sections_claims_and_citation_anchors(tmp_pa
     asyncio.run(run_report(flow, run, scope))
 
     view = report_view(store, run["research_id"], report_id)
+    viii = next(section for section in view["sections"] if section["section_id"] == "VIII")
+    assert viii["draft"]["text"]
+    assert viii["validation"]["numbers"]["kind"] == "limitations"
 
     assert [section["section_id"] for section in view["sections"]] == [
         "abstract", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "index_terms",

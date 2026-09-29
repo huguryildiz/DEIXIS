@@ -120,6 +120,15 @@ def valid_response(si: dict[str, Any]) -> str:
             "future_work_column_id": column_ids[0] if column_ids else None,
         })
     if task == "report_section":
+        if si["report_target"]["section_id"] == "VIII":
+            return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
+                "section_id": "VIII", "claims": [{
+                    "claim_key": "VIII.1", "text": "These limits constrain interpretation of the synthesis.",
+                    "support_type": "analyst_inference", "passage_ids": [], "cell_ids": [], "paragraph": 1,
+                    "table_ref": None, "equation_ref": None, "body_refs": [], "axis_id": None,
+                    "count": None, "equation_origin": None, "gap_refs": [],
+                }], "citation_anchors": [], "subsections": [], "gaps": [], "insufficient_evidence": [],
+            })
         if not si["passages"]:
             return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
                 "section_id": si["report_target"]["section_id"], "claims": [], "citation_anchors": [],

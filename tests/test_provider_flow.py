@@ -55,7 +55,7 @@ def discover(tmp_path, monkeypatch, handler, adapter, before_resume=None, retry_
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": adapter},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": adapter},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as client:

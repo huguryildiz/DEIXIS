@@ -2,6 +2,16 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D117 — `sw` is the default search workflow by the owner's decision, and `legacy` is to be removed
+
+**Status:** accepted 2026-09-30, the owner's decision after reading D114 ("bizim sw default olmalı", "artık legacy vs olmamalı"). It supersedes D114's "the default stays `legacy` for good" and D105's and D108's default clauses. It is not a measured pass: D114's gates stand as recorded.
+
+**Context:** Slice 30 (D114) passed only gate 3 on medicine: `sw` cited fewer reference trials than `legacy` (mean 1.0 vs 4.5) and one `sw` answer stayed `unverified_draft`. On quantum `sw` passed all four gates in slice 24a. The owner chooses `sw` as the product's only search workflow anyway.
+
+**Decision:** `Settings.search_workflow` and `DEIXIS_SEARCH_WORKFLOW` default to `sw` (`config.py`). `legacy` stays selectable with `DEIXIS_SEARCH_WORKFLOW=legacy` only until a removal slice takes it out. The tests that exercised `legacy` through the old default now set `search_workflow="legacy"` explicitly (`test_api_flow`, `test_backup`, `test_protocol_record`, `test_provider_flow`, `test_zotero`); `test_the_default_search_workflow_is_sw` replaces the old default test. The removal slice gets its own plan; by default, researches already stored as `legacy` keep opening and answering, and no new `legacy` research can start.
+
+**Limits:** What D114 measured still holds: on the medicine question `sw` reached fewer reference trials, mostly for lack of open PDFs, and a standard `sw` research opened about 124 model sessions against `legacy`'s 10, so model quota use rises. `Store.create_research` and the Playwright fixture server still default to `legacy` until the removal slice. pytest: 2,680 passed plus the known memory-limit failure; three script-importing test modules need `python -m pytest` to find `scripts` (unchanged by this decision). Playwright was not re-run.
+
 ## D114 — The last medicine measurement at `a04eaa0` passes only gate 3; the default stays `legacy` for good in this track, 24b closes undone and the SW track ends
 
 **Status:** accepted 2026-09-30 as the recorded result of slice 30 (plan `docs/product/sw-slice30-medicine-final.md`, commit `a04eaa0`; resume prompt `docs/product/sw-slice30-resume-prompt.md`). The plan named D112; P6 took D112 and D113 first, so this is D114. Run folder `.local/sw-slice30-medicine-final-2026-09-28/`; results `docs/product/sw-slice30-results.md`. No product file changed; no migration.

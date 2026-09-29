@@ -58,7 +58,7 @@ async def fake_fetch(url):
 
 def app_for(tmp_path, adapter=None, http_status=200):
     # These API tests script pause/cancel inside one call and assume the next source is not yet in flight.
-    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1)
+    settings = Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765, model_concurrency=1)
     return create_app(settings, adapters={"fake": adapter or FakeAdapter()}, http_client=openalex_client(http_status),
                       fetcher=fake_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
 
@@ -178,7 +178,7 @@ def test_institutional_access_is_checked_through_scopus_and_cached(tmp_path, mon
         return httpx.Response(200, json={"search-results": {}})
     monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
     monkeypatch.setattr(scopus, "route_source", lambda: route[0])
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fake_fetch,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as client:
@@ -312,7 +312,7 @@ def test_version_uncertain_pdf_candidate_is_attached_only_when_the_user_confirms
             return FetchResult("http_error", final_url=url, http_status=403)
         return FetchResult("ok", data=make_pdf(["SYNTHETIC repository copy"]), final_url=url, http_status=200)
 
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
                      http_client=openalex_client(), fetcher=fetcher, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
         client = session(raw)
@@ -382,7 +382,7 @@ def test_refused_link_leads_to_one_lookup_for_another_copy_and_is_not_requested_
             return FetchResult("ok", data=make_pdf(["SYNTHETIC repository copy"]), final_url=url, http_status=200)
         return FetchResult("http_error", final_url=url, http_status=403)
 
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fetcher,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
@@ -990,7 +990,7 @@ def test_standard_depth_reads_more_results_screens_in_batches_and_gives_every_in
         return httpx.Response(200, json={"meta": {"count": 300}, "results": works})
 
     adapter = FakeAdapter()
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": adapter},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": adapter},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fake_fetch,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as client:
@@ -1049,7 +1049,7 @@ def test_mutations_require_csrf_and_known_host(tmp_path):
         pdf_file = {"file": ("a.pdf", make_pdf(["SYNTHETIC"]), "application/pdf")}
         assert client.post(f"/api/researches/{rid}/uploads", files=pdf_file).status_code == 422  # academic-only scope
 
-    remote_app = create_app(Settings(data_dir=tmp_path / "remote", port=8765), adapters={"fake": FakeAdapter()},
+    remote_app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "remote", port=8765), adapters={"fake": FakeAdapter()},
                             http_client=openalex_client(), fetcher=fake_fetch, extra_hosts=("testserver",))
     with TestClient(remote_app) as remote:
         assert remote.get("/api/health").status_code == 403  # the test client's peer address is not loopback
@@ -1104,7 +1104,7 @@ def test_each_role_can_use_a_model_from_another_connection(tmp_path):
     answer = FakeAdapter(models=["answer-model"], efforts=["high"])
     # A second connection registered under a connection id the step input contract lists.
     other = FakeAdapter(models=["lit-model", "review-model"], efforts=["low"])
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": answer, "gemini": other},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": answer, "gemini": other},
                      http_client=openalex_client(), fetcher=fake_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as client:
         session(client)
@@ -1195,7 +1195,7 @@ def test_pdf_collection_run_retrieves_open_pdfs_without_a_model_call_and_the_ans
         fetched.append(url)
         return await fake_fetch(url)
 
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
                      http_client=openalex_client(), fetcher=fetcher, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
         client = session(raw)
@@ -1306,7 +1306,7 @@ def test_version_uncertain_pdf_candidate_is_attached_only_when_the_user_confirms
             return FetchResult("http_error", final_url=url, http_status=403)
         return FetchResult("ok", data=make_pdf(["SYNTHETIC repository copy"]), final_url=url, http_status=200)
 
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
                      http_client=openalex_client(), fetcher=fetcher, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
         client = session(raw)
@@ -1376,7 +1376,7 @@ def test_refused_link_leads_to_one_lookup_for_another_copy_and_is_not_requested_
             return FetchResult("ok", data=make_pdf(["SYNTHETIC repository copy"]), final_url=url, http_status=200)
         return FetchResult("http_error", final_url=url, http_status=403)
 
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fetcher,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
@@ -1864,7 +1864,7 @@ def test_standard_depth_reads_more_results_screens_in_batches_and_gives_every_in
         return httpx.Response(200, json={"meta": {"count": 300}, "results": works})
 
     adapter = FakeAdapter()
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": adapter},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": adapter},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fake_fetch,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as client:
@@ -1923,7 +1923,7 @@ def test_mutations_require_csrf_and_known_host(tmp_path):
         pdf_file = {"file": ("a.pdf", make_pdf(["SYNTHETIC"]), "application/pdf")}
         assert client.post(f"/api/researches/{rid}/uploads", files=pdf_file).status_code == 422  # academic-only scope
 
-    remote_app = create_app(Settings(data_dir=tmp_path / "remote", port=8765), adapters={"fake": FakeAdapter()},
+    remote_app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "remote", port=8765), adapters={"fake": FakeAdapter()},
                             http_client=openalex_client(), fetcher=fake_fetch, extra_hosts=("testserver",))
     with TestClient(remote_app) as remote:
         assert remote.get("/api/health").status_code == 403  # the test client's peer address is not loopback
@@ -1978,7 +1978,7 @@ def test_each_role_can_use_a_model_from_another_connection(tmp_path):
     answer = FakeAdapter(models=["answer-model"], efforts=["high"])
     # A second connection registered under a connection id the step input contract lists.
     other = FakeAdapter(models=["lit-model", "review-model"], efforts=["low"])
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": answer, "gemini": other},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": answer, "gemini": other},
                      http_client=openalex_client(), fetcher=fake_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as client:
         session(client)
@@ -2069,7 +2069,7 @@ def test_pdf_collection_run_retrieves_open_pdfs_without_a_model_call_and_the_ans
         fetched.append(url)
         return await fake_fetch(url)
 
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
                      http_client=openalex_client(), fetcher=fetcher, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
         client = session(raw)

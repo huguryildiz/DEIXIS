@@ -25,7 +25,7 @@ class Settings:
     port: int = 8765
     model_concurrency: int = 6
     query_strategy: str = "legacy"
-    search_workflow: str = "legacy"
+    search_workflow: str = "sw"
     # Whether an sw discovery run stops for the user before it freezes its protocol (SW2.6, slice 08a). `ask` is the
     # product's behavior; `as_proposed` approves the proposal without stopping, for a measurement or a test that
     # needs a run nobody attends, and says so in the protocol body rather than looking like a user's approval.
@@ -111,7 +111,7 @@ def load_settings() -> Settings:
     query_strategy = os.environ.get("DEIXIS_QUERY_STRATEGY", "legacy")
     if query_strategy not in ("legacy", "compact_openalex_v1"):
         raise ValueError("DEIXIS_QUERY_STRATEGY must be legacy or compact_openalex_v1")
-    search_workflow = os.environ.get("DEIXIS_SEARCH_WORKFLOW", "legacy")
+    search_workflow = os.environ.get("DEIXIS_SEARCH_WORKFLOW", "sw")
     if search_workflow not in ("legacy", "sw"):
         raise ValueError("DEIXIS_SEARCH_WORKFLOW must be legacy or sw")
     protocol_approval = os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "ask")

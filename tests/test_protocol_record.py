@@ -48,8 +48,8 @@ def test_an_unknown_search_workflow_setting_is_refused(monkeypatch):
         load_settings()
 
 
-def test_the_default_search_workflow_is_legacy():
-    assert Settings(data_dir=None).search_workflow == "legacy"
+def test_the_default_search_workflow_is_sw():
+    assert Settings(data_dir=None).search_workflow == "sw"
 
 
 def test_the_workflow_a_research_was_opened_with_survives_a_scope_revision(tmp_path):
@@ -90,7 +90,7 @@ def test_build_protocol_is_repeatable_and_reads_its_thresholds_from_their_defini
              "literature_model": None, "review_mode": "off", "effort": "quick"}
     plan = {"concepts": [{"label": "diffusion channel", "role": "core", "synonyms": ["diffusion channel"]}]}
     queries = [{"provider_id": "openalex", "query_text": "diffusion channel", "results": 25}]
-    settings = Settings(data_dir=None)
+    settings = Settings(search_workflow="legacy", data_dir=None)
     body = protocol.build_protocol(scope, {"max_candidates": 20}, plan, queries, "pkg_hash", settings)
     assert sha256_hex(body) == sha256_hex(protocol.build_protocol(scope, {"max_candidates": 20}, plan, queries, "pkg_hash", settings))
     assert body["schema"] == protocol.PROTOCOL_SCHEMA and body["search_workflow"] == "sw"
@@ -132,7 +132,7 @@ def test_only_an_sw_protocol_carries_the_record_identity_thresholds():
              "seed_mode": "question_only", "providers": ["openalex"], "model_connection": "fake",
              "requested_model": "fake-model", "reasoning_effort": None, "literature_model": None,
              "review_mode": "off", "effort": "quick"}
-    settings = Settings(data_dir=None)
+    settings = Settings(search_workflow="legacy", data_dir=None)
     legacy = protocol.build_protocol(scope | {"search_workflow": "legacy"}, {}, None, [], "pkg_hash", settings)
     sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
     assert not {"record_identity", "search_read", "survey", "lookup", "criterion", "ranking",
@@ -178,7 +178,7 @@ def test_an_sw_body_carries_the_chain_policy_its_budget_froze_and_a_legacy_body_
              "seed_mode": "question_only", "providers": ["openalex"], "model_connection": "fake",
              "requested_model": "fake-model", "reasoning_effort": None, "literature_model": None,
              "review_mode": "off", "effort": "standard"}
-    settings = Settings(data_dir=None)
+    settings = Settings(search_workflow="legacy", data_dir=None)
     auto = {"citation_chaining": "auto", "max_chain_requests": 40}
     sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, auto, None, [], "pkg_hash", settings)
     assert sw["citation_chaining"] == {
@@ -311,7 +311,7 @@ def test_a_later_discovery_run_with_another_plan_opens_a_new_protocol_revision(t
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter(changing_plan)},
+    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter(changing_plan)},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(routed)), fetcher=no_fetch,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as client:

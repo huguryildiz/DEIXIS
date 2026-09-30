@@ -302,7 +302,7 @@ modelin yazdığıyla doluyor.
 **P14** — 1l: scriptlenmiş modelle Playwright kabul testi. ✅ (D122; commit: bu satırı ekleyen commit).
 **P15** — 1m: davranış vakaları ve ekilmiş hatalı inceleme kümesi. ✅ (D123; commit: bu satırı ekleyen commit). 18 vaka, `gpt-5.6-luna` ile bir kez koşuldu; R10 değil, sentetik inceleme vakaları.
 **P16** — 1n: beklenti dosyası (koşudan **önce** donar ve commit'lenir), ölçüm raporu, karar kaydı, tasarım
-notunun durum güncellemesi.
+notunun durum güncellemesi. Beklenti dosyası donduruldu (`cdf79ba`). Koşu yapıldı ve tabloda durdu (D124, commit: bu satırı ekleyen commit): tek doldurma 36 oturum, tamamlanmaya kadar 3,3 dakika; tablo `report_ready` olmadı (21/175 hücre eksik: iki kaynakta metin yok, bir kaynakta çapa hatası), rapor başlamadı, R1–R11 ölçülmedi.
 
 Gerçekçi tahmin, 18 Eylül'de güncellendi: P1, P2 ve plan dışı P2.5 bir oturum sürdü ve dört tasarım boşluğu
 çıkardı. Arayüzde bakılabilir bir rapor görmek P3 + P4 + P10/P11 demek, yani en az üç tur daha. Bütün dilim 1,

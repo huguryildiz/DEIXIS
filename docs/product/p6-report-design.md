@@ -325,6 +325,8 @@ Payda sıfırsa metrik "ölçülemedi" diye yazılır, 0 ya da 1 diye değil. Ya
 
 Sahibin okuma değerlendirmesi ayrı raporlanır; Claude'un okuması "insan denetimi" sayılmaz.
 
+**Durum (30 Eylül 2026, D124):** Beklentiler donduruldu (`p6-slice1-report-expectations.md`). İlk gerçek koşu tabloda durdu: doldurma bitti ama tablo `report_ready` olmadı, rapor başlamadı, R1–R11 ölçülmedi (`p6-slice1-report-results.md`). Rapor kalitesi hakkında ölçülmüş bir şey yoktur.
+
 ## 14. Varsayımlar ve sınırlar
 
 - Rapor, korpusun kapsamını iyileştirmez; D55'teki geri çağırım ve PDF edinme sorunları rapora aynen yansır ve II/VIII'de görünür.

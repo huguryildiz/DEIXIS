@@ -300,7 +300,7 @@ modelin yazdığıyla doluyor.
 **P12** — 1j: Markdown dışa aktarma ve numaralandırma.
 **P13** — 1k: kesinti testleri, geç sonuç denetimi ve bölüm hata nedenleri. ✅ (D121; commit: bu satırı ekleyen commit).
 **P14** — 1l: scriptlenmiş modelle Playwright kabul testi. ✅ (D122; commit: bu satırı ekleyen commit).
-**P15** — 1m: davranış vakaları ve R10 ekilmiş hata kümesi.
+**P15** — 1m: davranış vakaları ve ekilmiş hatalı inceleme kümesi. ✅ (D123; commit: bu satırı ekleyen commit). 18 vaka, `gpt-5.6-luna` ile bir kez koşuldu; R10 değil, sentetik inceleme vakaları.
 **P16** — 1n: beklenti dosyası (koşudan **önce** donar ve commit'lenir), ölçüm raporu, karar kaydı, tasarım
 notunun durum güncellemesi.
 

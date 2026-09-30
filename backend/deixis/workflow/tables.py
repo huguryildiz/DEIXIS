@@ -20,6 +20,11 @@ ANSWER_FORMATS = ("choice", "number_unit", "yes_no", "text")
 CELL_STATES = ("value", "unknown", "not_reported", "not_verified", "not_applicable", "inaccessible", "not_found_in_inspected_scope")
 VALUE_STATES = ("value", "not_verified")  # the states that carry a value
 MAX_TEXT_VALUE = 500
+LINEAGE_ROLE_COLUMNS = {
+    "problem": ("Problem addressed", "The problem or question this work takes up, in its own terms, in one or two sentences."),
+    "change": ("Established or changed", "What this work states it established, showed or changed relative to earlier work. If the passages make no comparison, say so; do not infer one."),
+    "uncertainty": ("Uncertainty left", "An uncertainty, limitation or open question the work itself names as remaining or as future work. Prefer the stated next step when the source separates a limitation from a next step."),
+}
 MAX_OPTIONS = 20
 MAX_FILL_SOURCES = 25  # sources one fill run reads; the rest stay empty for another fill (D37)
 MAX_COLUMNS_PER_CALL = 8  # columns one cell extraction call answers for its source
@@ -368,6 +373,30 @@ class TableStore:
             self._changed(research_id, table_id)
         return cid
 
+    def add_development_columns(self, research_id: str, table_id: str, expected_version: int, idempotency_key: str | None) -> None:
+        """Append missing role columns atomically; removed columns retain their roles and replay history."""
+        keys = {role: f"lineage-columns:{research_id}:{table_id}:{idempotency_key}:{role}" if idempotency_key else None
+                for role in LINEAGE_ROLE_COLUMNS}
+        with transaction(self.conn):
+            # Prefix-first keys cannot collide with the research-prefixed ordinary column writers.
+            if idempotency_key and any(self.conn.execute(
+                "SELECT 1 FROM column_revisions WHERE idempotency_key = ?", (key,)
+            ).fetchone() for key in keys.values()):
+                return
+            check_expected_version(expected_version, self._table(research_id, table_id)["version"])
+            present = {c["lineage_role"] for c in self._columns(table_id)}
+            missing = [role for role in LINEAGE_ROLE_COLUMNS if role not in present]
+            if not missing:
+                return
+            position = self.conn.execute("SELECT COALESCE(MAX(position) + 1, 0) FROM table_columns WHERE table_id = ?", (table_id,)).fetchone()[0]
+            for index, role in enumerate(missing):
+                name, instruction = LINEAGE_ROLE_COLUMNS[role]
+                spec = column_spec(name, instruction, "text", None, False, None)
+                cid = self._insert_column(table_id, position + index, spec, "user", None, keys[role])
+                self.conn.execute("UPDATE table_columns SET lineage_role = ? WHERE id = ?", (role, cid))
+            self._touch(table_id, bump=True)
+            self._changed(research_id, table_id)
+
     def apply_template(self, research_id: str, table_id: str, template_id: str, expected_version: int, idempotency_key: str | None) -> None:
         """Give a table without columns the columns of a saved template (origin 'template'), as a table started from it gets."""
         key = self._key(research_id, idempotency_key)
@@ -396,6 +425,8 @@ class TableStore:
             check_expected_version(expected_version, column["version"])
             current = {k: column[k] for k in ("name", "instruction", "answer_format", "options", "allow_multiple", "unit_hint")}
             fmt = changes.get("answer_format", column["answer_format"])
+            if column["lineage_role"] is not None and fmt != "text":
+                raise InvalidTableInput("A development column must stay a text column")
             # A format change drops the fields the new format has no use for, unless the request sets them.
             dropped = {"options": None, "allow_multiple": False} if fmt != "choice" else {}
             dropped |= {"unit_hint": None} if fmt != "number_unit" else {}
@@ -427,6 +458,11 @@ class TableStore:
             if column is None:
                 raise NotFound(column_id)
             check_expected_version(expected_version, column["version"])
+            if column["lineage_role"] is not None and self.conn.execute(
+                "SELECT 1 FROM table_columns WHERE table_id = ? AND lineage_role = ? AND removed_at IS NULL AND id != ?",
+                (table_id, column["lineage_role"], column_id),
+            ).fetchone():
+                raise InvalidTableInput(f"Another active column already holds the {column['lineage_role']} role")
             self.conn.execute("UPDATE table_columns SET removed_at = NULL, version = version + 1 WHERE id = ?", (column_id,))
             self._touch(table_id)
             self.store._event(research_id, "column_restored", {"table_id": table_id, "column_id": column_id})
@@ -819,7 +855,7 @@ class TableStore:
         return {
             "table": {k: table[k] for k in ("id", "research_id", "title", "template_id", "version", "created_at", "updated_at")},
             "columns": [{"id": c["id"], "position": c["position"], "revision": c["current_revision"], "version": c["version"],
-                         "origin": c["origin"], **{k: c[k] for k in ("name", "instruction", "answer_format", "options",
+                         "origin": c["origin"], "lineage_role": c["lineage_role"], **{k: c[k] for k in ("name", "instruction", "answer_format", "options",
                                                                      "allow_multiple", "unit_hint")}} for c in columns],
             "rows": [r for r in rows if r["removed_at"] is None],
             "removed_rows": [r for r in rows if r["removed_at"] is not None],

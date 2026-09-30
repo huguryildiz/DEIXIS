@@ -527,7 +527,7 @@ Her batch ayrı bir commit olur; commit ve push yalnız sahibin istediği zaman,
 
 L1–L4'ün bağımsızlığı yalnız aşağıdaki arayüz sınırlarıyla geçerlidir: L2 yalnız kendisine verilen kaynak/pasaj anlık görüntüleri üzerinde çalışan **saf** hesapları kurar (DB'den düğüm okuma yok); rol sütunlarını ve mevcut hücre revizyonlarını okuyup `lineage_target` oluşturma, aday seçimi ve koşu orkestrasyonu L5'tedir; L3 `_step_input`/`_model_step` parametre geçişini, görev dispatch'ini, tutamak ve sözleşme yolunu kurar, iş mantığı kurmaz. Migration numaraları tek noktadan tahsis edilir; L1 ve L4 migration'ları birleşmiş sırada birlikte sınanır. Ayrı worktree kullanmak ortak dosya (`flow.py`, `contracts.py`, `api/app.py`) ve numara çakışmalarını kendiliğinden çözmez; L3 `methods/` değiştirdiği için sıra kuralına tabidir.
 
-### L1 — Rol sütunları ve ekleme eylemi (M)
+### L1 — Rol sütunları ve ekleme eylemi (M) ✅ commit: bu satırı ekleyen commit
 
 **Kapsam.** `table_columns.lineage_role` ve kısmi tekil indeks (migration); `TableStore.add_development_columns(table_id, expected_version, idempotency_key)`: eksik rolleri atomik ve idempotent ekler, üç sütunun `instruction` metni §6'dakiler; `revise_column` kuralları (ad/konum rolü korur, `text` dışı biçim reddi, talimat değişikliği bugünkü stale kuralı); `remove/restore_column` çakışması; API rotası `POST /api/researches/{id}/tables/{table_id}/lineage/columns`; tablo araç çubuğunda "Add development columns" (dar UI, `i18n.ts`/`labels.ts` EN/TR).
 **Dosyalar.** `backend/deixis/storage/migrations/00NN_lineage_role.sql`, `workflow/tables.py`, `api/app.py`, `apps/web/src/api.ts`, `EvidenceTable.tsx`, `i18n.ts`/`labels.ts`, `tests/test_evidence_tables.py` (+ yeni `tests/test_lineage_columns.py`), `tests/test_migrations.py`.

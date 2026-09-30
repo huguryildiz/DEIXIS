@@ -1825,6 +1825,13 @@ def create_app(
                           origin="model_suggestion" if body.suggestion_step_id else "user", suggestion_step_id=body.suggestion_step_id)
         return tables.table_view(research_id, table_id)
 
+    @app.post(table_path + "/lineage/columns")
+    async def add_development_columns(research_id: str, table_id: str, body: ExpectedVersion, request: Request,
+                                      idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        tables = tables_of(request)
+        tables.add_development_columns(research_id, table_id, body.expected_version, idempotency_key)
+        return tables.table_view(research_id, table_id)
+
     @app.post(table_path + "/template-columns", status_code=201)
     async def apply_table_template(research_id: str, table_id: str, body: TemplateApply, request: Request,
                                    idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:

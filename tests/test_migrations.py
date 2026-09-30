@@ -21,6 +21,41 @@ PRE_SECTION_II_IDS = ("I", "III", "IV", "V", "VI", "VII", "VIII", "IX", "abstrac
 PRE_FULLTEXT_KINDS = (*PRE_REPORT_KINDS, "report")
 
 
+def test_migration_adds_role_column_and_partial_unique_index(tmp_path, monkeypatch):
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    real = db.MIGRATIONS_DIR
+    for path in real.glob("*.sql"):
+        if int(path.name.split("_", 1)[0]) <= 57:
+            shutil.copy(path, migrations / path.name)
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_test', 'Synthetic', 'now', 'now')")
+    for tid in ("tbl_one", "tbl_two"):
+        conn.execute("INSERT INTO evidence_tables (id, research_id, title, created_at, updated_at) VALUES (?, 'res_test', 'Synthetic', 'now', 'now')", (tid,))
+    for cid in ("col_old", "col_other"):
+        conn.execute("INSERT INTO table_columns (id, table_id, position, origin, created_at) VALUES (?, 'tbl_one', 0, 'user', 'now')", (cid,))
+        conn.execute("INSERT INTO column_revisions (column_id, revision, name, instruction, answer_format, created_at) VALUES (?, 1, 'Synthetic', 'Record the source', 'text', 'now')", (cid,))
+    shutil.copy(real / "0058_lineage_role.sql", migrations / "0058_lineage_role.sql")
+    assert db.migrate(conn) == [58]
+    assert [r[0] for r in conn.execute("SELECT lineage_role FROM table_columns")] == [None, None]
+    index = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'table_columns_lineage_role'").fetchone()[0]
+    assert "UNIQUE INDEX" in index and "(table_id, lineage_role)" in index
+    assert "WHERE lineage_role IS NOT NULL AND removed_at IS NULL" in index
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
+        conn.execute("UPDATE table_columns SET lineage_role = 'invented' WHERE id = 'col_old'")
+    conn.execute("UPDATE table_columns SET lineage_role = 'problem' WHERE id = 'col_old'")
+    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+        conn.execute("UPDATE table_columns SET lineage_role = 'problem' WHERE id = 'col_other'")
+    conn.execute("UPDATE table_columns SET removed_at = 'now' WHERE id = 'col_old'")
+    conn.execute("UPDATE table_columns SET lineage_role = 'problem' WHERE id = 'col_other'")
+    conn.execute("INSERT INTO table_columns (id, table_id, position, origin, created_at, lineage_role) VALUES ('col_elsewhere', 'tbl_two', 0, 'user', 'now', 'problem')")
+    assert conn.execute("SELECT COUNT(*) FROM table_columns WHERE lineage_role = 'problem'").fetchone()[0] == 3
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    conn.close()
+
+
 def test_report_migration_preserves_all_existing_run_kinds(tmp_path, monkeypatch):
     migrations = tmp_path / "migrations"
     migrations.mkdir()
@@ -382,7 +417,7 @@ def test_the_europepmc_migration_keeps_every_pdf_lookup_row_and_accepts_the_new_
         store.record_pdf_discovery(rid, svid, "europepmc", "10.1/x", Lookup("zero_results", [], 200))
 
     monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
-    assert db.migrate(conn) == [55, 56, 57]
+    assert db.migrate(conn) == [55, 56, 57, 58]
     after = {table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")]
              for table in ("pdf_discovery_runs", "pdf_candidates")}
     assert after == before  # every row and column value kept, other_title_count included

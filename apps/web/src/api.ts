@@ -635,6 +635,7 @@ export type ColumnSpec = {
   options: { id?: string | null; label: string }[] | null; allow_multiple: boolean; unit_hint: string | null
 }
 export type TableColumn = {
+  lineage_role: 'problem' | 'change' | 'uncertainty' | null
   id: string; position: number; revision: number; version: number; origin: 'user' | 'model_suggestion' | 'template'
   name: string; instruction: string; answer_format: AnswerFormat; options: ColumnOption[] | null; allow_multiple: boolean; unit_hint: string | null
 }
@@ -934,6 +935,8 @@ export const api = {
     request<TableView>(`/api/researches/${id}/tables/${tableId}/rows/${sourceId}?expected_version=${expectedVersion}`, { method: 'DELETE' }),
   addColumn: (id: string, tableId: string, spec: ColumnSpec & { suggestion_step_id?: string }, expectedVersion: number, idempotencyKey: string) =>
     request<TableView>(`/api/researches/${id}/tables/${tableId}/columns`, json('POST', { ...spec, expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+  addDevelopmentColumns: (id: string, tableId: string, expectedVersion: number, idempotencyKey: string) =>
+    request<TableView>(`/api/researches/${id}/tables/${tableId}/lineage/columns`, json('POST', { expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
   // Only a table without columns takes a template's columns.
   applyTableTemplate: (id: string, tableId: string, templateId: string, expectedVersion: number, idempotencyKey: string) =>
     request<TableView>(`/api/researches/${id}/tables/${tableId}/template-columns`, json('POST', { template_id: templateId, expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),

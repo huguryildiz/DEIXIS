@@ -278,6 +278,9 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
 
   const tableId = table.table.id
   const { columns, rows, fill_estimate: estimate } = table
+  const hasDevelopmentColumns = (['problem', 'change', 'uncertainty'] as const).every(role => columns.some(c => c.lineage_role === role))
+  const developmentButton = !hasDevelopmentColumns && <Button variant="ghost" disabled={busy}
+    onClick={() => act(() => api.addDevelopmentColumns(researchId, tableId, table.table.version, newKey()), t('Development columns added.'))}><Plus size={15} aria-hidden />{t('Add development columns')}</Button>
   const cells = new Map<string, CellSummary>(table.cells.map(c => [`${c.column_id}:${c.source_version_id}`, c]))
   // Live state comes from the active run's stored target: the cells a fill plans to read, or the one cell a recheck reads.
   const filling = new Set<string>()
@@ -344,6 +347,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
     {continueWithFailed && reportState && <Notice tone="attention">{t('{n} of {m} sources did not complete the table (missing cells: {cells}). These rows will be excluded from the report’s evidence assessment and aggregation denominators.', { n: reportState.failed_rows, m: reportState.included_rows, cells: reportState.cells_left })}</Notice>}
     <div className="evidence-toolbar">
       {columns.length > 0 && <Button variant="ghost" disabled={busy} onClick={() => setEditor({ mode: 'add' })}><Plus size={15} aria-hidden />{t('Add column')}</Button>}
+      {columns.length > 0 && developmentButton}
       <Button variant="ghost" disabled={busy} aria-expanded={addRowsOpen} onClick={() => setAddRowsOpen(open => !open)}><ListPlus size={15} aria-hidden />{t('Add rows')}</Button>
       {columns.length > 0 && <><span className="evidence-toolbar-sep" aria-hidden />
         <Button variant="ghost" disabled={busy || Boolean(activeRun)} onClick={suggestColumns} title={t('{model} · 1–2 calls', { model })}><Sparkles size={15} aria-hidden />{t('Suggest columns')}</Button></>}
@@ -409,6 +413,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
             </div>}
           {!suggesting && <div className="evidence-actions">
             <Button variant="outline" disabled={busy} onClick={() => setEditor({ mode: 'add' })}><Plus size={15} aria-hidden />{t('Add column')}</Button>
+            {developmentButton}
             <Button disabled={busy || Boolean(activeRun)} onClick={suggestColumns} title={t('{model} · 1–2 calls', { model })}><Sparkles size={15} aria-hidden />{t('Suggest columns')}</Button>
           </div>}
         </div>
@@ -546,10 +551,11 @@ function ColumnEditor({ target, busy, dark, onSave, onRemove, onClose }: { targe
         <label className="evidence-field"><span>{t('Short name')}</span><input value={name} maxLength={80} onChange={e => setName(e.target.value)} /></label>
         <label className="evidence-field"><span>{t('Instruction')}</span><small>{t('Write it as you would for a person reading one source.')}</small>
           <textarea value={instruction} maxLength={2000} rows={4} onChange={e => setInstruction(e.target.value)} /></label>
-        <fieldset className="evidence-field"><legend>{t('Answer format')}</legend>
+        <fieldset className="evidence-field" disabled={target.mode === 'edit' && Boolean(target.column.lineage_role)}><legend>{t('Answer format')}</legend>
           <div className="evidence-segments">{(Object.keys(formatLabels) as AnswerFormat[]).map(f => <label key={f} className={format === f ? 'is-selected' : undefined}>
             <input type="radio" name="answer-format" value={f} checked={format === f} onChange={() => setFormat(f)} />{t(formatLabels[f])}
           </label>)}</div>
+          {target.mode === 'edit' && target.column.lineage_role && <small>{t('This column feeds the development lines and stays a text column.')}</small>}
         </fieldset>
         {format === 'choice' && <fieldset className="evidence-field"><legend>{t('Options')}</legend>
           {options.map((option, i) => <div className="evidence-option" key={option.id ?? `new-${i}`}>

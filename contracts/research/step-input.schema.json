@@ -29,6 +29,68 @@
     "created_at"
   ],
   "properties": {
+    "lineage_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "table_id",
+        "to",
+        "candidates"
+      ],
+      "properties": {
+        "table_id": {
+          "type": "string",
+          "pattern": "^tbl_[0-9A-Za-z]{8,40}$"
+        },
+        "to": {
+          "$ref": "#/$defs/lineage_node"
+        },
+        "candidates": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "origin",
+              "mention_passage_ids",
+              "edge_state",
+              "year_order_warning"
+            ],
+            "properties": {
+              "from": {
+                "$ref": "#/$defs/lineage_node"
+              },
+              "origin": {
+                "type": "string",
+                "const": "mention"
+              },
+              "mention_passage_ids": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "items": {
+                  "$ref": "common.schema.json#/$defs/passage_id"
+                }
+              },
+              "edge_state": {
+                "type": "string",
+                "enum": [
+                  "present",
+                  "absent_in_read_list",
+                  "unresolved",
+                  "not_read"
+                ]
+              },
+              "year_order_warning": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
     "step_input_id": {
       "$ref": "common.schema.json#/$defs/step_input_id"
     },
@@ -61,7 +123,8 @@
         "report_plan",
         "report_section",
         "report_phrase_repair",
-        "report_review"
+        "report_review",
+        "lineage_links"
       ]
     },
     "scope_revision": {
@@ -1054,6 +1117,205 @@
     },
     "created_at": {
       "type": "string"
+    }
+  },
+  "$defs": {
+    "lineage_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "year",
+        "cells"
+      ],
+      "properties": {
+        "source_id": {
+          "$ref": "common.schema.json#/$defs/source_id"
+        },
+        "year": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cells": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/lineage_cell"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+    "lineage_cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "cell_id",
+        "cell_revision_id",
+        "column_revision",
+        "instruction_revision",
+        "instruction",
+        "state",
+        "value",
+        "reading_depth",
+        "output_status",
+        "flags",
+        "evidence_quotes"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "problem",
+            "change",
+            "uncertainty"
+          ]
+        },
+        "cell_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^cel_[0-9A-Za-z]{8,40}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cell_revision_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "column_revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instruction_revision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instruction": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "value",
+            "unknown",
+            "not_reported",
+            "not_verified",
+            "not_applicable",
+            "inaccessible",
+            "not_found_in_inspected_scope",
+            "missing"
+          ]
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reading_depth": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "metadata",
+                "abstract",
+                "selected_sections",
+                "full_text"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "output_status": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flags": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stale_column",
+            "pdf_removed",
+            "pdf_replaced",
+            "text_superseded",
+            "not_verified"
+          ],
+          "properties": {
+            "stale_column": {
+              "type": "boolean"
+            },
+            "pdf_removed": {
+              "type": "boolean"
+            },
+            "pdf_replaced": {
+              "type": "boolean"
+            },
+            "text_superseded": {
+              "type": "boolean"
+            },
+            "not_verified": {
+              "type": "boolean"
+            }
+          }
+        },
+        "evidence_quotes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
     }
   }
 }

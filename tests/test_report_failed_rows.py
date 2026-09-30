@@ -359,7 +359,8 @@ def test_limitations_input_contract_accepts_seven_and_eight_but_refuses_bad_eigh
         bad = copy.deepcopy(updated)
         bad["report_target"]["limitations_core"]["items"][7][field] = value
         assert "step_input_schema_invalid" in {i.code for i in contracts.check_step_input(bad)}
-    assert skill.load_skill_package().package_hash == "sha256:cef7c08662f102f5e7dd56f5203ecb142fc28b91eebeddbfb5b3bb0bbad3b6bb"
+    # P19 pinned the package at its own commit; L3 changes the package, not these report rules.
+    assert skill.load_skill_package().package_hash == "sha256:371fcecb7977fec6cce031f101a68cba9e4688383118951fe663614f342b2e8c"
 
 
 def test_three_full_text_absence_rows_have_identical_candidates_with_failed_row(state):

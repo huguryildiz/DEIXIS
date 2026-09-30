@@ -42,6 +42,7 @@ SCHEMA_FILES = {
     "ReportSectionDraft": "report-section-draft.schema.json",
     "ReportPhraseRepairDraft": "report-phrase-repair.schema.json",
     "ReportReview": "report-review.schema.json",
+    "LineageLinksDraft": "lineage-links-draft.schema.json",
 }
 SCHEMA_VERSIONS = {
     "GroundedAnswerDraft": "deixis.grounded_answer_draft.v3",
@@ -59,6 +60,7 @@ SCHEMA_VERSIONS = {
     "ReportSectionDraft": "deixis.report_section_draft.v2",
     "ReportPhraseRepairDraft": "deixis.report_phrase_repair_draft.v1",
     "ReportReview": "deixis.report_review.v1",
+    "LineageLinksDraft": "deixis.lineage_links_draft.v1",
 }
 # Model outputs each task may return. More than one output type is wrapped in an
 # object with one nullable property per type; exactly one must be non-null.
@@ -78,6 +80,7 @@ TASK_OUTPUTS = {
     "report_section": ("ReportSectionDraft",),
     "report_phrase_repair": ("ReportPhraseRepairDraft",),
     "report_review": ("ReportReview",),
+    "lineage_links": ("LineageLinksDraft",),
 }
 EXTRACTION_TASKS = ("cell_extraction", "table_columns")
 # The block-labelling step sorts a phrase list code extracted; it carries a vocabulary_target instead (SW17.1).
@@ -91,6 +94,7 @@ SCREENING_TARGET_TASKS = ("abstract_screening",)
 ADJUDICATION_TARGET_TASKS = ("fulltext_adjudication",)
 GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
 REPORT_TASKS = ("report_plan", "report_section", "report_phrase_repair", "report_review")
+LINEAGE_TASKS = ("lineage_links",)
 # The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's (D37).
 MODEL_CELL_STATES = ("value", "unknown", "not_applicable", "not_found_in_inspected_scope")
 WRAPPER_KEYS: dict[str, str] = {}
@@ -332,6 +336,7 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
         issues.append(Issue("adjudication_target_mismatch", "/adjudication_target", step_input["task_type"]))
     elif adjudication_target is not None and not 1 <= adjudication_target["run"] <= adjudication_target["runs"]:
         issues.append(Issue("adjudication_run_out_of_range", "/adjudication_target/run", str(adjudication_target["run"])))
+    issues.extend(_check_lineage_target(step_input, records))
     report_target = step_input.get("report_target")
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
         issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
@@ -398,6 +403,80 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
                     issues.append(Issue(code, f"/report_target/plan/{field}", column_id))
         elif report_target["plan"] is not None:
             issues.append(Issue("report_plan_must_be_null", "/report_target/plan", step_input["task_type"]))
+    return issues
+
+
+def _lineage_records_by_id(records: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
+    """Keep the first source-owned record for each ID, matching lineage handle numbering."""
+    by_id: dict[str, dict[str, Any]] = {}
+    for record in records:
+        by_id.setdefault(record[key], record)
+    return by_id
+
+
+def _check_lineage_target(step_input: dict[str, Any], records: dict[str, set[str]]) -> list[Issue]:
+    issues: list[Issue] = []
+    target = step_input.get("lineage_target")
+    lineage = step_input["task_type"] in LINEAGE_TASKS
+    allow = step_input["allowlist"]
+    if (target is not None) != lineage or (lineage and (
+        step_input["candidates"] or allow["candidate_ids"] or any(
+            field in step_input for field in ("extraction_target", "report_target", "vocabulary_target",
+                                              "screening_target", "suggestion_target", "adjudication_target")))):
+        issues.append(Issue("lineage_target_mismatch", "/lineage_target", step_input["task_type"]))
+    if lineage:
+        for key in sorted(set(allow) - {"candidate_ids", "source_ids", "passage_ids"}):
+            issues.append(Issue("lineage_allowlist_key", f"/allowlist/{key}", key))
+        if "claims_under_review" in step_input:
+            issues.append(Issue("lineage_unexpected_field", "/claims_under_review", "not a lineage input field"))
+        for field, key in (("sources", "source_id"), ("passages", "passage_id")):
+            first_records = _lineage_records_by_id(step_input[field], key)
+            for i, record in enumerate(step_input[field]):
+                if record != first_records[record[key]]:
+                    issues.append(Issue("lineage_conflicting_record", f"/{field}/{i}", record[key]))
+    if target is None:
+        return issues
+    sources = (_lineage_records_by_id(step_input["sources"], "source_id") if lineage
+               else {s["source_id"]: s for s in step_input["sources"]})
+    to_id = target["to"]["source_id"]
+    seen: set[str] = set()
+    nodes = [("/lineage_target/to", target["to"])]
+    for i, candidate in enumerate(target["candidates"]):
+        path = f"/lineage_target/candidates/{i}"
+        from_id = candidate["from"]["source_id"]
+        nodes.append((f"{path}/from", candidate["from"]))
+        if from_id == to_id or (from_id in sources and to_id in sources
+                               and sources[from_id]["work_id"] == sources[to_id]["work_id"]):
+            issues.append(Issue("lineage_same_work", f"{path}/from/source_id", from_id))
+        if from_id in seen:
+            issues.append(Issue("duplicate_lineage_candidate", f"{path}/from/source_id", from_id))
+        seen.add(from_id)
+        mentions: set[str] = set()
+        for j, pid in enumerate(candidate["mention_passage_ids"]):
+            if pid not in records["passage_ids"] or pid in mentions:
+                issues.append(Issue("lineage_mention_passage_unknown", f"{path}/mention_passage_ids/{j}", pid))
+            mentions.add(pid)
+    for path, node in nodes:
+        sid = node["source_id"]
+        if sid not in allow["source_ids"]:
+            issues.append(Issue("lineage_source_not_allowed", f"{path}/source_id", sid))
+        if sid not in sources:
+            issues.append(Issue("lineage_source_not_shown", f"{path}/source_id", sid))
+        if sorted(c["role"] for c in node["cells"]) != ["change", "problem", "uncertainty"]:
+            issues.append(Issue("lineage_node_roles", f"{path}/cells", "each role must appear exactly once"))
+        for i, cell in enumerate(node["cells"]):
+            if cell["state"] == "missing" and (any(cell[field] is not None for field in (
+                "cell_id", "cell_revision_id", "column_revision", "value", "reading_depth", "output_status"))
+                or any(cell["flags"].values()) or cell["evidence_quotes"]):
+                issues.append(Issue("lineage_missing_cell_shape", f"{path}/cells/{i}", "missing cell carries stored content"))
+    for i, passage in enumerate(step_input["passages"]):
+        if passage["source_id"] != to_id:
+            issues.append(Issue("lineage_passage_not_later_work", f"/passages/{i}/source_id", passage["source_id"]))
+    if len(records["passage_ids"]) > 24:
+        issues.append(Issue("lineage_passage_count", "/passages", "at most 24 unique passages"))
+    for key in ("source_ids", "passage_ids"):
+        for missing in sorted(records[key] - set(allow[key])):
+            issues.append(Issue("lineage_allowlist_mismatch", f"/allowlist/{key}", missing))
     return issues
 
 
@@ -473,7 +552,7 @@ def _semantic_checks_best_effort(step_input: dict[str, Any], data: Any, report: 
         return path != "$" and not any(path == f or path.startswith(f + "/") or f.startswith(path + "/") for f in flagged)
 
     report.issues.extend(i for i in probe.issues if elsewhere(i.path) or (
-        step_input["task_type"] in REPORT_TASKS
+        step_input["task_type"] in REPORT_TASKS + LINEAGE_TASKS
         and i.code in {"unknown_passage_id", "unknown_cell_id", "unknown_source_id", "unknown_column_id"}))
     report.warnings.extend(w for w in probe.warnings if elsewhere(w.path))
 
@@ -488,6 +567,8 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_review(step_input, result, report)
     elif output_type == "EvidenceCellDraft":
         _check_cells(step_input, allow, result, report)
+    elif output_type == "LineageLinksDraft":
+        _check_lineage_links(step_input, allow, result, report)
     elif output_type == "TableColumnProposal":
         _check_column_proposal(step_input, result, report)
     elif output_type == "ResearchTitle":
@@ -678,6 +759,66 @@ def _check_review(step_input: dict[str, Any], review: dict[str, Any], report: Va
         seen.add(label)
     for label in sorted(labels - seen):
         report.issues.append(Issue("claim_without_review", "/reviews", label))
+
+
+def _check_lineage_links(step_input: dict[str, Any], allow: dict[str, set[str]],
+                         draft: dict[str, Any], report: ValidationReport) -> None:
+    """Check per-pair coverage and located evidence, never the meaning of a development relation."""
+    target = step_input["lineage_target"]
+    candidates = {c["from"]["source_id"]: c for c in target["candidates"]}
+    passages = _lineage_records_by_id(step_input["passages"], "passage_id")
+    seen: set[str] = set()
+    for i, decision in enumerate(draft["decisions"]):
+        path, sid = f"/decisions/{i}", decision["from_source_id"]
+        if isinstance(sid, str):
+            if sid in seen:
+                report.issues.append(Issue("duplicate_candidate_decision", f"{path}/from_source_id", sid))
+            seen.add(sid)
+            if sid not in allow["source_ids"]:
+                report.issues.append(Issue("unknown_source_id", f"{path}/from_source_id", sid))
+            elif sid not in candidates:
+                report.issues.append(Issue("decision_for_non_candidate", f"{path}/from_source_id", sid))
+        link = decision["decision"] == "link"
+        fields = ("relation", "what_changed", "support_type")
+        if link:
+            for field in fields:
+                if decision[field] is None:
+                    report.issues.append(Issue("link_field_missing", f"{path}/{field}", field))
+            if not decision["evidence"]:
+                report.issues.append(Issue("link_without_evidence", f"{path}/evidence", "a link requires a located quote"))
+        else:
+            for field in fields:
+                if decision[field] is not None:
+                    report.issues.append(Issue("fields_on_non_link", f"{path}/{field}", field))
+            if decision["evidence"]:
+                report.issues.append(Issue("evidence_without_link", f"{path}/evidence", "only a link carries evidence"))
+        if decision["relation"] == "independent_parallel" and decision["support_type"] != "source_stated":
+            report.issues.append(Issue("independent_parallel_needs_source_stated", f"{path}/support_type", sid))
+        # Reset for each pair: one located span may support different candidate decisions.
+        located: set[tuple[str, str]] = set()
+        cited: set[str] = set()
+        for j, evidence in enumerate(decision["evidence"]):
+            pid = evidence["passage_id"]
+            evidence_path = f"{path}/evidence/{j}"
+            if not isinstance(pid, str):
+                continue  # Non-string IDs are schema errors; wrong-kind strings also get membership issues.
+            cited.add(pid)
+            passage = passages.get(pid)
+            if pid not in allow["passage_ids"] or passage is None or passage["source_id"] != target["to"]["source_id"]:
+                report.issues.append(Issue("unknown_passage_id", f"{evidence_path}/passage_id", pid))
+            elif (anchor := locate_anchor(evidence["quote"], passage["text"])) is None:
+                report.issues.append(Issue("anchor_not_in_passage", f"{evidence_path}/quote",
+                                           f"{sid}:{pid}: the quoted text was not found in the cited passage"))
+            elif (pid, anchor.text) in located:
+                report.issues.append(Issue("duplicate_evidence_quote", f"{evidence_path}/quote",
+                                           f"{sid}:{pid}: this quote repeats an earlier quote of the same passage"))
+            else:
+                located.add((pid, anchor.text))
+        if (decision["support_type"] == "source_stated" and sid in candidates
+                and not cited.intersection(candidates[sid]["mention_passage_ids"])):
+            report.issues.append(Issue("source_stated_without_mention_passage", f"{path}/evidence", sid))
+    for missing in sorted(set(candidates) - seen):
+        report.issues.append(Issue("candidate_without_decision", "/decisions", missing))
 
 
 def _check_cells(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
@@ -1226,6 +1367,19 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
 
 
 # Explicit paths keep record conversion out of prose, quotes, revision IDs and envelope metadata.
+LINEAGE_OUTPUT_ID_FIELDS = (
+    ("decisions/*/from_source_id", "srv_S"), ("decisions/*/evidence/*/passage_id", "psg_P"),
+)
+LINEAGE_INPUT_ID_FIELDS = (
+    ("passages/*/passage_id", "psg_P"), ("passages/*/source_id", "srv_S"),
+    ("sources/*/source_id", "srv_S"),
+    ("allowlist/passage_ids/*", "psg_P"), ("allowlist/source_ids/*", "srv_S"),
+    ("lineage_target/to/source_id", "srv_S"), ("lineage_target/to/cells/*/cell_id", "cel_L"),
+    ("lineage_target/candidates/*/from/source_id", "srv_S"),
+    ("lineage_target/candidates/*/from/cells/*/cell_id", "cel_L"),
+    ("lineage_target/candidates/*/mention_passage_ids/*", "psg_P"),
+)
+
 REPORT_PLAN_ID_FIELDS = (
     ("glossary/*/passage_id", "psg_P"), ("axes/*/column_id", "col_C"),
     ("limitations_column_id", "col_C"), ("future_work_column_id", "col_C"),
@@ -1319,6 +1473,30 @@ def report_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     return handles
 
 
+def lineage_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
+    """Number shown records, then display-only cells, then remaining declared slots; first occurrence wins."""
+    handles: dict[str, str] = {}
+    counts = dict.fromkeys(("psg_P", "srv_S", "cel_L"), 0)
+
+    def add(identifier: Any, kind: str) -> None:
+        if isinstance(identifier, str) and identifier not in handles:
+            counts[kind] += 1
+            handles[identifier] = f"{kind}{counts[kind]:07d}"
+
+    for records, key, kind in ((step_input["passages"], "passage_id", "psg_P"),
+                               (step_input["sources"], "source_id", "srv_S")):
+        for record in records:
+            add(record[key], kind)
+    target = step_input.get("lineage_target") or {}
+    nodes = [target.get("to") or {}] + [c["from"] for c in target.get("candidates", [])]
+    for node in nodes:
+        for cell in node.get("cells", []):
+            add(cell["cell_id"], "cel_L")
+    for owner, key, kind, _ in _report_id_fields(step_input, LINEAGE_INPUT_ID_FIELDS):
+        add(owner[key], kind)
+    return handles
+
+
 def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     """Short per-step identifiers shown to the model in place of passage and source IDs.
 
@@ -1328,6 +1506,8 @@ def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     """
     if step_input.get("task_type") in REPORT_TASKS:
         return report_citation_handles(step_input)
+    if step_input.get("task_type") in LINEAGE_TASKS:
+        return lineage_citation_handles(step_input)
     handles = {p["passage_id"]: f"psg_P{n:07d}" for n, p in enumerate(step_input["passages"], start=1)}
     columns = (step_input.get("extraction_target") or {}).get("columns", [])
     handles |= {c["column_id"]: f"col_C{n:07d}" for n, c in enumerate(columns, start=1)}
@@ -1340,8 +1520,9 @@ def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
 def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
     handles = citation_handles(step_input)
     shown = copy.deepcopy(step_input)
-    if step_input.get("task_type") in REPORT_TASKS:
-        for owner, key, _, _ in _report_id_fields(shown, REPORT_INPUT_ID_FIELDS):
+    if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS:
+        fields = LINEAGE_INPUT_ID_FIELDS if step_input["task_type"] in LINEAGE_TASKS else REPORT_INPUT_ID_FIELDS
+        for owner, key, _, _ in _report_id_fields(shown, fields):
             if isinstance(owner[key], str):
                 owner[key] = handles.get(owner[key], owner[key])
         return shown
@@ -1457,9 +1638,10 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
         return raw
     if not isinstance(data, dict):
         return raw
-    if step_input.get("task_type") in REPORT_TASKS:
-        fields = REPORT_PLAN_ID_FIELDS if step_input["task_type"] == "report_plan" else (
-            REPORT_SECTION_ID_FIELDS if step_input["task_type"] == "report_section" else ())
+    if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS:
+        fields = LINEAGE_OUTPUT_ID_FIELDS if step_input["task_type"] in LINEAGE_TASKS else (
+            REPORT_PLAN_ID_FIELDS if step_input["task_type"] == "report_plan" else (
+                REPORT_SECTION_ID_FIELDS if step_input["task_type"] == "report_section" else ()))
         for owner, key, kind, _ in _report_id_fields(data, fields):
             identifier = owner[key]
             if isinstance(identifier, str) and identifier.startswith(kind):

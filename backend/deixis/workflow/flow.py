@@ -95,7 +95,7 @@ CHAIN_RANK_BASE = 1_000_000_000
 # Steps whose records are shown as short handles instead of stored identifiers, because long random IDs were
 # mis-copied (D12). The abstract stage joined them in slice 09: its batches name 20 candidates each.
 HANDLE_TASKS = ("grounded_answer", "answer_review", "cell_extraction", "abstract_screening",
-                "fulltext_adjudication") + contracts.REPORT_TASKS
+                "fulltext_adjudication", "lineage_links") + contracts.REPORT_TASKS
 FORMULATION_SCORE_THRESHOLD = 3
 FORMULATION_TERMS = re.compile(
     r"\b(?:minimi[sz]e|maximi[sz]e|subject\s+to|s\.\s*t|objective\s+function|constraints?|decision\s+variables?"
@@ -4521,7 +4521,8 @@ class ResearchFlow:
                     vocabulary_target: dict[str, Any] | None = None,
                     screening_target: dict[str, Any] | None = None,
                     suggestion_target: dict[str, Any] | None = None,
-                    adjudication_target: dict[str, Any] | None = None) -> dict[str, Any]:
+                    adjudication_target: dict[str, Any] | None = None,
+                    lineage_target: dict[str, Any] | None = None) -> dict[str, Any]:
         candidates = []
         for c in candidate_rows:
             source = self.store.source(c["source_version_id"])
@@ -4561,6 +4562,8 @@ class ResearchFlow:
             target["suggestion_target"] = suggestion_target
         if adjudication_target is not None:
             target["adjudication_target"] = adjudication_target
+        if lineage_target is not None:
+            target["lineage_target"] = lineage_target
         allowlist = {"candidate_ids": [c["candidate_id"] for c in candidates], "source_ids": [s["source_id"] for s in sources],
                      "passage_ids": [p["passage_id"] for p in passages]}
         if vocabulary_target is not None:
@@ -4642,6 +4645,7 @@ class ResearchFlow:
                           limiter: ModelCallLimiter | None = None, budget_short: str = "pause",
                           recheck: Callable[[list[dict[str, Any]]], list[dict[str, Any]] | None] | None = None,
                           step_output_extra: dict[str, Any] | None = None,
+                          lineage_target: dict[str, Any] | None = None,
                           ) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run. `budget_short="skip"` is the sw
@@ -4709,7 +4713,7 @@ class ResearchFlow:
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
                                        claims or [], model, extraction_target, report_target, vocabulary_target,
-                                       screening_target, suggestion_target, adjudication_target)
+                                       screening_target, suggestion_target, adjudication_target, lineage_target)
             if issues := contracts.check_step_input(payload):
                 self.store.finish_step(step["id"], "failed", error_code="step_input_invalid", error=[vars(i) for i in issues])
                 halt("step_input_invalid", fail=True)
@@ -4774,7 +4778,7 @@ class ResearchFlow:
                 self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_mismatch", error=mismatch)
                 halt("model_mismatch", mismatch)
             output_text = result.raw_text or ""
-            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS:
+            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS:
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             # Field names from the alias table are put right before validation and the renames recorded (D86).
             output_text, normalised_changes = contracts.normalise_output(task_type, output_text)

@@ -1744,6 +1744,279 @@
      }
     ]
    }
+  },
+  {
+   "name": "lineage_valid",
+   "step_input": "I_lineage_links",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "step_input_id": "sti_SYNTHL0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "schema_version": "deixis.lineage_links_draft.v1",
+    "decisions": [
+     {
+      "from_source_id": "srv_SYNTHEARLY01",
+      "decision": "link",
+      "relation": "extends",
+      "what_changed": "SYNTHETIC: extends the observation window.",
+      "support_type": "source_stated",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHLATER01",
+        "quote": "SYNTHETIC. We extend the first earlier approach to a longer observation window."
+       }
+      ],
+      "note": null
+     },
+     {
+      "from_source_id": "srv_SYNTHEARLY02",
+      "decision": "no_relation",
+      "relation": null,
+      "what_changed": null,
+      "support_type": null,
+      "evidence": [],
+      "note": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "lineage_unknown_passage",
+   "step_input": "I_lineage_links",
+   "expect_ok": false,
+   "expect_codes": [
+    "unknown_passage_id",
+    "source_stated_without_mention_passage"
+   ],
+   "output": {
+    "step_input_id": "sti_SYNTHL0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "schema_version": "deixis.lineage_links_draft.v1",
+    "decisions": [
+     {
+      "from_source_id": "srv_SYNTHEARLY01",
+      "decision": "link",
+      "relation": "extends",
+      "what_changed": "SYNTHETIC: extends the observation window.",
+      "support_type": "source_stated",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHUNKNOWN01",
+        "quote": "SYNTHETIC. We extend the first earlier approach to a longer observation window."
+       }
+      ],
+      "note": null
+     },
+     {
+      "from_source_id": "srv_SYNTHEARLY02",
+      "decision": "no_relation",
+      "relation": null,
+      "what_changed": null,
+      "support_type": null,
+      "evidence": [],
+      "note": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "lineage_missing_candidate",
+   "step_input": "I_lineage_links",
+   "expect_ok": false,
+   "expect_codes": [
+    "candidate_without_decision"
+   ],
+   "output": {
+    "step_input_id": "sti_SYNTHL0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "schema_version": "deixis.lineage_links_draft.v1",
+    "decisions": [
+     {
+      "from_source_id": "srv_SYNTHEARLY01",
+      "decision": "link",
+      "relation": "extends",
+      "what_changed": "SYNTHETIC: extends the observation window.",
+      "support_type": "source_stated",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHLATER01",
+        "quote": "SYNTHETIC. We extend the first earlier approach to a longer observation window."
+       }
+      ],
+      "note": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "lineage_duplicate_candidate",
+   "step_input": "I_lineage_links",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_candidate_decision"
+   ],
+   "output": {
+    "step_input_id": "sti_SYNTHL0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "schema_version": "deixis.lineage_links_draft.v1",
+    "decisions": [
+     {
+      "from_source_id": "srv_SYNTHEARLY01",
+      "decision": "link",
+      "relation": "extends",
+      "what_changed": "SYNTHETIC: extends the observation window.",
+      "support_type": "source_stated",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHLATER01",
+        "quote": "SYNTHETIC. We extend the first earlier approach to a longer observation window."
+       }
+      ],
+      "note": null
+     },
+     {
+      "from_source_id": "srv_SYNTHEARLY02",
+      "decision": "no_relation",
+      "relation": null,
+      "what_changed": null,
+      "support_type": null,
+      "evidence": [],
+      "note": null
+     },
+     {
+      "from_source_id": "srv_SYNTHEARLY01",
+      "decision": "link",
+      "relation": "extends",
+      "what_changed": "SYNTHETIC: extends the observation window.",
+      "support_type": "source_stated",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHLATER01",
+        "quote": "SYNTHETIC. We extend the first earlier approach to a longer observation window."
+       }
+      ],
+      "note": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "lineage_link_without_evidence",
+   "step_input": "I_lineage_links",
+   "expect_ok": false,
+   "expect_codes": [
+    "link_without_evidence",
+    "source_stated_without_mention_passage"
+   ],
+   "output": {
+    "step_input_id": "sti_SYNTHL0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "schema_version": "deixis.lineage_links_draft.v1",
+    "decisions": [
+     {
+      "from_source_id": "srv_SYNTHEARLY01",
+      "decision": "link",
+      "relation": "extends",
+      "what_changed": "SYNTHETIC: extends the observation window.",
+      "support_type": "source_stated",
+      "evidence": [],
+      "note": null
+     },
+     {
+      "from_source_id": "srv_SYNTHEARLY02",
+      "decision": "no_relation",
+      "relation": null,
+      "what_changed": null,
+      "support_type": null,
+      "evidence": [],
+      "note": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "lineage_source_stated_non_mention",
+   "step_input": "I_lineage_links",
+   "expect_ok": false,
+   "expect_codes": [
+    "source_stated_without_mention_passage"
+   ],
+   "output": {
+    "step_input_id": "sti_SYNTHL0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "schema_version": "deixis.lineage_links_draft.v1",
+    "decisions": [
+     {
+      "from_source_id": "srv_SYNTHEARLY01",
+      "decision": "link",
+      "relation": "extends",
+      "what_changed": "SYNTHETIC: extends the observation window.",
+      "support_type": "source_stated",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHLATER02",
+        "quote": "SYNTHETIC. The second earlier work is a comparator; we state no methodological dependency."
+       }
+      ],
+      "note": null
+     },
+     {
+      "from_source_id": "srv_SYNTHEARLY02",
+      "decision": "no_relation",
+      "relation": null,
+      "what_changed": null,
+      "support_type": null,
+      "evidence": [],
+      "note": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "lineage_independent_parallel_inference",
+   "step_input": "I_lineage_links",
+   "expect_ok": false,
+   "expect_codes": [
+    "independent_parallel_needs_source_stated"
+   ],
+   "output": {
+    "step_input_id": "sti_SYNTHL0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "schema_version": "deixis.lineage_links_draft.v1",
+    "decisions": [
+     {
+      "from_source_id": "srv_SYNTHEARLY01",
+      "decision": "link",
+      "relation": "independent_parallel",
+      "what_changed": "SYNTHETIC: extends the observation window.",
+      "support_type": "analyst_inference",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHLATER01",
+        "quote": "SYNTHETIC. We extend the first earlier approach to a longer observation window."
+       }
+      ],
+      "note": null
+     },
+     {
+      "from_source_id": "srv_SYNTHEARLY02",
+      "decision": "no_relation",
+      "relation": null,
+      "what_changed": null,
+      "support_type": null,
+      "evidence": [],
+      "note": null
+     }
+    ]
+   }
   }
  ]
 }

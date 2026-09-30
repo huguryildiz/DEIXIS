@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/lineage-links-draft.schema.json",
+  "title": "LineageLinksDraft",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "decisions"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "deixis.lineage_links_draft.v1"
+    },
+    "step_input_id": {
+      "$ref": "common.schema.json#/$defs/step_input_id"
+    },
+    "scope_revision": {
+      "$ref": "common.schema.json#/$defs/scope_revision"
+    },
+    "skill_package_hash": {
+      "$ref": "common.schema.json#/$defs/skill_package_hash"
+    },
+    "decisions": {
+      "type": "array",
+      "maxItems": 8,
+      "description": "Exactly one item per candidate in lineage_target.candidates.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "from_source_id",
+          "decision",
+          "relation",
+          "what_changed",
+          "support_type",
+          "evidence",
+          "note"
+        ],
+        "properties": {
+          "from_source_id": {
+            "$ref": "common.schema.json#/$defs/source_id"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "link",
+              "no_relation",
+              "insufficient_evidence"
+            ]
+          },
+          "relation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "extends",
+                  "relaxes_assumption",
+                  "changes_method",
+                  "new_domain_or_condition",
+                  "corrects_or_contradicts",
+                  "independent_parallel"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "what_changed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "support_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "source_stated",
+                  "analyst_inference"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 5,
+            "description": "Quotes from the LATER work's shown passages only. Empty unless decision is link.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "passage_id",
+                "quote"
+              ],
+              "properties": {
+                "passage_id": {
+                  "$ref": "common.schema.json#/$defs/passage_id"
+                },
+                "quote": {
+                  "type": "string",
+                  "minLength": 12,
+                  "maxLength": 600
+                }
+              }
+            }
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -75,6 +75,11 @@ For `cell_extraction` and `table_columns`, read
 [evidence table](references/evidence-table.md): you answer evidence table
 columns for one source, or suggest columns, and do not answer the question.
 
+For `lineage_links`, read [development lines](references/synthesis.md): make a
+per-pair development-relation decision for each supplied candidate. This task
+is not an idea-chain synthesis. The following availability limits continue to
+apply to `grounded_answer` and the report tasks.
+
 This version supports only source-grounded question answering and, for a report run, the fixed report
 skeleton described in [report.md](references/report.md). Literature synthesis across idea chains, candidate
 research-question development, claim-specific kill-search, and experiment design or execution are **not

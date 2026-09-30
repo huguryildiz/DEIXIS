@@ -1955,5 +1955,365 @@
    "requested_model": null
   },
   "created_at": "2026-09-23T12:00:00Z"
+ },
+ "I_lineage_links": {
+  "step_input_id": "sti_SYNTHL0003",
+  "research_id": "res_SYNTHA0001",
+  "run_id": "run_SYNTHA0002",
+  "step_id": "stp_SYNTHA0003",
+  "task_type": "lineage_links",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "skill_files": [
+   "SKILL.md",
+   "references/synthesis.md"
+  ],
+  "output_schema_versions": [
+   "deixis.lineage_links_draft.v1"
+  ],
+  "question": {
+   "text": "SYNTHETIC: Does the later work state a development relation to each candidate?",
+   "language_hint": "en"
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "grounded_answer"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [],
+  "candidates": [],
+  "sources": [
+   {
+    "source_id": "srv_SYNTHLATER01",
+    "work_id": "wrk_SYNTHL0001",
+    "title": "SYNTHETIC invented work 1",
+    "year": 2024,
+    "version_label": "synthetic version",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_SYNTHEARLY01",
+    "work_id": "wrk_SYNTHL0002",
+    "title": "SYNTHETIC invented work 2",
+    "year": 2021,
+    "version_label": "synthetic version",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_SYNTHEARLY02",
+    "work_id": "wrk_SYNTHL0003",
+    "title": "SYNTHETIC invented work 3",
+    "year": 2025,
+    "version_label": "synthetic version",
+    "access_level": "pdf_available"
+   }
+  ],
+  "passages": [
+   {
+    "passage_id": "psg_SYNTHLATER01",
+    "source_id": "srv_SYNTHLATER01",
+    "reading_depth": "selected_sections",
+    "locator": {
+     "kind": "pdf_page",
+     "physical_page": 1,
+     "printed_label": "1"
+    },
+    "abstract_origin": null,
+    "text_source": "text_layer",
+    "text": "SYNTHETIC. We extend the first earlier approach to a longer observation window."
+   },
+   {
+    "passage_id": "psg_SYNTHLATER02",
+    "source_id": "srv_SYNTHLATER01",
+    "reading_depth": "selected_sections",
+    "locator": {
+     "kind": "pdf_page",
+     "physical_page": 2,
+     "printed_label": "2"
+    },
+    "abstract_origin": null,
+    "text_source": "text_layer",
+    "text": "SYNTHETIC. The second earlier work is a comparator; we state no methodological dependency."
+   },
+   {
+    "passage_id": "psg_SYNTHLATER03",
+    "source_id": "srv_SYNTHLATER01",
+    "reading_depth": "selected_sections",
+    "locator": {
+     "kind": "pdf_page",
+     "physical_page": 3,
+     "printed_label": "3"
+    },
+    "abstract_origin": null,
+    "text_source": "text_layer",
+    "text": "SYNTHETIC. The apparatus was painted green before the experiment."
+   }
+  ],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [
+    "srv_SYNTHLATER01",
+    "srv_SYNTHEARLY01",
+    "srv_SYNTHEARLY02"
+   ],
+   "passage_ids": [
+    "psg_SYNTHLATER01",
+    "psg_SYNTHLATER02",
+    "psg_SYNTHLATER03"
+   ]
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 4,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 2
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": null
+  },
+  "created_at": "2026-09-14T12:05:00Z",
+  "lineage_target": {
+   "table_id": "tbl_SYNTHL0001",
+   "to": {
+    "source_id": "srv_SYNTHLATER01",
+    "year": 2024,
+    "cells": [
+     {
+      "role": "problem",
+      "cell_id": "cel_SYNTHL0010001",
+      "cell_revision_id": "crv_SYNTHL0010001",
+      "column_revision": 1,
+      "instruction_revision": 1,
+      "instruction": "SYNTHETIC: describe problem.",
+      "state": "value",
+      "value": "SYNTHETIC problem context.",
+      "reading_depth": "selected_sections",
+      "output_status": "structurally_valid",
+      "flags": {
+       "stale_column": false,
+       "pdf_removed": false,
+       "pdf_replaced": false,
+       "text_superseded": false,
+       "not_verified": false
+      },
+      "evidence_quotes": [
+       "SYNTHETIC stored cell context, not citable."
+      ]
+     },
+     {
+      "role": "change",
+      "cell_id": "cel_SYNTHL0010002",
+      "cell_revision_id": "crv_SYNTHL0010002",
+      "column_revision": 1,
+      "instruction_revision": 1,
+      "instruction": "SYNTHETIC: describe change.",
+      "state": "value",
+      "value": "SYNTHETIC change context.",
+      "reading_depth": "selected_sections",
+      "output_status": "structurally_valid",
+      "flags": {
+       "stale_column": false,
+       "pdf_removed": false,
+       "pdf_replaced": false,
+       "text_superseded": false,
+       "not_verified": false
+      },
+      "evidence_quotes": [
+       "SYNTHETIC stored cell context, not citable."
+      ]
+     },
+     {
+      "role": "uncertainty",
+      "cell_id": "cel_SYNTHL0010003",
+      "cell_revision_id": "crv_SYNTHL0010003",
+      "column_revision": 1,
+      "instruction_revision": 1,
+      "instruction": "SYNTHETIC: describe uncertainty.",
+      "state": "value",
+      "value": "SYNTHETIC uncertainty context.",
+      "reading_depth": "selected_sections",
+      "output_status": "structurally_valid",
+      "flags": {
+       "stale_column": false,
+       "pdf_removed": false,
+       "pdf_replaced": false,
+       "text_superseded": false,
+       "not_verified": false
+      },
+      "evidence_quotes": [
+       "SYNTHETIC stored cell context, not citable."
+      ]
+     }
+    ]
+   },
+   "candidates": [
+    {
+     "from": {
+      "source_id": "srv_SYNTHEARLY01",
+      "year": 2021,
+      "cells": [
+       {
+        "role": "problem",
+        "cell_id": "cel_SYNTHL0020001",
+        "cell_revision_id": "crv_SYNTHL0020001",
+        "column_revision": 1,
+        "instruction_revision": 1,
+        "instruction": "SYNTHETIC: describe problem.",
+        "state": "value",
+        "value": "SYNTHETIC problem context.",
+        "reading_depth": "selected_sections",
+        "output_status": "structurally_valid",
+        "flags": {
+         "stale_column": false,
+         "pdf_removed": false,
+         "pdf_replaced": false,
+         "text_superseded": false,
+         "not_verified": false
+        },
+        "evidence_quotes": [
+         "SYNTHETIC stored cell context, not citable."
+        ]
+       },
+       {
+        "role": "change",
+        "cell_id": "cel_SYNTHL0020002",
+        "cell_revision_id": "crv_SYNTHL0020002",
+        "column_revision": 1,
+        "instruction_revision": 1,
+        "instruction": "SYNTHETIC: describe change.",
+        "state": "value",
+        "value": "SYNTHETIC change context.",
+        "reading_depth": "selected_sections",
+        "output_status": "structurally_valid",
+        "flags": {
+         "stale_column": false,
+         "pdf_removed": false,
+         "pdf_replaced": false,
+         "text_superseded": false,
+         "not_verified": false
+        },
+        "evidence_quotes": [
+         "SYNTHETIC stored cell context, not citable."
+        ]
+       },
+       {
+        "role": "uncertainty",
+        "cell_id": "cel_SYNTHL0020003",
+        "cell_revision_id": "crv_SYNTHL0020003",
+        "column_revision": 1,
+        "instruction_revision": 1,
+        "instruction": "SYNTHETIC: describe uncertainty.",
+        "state": "value",
+        "value": "SYNTHETIC uncertainty context.",
+        "reading_depth": "selected_sections",
+        "output_status": "structurally_valid",
+        "flags": {
+         "stale_column": false,
+         "pdf_removed": false,
+         "pdf_replaced": false,
+         "text_superseded": false,
+         "not_verified": false
+        },
+        "evidence_quotes": [
+         "SYNTHETIC stored cell context, not citable."
+        ]
+       }
+      ]
+     },
+     "origin": "mention",
+     "mention_passage_ids": [
+      "psg_SYNTHLATER01"
+     ],
+     "edge_state": "present",
+     "year_order_warning": false
+    },
+    {
+     "from": {
+      "source_id": "srv_SYNTHEARLY02",
+      "year": 2025,
+      "cells": [
+       {
+        "role": "problem",
+        "cell_id": "cel_SYNTHL0030001",
+        "cell_revision_id": "crv_SYNTHL0030001",
+        "column_revision": 1,
+        "instruction_revision": 1,
+        "instruction": "SYNTHETIC: describe problem.",
+        "state": "value",
+        "value": "SYNTHETIC problem context.",
+        "reading_depth": "selected_sections",
+        "output_status": "structurally_valid",
+        "flags": {
+         "stale_column": false,
+         "pdf_removed": false,
+         "pdf_replaced": false,
+         "text_superseded": false,
+         "not_verified": false
+        },
+        "evidence_quotes": [
+         "SYNTHETIC stored cell context, not citable."
+        ]
+       },
+       {
+        "role": "change",
+        "cell_id": "cel_SYNTHL0030002",
+        "cell_revision_id": "crv_SYNTHL0030002",
+        "column_revision": 1,
+        "instruction_revision": 1,
+        "instruction": "SYNTHETIC: describe change.",
+        "state": "value",
+        "value": "SYNTHETIC change context.",
+        "reading_depth": "selected_sections",
+        "output_status": "structurally_valid",
+        "flags": {
+         "stale_column": false,
+         "pdf_removed": false,
+         "pdf_replaced": false,
+         "text_superseded": false,
+         "not_verified": false
+        },
+        "evidence_quotes": [
+         "SYNTHETIC stored cell context, not citable."
+        ]
+       },
+       {
+        "role": "uncertainty",
+        "cell_id": null,
+        "cell_revision_id": null,
+        "column_revision": null,
+        "instruction_revision": 1,
+        "instruction": "SYNTHETIC: describe uncertainty.",
+        "state": "missing",
+        "value": null,
+        "reading_depth": null,
+        "output_status": null,
+        "flags": {
+         "stale_column": false,
+         "pdf_removed": false,
+         "pdf_replaced": false,
+         "text_superseded": false,
+         "not_verified": false
+        },
+        "evidence_quotes": []
+       }
+      ]
+     },
+     "origin": "mention",
+     "mention_passage_ids": [
+      "psg_SYNTHLATER02"
+     ],
+     "edge_state": "not_read",
+     "year_order_warning": true
+    }
+   ]
+  }
  }
 }

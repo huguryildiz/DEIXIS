@@ -21,6 +21,20 @@ def envelope(si: dict[str, Any], version: str) -> dict[str, Any]:
 
 def valid_response(si: dict[str, Any]) -> str:
     task = si["task_type"]
+    if task == "lineage_links":
+        decisions = []
+        for i, candidate in enumerate(si["lineage_target"]["candidates"]):
+            decision = {"from_source_id": candidate["from"]["source_id"], "decision": "no_relation",
+                        "relation": None, "what_changed": None, "support_type": None, "evidence": [],
+                        "note": "SYNTHETIC: scripted per-pair decision."}
+            if i == 0:
+                pid = candidate["mention_passage_ids"][0]
+                passage = next(p for p in si["passages"] if p["passage_id"] == pid)
+                decision.update(decision="link", relation="extends", support_type="source_stated",
+                                what_changed="SYNTHETIC: the later work extends the earlier approach.",
+                                evidence=[{"passage_id": pid, "quote": passage["text"][:600]}])
+            decisions.append(decision)
+        return json.dumps(envelope(si, "deixis.lineage_links_draft.v1") | {"decisions": decisions})
     if task == "abstract_screening":
         # SYNTHETIC and field-independent: every record with an abstract is a candidate quoted from its own first
         # words, so the quote always locates and the two runs always agree. It says nothing about model behavior.

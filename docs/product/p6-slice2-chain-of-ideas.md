@@ -543,7 +543,7 @@ L1–L4'ün bağımsızlığı yalnız aşağıdaki arayüz sınırlarıyla geç
 **Çıkış.** Sentetik pasajlarda beklenen adaylar ve kenar durumları; numaralı atıf kaçırılır; alan tabanı saklı sayıdan hesaplanır.
 **Göstermez.** Mention bulucunun gerçek korpusta geri çağırımını (L2 bunu ölçmez; L9 yalnız R14'ün dar kazanımını ölçer); `O(|T|·P·R)` maliyetini gerçek boyutta.
 
-### L3 — Sözleşme ve model taşıma yolu (M–L)
+### L3 — Sözleşme ve model taşıma yolu (M–L) ✅ commit: bu satırı ekleyen commit
 
 **Kapsam.** `contracts/research/lineage-links-draft.schema.json` (v1) ve `step-input.schema.json` eklentisi (`lineage_target`, `lineage_node`); `domain/contracts.py::_check_lineage_links`; D127 tarzı alan alan tutamak eşlemesi, izin listesi beslemesi, çıktı çözümlemesi ve onarım mesajı `lineage_links` için; `RUNTIME_FILES`, `methods/deixis-research/references/synthesis.md`, `SKILL.md` daraltması, `provenance.json`; `domain/contracts.py` kayıt noktaları (`SCHEMA_FILES`, `SCHEMA_VERSIONS`, `TASK_OUTPUTS`, doğrulama dispatch'i, onarım yolu) ve `flow.py`'de `HANDLE_TASKS` ile çıktı çözümleme dalı; `tests/fixtures/research/{step-inputs,fake-outputs}.json` ve `tests/fakes.py::valid_response`; §11'deki davranış vakalarının **tanımları** (çalıştırma yok).
 **Dosyalar.** `contracts/research/*`, `domain/contracts.py`, `domain/skill.py`, `methods/deixis-research/**`, `workflow/flow.py` (`_step_input` izin listesi ve `_model_step` parametresi, iş mantığı yok), `tests/test_lineage_contract.py`, `tests/test_skill.py`, `tests/fixtures/research/*`, `tests/fakes.py`, `tests/model_behavior/lineage_cases.json`.

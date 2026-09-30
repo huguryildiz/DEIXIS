@@ -195,7 +195,26 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
     lines: list[str] = []
     if draft:
         count = sum(section["status"] != "valid" for section in view["sections"])
-        lines.extend([f"> {_label(f'DRAFT: {count} sections not validated.', tr, f'TASLAK: {count} bölüm doğrulanmadı.')}", ""])
+        draft_line = _label(f'DRAFT: {count} sections not validated.', tr, f'TASLAK: {count} bölüm doğrulanmadı.')
+        if count == 0:
+            error = (view.get("run") or {}).get("error")
+            rules = list(dict.fromkeys(
+                item["rule"] for item in error if isinstance(item, dict) and isinstance(item.get("rule"), str)
+                and not (item["rule"].endswith("_warning") and isinstance(item.get("detail"), str)
+                         and item["detail"].startswith("WARNING:"))
+            )) if isinstance(error, list) else []
+            names = {"banned_word": ("banned word", "yasak sözcük"), "empty_section": ("empty section", "boş bölüm"),
+                     "corpus_count_mismatch": ("corpus count mismatch", "korpus sayısı uyuşmazlığı"),
+                     "citation_anchor_unmatched": ("unlocated citation quote", "konumu bulunamayan atıf alıntısı"),
+                     "anchor_not_in_cell_evidence": ("quote missing from cell evidence", "alıntı hücre kanıtında yok"),
+                     "anchor_not_in_passage": ("quote missing from passage", "alıntı pasajda yok")}
+            reason = ", ".join(names[rule][int(tr)] if rule in names else rule.replace("_", " ") for rule in rules[:3])
+            if len(rules) > 3:
+                reason += _label(f" and {len(rules) - 3} more", tr, f" ve {len(rules) - 3} kural daha")
+            if reason:
+                draft_line = _label(f"DRAFT: the assembly check refused the report ({reason}).", tr,
+                                    f"TASLAK: birleştirme kontrolü raporu reddetti ({reason}).")
+        lines.extend([f"> {_md(draft_line)}", ""])
     lines.extend([f"# {_md(title)}", _label("Evidence report · draft" if draft else f'Evidence report · V{view["report_version"]}',
                                           tr, "Kanıt raporu · taslak" if draft else f'Kanıt raporu · V{view["report_version"]}'), ""])
     missing = view.get("missing_rows")

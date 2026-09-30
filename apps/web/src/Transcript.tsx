@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert } from 'lucide-react'
 import type { ResearchView, Run, Verdict } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
-import { connectionName, fetchReasonText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
+import { connectionName, failedSectionReasonText, fetchReasonText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { ProtocolApproval } from './ProtocolApproval'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
@@ -331,7 +331,10 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
       const needsRewrite = run.pause_reason === 'section_must_be_rewritten' &&
         Array.isArray((run.error as { sections?: string[] } | null)?.sections) &&
         (run.error as { sections: string[] }).sections.includes(section)
-      const outcome = needsRewrite ? t('{section}: must be written again', { section }) : step.status === 'succeeded' ? t('{section} written', { section }) : step.status === 'failed' || step.status === 'outcome_unknown' ? t('{section} failed', { section }) : step.status === 'running' ? t('{section}: being written', { section }) : t('{section}: waiting', { section })
+      const reasons = (run.error as { reasons?: { section_id?: string; code?: string }[] } | null)?.reasons
+      const code = Array.isArray(reasons) ? reasons.find(reason => reason?.section_id === section)?.code : undefined
+      const reason = typeof code === 'string' && code ? failedSectionReasonText(code) : ''
+      const outcome = needsRewrite ? reason ? t('{section}: must be written again: {reason}', { section, reason }) : t('{section}: must be written again', { section }) : step.status === 'succeeded' ? t('{section} written', { section }) : step.status === 'failed' || step.status === 'outcome_unknown' ? reason ? t('{section} failed: {reason}', { section, reason }) : t('{section} failed', { section }) : step.status === 'running' ? t('{section}: being written', { section }) : t('{section}: waiting', { section })
       return <p key={step.id} className="chat-report-line">{outcome}</p>
     })}</>
     // A search phase reports even when a provider failed: the totals of the providers that did answer still hold.

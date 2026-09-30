@@ -24,6 +24,8 @@ given to you as rows and cited cells, and you discuss it — you do not restate 
   the allowlist. A glossary passage named in the input but absent from the allowlist may not be cited.
 - Cite only passage_ids and cell_ids from the allowlist. For a cell_id, anchor to one of that cell's stored
   evidence quotes; for a passage_id, apply [the shared citation rule](source-grounded-answer.md#grounded-answer).
+- A located anchor does not prove support. If no stored quote of the cited cell supports the claim, rewrite the
+  claim or drop that cell citation; a quote from another cell or a passage is never a substitute.
 - Each citation anchor names either a passage or an evidence-table cell, never both and never neither. If both
   support a claim, write one anchor for the passage and one for the cell.
 - Apply [the shared mathematics and `text_source` rule](source-grounded-answer.md#grounded-answer) to equations.

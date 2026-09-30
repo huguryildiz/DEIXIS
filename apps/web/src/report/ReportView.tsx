@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, ApiError, type ReportClaim, type ReportDetail, type ReportLink, type ReportSection, type ResearchView } from '../api'
 import { MathText } from '../MathText'
-import { failedRowReasonText, pauseReasonText, reportChangeLabels, reportChangeViaLabels, reportRevisionLabels, reportSupportLabels } from '../labels'
+import { failedRowReasonText, failedSectionReasonText, pauseReasonText, reportAssemblyDraftText, reportChangeLabels, reportChangeViaLabels, reportRevisionLabels, reportSupportLabels } from '../labels'
 import { Notice } from '../Notice'
 import { t, uiLocale } from '../i18n'
 import { useToast } from '../Toast'
@@ -172,7 +172,7 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
     <div className="report-scroll"><article className="report-document evidence-report-document">
       {error && <Notice tone="error">{error}</Notice>}
       {!report ? <p>{t('Loading report…')}</p> : <>
-        <header className="report-document-head"><p>{report.status === 'valid' ? t('Evidence report · V{n}', { n: report.report_version ?? '' }) : report.status === 'draft' ? t('DRAFT: {n} sections not validated', { n: report.sections.filter(section => section.status !== 'valid').length }) : t('Evidence report · being written')}</p><h1>{title}</h1><time>{new Date(report.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'long' })}</time>{report.edited_after_version !== null && <small>{t('Edited by hand after version {n}; edited text was not checked again.', { n: report.edited_after_version })}</small>}{report.run?.status === 'paused' && <p role="status">{t('Paused: {reason}', { reason: pauseReasonText(report.run.pause_reason) || t('Report paused') })}</p>}</header>
+        <header className="report-document-head"><p>{report.status === 'valid' ? t('Evidence report · V{n}', { n: report.report_version ?? '' }) : report.status === 'draft' ? (report.sections.every(section => section.status === 'valid') && reportAssemblyDraftText(report.run?.error)) || t('DRAFT: {n} sections not validated', { n: report.sections.filter(section => section.status !== 'valid').length }) : t('Evidence report · being written')}</p><h1>{title}</h1><time>{new Date(report.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'long' })}</time>{report.edited_after_version !== null && <small>{t('Edited by hand after version {n}; edited text was not checked again.', { n: report.edited_after_version })}</small>}{report.run?.status === 'paused' && <p role="status">{t('Paused: {reason}', { reason: pauseReasonText(report.run.pause_reason) || t('Report paused') })}</p>}</header>
         {report.missing_rows && <Notice tone="attention">
           <p>{t('{n} of {m} sources did not complete the table (missing cells: {cells}). These rows were excluded from the report’s evidence assessment and aggregation denominators.', { n: report.missing_rows.counts.failed, m: report.missing_rows.counts.included, cells: report.missing_rows.counts.cells_missing })}</p>
           <ul>{report.missing_rows.failed_rows.map(row => <li key={row.source_version_id}>{row.source_key || row.title}: {failedRowReasonText(row.reason)}</li>)}</ul>
@@ -194,7 +194,7 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
           return <section className="evidence-report-section" key={id}><h2>{labels(id)}</h2>
             {changes.length > 0 && <div className="evidence-report-changes"><Notice tone="attention">{t('This section rests on evidence that changed after this report:')} {reasons.join('; ')}.</Notice>{evidenceView && <ul>{changes.map(change => <li key={change.key}>{t(reportChangeLabels[change.kind] ?? change.kind)} · {report.references.find(ref => ref.source_version_id === change.source_version_id)?.source_key ?? ''} · {table?.columns.find(column => column.column_id === change.column_id)?.name ?? ''}</li>)}</ul>}<Button size="sm" variant="outline" disabled={busy} onClick={() => void acknowledge(section)}>{t('Keep as is')}</Button></div>}
             {evidenceView && section.evidence_changes.acknowledged_count > 0 && <small>{t('{n} earlier changes kept as is.', { n: section.evidence_changes.acknowledged_count })}</small>}
-            {(section.status === 'draft' || section.status === 'failed') && <Notice tone="attention">{t('This section was not validated and must be written again.')}</Notice>}
+            {(section.status === 'draft' || section.status === 'failed') && <Notice tone="attention">{section.validation?.issues?.[0]?.code ? t('This section was not validated and must be written again: {reason}.', { reason: failedSectionReasonText(section.validation.issues[0].code) }) : t('This section was not validated and must be written again.')}</Notice>}
             {id === 'VI' && <p className="evidence-report-fine">{t('Candidate aspects the model inferred from the evidence table; none was checked by a kill-search.')}</p>}
             {id === 'IV' && !hasTableRef && tableNode}
             {(id === 'II' || id === 'VIII') && section.draft?.text && <p className="evidence-report-paragraph"><MathText text={section.draft.text} /></p>}

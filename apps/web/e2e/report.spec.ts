@@ -3,6 +3,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { failedSectionReasonText, reportAssemblyDraftText } from '../src/labels'
+import { setUiLanguage } from '../src/i18n'
 
 // SYNTHETIC records and a scripted report model exercise the UI, not the quality of a research report.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -328,10 +330,11 @@ test('a banned word leaves the assembled report as an exportable draft', async (
     const sheet = reportSheet(page)
     const header = sheet.locator('.report-document-head')
     await expect(header.locator('p').first()).toContainText(/^DRAFT/)
+    await expect(header.locator('p').first()).toHaveText('DRAFT: the assembly check refused the report (banned word)')
     await expect(header).not.toContainText(/Evidence report · V\d+/)
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: server.url() })
     await sheet.getByRole('button', { name: 'Copy Markdown' }).click()
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText().then(text => text.split('\n').find(line => line.trim()) ?? ''))).toMatch(/^> DRAFT: \d+ sections not validated\.$/)
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText().then(text => text.split('\n').find(line => line.trim()) ?? ''))).toBe('> DRAFT: the assembly check refused the report (banned word).')
     const downloaded = page.waitForEvent('download')
     await sheet.getByRole('button', { name: 'Download .md' }).click()
     const file = await downloaded
@@ -340,10 +343,18 @@ test('a banned word leaves the assembled report as an exportable draft', async (
     await toastsOff(page)
     await header.scrollIntoViewIfNeeded()
     await shot(page, 'report-draft-desktop')
-    await page.emulateMedia({ colorScheme: 'dark' })
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Use dark theme' }).click()
+    await entry.click()
+    await header.scrollIntoViewIfNeeded()
     await shot(page, 'report-draft-dark-desktop')
-    await page.emulateMedia({ colorScheme: 'light' })
     await page.setViewportSize({ width: 390, height: 844 })
+    await header.scrollIntoViewIfNeeded()
+    await shot(page, 'report-draft-dark-390')
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Use light theme' }).click()
+    await entry.click()
+    await header.scrollIntoViewIfNeeded()
     await shot(page, 'report-draft-390')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   } finally { await api.dispose(); await page.close(); await server.stop() }
@@ -368,7 +379,7 @@ test('an empty section pauses the report and can be cancelled', async ({ browser
     expect(run.error).toEqual({ sections: ['IV'], reasons: [{ section_id: 'IV', code: 'empty_section', detail: 'section has no claims or insufficient-evidence entries' }] })
     await expect(page.getByText('Report paused').first()).toBeVisible()
     await page.getByRole('button', { name: 'Report sections' }).click()
-    await expect(page.getByText('IV: must be written again')).toBeVisible()
+    await expect(page.getByText('IV: must be written again: the section had no claims or explanation of missing evidence')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Resume' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
     const summaries = await (await api.get(`/api/researches/${researchId}/reports`)).json() as { id: string; status: string }[]
@@ -377,14 +388,14 @@ test('an empty section pauses the report and can be cancelled', async ({ browser
     const entry = page.getByRole('button', { name: 'Open evidence report' })
     await expect(entry).not.toContainText(/Evidence report · V\d+/)
     await toastsOff(page)
-    await page.getByText('IV: must be written again').scrollIntoViewIfNeeded()
+    await page.getByText('IV: must be written again: the section had no claims or explanation of missing evidence').scrollIntoViewIfNeeded()
     await shot(page, 'report-paused-desktop')
     await page.emulateMedia({ colorScheme: 'dark' })
     await shot(page, 'report-paused-dark-desktop')
     await entry.click()
     const sheet = reportSheet(page)
     await expect(sheet.locator('.report-document-head')).toContainText('Paused: A section must be written again.')
-    await expect(section(page, 'IV')).toContainText('This section was not validated and must be written again.')
+    await expect(section(page, 'IV')).toContainText('This section was not validated and must be written again: the section had no claims or explanation of missing evidence.')
     await expect(sheet.getByRole('button', { name: 'Copy Markdown' })).toBeDisabled()
     await expect(sheet.getByRole('button', { name: 'Download .md' })).toBeDisabled()
     const exportResponse = await api.get(`/api/researches/${researchId}/reports/${reportId}/export?format=markdown`)
@@ -399,7 +410,7 @@ test('an empty section pauses the report and can be cancelled', async ({ browser
     await shot(page, 'report-paused-sheet-desktop')
     await page.keyboard.press('Escape')
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.getByText('IV: must be written again').scrollIntoViewIfNeeded()
+    await page.getByText('IV: must be written again: the section had no claims or explanation of missing evidence').scrollIntoViewIfNeeded()
     await shot(page, 'report-paused-390')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
     await page.getByRole('button', { name: 'Cancel', exact: true }).click()
@@ -410,5 +421,99 @@ test('an empty section pauses the report and can be cancelled', async ({ browser
     await expect(page.getByRole('button', { name: /^Report cancelled/ })).toBeVisible()
     const after = await (await api.get(`/api/researches/${researchId}/reports`)).json() as { id: string; status: string }[]
     expect(after[0].status).not.toBe('valid')
+  } finally { await api.dispose(); await page.close(); await server.stop() }
+})
+
+test('report failure labels use codes only in English and Turkish, with bounded assembly rules', () => {
+  try {
+    for (const language of ['en', 'tr'] as const) {
+      setUiLanguage(language)
+      expect(failedSectionReasonText('anchor_not_in_cell_evidence')).toBe(language === 'en'
+        ? 'a cited quote was not found in that table cell’s stored evidence'
+        : 'atıf yapılan alıntı o tablo hücresinin saklı kanıtında bulunamadı')
+      expect(failedSectionReasonText('unknown_future_code')).toBe('unknown future code')
+      for (const code of ['anchor_not_in_passage', 'unknown_passage_id', 'unknown_cell_id', 'unknown_source_id',
+        'unknown_column_id', 'empty_section', 'model_mismatch', 'invalid_model_output', 'schema_invalid', 'invalid_json', 'envelope_mismatch']) {
+        expect(failedSectionReasonText(code)).not.toContain('_')
+      }
+      const entries = ['banned_word', 'banned_word', 'empty_section', 'unknown_rule', 'fourth_rule', 'fifth_rule']
+        .map(rule => ({ rule, section_id: 'IV', detail: 'SYNTHETIC model text cel_REALSECRET psg_REALSECRET' }))
+      entries.unshift({ rule: 'equation_text_source_warning', section_id: 'IV', detail: 'WARNING: secret' })
+      const header = reportAssemblyDraftText(entries)
+      expect(header).toContain(language === 'en' ? 'banned word, empty section, unknown rule and 2 more' : 'yasak sözcük, boş bölüm, unknown rule ve 2 kural daha')
+      expect(header).not.toMatch(/secret|SYNTHETIC|REALSECRET|warning|fourth|fifth/)
+      expect(reportAssemblyDraftText(null)).toBe('')
+      expect(reportAssemblyDraftText({ reasons: [] })).toBe('')
+      expect(reportAssemblyDraftText([entries[0]])).toBe('')
+      // A warning-shaped rule without the recorded WARNING: prefix is still an error.
+      expect(reportAssemblyDraftText([{ rule: 'odd_warning', detail: 'ERROR: secret' }])).toContain('odd warning')
+    }
+  } finally { setUiLanguage('en') }
+})
+
+test('a bad cell anchor fails after one repair and displays only the stored reason code', async ({ browser }) => {
+  const server = new ReportServer(8804)
+  await server.start()
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
+  const reason = 'a cited quote was not found in that table cell’s stored evidence'
+  try {
+    const researchId = await readyResearch(page, server, 'SYNTHETIC: How are molecule release schedules compared? [report-bad-anchor]')
+    await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
+    const researchPath = `/api/researches/${researchId}`
+    await expect.poll(async () => {
+      const view = await (await api.get(researchPath)).json()
+      return view.runs.find((run: { kind: string }) => run.kind === 'report')?.status
+    }, { timeout: 60_000 }).toBe('paused')
+    const view = await (await api.get(researchPath)).json()
+    const run = view.runs.find((item: { kind: string }) => item.kind === 'report')
+    expect(run.pause_reason).toBe('section_failed')
+    expect(run.error.reasons[0]).toMatchObject({ section_id: 'IV', code: 'anchor_not_in_cell_evidence' })
+    await page.getByRole('button', { name: 'Report sections' }).click()
+    const timeline = page.getByText(`IV failed: ${reason}`, { exact: true })
+    await expect(timeline).toBeVisible()
+    const summaries = await (await api.get(`/api/researches/${researchId}/reports`)).json()
+    const reportPath = `/api/researches/${researchId}/reports/${summaries[0].id}`
+    const report = await (await api.get(reportPath)).json()
+    const iv = report.sections.find((item: { section_id: string }) => item.section_id === 'IV')
+    expect(iv.validation.issues[0].code).toBe('anchor_not_in_cell_evidence')
+    expect(iv.claims).toEqual([])
+    const secret = 'SYNTHETIC model-written detail cel_REALSECRET psg_REALSECRET'
+    iv.validation.issues[0] = { ...iv.validation.issues[0], message: secret, detail: secret }
+    await page.route(`**${reportPath}`, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(report) }))
+    const entry = page.getByRole('button', { name: 'Open evidence report' })
+    for (const dark of [false, true]) {
+      if (dark) await page.getByRole('button', { name: 'Use dark theme' }).click()
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+        await timeline.scrollIntoViewIfNeeded()
+        await expect(timeline).not.toContainText(/REALSECRET|missing anchor|cel_|psg_|not found in one stored/)
+        await shot(page, `report-bad-anchor-timeline-${dark ? 'dark' : 'light'}-${width}`)
+        await entry.click()
+        const notice = section(page, 'IV').locator('.notice')
+        await expect(section(page, 'IV')).toContainText(`This section was not validated and must be written again: ${reason}.`)
+        await expect(section(page, 'IV')).not.toContainText(/REALSECRET|missing anchor|cel_|psg_|model-written/)
+        await expect(reportSheet(page).getByRole('button', { name: 'Copy Markdown' })).toBeDisabled()
+        await expect(reportSheet(page).getByRole('button', { name: 'Download .md' })).toBeDisabled()
+        await notice.scrollIntoViewIfNeeded()
+        await shot(page, `report-bad-anchor-sheet-${dark ? 'dark' : 'light'}-${width}`)
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+        await page.keyboard.press('Escape')
+      }
+      await page.setViewportSize({ width: 1440, height: 900 })
+    }
+    // Historical sections without reasons retain the original notice.
+    iv.validation = { issues: [] }
+    await entry.click()
+    await expect(section(page, 'IV')).toContainText('This section was not validated and must be written again.')
+    await page.keyboard.press('Escape')
+    const historicalView = { ...view, runs: view.runs.map((item: { id: string; error: unknown }) => item.id === run.id
+      ? { ...item, error: { sections: ['IV'] } } : item) }
+    await page.route(`**${researchPath}`, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(historicalView) }))
+    await page.reload()
+    await page.getByRole('button', { name: 'Report sections' }).click()
+    await expect(page.getByText('IV failed', { exact: true })).toBeVisible()
+    expect((await api.get(`${reportPath}/export?format=markdown`)).status()).toBe(409)
+    expect((await (await api.get(researchPath)).json()).runs.find((item: { id: string }) => item.id === run.id).status).toBe('paused')
   } finally { await api.dispose(); await page.close(); await server.stop() }
 })

@@ -71,6 +71,40 @@ const pauseReasons: Record<string, string> = {
 }
 export const pauseReasonText = (reason: string | null) => (reason ? t(pauseReasons[reason] ?? reason) : '')
 export const failedRowReasonText = (reason: string) => reason === 'no_stored_text' ? t('no stored text') : reason.replaceAll('_', ' ')
+const sectionFailureReasons: Record<string, string> = {
+  anchor_not_in_cell_evidence: 'a cited quote was not found in that table cell’s stored evidence',
+  anchor_not_in_passage: 'a cited quote was not found in the stored passage',
+  unknown_passage_id: 'a cited passage was not in the allowed evidence',
+  unknown_cell_id: 'a cited table cell was not in the allowed evidence',
+  unknown_source_id: 'a named source was not in the allowed evidence',
+  unknown_column_id: 'a named column was not allowed for this section',
+  empty_section: 'the section had no claims or explanation of missing evidence',
+  model_mismatch: 'the connection answered with a different model',
+  invalid_model_output: 'the model output failed validation',
+  invalid_json: 'the model output could not be read as JSON',
+  schema_invalid: 'the model output did not match the required format',
+  envelope_mismatch: 'the model output did not match this step’s recorded input',
+  citation_anchor_target_count: 'a citation must name exactly one passage or table cell',
+  unframed_exception: 'a sentence did not follow a supplied phrase frame',
+}
+export const failedSectionReasonText = (code: string) => t(sectionFailureReasons[code] ?? code.replaceAll('_', ' '))
+
+const assemblyRuleLabels: Record<string, string> = {
+  banned_word: 'banned word', empty_section: 'empty section',
+  corpus_count_mismatch: 'corpus count mismatch', citation_anchor_unmatched: 'unlocated citation quote',
+  anchor_not_in_cell_evidence: 'quote missing from cell evidence', anchor_not_in_passage: 'quote missing from passage',
+}
+export const reportAssemblyDraftText = (error: unknown) => {
+  const rules: string[] = []
+  if (Array.isArray(error)) for (const entry of error) {
+    if (!entry || typeof entry.rule !== 'string') continue
+    if (entry.rule.endsWith('_warning') && typeof entry.detail === 'string' && entry.detail.startsWith('WARNING:')) continue
+    if (!rules.includes(entry.rule)) rules.push(entry.rule)
+  }
+  const names = rules.slice(0, 3).map(rule => t(assemblyRuleLabels[rule] ?? rule.replaceAll('_', ' '))).join(', ')
+  const reason = names + (rules.length > 3 ? t(' and {n} more', { n: rules.length - 3 }) : '')
+  return reason ? t('DRAFT: the assembly check refused the report ({reason})', { reason }) : ''
+}
 // How many more times resuming may ask the model to write the query; the pause carries it (D92).
 export const searchQueryTriesLeft = (run: { error: unknown }) => (run.error as { retries_left?: number } | null)?.retries_left ?? 1
 

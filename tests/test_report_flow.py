@@ -179,7 +179,7 @@ def _claim(section_id, passage_ids=None, cell_ids=None, body_refs=None):
 
 
 def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None, unframed_section=None,
-                ambiguous_anchor_section=None, passage_kind="abstract"):
+                ambiguous_anchor_section=None, passage_kind="abstract", cell_quotes=None):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     store = Store(conn)
@@ -196,7 +196,8 @@ def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None,
         passage_id = store.passages_for(source_id)[0]["id"]
     else:
         passage_id = store._insert_passage(
-            source_id, None, "abstract", None, None, "synthetic_fixture", None, None, PASSAGE,
+            source_id, None, "abstract", None, None, "synthetic_fixture", None, None,
+            PASSAGE + (" " + " ".join(cell_quotes) if cell_quotes else ""),
         )
     store.add_to_corpus(research_id, source_id, "user_upload", selection_state="included", selection_origin="user")
     tables = TableStore(store)
@@ -215,13 +216,13 @@ def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None,
              "skill_package_hash": "sha256:synthetic"},
             "base", "developer", "message", {},
         )
-        for column_id in column_ids:
+        for index, column_id in enumerate(column_ids):
             tables.save_model_output(
                 research_id, table_id, column_id, source_id, column_revision=1, state="value",
                 value={"text": "SYNTHETIC bounded formulation"}, note=None, reading_depth="abstract",
                 output_status="structurally_valid",
                 links=[{"passage_id": passage_id, "source_version_id": source_id,
-                        "anchor_text": CELL_QUOTE, "anchor_match": "exact"}],
+                        "anchor_text": cell_quotes[index] if cell_quotes else CELL_QUOTE, "anchor_match": "exact"}],
                 run_id=fill_run["id"], step_id=step["id"], step_input_id=step_input_id,
                 model_connection="fake", resolved_model="fake-model", scope_revision=1,
                 cell_version_at_request=0, recheck=False,

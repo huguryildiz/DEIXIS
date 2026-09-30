@@ -46,6 +46,7 @@ Report-section steps alone add a second SYNTHETIC claim from a filled cell's own
 the report UI acceptance case a cell citation whose later edit can be observed; other model tasks are unchanged.
 "[report-banned-word]" puts "research gap" in section IV's cell claim so assembly refuses a draft.
 "[report-empty-section]" returns section IV with no claim or insufficiency entry so the report run pauses.
+"[report-bad-anchor]" gives section IV a cell quote absent from all stored quotes, including on repair.
 """
 
 from __future__ import annotations
@@ -414,6 +415,8 @@ class ScriptedCodex:
                     "equation_origin": None, "gap_refs": [],
                 })
                 quote = next(e["quote"] for e in cell["evidence"] if e.get("quote"))
+                if section == "IV" and "[report-bad-anchor]" in question:
+                    quote = "SYNTHETIC missing anchor P19 nowhere in stored evidence."
                 output["citation_anchors"].append({"claim_key": claim_key, "passage_id": None,
                                                     "cell_id": cell["cell_id"], "quote": quote})
         if si["task_type"] == "term_suggestions":

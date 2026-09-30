@@ -4727,7 +4727,17 @@ class ResearchFlow:
             if repair_issues is None:
                 message = prompt.step_message(shown)
             else:  # issues name records by ID; the model knows them only by the handles it was shown
-                message = prompt.repair_message(shown, contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues)
+                anchor_context = None
+                if task_type == "report_section":
+                    failed_input = self.store.step_input_payload(invalid_input)
+                    anchor_context = contracts.report_section_anchor_repair_context(failed_input, output_text, repair_issues)
+                    handles = contracts.report_citation_handles(payload)
+                    for pair in anchor_context:
+                        pair["cell_id"] = handles[pair["cell_id"]]
+                        for quote in pair["allowed_quotes"]:
+                            quote["passage_id"] = handles[quote["passage_id"]]
+                message = prompt.repair_message(shown, contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues,
+                                                anchor_context)
             self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema, selection_revision)
             session, result = await self._call_adapter(
                 run_id, rid, step["id"], payload["step_input_id"], connection, requested_model, adapter, base, developer,

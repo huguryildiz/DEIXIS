@@ -75,10 +75,23 @@ def schema_appendix(task_type: str, schema: dict[str, Any]) -> str:
     )
 
 
-def repair_message(step_input: dict[str, Any], issues: list[dict[str, str]]) -> str:
-    return (
+REPORT_SECTION_ANCHOR_REPAIR_GUIDANCE = """For each failing anchor below, copy the quote exactly from one of the allowed quotes of the SAME cell named in that pair.
+A quote from another cell or a whole passage is not allowed; a cell anchor is never a whole passage.
+A found quote does not prove that the claim is supported. Use a quote only if the claim says no more than that quote states.
+Otherwise rewrite the claim to say only what a stored quote of that cell states, or remove that cell citation and its anchor from the claim.
+If the claim is then left without support, remove it from claims only together with an insufficient_evidence entry naming its claim_key and explaining why it was removed, so the removal remains visible in the stored section.
+Never swap in a quote only to pass the check. Do not cite identifiers outside the allowlist."""
+
+
+def repair_message(step_input: dict[str, Any], issues: list[dict[str, str]],
+                   anchor_context: list[dict[str, Any]] | None = None) -> str:
+    message = (
         step_message(step_input)
         + "\n\nA previous output for this StepInput failed validation with these issues. "
         "Return a corrected JSON object; do not add identifiers that are not in the allowlist.\n"
         + json.dumps(issues, ensure_ascii=False, indent=1)
     )
+    if anchor_context:
+        message += ("\n\nCell anchor repair pairs:\n" + json.dumps(anchor_context, ensure_ascii=False, indent=1)
+                    + "\n" + REPORT_SECTION_ANCHOR_REPAIR_GUIDANCE)
+    return message

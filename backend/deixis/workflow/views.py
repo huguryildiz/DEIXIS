@@ -367,10 +367,17 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                       for cell in frozen["cells"]],
         }
     run = store.conn.execute("SELECT id, status, pause_reason FROM runs WHERE id = ?", (report["run_id"],)).fetchone()
+    run = dict(run) if run else None
+    if run:
+        error = store.run(run["id"])["error"]
+        if isinstance(error, list) and all(isinstance(item, dict) and isinstance(item.get("rule"), str)
+                                          and "section_id" in item and isinstance(item.get("detail"), str)
+                                          for item in error):
+            run["error"] = error
     return report | {"sections": sections, "evidence_changes": {key: value for key, value in changes.items() if key != "sections"},
                      "edited_after_version": report["report_version"] if edited else None,
                      "references": references, "table_i": table_i, "missing_rows": missing_rows,
-                     "run": dict(run) if run else None}
+                     "run": run}
 
 
 def research_view(store: Store, research_id: str) -> dict[str, Any]:

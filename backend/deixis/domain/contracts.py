@@ -1052,6 +1052,44 @@ def limitations_claim_issues(claim: dict[str, Any]) -> list[Issue]:
     return issues
 
 
+def report_section_anchor_repair_context(step_input: dict[str, Any], draft: Any,
+                                        issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pair failing cell anchors with that cell's stored quotes, without altering the draft."""
+    if (step_input.get("task_type") != "report_section" or not isinstance(draft, dict)
+            or not isinstance(draft.get("citation_anchors"), list)):
+        return []
+    cells = {cell["cell_id"]: cell for cell in (step_input.get("report_target") or {}).get("cells", [])
+             if cell["cell_id"] in step_input["allowlist"].get("cell_ids", [])}
+    claims = draft.get("claims")
+    claims = claims if isinstance(claims, list) else []
+    context = []
+    for issue in issues:
+        if issue.get("code") != "anchor_not_in_cell_evidence":
+            continue
+        path = issue.get("path")
+        match = re.fullmatch(r"/citation_anchors/(\d+)/quote", path) if isinstance(path, str) else None
+        if match is None or int(match[1]) >= len(draft["citation_anchors"]):
+            continue
+        index = int(match[1])
+        anchor = draft["citation_anchors"][index]
+        if not isinstance(anchor, dict) or not isinstance(anchor.get("cell_id"), str):
+            continue
+        cell = cells.get(anchor["cell_id"])
+        if cell is None or not isinstance(anchor.get("quote"), str) or not isinstance(anchor.get("claim_key"), str):
+            continue
+        context.append({
+            "anchor_index": index, "claim_key": anchor["claim_key"], "cell_id": cell["cell_id"],
+            "quote": anchor["quote"],
+            "allowed_quotes": [{"passage_id": evidence["passage_id"], "quote": evidence["quote"]}
+                               for evidence in cell.get("evidence", []) if evidence.get("quote")],
+            "claims": [{"claim_key": claim["claim_key"], "text": claim["text"]}
+                       for claim in claims if isinstance(claim, dict)
+                       and isinstance(claim.get("cell_ids"), list) and cell["cell_id"] in claim["cell_ids"]
+                       and isinstance(claim.get("claim_key"), str) and isinstance(claim.get("text"), str)],
+        })
+    return context
+
+
 def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]],
                           draft: dict[str, Any], report: ValidationReport) -> None:
     # Display-only records (for example glossary passages and failed rows) confer no use rights.

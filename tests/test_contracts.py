@@ -150,8 +150,9 @@ def test_report_citation_anchor_names_exactly_one_target(passage_id, cell_id, ex
 
     assert report.ok is expect_ok
     if not expect_ok:
-        assert report.codes() == ["citation_anchor_target_count"]
-        assert report.issues[0].path == "/citation_anchors/0"
+        assert set(report.codes()) == ({"citation_anchor_target_count", "unknown_cell_id"}
+                                       if cell_id is not None else {"citation_anchor_target_count"})
+        assert next(issue for issue in report.issues if issue.code == "citation_anchor_target_count").path == "/citation_anchors/0"
 
 
 def test_report_passage_anchor_must_be_located():

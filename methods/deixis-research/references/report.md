@@ -19,6 +19,9 @@ given to you as rows and cited cells, and you discuss it — you do not restate 
 - Write in the question's language (`question.language_hint`, or the question's own script if absent).
 - A claim's `claim_key` is a label you assign once per call, matching `^[A-Za-z_]+\.[0-9]{1,3}$` (for example
   `IV.3`). Reuse the section identifier as the prefix.
+- Passages, evidence-table cells, sources and columns appear as short ids such as `psg_P0000001`,
+  `cel_L0000001`, `srv_S0000001` and `col_C0000001`. Copy each id exactly as shown; use only ids given in
+  the allowlist. A glossary passage named in the input but absent from the allowlist may not be cited.
 - Cite only passage_ids and cell_ids from the allowlist. For a cell_id, anchor to one of that cell's stored
   evidence quotes; for a passage_id, apply [the shared citation rule](source-grounded-answer.md#grounded-answer).
 - Each citation anchor names either a passage or an evidence-table cell, never both and never neither. If both

@@ -472,7 +472,9 @@ def _semantic_checks_best_effort(step_input: dict[str, Any], data: Any, report: 
     def elsewhere(path: str) -> bool:
         return path != "$" and not any(path == f or path.startswith(f + "/") or f.startswith(path + "/") for f in flagged)
 
-    report.issues.extend(i for i in probe.issues if elsewhere(i.path))
+    report.issues.extend(i for i in probe.issues if elsewhere(i.path) or (
+        step_input["task_type"] in REPORT_TASKS
+        and i.code in {"unknown_passage_id", "unknown_cell_id", "unknown_source_id", "unknown_column_id"}))
     report.warnings.extend(w for w in probe.warnings if elsewhere(w.path))
 
 
@@ -1052,6 +1054,16 @@ def limitations_claim_issues(claim: dict[str, Any]) -> list[Issue]:
 
 def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]],
                           draft: dict[str, Any], report: ValidationReport) -> None:
+    # Display-only records (for example glossary passages and failed rows) confer no use rights.
+    allowed = {"psg_P": allow["passage_ids"], "cel_L": allow.get("cell_ids", set()),
+               "col_C": allow.get("column_ids", set()),
+               "srv_S": allow["source_ids"] | {c["source_version_id"] for c in step_input["report_target"]["cells"]}}
+    codes = {"psg_P": "unknown_passage_id", "cel_L": "unknown_cell_id",
+             "srv_S": "unknown_source_id", "col_C": "unknown_column_id"}
+    for owner, key, kind, path in _report_id_fields(draft, REPORT_SECTION_ID_FIELDS):
+        identifier = owner[key]
+        if isinstance(identifier, str) and identifier not in allowed[kind]:
+            report.issues.append(Issue(codes[kind], path, identifier))
     if draft["section_id"] != step_input["report_target"]["section_id"]:
         report.issues.append(Issue("report_section_mismatch", "/section_id", draft["section_id"]))
     for i, anchor in enumerate(draft["citation_anchors"]):
@@ -1075,12 +1087,6 @@ def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]]
         if draft["section_id"] == "VIII":
             report.issues.extend(Issue(issue.code, f"/claims/{i}{issue.path}", issue.message)
                                  for issue in limitations_claim_issues(claim))
-        for j, passage_id in enumerate(claim["passage_ids"]):
-            if passage_id not in allow["passage_ids"]:
-                report.issues.append(Issue("unknown_passage_id", f"/claims/{i}/passage_ids/{j}", passage_id))
-        for j, cell_id in enumerate(claim["cell_ids"]):
-            if cell_id not in allow.get("cell_ids", set()):
-                report.issues.append(Issue("unknown_cell_id", f"/claims/{i}/cell_ids/{j}", cell_id))
         for j, gap_id in enumerate(claim["gap_refs"]):
             if gap_id not in allow.get("gap_ids", set()):
                 report.issues.append(Issue("unknown_gap_ref", f"/claims/{i}/gap_refs/{j}", gap_id))
@@ -1089,8 +1095,8 @@ def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]]
         if origin is not None:
             passage = next((p for p in step_input.get("passages", []) if p["passage_id"] == origin["passage_id"]), None)
             if passage is None or origin["passage_id"] not in allow["passage_ids"]:
-                report.issues.append(Issue("unknown_passage_id", f"/claims/{i}/equation_origin/passage_id", origin["passage_id"]))
-            elif origin["passage_id"] not in claim["passage_ids"]:
+                continue
+            if origin["passage_id"] not in claim["passage_ids"]:
                 report.issues.append(Issue("equation_origin_not_cited", f"/claims/{i}/equation_origin/passage_id", origin["passage_id"]))
             elif origin["text_source"] != passage.get("text_source"):
                 report.issues.append(Issue("equation_origin_mismatch", f"/claims/{i}/equation_origin/text_source",
@@ -1181,6 +1187,100 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
                 report.issues.append(Issue("unknown_source_id", f"/limitations/{i}/source_ids/{j}", sid))
 
 
+# Explicit paths keep record conversion out of prose, quotes, revision IDs and envelope metadata.
+REPORT_PLAN_ID_FIELDS = (
+    ("glossary/*/passage_id", "psg_P"), ("axes/*/column_id", "col_C"),
+    ("limitations_column_id", "col_C"), ("future_work_column_id", "col_C"),
+)
+REPORT_COUNT_ID_FIELDS = (
+    ("numerator_source_ids/*", "srv_S"), ("denominator_source_ids/*", "srv_S"),
+    ("column_id", "col_C"),
+)
+REPORT_SECTION_ID_FIELDS = (
+    ("claims/*/passage_ids/*", "psg_P"), ("claims/*/cell_ids/*", "cel_L"),
+    *((f"claims/*/count/{path}", kind) for path, kind in REPORT_COUNT_ID_FIELDS),
+    ("claims/*/equation_origin/passage_id", "psg_P"),
+    ("citation_anchors/*/passage_id", "psg_P"), ("citation_anchors/*/cell_id", "cel_L"),
+    ("gaps/*/basis_passage_ids/*", "psg_P"), ("gaps/*/basis_cell_ids/*", "cel_L"),
+    ("gaps/*/nearest_match/source_id", "srv_S"), ("gaps/*/nearest_match/cell_id", "cel_L"),
+)
+REPORT_INPUT_ID_FIELDS = (
+    ("passages/*/passage_id", "psg_P"), ("passages/*/source_id", "srv_S"),
+    ("sources/*/source_id", "srv_S"),
+    *((f"allowlist/{field}/*", kind) for field, kind in (
+        ("passage_ids", "psg_P"), ("source_ids", "srv_S"), ("column_ids", "col_C"), ("cell_ids", "cel_L"))),
+    ("report_target/columns/*/column_id", "col_C"),
+    ("report_target/cells/*/cell_id", "cel_L"), ("report_target/cells/*/column_id", "col_C"),
+    ("report_target/cells/*/source_version_id", "srv_S"),
+    ("report_target/cells/*/evidence/*/passage_id", "psg_P"),
+    ("report_target/gap_candidates/*/column_id", "col_C"),
+    ("report_target/gap_candidates/*/basis_cell_ids/*", "cel_L"),
+    *((f"report_target/plan/{path}", kind) for path, kind in REPORT_PLAN_ID_FIELDS),
+    ("report_target/review_sections/*/claims/*/citations/*/passage_id", "psg_P"),
+    ("report_target/review_sections/*/claims/*/citations/*/cell_id", "cel_L"),
+    *((f"report_target/review_sections/*/claims/*/count/{path}", kind) for path, kind in REPORT_COUNT_ID_FIELDS),
+    ("report_target/limitations_core/failed_rows/*/source_version_id", "srv_S"),
+)
+
+
+def _report_id_fields(data: dict[str, Any], fields: tuple) -> Any:
+    """Yield only declared ID slots, tolerating malformed values until schema validation."""
+    def slots(node: Any, parts: list[str], path: str) -> Any:
+        part, *rest = parts
+        keys = range(len(node)) if part == "*" and isinstance(node, list) else (
+            [part] if isinstance(node, dict) and part in node else [])
+        for key in keys:
+            location = f"{path}/{key}"
+            if rest:
+                yield from slots(node[key], rest, location)
+            else:
+                yield node, key, location
+
+    for path, kind in fields:
+        for owner, key, location in slots(data, path.split("/"), ""):
+            yield owner, key, kind, location
+
+
+def report_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
+    """Number from stored records first, then display-only references; never extend an allowlist."""
+    handles: dict[str, str] = {}
+    counts = dict.fromkeys(("psg_P", "srv_S", "cel_L", "col_C"), 0)
+
+    def add(identifier: Any, kind: str) -> None:
+        if isinstance(identifier, str) and identifier not in handles:
+            counts[kind] += 1
+            handles[identifier] = f"{kind}{counts[kind]:07d}"
+
+    target = step_input.get("report_target") or {}
+    for records, key, kind in ((step_input["passages"], "passage_id", "psg_P"),
+                               (step_input["sources"], "source_id", "srv_S"),
+                               (target.get("cells", []), "cell_id", "cel_L"),
+                               (target.get("columns", []), "column_id", "col_C")):
+        for record in records:
+            add(record[key], kind)
+    for identifier in step_input["allowlist"].get("column_ids", []):
+        add(identifier, "col_C")
+    for records in (target.get("cells", []), target.get("gap_candidates", []),
+                    (target.get("plan") or {}).get("axes", [])):
+        for record in records:
+            add(record["column_id"], "col_C")
+    for entry in (target.get("plan") or {}).get("glossary", []):
+        add(entry["passage_id"], "psg_P")
+    for row in (target.get("limitations_core") or {}).get("failed_rows", []):
+        add(row["source_version_id"], "srv_S")
+    for section in target.get("review_sections") or []:
+        for claim in section["claims"]:
+            count = claim.get("count")
+            if isinstance(count, dict):
+                for field in ("numerator_source_ids", "denominator_source_ids"):
+                    for identifier in count.get(field, []):
+                        add(identifier, "srv_S")
+    # Remaining plan roles and opaque review count columns follow the prescribed primary order.
+    for owner, key, kind, _ in _report_id_fields(step_input, REPORT_INPUT_ID_FIELDS):
+        add(owner[key], kind)
+    return handles
+
+
 def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     """Short per-step identifiers shown to the model in place of passage and source IDs.
 
@@ -1188,6 +1288,8 @@ def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     a dropped character). Handles are numbered in StepInput order, so they are recomputed from the stored StepInput;
     passage and source handles never share a suffix, so a swapped prefix stays an unknown ID instead of another record.
     """
+    if step_input.get("task_type") in REPORT_TASKS:
+        return report_citation_handles(step_input)
     handles = {p["passage_id"]: f"psg_P{n:07d}" for n, p in enumerate(step_input["passages"], start=1)}
     columns = (step_input.get("extraction_target") or {}).get("columns", [])
     handles |= {c["column_id"]: f"col_C{n:07d}" for n, c in enumerate(columns, start=1)}
@@ -1200,6 +1302,11 @@ def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
 def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
     handles = citation_handles(step_input)
     shown = copy.deepcopy(step_input)
+    if step_input.get("task_type") in REPORT_TASKS:
+        for owner, key, _, _ in _report_id_fields(shown, REPORT_INPUT_ID_FIELDS):
+            if isinstance(owner[key], str):
+                owner[key] = handles.get(owner[key], owner[key])
+        return shown
     for passage in shown["passages"]:
         passage["passage_id"], passage["source_id"] = handles[passage["passage_id"]], handles[passage["source_id"]]
     for source in shown["sources"]:
@@ -1293,7 +1400,7 @@ def salvage_answer_draft(step_input: dict[str, Any], draft: dict[str, Any]) -> t
     return draft, warnings
 
 
-PADDED_HANDLE = re.compile(r"^(psg_P|srv_S|col_C|cnd_C)0*(\d{1,7})$")
+PADDED_HANDLE = re.compile(r"^(psg_P|srv_S|col_C|cnd_C|cel_L)0*(\d{1,7})$")
 
 
 def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict[str, Any]:
@@ -1312,6 +1419,14 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
         return raw
     if not isinstance(data, dict):
         return raw
+    if step_input.get("task_type") in REPORT_TASKS:
+        fields = REPORT_PLAN_ID_FIELDS if step_input["task_type"] == "report_plan" else (
+            REPORT_SECTION_ID_FIELDS if step_input["task_type"] == "report_section" else ())
+        for owner, key, kind, _ in _report_id_fields(data, fields):
+            identifier = owner[key]
+            if isinstance(identifier, str) and identifier.startswith(kind):
+                owner[key] = real(identifier)
+        return data
     for items, key in ((data.get("claims"), "passage_ids"), (data.get("limitations"), "source_ids")):
         for item in items if isinstance(items, list) else []:
             if isinstance(item, dict) and isinstance(item.get(key), list):

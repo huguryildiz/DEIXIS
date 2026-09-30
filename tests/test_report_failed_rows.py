@@ -359,7 +359,7 @@ def test_limitations_input_contract_accepts_seven_and_eight_but_refuses_bad_eigh
         bad = copy.deepcopy(updated)
         bad["report_target"]["limitations_core"]["items"][7][field] = value
         assert "step_input_schema_invalid" in {i.code for i in contracts.check_step_input(bad)}
-    assert skill.load_skill_package().package_hash == "sha256:08f1bdeadc63b809bdf6d123a1e77889cada14d64d3e851c3d9fe25bfb2704ee"
+    assert skill.load_skill_package().package_hash == "sha256:52775258f530aa6a51513488f2aea37d0b7e609ffebe23d06451fd8ef0ae81ac"
 
 
 def test_three_full_text_absence_rows_have_identical_candidates_with_failed_row(state):

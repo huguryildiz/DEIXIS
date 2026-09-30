@@ -95,7 +95,7 @@ CHAIN_RANK_BASE = 1_000_000_000
 # Steps whose records are shown as short handles instead of stored identifiers, because long random IDs were
 # mis-copied (D12). The abstract stage joined them in slice 09: its batches name 20 candidates each.
 HANDLE_TASKS = ("grounded_answer", "answer_review", "cell_extraction", "abstract_screening",
-                "fulltext_adjudication")
+                "fulltext_adjudication") + contracts.REPORT_TASKS
 FORMULATION_SCORE_THRESHOLD = 3
 FORMULATION_TERMS = re.compile(
     r"\b(?:minimi[sz]e|maximi[sz]e|subject\s+to|s\.\s*t|objective\s+function|constraints?|decision\s+variables?"
@@ -4722,7 +4722,7 @@ class ResearchFlow:
             )
             if not adapter.enforces_schema:
                 developer = developer + "\n\n" + prompt.schema_appendix(task_type, schema)
-            # Answer, review and cell steps show short handles; the stored StepInput keeps the record IDs they map back to.
+            # Handled steps show short IDs; the stored StepInput keeps the record IDs they map back to.
             shown = contracts.with_citation_handles(payload) if task_type in HANDLE_TASKS else payload
             if repair_issues is None:
                 message = prompt.step_message(shown)
@@ -4764,7 +4764,7 @@ class ResearchFlow:
                 self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_mismatch", error=mismatch)
                 halt("model_mismatch", mismatch)
             output_text = result.raw_text or ""
-            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication"):
+            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS:
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             # Field names from the alias table are put right before validation and the renames recorded (D86).
             output_text, normalised_changes = contracts.normalise_output(task_type, output_text)

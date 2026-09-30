@@ -1,6 +1,7 @@
 """Model-independent checks for report StepInput construction and routing."""
 
 import asyncio
+import json
 
 import pytest
 
@@ -105,9 +106,11 @@ def test_report_section_builds_a_valid_step_input_with_report_allowlists(tmp_pat
 
     (step_input,) = adapter.calls
     assert contracts.check_step_input(step_input) == []
-    assert step_input["report_target"] == target
-    assert step_input["allowlist"]["column_ids"] == ["col_SYNTH0001", "col_SYNTH0002"]
-    assert step_input["allowlist"]["cell_ids"] == [f"cel_SYNTH000{i}" for i in range(1, 4)]
+    stored = store.conn.execute("SELECT payload_json FROM step_inputs").fetchone()[0]
+    assert json.loads(stored)["report_target"] == target
+    assert step_input == contracts.with_citation_handles(json.loads(stored))
+    assert step_input["allowlist"]["column_ids"] == ["col_C0000001", "col_C0000002"]
+    assert step_input["allowlist"]["cell_ids"] == [f"cel_L{i:07d}" for i in range(1, 4)]
     assert step_input["allowlist"]["gap_ids"] == ["gap1"]
 
 

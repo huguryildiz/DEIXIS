@@ -296,9 +296,10 @@ modelin yazdığıyla doluyor.
 **30 Eylül: P9 yapıldı** (D118, istem `p6-slice1-p9-review-prompt.md`, commit: bu satırı ekleyen commit): `report_review` tek çağrı olarak `finalize`'dan sonra koşar, sonucu `reports.review_json`'da (migration 0057) saklar; yalnız `support_broken` + cümle kimlikli bulgu, iki metin kopyasında ve montaj denetiminden geçerse `reverted_exception` satırıyla geri alınır; ekran incelemenin yaptığını (aynı model, ek çağrı) söyler; rapor koşusunun model çağrısı bütçe formülü bir adım kazandı (açık soru 3 kapandı).
 
 **30 Eylül: P12 yapıldı** (D120, istem `p6-slice1-p12-prompt.md`, commit: bu satırı ekleyen commit): rapor tek Markdown dosyası olarak dışa aktarılır (`report/export.py`, `GET …/reports/{id}/export`), ekranda Copy Markdown ve Download .md düğmeleri vardır; dosya ekranın "denetlenmedi" sınırlarını taşır, atıf ve denklem numaraları okuma sırasına bağlandı (`report_view` bölüm ve paragraf sırası).
+**30 Eylül: P14 yapıldı** (D122, istem `p6-slice1-p14-prompt.md`, commit: bu satırı ekleyen commit): montajın yasak sözcük yüzünden taslak bıraktığı ve boş IV bölümünde koşunun duraklayıp iptal edildiği iki scriptlenmiş Playwright vakası (`[report-banned-word]`, `[report-empty-section]`); montaj hatası başlığı hâlâ `DRAFT: 0 sections not validated` diyor ve kuralı adlandırmıyor (D122 Limits); P13'ün hata nedeni gösterimi test edilmedi (P13 yoktu).
 **P12** — 1j: Markdown dışa aktarma ve numaralandırma.
 **P13** — 1k: kesinti testleri, geç sonuç denetimi ve bölüm hata nedenleri. ✅ (D121; commit: bu satırı ekleyen commit).
-**P14** — 1l: scriptlenmiş modelle Playwright kabul testi.
+**P14** — 1l: scriptlenmiş modelle Playwright kabul testi. ✅ (D122; commit: bu satırı ekleyen commit).
 **P15** — 1m: davranış vakaları ve R10 ekilmiş hata kümesi.
 **P16** — 1n: beklenti dosyası (koşudan **önce** donar ve commit'lenir), ölçüm raporu, karar kaydı, tasarım
 notunun durum güncellemesi.

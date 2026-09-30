@@ -14,7 +14,7 @@ mkdirSync(OUT, { recursive: true })
 class ReportServer {
   private proc?: ChildProcess
   readonly dataDir = mkdtempSync(path.join(tmpdir(), 'deixis-report-'))
-  readonly port = 8801
+  constructor(readonly port = 8801) {}
   async start() {
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], {
       cwd: REPO, env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend') }, stdio: 'inherit',
@@ -39,6 +39,30 @@ const reportSheet = (page: Page) => page.locator('.report-sheet').last()
 const section = (page: Page, number: string) => reportSheet(page).locator('.evidence-report-section', { has: page.getByRole('heading', { name: new RegExp(`^${number}\\.`) }) })
 
 const toastsOff = async (target: Page) => { for (const b of await target.getByRole('button', { name: 'Dismiss notification' }).all()) await b.click().catch(() => {}) }
+
+const readyResearch = async (page: Page, server: ReportServer, question: string) => {
+  await page.goto(server.url())
+  await page.getByLabel('Research question').fill(question)
+  await page.getByRole('button', { name: 'Start research' }).click()
+  await page.waitForURL(/#\/research\//)
+  const researchId = page.url().split('/research/')[1].split('/')[0]
+  await expect(page.getByText('Ran search & screening')).toBeVisible()
+  await page.getByRole('tab', { name: /Sources/ }).click()
+  const source = page.locator('.source-row:not(.is-other-version)').filter({ hasText: 'SYNTHETIC molecule release scheduling with bisection' })
+  await source.getByRole('button', { name: 'Include' }).click()
+  await expect(source.getByRole('button', { name: 'Include' })).toBeDisabled()
+  await page.getByRole('tab', { name: /Evidence/ }).click()
+  await page.getByRole('button', { name: /Add a column/ }).click()
+  const editor = page.getByRole('dialog', { name: 'Add column' })
+  await editor.getByLabel('Short name').fill('SYNTHETIC method')
+  await editor.getByLabel('Instruction').fill('Record the method named by the source.')
+  await editor.getByRole('button', { name: 'Add column' }).click()
+  await page.getByRole('button', { name: /^Fill empty cells/ }).click()
+  await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write report' })).toBeEnabled({ timeout: 60_000 })
+  await page.getByRole('tab', { name: 'Answer' }).click()
+  await expect(page.locator('.report-ready').getByRole('button', { name: 'Write report' })).toBeEnabled()
+  return researchId
+}
 
 test('write, read, edit, restore and acknowledge an evidence report', async ({ browser }) => {
   const server = new ReportServer()
@@ -272,5 +296,119 @@ test('a scripted report review finding appears as a model flag', async ({ browse
     await page.setViewportSize({ width: 390, height: 844 })
     await review.scrollIntoViewIfNeeded()
     await shot(page, 'report-review-390')
+  } finally { await api.dispose(); await page.close(); await server.stop() }
+})
+
+test('a banned word leaves the assembled report as an exportable draft', async ({ browser }) => {
+  const server = new ReportServer(8802)
+  await server.start()
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
+  try {
+    const researchId = await readyResearch(page, server, 'SYNTHETIC: How are molecule release schedules compared? [report-banned-word]')
+    await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
+    const researchPath = `/api/researches/${researchId}`
+    await expect.poll(async () => {
+      const view = await (await api.get(researchPath)).json()
+      return view.runs.find((run: { kind: string }) => run.kind === 'report')?.status
+    }, { timeout: 60_000 }).toBe('completed')
+    const view = await (await api.get(researchPath)).json()
+    const run = view.runs.find((item: { kind: string }) => item.kind === 'report')
+    expect(run.error).toEqual(expect.arrayContaining([expect.objectContaining({ rule: 'banned_word', section_id: 'IV' })]))
+    const summaries = await (await api.get(`/api/researches/${researchId}/reports`)).json() as { id: string; status: string }[]
+    expect(summaries[0].status).toBe('draft')
+    const reportId = summaries[0].id
+    const report = await (await api.get(`/api/researches/${researchId}/reports/${reportId}`)).json()
+    expect(report.status).toBe('draft')
+    expect(report.report_version).toBeNull()
+    const entry = page.getByRole('button', { name: 'Open evidence report' })
+    await expect(entry).toContainText('Evidence report · draft')
+    await expect(entry).not.toContainText(/Evidence report · V\d+/)
+    await entry.click()
+    const sheet = reportSheet(page)
+    const header = sheet.locator('.report-document-head')
+    await expect(header.locator('p').first()).toContainText(/^DRAFT/)
+    await expect(header).not.toContainText(/Evidence report · V\d+/)
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: server.url() })
+    await sheet.getByRole('button', { name: 'Copy Markdown' }).click()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText().then(text => text.split('\n').find(line => line.trim()) ?? ''))).toMatch(/^> DRAFT: \d+ sections not validated\.$/)
+    const downloaded = page.waitForEvent('download')
+    await sheet.getByRole('button', { name: 'Download .md' }).click()
+    const file = await downloaded
+    expect(file.suggestedFilename()).toMatch(/^report-.*-draft\.md$/)
+    expect(file.suggestedFilename()).not.toContain('-v1')
+    await toastsOff(page)
+    await header.scrollIntoViewIfNeeded()
+    await shot(page, 'report-draft-desktop')
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await shot(page, 'report-draft-dark-desktop')
+    await page.emulateMedia({ colorScheme: 'light' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await shot(page, 'report-draft-390')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  } finally { await api.dispose(); await page.close(); await server.stop() }
+})
+
+test('an empty section pauses the report and can be cancelled', async ({ browser }) => {
+  const server = new ReportServer(8803)
+  await server.start()
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
+  try {
+    const researchId = await readyResearch(page, server, 'SYNTHETIC: How are molecule release schedules compared? [report-empty-section]')
+    await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
+    const researchPath = `/api/researches/${researchId}`
+    await expect.poll(async () => {
+      const view = await (await api.get(researchPath)).json()
+      return view.runs.find((run: { kind: string }) => run.kind === 'report')?.status
+    }, { timeout: 60_000 }).toBe('paused')
+    const view = await (await api.get(researchPath)).json()
+    const run = view.runs.find((item: { kind: string }) => item.kind === 'report')
+    expect(run.pause_reason).toBe('section_must_be_rewritten')
+    expect(run.error).toEqual({ sections: ['IV'], reasons: [{ section_id: 'IV', code: 'empty_section', detail: 'section has no claims or insufficient-evidence entries' }] })
+    await expect(page.getByText('Report paused').first()).toBeVisible()
+    await page.getByRole('button', { name: 'Report sections' }).click()
+    await expect(page.getByText('IV: must be written again')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Resume' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+    const summaries = await (await api.get(`/api/researches/${researchId}/reports`)).json() as { id: string; status: string }[]
+    expect(summaries[0].status).toBe('in_progress')
+    const reportId = summaries[0].id
+    const entry = page.getByRole('button', { name: 'Open evidence report' })
+    await expect(entry).not.toContainText(/Evidence report · V\d+/)
+    await toastsOff(page)
+    await page.getByText('IV: must be written again').scrollIntoViewIfNeeded()
+    await shot(page, 'report-paused-desktop')
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await shot(page, 'report-paused-dark-desktop')
+    await entry.click()
+    const sheet = reportSheet(page)
+    await expect(sheet.locator('.report-document-head')).toContainText('Paused: A section must be written again.')
+    await expect(section(page, 'IV')).toContainText('This section was not validated and must be written again.')
+    await expect(sheet.getByRole('button', { name: 'Copy Markdown' })).toBeDisabled()
+    await expect(sheet.getByRole('button', { name: 'Download .md' })).toBeDisabled()
+    const exportResponse = await api.get(`/api/researches/${researchId}/reports/${reportId}/export?format=markdown`)
+    expect(exportResponse.status()).toBe(409)
+    await section(page, 'IV').scrollIntoViewIfNeeded()
+    await shot(page, 'report-paused-sheet-dark-desktop')
+    await page.keyboard.press('Escape')
+    await page.emulateMedia({ colorScheme: 'light' })
+    await entry.click()
+    await expect(reportSheet(page).locator('.report-document-head')).toContainText('Paused: A section must be written again.')
+    await section(page, 'IV').scrollIntoViewIfNeeded()
+    await shot(page, 'report-paused-sheet-desktop')
+    await page.keyboard.press('Escape')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.getByText('IV: must be written again').scrollIntoViewIfNeeded()
+    await shot(page, 'report-paused-390')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect.poll(async () => {
+      const next = await (await api.get(researchPath)).json()
+      return next.runs.find((item: { id: string }) => item.id === run.id)?.status
+    }).toBe('cancelled')
+    await expect(page.getByRole('button', { name: /^Report cancelled/ })).toBeVisible()
+    const after = await (await api.get(`/api/researches/${researchId}/reports`)).json() as { id: string; status: string }[]
+    expect(after[0].status).not.toBe('valid')
   } finally { await api.dispose(); await page.close(); await server.stop() }
 })

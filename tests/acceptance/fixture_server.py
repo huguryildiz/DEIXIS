@@ -42,6 +42,8 @@ nothing included, which is the state its answer is asked from.
 
 Report-section steps alone add a second SYNTHETIC claim from a filled cell's own stored evidence quote. This gives
 the report UI acceptance case a cell citation whose later edit can be observed; other model tasks are unchanged.
+"[report-banned-word]" puts "research gap" in section IV's cell claim so assembly refuses a draft.
+"[report-empty-section]" returns section IV with no claim or insufficiency entry so the report run pauses.
 """
 
 from __future__ import annotations
@@ -383,16 +385,22 @@ class ScriptedCodex:
             # VII claims need a gap basis (P7 assembly rule 8) and this fixture has no gaps: VII says so instead.
             output |= {"claims": [], "citation_anchors": [], "insufficient_evidence": [{
                 "context": "VII", "reason": "It is beyond the scope of this synthetic fixture to add a claim."}]}
+        if (si["task_type"] == "report_section" and si["report_target"]["section_id"] == "IV"
+                and "[report-empty-section]" in question):
+            output |= {"claims": [], "citation_anchors": [], "insufficient_evidence": []}
         if si["task_type"] == "report_section":
             cell = next((cell for cell in si["report_target"]["cells"]
                          if cell.get("value") and any(e.get("quote") for e in cell.get("evidence", []))), None)
             # Section VII needs a gap basis (P7 assembly rule 8), which this scripted cell claim does not have.
-            if cell is not None and si["report_target"]["section_id"] != "VII":
+            if (cell is not None and si["report_target"]["section_id"] != "VII"
+                    and not (si["report_target"]["section_id"] == "IV" and "[report-empty-section]" in question)):
                 section = si["report_target"]["section_id"]
                 claim_key = f"{section}.{len(output['claims']) + 1}"
                 output["claims"].append({
                     "claim_key": claim_key,
                     "text": ("It may be that this synthetic table cell records a value." if section == "VI"
+                             else "It has been reported that this synthetic table cell records a research gap."
+                             if section == "IV" and "[report-banned-word]" in question
                              else "It has been reported that this synthetic table cell records a value."),
                     "support_type": "analyst_inference" if section == "VI" else "source_stated",
                     "passage_ids": [], "cell_ids": [cell["cell_id"]], "paragraph": 1, "table_ref": None,

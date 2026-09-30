@@ -741,6 +741,18 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
 const json = (method: string, body: unknown, extra: Record<string, string> = {}): RequestInit =>
   ({ method, headers: { 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) })
 
+async function reportMarkdown(id: string, reportId: string): Promise<{ text: string; filename: string }> {
+  const response = await fetch(`/api/researches/${id}/reports/${reportId}/export?format=markdown`, { credentials: 'same-origin' })
+  if (!response.ok) {
+    let detail = response.statusText
+    try { const body = await response.json(); if (typeof body.detail === 'string') detail = body.detail } catch { /* keep status text */ }
+    throw new ApiError(response.status, detail)
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const filename = /^attachment;\s*filename="([a-zA-Z0-9._-]+)"$/.exec(disposition)?.[1] ?? 'report.md'
+  return { text: await response.text(), filename }
+}
+
 export const api = {
   researches: () => request<ResearchSummary[]>('/api/researches'),
   trash: () => request<Trash>('/api/trash'),
@@ -900,6 +912,7 @@ export const api = {
   tables: (id: string) => request<TableSummary[]>(`/api/researches/${id}/tables`),
   startReport: (id: string, tableId: string, key: string) => request<Run>(`/api/researches/${id}/reports`, json('POST', { table_id: tableId }, { 'Idempotency-Key': key })),
   report: (id: string, reportId: string) => request<ReportDetail>(`/api/researches/${id}/reports/${reportId}`),
+  reportMarkdown,
   editReportClaim: (id: string, reportId: string, claimId: string, body: { expected_version: number; text?: string; note?: string | null; restore_from?: string }) =>
     request<ReportDetail>(`/api/researches/${id}/reports/${reportId}/claims/${claimId}`, json('PUT', body, { 'Idempotency-Key': crypto.randomUUID() })),
   acknowledgeReportChanges: (id: string, reportId: string, sectionId: string, changeKeys: string[]) =>

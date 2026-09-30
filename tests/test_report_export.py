@@ -1,0 +1,365 @@
+"""Synthetic report export checks; no provider or real model is called."""
+
+import asyncio
+import re
+
+from fastapi.testclient import TestClient
+
+from deixis.storage.db import new_id
+from deixis.workflow.report.export import _md, _table, to_markdown
+from deixis.workflow.report.sections import run_report
+from deixis.workflow.report.store import ReportStore
+from deixis.workflow.views import report_view
+from test_api_flow import app_for, create, session
+from test_report_api import upload_and_include, create_table, fill_table
+from test_report_flow import ReportAdapter, report_flow
+
+
+def complete(tmp_path):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path)
+    asyncio.run(run_report(flow, run, scope))
+    store.update_run(run["id"], status="completed")
+    return store, reports, run["research_id"], report_id
+
+
+def test_valid_export_route_contains_frozen_table_references_and_corpus(tmp_path):
+    with TestClient(app_for(tmp_path, ReportAdapter())) as raw:
+        client = session(raw)
+        research_id = create(client, source_scope="attached", effort="quick")
+        upload_and_include(client, research_id)
+        table = create_table(client, research_id, with_columns=True)
+        fill_table(client, research_id, table)
+        started = client.post(f"/api/researches/{research_id}/reports", json={"table_id": table["table"]["id"]})
+        report_id = started.json()["target"]["report_id"]
+        from test_api_flow import wait_run
+        _, run = wait_run(client, research_id, started.json()["id"])
+        assert run["status"] == "completed"
+        response = client.get(f"/api/researches/{research_id}/reports/{report_id}/export?format=markdown")
+        assert response.status_code == 200, response.text
+        assert response.headers["content-type"] == "text/markdown; charset=utf-8"
+        assert re.fullmatch(r'attachment; filename="report-[a-z0-9-]+-v1\.md"', response.headers["content-disposition"])
+        text = response.text
+        assert "TABLE I." in text and "| --- |" in text and "## References" in text
+        assert not text.startswith("> DRAFT")
+        corpus = ReportStore(raw.app.state.store).snapshot(report_id)["corpus"]
+        assert all(f"{corpus[key]} {label}" in text for key, label in (
+            ("found", "found"), ("unique", "unique"), ("screened", "screened"),
+            ("included", "included"), ("full_text", "with full text")))
+        view = client.get(f"/api/researches/{research_id}/reports/{report_id}").json()
+        body = text.split("## References", 1)[0]
+        for ref in view["references"]:
+            assert f'[{ref["number"]}]' in body
+            assert f'[{ref["number"]}]' in text.split("## References", 1)[1]
+        claim = next(claim for section in view["sections"] for claim in section["claims"] if claim["evidence"])
+        edited = client.put(f"/api/researches/{research_id}/reports/{report_id}/claims/{claim['id']}",
+                            json={"text": "SYNTHETIC revised claim", "expected_version": claim["version"]})
+        assert edited.status_code == 200
+        revised = client.get(f"/api/researches/{research_id}/reports/{report_id}/export")
+        assert "SYNTHETIC revised claim" in revised.text
+        assert "Edited by hand after version 1; edited text was not checked again." in revised.text
+
+
+def test_index_terms_citation_is_numbered_in_reading_order(tmp_path):
+    """First appearance applies to body claim citations only.
+
+    Table I row labels use the screen's numbers for frozen rows, so a later
+    section may first cite a source that Table I already labels.
+    """
+    store, _, research_id, report_id = complete(tmp_path)
+    before = report_view(store, research_id, report_id)
+    abstract = next(section for section in before["sections"] if section["section_id"] == "abstract")["claims"][0]
+    index = next(section for section in before["sections"] if section["section_id"] == "index_terms")["claims"][0]
+    first = store.create_upload_source("SYNTHETIC first source")
+    first_passage = store._insert_passage(first, None, "abstract", None, None, "synthetic_fixture", None, None, "SYNTHETIC first passage")
+    other = store.create_upload_source("SYNTHETIC second source")
+    passage = store._insert_passage(other, None, "abstract", None, None, "synthetic_fixture", None, None, "SYNTHETIC second passage")
+    original = store.conn.execute("SELECT step_input_id FROM report_citation_links LIMIT 1").fetchone()
+    store.conn.execute("DELETE FROM report_citation_links WHERE claim_id = ?", (abstract["id"],))
+    store.conn.execute("INSERT INTO report_citation_links (id, claim_id, passage_id, cell_id, source_version_id, step_input_id, anchor_text, anchor_match) VALUES (?, ?, ?, NULL, ?, ?, ?, 'exact')",
+                       (new_id("rln"), abstract["id"], first_passage, first, original["step_input_id"], "SYNTHETIC first passage"))
+    store.conn.execute("DELETE FROM report_citation_links WHERE claim_id = ?", (index["id"],))
+    store.conn.execute("INSERT INTO report_citation_links (id, claim_id, passage_id, cell_id, source_version_id, step_input_id, anchor_text, anchor_match) VALUES (?, ?, ?, NULL, ?, ?, ?, 'exact')",
+                       (new_id("rln"), index["id"], passage, other, original["step_input_id"], "SYNTHETIC second passage"))
+    frozen_source = before["table_i"]["rows"][0]["source_version_id"]
+    store.conn.execute(
+        "DELETE FROM report_citation_links WHERE source_version_id = ? AND claim_id IN ("
+        "SELECT c.id FROM report_claims c JOIN report_sections s ON s.id = c.report_section_id"
+        " WHERE s.report_id = ? AND s.section_id IN ('abstract', 'index_terms', 'I', 'II', 'III', 'IV'))",
+        (frozen_source, report_id),
+    )
+    view = report_view(store, research_id, report_id)
+    assert [section["section_id"] for section in view["sections"][:2]] == ["abstract", "index_terms"]
+    assert view["references"][0]["source_version_id"] == first
+    assert view["references"][1]["source_version_id"] == other
+    from deixis.workflow.report.export import export_markdown
+    text, _ = export_markdown(store, research_id, report_id)
+    body, references = text.split("## References\n", 1)
+    assert body.index("[1]") < body.index("[2]")
+    assert body.index("## Index Terms") < body.index("## I. Introduction")
+    by_number = {ref["number"]: ref for ref in view["references"]}
+    expected = []
+    for section in view["sections"]:
+        for claim in section["claims"]:
+            for link in claim["evidence"]:
+                assert by_number[link["ref_number"]]["source_version_id"] == link["source_version_id"]
+            expected.extend(dict.fromkeys(link["ref_number"] for link in claim["evidence"]))
+    table_blocks = list(re.finditer(r"(?m)^TABLE I\.[^\n]*\n\n(?:\|[^\n]*\n)+", body))
+    assert len(table_blocks) == 1
+    body_without_table = list(body)
+    for block in table_blocks:
+        body_without_table[block.start():block.end()] = " " * (block.end() - block.start())
+    citations = list(re.finditer(r"(?<!\\)\[(\d+)\]", "".join(body_without_table)))
+    assert [int(match.group(1)) for match in citations] == expected
+    assert list(dict.fromkeys(expected)) == list(range(1, len(view["references"]) + 1))
+    reference_lines = {int(match.group(1)): match.group(0) for match in
+                       re.finditer(r"(?m)^\[(\d+)\] [^\n]+$", references)}
+    assert set(reference_lines) == set(by_number)
+    for number, ref in by_number.items():
+        assert _md(ref["title"]) in reference_lines[number]
+    first_citation = {number: next(match.start() for match in citations if int(match.group(1)) == number)
+                      for number in by_number}
+    # First appearance applies to body claim citations. Table I's [n] row labels
+    # use the screen's numbers for frozen rows, including sources first cited in
+    # a later section; only these row labels may precede a claim citation.
+    early_markers = [match for match in re.finditer(r"(?<!\\)\[(\d+)\]", body)
+                     if match.start() < first_citation[int(match.group(1))]]
+    assert {int(match.group(1)) for match in early_markers} == {
+        next(number for number, ref in by_number.items() if ref["source_version_id"] == frozen_source)}
+    assert all(any(block.start() <= match.start() < block.end() for block in table_blocks)
+               for match in early_markers)
+
+
+def test_draft_gating_and_unknown_ids(tmp_path):
+    with TestClient(app_for(tmp_path, ReportAdapter())) as raw:
+        client = session(raw)
+        first = create(client, source_scope="attached")
+        second = create(client, source_scope="attached")
+        store = raw.app.state.store
+        run = store.create_run(second, "report", {"max_model_calls": 1, "max_provider_requests": 0}, None,
+                               {"table_id": "tbl_synthetic"})
+        reports = ReportStore(store)
+        report_id = reports.create_report(second, run["id"], run["scope_revision"], "en")
+        path = f"/api/researches/{second}/reports/{report_id}/export"
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 409 and response.json()["detail"] == "The report is still being written"
+        reports.create_section(report_id, "abstract", 0)
+        reports.finalize(report_id, "draft")
+        store.update_run(run["id"], status="paused")
+        assert client.get(path).status_code == 409
+        store.update_run(run["id"], status="failed")
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.text.startswith("> DRAFT: 1 sections not validated.\n")
+        assert response.headers["content-disposition"].endswith('-draft.md"')
+        assert "· draft" in response.text and "· V" not in response.text
+        assert client.get(f"/api/researches/{first}/reports/{report_id}/export", follow_redirects=False).status_code == 404
+        assert client.get(f"/api/researches/{second}/reports/rpt_unknown000/export", follow_redirects=False).status_code == 404
+
+
+def test_edited_claim_and_viii_text_both_export(tmp_path):
+    store, _, research_id, report_id = complete(tmp_path)
+    view = report_view(store, research_id, report_id)
+    claim = next(claim for section in view["sections"] for claim in section["claims"] if claim["evidence"])
+    reports = ReportStore(store)
+    reports.edit_claim(research_id, report_id, claim["id"], text="SYNTHETIC human correction",
+                       restore_from=None, note=None, expected_version=claim["version"], idempotency_key=None)
+    from deixis.workflow.report.export import export_markdown
+    text, _ = export_markdown(store, research_id, report_id)
+    assert "SYNTHETIC human correction" in text
+    assert "Edited by hand after version 1; edited text was not checked again." in text
+    viii = next(section for section in view["sections"] if section["section_id"] == "VIII")
+    assert viii["draft"]["text"] in text
+    assert viii["claims"][0]["text"] in text
+
+
+def test_hand_built_view_covers_escaping_equations_table_and_provenance():
+    claim = lambda text, paragraph, equation=None, links=None: {
+        "text": text, "paragraph": paragraph, "equation_ref": equation, "table_ref": None, "evidence": links or []}
+    ref = lambda n: {"ref_number": n, "anchor_match": "exact"}
+    view = {
+        "status": "valid", "language": "en", "report_version": 2, "edited_after_version": None,
+        "evidence_changes": {"any": False}, "review": None,
+        "sections": [
+            {"section_id": "abstract", "status": "valid", "draft": None, "claims": [
+                claim("First $a_1 | b$", 1, "eq-a", [ref(1), ref(2)]),
+                claim("Second", 2, "eq-b", [ref(2)]),
+                claim("Third", 1, "eq-a"),
+                claim("## References\n[1] fake", 1),
+            ]},
+            {"section_id": "II", "status": "draft", "draft": {"insufficient_evidence": [{"reason": "- x"}]}, "claims": []},
+            {"section_id": "VIII", "status": "valid", "draft": {"text": "Limitations text"}, "claims": [claim("VIII claim", 1)]},
+            {"section_id": "IV", "status": "valid", "draft": None, "claims": []},
+        ],
+        "references": [{"number": 1, "authors": [], "title": "[3] source", "venue": None, "year": None, "doi": None, "version_label": None},
+                       {"number": 2, "authors": ["A"], "title": "B", "venue": None, "year": None, "doi": None, "version_label": None}],
+        "table_i": {"columns": [{"column_id": "c", "name": "A|B", "options": None}],
+                    "rows": [{"source_version_id": "s", "ref_number": None, "source_key": "S", "title": "T"}],
+                    "cells": [{"source_version_id": "s", "column_id": "c", "state": "value", "value": {"text": "one|two\nthree"}}]},
+    }
+    text = to_markdown(view, title="# H\n- x", corpus=None)
+    assert text.startswith("# \\# H - x\n")
+    assert "$a_1 | b$ (1) [1], [2] Third (1) \\## References \\[1\\] fake" in text
+    assert "Second (2) [2]" in text
+    assert "## References\n" in text and "[1] \\[3\\] source" in text
+    assert "Not enough evidence: \\- x" in text
+    assert "Limitations text\n\nVIII claim" in text
+    assert "| Source | A\\|B |" in text and "| S | one\\|two three |" in text
+    assert "Generated by DEIXIS." in text
+    assert text.endswith("\n") and not text.endswith("\n\n")
+    assert _md("> q") == "\\> q"
+
+
+def test_table_pipes_in_math_and_column_names_stay_inside_cells():
+    columns = [{"column_id": "pair", "name": "A|B", "options": None},
+               {"column_id": "escaped", "name": "Escaped", "options": None},
+               {"column_id": "bare", "name": "Bare", "options": None},
+               {"column_id": "prose", "name": "Prose", "options": None},
+               {"column_id": "status", "name": "Status", "options": None}]
+    table = {"columns": columns,
+             "rows": [{"source_version_id": "s", "ref_number": 1, "source_key": "S|1", "title": "T"}],
+             "cells": [{"source_version_id": "s", "column_id": "pair", "state": "value",
+                        "value": {"text": r"$a\\|b$"}},
+                       {"source_version_id": "s", "column_id": "escaped", "state": "value",
+                        "value": {"text": r"$a\|b$"}},
+                       {"source_version_id": "s", "column_id": "bare", "state": "value",
+                        "value": {"text": "$a|b$"}},
+                       {"source_version_id": "s", "column_id": "prose", "state": "value",
+                        "value": {"text": r"a\|b"}},
+                       {"source_version_id": "s", "column_id": "status", "state": "not_verified",
+                        "value": {"text": "$c|d$\nnext"}}]}
+    lines = _table(table, False).splitlines()
+    assert _md("$a|b$") == "$a|b$"
+    assert "A\\|B" in lines[2]
+    assert r"$a\\{\vert}b$" in lines[4]
+    assert r"$a{\Vert}b$" in lines[4]
+    assert r"$a{\vert}b$" in lines[4]
+    assert r"a\\\|b" in lines[4]
+    assert "$c{\\vert}d$ next (not verified: no quote linked)" in lines[4]
+    assert "S\\|1" in lines[4]
+
+    def unescaped_pipes(row):
+        count = 0
+        backslashes = 0
+        for char in row:
+            if char == "\\":
+                backslashes += 1
+            else:
+                if char == "|" and backslashes % 2 == 0:
+                    count += 1
+                backslashes = 0
+        return count
+
+    for row in lines[2:]:
+        assert row.startswith("| ") and row.endswith(" |")
+        assert unescaped_pipes(row) == len(columns) + 2
+
+
+def test_math_content_cannot_insert_html_or_claim_citation_markers():
+    view = {"status": "valid", "language": "en", "report_version": 1,
+            "edited_after_version": None, "evidence_changes": {"any": False},
+            "sections": [{"section_id": "abstract", "status": "valid", "draft": None,
+                          "claims": [{"text": "$<img src=x onerror=1>$ and $[1]$ and $$<img>$$",
+                                      "paragraph": 1, "equation_ref": None, "table_ref": None,
+                                      "evidence": [{"ref_number": 1, "anchor_match": "exact"}]}]}],
+            "table_i": None, "review": None,
+            "references": [{"number": 1, "authors": [], "title": "Source", "venue": None,
+                            "year": None, "doi": None, "version_label": None}]}
+    body = to_markdown(view, title="SYNTHETIC", corpus=None).split("## References", 1)[0]
+    assert r"${\lt}img src=x onerror=1{\gt}$" in body
+    assert "${[}1{]}$" in body
+    assert r"$${\lt}img{\gt}$$" in body
+    assert "<img" not in body
+    assert body.count("[1]") == 1  # Only the exporter-written claim citation.
+    assert _md("$`x`$") == "$`x`$"
+
+
+def test_references_are_separate_markdown_paragraphs():
+    view = {"status": "valid", "language": "en", "report_version": 1,
+            "edited_after_version": None, "evidence_changes": {"any": False},
+            "sections": [], "table_i": None, "review": None,
+            "references": [{"number": 1, "authors": [], "title": "First", "venue": None,
+                            "year": None, "doi": None, "version_label": None},
+                           {"number": 2, "authors": [], "title": "Second", "venue": None,
+                            "year": None, "doi": None, "version_label": None}]}
+    text = to_markdown(view, title="SYNTHETIC", corpus=None)
+    assert "## References\n\n[1] First\n\n[2] Second\n\nGenerated by DEIXIS." in text
+
+
+def test_turkish_review_and_unlocated_anchor():
+    view = {"status": "draft", "language": "tr-TR", "report_version": None, "edited_after_version": None,
+            "evidence_changes": {"any": True}, "table_i": None, "references": [],
+            "sections": [{"section_id": "abstract", "status": "draft", "draft": None,
+                          "claims": [{"text": "İddia", "paragraph": 1, "equation_ref": None, "table_ref": None,
+                                      "evidence": [{"ref_number": 1, "anchor_match": None}]}]}],
+            "review": {"status": "reviewed", "sections_reviewed": ["abstract"],
+                       "sections_not_reviewed": [{"section_id": "II", "reason": "input_too_large"}],
+                       "findings": [{"section_id": "abstract", "code": "count_error", "text": "# H\n- x"}],
+                       "reverted": [{"sentence_id": "s"}]}}
+    text = to_markdown(view, title="Deneme", corpus=None)
+    assert text.startswith("> TASLAK: 1 bölüm doğrulanmadı.")
+    assert "## Özet" in text and "## Kaynaklar" in text
+    assert "DEIXIS ile üretildi." in text
+    assert "Pasaj metni denetlenmedi." in text
+    assert "1 atıf çapasının 0 tanesi" in text
+    assert "Okunmayan bölümler: II. İnceleme Yöntemi." in text
+    assert "Model bulguları\n\n- Özet · Sayı · \\# H - x" in text
+
+
+def test_first_seen_paragraph_groups_control_claim_and_equation_order(tmp_path):
+    store, _, research_id, report_id = complete(tmp_path)
+    section_id = ReportStore(store).section(report_id, "III")["id"]
+    original = store.conn.execute("SELECT * FROM report_claims WHERE report_section_id = ? ORDER BY ordinal LIMIT 1",
+                                  (section_id,)).fetchone()
+    store.conn.execute("DELETE FROM report_citation_links WHERE claim_id IN (SELECT id FROM report_claims WHERE report_section_id = ? AND id <> ?)",
+                       (section_id, original["id"]))
+    store.conn.execute("DELETE FROM report_claim_refs WHERE claim_id IN (SELECT id FROM report_claims WHERE report_section_id = ? AND id <> ?)",
+                       (section_id, original["id"]))
+    store.conn.execute("DELETE FROM report_claims WHERE report_section_id = ? AND id <> ?", (section_id, original["id"]))
+    store.conn.execute("UPDATE report_claims SET paragraph = 1, equation_ref = 'eq-one', text = 'SYNTHETIC first' WHERE id = ?",
+                       (original["id"],))
+    for ordinal, paragraph, equation, word in ((2, 2, "eq-three", "second"), (3, 1, "eq-two", "third")):
+        store.conn.execute(
+            "INSERT INTO report_claims (id, report_section_id, claim_key, ordinal, paragraph, text, support_type, table_ref, equation_ref)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+            (new_id("rcl"), section_id, f"synthetic-{word}", ordinal, paragraph, f"SYNTHETIC {word}",
+             original["support_type"], equation),
+        )
+    view = report_view(store, research_id, report_id)
+    iii = next(section for section in view["sections"] if section["section_id"] == "III")
+    assert [claim["text"] for claim in iii["claims"][:3]] == [
+        "SYNTHETIC first", "SYNTHETIC third", "SYNTHETIC second"]
+    from deixis.workflow.report.export import export_markdown
+    text, _ = export_markdown(store, research_id, report_id)
+    body = text.split("## III. Background and Taxonomy\n", 1)[1].split("## IV.", 1)[0]
+    assert "SYNTHETIC first (1)" in body
+    assert "SYNTHETIC third (2)" in body
+    assert "SYNTHETIC second (3)" in body
+    assert body.index("SYNTHETIC first") < body.index("SYNTHETIC third") < body.index("SYNTHETIC second")
+
+
+def test_not_reviewed_reason_is_not_presented_as_a_completed_review():
+    view = {"status": "valid", "language": "en", "report_version": 1,
+            "edited_after_version": None, "evidence_changes": {"any": False},
+            "sections": [], "references": [], "table_i": None,
+            "review": {"status": "not_reviewed", "reason": "budget_exhausted"}}
+    text = to_markdown(view, title="SYNTHETIC report", corpus=None)
+    assert "No accepted review result exists for this report (the model-call budget was exhausted)" in text
+    assert "whether the model read it in part is not established by this record." in text
+    assert "A model read the claims" not in text
+
+
+def test_reviewed_note_keeps_the_screen_limits_and_lists_model_flags():
+    view = {"status": "valid", "language": "en", "report_version": 1,
+            "edited_after_version": None, "evidence_changes": {"any": False},
+            "sections": [], "references": [], "table_i": None,
+            "review": {"status": "reviewed", "sections_reviewed": ["abstract"],
+                       "sections_not_reviewed": [{"section_id": "II", "reason": "input_too_large"}],
+                       "findings": [{"section_id": "abstract", "code": "support_broken", "text": "- x"}],
+                       "reverted": [{"sentence_id": "s"}]}}
+    text = to_markdown(view, title="SYNTHETIC", corpus=None)
+    assert "A model read the claims of 1 of 2 sections" in text
+    assert "That is a model’s reading, not peer review, and it can miss errors" in text
+    assert "whether each passage supports its claim was not checked by code." in text
+    assert "The model flagged 1 rewritten sentence as possibly no longer matching its sources" in text
+    assert "Not read: II. Review Methodology." in text
+    assert "Model findings\n\n- Abstract · Support no longer matches · \\- x" in text

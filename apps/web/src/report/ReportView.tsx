@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, FileText, Quote } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, Download, FileText, Quote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, ApiError, type ReportClaim, type ReportDetail, type ReportLink, type ReportSection, type ResearchView } from '../api'
@@ -80,12 +80,35 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
   const [editError, setEditError] = useState('')
   const [busy, setBusy] = useState(false)
   const [conflicts, setConflicts] = useState(0)
+  const [exportBusy, setExportBusy] = useState(false)
   useEffect(() => {
     let live = true
     api.report(researchId, reportId).then(next => { if (live) { setReport(next); setError('') } }, e => { if (live) setError(e instanceof Error ? e.message : String(e)) })
     return () => { live = false }
   }, [researchId, reportId, view.last_event_id])
   const refresh = async () => { const next = await api.report(researchId, reportId); setReport(next) }
+  const markdown = async (action: 'copy' | 'download') => {
+    setExportBusy(true)
+    try {
+      const { text, filename } = await api.reportMarkdown(researchId, reportId)
+      if (action === 'copy') {
+        await navigator.clipboard.writeText(text)
+        toast('success', t('Markdown copied.'))
+      } else {
+        const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown' }))
+        try {
+          const link = document.createElement('a')
+          link.href = url
+          link.download = filename
+          document.body.appendChild(link)
+          link.click()
+          link.remove()
+        } finally { window.setTimeout(() => URL.revokeObjectURL(url), 0) }
+        toast('success', t('Markdown downloaded.'))
+      }
+    } catch (e) { toast('error', e instanceof Error ? e.message : String(e)) }
+    finally { setExportBusy(false) }
+  }
   const save = async (claim: ReportClaim, body: { text?: string; note?: string | null; restore_from?: string }, expectedVersion = claim.version) => {
     setBusy(true); setEditError('')
     try {
@@ -145,7 +168,7 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
     return <td key={column.column_id}>{cell ? cell.state === 'value' ? valueText(cell.value, column.options) : cell.state === 'not_verified' ? t('{value} (not verified: no quote linked)', { value: valueText(cell.value, column.options) }) : t(cell.state.replaceAll('_', ' ')) : '—'}</td>
   })}</tr>)}</tbody></table></div>
   return <Sheet open onOpenChange={open => { if (!open) onClose() }}><SheetContent className={`detail-sheet report-sheet ${dark ? 'dark' : ''}`}>
-    <SheetHeader className="report-toolbar"><div className="report-toolbar-title"><FileText size={17} aria-hidden /><SheetTitle>{title}</SheetTitle></div><SheetDescription className="sr-only">{t('Evidence report')}</SheetDescription><div className="report-toolbar-actions"><Button variant="ghost" size="sm" aria-pressed={evidenceView} onClick={() => setEvidenceView(on => !on)}><Quote size={14} aria-hidden />{t('Evidence view')}</Button></div></SheetHeader>
+    <SheetHeader className="report-toolbar"><div className="report-toolbar-title"><FileText size={17} aria-hidden /><SheetTitle>{title}</SheetTitle></div><SheetDescription className="sr-only">{t('Evidence report')}</SheetDescription><div className="report-toolbar-actions"><Button variant="ghost" size="sm" aria-pressed={evidenceView} onClick={() => setEvidenceView(on => !on)}><Quote size={14} aria-hidden />{t('Evidence view')}</Button><Button variant="ghost" size="sm" disabled={!report || !finished.has(report.run?.status ?? '') || report.status === 'in_progress' || exportBusy} title={!report || !finished.has(report.run?.status ?? '') || report.status === 'in_progress' ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Copy Markdown')} onClick={() => void markdown('copy')}><Copy size={14} aria-hidden /><span className="report-export-label">{t('Copy Markdown')}</span></Button><Button variant="ghost" size="sm" disabled={!report || !finished.has(report.run?.status ?? '') || report.status === 'in_progress' || exportBusy} title={!report || !finished.has(report.run?.status ?? '') || report.status === 'in_progress' ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download .md')} onClick={() => void markdown('download')}><Download size={14} aria-hidden /><span className="report-export-label">{t('Download .md')}</span></Button></div></SheetHeader>
     <div className="report-scroll"><article className="report-document evidence-report-document">
       {error && <Notice tone="error">{error}</Notice>}
       {!report ? <p>{t('Loading report…')}</p> : <>

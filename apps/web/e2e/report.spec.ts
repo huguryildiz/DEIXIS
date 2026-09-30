@@ -1,6 +1,6 @@
 import { expect, request as apiRequest, test, type APIRequestContext, type Page } from '@playwright/test'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -82,6 +82,22 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await expect(section(page, 'VIII')).toContainText('Recall was not measured against a known source set.')
     await expect(sheet).toContainText('TABLE I')
     await expect(sheet.locator('.cite-chip').first()).toContainText('[1]')
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: server.url() })
+    await sheet.getByRole('button', { name: 'Copy Markdown' }).click()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('## References')
+    const downloaded = page.waitForEvent('download')
+    await sheet.getByRole('button', { name: 'Download .md' }).click()
+    const file = await downloaded
+    expect(file.suggestedFilename()).toMatch(/^report-.*-v1\.md$/)
+    expect(readFileSync(await file.path(), 'utf8')).toMatch(/^# /)
+    const exportPath = `**/api/researches/${researchId}/reports/${reportId}/export?format=markdown`
+    let unexpectedDownloads = 0
+    page.on('download', () => { unexpectedDownloads += 1 })
+    await page.route(exportPath, route => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'The report is still being written' }) }))
+    await sheet.getByRole('button', { name: 'Download .md' }).click()
+    await expect(page.getByText('The report is still being written')).toBeVisible()
+    expect(unexpectedDownloads).toBe(0)
+    await page.unroute(exportPath)
     const report = await (await api.get(`/api/researches/${researchId}/reports/${reportId}`)).json()
     expect(report.review.status).toBe('reviewed')
     const reviewed = report.review.sections_reviewed.length

@@ -14,6 +14,7 @@ from deixis.workflow.tables import InvalidTableInput, TableStore
 
 # The smallest model-call ceiling a report run may get, whatever the derived worst case is (owner, 2026-09-18).
 REPORT_CALL_FLOOR = 50
+DISPLAY_ORDER = ("abstract", "index_terms", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX")
 
 
 class ReportStore:

@@ -59,6 +59,7 @@ from deixis.workflow.equations import EquationService, chunk_numbers, equation_s
 from deixis.workflow.local_embedding_service import EmbeddingService, ServiceError
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.report.store import ReportStore
+from deixis.workflow.report import export as report_export
 from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
                                    SeedUnavailable, Store)
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
@@ -1834,6 +1835,13 @@ def create_app(
     @app.get("/api/researches/{research_id}/reports/{report_id}")
     async def get_report(research_id: str, report_id: str, request: Request) -> dict[str, Any]:
         return report_view(store_of(request), research_id, report_id)
+
+    @app.get("/api/researches/{research_id}/reports/{report_id}/export")
+    async def export_report(research_id: str, report_id: str, request: Request,
+                            fmt: Literal["markdown"] = Query("markdown", alias="format")) -> Response:
+        text, name = report_export.export_markdown(store_of(request), research_id, report_id)
+        return Response(text, media_type=report_export.MEDIA_TYPES[fmt],
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
     @app.get("/api/researches/{research_id}/reports")
     async def list_reports(research_id: str, request: Request) -> list[dict[str, Any]]:

@@ -20,7 +20,7 @@ from deixis.workflow import suggestions as suggestions_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import chunk_numbers, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow.report.store import DISPLAY_ORDER, ReportStore
 from deixis.workflow import waiting as waiting_rules
 from deixis.providers.registry import search_providers
 from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
@@ -269,12 +269,16 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
     first_passage: dict[str, str] = {}
     cited_cells: dict[str, list[str]] = {}
     sections = []
-    for section in reports.sections(report_id):
+    for section in sorted(reports.sections(report_id), key=lambda item: DISPLAY_ORDER.index(item["section_id"])
+                          if item["section_id"] in DISPLAY_ORDER else len(DISPLAY_ORDER)):
         claims = []
-        for claim in store.conn.execute(
+        stored_claims = list(store.conn.execute(
             "SELECT id, claim_key, text, support_type, paragraph, table_ref, equation_ref, current_revision_id, version FROM report_claims"
             " WHERE report_section_id = ? ORDER BY ordinal", (section["id"],),
-        ):
+        ))
+        first_paragraph = {paragraph: index for index, paragraph in enumerate(dict.fromkeys(
+            claim["paragraph"] for claim in stored_claims))}
+        for claim in sorted(stored_claims, key=lambda item: first_paragraph[item["paragraph"]]):
             evidence = [
                 {"passage_id": link["passage_id"], "cell_id": link["cell_id"],
                  "source_version_id": link["source_version_id"], "ref_number": numbers.setdefault(

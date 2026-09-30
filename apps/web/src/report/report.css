@@ -44,3 +44,4 @@
 @media(max-width:760px){.evidence-report-paragraph{font-size:17px}.evidence-report-content .evidence-report-section{margin-bottom:28px}}
 @media(prefers-reduced-motion:reduce){.report-ready-bar span{transition:none}}
 .report-toolbar-actions [data-slot=button][aria-pressed=true]{background:var(--selected-surface)}
+@media(max-width:600px){.report-toolbar-actions .report-export-label{display:none}}

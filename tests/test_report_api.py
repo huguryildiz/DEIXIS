@@ -135,7 +135,7 @@ def test_report_run_completes_with_fake_adapter_and_produces_a_valid_report(tmp_
         assert report["status"] == "valid"
         assert report["report_version"] == 1
         assert [section["section_id"] for section in report["sections"]] == [
-            "abstract", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "index_terms",
+            "abstract", "index_terms", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX",
         ]
         assert all(section["draft"] for section in report["sections"])
 
@@ -196,7 +196,7 @@ def test_report_view_returns_ordered_sections_claims_and_citation_anchors(tmp_pa
     assert viii["validation"]["numbers"]["kind"] == "limitations"
 
     assert [section["section_id"] for section in view["sections"]] == [
-        "abstract", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "index_terms",
+        "abstract", "index_terms", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX",
     ]
     cited_claims = [claim for section in view["sections"] for claim in section["claims"] if claim["evidence"]]
     assert cited_claims

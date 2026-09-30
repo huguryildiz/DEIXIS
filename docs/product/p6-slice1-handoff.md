@@ -304,6 +304,7 @@ modelin yazdığıyla doluyor.
 **P16** — 1n: beklenti dosyası (koşudan **önce** donar ve commit'lenir), ölçüm raporu, karar kaydı, tasarım
 notunun durum güncellemesi. Beklenti dosyası donduruldu (`cdf79ba`). Koşu yapıldı ve tabloda durdu (D124, commit: bu satırı ekleyen commit): tek doldurma 36 oturum, tamamlanmaya kadar 3,3 dakika; tablo `report_ready` olmadı (21/175 hücre eksik: iki kaynakta metin yok, bir kaynakta çapa hatası), rapor başlamadı, R1–R11 ölçülmedi.
 **P17** — açık devam seçimiyle hatalı satırlı rapor (P16 sonrası). ✅ (D125; commit: bu satırı ekleyen commit): `continue_with_failed` run hedefinde saklanır, hatalı satırlar snapshot'ta ayrı dondurulur ve modelin kanıtından, paydalardan ve yokluk adaylarından çıkar; II/VIII ve ekran/Markdown eksik satırları söyler; ölçüm yeniden koşulmadı.
+**P16 ikinci deneme** — D125 sonrası, tek rapor koşusu (D126, commit: bu satırı ekleyen commit): `continue_with_failed` ile başladı, 7 oturum ve 3,7 dakika sonra IV. bölüm çıktıdaki hatalı bir pasaj kimliği yüzünden (`unknown_passage_id`, onarımdan sonra da) düştü ve koşu `section_failed` ile durdu; yalnız R1 ve R7 ölçüldü (R1a 0/3, R1b 2/3, R1c 0/1), R2–R6, R8, R9, R11 ölçülemedi; üç başarısız kaynak yazılan bölümlerde (18 iddia) hiç kullanılmadı.
 
 Gerçekçi tahmin, 18 Eylül'de güncellendi: P1, P2 ve plan dışı P2.5 bir oturum sürdü ve dört tasarım boşluğu
 çıkardı. Arayüzde bakılabilir bir rapor görmek P3 + P4 + P10/P11 demek, yani en az üç tur daha. Bütün dilim 1,

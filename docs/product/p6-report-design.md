@@ -329,6 +329,8 @@ Sahibin okuma değerlendirmesi ayrı raporlanır; Claude'un okuması "insan dene
 
 **Durum (30 Eylül 2026, D126):** İkinci deneme (D125 sonrası, `continue_with_failed`, tek rapor koşusu) IV. bölümde `section_failed` ile durdu; yalnız R1 ve R7 ölçüldü, R2–R6, R8, R9, R11 ölçülemedi; rapor kalitesi hakkında yine ölçülmüş bir şey yoktur (`p6-slice1-report-results-run2.md`).
 
+**Durum (30 Eylül 2026, D128):** Üçüncü ve son deneme (D127 sonrası, tek rapor koşusu) IV. bölümde bir atıf alıntısı hatasıyla (`anchor_not_in_cell_evidence`) durdu ve ölçümü bitirmek için iptal edildi; yalnız R1 ve R7 ölçüldü, R2–R6, R8, R9, R11 ölçülemedi; seri tamamlanmış rapor olmadan bitti, rapor kalitesi hakkında ölçülmüş bir şey yoktur (`p6-slice1-report-results-run3.md`).
+
 ## 14. Varsayımlar ve sınırlar
 
 - Rapor, korpusun kapsamını iyileştirmez; D55'teki geri çağırım ve PDF edinme sorunları rapora aynen yansır ve II/VIII'de görünür.

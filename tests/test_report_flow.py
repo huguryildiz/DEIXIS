@@ -9,16 +9,20 @@ import pytest
 
 from deixis.config import Settings
 from deixis.domain import skill
+from deixis.models.adapter import ModelStepResult
 from deixis.storage import db
 from deixis.storage.db import dumps, new_id
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
-from deixis.workflow.report.sections import _citation_links, run_report
+from deixis.workflow.report.sections import _citation_links, _pause_detail, run_report
+from deixis.workflow.report.phrasing import _report_checkpoint
 from deixis.workflow.report.assembly import run_assembly_checks
 from deixis.workflow.report import assembly
 from deixis.workflow.report.selection import SECTION_BUDGET_TOKENS
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.store import Store
+from deixis.workflow.worker import Worker
+from deixis.workflow import flow as flow_module
 from deixis.workflow.tables import TableStore
 from fakes import FakeAdapter, envelope
 
@@ -240,6 +244,328 @@ def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None,
     return flow, store, reports, adapter, store.run(run["id"]), store.scope(research_id), report_id
 
 
+def _section_calls(adapter):
+    return Counter(call["report_target"]["section_id"] for call in adapter.calls
+                   if call["task_type"] == "report_section")
+
+
+def _claims(store, reports, report_id, section_id):
+    return store.conn.execute(
+        "SELECT claim_key FROM report_claims WHERE report_section_id = ?",
+        (reports.section(report_id, section_id)["id"],),
+    ).fetchall()
+
+
+def _resume_report(flow, store, run, scope):
+    store.update_run(run["id"], status="running", pause_reason=None, error_json=None)
+    asyncio.run(run_report(flow, store.run(run["id"]), scope))
+
+
+def _reason_codes(store, run):
+    return [(reason["section_id"], reason["code"]) for reason in store.run(run["id"])["error"]["reasons"]]
+
+
+def test_report_quota_retries_twice_then_completes(tmp_path, monkeypatch):
+    monkeypatch.setattr(flow_module, "RATE_LIMIT_BACKOFF_SECONDS", 0)
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+    attempts = 0
+
+    def fail(si):
+        nonlocal attempts
+        if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "III":
+            attempts += 1
+            if attempts <= 2:
+                return ModelStepResult("failed", error="rate_limit_error: quota exhausted")
+        return None
+
+    adapter.fail = fail
+    asyncio.run(run_report(flow, run, scope))
+    assert _section_calls(adapter)["III"] == 3
+    assert flow.deps.limiter.limit == 1
+    assert reports.section(report_id, "III")["status"] == "valid"
+    assert reports.report(report_id)["status"] == "valid"
+
+
+def test_report_quota_exhaustion_records_reason_and_resumes_only_failed_section(tmp_path, monkeypatch):
+    monkeypatch.setattr(flow_module, "RATE_LIMIT_BACKOFF_SECONDS", 0)
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+    adapter.fail = lambda si: (ModelStepResult("failed", error="rate_limit_error: quota exhausted " + "x" * 500)
+                               if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "III"
+                               else None)
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    assert _section_calls(adapter)["III"] == 3
+    assert flow.deps.limiter.limit == 1
+    assert reports.section(report_id, "III")["status"] == "failed"
+    assert reports.section(report_id, "III")["validation"]["issues"][0]["code"] == "model_call_failed"
+    assert all(reports.section(report_id, section)["status"] == "valid" for section in ("IV", "V"))
+    stopped = store.run(run["id"])
+    assert (stopped["status"], stopped["pause_reason"]) == ("paused", "section_failed")
+    assert _reason_codes(store, run) == [("III", "model_call_failed")]
+    assert "rate_limit_error" in stopped["error"]["reasons"][0]["detail"]["error"]
+    assert len(stopped["error"]["reasons"][0]["detail"]["error"]) == 300
+    before = _section_calls(adapter)
+    adapter.fail = None
+    _resume_report(flow, store, run, scope)
+    after = _section_calls(adapter)
+    assert after["III"] == before["III"] + 1
+    assert all(after[section] == before[section] for section in ("IV", "V"))
+    assert reports.report(report_id)["status"] == "valid"
+
+
+def test_report_crash_during_call_recovers_unknown_step_and_resends(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+
+    def crash(si):
+        if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "IV":
+            raise SystemExit("SYNTHETIC crash during IV")
+
+    adapter.before = crash
+    with pytest.raises(SystemExit):
+        asyncio.run(run_report(flow, run, scope))
+    step = store.step(run["id"], "report_section:IV", "model:report_section")
+    assert step["status"] == "running"
+    assert store.conn.execute("SELECT status FROM model_sessions WHERE step_id = ?", (step["id"],)).fetchone()[0] == "started"
+    assert store.run(run["id"])["status"] == "running"
+    assert reports.section(report_id, "IV")["status"] == "running"
+    assert not _claims(store, reports, report_id, "IV")
+    before = _section_calls(adapter)
+    succeeded_before = [section for section in ("III", "V")
+                        if store.step(run["id"], f"report_section:{section}", "model:report_section")["status"] == "succeeded"]
+    recovered = Worker(store, flow, tmp_path / "lock").recover()
+    assert recovered["runs"] >= 1 and recovered["steps"] >= 1 and recovered["model_sessions"] >= 1
+    assert (store.run(run["id"])["status"], store.run(run["id"])["pause_reason"]) == ("paused", "backend_restarted")
+    assert store.step(run["id"], "report_section:IV", "model:report_section")["status"] == "outcome_unknown"
+    adapter.before = None
+    _resume_report(flow, store, run, scope)
+    assert reports.report(report_id)["status"] == "valid"
+    assert _section_calls(adapter)["IV"] == 2
+    section_ids = [section["section_id"] for section in reports.sections(report_id)]
+    assert len(section_ids) == len(set(section_ids))
+    keys = [row[0] for row in store.conn.execute("SELECT claim_key FROM report_claims c JOIN report_sections s"
+             " ON s.id = c.report_section_id WHERE s.report_id = ?", (report_id,))]
+    assert len(keys) == len(set(keys))
+    for section in succeeded_before:
+        assert _section_calls(adapter)[section] == before[section]
+
+
+def test_report_crash_after_saved_result_reuses_it_on_resume(tmp_path, monkeypatch):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+    original = ReportStore.save_claims
+    crashed = False
+
+    def crash_once(self, section_key, claims, links):
+        nonlocal crashed
+        if section_key == reports.section(report_id, "IV")["id"] and not crashed:
+            crashed = True
+            raise SystemExit("SYNTHETIC crash before IV claims")
+        return original(self, section_key, claims, links)
+
+    monkeypatch.setattr(ReportStore, "save_claims", crash_once)
+    with pytest.raises(SystemExit):
+        asyncio.run(run_report(flow, run, scope))
+    assert store.run(run["id"])["status"] == "running"
+    assert reports.section(report_id, "IV")["status"] == "running"
+    assert not _claims(store, reports, report_id, "IV")
+    assert store.step(run["id"], "report_section:IV", "model:report_section")["status"] == "succeeded"
+    Worker(store, flow, tmp_path / "lock").recover()
+    assert store.run(run["id"])["pause_reason"] == "backend_restarted"
+    monkeypatch.setattr(ReportStore, "save_claims", original)
+    _resume_report(flow, store, run, scope)
+    assert reports.report(report_id)["status"] == "valid"
+    assert _section_calls(adapter)["IV"] == 1
+    assert len(_claims(store, reports, report_id, "IV")) == 1
+
+
+def test_report_cancel_during_section_keeps_late_result_unapplied(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+
+    def cancel(si):
+        if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "IV":
+            store.update_run(run["id"], event="run_cancelled", status="cancelled", pause_reason="user_cancelled")
+
+    adapter.before = cancel
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    assert store.run(run["id"])["status"] == "cancelled"
+    assert store.step(run["id"], "report_section:IV", "model:report_section")["status"] == "succeeded"
+    assert reports.section(report_id, "IV")["status"] == "running"
+    assert not _claims(store, reports, report_id, "IV")
+    assert reports.report(report_id)["status"] == "in_progress"
+    assert not any(section in _section_calls(adapter) for section in ("VI", "VII", "VIII", "I", "IX", "abstract", "index_terms"))
+
+
+def test_report_scope_change_stops_sibling_late_results(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+
+    def revise(si):
+        if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "IV":
+            research_id = run["research_id"]
+            store.revise_scope(research_id, store.research(research_id)["version"],
+                               "A revised SYNTHETIC question", None)
+
+    adapter.before = revise
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    assert (store.run(run["id"])["status"], store.run(run["id"])["pause_reason"]) == ("cancelled", "scope_revised")
+    assert store.step(run["id"], "report_section:IV", "model:report_section")["status"] == "succeeded"
+    for section in ("III", "IV", "V"):
+        step = store.step(run["id"], f"report_section:{section}", "model:report_section")
+        if step["status"] == "succeeded":
+            assert not _claims(store, reports, report_id, section)
+    assert reports.report(report_id)["status"] == "in_progress"
+    assert not any(section in _section_calls(adapter) for section in ("VI", "VII", "VIII", "I", "IX", "abstract", "index_terms"))
+
+
+def test_report_pause_during_section_applies_stored_result_once_on_resume(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+    paused = False
+
+    def pause(si):
+        nonlocal paused
+        if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "IV" and not paused:
+            paused = True
+            store.update_run(run["id"], event="run_pause_requested", status="pause_requested",
+                             pause_reason="user_requested")
+
+    adapter.before = pause
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    assert (store.run(run["id"])["status"], store.run(run["id"])["pause_reason"]) == ("paused", "user_requested")
+    assert not _claims(store, reports, report_id, "IV")
+    _resume_report(flow, store, run, scope)
+    assert reports.report(report_id)["status"] == "valid"
+    assert len(_claims(store, reports, report_id, "IV")) == 1
+    assert _section_calls(adapter)["IV"] == 1
+    assert all(_section_calls(adapter)[section] <= 1 for section in ("III", "V"))
+
+
+@pytest.mark.parametrize("repair_fails", [False, True])
+def test_report_cancel_during_phrase_repair_writes_no_repair_row(tmp_path, repair_fails):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path, unframed_section="IV")
+
+    def cancel(si):
+        if si["task_type"] == "report_phrase_repair":
+            store.update_run(run["id"], event="run_cancelled", status="cancelled", pause_reason="user_cancelled")
+
+    adapter.before = cancel
+    if repair_fails:
+        adapter.fail = lambda si: (ModelStepResult("failed", error="SYNTHETIC connection lost")
+                                   if si["task_type"] == "report_phrase_repair" else None)
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    assert store.run(run["id"])["status"] == "cancelled"
+    assert store.conn.execute("SELECT COUNT(*) FROM report_phrase_repairs WHERE report_id = ?", (report_id,)).fetchone()[0] == 0
+    assert not _claims(store, reports, report_id, "IV")
+
+
+def test_report_repair_checkpoint_stops_an_already_paused_run(tmp_path):
+    flow, store, _, _, run, _, _ = report_flow(tmp_path)
+    # A failed model call checkpoints before repair_section can handle OptionalStepFailed.
+    # The helper also guards a pause already finalized by a sibling section.
+    store.update_run(run["id"], status="paused", pause_reason="user_requested")
+    with pytest.raises(RunStopped):
+        _report_checkpoint(flow, run)
+
+
+def test_report_pause_finalized_during_phrase_repair_writes_no_repair_row(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path, unframed_section="IV")
+
+    def pause(si):
+        if si["task_type"] == "report_phrase_repair":
+            store.update_run(run["id"], status="paused", pause_reason="user_requested")
+
+    adapter.before = pause
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    assert (store.run(run["id"])["status"], store.run(run["id"])["pause_reason"]) == (
+        "paused", "user_requested",
+    )
+    assert store.conn.execute(
+        "SELECT COUNT(*) FROM report_phrase_repairs WHERE report_id = ?", (report_id,),
+    ).fetchone()[0] == 0
+    assert store.step(run["id"], "report_phrase_repair:IV", "model:report_phrase_repair")["status"] == "succeeded"
+    assert reports.section(report_id, "IV")["status"] == "running"
+    assert not _claims(store, reports, report_id, "IV")
+
+
+def test_report_wrong_model_reason_keeps_output_unapplied(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+
+    def select_model(si):
+        adapter.resolved_model = ("some-other-model" if si["task_type"] == "report_section"
+                                  and si["report_target"]["section_id"] == "IV" else None)
+
+    adapter.before = select_model
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    assert reports.section(report_id, "IV")["status"] == "failed"
+    assert reports.section(report_id, "IV")["validation"]["issues"][0]["code"] == "model_mismatch"
+    assert not _claims(store, reports, report_id, "IV")
+    assert all(reports.section(report_id, section)["status"] == "valid" for section in ("III", "V"))
+    assert store.run(run["id"])["pause_reason"] == "section_failed"
+    assert _reason_codes(store, run) == [("IV", "model_mismatch")]
+
+
+def test_report_budget_exhaustion_records_reason(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+    store.update_run(run["id"], budget_json=dumps(run["budget"] | {"max_model_calls": 1}))
+    run = store.run(run["id"])
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    assert not any(call["task_type"] == "report_section" for call in adapter.calls)
+    assert all(reports.section(report_id, section)["validation"]["issues"][0]["code"] == "budget_exhausted"
+               for section in ("III", "IV", "V"))
+    assert store.run(run["id"])["pause_reason"] == "section_failed"
+    assert _reason_codes(store, run) == [(section, "budget_exhausted") for section in ("III", "IV", "V")]
+
+
+def test_report_invalid_output_reason_uses_first_model_issue(tmp_path):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, broken_section="IV")
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    issue = reports.section(report_id, "IV")["validation"]["issues"][0]
+    assert issue["code"] != "unknown"
+    assert _reason_codes(store, run) == [("IV", issue["code"])]
+
+
+def test_report_rewrite_reason_uses_first_three_issues(tmp_path):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, empty_section="VIII")
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    section = reports.section(report_id, "VIII")
+    assert section["status"] == "draft"
+    issue_codes = [f"synthetic_limitation_{i}" for i in range(5)]
+    issues = [{"code": code, "detail": f"SYNTHETIC issue {i}"}
+              for i, code in enumerate(issue_codes)]
+    reports.save_section_draft(section["id"], section["step_id"], "draft", section["draft"],
+                               section["validation"] | {"issues": issues}, section["word_count"])
+    assert store.run(run["id"])["pause_reason"] == "section_must_be_rewritten"
+    assert reports.section(report_id, "VIII")["validation"]["issues"] == issues
+    detail = _pause_detail(reports, report_id, ["VIII"], 3)
+    assert detail["sections"] == ["VIII"]
+    assert [(reason["section_id"], reason["code"]) for reason in detail["reasons"]] == [
+        ("VIII", code) for code in issue_codes[:3]
+    ]
+    assert [reason["detail"] for reason in detail["reasons"]] == [
+        issue["detail"] for issue in issues[:3]
+    ]
+
+
+def test_report_failed_sections_and_reasons_keep_round_order(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+    adapter.fail = lambda si: (ModelStepResult("failed", error="SYNTHETIC connection lost")
+                               if si["task_type"] == "report_section"
+                               and si["report_target"]["section_id"] in {"III", "V"} else None)
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+    error = store.run(run["id"])["error"]
+    assert error["sections"] == ["III", "V"]
+    assert [reason["section_id"] for reason in error["reasons"]] == error["sections"]
+    assert _reason_codes(store, run) == [("III", "model_call_failed"), ("V", "model_call_failed")]
+    assert all(reports.section(report_id, section)["status"] == "failed" for section in error["sections"])
+
+
 def test_report_plan_uses_the_first_pdf_page_when_no_source_has_an_abstract(tmp_path):
     flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, passage_kind="pdf_page")
     source_id = store.conn.execute("SELECT source_version_id FROM corpus_memberships").fetchone()[0]
@@ -421,7 +747,8 @@ def test_an_ambiguous_citation_anchor_repairs_then_pauses_as_invalid_model_outpu
     stopped = store.run(run["id"])
     assert stopped["status"] == "paused"
     assert stopped["pause_reason"] == "section_failed"
-    assert stopped["error"] == {"sections": ["IV"]}
+    assert stopped["error"]["sections"] == ["IV"]
+    assert stopped["error"]["reasons"][0]["code"] == "citation_anchor_target_count"
     step = store.step(run["id"], "report_section:IV", "model:report_section")
     assert step["status"] == "failed"
     assert step["error_code"] == "invalid_model_output"
@@ -498,6 +825,9 @@ def test_viii_repair_that_restates_a_number_pauses_for_rewrite(tmp_path):
     assert viii["validation"]["ok"] is False
     issues = viii["validation"]["issues"]
     assert {issue["code"] for issue in issues} == {"unframed_exception", "limitations_number_restated"}
+    assert [reason["code"] for reason in store.run(run["id"])["error"]["reasons"]] == [
+        issue["code"] for issue in issues[:3]
+    ]
     assert any(issue["detail"].startswith("/claims/0/text:") for issue in issues)
     assert any(call["task_type"] == "report_phrase_repair" and
                call["report_target"]["section_id"] == "VIII" for call in adapter.calls)

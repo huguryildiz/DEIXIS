@@ -8,11 +8,17 @@ from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from deixis.domain import contracts, phrasebank
-from deixis.workflow.flow import OptionalStepFailed
+from deixis.workflow.flow import OptionalStepFailed, RunStopped
 from deixis.workflow.report.store import ReportStore
 
 if TYPE_CHECKING:
     from deixis.workflow.flow import ResearchFlow
+
+
+def _report_checkpoint(flow: ResearchFlow, run: dict[str, Any]) -> None:
+    flow._checkpoint(run["id"], run["scope_revision"])
+    if flow.store.run(run["id"])["status"] == "paused":
+        raise RunStopped
 
 
 def flagged_sentences(section_id: str, claims: list[dict[str, Any]],
@@ -108,6 +114,7 @@ async def repair_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[st
     try:
         output = await flow.deps.limiter.run(operation_key, factory)
     except OptionalStepFailed as exc:
+        _report_checkpoint(flow, run)
         exceptions = []
         for item in flagged:
             reports.save_phrase_repair(
@@ -117,6 +124,7 @@ async def repair_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[st
             exceptions.append(_exception(item, item["text"], f"repair failed: {exc.reason}"))
         return draft, exceptions
 
+    _report_checkpoint(flow, run)
     if output.get("invalid"):
         exceptions = []
         for item in flagged:

@@ -74,9 +74,9 @@ bir çıktı alanı eklerken `_step_input`'un izin listesini de beslediğinden e
 
 `_run_section` model adımını `optional=True` ile çağırır, böylece bir tur bitmeden hiçbir bölüm koşuyu
 duraklatmaz (aksi hâlde uçuştaki kardeş çağrılar duraklamış bir koşuya yazmaya devam ederdi). Bedeli: model
-bağlantısı düştüğünde ya da bütçe bittiğinde koşunun `pause_reason`'ı `section_failed` olur, gerçek neden yalnız
-o bölümün `validation_json`'ında kalır. **P13 (1k kesinti testleri) tam olarak bunu sınayacak; orada yeniden ele
-alınmalı.**
+bağlantısı düştüğünde ya da bütçe bittiğinde koşunun `pause_reason`'ı `section_failed` oluyordu, gerçek nedeni yalnız
+o bölümün `validation_json`'ında bırakıyordu.
+P13 (D121) nedeni koşunun `error.reasons` alanında sakladı; ekrandaki genel hata metni açık kaldı.
 
 ## Sıra neden değişti
 
@@ -297,8 +297,7 @@ modelin yazdığıyla doluyor.
 
 **30 Eylül: P12 yapıldı** (D120, istem `p6-slice1-p12-prompt.md`, commit: bu satırı ekleyen commit): rapor tek Markdown dosyası olarak dışa aktarılır (`report/export.py`, `GET …/reports/{id}/export`), ekranda Copy Markdown ve Download .md düğmeleri vardır; dosya ekranın "denetlenmedi" sınırlarını taşır, atıf ve denklem numaraları okuma sırasına bağlandı (`report_view` bölüm ve paragraf sırası).
 **P12** — 1j: Markdown dışa aktarma ve numaralandırma.
-**P13** — 1k: kesinti testleri (kota, çökme, iptal, kapsam değişimi, geç sonuç). Yukarıdaki
-"bölüm başarısızlığının nedeni kayboluyor" zayıflığı burada karara bağlanmalı.
+**P13** — 1k: kesinti testleri, geç sonuç denetimi ve bölüm hata nedenleri. ✅ (D121; commit: bu satırı ekleyen commit).
 **P14** — 1l: scriptlenmiş modelle Playwright kabul testi.
 **P15** — 1m: davranış vakaları ve R10 ekilmiş hata kümesi.
 **P16** — 1n: beklenti dosyası (koşudan **önce** donar ve commit'lenir), ölçüm raporu, karar kaydı, tasarım

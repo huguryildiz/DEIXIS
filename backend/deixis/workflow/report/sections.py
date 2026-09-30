@@ -6,9 +6,9 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 from deixis.domain import contracts, phrasebank
-from deixis.workflow.flow import OptionalStepFailed
+from deixis.workflow.flow import OptionalStepFailed, RunStopped
 from deixis.workflow.report import assembly, gaps, review_methodology, selection
-from deixis.workflow.report.phrasing import flagged_sentences, repair_section
+from deixis.workflow.report.phrasing import _report_checkpoint, flagged_sentences, repair_section
 from deixis.workflow.report.plan import freeze_plan
 from deixis.workflow.report.review import run_report_review
 from deixis.workflow.report.store import ReportStore
@@ -93,6 +93,23 @@ def _word_count(draft: dict[str, Any]) -> int:
     return sum(len(text.split()) for text in texts)
 
 
+def _pause_detail(reports: ReportStore, report_id: str, section_ids: list[str],
+                  max_issues: int) -> dict[str, Any]:
+    reasons = []
+    for section_id in section_ids:
+        issues = (reports.section(report_id, section_id)["validation"] or {}).get("issues") or []
+        for issue in issues[:max_issues] or [{"code": "unknown", "detail": None}]:
+            detail = issue.get("detail")
+            if isinstance(detail, str):
+                detail = detail[:300]
+            elif isinstance(detail, dict):
+                detail = {key: value[:300] if isinstance(value, str) else value
+                          for key, value in detail.items()}
+            reasons.append({"section_id": section_id, "code": issue.get("code") or "unknown",
+                            "detail": detail})
+    return {"sections": section_ids, "reasons": reasons}
+
+
 async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, Any], reports: ReportStore,
                        report_id: str, frozen_plan: dict[str, Any], snapshot: dict[str, Any],
                        section_id: str) -> str:
@@ -139,12 +156,14 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
     try:
         output = await flow.deps.limiter.run(operation_key, call)
     except OptionalStepFailed as exc:
+        _report_checkpoint(flow, run)
         reports.save_section_draft(
             section_key, step["id"], "failed", None,
             {"ok": False, "issues": [{"code": exc.reason, "detail": exc.detail}],
              "truncated": evidence["truncated"], **({"numbers": numbers} if numbers is not None else {})}, None,
         )
         return "failed"
+    _report_checkpoint(flow, run)
     if output.get("invalid"):
         reports.save_section_draft(
             section_key, step["id"], "failed", None,
@@ -162,6 +181,7 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
         flow.deps.package.files[phrasebank.PHRASEBANK], language,
     )
     draft, exceptions = await repair_section(flow, run, scope, report_id, section_id, draft, flagged)
+    _report_checkpoint(flow, run)
     limitations_issues = ([(i, issue) for i, claim in enumerate(draft["claims"])
                            for issue in contracts.limitations_claim_issues(claim)]
                           if section_id == "VIII" else [])
@@ -257,13 +277,11 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
             raise failure
         flow._checkpoint(run_id, run["scope_revision"])
         if any(result == "draft" for result in results):
-            flow._pause(run_id, "section_must_be_rewritten", {
-                "sections": [section_id for section_id, result in zip(round_ids, results) if result == "draft"],
-            })
+            section_ids = [section_id for section_id, result in zip(round_ids, results) if result == "draft"]
+            flow._pause(run_id, "section_must_be_rewritten", _pause_detail(reports, report_id, section_ids, 3))
         if any(result == "failed" for result in results):
-            flow._pause(run_id, "section_failed", {
-                "sections": [section_id for section_id, result in zip(round_ids, results) if result == "failed"],
-            })
+            section_ids = [section_id for section_id, result in zip(round_ids, results) if result == "failed"]
+            flow._pause(run_id, "section_failed", _pause_detail(reports, report_id, section_ids, 1))
 
     issues = assembly.run_assembly_checks(flow.store, reports, report_id)
     errors = [issue for issue in issues if not (

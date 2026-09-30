@@ -2,6 +2,16 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D121 — Report sections stop before applying late results, and run errors retain each section's stored reason
+
+**Status:** accepted 2026-09-30 as P6 slice 1 batch P13 (the 1k interruption tests). D119 remains reserved for slice 31.
+
+**Context:** A report section could finish a model call after cancellation, a requested pause, or a question revision and still write claims, gaps, or phrase-repair rows. A failed or draft section kept its issues in `report_sections.validation_json`, but the paused run's error named only section IDs.
+
+**Decision:** Each report section checks the run and scope after its model call and after phrase repair, before applying the result. Phrase repair also checks immediately after its own model call and on its optional-step failure path, before writing repair rows. A section checks for an already `paused` run because another section in the same round may have converted `pause_requested` to `paused` first. A stop leaves the section row `running` and any saved model-step output available for resume. The round still waits for all siblings, then re-raises `RunStopped`. `pause_reason` remains `section_failed` or `section_must_be_rewritten`; `error_json` keeps `sections` and adds ordered `reasons` from the stored validation issues (`section_id`, `code`, `detail`). Failed sections contribute their first issue; draft sections contribute up to three; a missing issue uses `unknown`. A string detail and string values one level inside a dict are capped at 300 characters. The wrong-model case remains a failed optional section with `model_mismatch` in `reasons`, with no claims or gaps applied. A step left `outcome_unknown` by recovery is sent again on resume because its result was never stored; a `succeeded` step reuses its stored output.
+
+**Limits:** Tests use fake and scripted models only; they do not measure a provider's real quota or crash behavior, or report quality. The crash test leaves simulated interrupted state and calls the real `Worker.recover()`; it does not kill a process. An `outcome_unknown` step is sent again on resume. The UI still shows only "A section could not be written." The reason is available in the run's `error`, and displaying it on the screen remains open. The plan's `model_mismatch` pause wording was not built: the run pauses as `section_failed`. These checkpoints guard the tested interruption points; they do not make the separate report-table writes atomic against an external process changing run state between synchronous writes. The phrase-repair checkpoint now also stops when a sibling has already converted `pause_requested` to `paused` while the call was out, closing that late repair-row gap.
+
 ## D120 — The report exports as one Markdown file built from the screen's own read model, with the screen's "not checked" limits written into it
 
 **Status:** accepted 2026-09-30 as P6 slice 1 batch P12 (prompt `docs/product/p6-slice1-p12-prompt.md`). D119 is reserved for slice 31 (legacy removal), which lands later.

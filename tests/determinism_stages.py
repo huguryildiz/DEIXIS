@@ -44,7 +44,7 @@ CONCEPTS = [
 ]
 SCOPE = {"question": "SYNTHETIC how is molecule release scheduling optimized?", "steering": None,
          "language_hint": None, "source_scope": "academic", "seed_mode": "question_only",
-         "search_workflow": "legacy", "model_connection": "fake", "requested_model": "fake-model",
+         "search_workflow": "sw", "effort": "standard", "model_connection": "fake", "requested_model": "fake-model",
          "reasoning_effort": None, "literature_model": None, "review_mode": "off"}
 PAGE_TEXT = ("SYNTHETIC molecule release schedule minimizes error. " * 40).strip()
 

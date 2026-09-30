@@ -60,7 +60,7 @@ def app_for(tmp_path, monkeypatch, handler, adapter, workflow="sw"):
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval="as_proposed", fulltext_fetch="off"),
                       adapters={"fake": adapter},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -224,23 +224,11 @@ def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_secon
     stored = store.latest_step_output(rid, "source_routing", 1)
     run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ?", (rid,)).fetchone()[0]
     again = protocol.build_protocol(store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"],
-        body["skill_package_hash"], Settings(data_dir=None, search_workflow="sw", search_query="code"), vocabulary=stored["vocabulary"],
+        body["skill_package_hash"], Settings(data_dir=None, search_query="code"), vocabulary=stored["vocabulary"],
         approval=store.approval_step(run_id)["output"]["approval"], routing=stored["routing"])
     assert sha256_hex(again) == rows[0]["body_sha256"]
 
 
-def test_a_legacy_research_still_runs_its_search_plan_step_and_opens_no_vocabulary_step(tmp_path, monkeypatch):
-    from test_provider_flow import routed, two_provider_plan
-
-    adapter = FakeAdapter(two_provider_plan)
-    with TestClient(app_for(tmp_path, monkeypatch, routed, adapter, workflow="legacy")) as client:
-        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
-        rid, run_id = start(client, "How is diffusion channel scheduling optimized?")
-        view, run = wait(client, rid, run_id)
-    assert run["status"] == "completed", run
-    keys = [s["operation_key"] for s in run["steps"]]
-    assert "search_plan" in keys and "vocabulary" not in keys
-    assert [c["task_type"] for c in adapter.calls].count("search_plan") == 1
 
 
 def test_a_vocabulary_that_matches_nothing_stops_the_run_before_any_search(tmp_path, monkeypatch):

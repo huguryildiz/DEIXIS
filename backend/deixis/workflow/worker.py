@@ -79,6 +79,25 @@ class Worker:
                 self.store._event(run["research_id"], "run_paused", {"status": "paused", "pause_reason": "backend_restarted"}, run["id"])
         return {"runs": len(runs), "steps": steps, "model_sessions": sessions}
 
+    def cancel_legacy_discovery(self) -> int:
+        """Close unfinished discovery-side runs after recovery and before work is picked."""
+        with transaction(self.store.conn):
+            rows = self.store.conn.execute(
+                "SELECT r.id, r.research_id FROM runs r JOIN scope_revisions s"
+                " ON s.research_id = r.research_id AND s.revision = r.scope_revision"
+                " WHERE s.search_workflow = 'legacy'"
+                " AND r.kind IN ('discovery', 'fulltext_fetch', 'fulltext_adjudication')"
+                " AND r.status IN ('queued', 'running', 'pause_requested', 'paused')"
+            ).fetchall()
+            for row in rows:
+                self.store.conn.execute(
+                    "UPDATE runs SET status = 'cancelled', pause_reason = 'legacy_workflow_removed',"
+                    " version = version + 1, updated_at = ? WHERE id = ?", (now(), row["id"]),
+                )
+                self.store._event(row["research_id"], "run_cancelled",
+                                  {"status": "cancelled", "reason": "legacy_workflow_removed"}, row["id"])
+        return len(rows)
+
     def wake(self) -> None:
         self._wake.set()
 

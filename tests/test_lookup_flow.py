@@ -145,7 +145,7 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None):
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setitem(CONNECTORS, "openalex", replace(CONNECTORS["openalex"], max_results=PAGE))
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval="as_proposed", fulltext_fetch="off"),
                       adapters={"fake": adapter or DeadAdapter()},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -350,28 +350,6 @@ def test_a_second_discovery_run_asks_only_about_what_is_still_unanswered(tmp_pat
     # asked again about the same two records.
     assert sources.batches == first_batches
     assert sources.lookups == first_lookups + ["10.1/a", "10.1/b"]
-
-
-def test_a_legacy_research_opens_no_lookup_step_and_sends_no_lookup_request(tmp_path, monkeypatch):
-    sources = Sources(works=[work(1, doi="10.1/a")])
-    app = app_for(tmp_path, monkeypatch, sources, workflow="legacy", adapter=FakeAdapter())
-    client = client_of(app)
-    try:
-        rid, run_id, view, run = discover(client)
-        store = app.state.store
-        keys = [s["operation_key"] for s in run["steps"]]
-        flags = store.conn.execute("SELECT COUNT(*) FROM record_flags").fetchone()[0]
-        decisions = store.conn.execute("SELECT COUNT(*) FROM stage_decisions").fetchone()[0]
-    finally:
-        client.__exit__(None, None, None)
-    assert not [key for key in keys if key.startswith(("lookup_plan", "record_lookup", "record_flags",
-                                                       "external_links"))]
-    assert sources.batches == [] and sources.lookups == []
-    assert (flags, decisions) == (0, 0)
-    # The legacy OpenAlex request is byte for byte what it was: no reference count in its `select`.
-    assert all("referenced_works_count" not in select for select in sources.pages)
-
-
 def test_an_sw_search_asks_openalex_for_the_reference_count_on_every_page(tmp_path, monkeypatch):
     sources = Sources(works=[work(1, doi="10.1/a", references=182)])
     app = app_for(tmp_path, monkeypatch, sources)

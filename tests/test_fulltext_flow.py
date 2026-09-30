@@ -113,7 +113,7 @@ def app_for(tmp_path, monkeypatch, transport, fetcher, workflow="sw", setting="a
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval=approval, fulltext_fetch=setting, fulltext_adjudication="off"),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport)), fetcher=fetcher,
@@ -212,29 +212,6 @@ def test_a_completed_sw_discovery_run_is_followed_by_one_retrieval_run(tmp_path,
     assert codes == {"W1": "not_read_yet", "W2": "no_fulltext"}
     assert summary["fetched"] == 1 and summary["no_fulltext"] == 1 and summary["not_settled"] == 0
     assert after == 2  # one per discovery run, never two for the same one
-
-
-def test_no_retrieval_run_follows_when_the_setting_is_off_or_the_research_is_legacy(tmp_path, monkeypatch):
-    app = app_for(tmp_path, monkeypatch, Transport([work(1)]), Fetcher({}), setting="off")
-    client = client_of(app)
-    try:
-        rid, _, _, run = discover(client)
-        off = retrieval_runs(client, rid)
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] == "completed" and off == []
-
-    legacy = app_for(tmp_path / "legacy", monkeypatch, Transport([work(1)]), Fetcher({}), workflow="legacy")
-    client = client_of(legacy)
-    try:
-        rid, _, _, run = discover(client)
-        assert run["status"] == "completed" and retrieval_runs(client, rid) == []
-        refused = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_fetch"})
-    finally:
-        client.__exit__(None, None, None)
-    assert refused.status_code == 422
-
-
 def test_a_paused_discovery_run_queues_nothing(tmp_path, monkeypatch):
     """Only a run that really completed leaves work behind; one waiting for the user is still theirs to resume.
 

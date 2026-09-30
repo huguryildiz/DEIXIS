@@ -138,46 +138,6 @@ def test_standard_waits_out_one_rate_limit_and_detailed_as_many_as_it_always_did
         assert error["rate_limit_retries"] == asked - 1, effort
 
 
-def test_a_legacy_search_waits_as_it_always_did_whatever_the_effort(tmp_path, monkeypatch):
-    """A `legacy` request is byte for byte what it was: it carries no effort, keeps the bounded retries and opens
-    no page step, on the `quick` effort that waits for nothing in an `sw` run."""
-    def one_provider_plan(step_input):
-        if step_input["task_type"] != "search_plan":
-            return valid_response(step_input)
-        output = json.loads(valid_response(step_input))
-        output["search_plan"].update(providers=["openalex"], concepts=[
-            {"label": "packet size", "role": "core", "synonyms": ["packet size"]}])
-        return json.dumps(output)
-
-    class RefusedOnce(PagedProviders):
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-            self.refused = False
-
-        def __call__(self, request):
-            if request.url.host == "api.openalex.org" and not self.refused:
-                self.refused = True
-                return httpx.Response(429, text="SYNTHETIC rate limit", headers={"retry-after": "0"})
-            return super().__call__(request)
-
-    providers = RefusedOnce(openalex_total=45)
-    app = app_for(tmp_path, monkeypatch, providers, workflow="legacy", adapter=FakeAdapter(one_provider_plan))
-    client = client_of(app)
-    try:
-        rid, run_id, view, run = discover(client, effort="quick")
-        descriptions = [row[0] for row in app.state.store.conn.execute(
-            "SELECT request_description FROM search_runs WHERE research_id = ?", (rid,))]
-    finally:
-        client.__exit__(None, None, None)
-    assert providers.openalex == [(0, 10)]  # the refused attempt was retried and served
-    rows = rows_of(view)
-    assert len(rows) == 1 and rows[0]["status"] == "completed"
-    assert [rows[0][key] for key in ("page_number", "read_limit", "read_total", "stop_reason", "unread_count")] == [None] * 5
-    assert descriptions == ['GET https://api.openalex.org/works search.title_and_abstract=\'"packet size"\''
-                            ' per_page=10 access=keyless']
-
-
-# ---- the abstract lookup -------------------------------------------------------------------------
 
 
 def two_records_no_abstract():

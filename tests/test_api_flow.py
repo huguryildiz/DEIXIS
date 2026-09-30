@@ -56,9 +56,15 @@ async def fake_fetch(url):
     return FetchResult("ok", data=make_pdf(["SYNTHETIC page one: molecule release schedule minimizes error."]), final_url=url, http_status=200)
 
 
+def sw_settings(tmp_path):
+    return Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1,
+                    protocol_approval="as_proposed", search_query="code",
+                    fulltext_fetch="off", citation_chaining="off")
+
+
 def app_for(tmp_path, adapter=None, http_status=200):
     # These API tests script pause/cancel inside one call and assume the next source is not yet in flight.
-    settings = Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765, model_concurrency=1)
+    settings = sw_settings(tmp_path)
     return create_app(settings, adapters={"fake": adapter or FakeAdapter()}, http_client=openalex_client(http_status),
                       fetcher=fake_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
 
@@ -86,6 +92,17 @@ def create(client, **overrides):
     response = client.post("/api/researches", json=body)
     assert response.status_code == 201, response.text
     return response.json()["research"]["id"]
+
+
+def include_sources(client, rid, view, predicate=lambda source: True):
+    for source in view["sources"]:
+        if source["version_role"] != "record" or not predicate(source):
+            continue
+        response = client.patch(f"/api/researches/{rid}/selections/{source['source_version_id']}",
+                                json={"state": "included", "expected_version": source["selection"]["version"],
+                                      "reason": "SYNTHETIC test selection"})
+        assert response.status_code == 200, response.text
+    return client.get(f"/api/researches/{rid}").json()
 
 
 def test_trash_restore_and_permanent_delete_with_evidence(tmp_path):
@@ -178,7 +195,7 @@ def test_institutional_access_is_checked_through_scopus_and_cached(tmp_path, mon
         return httpx.Response(200, json={"search-results": {}})
     monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
     monkeypatch.setattr(scopus, "route_source", lambda: route[0])
-    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(sw_settings(tmp_path), adapters={"fake": FakeAdapter()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fake_fetch,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as client:
@@ -204,7 +221,8 @@ def test_question_to_cited_answer_and_restart(tmp_path):
         view, run = wait_run(client, rid, first["id"])
         assert run["status"] == "completed", run
         assert view["counts"]["found"] == 3 and view["counts"]["unique"] == 3
-        assert all(s["selection"]["origin"] == "model_proposal" for s in view["sources"] if s["version_role"] == "record")
+        view = include_sources(client, rid, view)
+        assert all(s["selection"]["origin"] == "user" for s in view["sources"] if s["version_role"] == "record")
 
         second = next(s for s in view["sources"] if "relay" in s["title"])
         stale = client.patch(f"/api/researches/{rid}/selections/{second['source_version_id']}",
@@ -249,35 +267,6 @@ def test_question_to_cited_answer_and_restart(tmp_path):
         other = create(client, question="Unrelated research B question")
         leak = client.get(f"/api/researches/{other}/passages/{evidence['passage_id']}")
         assert leak.status_code == 404  # T08: passage outside research B's corpus
-
-
-def test_run_view_reports_the_plan_screening_notes_and_counting_step_outputs(tmp_path):
-    with TestClient(app_for(tmp_path)) as raw:
-        client = session(raw)
-        rid = create(client)
-        discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        view, run = wait_run(client, rid, discovery["id"])
-        assert run["status"] == "completed", run
-        plan = run["plan"]
-        assert plan["question_interpretation"] == "fake interpretation" and plan["search_rationale"] == "fake"
-        assert plan["scope_boundaries"] == ["fake"]
-        assert plan["concepts"][0]["label"] == "molecular communication" and plan["concepts"][0]["synonyms"] == ["molecular communication", "diffusion channel"]
-        assert [(q["provider_id"], q["query_text"], q["rationale"]) for q in plan["queries"]] == [
-            ("openalex", '("molecular communication" OR "diffusion channel") AND optimization',
-             'Core "molecular communication" with the method family "optimization"')]
-        assert [n["text"] for n in run["screening_notes"]] == ["fake screening notes."]
-        # A model step's output stays out of the view; the counting steps carry theirs.
-        assert next(s for s in run["steps"] if s["kind"] == "model:search_plan")["output"] is None
-
-        answer_run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
-        view, run = wait_run(client, rid, answer_run["id"])
-        assert run["status"] == "completed", run
-        assert run["plan"] is None and run["screening_notes"] == []
-        fetched = next(s for s in run["steps"] if s["kind"] == "fetch_pdf" and s["status"] == "succeeded")
-        assert fetched["output"]["page_count"] == 1 and fetched["output"]["passage_count"] >= 1
-        assert fetched["output"]["asset_id"] in [a["id"] for s in view["sources"] for a in s["access"]["assets"]]
-
-
 def test_pdf_discovery_is_visible_and_user_can_attach_pdf_to_existing_source(tmp_path):
     with TestClient(app_for(tmp_path)) as raw:
         client = session(raw)
@@ -312,7 +301,7 @@ def test_version_uncertain_pdf_candidate_is_attached_only_when_the_user_confirms
             return FetchResult("http_error", final_url=url, http_status=403)
         return FetchResult("ok", data=make_pdf(["SYNTHETIC repository copy"]), final_url=url, http_status=200)
 
-    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(sw_settings(tmp_path), adapters={"fake": FakeAdapter()},
                      http_client=openalex_client(), fetcher=fetcher, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
         client = session(raw)
@@ -382,14 +371,15 @@ def test_refused_link_leads_to_one_lookup_for_another_copy_and_is_not_requested_
             return FetchResult("ok", data=make_pdf(["SYNTHETIC repository copy"]), final_url=url, http_status=200)
         return FetchResult("http_error", final_url=url, http_status=403)
 
-    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(sw_settings(tmp_path), adapters={"fake": FakeAdapter()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fetcher,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
         client = session(raw)
         rid = create(client)
         discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        wait_run(client, rid, discovery["id"])
+        discovered, _ = wait_run(client, rid, discovery["id"])
+        include_sources(client, rid, discovered)
         answer = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
         view, run = wait_run(client, rid, answer["id"])
         assert run["status"] == "completed", run
@@ -567,65 +557,6 @@ def test_attached_only_scope_never_searches(tmp_path):
         assert client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).status_code == 422
         view = client.get(f"/api/researches/{rid}").json()
         assert view["search_runs"] == [] and view["scope"]["providers"] == []
-
-
-def test_selected_pdf_seed_is_frozen_for_the_search_plan_and_revisions(tmp_path):
-    adapter = FakeAdapter()
-    app = app_for(tmp_path, adapter)
-    with TestClient(app) as client:
-        session(client)
-        rid = create(client, source_scope="attached_and_academic", seed_mode="uploaded_seed")
-        assert client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).status_code == 422
-        first = client.post(f"/api/researches/{rid}/uploads", files={"file": (
-            "seed-notes.pdf", make_pdf(["SYNTHETIC molecule release model and scheduling objective.",
-                                        "SYNTHETIC channel parameters and constrained optimization."]), "application/pdf"
-        )})
-        assert first.status_code == 201, first.text
-        first_view = first.json()
-        seed_id = first_view["uploaded_source_version_id"]
-        selection_revision = first_view["research"]["selection_revision"]
-        selected = client.post(f"/api/researches/{rid}/seed", json={
-            "source_version_id": seed_id, "expected_version": first_view["research"]["version"]
-        })
-        assert selected.status_code == 200, selected.text
-        view = selected.json()
-        assert view["scope"]["revision"] == 2 and view["scope"]["seed_status"] == "ready"
-        assert view["scope"]["seed"]["source_version_id"] == seed_id
-        assert "passages" not in view["scope"]["seed"]
-        assert view["research"]["selection_revision"] == selection_revision
-        same = client.post(f"/api/researches/{rid}/seed", json={
-            "source_version_id": seed_id, "expected_version": view["research"]["version"]
-        }).json()
-        assert same["scope"]["revision"] == 2
-
-        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        _, result = wait_run(client, rid, run["id"])
-        assert result["status"] == "completed", result
-        payload_row = app.state.store.conn.execute(
-            "SELECT payload_json FROM step_inputs WHERE run_id = ? AND task_type = 'search_plan' ORDER BY rowid LIMIT 1",
-            (run["id"],),
-        ).fetchone()
-        payload = json.loads(payload_row["payload_json"])
-        assert [source["source_id"] for source in payload["sources"]] == [seed_id]
-        assert payload["passages"] and all(p["source_id"] == seed_id for p in payload["passages"])
-        assert "SYNTHETIC molecule release" in payload["passages"][0]["text"]
-        assert app.state.store.scope(rid)["seed_snapshot"]["asset_sha256"] == view["scope"]["seed"]["asset_sha256"]
-
-        asset_id = view["scope"]["seed"]["asset_id"]
-        removed = client.delete(f"/api/researches/{rid}/sources/{seed_id}/assets/{asset_id}")
-        assert removed.status_code == 200, removed.text
-        stale = client.get(f"/api/researches/{rid}").json()
-        assert stale["scope"]["seed_status"] == "stale"
-        assert client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).status_code == 409
-        revised = client.post(f"/api/researches/{rid}/scope", json={
-            "question": "SYNTHETIC revised scheduling question", "expected_version": stale["research"]["version"]
-        })
-        assert revised.status_code == 200, revised.text
-        assert revised.json()["scope"]["seed_status"] == "missing"
-        assert app.state.store.scope(rid, 2)["seed_snapshot"]["asset_id"] == asset_id
-        assert client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).status_code == 422
-
-
 def test_seed_requires_readable_uploaded_pdf_and_rejects_other_scopes(tmp_path):
     with TestClient(app_for(tmp_path)) as client:
         session(client)
@@ -868,29 +799,6 @@ def test_resume_after_crash_following_saved_answer_does_not_duplicate_it(tmp_pat
         view, resumed = wait_run(client, rid, run["id"], statuses=("completed", "failed", "cancelled"))
         assert resumed["status"] == "completed"
         assert len(view["answers"]) == 1 and adapter.calls == []
-
-
-def test_question_revision_during_discovery_stops_applying_its_results(tmp_path):
-    holder = {}
-
-    def responder(si):
-        if si["task_type"] == "search_plan":
-            store = holder["app"].state.store
-            store.revise_scope(si["research_id"], store.research(si["research_id"])["version"], "A revised molecule release question", None)
-        return valid_response(si)
-
-    adapter = FakeAdapter(responder)
-    holder["app"] = app = app_for(tmp_path, adapter)
-    with TestClient(app) as client:
-        session(client)
-        rid = create(client)
-        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        view, run = wait_run(client, rid, run["id"])
-        assert (run["status"], run["pause_reason"]) == ("cancelled", "scope_revised")
-        assert view["search_runs"] == [] and view["sources"] == []
-        assert [c["task_type"] for c in adapter.calls] == ["search_plan"]
-
-
 def test_submitted_and_published_versions_stay_separate_versions_of_one_work(tmp_path):
     # C: one work family, separate versions; evidence stays with the inspected version; versions are not counted twice.
     def cite_manuscript(si):
@@ -912,9 +820,9 @@ def test_submitted_and_published_versions_stay_separate_versions_of_one_work(tmp
         assert record["work_id"] == manuscript["work_id"] and record["source_version_id"] != manuscript["source_version_id"]
         assert (manuscript["version_label"], manuscript["doi"], manuscript["access"]["abstract_passage_id"]) == ("submittedVersion", None, None)
         assert manuscript["selection"]["origin"] == "default"  # not screened as a separate candidate
-        screening = [c for c in adapter.calls if c["task_type"] == "screening"][-1]
-        assert len(screening["candidates"]) == 3
 
+        view = include_sources(client, rid, view)
+        manuscript = next(s for s in view["sources"] if s["source_version_id"] == manuscript["source_version_id"])
         client.patch(f"/api/researches/{rid}/selections/{manuscript['source_version_id']}",
                      json={"state": "included", "expected_version": manuscript["selection"]["version"]})
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
@@ -974,52 +882,6 @@ def test_quick_find_matches_researches_and_their_sources(tmp_path):
         assert [(s["title"], s["research_id"]) for s in found["sources"]] == [("Relay Budget Notes", rid)]
         assert client.get("/api/search", params={"q": "  "}).json() == {"researches": [], "sources": []}
         assert client.get("/api/search", params={"q": "%"}).json() == {"researches": [], "sources": []}  # no wildcard matching
-
-
-def test_standard_depth_reads_more_results_screens_in_batches_and_gives_every_included_source(tmp_path):
-    from deixis.domain.rules import SCREENING_BATCH
-
-    seen, cited = [], {"base": 10}
-
-    def handler(request):
-        seen.append(request.url.params["per_page"])
-        works = [{"id": f"https://openalex.org/W{100 + i}", "doi": None, "display_name": f"SYNTHETIC molecule schedule study {i}",
-                  "publication_year": 2020, "type": "article", "authorships": [], "ids": {}, "primary_location": {},
-                  "best_oa_location": None, "abstract_inverted_index": {"Molecule": [0], "release": [1], f"schedule{i}.": [2]},
-                  "cited_by_count": cited["base"] + i} for i in range(45)]
-        return httpx.Response(200, json={"meta": {"count": 300}, "results": works})
-
-    adapter = FakeAdapter()
-    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": adapter},
-                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fake_fetch,
-                     extra_hosts=("testserver",), trusted_clients=("testclient",))
-    with TestClient(app) as client:
-        session(client)
-        rid = create(client, effort="standard")
-        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        view, run = wait_run(client, rid, run["id"])
-        assert run["status"] == "completed", run
-        # OpenAlex reads the core group alone to 100 results first, then the paired query to 25 (search-recall-depth note).
-        assert seen == ["100", "25"] and view["search_runs"][0]["provider_total"] == 300
-        assert [len(c["candidates"]) for c in adapter.calls if c["task_type"] == "screening"] == [SCREENING_BATCH, 45 - SCREENING_BATCH]
-        assert view["counts"]["included"] == 45
-        first = next(s for s in view["sources"] if s["title"].endswith("study 0"))
-        assert first["cited_by_count"] == 10 and first["cited_by_count_at"]
-
-        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
-        view, run = wait_run(client, rid, run["id"])
-        assert run["status"] == "completed", run
-        assert len(adapter.calls[-1]["sources"]) == 45 and view["answers"][0]["inputs_given"]["sources"] == 45
-        assert all("cited_by_count" not in s for s in adapter.calls[-1]["sources"])  # shown to the user, not given to the model
-        passage = client.get(f"/api/researches/{rid}/passages/{first['access']['abstract_passage_id']}").json()
-        assert passage["source"]["cited_by_count"] == 10
-
-        cited["base"] = 50  # the provider reports newer counts when the records are found again
-        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        view, _ = wait_run(client, rid, run["id"])
-        assert next(s for s in view["sources"] if s["title"].endswith("study 0"))["cited_by_count"] == 50
-
-
 def test_upload_size_is_bounded_before_and_while_reading(tmp_path, monkeypatch):
     from deixis.api import app as app_module
 
@@ -1049,7 +911,7 @@ def test_mutations_require_csrf_and_known_host(tmp_path):
         pdf_file = {"file": ("a.pdf", make_pdf(["SYNTHETIC"]), "application/pdf")}
         assert client.post(f"/api/researches/{rid}/uploads", files=pdf_file).status_code == 422  # academic-only scope
 
-    remote_app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "remote", port=8765), adapters={"fake": FakeAdapter()},
+    remote_app = create_app(Settings(data_dir=tmp_path / "remote", port=8765), adapters={"fake": FakeAdapter()},
                             http_client=openalex_client(), fetcher=fake_fetch, extra_hosts=("testserver",))
     with TestClient(remote_app) as remote:
         assert remote.get("/api/health").status_code == 403  # the test client's peer address is not loopback
@@ -1068,10 +930,12 @@ def test_literature_model_runs_search_steps_and_the_research_model_writes_the_an
         session(client)
         rid = create(client, requested_model="answer-model", reasoning_effort="high",
                      literature_model="lit-model", literature_reasoning_effort="low")
-        run_to_end(client, rid, "discovery")
+        discovered = run_to_end(client, rid, "discovery")
+        include_sources(client, rid, discovered)
         view = run_to_end(client, rid, "answer")
-        assert set(adapter.sent) == {("search_plan", "lit-model", "low"), ("screening", "lit-model", "low"),
-                                     ("research_title", "answer-model", "high"),
+        assert set(adapter.sent) == {("vocabulary_labels", "lit-model", "low"),
+                                     ("criterion_proposal", "lit-model", "low"),
+                                     ("abstract_screening", "lit-model", "low"),
                                      ("grounded_answer", "answer-model", "high")}
         assert view["answers"][0]["review"] is None and view["reviewer"]["model"] is None  # no reviewer set anywhere
         revised = client.post(f"/api/researches/{rid}/scope", json={"question": "How is molecule release timing optimized?",
@@ -1104,18 +968,20 @@ def test_each_role_can_use_a_model_from_another_connection(tmp_path):
     answer = FakeAdapter(models=["answer-model"], efforts=["high"])
     # A second connection registered under a connection id the step input contract lists.
     other = FakeAdapter(models=["lit-model", "review-model"], efforts=["low"])
-    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": answer, "gemini": other},
+    app = create_app(sw_settings(tmp_path), adapters={"fake": answer, "gemini": other},
                      http_client=openalex_client(), fetcher=fake_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as client:
         session(client)
         rid = create(client, requested_model="answer-model", reasoning_effort="high",
                      literature_connection="gemini", literature_model="lit-model", literature_reasoning_effort="low",
                      review_mode="custom", review_connection="gemini", review_model="review-model")
-        run_to_end(client, rid, "discovery")
+        discovered = run_to_end(client, rid, "discovery")
+        include_sources(client, rid, discovered)
         view = run_to_end(client, rid, "answer")
-        assert set(answer.sent) == {("research_title", "answer-model", "high"),
-                                    ("grounded_answer", "answer-model", "high")}
-        assert set(other.sent) == {("search_plan", "lit-model", "low"), ("screening", "lit-model", "low"),
+        assert set(answer.sent) == {("grounded_answer", "answer-model", "high")}
+        assert set(other.sent) == {("vocabulary_labels", "lit-model", "low"),
+                                   ("criterion_proposal", "lit-model", "low"),
+                                   ("abstract_screening", "lit-model", "low"),
                                    ("answer_review", "review-model", None)}
         assert view["reviewer"] == {"mode": "custom", "connection": "gemini", "model": "review-model", "reasoning_effort": None}
         assert view["answers"][0]["review"]["model"]["connection"] == "gemini"
@@ -1195,13 +1061,14 @@ def test_pdf_collection_run_retrieves_open_pdfs_without_a_model_call_and_the_ans
         fetched.append(url)
         return await fake_fetch(url)
 
-    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(sw_settings(tmp_path), adapters={"fake": FakeAdapter()},
                      http_client=openalex_client(), fetcher=fetcher, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
         client = session(raw)
         rid = create(client)
         discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        wait_run(client, rid, discovery["id"])
+        discovered, _ = wait_run(client, rid, discovery["id"])
+        include_sources(client, rid, discovered)
         collection = client.post(f"/api/researches/{rid}/runs", json={"kind": "pdf_collection"}).json()
         view, run = wait_run(client, rid, collection["id"])
         assert run["status"] == "completed", run
@@ -1223,6 +1090,7 @@ def test_dropped_pdfs_are_matched_to_included_sources_by_doi_or_title_and_not_at
         rid = create(client)
         discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
         view, _ = wait_run(client, rid, discovery["id"])
+        view = include_sources(client, rid, view)
         by_doi = next(s for s in view["sources"] if s["doi"] == "10.1/a")
         by_title = next(s for s in view["sources"] if s["title"] == "SYNTHETIC molecule schedule letter")
         files = [
@@ -1243,35 +1111,6 @@ def test_dropped_pdfs_are_matched_to_included_sources_by_doi_or_title_and_not_at
         other = create(client, question="Unrelated research B question")
         leak = client.get(f"/api/researches/{other}/passages/{evidence['passage_id']}")
         assert leak.status_code == 404  # T08: passage outside research B's corpus
-
-
-def test_run_view_reports_the_plan_screening_notes_and_counting_step_outputs(tmp_path):
-    with TestClient(app_for(tmp_path)) as raw:
-        client = session(raw)
-        rid = create(client)
-        discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        view, run = wait_run(client, rid, discovery["id"])
-        assert run["status"] == "completed", run
-        plan = run["plan"]
-        assert plan["question_interpretation"] == "fake interpretation" and plan["search_rationale"] == "fake"
-        assert plan["scope_boundaries"] == ["fake"]
-        assert plan["concepts"][0]["label"] == "molecular communication" and plan["concepts"][0]["synonyms"] == ["molecular communication", "diffusion channel"]
-        assert [(q["provider_id"], q["query_text"], q["rationale"]) for q in plan["queries"]] == [
-            ("openalex", '("molecular communication" OR "diffusion channel") AND optimization',
-             'Core "molecular communication" with the method family "optimization"')]
-        assert [n["text"] for n in run["screening_notes"]] == ["fake screening notes."]
-        # A model step's output stays out of the view; the counting steps carry theirs.
-        assert next(s for s in run["steps"] if s["kind"] == "model:search_plan")["output"] is None
-
-        answer_run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
-        view, run = wait_run(client, rid, answer_run["id"])
-        assert run["status"] == "completed", run
-        assert run["plan"] is None and run["screening_notes"] == []
-        fetched = next(s for s in run["steps"] if s["kind"] == "fetch_pdf" and s["status"] == "succeeded")
-        assert fetched["output"]["page_count"] == 1 and fetched["output"]["passage_count"] >= 1
-        assert fetched["output"]["asset_id"] in [a["id"] for s in view["sources"] for a in s["access"]["assets"]]
-
-
 def test_pdf_discovery_is_visible_and_user_can_attach_pdf_to_existing_source(tmp_path):
     with TestClient(app_for(tmp_path)) as raw:
         client = session(raw)
@@ -1306,7 +1145,7 @@ def test_version_uncertain_pdf_candidate_is_attached_only_when_the_user_confirms
             return FetchResult("http_error", final_url=url, http_status=403)
         return FetchResult("ok", data=make_pdf(["SYNTHETIC repository copy"]), final_url=url, http_status=200)
 
-    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(sw_settings(tmp_path), adapters={"fake": FakeAdapter()},
                      http_client=openalex_client(), fetcher=fetcher, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
         client = session(raw)
@@ -1376,14 +1215,15 @@ def test_refused_link_leads_to_one_lookup_for_another_copy_and_is_not_requested_
             return FetchResult("ok", data=make_pdf(["SYNTHETIC repository copy"]), final_url=url, http_status=200)
         return FetchResult("http_error", final_url=url, http_status=403)
 
-    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(sw_settings(tmp_path), adapters={"fake": FakeAdapter()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fetcher,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
         client = session(raw)
         rid = create(client)
         discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        wait_run(client, rid, discovery["id"])
+        discovered, _ = wait_run(client, rid, discovery["id"])
+        include_sources(client, rid, discovered)
         answer = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
         view, run = wait_run(client, rid, answer["id"])
         assert run["status"] == "completed", run
@@ -1742,29 +1582,6 @@ def test_resume_after_crash_following_saved_answer_does_not_duplicate_it(tmp_pat
         view, resumed = wait_run(client, rid, run["id"], statuses=("completed", "failed", "cancelled"))
         assert resumed["status"] == "completed"
         assert len(view["answers"]) == 1 and adapter.calls == []
-
-
-def test_question_revision_during_discovery_stops_applying_its_results(tmp_path):
-    holder = {}
-
-    def responder(si):
-        if si["task_type"] == "search_plan":
-            store = holder["app"].state.store
-            store.revise_scope(si["research_id"], store.research(si["research_id"])["version"], "A revised molecule release question", None)
-        return valid_response(si)
-
-    adapter = FakeAdapter(responder)
-    holder["app"] = app = app_for(tmp_path, adapter)
-    with TestClient(app) as client:
-        session(client)
-        rid = create(client)
-        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        view, run = wait_run(client, rid, run["id"])
-        assert (run["status"], run["pause_reason"]) == ("cancelled", "scope_revised")
-        assert view["search_runs"] == [] and view["sources"] == []
-        assert [c["task_type"] for c in adapter.calls] == ["search_plan"]
-
-
 def test_submitted_and_published_versions_stay_separate_versions_of_one_work(tmp_path):
     # C: one work family, separate versions; evidence stays with the inspected version; versions are not counted twice.
     def cite_manuscript(si):
@@ -1786,9 +1603,9 @@ def test_submitted_and_published_versions_stay_separate_versions_of_one_work(tmp
         assert record["work_id"] == manuscript["work_id"] and record["source_version_id"] != manuscript["source_version_id"]
         assert (manuscript["version_label"], manuscript["doi"], manuscript["access"]["abstract_passage_id"]) == ("submittedVersion", None, None)
         assert manuscript["selection"]["origin"] == "default"  # not screened as a separate candidate
-        screening = [c for c in adapter.calls if c["task_type"] == "screening"][-1]
-        assert len(screening["candidates"]) == 3
 
+        view = include_sources(client, rid, view)
+        manuscript = next(s for s in view["sources"] if s["source_version_id"] == manuscript["source_version_id"])
         client.patch(f"/api/researches/{rid}/selections/{manuscript['source_version_id']}",
                      json={"state": "included", "expected_version": manuscript["selection"]["version"]})
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
@@ -1848,52 +1665,6 @@ def test_quick_find_matches_researches_and_their_sources(tmp_path):
         assert [(s["title"], s["research_id"]) for s in found["sources"]] == [("Relay Budget Notes", rid)]
         assert client.get("/api/search", params={"q": "  "}).json() == {"researches": [], "sources": []}
         assert client.get("/api/search", params={"q": "%"}).json() == {"researches": [], "sources": []}  # no wildcard matching
-
-
-def test_standard_depth_reads_more_results_screens_in_batches_and_gives_every_included_source(tmp_path):
-    from deixis.domain.rules import SCREENING_BATCH
-
-    seen, cited = [], {"base": 10}
-
-    def handler(request):
-        seen.append(request.url.params["per_page"])
-        works = [{"id": f"https://openalex.org/W{100 + i}", "doi": None, "display_name": f"SYNTHETIC molecule schedule study {i}",
-                  "publication_year": 2020, "type": "article", "authorships": [], "ids": {}, "primary_location": {},
-                  "best_oa_location": None, "abstract_inverted_index": {"Molecule": [0], "release": [1], f"schedule{i}.": [2]},
-                  "cited_by_count": cited["base"] + i} for i in range(45)]
-        return httpx.Response(200, json={"meta": {"count": 300}, "results": works})
-
-    adapter = FakeAdapter()
-    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": adapter},
-                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fake_fetch,
-                     extra_hosts=("testserver",), trusted_clients=("testclient",))
-    with TestClient(app) as client:
-        session(client)
-        rid = create(client, effort="standard")
-        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        view, run = wait_run(client, rid, run["id"])
-        assert run["status"] == "completed", run
-        # OpenAlex reads the core group alone to 100 results first, then the paired query to 25 (search-recall-depth note).
-        assert seen == ["100", "25"] and view["search_runs"][0]["provider_total"] == 300
-        assert [len(c["candidates"]) for c in adapter.calls if c["task_type"] == "screening"] == [SCREENING_BATCH, 45 - SCREENING_BATCH]
-        assert view["counts"]["included"] == 45
-        first = next(s for s in view["sources"] if s["title"].endswith("study 0"))
-        assert first["cited_by_count"] == 10 and first["cited_by_count_at"]
-
-        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
-        view, run = wait_run(client, rid, run["id"])
-        assert run["status"] == "completed", run
-        assert len(adapter.calls[-1]["sources"]) == 45 and view["answers"][0]["inputs_given"]["sources"] == 45
-        assert all("cited_by_count" not in s for s in adapter.calls[-1]["sources"])  # shown to the user, not given to the model
-        passage = client.get(f"/api/researches/{rid}/passages/{first['access']['abstract_passage_id']}").json()
-        assert passage["source"]["cited_by_count"] == 10
-
-        cited["base"] = 50  # the provider reports newer counts when the records are found again
-        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        view, _ = wait_run(client, rid, run["id"])
-        assert next(s for s in view["sources"] if s["title"].endswith("study 0"))["cited_by_count"] == 50
-
-
 def test_upload_size_is_bounded_before_and_while_reading(tmp_path, monkeypatch):
     from deixis.api import app as app_module
 
@@ -1923,7 +1694,7 @@ def test_mutations_require_csrf_and_known_host(tmp_path):
         pdf_file = {"file": ("a.pdf", make_pdf(["SYNTHETIC"]), "application/pdf")}
         assert client.post(f"/api/researches/{rid}/uploads", files=pdf_file).status_code == 422  # academic-only scope
 
-    remote_app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "remote", port=8765), adapters={"fake": FakeAdapter()},
+    remote_app = create_app(Settings(data_dir=tmp_path / "remote", port=8765), adapters={"fake": FakeAdapter()},
                             http_client=openalex_client(), fetcher=fake_fetch, extra_hosts=("testserver",))
     with TestClient(remote_app) as remote:
         assert remote.get("/api/health").status_code == 403  # the test client's peer address is not loopback
@@ -1942,10 +1713,12 @@ def test_literature_model_runs_search_steps_and_the_research_model_writes_the_an
         session(client)
         rid = create(client, requested_model="answer-model", reasoning_effort="high",
                      literature_model="lit-model", literature_reasoning_effort="low")
-        run_to_end(client, rid, "discovery")
+        discovered = run_to_end(client, rid, "discovery")
+        include_sources(client, rid, discovered)
         view = run_to_end(client, rid, "answer")
-        assert set(adapter.sent) == {("search_plan", "lit-model", "low"), ("screening", "lit-model", "low"),
-                                     ("research_title", "answer-model", "high"),
+        assert set(adapter.sent) == {("vocabulary_labels", "lit-model", "low"),
+                                     ("criterion_proposal", "lit-model", "low"),
+                                     ("abstract_screening", "lit-model", "low"),
                                      ("grounded_answer", "answer-model", "high")}
         assert view["answers"][0]["review"] is None and view["reviewer"]["model"] is None  # no reviewer set anywhere
         revised = client.post(f"/api/researches/{rid}/scope", json={"question": "How is molecule release timing optimized?",
@@ -1978,18 +1751,20 @@ def test_each_role_can_use_a_model_from_another_connection(tmp_path):
     answer = FakeAdapter(models=["answer-model"], efforts=["high"])
     # A second connection registered under a connection id the step input contract lists.
     other = FakeAdapter(models=["lit-model", "review-model"], efforts=["low"])
-    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": answer, "gemini": other},
+    app = create_app(sw_settings(tmp_path), adapters={"fake": answer, "gemini": other},
                      http_client=openalex_client(), fetcher=fake_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as client:
         session(client)
         rid = create(client, requested_model="answer-model", reasoning_effort="high",
                      literature_connection="gemini", literature_model="lit-model", literature_reasoning_effort="low",
                      review_mode="custom", review_connection="gemini", review_model="review-model")
-        run_to_end(client, rid, "discovery")
+        discovered = run_to_end(client, rid, "discovery")
+        include_sources(client, rid, discovered)
         view = run_to_end(client, rid, "answer")
-        assert set(answer.sent) == {("research_title", "answer-model", "high"),
-                                    ("grounded_answer", "answer-model", "high")}
-        assert set(other.sent) == {("search_plan", "lit-model", "low"), ("screening", "lit-model", "low"),
+        assert set(answer.sent) == {("grounded_answer", "answer-model", "high")}
+        assert set(other.sent) == {("vocabulary_labels", "lit-model", "low"),
+                                   ("criterion_proposal", "lit-model", "low"),
+                                   ("abstract_screening", "lit-model", "low"),
                                    ("answer_review", "review-model", None)}
         assert view["reviewer"] == {"mode": "custom", "connection": "gemini", "model": "review-model", "reasoning_effort": None}
         assert view["answers"][0]["review"]["model"]["connection"] == "gemini"
@@ -2069,13 +1844,14 @@ def test_pdf_collection_run_retrieves_open_pdfs_without_a_model_call_and_the_ans
         fetched.append(url)
         return await fake_fetch(url)
 
-    app = create_app(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), adapters={"fake": FakeAdapter()},
+    app = create_app(sw_settings(tmp_path), adapters={"fake": FakeAdapter()},
                      http_client=openalex_client(), fetcher=fetcher, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
         client = session(raw)
         rid = create(client)
         discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        wait_run(client, rid, discovery["id"])
+        discovered, _ = wait_run(client, rid, discovery["id"])
+        include_sources(client, rid, discovered)
         collection = client.post(f"/api/researches/{rid}/runs", json={"kind": "pdf_collection"}).json()
         view, run = wait_run(client, rid, collection["id"])
         assert run["status"] == "completed", run
@@ -2097,6 +1873,7 @@ def test_dropped_pdfs_are_matched_to_included_sources_by_doi_or_title_and_not_at
         rid = create(client)
         discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
         view, _ = wait_run(client, rid, discovery["id"])
+        view = include_sources(client, rid, view)
         by_doi = next(s for s in view["sources"] if s["doi"] == "10.1/a")
         by_title = next(s for s in view["sources"] if s["title"] == "SYNTHETIC molecule schedule letter")
         files = [

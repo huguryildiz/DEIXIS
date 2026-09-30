@@ -385,6 +385,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
   // The human queue is an sw research's own surface (slice 17); a legacy research has no such tab.
   const hasQueue = view.scope.search_workflow === 'sw'
+  const discoveryReadOnly = view.research.read_only_reason === 'legacy_research_read_only'
   // An sw research whose current search finished may answer with nothing included: the answer records that (SW22).
   const answersWithoutInclude = hasQueue && view.scope.discovery_completed === true
   const queueCount = (view.counts.queue ?? 0) + (view.counts.look_again ?? 0)
@@ -438,6 +439,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <span title={t('Where DEIXIS looks for sources')}><ScopeIcon size={13} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
       <span title={t('How much searching and reading a run may do')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
     </div>
+    {discoveryReadOnly && <p className="legacy-mini-note" role="status">{t('This research used an earlier search method. Start a new research to search again.')}</p>}
 
     <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => { goTab(String(value)); setPicked([]) }}>
       <div className="research-tabs-bar">
@@ -461,7 +463,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <TabsContent value="answer">
         {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
         <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'pdf_collection' || r.kind === 'fulltext_fetch' || r.kind === 'fulltext_adjudication' || r.kind === 'pdf_ocr' || r.kind === 'answer' || r.kind === 'report') }} modelText={modelText}
-          onRetryFailedSearches={target => act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.'))}
+          onRetryFailedSearches={discoveryReadOnly ? undefined : target => act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.'))}
           onProtocolApproved={async () => { toast('success', t('Correction recorded. The run is queued again.')); await load(); onChanged() }}
           onChooseCodeQuery={target => act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.'))}
           onGiveKeyTerms={() => { keyTerms.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }); keyTerms.current?.focus({ preventScroll: true }) }}
@@ -474,9 +476,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           <span className="report-artifact-copy"><span className="report-artifact-meta"><FileText size={13} aria-hidden />{view.reportRuns[0].status === 'valid' ? t('Evidence report · V{n}', { n: view.reportRuns[0].report_version ?? '' }) : view.reportRuns[0].status === 'draft' ? t('Evidence report · draft') : t('Evidence report · being written')}</span><strong>{heading}</strong>{view.reportRuns[0].status === 'in_progress' && <small role="status">{t(latestEvidenceReportRun?.status === 'paused' ? 'Report paused' : 'The report is being written.')}</small>}</span>
           <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
         </button>}
-        {view.scope.source_scope === 'attached_and_academic' && <div className="research-seed">
+        {view.scope.source_scope === 'attached_and_academic' && !discoveryReadOnly && <div className="research-seed">
           <div><strong>{t('PDF guiding the search')}</strong><p>{view.scope.seed_status === 'ready'
-            ? t('{n} PDF passages were given to the search planner from {title}.', { n: view.scope.seed?.passage_count ?? 0, title: view.scope.seed?.title ?? '' })
+            ? t('{n} PDF passages from {title} guided the search.', { n: view.scope.seed?.passage_count ?? 0, title: view.scope.seed?.title ?? '' })
             : view.scope.seed_status === 'question_only'
               ? t('This earlier research searches from the question. Choose a PDF to guide a later search.')
               : t('Choose a readable PDF before searching scholarly providers.')}</p></div>
@@ -497,13 +499,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
         </div>}
         {/* Before the first answer, the next step is getting the included sources' PDFs (D49); the panel carries the answer button. */}
-        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady} act={act} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} onDropFiles={hasQueue ? dropForWaiting : undefined} /> :
+        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady && !discoveryReadOnly} act={act} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} onDropFiles={hasQueue ? dropForWaiting : undefined} /> :
         /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
            While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */
         active ? null : <><div className="answer-actions">
           <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
           {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
-          {hasAcademic && (view.search_runs.length
+          {hasAcademic && !discoveryReadOnly && (view.search_runs.length
             ? <Button className="quiet-action" variant="ghost" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}>{t('Search again')}</Button>
             : <Button variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
         </div><UploadedTextNote semantic={view.semantic} /></>}
@@ -571,9 +573,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <input ref={sourceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void uploadToSource(e.target.files); e.target.value = '' }} />
     <input ref={replaceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void reviewReplacement(e.target.files); e.target.value = '' }} />
 
-    <RevisionForm key={view.research.version} question={view.scope.question} disabled={busy || active}
+    {!discoveryReadOnly && <RevisionForm key={view.research.version} question={view.scope.question} disabled={busy || active}
       keyTerms={view.scope.search_workflow === 'sw' ? view.scope.key_terms ?? '' : null} keyTermsRef={keyTerms}
-      onSubmit={(text, terms) => act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />
+      onSubmit={(text, terms) => act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />}
     <ConfirmDialog open={Boolean(removeTarget)} dark={dark} title={t('Remove PDF?')}
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}

@@ -106,3 +106,13 @@ that paper ranked in the provider results (`provider_search` payloads):
 
 Not planned: a per-field local index (OpenAlex subset embedded with a local Ollama/LM Studio model) and a
 citation/recommendation snowball step. Both need a measured recall gap first.
+
+## Carried over from slice 31 (2026-09-30)
+
+- [ ] `sw` gives no discovery-time short title (D39) until the user includes a source: `_research_title` is gated on
+      `included_works`. Decide whether to title from the question alone at discovery end, or right after the first
+      inclusion (D119 Limits).
+- [ ] Slice 31 test backlog (gpt-6-sol code review, medium): the legacy answer test uses one short PDF so passage
+      ranking may be skipped; the legacy pdf/ocr/table/report test only walks Store status transitions; D119's
+      replacements for deleted protocol/provider record tests do not cover every old end-to-end assertion; the
+      evidence-table acceptance test includes its sources through the API, not the UI.

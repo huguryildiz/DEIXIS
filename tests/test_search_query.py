@@ -264,7 +264,7 @@ def client_for(tmp_path, monkeypatch, handler, adapter, approval="as_proposed", 
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw", search_query=setting,
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query=setting,
                               protocol_approval=approval, fulltext_fetch="off"),
                      adapters={"fake": adapter}, http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
                      fetcher=no_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
@@ -485,7 +485,7 @@ def test_the_code_setting_makes_no_model_query_step(tmp_path, monkeypatch):
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     adapter = FakeAdapter()
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw", search_query=setting,
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query=setting,
                               protocol_approval="as_proposed", fulltext_fetch="off"),
                      adapters={"fake": adapter}, http_client=httpx.AsyncClient(transport=httpx.MockTransport(OpenAlex())),
                      fetcher=no_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))

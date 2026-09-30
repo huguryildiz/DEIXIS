@@ -107,7 +107,7 @@ def app_for(tmp_path, monkeypatch, handler, chaining="auto", workflow="sw", adap
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval="as_proposed", fulltext_fetch=fetch, fulltext_adjudication="off",
                                citation_chaining=chaining),
                       adapters={"fake": adapter or FakeAdapter(responder())},
@@ -202,24 +202,6 @@ def test_chaining_off_sends_nothing_and_writes_no_step(tmp_path, monkeypatch):
     assert not [key for key in steps if "chain" in key]
     assert run["budget"]["citation_chaining"] == "off" and "max_chain_requests" not in run["budget"]
     assert body["citation_chaining"] == {"enabled": False} and "chain" not in body["thresholds"]
-
-
-def test_a_legacy_research_never_chains(tmp_path, monkeypatch):
-    transport = OpenAlex(keyword_pool(), citing={"W1": [work(700)]})
-    app = app_for(tmp_path, monkeypatch, transport, workflow="legacy", adapter=FakeAdapter(valid_response))
-    client = client_of(app)
-    try:
-        rid, run_id, view, run = discover(client)
-        store = app.state.store
-        steps = keys(store, run_id)
-        body = store.current_protocol(rid, 1)["body"]
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] == "completed" and transport.chain == []
-    assert not [key for key in steps if "chain" in key]
-    assert "citation_chaining" not in run["budget"] and "citation_chaining" not in body
-
-
 def test_a_run_queued_before_this_change_keeps_its_budget(tmp_path, monkeypatch):
     from deixis.domain.rules import CRITERION_CALLS, SUGGESTION_CALLS, TEST_EFFORT_BUDGETS
 

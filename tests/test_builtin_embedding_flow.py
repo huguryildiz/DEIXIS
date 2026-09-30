@@ -86,7 +86,7 @@ def make_app(tmp_path, monkeypatch, handler, local=None, workflow="sw", gemini_k
     if gemini_key:
         monkeypatch.setenv("GEMINI_API_KEY", "SYNTHETIC-key")
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval="as_proposed", fulltext_fetch="off"),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -648,17 +648,6 @@ def test_gemini_takes_the_question_as_written_and_never_the_sentence(session, sm
     s.store.save_english_question(rid, s.store.research(rid)["version"], ENGLISH_SENTENCE)
     run_id, view, run = s.again(rid)
     assert texts == [TURKISH] and s.step(run_id)["output"]["query_origin"] == "question"
-
-
-def test_a_legacy_research_follows_the_same_rule(session):
-    s = session(workflow="legacy")
-    rid, run_id, view, run = s.discover(question=TURKISH)
-    assert s.step(run_id) is None and s.local.calls == []
-    s.store.save_english_question(rid, s.store.research(rid)["version"], ENGLISH_SENTENCE)
-    run_id, view, run = s.again(rid)
-    assert s.step(run_id)["output"]["query_origin"] == "english_question" and s.local.calls[0] == ("query", 1)
-
-
 def test_an_older_library_migrates_with_no_sentences(tmp_path):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)

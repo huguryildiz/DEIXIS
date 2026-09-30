@@ -299,40 +299,6 @@ def test_the_expansion_revision_carries_the_same_criterion(tmp_path, monkeypatch
     assert first["inclusion_criterion"] is not None
     assert sha256_hex(criterion_fields(second)) == sha256_hex(criterion_fields(first))
     assert second["criterion_origin"] == first["criterion_origin"]
-
-
-def test_a_legacy_research_opens_no_criterion_step_and_its_protocol_body_is_what_it_was(tmp_path, monkeypatch):
-    from test_provider_flow import routed, two_provider_plan
-
-    adapter = FakeAdapter(two_provider_plan)
-    with TestClient(app_for(tmp_path, monkeypatch, routed, adapter, workflow="legacy")) as client:
-        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
-        rid, run_id = start(client, "How is diffusion channel scheduling optimized?")
-        view, run = wait(client, rid, run_id)
-    assert run["status"] == "completed", run
-    assert not any(key.startswith("criterion") for key in steps_of(run))
-    assert "criterion_proposal" not in [c["task_type"] for c in adapter.calls]
-    body = body_of(tmp_path, rid, 1)
-    assert criterion_fields(body) == {"inclusion_criterion": None, "criterion_parts": None, "cue_phrases": None,
-                                      "exclusion_title_words": None}
-    assert "criterion_origin" not in body and "criterion" not in body["thresholds"]
-    # The three calls the criterion adds are given to an sw discovery run alone: a legacy run keeps its preset.
-    assert body["budget"]["max_model_calls"] == TEST_EFFORT_BUDGETS[view["scope"]["effort"]].max_model_calls
-
-
-def test_the_legacy_protocol_body_has_the_digest_it_had_before_this_slice():
-    """Pinned from the body `build_protocol` produced at the commit before slice 06 (same arguments, same digest)."""
-    from deixis.config import Settings
-    from deixis.workflow.protocol import build_protocol
-    from determinism_stages import CONCEPTS, SCOPE
-
-    scope = SCOPE | {"providers": ["openalex", "crossref", "arxiv", "pubmed"]}
-    body = build_protocol(scope, {"max_candidates": 20}, {"concepts": CONCEPTS},
-                          [{"provider_id": "openalex", "query_text": "diffusion channel"}],
-                          "SYNTHETIC_package_hash", Settings(data_dir=None))
-    assert sha256_hex(body) == "b860f3c8ad392bdc49229c98594b4a15e17797fa19e4dd8d83cfe98259c31833"
-
-
 def test_a_population_two_proposals_name_is_recorded_and_read_back_with_the_frozen_criterion(tmp_path, monkeypatch):
     """SW23 (D106): the role two runs named is required, the base run holds it, and both fields travel with the
     criterion into the protocol and back out of it. The proposals are SYNTHETIC."""

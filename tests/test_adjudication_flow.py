@@ -36,7 +36,7 @@ def app_for(tmp_path, monkeypatch, transport, fetcher, *, workflow="sw", fetch="
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval="as_proposed", fulltext_fetch=fetch, fulltext_adjudication=reading,
                                model_concurrency=concurrency),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
@@ -190,47 +190,6 @@ def test_a_completed_retrieval_run_is_followed_by_a_reading_run_that_includes_on
     assert summary["include"] == 1 and summary["whole_text"] == 1 and summary["model_calls"] == 2
     assert len(adj_calls(adapter, reading["id"])) == 2
     assert pending == [] and before == after
-
-
-def test_off_legacy_and_a_research_with_no_criterion_queue_no_reading_run(tmp_path, monkeypatch):
-    off = app_for(tmp_path / "off", monkeypatch, Transport([work(1, pdf_url="https://example.org/w1.pdf")]),
-                  Fetcher({"https://example.org/w1.pdf": ok(named_pdf("10.1/oa.1"))}), reading="off")
-    client = client_of(off)
-    try:
-        rid, _, _, run = discover(client)
-        wait_fetch(client, rid)
-        none = runs_of(client, rid, "fulltext_adjudication")
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] == "completed" and none == []
-
-    legacy = app_for(tmp_path / "legacy", monkeypatch, Transport([work(1)]), Fetcher({}), workflow="legacy")
-    client = client_of(legacy)
-    try:
-        rid, _, _, run = discover(client)
-        refused = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"})
-        kinds = {r["kind"] for r in client.get(f"/api/researches/{rid}").json()["runs"]}
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] == "completed" and "fulltext_adjudication" not in kinds and refused.status_code == 422
-
-    bare = app_for(tmp_path / "bare", monkeypatch, Transport([]), Fetcher({}), reading="auto")
-    client = client_of(bare)
-    try:
-        rid = client.post("/api/researches", json={"question": QUESTION, "model_connection": "fake",
-                                                   "requested_model": "fake-model", "effort": "quick"}).json()["research"]["id"]
-        run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"}).json()["id"]
-        _, reading = wait(client, rid, run_id)
-        plan = step_output(bare.state.store, run_id, "adjudication_plan")
-        calls = bare.state.store.conn.execute(
-            "SELECT COUNT(*) FROM run_steps WHERE run_id = ? AND kind = 'model:fulltext_adjudication'", (run_id,)).fetchone()[0]
-    finally:
-        client.__exit__(None, None, None)
-    assert reading["status"] == "completed" and plan["reason"] == "no_criterion" and calls == 0
-
-
-# ---- the rule table, through the run ------------------------------------------------------------
-
 def test_an_unverified_quote_does_not_include(tmp_path, monkeypatch):
     works, fetcher = papers(1)
     app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=FakeAdapter(unverified_response))

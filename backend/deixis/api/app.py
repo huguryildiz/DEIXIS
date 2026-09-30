@@ -61,7 +61,8 @@ from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.report import export as report_export
 from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
-                                   SeedUnavailable, Store)
+                                   SeedUnavailable, Store, LegacyResearchReadOnly, DISCOVERY_RUN_KINDS,
+                                   legacy_research_read_only)
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, report_view, research_view
 from deixis.workflow.worker import Worker
@@ -85,7 +86,7 @@ class CreateResearch(BaseModel):
     model_connection: str = "codex"
     requested_model: str = Field(min_length=1, max_length=120)  # explicit: the connection never picks a model itself
     reasoning_effort: str | None = Field(default=None, min_length=1, max_length=40)
-    # Runs the search plan and screening. None: the research model runs them.
+    # Runs literature model steps. None: the research model runs them.
     literature_model: str | None = Field(default=None, min_length=1, max_length=120)
     literature_reasoning_effort: str | None = Field(default=None, min_length=1, max_length=40)
     # The connection that lists literature_model (D28). None: model_connection.
@@ -422,12 +423,15 @@ def create_app(
         app.state.institutional_access = None
         app.state.local_tools = local_tools.LocalTools(http)
         app.state.recovered = worker.recover() if owner else None
+        if owner:
+            app.state.legacy_cancelled = worker.cancel_legacy_discovery()
 
         async def take_over_when_released() -> None:
             # A previous instance may still be shutting down and holding the lock; own the worker once it is released.
             while not worker.acquire():
                 await asyncio.sleep(1.0)
             app.state.recovered = worker.recover()
+            app.state.legacy_cancelled = worker.cancel_legacy_discovery()
             app.state.owner = True
             equations.start()
             await worker.run_forever()
@@ -519,6 +523,16 @@ def create_app(
     @app.exception_handler(RevisionConflict)
     async def conflict(_: Request, exc: RevisionConflict):
         return JSONResponse({"detail": str(exc)}, status_code=409)
+
+    @app.exception_handler(LegacyResearchReadOnly)
+    async def legacy_read_only(_: Request, exc: LegacyResearchReadOnly):
+        return JSONResponse({"detail": "legacy_research_read_only"}, status_code=409)
+
+    def guard_legacy_discovery(store: Store, run: dict[str, Any]) -> None:
+        if run["kind"] in DISCOVERY_RUN_KINDS and legacy_research_read_only(
+            store.scope(run["research_id"], run["scope_revision"])
+        ):
+            raise LegacyResearchReadOnly("legacy_research_read_only")
 
     # The queue's 409 says why (slice 17): the row changed, or the reading of a confirmed PDF began. Other 409s keep
     # their one-sentence detail.
@@ -716,7 +730,7 @@ def create_app(
                                     body.literature_model, body.literature_reasoning_effort,
                                     body.review_mode, body.review_model, body.review_reasoning_effort,
                                     literature_connection=literature_connection, review_connection=review_connection,
-                                    seed_mode=body.seed_mode, search_workflow=settings.search_workflow,
+                                    seed_mode=body.seed_mode,
                                     key_terms=body.key_terms)
         return research_view(store, rid)
 
@@ -967,6 +981,8 @@ def create_app(
                         idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
         store = store_of(request)
         scope = store.scope(research_id)
+        if body.kind in DISCOVERY_RUN_KINDS and legacy_research_read_only(scope):
+            raise LegacyResearchReadOnly("legacy_research_read_only")
         if body.kind == "discovery" and scope["source_scope"] == "attached":
             raise HTTPException(422, "Academic search is not part of this research's source scope")
         if body.kind == "discovery" and scope["seed_mode"] == "uploaded_seed":
@@ -986,7 +1002,7 @@ def create_app(
         if body.kind == "fulltext_adjudication" and scope.get("search_workflow") != "sw":
             raise HTTPException(422, "Full-text reading runs belong to the search workflow")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
-        if body.kind == "discovery" and scope.get("search_workflow") == "sw":
+        if body.kind == "discovery":
             # The criterion proposal before the first search (D78) and the abstract stage's two runs over the
             # works the read limit reaches (D81) are given on top of the preset, so the preset itself — which a
             # legacy run and an answer run read — is what it always was (slice 06 review).
@@ -1038,6 +1054,7 @@ def create_app(
         store = store_of(request)
         run = store.run(run_id)
         store.research(run["research_id"])
+        guard_legacy_discovery(store, run)
         step = store.approval_step(run_id)
         if step is None or not step["output"]:
             raise HTTPException(409, "This run has not proposed a protocol to approve")
@@ -1064,6 +1081,7 @@ def create_app(
         store = store_of(request)
         run = store.run(run_id)
         store.research(run["research_id"])
+        guard_legacy_discovery(store, run)
         step = store.approval_step(run_id)
         if step is None or not step["output"]:
             raise HTTPException(409, "This run has not proposed a protocol to suggest terms for")
@@ -1097,6 +1115,7 @@ def create_app(
         store = store_of(request)
         run = store.run(run_id)
         store.research(run["research_id"])
+        guard_legacy_discovery(store, run)
         if run["status"] != "paused" or run["pause_reason"] != "search_query_failed":
             raise HTTPException(409, f"Cannot choose the code's query on a run in status {run['status']}")
         run = store.choose_code_query(run_id)
@@ -1108,6 +1127,8 @@ def create_app(
         store = store_of(request)
         run = store.run(run_id)
         store.research(run["research_id"])
+        if action in ("resume", "retry_failed"):
+            guard_legacy_discovery(store, run)
         status = run["status"]
         worker = request.app.state.worker
         if action == "retry_failed":
@@ -1218,7 +1239,7 @@ def create_app(
 
     @app.get("/api/effort-limits")
     async def effort_limits_view() -> dict[str, Any]:
-        return effort_limits(settings.search_workflow)
+        return effort_limits()
 
     @app.delete("/api/researches/{research_id}/sources")
     async def remove_sources(research_id: str, body: SourceRemoval, request: Request) -> dict[str, Any]:

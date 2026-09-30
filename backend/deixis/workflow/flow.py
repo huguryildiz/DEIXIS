@@ -1,9 +1,9 @@
 """Execution of discovery and answer runs.
 
-Discovery: search plan (model) → compiled provider queries → provider searches → screening proposal (model).
+Discovery: code vocabulary → compiled provider queries → paged provider searches → abstract screening.
 Answer: fetch accessible PDFs for included sources → text retrieval → grounded answer (model)
 → claim review (reviewer model, when one is set).
-The literature model runs the search plan and screening; the research model writes the answer.
+The literature model reads abstracts and full text; the research model writes the answer.
 Completed steps are skipped on resume. A connection or provider failure is recorded
 with its reason; discovery continues when another provider search succeeds, and nothing is silently substituted. A review failure is recorded
 on the review and does not pause the run: the answer never depends on its review.
@@ -69,7 +69,7 @@ from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, Table
 log = logging.getLogger(__name__)
 
 CAPABILITIES = {
-    "supported_tasks": ["search_plan", "screening", "grounded_answer", "answer_review", "cell_extraction", "table_columns", "research_title"],
+    "supported_tasks": ["grounded_answer", "answer_review", "cell_extraction", "table_columns", "research_title"],
     # `abstract_screening` is deliberately not listed: adding it would change every stored StepInput, including a
     # `legacy` run's, and this field tells the model what the product can do, not which step it is running.
     "unsupported_tasks": ["synthesis", "candidate_development", "claim_check", "experiment"],
@@ -437,51 +437,15 @@ class ResearchFlow:
         if scope["source_scope"] == "attached":
             return
         self._checkpoint(run_id, revision)
-        seed = scope["seed_snapshot"]
         if scope["seed_mode"] == "uploaded_seed" and self.store.seed_status(rid, scope) != "ready":
             self._pause(run_id, "seed_unavailable")
-        budget = run["budget"]
-        plan = vocabulary = criterion = approval = None
-        if scope.get("search_workflow") == "sw":
-            # The sw workflow takes the first search's words from the question by code, so no model runs before the
-            # search and a broken model connection does not stop it (SW2.3). Screening still goes to the model.
-            vocabulary, queries = await self._vocabulary(run, scope)
-            # A model writes the query from the question and the code's query is searched beside it (D92). With the
-            # setting on `code`, or with the user's own key terms, the code's query stands alone as it did in 13g.
-            vocabulary, queries = await self._search_query(run, scope, vocabulary, queries)
-            # Which domain sources are searched is read from the field distribution of the gate query, and the
-            # queries are compiled for those sources alone, before the user sees them (D93).
-            vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
-            # The criterion is proposed before the protocol is frozen, so the body this research searches under
-            # already carries it. It orders nothing and decides nothing yet (SW15.4 is slice 11).
-            criterion = await self._criterion(run, scope, vocabulary)
-            # Nothing above has left this machine except count probes. The user sees what would be searched and
-            # under which criterion, corrects it, and only then is the protocol frozen and a search sent (SW2.6).
-            vocabulary, queries, criterion, approval = await self._approval(run, scope, vocabulary, queries, criterion)
-        else:
-            output = await self._model_step(run, scope, "search_plan", "search_plan",
-                                            source_ids=[seed["source_version_id"]] if seed else None,
-                                            passage_rows=seed["passages"] if seed else None)
-            self._checkpoint(run_id, revision)
-            if output.get("invalid"):
-                self._fail(run_id, "invalid_model_output", {"step": "search_plan", "issues": output["issues"]})
-            if output["output_type"] == "ClarificationRequest":
-                self.store.save_answer(rid, run_id, None, output["step_input_id"], revision, "clarification",
-                                       output["result"], {"ok": True, "issues": []})
-                return
-            plan = output["result"]
-            if "queries" in plan:  # a SearchPlan v1 from before D44 carries the queries the model wrote
-                queries = [q for q in plan["queries"] if q["provider_id"] in scope["providers"]][: budget["max_provider_requests"]]
-            elif "queries" in output:
-                queries = output["queries"]
-            else:
-                # Compiled once and stored with the plan, so a resumed run searches the same queries even after a compiler change.
-                queries = query_compiler.compile_queries(plan, scope["providers"], budget["max_provider_requests"],
-                                                       budget.get("core_depth", 0), self.deps.settings.query_strategy)
-                self.store.set_step_output(self.store.step(run_id, "search_plan", "model:search_plan")["id"],
-                                           output | {"queries": queries, "query_compiler": (
-                                               query_compiler.COMPACT_VERSION if self.deps.settings.query_strategy == "compact_openalex_v1"
-                                               else query_compiler.VERSION)})
+        vocabulary = criterion = approval = None
+        # The first search's words come from code, so no model runs before the search (SW2.3).
+        vocabulary, queries = await self._vocabulary(run, scope)
+        vocabulary, queries = await self._search_query(run, scope, vocabulary, queries)
+        vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
+        criterion = await self._criterion(run, scope, vocabulary)
+        vocabulary, queries, criterion, approval = await self._approval(run, scope, vocabulary, queries, criterion)
         # The protocol is frozen before the first provider request and every step opened after it carries its hash (SW14.1).
         protocol_step = self.store.step(run_id, "protocol", "protocol:freeze")
         if protocol_step["status"] != "succeeded":
@@ -490,15 +454,13 @@ class ResearchFlow:
             # with its reason, never an edit of the first one (SW14.2).
             reason = "later_discovery_run" if self.store.current_protocol(rid, revision) else None
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
-                scope, budget, plan if plan and plan.get("concepts") else None, queries,
+                scope, run["budget"], None, queries,
                 self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
                 approval=approval, embedding_model=self._embedding_model(), routing=self._routing(run_id),
             ), reason=reason)
             self.store.finish_step(protocol_step["id"], "succeeded",
                                    output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
 
-        # Runs created before results_per_query existed split the candidate limit across their queries.
-        per_query = budget.get("results_per_query") or max(5, min(25, budget["max_candidates"] // max(1, len(queries))))
         # A failed search is recorded and shown, and the other searches go on (D18). The run pauses on a failure only when
         # none of its searches succeeded; resuming it then retries the failed searches.
         def searched() -> bool:
@@ -508,17 +470,10 @@ class ResearchFlow:
         # retries failures only when the whole search stage had no successful query (D18).
         retry_failed = bool(run["budget"].get("retry_failed_searches_only")) or not searched()
         failure = None
-        # An sw query is read page by page up to this effort's read limit; a legacy query reads its one page as it always has.
+        # Each query is read page by page up to its effort's read limit.
         effort = scope["effort"]
-        if scope.get("search_workflow") == "sw":
-            self._checkpoint(run_id, revision)
-            failure = await self._search_round(run, list(enumerate(queries)), retry_failed, effort)
-        else:
-            for index, query in enumerate(queries):
-                self._checkpoint(run_id, revision)
-                if self._skip_unsearchable(run, index, query):
-                    continue
-                failure = await self._search(run, index, query, per_query, retry_failed) or failure
+        self._checkpoint(run_id, revision)
+        failure = await self._search_round(run, list(enumerate(queries)), retry_failed, effort)
         if failure and not searched():
             self._pause(run_id, *failure)
         if not searched() and self._allowance_ended_searches(run_id):
@@ -526,68 +481,24 @@ class ResearchFlow:
             # a crash). Going on would screen a round that searched nothing (D18); asked to search again, the retry
             # adds to every query's share (review of 13f, 2026-09-23).
             self._pause(run_id, "budget_exhausted", {"limit": "query_requests"})
-        if scope.get("search_workflow") == "sw":
-            # A second arm that only adds: phrases the first round's own records offered, each kept by a count
-            # probe (SW2.4). The first round's query is not sent again.
-            more = await self._expansion(run, scope, vocabulary, queries, criterion, approval)
-            # A failed second-round search is recorded and left there: this run already has a search that succeeded,
-            # so nothing here can pause it (D18). The round starts only once the first is written: the expansion
-            # read the first round's records.
-            await self._search_round(run, list(enumerate(more, start=len(queries))), retry_failed, effort)
-
-        if scope.get("search_workflow") == "sw":
-            # Both rounds are done and nothing here feeds the search: a second source is asked for the abstracts
-            # that are missing, the links it names are read, and the survey labels are written (slice 05).
-            await self._second_sources(run, scope, vocabulary)
+        # Expansion reads the first round's records and searches only additional phrases.
+        more = await self._expansion(run, scope, vocabulary, queries, criterion, approval)
+        await self._search_round(run, list(enumerate(more, start=len(queries))), retry_failed, effort)
+        await self._second_sources(run, scope, vocabulary)
 
         self._checkpoint(run_id, revision)
         # A work is screened once, through its head; its other versions follow the head's selection (D46, D48).
         heads = set(self.store.work_heads(rid).values())
         pool = [c for c in self.store.candidates(rid, revision)
                 if c["origin"] != "user" and c["source_version_id"] in heads]
-        if scope.get("search_workflow") == "sw":
-            # The whole pool is embedded and then ranked before screening reads anything (SW7, SW8, slice 07). The
-            # records slice 05 holds back are ranked too; only the read plan leaves them out.
-            await self._source_similarity(run, scope, pool)
-            order = await self._ranking(run, scope, vocabulary)
-            self.store.update_run(run_id, stage="screening")
-            if self._overlaps(run):
-                # The open full text of the works whose place in the retrieval plan is already certain is fetched
-                # while the model still reads the other abstracts (slice 17a, SW10.1).
-                await self._overlap(run, scope, vocabulary, order)
-            else:
-                await self._screening(run, scope, vocabulary, order)
+        # Rank the full pool before deciding which abstracts to read.
+        await self._source_similarity(run, scope, pool)
+        order = await self._ranking(run, scope, vocabulary)
+        self.store.update_run(run_id, stage="screening")
+        if self._overlaps(run):
+            await self._overlap(run, scope, vocabulary, order)
         else:
-            self.store.update_run(run_id, stage="screening")
-            # A record an earlier run screened goes last, as it does in the candidate order. One this run screened
-            # keeps its place: a batch is keyed by where it starts, so a run resumed between two batches must find
-            # the same list, or the places the first batch held are read again and the next ones never are.
-            own = {s["id"] for s in self.store.run_steps(run_id)}
-
-            def earlier(c: dict[str, Any]) -> bool:
-                return bool(c["proposed"]) and c["proposal_step_id"] not in own
-
-            # The candidate order itself, with this run's own proposals left where they were.
-            screenable = sorted(pool, key=lambda c: (earlier(c), c["rank"] is not None, c["rank"] or 0, c["created_at"]))
-            candidates = screenable[: budget["max_candidates"]]
-            # Map through all candidates: a resumed run may apply a proposal made for an earlier candidate list.
-            by_candidate = {c["candidate_id"]: c["source_version_id"] for c in self.store.candidates(rid)}
-            for start in range(0, len(candidates), SCREENING_BATCH):
-                # The first batch keeps the single-call key so a run from before batching resumes without screening again.
-                key = "screening" if start == 0 else f"screening:{start // SCREENING_BATCH}"
-                output = await self._model_step(run, scope, key, "screening", candidate_rows=candidates[start:start + SCREENING_BATCH])
-                self._checkpoint(run_id, revision)
-                if output.get("invalid"):
-                    self._fail(run_id, "invalid_model_output", {"step": key, "issues": output["issues"]})
-                step = self.store.step(run_id, key, "model:screening")
-                for decision in output["result"]["decisions"]:
-                    self.store.apply_screening_proposal(
-                        rid, by_candidate[decision["candidate_id"]], decision["proposal"], decision["reason"],
-                        decision["evidence_basis"], step["id"],
-                    )
-            # An sw run scored the whole pool before it ranked it; a legacy run scores its screened candidates here,
-            # exactly where it always did.
-            await self._source_similarity(run, scope, candidates)
+            await self._screening(run, scope, vocabulary, order)
 
         # Derive a short title from the question and the included sources once screening is done. A structurally valid
         # answer later replaces it (store.save_answer). Optional: the run continues with the provisional title on failure.
@@ -2091,28 +2002,6 @@ class ResearchFlow:
                                    error_code="provider_not_searchable")
         return True
 
-    async def _search(self, run: dict[str, Any], index: int, query: dict[str, Any], per_query: int,
-                      retry_failed: bool = True) -> tuple[str, dict[str, Any]] | None:
-        """Run one legacy provider query: one unpaged request, as the legacy workflow has always sent it.
-
-        A failure is recorded and returned as (pause reason, detail). The sw workflow reads its queries through
-        `_search_round` instead.
-        """
-        run_id = run["id"]
-        connector = CONNECTORS[query["provider_id"]]
-        step = self.store.step(run_id, f"search:{index}", f"provider_search:{connector.provider_id}")
-        if step["status"] == "succeeded" or (step["status"] in ("failed", "outcome_unknown") and not retry_failed):
-            return None
-        # Bounded network and rate-limit retries are requests too and count against the same allowance.
-        allowance = (run["budget"]["max_provider_requests"] + run["budget"].get("retry_provider_requests", 0)
-                     + MAX_TRANSIENT_NETWORK_RETRIES + MAX_RATE_LIMIT_RETRIES)
-        if self.store.run(run_id)["usage"].get("provider_requests", 0) >= allowance:
-            self._pause(run_id, "budget_exhausted", {"limit": "provider_requests"})
-        self.store.start_step(step["id"])
-        limit = min(query.get("results") or per_query, connector.max_results)  # a deep core query carries its own depth
-        outcome = await self._send_search(run_id, connector, query, limit)
-        return self._record_search(run, step, query, outcome, limit)
-
     async def _send_search(self, run_id: str, connector: Connector, query: dict[str, Any], limit: int,
                            page: Page | None = None, stop: Callable[[], bool] | None = None) -> SearchOutcome | None:
         """Send one search request, with its bounded retries, counting each against the run and, for an sw page,
@@ -2125,8 +2014,7 @@ class ResearchFlow:
         attempts = 0
         while True:
             self.store.add_usage(run_id, "provider_requests", query=query_key)
-            # A paged read is the sw workflow's, and only it asks for the extra fields the connector names; the
-            # unpaged legacy request keeps the parameters it has always sent.
+            # A paged read supplies the connector's search options.
             outcome = await connector.search(self.deps.http, query["query_text"], limit, connector.api_key(),
                                              self.deps.settings.contact_email,
                                              **({"cursor": page.cursor, "max_rate_limit_retries": page.rate_limit_retries,
@@ -4256,6 +4144,7 @@ class ResearchFlow:
         What `_retrieve` selects from them is unchanged. Claim words stay out: they are the criterion (slice 11).
         """
         terms = [t for t in re.findall(r"\w+", scope["question"].lower()) if len(t) > 2 and t not in STOPWORDS]
+        # Only an already stored legacy plan can supply these answer-side concepts.
         plan = self.store.latest_step_output(research_id, "search_plan", scope["revision"])
         if plan and plan.get("output_type") == "SearchPlan":
             for concept in plan["result"]["concepts"]:
@@ -4646,9 +4535,6 @@ class ResearchFlow:
         sources = []
         for svid in source_ids:
             source = self.store.source(svid)
-            seed = scope.get("seed_snapshot") if task_type == "search_plan" else None
-            if seed and seed["source_version_id"] == svid:
-                source = source | {field: seed[field] for field in ("title", "year", "version_label")}
             kinds = {p["kind"] for p in self.store.passages_for(svid)}
             access = "pdf_available" if "pdf_page" in kinds else "abstract" if "abstract" in kinds else "metadata"
             sources.append({"source_id": svid, "work_id": source["work_id"], "title": source["title"], "year": source["year"],

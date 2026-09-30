@@ -61,15 +61,6 @@ def test_the_compiler_sends_no_query_to_a_verification_connector():
     assert {q["provider_id"] for q in queries} == {"openalex", "semantic_scholar"}
 
 
-def test_a_new_research_keeps_the_verification_connector_in_its_scope_and_hides_it_from_the_model(tmp_path, monkeypatch):
-    adapter = FakeAdapter(two_provider_plan)
-    view, run = discover(tmp_path, monkeypatch, routed, adapter)
-    assert run["status"] == "completed", run
-    # In scope, so `record_lookup:crossref` is still asked about a record whose DOI is known.
-    assert "crossref" in view["scope"]["providers"]
-    assert lookups.in_scope({"providers": view["scope"]["providers"]}, "crossref") is True
-    # Not offered to the model, which is why it can no longer name it in a plan.
-    assert "crossref" not in adapter.calls[0]["enabled_providers"]
 
 
 def test_an_sw_discovery_compiles_a_query_for_every_searchable_provider_and_none_for_crossref(tmp_path, monkeypatch):
@@ -89,61 +80,8 @@ def test_an_sw_discovery_compiles_a_query_for_every_searchable_provider_and_none
     assert "crossref" not in [s["provider"] for s in view["search_runs"]]
 
 
-def test_a_stored_query_for_a_connector_that_is_no_longer_searched_is_skipped_and_the_run_goes_on(tmp_path, monkeypatch):
-    down = {"openalex": True}
-
-    def handler(request):  # nothing answers until the run has paused, so the stored plan is the one that is resumed
-        return httpx.Response(503) if down["openalex"] else routed(request)
-
-    def store_a_crossref_query(store, run_id):
-        # A plan frozen before the connector's role changed. A resumed run reads its stored queries, so this is the
-        # only way one can still name Crossref.
-        step = store.step(run_id, "search_plan", "model:search_plan")
-        step["output"]["queries"] = step["output"]["queries"] + [
-            {"provider_id": "crossref", "query_text": "diffusion channel scheduling",
-             "rationale": "SYNTHETIC plan stored before D87"}]
-        store.set_step_output(step["id"], step["output"])
-        down["openalex"] = False
-
-    view, run = discover(tmp_path, monkeypatch, handler, FakeAdapter(two_provider_plan),
-                         before_resume=store_a_crossref_query)
-    assert run["status"] == "completed", run
-    skipped = [s for s in run["steps"] if s["kind"] == "provider_search:crossref"]
-    assert [(s["status"], s["error_code"]) for s in skipped] == [("cancelled", "provider_not_searchable")]
-    # Nothing was requested and nothing was recorded as a search, and the queries that could be sent still were.
-    assert "crossref" not in [s["provider"] for s in view["search_runs"]]
-    assert [(s["provider"], s["status"]) for s in view["search_runs"]][-2:] == [
-        ("openalex", "completed"), ("biorxiv", "completed")]
 
 
-def test_a_crossref_search_step_that_already_failed_keeps_its_failure_when_the_run_is_resumed(tmp_path, monkeypatch):
-    """The skip closes an open step only: a search that ended before the connector's role changed is history, and a
-    resumed run does not rewrite it as cancelled (slice 13b review)."""
-    down = {"openalex": True}
-
-    def handler(request):
-        return httpx.Response(503) if down["openalex"] else routed(request)
-
-    def store_a_failed_crossref_step(store, run_id):
-        step = store.step(run_id, "search_plan", "model:search_plan")
-        step["output"]["queries"] = step["output"]["queries"] + [
-            {"provider_id": "crossref", "query_text": "diffusion channel scheduling", "rationale": "SYNTHETIC"}]
-        store.set_step_output(step["id"], step["output"])
-        index = len(step["output"]["queries"]) - 1
-        failed = store.step(run_id, f"search:{index}", "provider_search:crossref")
-        store.start_step(failed["id"])
-        store.finish_step(failed["id"], "failed", error_code="http_error", error={"http_status": 503})
-        down["openalex"] = False
-
-    view, run = discover(tmp_path, monkeypatch, handler, FakeAdapter(two_provider_plan),
-                         before_resume=store_a_failed_crossref_step)
-    assert run["status"] == "completed", run
-    crossref = [(s["status"], s["error_code"]) for s in run["steps"] if s["kind"] == "provider_search:crossref"]
-    assert crossref == [("failed", "http_error")]
-    assert "crossref" not in [s["provider"] for s in view["search_runs"]]
-
-
-# ---- slice 13g Task 4: Scopus leaves the sw search and stays a legacy search source (D91) ----------------------
 
 
 def test_an_sw_vocabulary_compiles_no_scopus_query_and_a_legacy_plan_still_does():
@@ -195,12 +133,3 @@ def test_an_sw_research_with_scopus_configured_neither_searches_it_nor_names_it_
     assert "scopus" not in body["providers"] and "scopus" in body["verification_providers"]
     # The only Scopus request is the one access check of the lookup plan; no search went there.
     assert [params.get("view") for params in sources.elsevier] == ["COMPLETE"]
-
-
-def test_a_legacy_research_offers_scopus_to_the_model_as_it_always_did(tmp_path, monkeypatch):
-    adapter = FakeAdapter(two_provider_plan)
-    # `discover` clears every key, so Scopus is made keyless here to be in the scope of the new research.
-    monkeypatch.setitem(CONNECTORS, "scopus", replace(CONNECTORS["scopus"], key_env=None, key_required=False))
-    view, run = discover(tmp_path, monkeypatch, routed, adapter)
-    assert "scopus" in view["scope"]["providers"] and "scopus" in view["scope"]["search_providers"]
-    assert "scopus" in adapter.calls[0]["enabled_providers"]

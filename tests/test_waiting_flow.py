@@ -86,20 +86,6 @@ def test_the_list_holds_the_works_no_route_found_a_pdf_for_in_the_plan_s_order(t
     assert row["find_pdf_source_version_id"] == records["W2"]
     assert [v["source_version_id"] for v in row["versions"]] == [records["W2"]] and row["versions_digest"]
     assert len(runs_before) == 1  # reading the list opened nothing
-
-
-def test_a_legacy_research_has_no_list_and_its_match_answers_as_it_did(tmp_path, monkeypatch):
-    app, client, rid = sw_research(tmp_path, monkeypatch, workflow="legacy")
-    try:
-        refused = client.get(f"/api/researches/{rid}/waiting")
-        counts = client.get(f"/api/researches/{rid}").json()["counts"]
-        found = match(client, rid, ("a.pdf", named("10.1/oa.2")))
-    finally:
-        client.__exit__(None, None, None)
-    assert refused.status_code == 422 and "waiting_for_pdf" not in counts
-    assert list(found) == ["matches"] and [set(m) for m in found["matches"]] == [{"filename", "source_version_id", "basis"}]
-
-
 def test_links_open_through_the_proxy_once_one_is_set_and_a_bad_address_is_refused(tmp_path, monkeypatch):
     app, client, rid = sw_research(tmp_path, monkeypatch)
     try:

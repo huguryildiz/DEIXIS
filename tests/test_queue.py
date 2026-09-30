@@ -78,8 +78,10 @@ class Lib:
         self.store, self.field = store, FIELDS[field]
         self.ds = DecisionStore(store)
         self.rid = store.create_research(self.field["question"], "academic", "standard", ["openalex", "arxiv"],
-                                         "fake", "m", "en", search_workflow=workflow)
+                                         "fake", "m", "en")
         self.run = self.new_run("discovery")
+        if workflow == "legacy":
+            store.conn.execute("UPDATE scope_revisions SET search_workflow = 'legacy' WHERE research_id = ?", (self.rid,))
         store.freeze_protocol(self.rid, 1, body(self.field, elements=elements))
         self.n = 0
         self.reading: str | None = None

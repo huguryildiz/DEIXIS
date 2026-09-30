@@ -9,8 +9,8 @@ import path from 'node:path'
 // event stream.
 //
 // Its own fixture server, with retrieval and reading switched on (DEIXIS_FIXTURE_QUEUE) and four SYNTHETIC works the
-// scripted reading model answers so that each gives one row kind. A second server, the one A–G use, holds a legacy
-// research. A passing case shows application behavior, not whether a person reads a paper well.
+// scripted reading model answers so that each gives one row kind. A second server holds a stored legacy research.
+// A passing case shows application behavior, not whether a person reads a paper well.
 
 const REPO = path.resolve(process.cwd(), '..', '..')
 const PYTHON = path.join(REPO, '.venv', 'bin', 'python')
@@ -91,7 +91,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
   // DEIXIS_FIXTURE_AUDIT adds one work both reading runs include (slice 20): it is no queue row, and the audit sample's
   // group of agreeing includes shows it.
   const server = new QueueServer(8781, { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
-  const legacy = new QueueServer(8782, {})
+  const legacy = new QueueServer(8782, { DEIXIS_FIXTURE_STORED_LEGACY: 'on' })
   let api: Api
   let rid = ''
   let page: Page
@@ -115,7 +115,9 @@ test.describe.serial('J: the human queue of an sw research', () => {
 
   test('the tab and its count are in an sw research and not in a legacy one', async () => {
     const other = await apiOf(legacy)
-    const legacyId = await createResearch(other, 'How is SYNTHETIC molecule release scheduled in relay networks?')
+    const stored = await (await other.context.get('/api/researches')).json() as { id: string }[]
+    const legacyId = stored[0].id
+    expect((await (await other.context.get(`/api/researches/${legacyId}`)).json()).scope.search_workflow).toBe('legacy')
     await other.context.dispose()
     await page.goto(`${legacy.url()}/#/research/${legacyId}`)
     await expect(page.getByRole('tab', { name: /^Sources/ })).toBeVisible()

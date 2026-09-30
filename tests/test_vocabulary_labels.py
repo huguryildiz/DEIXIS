@@ -291,21 +291,6 @@ def test_a_research_whose_user_wrote_the_key_terms_opens_no_labelling_step(tmp_p
     assert vocabulary["block_assignment"] == "user"
     assert vocabulary["labelling"]["skipped"] == "user_key_terms"
     assert "vocabulary_labels" not in [c["task_type"] for c in adapter.calls]
-
-
-def test_a_legacy_research_opens_no_labelling_step(tmp_path, monkeypatch):
-    from test_provider_flow import routed, two_provider_plan
-
-    adapter = FakeAdapter(two_provider_plan)
-    with TestClient(app_for(tmp_path, monkeypatch, routed, adapter, workflow="legacy")) as client:
-        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
-        rid, run_id = start(client, "How is diffusion channel scheduling optimized?")
-        view, run = wait(client, rid, run_id)
-    assert run["status"] == "completed", run
-    assert not any(s["operation_key"].startswith("vocabulary") for s in run["steps"])
-    assert "vocabulary_labels" not in [c["task_type"] for c in adapter.calls]
-
-
 def test_the_frozen_protocol_names_the_origin_of_every_block_and_is_the_same_on_a_second_build(tmp_path, monkeypatch):
     from deixis.config import Settings
     from deixis.domain.canonical import sha256_hex
@@ -330,6 +315,6 @@ def test_the_frozen_protocol_names_the_origin_of_every_block_and_is_the_same_on_
     criterion = _criterion_result(store.latest_step_output(rid, "criterion", 1))
     again = protocol.build_protocol(
         store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"], body["skill_package_hash"],
-        Settings(data_dir=None, search_workflow="sw", search_query="code"), vocabulary=stored["vocabulary"], criterion=criterion,
+        Settings(data_dir=None, search_query="code"), vocabulary=stored["vocabulary"], criterion=criterion,
         approval=store.approval_step(run_id)["output"]["approval"], routing=stored["routing"])
     assert sha256_hex(again) == row["body_sha256"]

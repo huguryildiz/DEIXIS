@@ -52,7 +52,7 @@ class Research:
         self.rid, self.ds = self.lib.rid, self.lib.ds
         self.adapter = FakeAdapter(responder)
         self.flow = ResearchFlow(FlowDeps(
-            Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw", fulltext_adjudication=reading),
+            Settings(data_dir=tmp_path / "data", port=8765, fulltext_adjudication=reading),
             self.store, {"fake": self.adapter}, skill.load_skill_package(), None))
 
     def work(self):

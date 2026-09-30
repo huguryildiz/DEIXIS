@@ -68,7 +68,7 @@ def app_for(tmp_path, monkeypatch, transport, fetcher, *, adapter=None, reading=
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "sw")
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw", search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval=approval, fulltext_fetch="auto", fulltext_adjudication=reading),
                       adapters={"fake": adapter or FakeAdapter(responder(), delay=0.05)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport)), fetcher=fetcher,

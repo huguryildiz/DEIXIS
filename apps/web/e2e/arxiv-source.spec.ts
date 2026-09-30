@@ -77,6 +77,9 @@ test.describe.serial('O: the arXiv source route', () => {
     // shows nothing until then (D104's route runs where equations are read today: background, answer, table, cell).
     await startResearch(page, server, 'SYNTHETIC signal detection threshold study')
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
+    await page.getByRole('tab', { name: /Sources/ }).click()
+    await row(page, TITLE).getByRole('button', { name: 'Include' }).click()
+    await expect(row(page, TITLE).getByRole('button', { name: 'Include' })).toBeDisabled()
     await page.getByRole('tab', { name: /Answer/ }).click()
     await page.getByRole('button', { name: 'Generate answer now' }).click()
     await expect(page.getByText('Ran answer generation')).toBeVisible({ timeout: 60_000 })

@@ -199,7 +199,7 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None):
         monkeypatch.setitem(CONNECTORS, provider,
                             replace(CONNECTORS[provider], max_results=size, searchable=True))
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval="as_proposed", fulltext_fetch="off"),
                       adapters={"fake": adapter or DeadAdapter()},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -411,34 +411,10 @@ def test_a_paged_run_may_send_more_requests_than_max_provider_requests(tmp_path,
     assert rows_of(view)[-1]["stop_reason"] == "read_limit"
 
 
-def test_a_legacy_research_sends_one_request_and_stores_no_page(tmp_path, monkeypatch):
-    from fakes import valid_response
-
-    def one_provider_plan(si):
-        if si["task_type"] != "search_plan":
-            return valid_response(si)
-        output = json.loads(valid_response(si))
-        output["search_plan"].update(providers=["openalex"], concepts=[
-            {"label": "packet size", "role": "core", "synonyms": ["packet size"]}])
-        return json.dumps(output)
-
-    providers = PagedProviders(openalex_total=45)
-    client = client_of(app_for(tmp_path, monkeypatch, providers, workflow="legacy",
-                               adapter=FakeAdapter(one_provider_plan)))
-    try:
-        rid, run_id, view, run = discover(client)
-    finally:
-        client.__exit__(None, None, None)
-    assert providers.openalex == [(0, 10)]  # quick effort reads results_per_query records in one request
-    rows = rows_of(view)
-    assert len(rows) == 1
-    assert [rows[0][k] for k in ("page_number", "read_limit", "read_total", "stop_reason", "unread_count")] == [None] * 5
-    assert not [s for s in run["steps"] if ":page:" in s["operation_key"]]
-    assert view["counts"]["unread"] == 0
 
 
 class RateLimitedOnce(PagedProviders):
-    """Every page answers 429 once and then serves: the read succeeds, and each page cost two requests."""
+    """Each page returns 429 once, then a successful response."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

@@ -68,7 +68,7 @@ def app_for(tmp_path, monkeypatch, workflow="sw", adapter=None):
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    settings = Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code", fulltext_fetch="off")
+    settings = Settings(data_dir=tmp_path / "data", port=8765, search_query="code", fulltext_fetch="off")
     return create_app(settings, adapters={"fake": adapter or FakeAdapter()},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(404))),
                       fetcher=fake_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
@@ -300,22 +300,6 @@ def test_no_other_run_kind_opens_the_step_and_reading_a_run_leaves_none_pending(
         client.__exit__(None, None, None)
     assert "criterion_phrases" not in collection_keys and before == []
     assert [s["status"] for s in after] == ["succeeded"]
-
-
-def test_a_legacy_answer_run_opens_no_criterion_phrases_step(tmp_path, monkeypatch):
-    app = app_for(tmp_path, monkeypatch, workflow="legacy")
-    client = client_of(app)
-    try:
-        rid = research_with_pdf(client)
-        # Even with a protocol carrying phrases, a legacy run is what it was: it never reads them.
-        app.state.store.freeze_protocol(rid, 1, body_with(QUESTION, PHRASES))
-        _, run, _ = answer(client, rid)
-        steps = phrase_steps(app.state.store, rid)
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] == "completed" and steps == []
-
-
 def test_an_sw_answer_opens_the_same_number_of_model_sessions_as_a_legacy_one(tmp_path, monkeypatch):
     """Lesson D: the new step is code, so it spends nothing of the run's budget."""
     calls = {}

@@ -161,6 +161,7 @@ def test_queue_endpoints_refuse_legacy_and_mutations_need_the_csrf_header(tmp_pa
     client = client_of(legacy)
     try:
         rid, _, view, _ = discover(client)
+        legacy.state.store.conn.execute("UPDATE scope_revisions SET search_workflow = 'legacy' WHERE research_id = ?", (rid,))
         svid = view["sources"][0]["source_version_id"]
         listed = client.get(f"/api/researches/{rid}/queue")
         row = client.get(f"/api/researches/{rid}/queue/{svid}")
@@ -891,7 +892,7 @@ def quiet_app(tmp_path, monkeypatch):
     from deixis.api.app import create_app
     from deixis.config import Settings
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw"),
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765),
                      adapters={"fake": FakeAdapter(valid_response)},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(404))),
                      start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))

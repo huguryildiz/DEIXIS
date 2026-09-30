@@ -22,6 +22,7 @@ from deixis.workflow import links
 from deixis.workflow.source_keys import key_stem, suffixes
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
+DISCOVERY_RUN_KINDS = ("discovery", "fulltext_fetch", "fulltext_adjudication")
 ENDED_RUN_STATUSES = ("completed", "failed", "cancelled")
 # What became of a passage's file since the passage was stored (D45), over `passages p LEFT JOIN source_assets a`.
 EVIDENCE_STATUS_SQL = (
@@ -117,6 +118,14 @@ class SeedUnavailable(Exception):
     """The selected seed is not a readable, current PDF in this research."""
 
 
+class LegacyResearchReadOnly(Exception):
+    """Stored legacy research cannot start or revise discovery work."""
+
+
+def legacy_research_read_only(scope: dict[str, Any]) -> bool:
+    return scope.get("search_workflow") == "legacy"
+
+
 class Store:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
@@ -161,7 +170,7 @@ class Store:
         literature_connection: str | None = None,
         review_connection: str | None = None,
         seed_mode: str = "question_only",
-        search_workflow: str = "legacy",
+        search_workflow: str = "sw",
         key_terms: str | None = None,
     ) -> str:
         rid, ts = new_id("res"), now()
@@ -412,7 +421,7 @@ class Store:
         scope["providers"] = json.loads(scope.pop("providers_json"))
         snapshot = scope.pop("seed_snapshot_json", None)
         scope.setdefault("seed_mode", "question_only")
-        scope.setdefault("search_workflow", "legacy")
+        scope.setdefault("search_workflow", "sw")
         scope.setdefault("key_terms", None)
         scope["seed_snapshot"] = json.loads(snapshot) if snapshot else None
         return scope
@@ -422,6 +431,7 @@ class Store:
         """The next scope revision. `key_terms` given replaces the previous terms; left out, they carry over."""
         with transaction(self.conn):
             research = self.research(research_id)
+            self._guard_legacy_scope(research_id, research["current_scope_revision"])
             check_expected_version(expected_version, research["version"])
             current = dict(self.conn.execute(
                 "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?",
@@ -509,6 +519,7 @@ class Store:
         """Freeze a bounded reading of one uploaded PDF in a new scope revision."""
         with transaction(self.conn):
             research = self.research(research_id)
+            self._guard_legacy_scope(research_id, research["current_scope_revision"])
             check_expected_version(expected_version, research["version"])
             scope = self.scope(research_id)
             if scope["source_scope"] != "attached_and_academic":
@@ -651,15 +662,25 @@ class Store:
         return None
 
     # ---- runs -------------------------------------------------------------------------
+    def _guard_legacy_scope(self, research_id: str, revision: int) -> None:
+        if legacy_research_read_only(self.scope(research_id, revision)):
+            raise LegacyResearchReadOnly("legacy_research_read_only")
+
+    def _guard_legacy_run(self, run: dict[str, Any]) -> None:
+        if run["kind"] in DISCOVERY_RUN_KINDS:
+            self._guard_legacy_scope(run["research_id"], run["scope_revision"])
+
     def create_run(self, research_id: str, kind: str, budget: dict[str, Any], idempotency_key: str | None,
                    target: dict[str, Any] | None = None) -> dict[str, Any]:
         """Queue a run. Evidence table runs carry their target (table, columns, planned sources or cell)."""
         with transaction(self.conn):
+            research = self.research(research_id)
+            if kind in DISCOVERY_RUN_KINDS:
+                self._guard_legacy_scope(research_id, research["current_scope_revision"])
             if idempotency_key:
                 existing = self.conn.execute("SELECT * FROM runs WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
                 if existing:
                     return self.run(existing["id"])
-            research = self.research(research_id)
             active = self.conn.execute(
                 f"SELECT id FROM runs WHERE research_id = ? AND status IN ({','.join('?' * len(ACTIVE_RUN_STATUSES))})",
                 (research_id, *ACTIVE_RUN_STATUSES),
@@ -713,6 +734,8 @@ class Store:
         columns["updated_at"] = now()
         with transaction(self.conn):
             run = self.run(run_id)
+            if fields.get("status") in ("queued", "running"):
+                self._guard_legacy_run(run)
             assignments = ", ".join(f"{k} = ?" for k in columns)
             self.conn.execute(f"UPDATE runs SET {assignments}, version = version + 1 WHERE id = ?", (*columns.values(), run_id))
             if event:
@@ -728,6 +751,7 @@ class Store:
         """Queue only the failed provider searches of a completed or paused discovery run."""
         with transaction(self.conn):
             run = self.run(run_id)
+            self._guard_legacy_run(run)
             if run["kind"] != "discovery" or run["status"] not in ("completed", "paused"):
                 raise RevisionConflict("Only a completed or paused discovery run can retry failed searches")
             active = self.conn.execute(
@@ -932,6 +956,7 @@ class Store:
         step key, so a repeat after a failure opens a new step instead of reopening the failed one.
         """
         with transaction(self.conn):
+            self._guard_legacy_run(self.run(run_id))
             row = self.conn.execute(
                 "SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = 'protocol_approval'",
                 (run_id,)).fetchone()
@@ -955,6 +980,7 @@ class Store:
         request cannot hold the request open or leave the run queued with half of the work done.
         """
         with transaction(self.conn):
+            self._guard_legacy_run(self.run(run_id))
             row = self.conn.execute(
                 "SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = 'protocol_approval'",
                 (run_id,)).fetchone()
@@ -975,6 +1001,7 @@ class Store:
         Written on the model-query step, which the worker reads when it picks the run up; nothing is compiled here.
         """
         with transaction(self.conn):
+            self._guard_legacy_run(self.run(run_id))
             row = self.conn.execute(
                 "SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = 'search_query'",
                 (run_id,)).fetchone()
@@ -2389,32 +2416,6 @@ class Store:
             f" WHERE c.research_id = ?{revision_filter} ORDER BY s.proposal IS NOT NULL, c.rank, c.created_at", params
         ).fetchall()
         return [dict(r) for r in rows]
-
-    def apply_screening_proposal(self, research_id: str, svid: str, proposal: str, reason: str, basis: str, step_id: str) -> None:
-        """Record the proposal; change state only when the user has not decided."""
-        state = {"include": "included", "exclude": "excluded"}.get(proposal, "pending")
-        with transaction(self.conn):
-            current = self.conn.execute(
-                "SELECT * FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
-            ).fetchone()
-            if current["proposal_step_id"] == step_id:
-                return  # already applied by this step, e.g. when a run resumes after a restart
-            if current["origin"] == "user":
-                self.conn.execute(
-                    "UPDATE selections SET proposal = ?, proposal_reason = ?, proposal_basis = ?, proposal_step_id = ? WHERE research_id = ? AND source_version_id = ?",
-                    (proposal, reason, basis, step_id, research_id, svid),
-                )
-                return
-            self.conn.execute(
-                "UPDATE selections SET state = ?, origin = 'model_proposal', proposal = ?, proposal_reason = ?, proposal_basis = ?,"
-                " proposal_step_id = ?, version = version + 1, updated_at = ? WHERE research_id = ? AND source_version_id = ?",
-                (state, proposal, reason, basis, step_id, now(), research_id, svid),
-            )
-            self.conn.execute(
-                "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, reason, created_at) VALUES (?, ?, ?, ?, 'model_proposal', ?, ?)",
-                (research_id, svid, current["state"], state, reason, now()),
-            )
-            self._bump_selection_revision(research_id, current["state"], state)
 
     def set_research_title(self, research_id: str, scope_revision: int, title: str) -> None:
         """Apply a discovery-time title for the active question revision. A valid answer may rename it later."""

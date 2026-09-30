@@ -146,8 +146,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         return 0
     if args.port:
-        # Only the port moves; rebuilding Settings here dropped every other setting the environment had
-        # asked for (workflow, approval, the two follow-on runs, query strategy, concurrency) — slice 13 smoke run.
+        # Only the port moves; rebuilding Settings here dropped approval, follow-on run settings, query strategy
+        # and concurrency requested by the environment (slice 13 smoke run).
         settings = dataclasses.replace(settings, port=args.port)
     dev_hosts = ("127.0.0.1:5178", "localhost:5178") if args.dev else ()
     return serve(settings, not args.no_browser, dev_hosts)

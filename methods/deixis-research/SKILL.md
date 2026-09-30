@@ -1,6 +1,6 @@
 ---
 name: deixis-research
-description: Method instructions loaded by the DEIXIS application for its single research agent. Covers the supported source-grounded answer workflow (search plan, candidate screening, passage-linked answer), the review of an answer's claims against their cited passages, and evidence table cells and column suggestions. Not a globally installed skill; the application supplies each step's input records and output schema.
+description: Method instructions loaded by the DEIXIS application for its single research agent. Covers passage-linked answers, review of an answer's claims against cited passages, and evidence table cells and column suggestions. Not a globally installed skill; the application supplies each step's input records and output schema.
 ---
 
 # DEIXIS research method
@@ -33,8 +33,6 @@ that matches `task_type`:
 
 | `task_type` | Section |
 |---|---|
-| `search_plan` | Search plan |
-| `screening` | Screening |
 | `grounded_answer` | Grounded answer |
 | `report_plan` | [Report](references/report.md) — Report plan |
 | `report_section` | [Report](references/report.md) — Section instructions |

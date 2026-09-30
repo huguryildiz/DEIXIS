@@ -35,8 +35,7 @@ def test_runtime_text_loads_only_declared_files():
     assert f'<method-file path="{skill.PHRASEBANK}">' in text
     assert "provenance.json" not in text
     # The answer and report-section steps carry the phrasebank.
-    assert skill.PHRASEBANK not in package.runtime_text("screening")
-    assert skill.PHRASEBANK not in package.runtime_text("search_plan")
+    assert skill.PHRASEBANK not in package.runtime_text("abstract_screening")
     review = package.runtime_text("answer_review")
     assert '<method-file path="references/answer-review.md">' in review and skill.PHRASEBANK not in review
     for task in ("cell_extraction", "table_columns"):

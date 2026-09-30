@@ -377,6 +377,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     research = store.research(research_id)
     scope = store.scope(research_id)
     sw = scope.get("search_workflow") == "sw"
+    research["read_only_reason"] = None if sw else "legacy_research_read_only"
     # One queue context: the facts and every work's outcome, read once for all four (slice 19). Legacy has none.
     ctx = queue_context(store, research_id) if sw else None
     probe = probe_rules.probe_set(ctx) if ctx is not None else None

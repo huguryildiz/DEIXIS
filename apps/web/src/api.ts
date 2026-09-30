@@ -493,7 +493,7 @@ export type QueueAnswerResult = {
   selection: { source_version_id: string; state: Source['selection']['state']; origin: Source['selection']['origin']; version: number } | null
 }
 export type ResearchView = {
-  research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string }
+  research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string; read_only_reason: string | null }
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
   reportRuns: ReportSummary[]
   // null for a legacy research (slice 19).

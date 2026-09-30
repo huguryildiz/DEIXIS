@@ -115,7 +115,7 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None, embeddi
     else:
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval="as_proposed", fulltext_fetch="off"),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -394,23 +394,6 @@ def test_a_second_discovery_run_of_the_same_scope_ranks_again_and_leaves_the_fir
 
 
 # ---- legacy is untouched ---------------------------------------------------------------------
-
-def test_a_legacy_research_opens_no_ranking_step_and_scores_its_sources_where_it_always_did(tmp_path, monkeypatch):
-    app = app_for(tmp_path, monkeypatch, Pool(), workflow="legacy", embedding=True)
-    client = client_of(app)
-    try:
-        rid, run_id, view, run = discover(client)
-        store = app.state.store
-        keys = [s["operation_key"] for s in store.run_steps(run_id)]
-        body = json.loads(store.conn.execute(
-            "SELECT body_json FROM protocol_records WHERE research_id = ?", (rid,)).fetchone()[0])
-    finally:
-        client.__exit__(None, None, None)
-    assert "ranking" not in keys and "source_similarity" in keys
-    assert keys.index("source_similarity") > keys.index("screening")  # after screening, as before this slice
-    assert body["signals"] == [] and "ranking" not in body["thresholds"]
-
-
 def test_an_sw_run_scores_the_whole_pool_before_it_ranks_and_not_again_after_screening(tmp_path, monkeypatch):
     handler = Pool(embedding=STRONG)
     app = app_for(tmp_path, monkeypatch, handler, embedding=True)
@@ -457,7 +440,7 @@ def test_changing_the_embedding_setting_makes_no_decision_stale(tmp_path, monkey
     rid = store.create_research("SYNTHETIC question?", "academic", "quick", ["openalex"], "fake", "m", "en",
                                 search_workflow="sw")
     scope = store.scope(rid)
-    settings = Settings(data_dir=tmp_path / "data", search_workflow="sw", search_query="code")
+    settings = Settings(data_dir=tmp_path / "data", search_query="code")
     criterion = {"criterion": "SYNTHETIC: the paper states a model.", "parts": [], "cue_phrases": [],
                  "exclusion_title_words": [], "origin": "consensus", "base_run": 1, "runs_ok": 3,
                  "dropped_exclusion_title_words": [], "sought_term_in_criterion": True}
@@ -655,34 +638,3 @@ def test_a_run_paused_between_two_screening_batches_screens_the_next_places_of_t
     # connection cost is re-sent on resume, after batches that were already in flight when the run paused.
     assert resumed["batches"] == plan["batches"]
     assert sorted(read) == sorted(batch for batch in planned for _ in range(2))
-
-
-def test_a_legacy_run_paused_between_two_screening_batches_screens_every_candidate_when_it_resumes(tmp_path, monkeypatch):
-    """The same list on resume in the legacy workflow too: before, a batch's worth of candidates was never screened."""
-    from deixis.workflow.flow import SCREENING_BATCH
-
-    calls, failed = [], []
-
-    def fail_the_second_batch_once(si):
-        if si["task_type"] == "screening":
-            if len(calls) == 1 and not failed:
-                failed.append(si)
-                return ModelStepResult("failed", error="SYNTHETIC model connection dropped")
-            calls.append(si)
-        return None
-
-    size = 3 * SCREENING_BATCH
-    app = app_for(tmp_path, monkeypatch, Pool(pool(size)), workflow="legacy",
-                  adapter=FakeAdapter(valid_response, fail=fail_the_second_batch_once))
-    client = client_of(app)
-    try:
-        rid, run_id, view, run = discover(client, effort="standard")
-        assert run["status"] == "paused"
-        client.post(f"/api/runs/{run_id}/resume")
-        view, run = wait(client, rid, run_id)
-        sent = [c["candidate_id"] for si in calls for c in si["candidates"]]
-        unscreened = [c for c in app.state.store.candidates(rid, 1) if not c["proposed"]]
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] == "completed"
-    assert len(sent) == len(set(sent)) == size and not unscreened

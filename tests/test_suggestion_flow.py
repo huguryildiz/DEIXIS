@@ -176,22 +176,6 @@ def test_an_unattended_run_opens_no_suggestion_step_and_refuses_the_request(tmp_
         suggest(client, run_id, expect=409)
     finally:
         client.__exit__(None, None, None)
-
-
-def test_a_legacy_research_has_no_card_and_no_suggestion_route(tmp_path, monkeypatch):
-    client = client_of(app_for(tmp_path, monkeypatch, Counts(), suggesting(), workflow="legacy"))
-    try:
-        rid, run_id = start(client, QUESTION)
-        view, run = wait(client, rid, run_id)
-        assert not suggestion_steps(run), steps_of(run)
-        assert approval_of(view, run_id) is None
-        suggest(client, run_id, expect=409)
-    finally:
-        client.__exit__(None, None, None)
-
-
-# ---- the request itself ----------------------------------------------------------------------------------
-
 def test_a_requested_suggestion_stops_the_run_at_the_card_again_and_searches_nothing(tmp_path, monkeypatch):
     openalex = Counts()
     client = client_of(app_for(tmp_path, monkeypatch, openalex, suggesting()))

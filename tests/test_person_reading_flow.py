@@ -146,7 +146,7 @@ def still(tmp_path, monkeypatch):
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
 
     def make(workflow="sw", reading="auto"):
-        app = create_app(Settings(data_dir=tmp_path / workflow / "data", port=8765, search_workflow=workflow,
+        app = create_app(Settings(data_dir=tmp_path / workflow / "data", port=8765,
                                   fulltext_adjudication=reading),
                          adapters={"fake": FakeAdapter(valid_response)}, start_worker=False,
                          extra_hosts=("testserver",), trusted_clients=("testclient",))
@@ -264,7 +264,7 @@ def test_cancelling_a_reading_run_leaves_a_file_added_after_its_plan_froze_waiti
 
 def test_a_crash_after_the_attach_opens_the_reading_when_the_app_starts_again(tmp_path, monkeypatch):
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
-    settings = Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw", fulltext_adjudication="auto")
+    settings = Settings(data_dir=tmp_path / "data", port=8765, fulltext_adjudication="auto")
     first = create_app(settings, adapters={"fake": FakeAdapter(valid_response)}, start_worker=False,
                        extra_hosts=("testserver",), trusted_clients=("testclient",))
     client = client_of(first)

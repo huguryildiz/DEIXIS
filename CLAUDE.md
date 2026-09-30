@@ -30,9 +30,9 @@ Runtime data (SQLite `library.sqlite`, PDFs, provider payloads, `codex-home`) li
 
 ## Architecture
 
-**Runs and steps** (`workflow/`). A research has scope revisions; work happens in runs of two kinds, executed by `ResearchFlow` (`flow.py`):
-- `discovery`: `search_plan` model step (concept vocabulary with one core concept, plus providers; D44) → `providers/query_compiler.py` builds every provider query from the synonyms and they are stored with the plan step → one provider search per compiled query (a failed search is recorded and the rest continue, D18) → `screening` model steps in batches → optional embedding similarity.
-- `answer`: inspection (PDF fetch, one lookup for another open copy, lexical + semantic passage ranking fused with RRF) → `grounded_answer` model step → background `answer_review` claim check.
+**Runs and steps** (`workflow/`). A research has scope revisions; `ResearchFlow` (`flow.py`) executes its runs:
+- `discovery`: code builds a vocabulary from the question and optional PDF seed; optional model labels, criterion proposals, and a user approval settle the search terms. The protocol freezes before provider requests. Queries are read page by page within the effort budget, with failed requests recorded. Code ranks and screens records, and the model reads selected abstracts twice; optional full-text retrieval and citation chaining have separate recorded steps. Abstract screening does not automatically include a source.
+- `answer`: inspection (PDF fetch, one lookup for another open copy, lexical + semantic passage ranking fused with RRF) → `grounded_answer` model step → background `answer_review` claim check. Stored `legacy` researches can still answer from their existing corpus and plan concepts; their discovery-side runs and scope edits return 409.
 
 Every step is a row keyed by `operation_key`; a step that already `succeeded` returns its stored output, which is what makes pause/resume and crash recovery work without repeating model calls. `_checkpoint` stops the run on pause, cancel, or a newer scope revision. `worker.py` owns execution through an OS advisory lock and, on start, marks half-finished work `outcome_unknown`/`paused` rather than retrying it.
 

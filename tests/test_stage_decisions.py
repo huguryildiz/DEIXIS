@@ -34,10 +34,11 @@ def record(record_id, title="SYNTHETIC release scheduling for diffusion channels
 
 
 def research(store, search_workflow="sw"):
-    rid = store.create_research("SYNTHETIC question?", "academic", "standard", ["openalex", "arxiv"], "fake", "m", "en",
-                                search_workflow=search_workflow)
+    rid = store.create_research("SYNTHETIC question?", "academic", "standard", ["openalex", "arxiv"], "fake", "m", "en")
     run = store.create_run(rid, "discovery", {"max_model_calls": 4, "max_provider_requests": 4, "max_candidates": 50,
                                               "max_answer_passages": 8}, None)
+    if search_workflow == "legacy":
+        store.conn.execute("UPDATE scope_revisions SET search_workflow = 'legacy' WHERE research_id = ?", (rid,))
     return rid, run["id"]
 
 

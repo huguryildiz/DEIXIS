@@ -22,17 +22,19 @@
 
 ## What is it?
 
-DEIXIS starts with a research question. It searches selected scholarly providers or accepts attached PDFs, lets the user screen and include sources, exposes passages for inspection, and produces a source-linked answer. An evidence table can extract values from selected source versions, with quotes and revision history. Research, sources, answers, and tables remain in a local SQLite library that can be reopened and backed up.
+DEIXIS starts with a research question. Code builds search terms and reads selected scholarly providers page by page, or accepts attached PDFs. The user screens and includes sources, inspects passages, and can produce a source-linked answer. An evidence table can extract values from selected source versions, with quotes and revision history. Research, sources, answers, and tables remain in a local SQLite library that can be reopened and backed up.
 
 This is an **AI-assisted research workspace**, not an autonomous discovery system or a scientific-validity certificate. A structurally valid answer has passed deterministic schema and citation-link checks; those checks do not prove that each quoted passage supports the claim made about it.
 
 ## How it works
 
 1. Ask a question and choose the academic sources and model connection for the research.
-2. Inspect retrieved records or add PDFs; keep or exclude sources yourself, even when model screening differs.
+2. Inspect retrieved records or add PDFs; keep or exclude sources yourself. Abstract screening does not automatically include a source.
 3. Open the underlying passages and PDF pages. Reading depth, source versions, and unavailable text stay visible.
 4. Generate an answer with claim-to-passage links, or fill an evidence table from selected sources. Unresolved citation failures remain unverified drafts.
 5. Reopen the research, revise the selection, and retain earlier answers and cell revisions instead of silently replacing them.
+
+New researches use the `sw` search workflow. Researches stored with the earlier `legacy` workflow remain readable and can answer from their existing corpus; their search and scope revision controls are closed.
 
 The current checkout includes OpenAlex, Semantic Scholar, Crossref, arXiv, bioRxiv (via OpenAlex), PubMed, IEEE Xplore, Scopus, CORE, and a supplementary SerpApi search connector. Some require keys or access entitlements. Model adapters include Codex, Claude Code, Gemini, and DeepSeek; availability depends on local authentication or configured credentials, not merely on an adapter being present. Zotero collection import, BibTeX/RIS export, PDF extraction, optional OCR/equation reading, and library backup/restore are also implemented. See [provider settings](docs/product/providers.env.example) and [decisions](docs/decisions.md) for conditions and boundaries.
 

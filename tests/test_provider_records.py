@@ -37,9 +37,12 @@ def search(store, rid, run_id, index, provider, records):
 
 
 def research(store):
+    # Rebuild a stored pre-removal scope after its run row exists; current discovery is sw-only.
     rid = store.create_research("SYNTHETIC question?", "academic", "standard", ["openalex", "ieee_xplore", "arxiv"], "fake", "m", "en")
     run = store.create_run(rid, "discovery", {"max_model_calls": 4, "max_provider_requests": 4, "max_candidates": 50,
                                                "max_answer_passages": 8}, None)
+    if any(row[1] == "search_workflow" for row in store.conn.execute("PRAGMA table_info(scope_revisions)")):
+        store.conn.execute("UPDATE scope_revisions SET search_workflow = 'legacy' WHERE research_id = ?", (rid,))
     return rid, run["id"]
 
 
@@ -113,8 +116,13 @@ def published_record(record_id="W9", authors=AUTHORS, title=TITLE, doi=DOI):
 
 
 def screen(store, rid, run_id, svid, proposal="include"):
-    step = store.step(run_id, f"screening:{svid}", "model:screening")
-    store.apply_screening_proposal(rid, svid, proposal, "SYNTHETIC reason", "title_and_abstract", step["id"])
+    # Historical selection row: the removed model step cannot run in this checkout.
+    store.conn.execute(
+        "UPDATE selections SET state = ?, origin = 'model_proposal', proposal = ?,"
+        " proposal_reason = 'SYNTHETIC reason', proposal_basis = 'title_and_abstract'"
+        " WHERE research_id = ? AND source_version_id = ?",
+        ("included" if proposal == "include" else "excluded", proposal, rid, svid),
+    )
 
 
 def test_a_published_record_heads_the_work_of_its_screened_preprint(store):
@@ -363,6 +371,9 @@ def test_migration_joins_records_of_one_arxiv_preprint_found_before_d46(tmp_path
     db.migrate(conn)
     old_store = Store(conn)
     rid, run_id = research(old_store)
+    # The pre-0037 schema has no workflow column; its historical search behavior was legacy.
+    old_scope = old_store.scope
+    old_store.scope = lambda research_id, revision=None: old_scope(research_id, revision) | {"search_workflow": "legacy"}
     arxiv_doi = "10.48550/arxiv.2101.00001"
     search(old_store, rid, run_id, 0, "arxiv", [record("2101.00001v1", doi=arxiv_doi, merge_by_doi=False)])
     search(old_store, rid, run_id, 1, "openalex", [record("W5", doi=arxiv_doi)])

@@ -113,7 +113,7 @@ def test_the_suggestion_target_belongs_to_this_task_and_to_no_other():
     del without["suggestion_target"]
     assert "suggestion_target_mismatch" in {i.code for i in contracts.check_step_input(without)}
 
-    elsewhere = json.loads(json.dumps(json.loads((FIXTURES / "step-inputs.json").read_text())["A_search_plan"]))
+    elsewhere = json.loads(json.dumps(json.loads((FIXTURES / "step-inputs.json").read_text())["A_answer"]))
     elsewhere["suggestion_target"] = STEP_INPUT["suggestion_target"]
     assert "suggestion_target_mismatch" in {i.code for i in contracts.check_step_input(elsewhere)}
 

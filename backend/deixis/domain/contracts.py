@@ -21,16 +21,12 @@ from referencing import Registry, Resource
 
 from deixis.domain import phrasebank
 from deixis.paths import CONTRACTS_DIR, SKILL_DIR
-from deixis.providers import query_compiler
 from deixis.workflow.criterion import (MAX_PHRASE_WORDS, PARTS_PER_PROPOSAL, PHRASES_PER_PART,
                                        holds as criterion_holds, norm as normalize_phrase)
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, InvalidTableInput, check_value, column_spec
 
 SCHEMA_FILES = {
-    "SearchPlan": "search-plan.schema.json",
-    "ScreeningProposal": "screening-proposal.schema.json",
     "GroundedAnswerDraft": "grounded-answer-draft.schema.json",
-    "ClarificationRequest": "clarification-request.schema.json",
     "AnswerReview": "answer-review.schema.json",
     "EvidenceCellDraft": "evidence-cell-draft.schema.json",
     "TableColumnProposal": "table-column-proposal.schema.json",
@@ -48,10 +44,7 @@ SCHEMA_FILES = {
     "ReportReview": "report-review.schema.json",
 }
 SCHEMA_VERSIONS = {
-    "SearchPlan": "deixis.search_plan.v2",
-    "ScreeningProposal": "deixis.screening_proposal.v1",
     "GroundedAnswerDraft": "deixis.grounded_answer_draft.v3",
-    "ClarificationRequest": "deixis.clarification_request.v1",
     "AnswerReview": "deixis.answer_review.v1",
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
     "TableColumnProposal": "deixis.table_column_proposal.v1",
@@ -70,8 +63,6 @@ SCHEMA_VERSIONS = {
 # Model outputs each task may return. More than one output type is wrapped in an
 # object with one nullable property per type; exactly one must be non-null.
 TASK_OUTPUTS = {
-    "search_plan": ("SearchPlan", "ClarificationRequest"),
-    "screening": ("ScreeningProposal",),
     "grounded_answer": ("GroundedAnswerDraft",),
     "answer_review": ("AnswerReview",),
     "cell_extraction": ("EvidenceCellDraft",),
@@ -102,10 +93,7 @@ GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
 REPORT_TASKS = ("report_plan", "report_section", "report_phrase_repair", "report_review")
 # The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's (D37).
 MODEL_CELL_STATES = ("value", "unknown", "not_applicable", "not_found_in_inspected_scope")
-WRAPPER_KEYS = {
-    "SearchPlan": "search_plan",
-    "ClarificationRequest": "clarification_request",
-}
+WRAPPER_KEYS: dict[str, str] = {}
 COMMON_REF_PREFIX = "common.schema.json#/$defs/"
 ENVELOPE_FIELDS = ("step_input_id", "scope_revision", "skill_package_hash")
 
@@ -490,11 +478,7 @@ def _semantic_checks_best_effort(step_input: dict[str, Any], data: Any, report: 
 
 def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[str, Any], report: ValidationReport) -> None:
     allow = {k: set(v) for k, v in step_input["allowlist"].items()}
-    if output_type == "SearchPlan":
-        _check_search_plan(step_input, result, report)
-    elif output_type == "ScreeningProposal":
-        _check_screening(allow, result, report)
-    elif output_type == "GroundedAnswerDraft":
+    if output_type == "GroundedAnswerDraft":
         _check_answer(step_input, allow, result, report)
         _check_phrasing(step_input, result, report)
         _check_math(step_input, result, report)
@@ -677,48 +661,6 @@ def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: V
             report.warnings.append(Issue("plural_sources_for_one_source", f"/claims/{i}/text",
                                        f"{phrase!r} speaks of several sources, but this claim cites one source; "
                                        "use a frame for reporting what one source states"))
-
-
-def _check_search_plan(step_input: dict[str, Any], plan: dict[str, Any], report: ValidationReport) -> None:
-    """The model gives vocabulary and providers; the application compiles the queries from them (D44)."""
-    issues: list[Issue] = []
-    cores = sum(c["role"] == "core" for c in plan["concepts"])
-    if cores != 1:
-        issues.append(Issue("core_concept_count", "/concepts",
-                            f"{cores} concepts have role core; give exactly one core concept: the discriminating decision or "
-                            "mechanism phrase that every query requires, not the broad field name"))
-    for i, concept in enumerate(plan["concepts"]):
-        if concept["role"] == "core" and not any(s.strip() for s in concept["synonyms"]):
-            issues.append(Issue("core_without_synonyms", f"/concepts/{i}/synonyms",
-                                "the core concept has no synonyms; synonyms are the search terms, in the literature's language"))
-    enabled = set(step_input["enabled_providers"])
-    for i, provider in enumerate(plan["providers"]):
-        if provider not in enabled:
-            issues.append(Issue("provider_not_enabled", f"/providers/{i}", provider))
-    if len(set(plan["providers"])) != len(plan["providers"]):
-        issues.append(Issue("duplicate_provider", "/providers", "list each provider once"))
-    if set(plan["providers"]) == {"serpapi"}:
-        issues.append(Issue("supplementary_provider_limit", "/providers",
-                            "SerpApi only supplements direct scholarly providers; choose one of them as well"))
-    if not issues and not query_compiler.compile_queries(plan, step_input["enabled_providers"],
-                                                         step_input["budget"]["max_provider_requests"]):
-        issues.append(Issue("no_compiled_query", "/concepts",
-                            "no provider query can be built from these concepts and providers; give the core concept "
-                            "search-term synonyms and at least one other concept with synonyms, or choose another provider"))
-    report.issues += issues
-
-
-def _check_screening(allow: dict[str, set[str]], proposal: dict[str, Any], report: ValidationReport) -> None:
-    seen: set[str] = set()
-    for i, decision in enumerate(proposal["decisions"]):
-        cid = decision["candidate_id"]
-        if cid not in allow["candidate_ids"]:
-            report.issues.append(Issue("unknown_candidate_id", f"/decisions/{i}/candidate_id", cid))
-        if cid in seen:
-            report.issues.append(Issue("duplicate_candidate_decision", f"/decisions/{i}/candidate_id", cid))
-        seen.add(cid)
-    for cid in sorted(allow["candidate_ids"] - seen):
-        report.warnings.append(Issue("candidate_without_proposal", "/decisions", cid))
 
 
 def _check_review(step_input: dict[str, Any], review: dict[str, Any], report: ValidationReport) -> None:

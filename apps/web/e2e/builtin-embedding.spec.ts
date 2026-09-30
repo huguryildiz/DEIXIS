@@ -220,7 +220,7 @@ test.describe.serial('N: a failed passage ranking still says where uploaded text
     await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
     await startResearch(page, server, 'SYNTHETIC [embed-fails] comparison of molecular release schedules', 'Files + academic search')
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
-    await page.getByRole('button', { name: 'Generate answer now' }).click()
+    await page.getByRole('button', { name: 'Generate source-linked answer' }).click()
     await expect(page.getByText('Ran answer generation')).toBeVisible({ timeout: 60_000 })
     await page.getByRole('button', { name: /Ran answer generation/ }).click()
     const line = page.getByText(/Unavailable · continued with keyword search/)

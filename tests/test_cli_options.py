@@ -4,6 +4,8 @@ No model, no provider and no server are involved; `serve` is replaced by a recor
 handling of the settings it was given.
 """
 
+import pytest
+
 from deixis import __main__ as cli
 
 
@@ -30,7 +32,7 @@ def test_a_port_on_the_command_line_keeps_every_other_setting(monkeypatch, tmp_p
     monkeypatch.setenv("DEIXIS_MODEL_CONCURRENCY", "3")
     settings = settings_of(["serve", "--port", "8799", "--no-browser"], monkeypatch, tmp_path)
     assert settings.port == 8799
-    assert settings.search_workflow == "sw"
+    assert not hasattr(settings, "search_workflow")
     assert settings.protocol_approval == "as_proposed"
     assert settings.fulltext_fetch == "off"
     assert settings.fulltext_adjudication == "off"
@@ -44,4 +46,18 @@ def test_without_a_port_the_environment_decides(monkeypatch, tmp_path):
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "sw")
     settings = settings_of(["serve", "--no-browser"], monkeypatch, tmp_path)
     assert settings.port == 8801
-    assert settings.search_workflow == "sw"
+    assert not hasattr(settings, "search_workflow")
+
+
+@pytest.mark.parametrize("command", ["serve", "backup", "restore"])
+def test_obsolete_workflow_env_warns_once_and_does_not_block_commands(monkeypatch, tmp_path, command):
+    monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "legacy")
+    monkeypatch.setenv("DEIXIS_DATA_DIR", str(tmp_path / "data"))
+    called = []
+    monkeypatch.setattr(cli, "serve", lambda *args: called.append("serve") or 0)
+    monkeypatch.setattr(cli.backup, "create_backup", lambda *args: called.append("backup") or tmp_path / "backup")
+    monkeypatch.setattr(cli.backup, "restore_backup", lambda *args: called.append("restore") or {"researches": 0, "files": 0})
+    args = ["serve", "--no-browser"] if command == "serve" else [command, str(tmp_path / "backup")]
+    with pytest.warns(UserWarning, match="DEIXIS_SEARCH_WORKFLOW is ignored") as caught:
+        assert cli.main(args) == 0
+    assert len(caught) == 1 and called == [command]

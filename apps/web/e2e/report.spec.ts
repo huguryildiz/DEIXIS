@@ -53,6 +53,10 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await page.waitForURL(/#\/research\//)
     const researchId = page.url().split('/research/')[1].split('/')[0]
     await expect(page.getByText('Ran search & screening')).toBeVisible()
+    await page.getByRole('tab', { name: /Sources/ }).click()
+    const source = page.locator('.source-row:not(.is-other-version)').filter({ hasText: 'SYNTHETIC molecule release scheduling with bisection' })
+    await source.getByRole('button', { name: 'Include' }).click()
+    await expect(source.getByRole('button', { name: 'Include' })).toBeDisabled()
     await page.getByRole('tab', { name: /Evidence/ }).click()
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
@@ -231,6 +235,11 @@ test('a scripted report review finding appears as a model flag', async ({ browse
     await page.getByRole('button', { name: 'Start research' }).click()
     await page.waitForURL(/#\/research\//)
     const researchId = page.url().split('/research/')[1].split('/')[0]
+    await expect(page.getByText('Ran search & screening')).toBeVisible()
+    await page.getByRole('tab', { name: /Sources/ }).click()
+    const source = page.locator('.source-row:not(.is-other-version)').filter({ hasText: 'SYNTHETIC molecule release scheduling with bisection' })
+    await source.getByRole('button', { name: 'Include' }).click()
+    await expect(source.getByRole('button', { name: 'Include' })).toBeDisabled()
     await page.getByRole('tab', { name: /Evidence/ }).click()
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })

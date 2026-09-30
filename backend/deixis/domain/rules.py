@@ -36,8 +36,8 @@ SW_READ_LIMIT = {"quick": 400, "standard": 1_000, "detailed": 1_000}
 # How many times a paged sw read or an sw abstract lookup batch waits out a provider's 429, by effort (D88).
 # `quick` does not wait at all: the rate-limited page or batch ends that read there, its records stay `unread` /
 # `abstract_not_found` and are counted, and the run goes on. `detailed` waits as much as it always did. The waiting
-# is bounded by count, never by a clock: no effort stops a run at a time (D88). The `legacy` workflow and the
-# Crossref lookup path do not read this at all and send what they always sent.
+# is bounded by count, never by a clock: no effort stops a run at a time (D88). The Crossref lookup path does not
+# read this table.
 PROVIDER_WAIT = {"quick": 0, "standard": 1, "detailed": MAX_RATE_LIMIT_RETRIES}
 
 # How many hosts one round of sw discovery searches reads at once (D89, slice 13f). A host is asked one request at a
@@ -117,14 +117,13 @@ CHAIN_REQUEST_LIMIT = 40
 FULLTEXT_CRITERION_PASSAGES = 8
 FULLTEXT_QUOTE_MIN_CHARS = 12
 
-# Effort presets bound work; they are not paper-count or accuracy guarantees. Model calls cover the search plan, one
-# screening call per SCREENING_BATCH candidates and the answer, each with its one schema repair. Provider requests are
-# the plan's query limit; with several providers enabled, one query per relevant provider needs room. `core_depth` is
+# Effort presets bound work; they are not paper-count or accuracy guarantees. Provider requests are
+# bounded per run; with several providers enabled, one query per relevant provider needs room. `core_depth` is
 # how many results OpenAlex's core-only query reads (0: no such query); standard's 250 candidates and 15 model calls were
 # chosen for it in docs/product/search-recall-depth-2026-09-17.md, detailed keeps more room than standard.
 # 2026-09-21 (D78): an sw discovery run is given CRITERION_CALLS on top of its preset for the criterion proposal it
 # makes before the first search (api/app.py), so its room for screening is what it was. The presets themselves are
-# unchanged: a legacy run and an answer run propose no criterion and keep the budget they always had.
+# unchanged for answer runs, which propose no criterion.
 # 2026-09-21 (D82): the same holds for the one term-suggestion call an `sw` discovery run may make, and only when
 # the user asks for it on the approval card (SW2.5). Hand-picked and not measured: how many of at most
 # MAX_SUGGESTED_TERMS proposals survive the count probe, and how many of those are really other names, is unknown.
@@ -169,7 +168,7 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
 
 # `fulltext_adjudication` uses the literature model, as abstract screening does. The slice names no other model
 # for the reading step.
-LITERATURE_TASKS = ("search_plan", "screening", "vocabulary_labels", "criterion_proposal", "term_suggestions", "search_query",
+LITERATURE_TASKS = ("vocabulary_labels", "criterion_proposal", "term_suggestions", "search_query",
                     "abstract_screening", "fulltext_adjudication")
 # A repair would let the step name a phrase the question does not hold and then take it back. The block labelling
 # gets one attempt: an output that invents, drops or repeats a phrase is rejected and the rule stands (SW17.1). An
@@ -229,12 +228,10 @@ def effective_selection(
     return result
 
 
-def effort_limits(search_workflow: str) -> dict[str, Any]:
+def effort_limits() -> dict[str, Any]:
     """What each research depth lets an `sw` run read, from the constants above at the moment of asking (slice 20,
     decision 9): Home's depth text says these numbers, so the next change of a limit cannot leave the text behind.
-    A `legacy` server returns no numbers; its depth texts stay as they are."""
-    if search_workflow != "sw":
-        return {"search_workflow": "legacy", "efforts": None}
+    """
     return {"search_workflow": "sw", "efforts": {effort: {
         "read": SW_READ_LIMIT[effort], "abstracts": ABSTRACT_READ_LIMIT[effort], "fetch": FULLTEXT_WORK_LIMIT[effort],
         "reads": FULLTEXT_READ_LIMIT[effort], "runs": FULLTEXT_RUNS, "chain_seeds": CHAIN_SEEDS,

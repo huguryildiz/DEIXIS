@@ -110,27 +110,10 @@ def _app(tmp_path, monkeypatch, workflow):
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                fulltext_fetch="off", fulltext_adjudication="off"),
                       adapters={"fake": FakeAdapter()}, extra_hosts=("testserver",),
                       trusted_clients=("testclient",), start_worker=False)
-
-
-def test_a_legacy_research_refuses_a_fulltext_reading_run(tmp_path, monkeypatch):
-    app = _app(tmp_path, monkeypatch, "legacy")
-    with TestClient(app) as client:
-        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
-        created = client.post("/api/researches", json={
-            "question": "SYNTHETIC: how does drip irrigation change greenhouse tomato yield, and what of a bakery?",
-            "model_connection": "fake", "requested_model": "fake-model",
-        })
-        assert created.status_code == 201, created.text
-        rid = created.json()["research"]["id"]
-        refused = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"})
-    assert refused.status_code == 422
-    assert refused.json()["detail"] == "Full-text reading runs belong to the search workflow"
-
-
 def test_an_sw_research_queues_a_reading_run_on_the_inspection_stage_with_the_read_budget(tmp_path, monkeypatch):
     """The route stores the budget. The worker is not started, so nothing is read and no decision is written."""
     app = _app(tmp_path, monkeypatch, "sw")

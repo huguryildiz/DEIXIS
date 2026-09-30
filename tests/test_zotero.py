@@ -56,7 +56,8 @@ async def no_fetch(url):
 
 
 def app_for(tmp_path, http_client, fetcher=no_fetch):
-    settings = Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765)
+    settings = Settings(data_dir=tmp_path / "data", port=8765, protocol_approval="as_proposed", search_query="code",
+                        fulltext_fetch="off", citation_chaining="off")
     return create_app(settings, adapters={"fake": FakeAdapter()}, http_client=http_client, fetcher=fetcher,
                       extra_hosts=("testserver",), trusted_clients=("testclient",))
 
@@ -198,6 +199,11 @@ def test_zotero_pdfs_attach_the_library_copy_to_included_works_without_pdf_text(
             if next(r for r in view["runs"] if r["id"] == run["id"])["status"] == "completed":
                 break
             __import__("time").sleep(0.1)
+        for source in view["sources"]:
+            selected = client.patch(f"/api/researches/{rid}/selections/{source['source_version_id']}",
+                                    json={"state": "included", "expected_version": source["selection"]["version"]})
+            assert selected.status_code == 200, selected.text
+        view = client.get(f"/api/researches/{rid}").json()
         assert all(s["selection"]["state"] == "included" for s in view["sources"]), view["sources"]
 
         response = client.post(f"/api/researches/{rid}/zotero-pdfs", json={"source": "local"})

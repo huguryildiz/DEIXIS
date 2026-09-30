@@ -12,6 +12,375 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 **Limits:** Fake and scripted models only: this shows the file's structure and that it carries the screen's limits, not report quality. Table I's `[n]` row labels are the screen's numbers for the frozen rows, so a label can name a source that only a later section cites; the first-appearance rule holds for the citations in the body. The escaping over-protects a little (a literal `[2]` in a claim reads `\[2\]`) and does not neutralise a backtick inside a math span. DOI and version label in References are additions the screen does not show. LaTeX export (slice 5) is not built. pytest 2,722 (2,721 passed + the known memory-limit failure), Playwright 105/105, lint 17 unchanged. gpt-6-sol high: plan three rounds (3, 2, 2 high fixed; round 3's fixes not re-reviewed), code three rounds (1, 1, 0 high fixed).
 
+## D119 — Remove `legacy` discovery execution and preserve stored records
+
+**Status:** accepted 2026-09-30 as SW slice 31, implementation left uncommitted. The authority for the scope is [the reviewed plan](product/sw-slice31-legacy-removal.md). D117's owner decision selects `sw`; D114's measured medicine limitations remain.
+
+**Decision:** New researches and scope defaults use `sw`; there is no executable `search_plan` or `screening` discovery step, unpaged `_search`, legacy screening batch, legacy model contracts, or new legacy protocol body. The runtime method package hash is `sha256:08f1bdeadc63b809bdf6d123a1e77889cada14d64d3e851c3d9fe25bfb2704ee`. Stored `legacy` researches still expose plan and screening notes. A fake-model answer test completes on an old research; Store tests verify that PDF collection, OCR, table, title and report runs may be queued and marked running. Discovery, full-text fetch, full-text adjudication, scope revision, and seed replacement raise 409 `legacy_research_read_only` from the stored scope revision; run creation checks before idempotency return. The UI reads `research.read_only_reason`, hides its two search controls, revision form and seed selector, and keeps the queue tab limited to `sw`.
+
+After `Worker.recover`, before a run is picked, the owner cancels each queued, running, pause-requested or paused legacy discovery-side run with a `legacy_workflow_removed` event in the same transaction. `DEIXIS_SEARCH_WORKFLOW` is ignored; its presence produces one warning on each CLI startup, including `serve`, `backup` and `restore`. The database column and old migrations remain; no migration or `uv.lock` change was made.
+
+**Entry audit:** `rg -n "start_run|queue_run|requeue" backend/deixis/api` found `start_run` at `api/app.py:979`; the route audit also found `/scope` (942), `/seed` (972), `/runs` (978), `/runs/{run_id}/protocol-approval` (1046), `/term-suggestions` (1072), `/search-query-choice` (1107), and `/runs/{run_id}/{action}` (1124: resume and retry). All take the store guard; run actions use the run's stored scope revision. `create_research` is the only scope revision insertion exempted. The other insertions are `Store.revise_scope` (450) and `Store.set_seed` (576), both guarded.
+
+**`runs.status` SQL audit:** `Store.create_run` (695, `queued`), `update_run` (740, dynamic `queued`/`running`), `queue_failed_search_retry` (776, `queued`), `request_term_suggestions` (971, `queued`), `submit_approval` (993, `queued`), and `choose_code_query` (1014, `queued`) all check stored legacy discovery scope before writing. `Worker.recover` (76) writes only `paused`; startup cleanup (94) writes only `cancelled`. `Store.add_usage` (796) and `start_model_session` (1062) update usage only. Migration `runs_new` insertions in 0019, 0022, 0028, 0032, 0035, 0045 and 0046 copy existing rows during schema migration; they do not queue new work. A direct `update_run(..., status='running')` and an idempotency-key hit are covered by tests.
+
+**Test boundary:** Deterministic and fake-model tests exercise the 409 routes, direct Store guards, historical plan and note rendering, answer-side concept reading, answer execution, recovery order and event rollback, and obsolete environment warning. They do not validate scientific support or live providers. The final `PYTHONPATH=backend:. uv run --no-sync pytest -q` run had 2,678 passes and the known extraction memory-limit failure in `tests/test_documents.py` (timeout reported instead of the expected memory-limit error). Web build passed; lint reported 17 warnings and no errors. The final full Playwright run passed 106/106, with 0 failures and 0 did not run; it uses synthetic records and a scripted model. No live service was restarted and no real model was called.
+
+**Judgment and limits:** I treated records written directly into historical test fixtures as stored old data, not as a way to run old discovery. I migrated generic API, backup and Zotero tests to explicit `sw` user selections; removed tests whose sole assertion required execution of the deleted path. The provider record tests reconstruct historical selection rows without calling the deleted `apply_screening_proposal`. The browser fixture approves `sw` proposals automatically for unattended A–G cases. The `build_protocol` signature retains an unused `plan` parameter for callers; it writes only the `sw` body. The worktree was rebased onto P12 (`545745c`, D120) before commit. Playwright captured desktop and narrow screenshots, but they were not separately reviewed by eye. **Discovery-time short title (D39) now depends on the user:** `_research_title` runs at the end of discovery only when `included_works` is non-empty, the same gate as at `545745c` for both workflows. Legacy screening included sources by itself, so a legacy research always got the title; in `sw` sources are included by the user, so a research with no user inclusion yet keeps the question as its header until the user includes a source and asks for a title, or an answer renames it. The trash and rename acceptance tests therefore request the title through "Suggest a short title" instead of expecting it at discovery end. This is `sw` behavior since D117, not new in this slice; changing it (a title from the question alone, or after the first inclusion) is left to a later decision (TODO.md). Code review: gpt-6-sol high two rounds (round 1 hazır, three medium test-coverage notes kept as backlog; round 2 raised this title point as high, judged pre-existing `sw` behavior and recorded here, and one medium: the table test includes its three sources through the API, not the UI).
+
+### D119 Playwright failure causes and fixes
+
+- `acceptance.spec.ts:138` — `sw` does not auto-name a research during discovery; the test requests a short title through the UI before checking Trash, restore and permanent deletion.
+- `acceptance.spec.ts:189` — the rename test expected the removed discovery title step; it requests the short title through the UI, then checks both rename paths and persistence.
+- `acceptance.spec.ts:311` — `sw` has no legacy screening override label; the test checks the user's exclusion and reason after reload.
+- `acceptance.spec.ts:508` — `.search-summary` also names the flow block, while another provider can legitimately have zero results; the test checks the OpenAlex row for `rate limited` and absence of `zero results`.
+- `acceptance.spec.ts:555` — explicit `sw` selection includes three works, not four legacy-selected works; table rows and fill budget now check those three selected sources.
+- `acceptance.spec.ts:716` — the fill button and progress expected four legacy-selected works, so the test stalled; pause, resume, cancellation and kept values now check the three `sw` selected works.
+- `arxiv-source.spec.ts:75` — `sw` left the arXiv work undecided, so the answer action was unavailable; the test includes that source in the UI before generating and inspecting the cited PDF.
+- `builtin-embedding.spec.ts:216` — with the uploaded PDF already in hand, the answer action is labelled `Generate source-linked answer`; the test uses that action and still checks the failed ranking's disclosure.
+- `human-queue.spec.ts:116` — a new research defaults to `sw` even on the second server; the test opens an explicitly stored historical `legacy` fixture and checks the queue tab is absent there.
+- `report.spec.ts:43` — `sw` had no included source for the first table; the test includes a source in the UI before filling and checking the report lifecycle.
+- `report.spec.ts:207` — the second report case had the same empty `sw` selection; it includes a source before checking the recorded model review flag.
+- `acceptance.spec.ts:523` — a paused error sentence appeared twice, and the resumed `sw` run has no legacy selection proposal; the test targets the exact sentence, then checks retained sources, completion and the same model.
+
+### D119 deleted-test ledger
+
+Each removed test is listed below with its replacement or `artık yok`. `artık yok` means the operation it asserted is no longer executable; it is not a claim that adjacent `sw` behavior has no tests.
+
+- `tests/test_abstract_flow.py::test_a_legacy_research_screens_as_it_always_did_and_opens_no_abstract_stage` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_adjudication.py::test_a_legacy_research_refuses_a_fulltext_reading_run` — `test_legacy_removal.py::test_api_rejects_each_legacy_discovery_entry_and_keeps_answer_resume`
+- `tests/test_adjudication_flow.py::test_off_legacy_and_a_research_with_no_criterion_queue_no_reading_run` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_answer_snapshot.py::test_a_legacy_answer_run_opens_no_snapshot_and_an_answer_without_one_shows_none` — `test_legacy_removal.py::test_legacy_answer_uses_stored_plan_concepts` ve `test_no_include_answer.py`
+- `tests/test_api_flow.py::test_question_revision_during_discovery_stops_applying_its_results` — `test_adjudication_flow.py::test_a_scope_revision_cancels_the_run_and_an_in_flight_response_writes_no_decision` (`sw`)
+- `tests/test_api_flow.py::test_run_view_reports_the_plan_screening_notes_and_counting_step_outputs` — `test_legacy_removal.py::test_stored_legacy_plan_and_screening_notes_remain_readable`
+- `tests/test_api_flow.py::test_selected_pdf_seed_is_frozen_for_the_search_plan_and_revisions` — `test_api_flow.py::test_seed_requires_readable_uploaded_pdf_and_rejects_other_scopes` (`sw`)
+- `tests/test_api_flow.py::test_standard_depth_reads_more_results_screens_in_batches_and_gives_every_included_source` — `test_search_paging.py` (`sw` sayfalama ve sınır)
+- `tests/test_approval_flow.py::test_a_legacy_research_opens_no_approval_step_and_its_protocol_body_is_what_it_was` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_approval_flow.py::test_the_route_refuses_a_legacy_run_that_proposed_nothing` — `test_legacy_removal.py::test_api_rejects_each_legacy_discovery_entry_and_keeps_answer_resume`
+- `tests/test_builtin_embedding_flow.py::test_a_legacy_research_follows_the_same_rule` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_chaining_flow.py::test_a_legacy_research_never_chains` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_contracts.py::test_search_plan_from_which_no_query_can_be_built_goes_back_for_repair` — artık yok: eski model sözleşmesi/protokolü üretilmiyor
+- `tests/test_contracts.py::test_search_plan_needs_exactly_one_core_concept` — artık yok: eski model sözleşmesi/protokolü üretilmiyor
+- `tests/test_contracts.py::test_user_selection_overrides_model_screening_proposal` — `test_api_flow.py::test_question_to_cited_answer_and_restart` (`sw` kullanıcı seçimi)
+- `tests/test_criterion_flow.py::test_a_legacy_research_opens_no_criterion_step_and_its_protocol_body_is_what_it_was` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_criterion_flow.py::test_the_legacy_protocol_body_has_the_digest_it_had_before_this_slice` — artık yok: eski model sözleşmesi/protokolü üretilmiyor
+- `tests/test_criterion_passage_flow.py::test_a_legacy_answer_run_opens_no_criterion_phrases_step` — `test_legacy_removal.py::test_legacy_answer_uses_stored_plan_concepts` ve `test_no_include_answer.py`
+- `tests/test_effort_limits.py::test_a_legacy_search_waits_as_it_always_did_whatever_the_effort` — `test_search_paging.py` (`sw` sayfalama ve sınır)
+- `tests/test_expansion_flow.py::test_a_legacy_research_opens_no_expansion_step` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_fulltext_flow.py::test_no_retrieval_run_follows_when_the_setting_is_off_or_the_research_is_legacy` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_lookup_flow.py::test_a_legacy_research_opens_no_lookup_step_and_sends_no_lookup_request` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_no_include_answer.py::test_a_legacy_research_with_no_include_is_still_refused` — `test_legacy_removal.py::test_api_rejects_each_legacy_discovery_entry_and_keeps_answer_resume`
+- `tests/test_prisma_s.py::test_a_legacy_server_says_so_and_gives_no_sw_numbers` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_protocol_record.py::test_a_discovery_run_freezes_one_protocol_before_its_first_search_and_stamps_the_later_steps` — `test_protocol_record.py` (`sw` protokol ve özet)
+- `tests/test_protocol_record.py::test_a_later_discovery_run_with_another_plan_opens_a_new_protocol_revision` — `test_protocol_record.py` (`sw` protokol ve özet)
+- `tests/test_protocol_record.py::test_a_model_step_stores_the_digest_of_what_it_sent_and_what_came_back` — `test_protocol_record.py` (`sw` protokol ve özet)
+- `tests/test_protocol_record.py::test_a_paused_and_resumed_run_keeps_the_protocol_it_froze` — `test_protocol_record.py` (`sw` protokol ve özet)
+- `tests/test_protocol_record.py::test_a_provider_search_stores_the_digest_of_the_payload_it_kept` — `test_provider_roles.py` ve `test_search_paging.py` (`sw`)
+- `tests/test_protocol_record.py::test_an_sw_body_carries_the_chain_policy_its_budget_froze_and_a_legacy_body_does_not` — artık yok: eski model sözleşmesi/protokolü üretilmiyor
+- `tests/test_protocol_record.py::test_an_unknown_search_workflow_setting_is_refused` — `test_cli_options.py::test_obsolete_workflow_env_warns_once_and_does_not_block_commands`
+- `tests/test_protocol_record.py::test_only_an_sw_protocol_carries_the_record_identity_thresholds` — `test_protocol_record.py` (`sw` protokol ve özet)
+- `tests/test_provider_flow.py::test_a_failed_provider_search_is_kept_and_the_other_searches_go_on` — `test_provider_roles.py` ve `test_search_paging.py` (`sw`)
+- `tests/test_provider_flow.py::test_a_search_plan_v1_from_before_d44_still_shows_its_model_written_queries` — `test_provider_roles.py` ve `test_search_paging.py` (`sw`)
+- `tests/test_provider_flow.py::test_compiled_queries_are_stored_with_the_plan_and_a_resumed_run_searches_them_again` — `test_provider_roles.py` ve `test_search_paging.py` (`sw`)
+- `tests/test_provider_flow.py::test_discovery_searches_each_planned_provider_and_merges_by_doi` — `test_provider_roles.py` ve `test_search_paging.py` (`sw`)
+- `tests/test_provider_flow.py::test_failed_provider_searches_can_be_retried_without_repeating_the_plan` — `test_provider_roles.py` ve `test_search_paging.py` (`sw`)
+- `tests/test_provider_roles.py::test_a_crossref_search_step_that_already_failed_keeps_its_failure_when_the_run_is_resumed` — artık yok: kaldırılan keşif adımına bağlıydı
+- `tests/test_provider_roles.py::test_a_legacy_research_offers_scopus_to_the_model_as_it_always_did` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_provider_roles.py::test_a_new_research_keeps_the_verification_connector_in_its_scope_and_hides_it_from_the_model` — `test_provider_roles.py` ve `test_search_paging.py` (`sw`)
+- `tests/test_provider_roles.py::test_a_stored_query_for_a_connector_that_is_no_longer_searched_is_skipped_and_the_run_goes_on` — `test_provider_roles.py` ve `test_search_paging.py` (`sw`)
+- `tests/test_ranking_flow.py::test_a_legacy_research_opens_no_ranking_step_and_scores_its_sources_where_it_always_did` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_ranking_flow.py::test_a_legacy_run_paused_between_two_screening_batches_screens_every_candidate_when_it_resumes` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_search_paging.py::test_a_legacy_research_sends_one_request_and_stores_no_page` — `test_search_paging.py` (`sw` sayfalama ve sınır)
+- `tests/test_suggestion_flow.py::test_a_legacy_research_has_no_card_and_no_suggestion_route` — `test_legacy_removal.py::test_api_rejects_each_legacy_discovery_entry_and_keeps_answer_resume`
+- `tests/test_vocabulary_flow.py::test_a_legacy_research_still_runs_its_search_plan_step_and_opens_no_vocabulary_step` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_vocabulary_labels.py::test_a_legacy_research_opens_no_labelling_step` — artık yok: eski keşif yürütmesi kaldırıldı
+- `tests/test_waiting_flow.py::test_a_legacy_research_has_no_list_and_its_match_answers_as_it_did` — artık yok: eski keşif yürütmesi kaldırıldı
+
+### D119 remaining-`legacy` hit audit
+
+The list below follows `rg -n "legacy" backend apps/web/src tests methods contracts` (280 hits). Each line classifies one hit; CSS `legacy-*` class names and TeX command names are unrelated identifiers. The other hits read stored history, reject or skip old work, or exercise the separate query compiler strategy.
+
+- `tests/test_s2_bulk.py:1` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_s2_bulk.py:69` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_s2_bulk.py:90` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `apps/web/src/WaitingForPdf.tsx:125` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `backend/deixis/domain/record_identity.py:152` — Eski kayıt/karar sınırını açıklayan yorum.
+- `tests/test_queue_api.py:159` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_queue_api.py:160` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_queue_api.py:161` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_queue_api.py:164` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_queue_api.py:175` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_ranking_flow.py:4` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_ranking_flow.py:396` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_prisma_s.py:274` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_prisma_s.py:282` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_prisma_s.py:283` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `apps/web/src/api.ts:22` — Saklı eski kayıt için tür ve okuma yüzeyi.
+- `apps/web/src/api.ts:73` — Saklı eski kayıt için tür ve okuma yüzeyi.
+- `apps/web/src/api.ts:79` — Saklı eski kayıt için tür ve okuma yüzeyi.
+- `apps/web/src/api.ts:88` — Saklı eski kayıt için tür ve okuma yüzeyi.
+- `apps/web/src/api.ts:383` — Saklı eski kayıt için tür ve okuma yüzeyi.
+- `apps/web/src/api.ts:414` — Saklı eski kayıt için tür ve okuma yüzeyi.
+- `apps/web/src/api.ts:416` — Saklı eski kayıt için tür ve okuma yüzeyi.
+- `apps/web/src/api.ts:418` — Saklı eski kayıt için tür ve okuma yüzeyi.
+- `apps/web/src/api.ts:446` — Saklı eski kayıt için tür ve okuma yüzeyi.
+- `apps/web/src/api.ts:499` — Saklı eski kayıt için tür ve okuma yüzeyi.
+- `backend/deixis/api/app.py:64` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:426` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:433` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:527` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:528` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:530` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:531` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:534` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:983` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:984` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:995` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:1007` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:1056` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:1083` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:1117` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:1130` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `backend/deixis/api/app.py:1312` — Eski keşif girişini reddetme veya saklı kapsamı okuma.
+- `tests/test_record_lookups.py:302` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `apps/web/src/workspace.css:1` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:48` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:80` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:83` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:84` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:85` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:87` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:88` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:90` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:91` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:93` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:94` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:95` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:96` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:97` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:98` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:99` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:100` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:101` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:112` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:159` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:167` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:359` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:391` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:493` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:494` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:501` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:614` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:616` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:759` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:929` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:930` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/workspace.css:966` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/Connections.tsx:434` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/Connections.tsx:498` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/Connections.tsx:511` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/Connections.tsx:522` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/Connections.tsx:534` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/Connections.tsx:540` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/Connections.tsx:560` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/Connections.tsx:574` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `tests/test_search_paging.py:4` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_adjudication.py:4` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `backend/deixis/workflow/views.py:376` — Saklı eski kayıt ve notları görünümde okuma.
+- `backend/deixis/workflow/views.py:405` — Saklı eski kayıt ve notları görünümde okuma.
+- `backend/deixis/workflow/views.py:410` — Saklı eski kayıt ve notları görünümde okuma.
+- `backend/deixis/workflow/views.py:654` — Saklı eski kayıt ve notları görünümde okuma.
+- `backend/deixis/workflow/views.py:659` — Saklı eski kayıt ve notları görünümde okuma.
+- `backend/deixis/workflow/views.py:674` — Saklı eski kayıt ve notları görünümde okuma.
+- `apps/web/src/PdfReadiness.tsx:28` — Saklı eski kaydı gösteren tür/koşul veya tarihî yorum.
+- `backend/deixis/providers/query_compiler.py:3` — Ayrı sorgu derleme stratejisi veya tarihî sorgu biçimi.
+- `backend/deixis/providers/query_compiler.py:9` — Ayrı sorgu derleme stratejisi veya tarihî sorgu biçimi.
+- `backend/deixis/providers/query_compiler.py:24` — Ayrı sorgu derleme stratejisi veya tarihî sorgu biçimi.
+- `backend/deixis/providers/query_compiler.py:42` — Ayrı sorgu derleme stratejisi veya tarihî sorgu biçimi.
+- `backend/deixis/providers/query_compiler.py:206` — Ayrı sorgu derleme stratejisi veya tarihî sorgu biçimi.
+- `apps/web/src/FlowReport.tsx:60` — Saklı eski kaydı gösteren tür/koşul veya tarihî yorum.
+- `tests/test_criterion_flow.py:5` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_criterion_flow.py:171` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_criterion_flow.py:284` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `apps/web/src/ResearchView.tsx:386` — Backend read_only_reason veya saklı kapsam üzerinden UI koruması.
+- `apps/web/src/ResearchView.tsx:388` — Backend read_only_reason veya saklı kapsam üzerinden UI koruması.
+- `apps/web/src/ResearchView.tsx:396` — Mevcut CSS sınıf adı; iş akışı seçimi değil.
+- `apps/web/src/ResearchView.tsx:442` — Mevcut CSS sınıf adı; iş akışı seçimi değil.
+- `apps/web/src/ResearchView.tsx:648` — Mevcut CSS sınıf adı; iş akışı seçimi değil.
+- `apps/web/src/ResearchView.tsx:657` — Mevcut CSS sınıf adı; iş akışı seçimi değil.
+- `apps/web/src/ResearchView.tsx:715` — Mevcut CSS sınıf adı; iş akışı seçimi değil.
+- `apps/web/src/ResearchView.tsx:762` — Mevcut CSS sınıf adı; iş akışı seçimi değil.
+- `apps/web/src/ResearchView.tsx:858` — Mevcut CSS sınıf adı; iş akışı seçimi değil.
+- `apps/web/src/ResearchView.tsx:870` — Mevcut CSS sınıf adı; iş akışı seçimi değil.
+- `apps/web/src/ResearchView.tsx:873` — Mevcut CSS sınıf adı; iş akışı seçimi değil.
+- `apps/web/src/ResearchView.tsx:1123` — Backend read_only_reason veya saklı kapsam üzerinden UI koruması.
+- `backend/deixis/config.py:28` — Ayrı sorgu derleme stratejisi korunuyor.
+- `backend/deixis/config.py:111` — Ayrı sorgu derleme stratejisi korunuyor.
+- `backend/deixis/config.py:112` — Ayrı sorgu derleme stratejisi korunuyor.
+- `backend/deixis/config.py:113` — Eski ortam değişkeni için uyarı; akış seçimi yapılmıyor.
+- `backend/deixis/workflow/links.py:212` — Eski kayıt için okuma, ret veya atlama sınırı.
+- `backend/deixis/providers/registry.py:44` — Saklı eski sağlayıcı/sorgu kaydını okuma ya da tarihî biçim sınırı.
+- `backend/deixis/providers/registry.py:52` — Saklı eski sağlayıcı/sorgu kaydını okuma ya da tarihî biçim sınırı.
+- `backend/deixis/providers/registry.py:97` — Saklı eski sağlayıcı/sorgu kaydını okuma ya da tarihî biçim sınırı.
+- `backend/deixis/providers/registry.py:141` — Saklı eski sağlayıcı/sorgu kaydını okuma ya da tarihî biçim sınırı.
+- `backend/deixis/providers/semantic_scholar.py:18` — Saklı eski sağlayıcı/sorgu kaydını okuma ya da tarihî biçim sınırı.
+- `backend/deixis/providers/openalex.py:37` — Saklı eski sağlayıcı/sorgu kaydını okuma ya da tarihî biçim sınırı.
+- `backend/deixis/workflow/flow.py:74` — Eski kaydı cevapta okuma veya yeni keşifte atlama.
+- `backend/deixis/workflow/flow.py:383` — Eski kaydı cevapta okuma veya yeni keşifte atlama.
+- `backend/deixis/workflow/flow.py:2374` — Eski kaydı cevapta okuma veya yeni keşifte atlama.
+- `backend/deixis/workflow/flow.py:4147` — Eski kaydı cevapta okuma veya yeni keşifte atlama.
+- `backend/deixis/workflow/flow.py:4260` — Eski kaydı cevapta okuma veya yeni keşifte atlama.
+- `tests/test_cli_options.py:54` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `backend/deixis/documents/latex_kernel_names.json:2359` — TeX komut adı; arama iş akışı değil.
+- `backend/deixis/documents/latex_kernel_names.json:3411` — TeX komut adı; arama iş akışı değil.
+- `backend/deixis/documents/latex_kernel_names.json:3412` — TeX komut adı; arama iş akışı değil.
+- `backend/deixis/documents/latex_kernel_names.json:3413` — TeX komut adı; arama iş akışı değil.
+- `backend/deixis/documents/latex_kernel_names.json:3414` — TeX komut adı; arama iş akışı değil.
+- `backend/deixis/documents/latex_kernel_names.json:3415` — TeX komut adı; arama iş akışı değil.
+- `backend/deixis/documents/latex_kernel_names.json:3416` — TeX komut adı; arama iş akışı değil.
+- `backend/deixis/documents/latex_kernel_names.json:3417` — TeX komut adı; arama iş akışı değil.
+- `backend/deixis/documents/latex_kernel_names.json:3418` — TeX komut adı; arama iş akışı değil.
+- `tests/test_provider_roles.py:87` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_provider_roles.py:97` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_provider_roles.py:98` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `apps/web/src/LegacyWorkspace.css:1` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/LegacyWorkspace.css:2` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/LegacyWorkspace.css:3` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/LegacyWorkspace.css:4` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/LegacyWorkspace.css:11` — Saklı eski kaydı gösteren tür/koşul veya tarihî yorum.
+- `backend/deixis/workflow/store.py:122` — Saklı eski kapsam ya da tarihî şema uyumluluğu.
+- `backend/deixis/workflow/store.py:125` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:126` — Saklı eski kapsam ya da tarihî şema uyumluluğu.
+- `backend/deixis/workflow/store.py:198` — Saklı eski kapsam ya da tarihî şema uyumluluğu.
+- `backend/deixis/workflow/store.py:434` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:522` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:665` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:666` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:667` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:669` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:671` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:679` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:738` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:754` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:959` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:983` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/store.py:1004` — Saklı eski kapsam için yazma/kuyruk koruması.
+- `backend/deixis/workflow/worker.py:82` — Başlangıçta yarım eski keşif koşusunu durdurma ve olay yazma.
+- `backend/deixis/workflow/worker.py:88` — Başlangıçta yarım eski keşif koşusunu durdurma ve olay yazma.
+- `backend/deixis/workflow/worker.py:94` — Başlangıçta yarım eski keşif koşusunu durdurma ve olay yazma.
+- `backend/deixis/workflow/worker.py:98` — Başlangıçta yarım eski keşif koşusunu durdurma ve olay yazma.
+- `tests/test_record_links.py:7` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_record_links.py:59` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_record_links.py:60` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_record_links.py:95` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_record_links.py:98` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_record_links.py:99` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `backend/deixis/workflow/lookups.py:232` — Eski kayıt için okuma, ret veya atlama sınırı.
+- `backend/deixis/workflow/lookups.py:233` — Eski kayıt için okuma, ret veya atlama sınırı.
+- `tests/test_flow_counts.py:177` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_flow_counts.py:178` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_effort_limits.py:8` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `apps/web/src/Settings.tsx:34` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/Settings.tsx:48` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/Settings.tsx:50` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/Settings.tsx:97` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `tests/test_legacy_removal.py:1` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:20` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:41` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:53` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:59` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:114` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:124` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:136` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:146` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:152` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:155` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:157` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:163` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_legacy_removal.py:168` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_stage_decisions.py:40` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_stage_decisions.py:41` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_stage_decisions.py:217` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_stage_decisions.py:218` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_rendition_views.py:25` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_rendition_views.py:59` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_approval_flow.py:5` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_abstract_flow.py:6` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_abstract_flow.py:515` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_source_routing.py:85` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_provider_records.py:45` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_provider_records.py:374` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_provider_records.py:376` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `backend/deixis/storage/migrations/0042_author_keywords.sql:3` — Tarihî veritabanı şeması/kopyası korunuyor.
+- `apps/web/src/EvidenceTable.tsx:388` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `apps/web/src/EvidenceTable.tsx:460` — Mevcut CSS sınıfı/dosya adı; iş akışı seçimi değil.
+- `tests/test_query_compiler.py:127` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_query_compiler.py:130` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_query_compiler.py:137` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_query_compiler.py:138` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_query_compiler.py:143` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_query_compiler.py:146` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `backend/deixis/storage/migrations/0041_search_run_pages.sql:1` — Tarihî veritabanı şeması/kopyası korunuyor.
+- `tests/test_fulltext_flow.py:4` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_fulltext_flow.py:7` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_queue.py:83` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_queue.py:84` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_queue.py:631` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_queue.py:637` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_queue.py:639` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_phrasebank.py:50` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_phrasebank.py:67` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_phrasebank.py:68` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_phrasebank.py:69` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_providers.py:245` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_providers.py:462` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_providers.py:559` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_lookup_flow.py:6` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_probes.py:241` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_probes.py:242` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_vocabulary.py:344` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_vocabulary.py:362` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_expansion_flow.py:6` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_migrations.py:94` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_migrations.py:112` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_vocabulary_flow.py:5` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_waiting.py:226` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `backend/deixis/storage/migrations/0037_protocol_records.sql:23` — Tarihî veritabanı şeması/kopyası korunuyor.
+- `backend/deixis/storage/migrations/0037_protocol_records.sql:24` — Tarihî veritabanı şeması/kopyası korunuyor.
+- `tests/test_person_reading_flow.py:195` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_person_reading_flow.py:204` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_person_reading_flow.py:205` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_person_reading_flow.py:206` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_person_reading_flow.py:207` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_person_reading_flow.py:208` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_audit.py:257` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_audit.py:258` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_audit.py:373` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_audit.py:374` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_chaining_flow.py:7` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_external_links.py:8` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_external_links.py:57` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_external_links.py:58` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_external_links.py:250` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_external_links.py:253` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_external_links.py:254` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_external_links.py:255` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_criterion_passage_flow.py:9` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_criterion_passage_flow.py:42` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_criterion_passage_flow.py:303` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_criterion_passage_flow.py:306` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_criterion_passage_flow.py:322` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_criterion_passage_flow.py:366` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_criterion_passage_flow.py:367` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_criterion_passage_flow.py:368` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/test_criterion_passage_flow.py:380` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/acceptance/fixture_server.py:512` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/acceptance/fixture_server.py:513` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/acceptance/fixture_server.py:517` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/acceptance/fixture_server.py:518` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/acceptance/fixture_server.py:521` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+- `tests/acceptance/fixture_server.py:562` — Sentetik tarihî kayıt, ret veya ayrı sorgu stratejisi testi; eski keşif çağrısı yok.
+
 ## D118 — The report is read once by a model after assembly, and only a `support_broken` finding on a kept repair can put original wording back
 
 **Status:** accepted 2026-09-30 as P6 slice 1 batch P9 (prompt `docs/product/p6-slice1-p9-review-prompt.md`). D117 (sw default) and D114 are on main; this number follows them.

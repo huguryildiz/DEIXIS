@@ -73,7 +73,7 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None, concurr
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval="as_proposed", model_concurrency=concurrency, fulltext_fetch="off"),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -514,25 +514,6 @@ def test_a_revised_question_makes_the_old_decision_stale_and_the_record_is_read_
 
 # ---- legacy is untouched ------------------------------------------------------------------------
 
-def test_a_legacy_research_screens_as_it_always_did_and_opens_no_abstract_stage(tmp_path, monkeypatch):
-    app = app_for(tmp_path, monkeypatch, Pool([work(1, ON_TOPIC, ON_ABSTRACT), work(2)]), workflow="legacy")
-    client = client_of(app)
-    try:
-        rid, run_id, view, run = discover(client)
-        store = app.state.store
-        keys = [s["operation_key"] for s in store.run_steps(run_id)]
-        selections = selections_of(store, rid)
-        decisions = store.conn.execute(
-            "SELECT COUNT(*) FROM stage_decisions WHERE research_id = ?", (rid,)).fetchone()[0]
-        body = json.loads(store.conn.execute(
-            "SELECT body_json FROM protocol_records WHERE research_id = ?", (rid,)).fetchone()[0])
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] == "completed"
-    assert "screening" in keys and "abstract_stage" not in keys
-    # The model's include proposal still reaches the selection in a legacy research, and no decision row is written.
-    assert set(selections.values()) == {("included", "model_proposal")} and decisions == 0
-    assert "abstract_screening" not in body["thresholds"] and body["thresholds"]["screening_batch"] == 40
 
 
 def test_the_sw_protocol_names_the_read_limit_of_its_own_effort(tmp_path, monkeypatch):

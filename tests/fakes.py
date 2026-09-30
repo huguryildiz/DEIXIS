@@ -21,21 +21,6 @@ def envelope(si: dict[str, Any], version: str) -> dict[str, Any]:
 
 def valid_response(si: dict[str, Any]) -> str:
     task = si["task_type"]
-    if task == "search_plan":
-        plan = envelope(si, "deixis.search_plan.v2") | {
-            "question_interpretation": "fake interpretation",
-            "concepts": [{"label": "molecular communication", "role": "core", "synonyms": ["molecular communication", "diffusion channel"]},
-                         {"label": "optimization", "role": "method", "synonyms": ["optimization"]}],
-            "providers": si["enabled_providers"][:1],
-            "scope_boundaries": ["fake"], "search_rationale": "fake",
-        }
-        return json.dumps({"search_plan": plan, "clarification_request": None})
-    if task == "screening":
-        return json.dumps(envelope(si, "deixis.screening_proposal.v1") | {
-            "decisions": [{"candidate_id": c["candidate_id"], "proposal": "include", "reason": "fake include", "evidence_basis": "title_and_abstract"}
-                          for c in si["candidates"]],
-            "notes": "fake screening notes.",
-        })
     if task == "abstract_screening":
         # SYNTHETIC and field-independent: every record with an abstract is a candidate quoted from its own first
         # words, so the quote always locates and the two runs always agree. It says nothing about model behavior.

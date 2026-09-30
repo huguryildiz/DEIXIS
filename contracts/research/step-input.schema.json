@@ -47,8 +47,6 @@
     "task_type": {
       "type": "string",
       "enum": [
-        "search_plan",
-        "screening",
         "grounded_answer",
         "answer_review",
         "cell_extraction",

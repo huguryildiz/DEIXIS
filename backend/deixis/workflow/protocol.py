@@ -84,20 +84,20 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     Its counts are the ones the first run read; they change in the literature over time and are never re-probed, so
     the body keeps the numbers that actually decided this research's query. `expansion` is the step output of the
     second arm (SW2.4) and is given only for the revision that opened it, so a body without one is what it was.
-    `criterion` is what three proposals agreed on (SW15.2); without one the four criterion fields stay null, which
-    is what a `legacy` body and a run whose model was unreachable both have. `embedding_model` is the semantic search
+    `criterion` is what three proposals agreed on (SW15.2); without one the four criterion fields stay null.
+    `embedding_model` is the semantic search
     model the research was configured with when it froze this body; the flow reads it, because this function sees no
     store; it says which signals were configured, never which of them really ran — that is in the ranking step's own
     output — so a research whose embedding failed keeps the body it froze. `approval` is how the vocabulary and the
     criterion below were agreed (slice 08a): who approved them, whether they were corrected and what the user was
-    asked about. A body without one is a `legacy` body or one frozen before that step existed. `routing` is the
+    asked about. A body without one was frozen before that step existed. `routing` is the
     source routing the queries were compiled for (D93): the gate query probed, the field shares, the share and table
-    it was decided with, and every source chosen or left out with its reason. A body without one is a `legacy` body or
-    one frozen before D93, and names the scope's searched providers as it always did.
+    it was decided with, and every source chosen or left out with its reason. A body without one
+    was frozen before D93 and names the scope's searched providers.
     """
     # Imported here: flow loads this module, and the thresholds are read from their one definition rather than repeated.
     from deixis.documents.pdf import CHUNK_CHARS
-    from deixis.workflow.flow import (FORMULATION_SCORE_THRESHOLD, MAX_ABSTRACT_CHARS, MAX_PASSAGES_PER_SOURCE,
+    from deixis.workflow.flow import (MAX_ABSTRACT_CHARS, MAX_PASSAGES_PER_SOURCE,
                                       PDF_PAGES_PER_SOURCE, RRF_K)
     from deixis.workflow.criterion import THRESHOLDS as CRITERION_THRESHOLDS
     from deixis.workflow.criterion_passages import THRESHOLDS as CRITERION_PASSAGE_THRESHOLDS
@@ -117,7 +117,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     default_origin = "user" if vocabulary and vocabulary["block_assignment"] == "user" else "rule"
     block_origin = block_origins(vocabulary) if vocabulary else {}
     # An sw body frozen without a routing is a run from before D93, which still searched CORE and SerpApi.
-    searched = search_providers(scope["providers"], scope.get("search_workflow"), routed=routing is not None)
+    searched = search_providers(scope["providers"], "sw", routed=routing is not None)
     in_scope = searched
     if routing is not None:
         # A routed source is searched only when a query was compiled for it: the effort's query limit can leave a
@@ -126,16 +126,14 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         searched = [p for p in routing["providers"] if p in with_query]
 
     # How this run chains citations after its abstract stage (D95), read from the budget it was queued with, so the
-    # first body and the expansion revision say the same. A `legacy` body and one queued before D95 carry none.
-    chaining = chain_policy(budget, scope["effort"]) if scope.get("search_workflow") == "sw" else None
+    # first body and the expansion revision say the same. A run queued before D95 carries none.
+    chaining = chain_policy(budget, scope["effort"])
 
     # A code vocabulary's queries came from the block compiler, so the body names that compiler, not the plan one.
-    compiler_version = (query_compiler.BLOCKS_VERSION if vocabulary else
-                        query_compiler.COMPACT_VERSION if settings.query_strategy == "compact_openalex_v1"
-                        else query_compiler.VERSION)
+    compiler_version = query_compiler.BLOCKS_VERSION
     return {
         "schema": PROTOCOL_SCHEMA,
-        "search_workflow": scope.get("search_workflow", "legacy"),
+        "search_workflow": "sw",
         "question": scope["question"],
         "steering": scope.get("steering"),
         "language_hint": scope.get("language_hint"),
@@ -161,9 +159,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "block_assignment": vocabulary["block_assignment"] if vocabulary else None,
         "claim_words": list(vocabulary["claim_words"]) if vocabulary else None,
         "exclusion_words": list(vocabulary["exclusion_words"]) if vocabulary else None,
-        "vocabulary": ([{"label": c["label"], "role": c["role"], "synonyms": list(c.get("synonyms") or [])}
-                        for c in plan.get("concepts", [])] if plan else
-                       [{"phrase": t["phrase"], "origin": t["origin"], "block": t["block"],
+        "vocabulary": ([{"phrase": t["phrase"], "origin": t["origin"], "block": t["block"],
                          "block_origin": block_origin.get(t["phrase"], default_origin), "root": t["root"],
                          "in_query": t["in_query"], "phrase_count": t["phrase_count"], "root_count": t["root_count"],
                          "and_only": t["and_only"], "dropped": t["dropped"]} for t in vocabulary["terms"]]
@@ -189,23 +185,17 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                                "chosen_not_queried": [p for p in routing["providers"] if p not in searched]}}
            if routing is not None else {}),
         # The databases searched, which is what the record reports (PRISMA-S item 1); a connector kept in scope only
-        # to verify a known DOI is named apart so that it is not read as a searched source (D87). A `legacy` body
-        # keeps the list it always had, digest and all. Scopus is not searched by an sw research (D91).
-        **({"providers": sorted(searched),
-            "verification_providers": sorted(p for p in scope["providers"] if p not in in_scope)}
-           if scope.get("search_workflow") == "sw" else {"providers": sorted(scope["providers"])}),
+        # to verify a known DOI is named apart so that it is not read as a searched source (D87).
+        "providers": sorted(searched),
+        "verification_providers": sorted(p for p in scope["providers"] if p not in in_scope),
         "arms": ["keyword_search", "data_expansion"] if expansion else ["keyword_search"],
         **({"citation_chaining": chaining} if chaining is not None else {}),
-        # How this research decides a record describes itself as a survey. A `legacy` body carries none of it.
-        **({"survey": {"title_words": list(kept_words), "dropped_title_words": list(dropped_words),
-                       "abstract_patterns": list(SURVEY_PATTERNS)}}
-           if scope.get("search_workflow") == "sw" else {}),
-        # How this research was configured to order its inspection list (SW7, SW8). A `legacy` body has no signal.
-        "signals": ([{"signal": "bm25"}, {"signal": "blocks"},
+        "survey": {"title_words": list(kept_words), "dropped_title_words": list(dropped_words),
+                   "abstract_patterns": list(SURVEY_PATTERNS)},
+        "signals": [{"signal": "bm25"}, {"signal": "blocks"},
                      {"signal": "tfidf", "seeds": "verified"},
                      {"signal": "graph", "seeds": "verified_then_code"},
-                     {"signal": "embedding", "model": embedding_model, "rescue": True}]
-                    if scope.get("search_workflow") == "sw" else []),
+                     {"signal": "embedding", "model": embedding_model, "rescue": True}],
         "thresholds": {
             "screening_batch": SCREENING_BATCH,
             "max_abstract_chars": MAX_ABSTRACT_CHARS,
@@ -213,13 +203,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             "chunk_chars": CHUNK_CHARS,
             "max_passages_per_source": MAX_PASSAGES_PER_SOURCE,
             "pdf_pages_per_source": PDF_PAGES_PER_SOURCE,
-            # The hand-written formulation quota is a legacy body's alone: an sw answer fills that room from the
-            # criterion's approved cue phrases instead (D84), so a threshold it no longer applies is not recorded.
-            **({"formulation_score_threshold": FORMULATION_SCORE_THRESHOLD}
-               if scope.get("search_workflow") != "sw" else {}),
-            # The identity rule and the page read limit run only on the sw workflow, so a legacy protocol body stays
-            # exactly as it was.
-            **({"record_identity": THRESHOLDS,
+            "record_identity": THRESHOLDS,
                 # How much of the answer input the criterion order may fill, and how it is split per source (D84).
                 "criterion_passages": CRITERION_PASSAGE_THRESHOLDS,
                 "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS,
@@ -239,8 +223,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                 "fulltext_adjudication": {"read_limit": FULLTEXT_READ_LIMIT[scope["effort"]], "runs": FULLTEXT_RUNS,
                                           "passages_per_call": FULLTEXT_PASSAGES_PER_CALL,
                                           "criterion_passages": FULLTEXT_CRITERION_PASSAGES,
-                                          "quote_min_chars": FULLTEXT_QUOTE_MIN_CHARS}}
-               if scope.get("search_workflow") == "sw" else {}),
+                                          "quote_min_chars": FULLTEXT_QUOTE_MIN_CHARS},
             **({"vocabulary": VOCABULARY_THRESHOLDS} if vocabulary else {}),
             **({"search_query": SEARCH_QUERY_THRESHOLDS}
                if vocabulary and (vocabulary.get("search_query") or {}).get("status") == "ready" else {}),
@@ -249,11 +232,11 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                                                          "abstract_read", "plan_room")}}
                if chaining and chaining["enabled"] else {}),
         },
-        "rule_table_version": "legacy",
+        "rule_table_version": "sw",
         "budget": budget,
         # The reviewer that follows the app-wide default setting is not resolved here: the body is built without a store.
         "models": {"research": _model(step_model(scope, "grounded_answer")),
-                   "literature": _model(step_model(scope, "search_plan")),
+                   "literature": _model(step_model(scope, "abstract_screening")),
                    "review": _model(effective_reviewer(scope, None))},
         "skill_package_hash": skill_package_hash,
         "code_version": f"deixis/{version('deixis')} {compiler_version}",

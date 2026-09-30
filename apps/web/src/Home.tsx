@@ -31,7 +31,7 @@ export const effortOptions: Record<Effort, { icon: LucideIcon; detail: string }>
 // changed limit cannot leave this text behind. Without an answer from the server the text carries no number at all.
 function effortDetail(effort: Effort, limits: EffortLimits | null | undefined): string | undefined {
   if (!limits) return undefined
-  if (limits.search_workflow !== 'sw' || !limits.efforts) return t(effortOptions[effort].detail)
+  if (!limits.efforts) return undefined
   const e = limits.efforts[effort]
   const number = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
   return t('Each search reads up to {read} records; the model screens {abstracts} abstracts, fetches up to {fetch} full texts and reads {reads} of them twice; the answer uses up to {passages} passages.', {

@@ -151,23 +151,6 @@ def test_an_included_work_whose_only_text_is_an_unread_person_file_is_counted_an
     assert run["status"] == "completed", run
     assert output["included"] == 2 and output["included_without_answer_text"] == 1
     assert person not in view["answers"][0]["inputs_given"]["source_ids"]
-
-
-def test_a_legacy_answer_run_opens_no_snapshot_and_an_answer_without_one_shows_none(tmp_path, monkeypatch):
-    app = app_for(tmp_path, monkeypatch, workflow="legacy")
-    client = client_of(app)
-    try:
-        store = app.state.store
-        rid = research_with_pdf(client)
-        view, run, run_id = answer(client, rid)
-        step = snapshot_step(store, run_id)
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] == "completed", run
-    assert step is None
-    assert view["answers"][0]["start_snapshot"] is None and view["counts"]["flow"] is None
-
-
 def test_an_sw_answer_stored_before_this_slice_has_no_snapshot_and_no_counts_of_today(tmp_path, monkeypatch):
     app = app_for(tmp_path, monkeypatch)
     client = client_of(app)

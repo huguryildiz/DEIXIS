@@ -16,7 +16,6 @@ from deixis.domain.rules import (
     RevisionConflict,
     after_invalid_output,
     check_expected_version,
-    effective_selection,
     result_applicability,
 )
 
@@ -46,7 +45,7 @@ def test_report_task_types_are_registered():
 
 
 def test_report_step_input_requires_report_target_only_for_report_tasks():
-    si = json.loads(json.dumps(STEP_INPUTS["A_search_plan"]))
+    si = json.loads(json.dumps(STEP_INPUTS["A_answer"]))
     si["allowlist"]["column_ids"] = []
     assert contracts.check_step_input(si) == []
     si["task_type"] = "report_plan"
@@ -523,33 +522,6 @@ def test_openalex_query_shape_is_limited(query, rejected):
     assert bool(query_rules.openalex_query_shape_issues(query)) is rejected
 
 
-def search_plan(concepts, providers, step_input=STEP_INPUTS["A_search_plan"]):
-    output = json.loads(json.dumps(next(c for c in CASES if c["name"] == "search_plan_valid")["output"]))
-    output["search_plan"].update(concepts=concepts, providers=providers)
-    return contracts.validate_model_output(step_input, output)
-
-
-def test_search_plan_needs_exactly_one_core_concept():
-    method = {"label": "integer programming", "role": "method", "synonyms": ["integer programming"]}
-    assert "core_concept_count" in search_plan([method], ["openalex"]).codes()
-    core = {"label": "moleküler haberleşme", "role": "core", "synonyms": ["molecular communication"]}
-    assert "core_concept_count" in search_plan([core, dict(core, label="nano networks"), method], ["openalex"]).codes()
-    assert search_plan([core, method], ["openalex"]).ok
-    # Synonyms are the search terms; the label is display text, so a core without synonyms goes back for repair.
-    assert "core_without_synonyms" in search_plan([dict(core, synonyms=[]), method], ["openalex"]).codes()
-
-
-def test_search_plan_from_which_no_query_can_be_built_goes_back_for_repair():
-    step_input = json.loads(json.dumps(STEP_INPUTS["A_search_plan"]))
-    step_input["enabled_providers"] = ["core", "serpapi"]
-    core = {"label": "molecular communication", "role": "core", "synonyms": ["molecular communication"]}
-    # CORE answers a quoted phrase without AND with an error, so a core concept alone gives it no query.
-    assert search_plan([core], ["core"], step_input).codes() == ["no_compiled_query"]
-    assert search_plan([core, {"label": "scheduling", "role": "method", "synonyms": ["scheduling"]}], ["core"], step_input).ok
-    assert search_plan([core], ["serpapi"], step_input).codes() == ["supplementary_provider_limit"]
-    assert "duplicate_provider" in search_plan([core], ["openalex", "openalex"]).codes()
-
-
 @pytest.mark.parametrize("text", [
     "Equation 4 on page 12 proves convergence.", "The bound holds (Eq. (7)).", "Table 2 lists the delays.",
     "As shown in Fig. 3, error falls.", "Section 4.2 derives the rule.", "See 10.1234/abc.def for the proof.",
@@ -594,15 +566,6 @@ def test_stale_scope_result_is_not_applied_as_current():
 def test_schema_repair_is_bounded_to_one_attempt():
     assert after_invalid_output(0) == "repair"
     assert after_invalid_output(1) == "store_unverified_draft"
-
-
-def test_user_selection_overrides_model_screening_proposal():
-    proposals = {"cnd_SYNA1cand": "include", "cnd_SYNA2cand": "uncertain", "cnd_SYNA4cand": "exclude"}
-    user = {"cnd_SYNA4cand": "included", "cnd_SYNA1cand": "excluded"}
-    selection = effective_selection(proposals, user)
-    assert selection["cnd_SYNA4cand"] == {"state": "included", "origin": "user"}
-    assert selection["cnd_SYNA1cand"] == {"state": "excluded", "origin": "user"}
-    assert selection["cnd_SYNA2cand"] == {"state": "pending", "origin": "model_proposal"}
 
 
 def test_stale_edit_cannot_overwrite_newer_human_version():

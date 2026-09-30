@@ -309,7 +309,3 @@ def test_effort_limits_come_from_the_rules_and_follow_a_changed_constant(tmp_pat
         "chain_abstracts": rules.CHAIN_ABSTRACT_READ["standard"],
         "passages": rules.TEST_EFFORT_BUDGETS["standard"].max_answer_passages}
     assert changed["efforts"]["quick"]["read"] == 123
-
-
-def test_a_legacy_server_says_so_and_gives_no_sw_numbers(tmp_path, monkeypatch):
-    assert rules.effort_limits("legacy") == {"search_workflow": "legacy", "efforts": None}

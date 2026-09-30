@@ -50,7 +50,7 @@ def app_for(tmp_path, monkeypatch, handler, adapter=None, workflow="sw", approva
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval=approval, fulltext_fetch="off"),
                       adapters={"fake": adapter or DeadAdapter()},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -447,21 +447,6 @@ def test_the_as_proposed_setting_never_stops_and_says_so_in_the_protocol(tmp_pat
     assert all(term["block_origin"] != "user" for term in body["vocabulary"])
 
 
-def test_a_legacy_research_opens_no_approval_step_and_its_protocol_body_is_what_it_was(tmp_path, monkeypatch):
-    client = client_of(app_for(tmp_path, monkeypatch, routed, FakeAdapter(two_provider_plan), workflow="legacy"))
-    try:
-        rid, run_id = start(client, QUESTION)
-        view, run = wait(client, rid, run_id)
-    finally:
-        client.__exit__(None, None, None)
-    assert "protocol_approval" not in steps_of(run)
-    assert run["pause_reason"] != "protocol_approval_needed", run
-    assert next(r for r in view["runs"] if r["id"] == run_id)["approval"] is None
-    body = bodies(tmp_path, rid)[0]
-    assert "approval" not in body and body["search_workflow"] == "legacy"
-
-
-# ---- the route and what the view carries ------------------------------------------------------------------
 
 def test_the_route_refuses_a_run_that_has_not_proposed_a_protocol(tmp_path, monkeypatch):
     client = client_of(app_for(tmp_path, monkeypatch, CountingOpenAlex(), proposing(), approval="as_proposed"))
@@ -475,15 +460,6 @@ def test_the_route_refuses_a_run_that_has_not_proposed_a_protocol(tmp_path, monk
         client.__exit__(None, None, None)
 
 
-def test_the_route_refuses_a_legacy_run_that_proposed_nothing(tmp_path, monkeypatch):
-    client = client_of(app_for(tmp_path, monkeypatch, routed, FakeAdapter(two_provider_plan), workflow="legacy"))
-    try:
-        rid, run_id = start(client, QUESTION)
-        wait(client, rid, run_id)
-        response = client.post(f"/api/runs/{run_id}/protocol-approval", json={"terms": []})
-        assert response.status_code == 409 and "not proposed" in response.text
-    finally:
-        client.__exit__(None, None, None)
 
 
 def test_the_route_refuses_a_run_that_is_no_longer_waiting(tmp_path, monkeypatch):

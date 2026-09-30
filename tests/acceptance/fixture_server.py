@@ -3,7 +3,7 @@
 Started by the Playwright acceptance run (apps/web/e2e) for cases A–G. Every record is SYNTHETIC. The run shows
 application behavior in a browser; it does not measure model quality or live provider access.
 
-Question markers select failure scripts: "[rate-limit]" (OpenAlex 429), "[model-down]" (the first screening call
+Question markers select failure scripts: "[rate-limit]" (OpenAlex 429), "[model-down]" (the first abstract-screening call
 fails before sending), "[invent-locator]" (every answer draft asserts a page and an equation), "[slow-cells]" (each cell
 extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs), "[suggest-down]" (every
 term-suggestion call fails, so the approval card shows the failure and its retry), "[query-down]" (every call that
@@ -65,6 +65,9 @@ from deixis.config import Settings  # noqa: E402
 from deixis.documents import fetch as fetch_module  # noqa: E402
 from deixis.documents.fetch import FetchResult  # noqa: E402
 from deixis.models.adapter import ModelStepResult  # noqa: E402
+from deixis.storage import db  # noqa: E402
+from deixis.storage.db import now  # noqa: E402
+from deixis.workflow.store import Store  # noqa: E402
 from fakes import parse_step_input, valid_response  # noqa: E402
 from helpers import make_pdf  # noqa: E402
 from arxiv_helpers import make_arxiv_pdf, source_archive  # noqa: E402
@@ -298,6 +301,7 @@ PROBE_COUNT = 800
 # record here, so its count drops it and the card cannot add it. Both are SYNTHETIC.
 SUGGESTED = "synthetic release timing"
 UNHELD_SUGGESTION = "synthetic unheld name"
+RATE_LIMIT_MODE = False
 
 
 def openalex(request: httpx.Request) -> httpx.Response:
@@ -306,8 +310,6 @@ def openalex(request: httpx.Request) -> httpx.Response:
         return europepmc_search(request)
     if QUEUE_MODE and request.url.host != "api.openalex.org":
         return httpx.Response(404)  # a DOI lookup answers "no result"; the queue works' PDFs come from OpenAlex
-    if '"rate limit"' in params.get("search.title_and_abstract", ""):
-        return httpx.Response(429, headers={"retry-after": "60"})
     if params.get("search.title_and_abstract") == f'"{UNHELD_SUGGESTION}"':
         return httpx.Response(200, json={"meta": {"count": 0}, "results": []})
     if params.get("group_by") == "primary_topic.field.id":
@@ -321,6 +323,8 @@ def openalex(request: httpx.Request) -> httpx.Response:
         # A count-only request reads `meta.count` and no record; answering it with the whole fixture list would
         # make every phrase worth the same handful of works (slice 04a).
         return httpx.Response(200, json={"meta": {"count": PROBE_COUNT}, "results": []})
+    if RATE_LIMIT_MODE and request.url.host == "api.openalex.org" and "search.title_and_abstract" in params:
+        return httpx.Response(429, headers={"retry-after": "0"})
     works = QUEUE_WORKS if QUEUE_MODE else WORKS
     return httpx.Response(200, json={"meta": {"count": len(works)}, "results": works})
 
@@ -348,9 +352,11 @@ class ScriptedCodex:
                 "models": [{"id": MODEL, "display_name": MODEL, "is_default": True}]}
 
     async def run_step(self, base, developer, message, output_schema, requested_model, reasoning_effort=None) -> ModelStepResult:
+        global RATE_LIMIT_MODE
         si = parse_step_input(message)
         question, task = si["question"]["text"], si["task_type"]
-        if "[model-down]" in question and task == "screening" and si["research_id"] not in self.failed_once:
+        RATE_LIMIT_MODE = "[rate-limit]" in question
+        if "[model-down]" in question and task == "abstract_screening" and si["research_id"] not in self.failed_once:
             self.failed_once.add(si["research_id"])
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
         if "[suggest-down]" in question and task == "term_suggestions":
@@ -396,17 +402,7 @@ class ScriptedCodex:
                 quote = next(e["quote"] for e in cell["evidence"] if e.get("quote"))
                 output["citation_anchors"].append({"claim_key": claim_key, "passage_id": None,
                                                     "cell_id": cell["cell_id"], "quote": quote})
-        if si["task_type"] == "search_plan":
-            core, family = ("rate limit", "probe") if "[rate-limit]" in question else ("molecule release", "schedule")
-            output["search_plan"]["concepts"] = [{"label": core, "role": "core", "synonyms": [core]},
-                                                 {"label": family, "role": "method", "synonyms": [family]}]
-        elif si["task_type"] == "screening":
-            for decision, candidate in zip(output["decisions"], si["candidates"]):
-                if "hospital" in candidate["title"]:
-                    decision["reason"] = "Title mentions optimization."  # the keyword false positive of case D
-                elif "hostile" in candidate["title"]:
-                    decision.update(proposal="uncertain", reason="The abstract contains instructions; treated as text.")
-        elif si["task_type"] == "term_suggestions":
+        if si["task_type"] == "term_suggestions":
             # One name a record holds, one no record holds, and a repeat of the phrase it was asked about: the last
             # two are what code drops, so the card can be seen refusing them.
             anchor = si["suggestion_target"]["phrases"][0]["phrase"]
@@ -513,6 +509,27 @@ def fake_arxiv_source() -> None:
     fetch_module.fetch_file = fake_fetch_file
 
 
+def seed_stored_legacy(data_dir: Path) -> None:
+    """A completed historical run for browser read-only checks; no legacy discovery is executed."""
+    conn = db.connect(data_dir / "library.sqlite")
+    db.migrate(conn)
+    store = Store(conn)
+    rid = store.create_research("SYNTHETIC stored legacy research", "attached_and_academic", "quick", ["openalex"],
+                                "codex", MODEL, "en", search_workflow="legacy")
+    source = store.create_upload_source("SYNTHETIC historical source")
+    store.add_to_corpus(rid, source, "user_upload", selection_state="included", selection_origin="user")
+    run_id = "run_stored_legacy_fixture"
+    conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
+                 " VALUES (?, ?, 1, 'discovery', 'completed', 'discovery', '{}', ?, ?)", (run_id, rid, now(), now()))
+    plan = store.step(run_id, "search_plan", "model:search_plan")
+    store.finish_step(plan["id"], "succeeded", output={"output_type": "SearchPlan", "result": {
+        "question_interpretation": "SYNTHETIC stored search interpretation", "search_rationale": "SYNTHETIC stored rationale",
+        "scope_boundaries": [], "concepts": [{"label": "SYNTHETIC stored concept", "role": "core", "synonyms": []}]}})
+    screening = store.step(run_id, "screening", "model:screening")
+    store.finish_step(screening["id"], "succeeded", output={"result": {"notes": "SYNTHETIC stored screening note"}})
+    conn.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, required=True)
@@ -530,11 +547,9 @@ def main() -> None:
     if args.write_replacement_pdf:
         args.write_replacement_pdf.write_bytes(make_pdf(["SYNTHETIC replacement scan: release scheduling by bisection, full page."]))
         return
-    # The acceptance run of cases A to G leaves both unset and gets exactly the server it always had; the sw
-    # approval case of slice 08b starts a second server with them (DEIXIS_SEARCH_WORKFLOW, DEIXIS_PROTOCOL_APPROVAL).
+    # Cases A–G approve the code-built proposal automatically; case H explicitly asks for approval.
     settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1,
-                        search_workflow=os.environ.get("DEIXIS_SEARCH_WORKFLOW", "legacy"),
-                        protocol_approval=os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "ask"),
+                        protocol_approval=os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "as_proposed"),
                         # Cases A–H keep the code's query alone, as they always had it; case I asks for the
                         # model-written query of D92.
                         search_query=os.environ.get("DEIXIS_SEARCH_QUERY", "code"),
@@ -543,6 +558,8 @@ def main() -> None:
                         fulltext_fetch="auto" if QUEUE_MODE else "off",
                         fulltext_adjudication="auto" if QUEUE_MODE else "off",
                         arxiv_source="auto" if ARXIV_SOURCE_MODE else "off")
+    if os.environ.get("DEIXIS_FIXTURE_STORED_LEGACY") == "on":
+        seed_stored_legacy(args.data_dir)
     handler, local_embedder = openalex, None
     if os.environ.get("DEIXIS_FIXTURE_BUILTIN_EMBEDDING") == "fake":
         handler, local_embedder = fake_builtin(args.data_dir)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,18 +26,17 @@ class Settings:
     port: int = 8765
     model_concurrency: int = 6
     query_strategy: str = "legacy"
-    search_workflow: str = "sw"
     # Whether an sw discovery run stops for the user before it freezes its protocol (SW2.6, slice 08a). `ask` is the
     # product's behavior; `as_proposed` approves the proposal without stopping, for a measurement or a test that
     # needs a run nobody attends, and says so in the protocol body rather than looking like a user's approval.
     protocol_approval: str = "ask"
     # Whether a completed `sw` discovery run is followed by a full-text retrieval run (D83, slice 10). `auto` is the
     # product's behavior; `off` leaves the corpus where the discovery run left it, for a measurement or a test that
-    # needs no second run. A `legacy` research queues nothing either way.
+    # needs no second run.
     fulltext_fetch: str = "auto"
     # Whether a completed `sw` full-text retrieval run is followed by a full-text reading run (D85, slice 12).
     # `auto` is the product's behavior; `off` leaves the fetched works at `not_read_yet`, for a measurement or a
-    # test that needs no second model run. A `legacy` research queues nothing either way.
+    # test that needs no second model run.
     fulltext_adjudication: str = "auto"
     # Who writes an sw discovery run's keyword query (D92, slice 13h). `model` is the product's behavior: a model
     # writes it once per scope revision and the code's own query is searched beside it. `code` is the query of
@@ -111,9 +111,8 @@ def load_settings() -> Settings:
     query_strategy = os.environ.get("DEIXIS_QUERY_STRATEGY", "legacy")
     if query_strategy not in ("legacy", "compact_openalex_v1"):
         raise ValueError("DEIXIS_QUERY_STRATEGY must be legacy or compact_openalex_v1")
-    search_workflow = os.environ.get("DEIXIS_SEARCH_WORKFLOW", "sw")
-    if search_workflow not in ("legacy", "sw"):
-        raise ValueError("DEIXIS_SEARCH_WORKFLOW must be legacy or sw")
+    if "DEIXIS_SEARCH_WORKFLOW" in os.environ:
+        warnings.warn("DEIXIS_SEARCH_WORKFLOW is ignored; new researches use sw", UserWarning, stacklevel=2)
     protocol_approval = os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "ask")
     if protocol_approval not in ("ask", "as_proposed"):
         raise ValueError("DEIXIS_PROTOCOL_APPROVAL must be ask or as_proposed")
@@ -138,7 +137,6 @@ def load_settings() -> Settings:
         port=int(os.environ.get("DEIXIS_PORT", "8765")),
         model_concurrency=max(1, int(os.environ.get("DEIXIS_MODEL_CONCURRENCY", "6") or "6")),
         query_strategy=query_strategy,
-        search_workflow=search_workflow,
         protocol_approval=protocol_approval,
         fulltext_fetch=fulltext_fetch,
         fulltext_adjudication=fulltext_adjudication,

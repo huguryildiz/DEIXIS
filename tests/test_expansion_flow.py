@@ -99,7 +99,7 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None):
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setitem(CONNECTORS, "openalex", replace(CONNECTORS["openalex"], max_results=PAGE))
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_workflow=workflow, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
                                protocol_approval="as_proposed", fulltext_fetch="off"),
                       adapters={"fake": adapter or DeadAdapter()},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -263,7 +263,7 @@ def test_an_accepted_phrase_freezes_a_second_revision_and_leaves_the_first_alone
         rebuilt = protocol.build_protocol(
             app.state.store.scope(rid, 1), app.state.store.run(run_id)["budget"], None,
             first["queries"] + stored["queries"], app.state.package.package_hash,
-            Settings(data_dir=tmp_path / "data", port=8765, search_workflow="sw", search_query="code"),
+            Settings(data_dir=tmp_path / "data", port=8765, search_query="code"),
             vocabulary=first["vocabulary"], expansion=stored["expansion"],
             # The approval is an input of the body like the vocabulary, so the rebuild is given it too (slice 08a).
             approval=app.state.store.approval_step(run_id)["output"]["approval"], routing=first["routing"])
@@ -326,28 +326,6 @@ def test_the_request_allowance_covers_the_second_round_and_its_retries(tmp_path,
     assert any(ACCEPTED in row["query_text"] and row["status"] == "completed" for row in openalex_rows(view))
 
 
-def test_a_legacy_research_opens_no_expansion_step(tmp_path, monkeypatch):
-    from fakes import valid_response
-
-    def one_provider_plan(si):
-        if si["task_type"] != "search_plan":
-            return valid_response(si)
-        output = json.loads(valid_response(si))
-        output["search_plan"].update(providers=["openalex"], concepts=[
-            {"label": "packet size", "role": "core", "synonyms": ["packet size"]}])
-        return json.dumps(output)
-
-    app = app_for(tmp_path, monkeypatch, Field(), workflow="legacy", adapter=FakeAdapter(one_provider_plan))
-    client = client_of(app)
-    try:
-        rid, run_id, view, run = discover(client)
-        frozen = protocols(app.state.store, rid)
-    finally:
-        client.__exit__(None, None, None)
-    keys = [step["operation_key"] for step in run["steps"]]
-    assert "vocabulary_expansion" not in keys and "protocol_expansion" not in keys
-    assert [row["protocol_revision"] for row in frozen] == [1]
-    assert frozen[0]["body"]["arms"] == ["keyword_search"] and "expansion" not in frozen[0]["body"]
 
 
 def test_a_setting_synonym_takes_the_setting_blocks_place_and_the_task_block_stays(tmp_path, monkeypatch):

@@ -78,20 +78,6 @@ def test_an_sw_research_without_a_completed_discovery_is_still_refused(tmp_path,
         assert start_answer(client, rid).status_code == 422
     finally:
         client.__exit__(None, None, None)
-
-
-def test_a_legacy_research_with_no_include_is_still_refused(tmp_path, monkeypatch):
-    app = app_for(tmp_path, monkeypatch, workflow="legacy")
-    client = client_of(app)
-    try:
-        store = app.state.store
-        rid = research(client)
-        completed_discovery(store, rid)
-        assert start_answer(client, rid).status_code == 422
-    finally:
-        client.__exit__(None, None, None)
-
-
 def test_a_pdf_collection_with_no_include_is_still_refused(tmp_path, monkeypatch):
     app = app_for(tmp_path, monkeypatch, workflow="sw")
     client = client_of(app)

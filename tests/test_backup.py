@@ -27,7 +27,7 @@ def build_library(tmp_path):
         client.post(f"/api/researches/{rid}/uploads", files={"file": ("notes.pdf", make_pdf(["SYNTHETIC uploaded notes."]), "application/pdf")})
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
         wait_run(client, rid, run["id"])
-        backup_dir = create_backup(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), tmp_path / "backups")  # server still running
+        backup_dir = create_backup(Settings(data_dir=tmp_path / "data", port=8765), tmp_path / "backups")  # server still running
         view = client.get(f"/api/researches/{rid}").json()
         assets = {a["id"]: client.get(f"/api/researches/{rid}/assets/{a['id']}").content
                   for s in view["sources"] for a in s["access"]["assets"]}
@@ -45,7 +45,7 @@ def test_backup_restores_selections_answers_and_files(tmp_path):
     assert not any("codex-home" in str(p) for p in backup_dir.rglob("*"))  # model sign-in data is never copied
 
     restored = tmp_path / "restored"
-    result = restore_backup(backup_dir, Settings(search_workflow="legacy", data_dir=restored / "data", port=8765))
+    result = restore_backup(backup_dir, Settings(data_dir=restored / "data", port=8765))
     assert result["researches"] == 1
 
     with TestClient(app_for(restored)) as client:
@@ -63,13 +63,13 @@ def test_restore_refuses_changed_backup_and_existing_library(tmp_path):
     _, _, _, backup_dir = build_library(tmp_path)
 
     with pytest.raises(BackupError, match="already exists"):
-        restore_backup(backup_dir, Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765))
+        restore_backup(backup_dir, Settings(data_dir=tmp_path / "data", port=8765))
 
     changed = tmp_path / "changed"
     shutil.copytree(backup_dir, changed)
     paper = next((changed / "papers").iterdir())
     paper.write_bytes(paper.read_bytes() + b"%")
-    target = Settings(search_workflow="legacy", data_dir=tmp_path / "other" / "data", port=8765)
+    target = Settings(data_dir=tmp_path / "other" / "data", port=8765)
     with pytest.raises(BackupError, match="missing or changed"):
         restore_backup(changed, target)
     assert not target.db_path.exists()
@@ -79,5 +79,5 @@ def test_backup_fails_without_leaving_a_partial_folder_when_a_file_is_missing(tm
     _, _, _, backup_dir = build_library(tmp_path)
     next((tmp_path / "data" / "papers").iterdir()).unlink()
     with pytest.raises(BackupError, match="missing"):
-        create_backup(Settings(search_workflow="legacy", data_dir=tmp_path / "data", port=8765), tmp_path / "later")
+        create_backup(Settings(data_dir=tmp_path / "data", port=8765), tmp_path / "later")
     assert not (tmp_path / "later").exists() or not any((tmp_path / "later").iterdir())

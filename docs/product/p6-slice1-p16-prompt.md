@@ -134,6 +134,7 @@ Three subcommands, following `scripts/p4_eval/measure.py` (argparse, one `main`,
    `results.json` also holds the automated parts from `automated.json` so one file carries all eleven rows. A row whose
    reader marked fewer units than the sheet lists says so (`judged` vs `total`), and an unmarked sheet is `not_measurable`
    with reason `not_read`, not zero.
+   - **SUPERSEDED (30 September 2026, freeze review 4): R10 is not measured in this slice; `--seeded` only carries P15's real file (`results`, `case_id`, `automatic_checks.flagged`) as a separate `p15_behavior` record and R10 is always `not_measurable` (`p15_behavior_is_not_r10`). The bullet below is the original proposal, kept for the record.**
    - **R10 interface (P15 is not landed; do not touch its files):** `--seeded` takes a JSON file that is either a list or an
      object with a `cases` list; each entry whose `id` starts with `RS` counts as one seeded fault. Recognised optional
      fields: `review_caught` and `assembly_caught` (true, false or null), `seeded_fault`, `task`. The kit computes

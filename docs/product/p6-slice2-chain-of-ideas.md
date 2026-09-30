@@ -535,7 +535,7 @@ L1–L4'ün bağımsızlığı yalnız aşağıdaki arayüz sınırlarıyla geç
 **Çıkış.** Üç rol sütunu eklenir, yeniden eklemek ikinci kopya üretmez, rol ad değişikliğinden sağ çıkar, migration temiz uygulanır; dilim 1 testleri değişmeden geçer.
 **Göstermez.** Sütunların doldurulma kalitesini; rapor kalitesine etkisini; 2c'deki rapor davranışını.
 
-### L2 — Modelsiz adaylar, atıf kenarları ve alan tabanı (M)
+### L2 — Modelsiz adaylar, atıf kenarları ve alan tabanı (M) ✅ commit: bu satırı ekleyen commit
 
 **Kapsam.** `workflow/lineage/mentions.py` (soyadı+yıl ve başlık parçası, normalize, en çok 3 pasaj, kararlı sıra), `edges.py` (dört durum, `record_references ⋈ identifier_mappings`), `candidates.py` (aday kümesi, parçalama, `not_sent_budget`, `year_order_warning`, insan kararlı çiftin hariç tutulması için arayüz), `baseline.py` (iki liste, ilk beş, eşitlik `work_id`, korpus içi atıf sayıları, bilinmeyen sayı sıfır sayılmaz). Hepsi **saf** işlevlerdir: girdi olarak kendilerine verilen kaynak/pasaj/sayı anlık görüntülerini alır, DB'den okumaz ve yazmaz; aday önceliği tek sıralama anahtarıyla (§4.3), normalizasyon, stopword kümesi ve 60 karakter aralığının ölçüldüğü metin burada sabitlenir ve kayda yazılır. İnsan kararlı çift hariç tutma bir parametredir (burada boş küme).
 **Dosyalar.** `backend/deixis/workflow/lineage/{__init__,mentions,edges,candidates,baseline}.py`, `tests/test_lineage_mentions.py`, `tests/test_lineage_edges.py`, `tests/test_lineage_baseline.py`.

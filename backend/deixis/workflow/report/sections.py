@@ -6,12 +6,15 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 from deixis.domain import contracts, phrasebank
+from deixis.domain.rules import RevisionConflict
 from deixis.workflow.flow import OptionalStepFailed, RunStopped
 from deixis.workflow.report import assembly, gaps, review_methodology, selection
 from deixis.workflow.report.phrasing import _report_checkpoint, flagged_sentences, repair_section
 from deixis.workflow.report.plan import freeze_plan
 from deixis.workflow.report.review import run_report_review
 from deixis.workflow.report.store import ReportStore
+from deixis.workflow.report.snapshot import evidence_row_ids
+from deixis.workflow.store import NotFound
 from deixis.workflow.tables import TableStore, report_ready
 
 if TYPE_CHECKING:
@@ -219,15 +222,27 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     table_id, report_id = run["target"]["table_id"], run["target"]["report_id"]
     tables, reports = TableStore(flow.store), ReportStore(flow.store)
     flow._checkpoint(run_id, run["scope_revision"])
-    readiness = report_ready(flow.store, research_id, table_id)
-    if not readiness["ready"]:
-        flow._fail(run_id, "table_not_ready", readiness)
-    snapshot = reports.save_snapshot(report_id, table_id)
+    continue_with_failed = run["target"].get("continue_with_failed", False)
+    snapshot = None
+    if continue_with_failed:
+        try:
+            snapshot = reports.snapshot(report_id)
+        except NotFound:
+            pass
+    if snapshot is None:
+        readiness = report_ready(flow.store, research_id, table_id, continue_with_failed=continue_with_failed)
+        if not readiness["ready"]:
+            flow._fail(run_id, "table_not_ready", readiness)
+        try:
+            snapshot = reports.save_snapshot(report_id, table_id, continue_with_failed=continue_with_failed)
+        except RevisionConflict:
+            flow._fail(run_id, "table_not_ready", report_ready(flow.store, research_id, table_id,
+                                                              continue_with_failed=continue_with_failed))
     target = {"report_id": report_id, "section_id": None, "columns": snapshot["columns"], "plan": None, "cells": [],
               "gap_candidates": [], "prior_summaries": [], "repair_request": None, "review_scope": None,
               "limitations_core": None}
 
-    source_ids = [row["source_version_id"] for row in snapshot["rows"]]
+    source_ids = evidence_row_ids(snapshot)
     # One passage per source for the plan's vocabulary: the abstract, or the first PDF page when a source has
     # none (an attached-PDF research has no abstract at all, and an empty allowlist leaves the plan unwritable).
     plan_passages = []
@@ -252,7 +267,8 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     flow._checkpoint(run_id, run["scope_revision"])
     if output.get("invalid"):
         flow._fail(run_id, "invalid_model_output", {"step": "report_plan", "issues": output["issues"]})
-    frozen_plan = freeze_plan(output["result"], snapshot, len(tables.active_rows(table_id)))
+    frozen_plan = freeze_plan(output["result"], snapshot,
+                              snapshot.get("row_counts", {}).get("completed", len(tables.active_rows(table_id))))
     reports.set_plan(report_id, frozen_plan)
 
     if not flow.store.research(research_id)["title"]:

@@ -919,14 +919,40 @@
                 }
               },
               "items": {
-                "type": "array", "minItems": 7, "maxItems": 7,
-                "items": {
+                "type": "array", "minItems": 7, "maxItems": 8,
+                "prefixItems": [
+                  { "properties": { "number": { "maximum": 7 } } },
+                  { "properties": { "number": { "maximum": 7 } } },
+                  { "properties": { "number": { "maximum": 7 } } },
+                  { "properties": { "number": { "maximum": 7 } } },
+                  { "properties": { "number": { "maximum": 7 } } },
+                  { "properties": { "number": { "maximum": 7 } } },
+                  { "properties": { "number": { "maximum": 7 } } }, {
+                  "properties": { "number": { "const": 8 }, "key": { "const": "failed_rows" } }
+                }],
+                "items": false,
+                "allOf": [{ "items": {
                   "type": "object", "additionalProperties": false,
                   "required": ["number", "key", "text"],
                   "properties": {
-                    "number": { "type": "integer", "minimum": 1, "maximum": 7 },
-                    "key": { "type": "string", "enum": ["recall_measurement", "open_access_bias_note", "no_full_text_share", "analyst_inference_share", "kill_search_status", "phrase_repair_exceptions", "truncation"] },
+                    "number": { "type": "integer", "minimum": 1, "maximum": 8 },
+                    "key": { "type": "string", "enum": ["recall_measurement", "open_access_bias_note", "no_full_text_share", "analyst_inference_share", "kill_search_status", "phrase_repair_exceptions", "truncation", "failed_rows"] },
                     "text": { "type": "string", "minLength": 1 }
+                  },
+                  "if": { "properties": { "number": { "const": 8 } } },
+                  "then": { "properties": { "key": { "const": "failed_rows" } } },
+                  "else": { "properties": { "key": { "not": { "const": "failed_rows" } } } }
+                } }]
+              },
+              "failed_rows": {
+                "type": "array",
+                "items": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["source_version_id", "name", "reason"],
+                  "properties": {
+                    "source_version_id": { "$ref": "common.schema.json#/$defs/source_id" },
+                    "name": { "type": "string" },
+                    "reason": { "type": "string" }
                   }
                 }
               }

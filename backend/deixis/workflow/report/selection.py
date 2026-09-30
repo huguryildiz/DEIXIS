@@ -7,6 +7,7 @@ import math
 from typing import Any
 
 from deixis.workflow.store import Store
+from deixis.workflow.report.snapshot import evidence_row_ids
 
 
 SECTION_BUDGET_TOKENS = {
@@ -46,7 +47,7 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
         return {"passages": [], "cells": [], "truncated": []}
 
     del prior_summaries
-    source_ids = [row["source_version_id"] for row in snapshot.get("rows", [])]
+    source_ids = evidence_row_ids(snapshot)
     passages_by_source = {source_id: store.passages_for(source_id) for source_id in source_ids}
     passage_by_id = {_passage_id(passage): passage for passages in passages_by_source.values() for passage in passages}
     selected_passages: list[dict[str, Any]] = []

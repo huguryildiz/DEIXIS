@@ -27,6 +27,21 @@ _TEMPLATES = {
     ),
 }
 
+_ROW_TEMPLATES = {
+    "en": (" Of the {included} included sources, {completed} have a completed evidence-table row and {failed} do not "
+           "(missing table cells: {cells_missing} of {cells_total}); rows that did not complete are left out of "
+           "the report's evidence."),
+    "tr": (" {included} dahil kaynağın {completed} tanesinde kanıt tablosu satırı tamamlandı, {failed} tanesinde "
+           "tamamlanmadı ({cells_total} tablo hücresinin {cells_missing} tanesi eksik); tamamlanmayan satırlar "
+           "raporun kanıt değerlendirmesine alınmadı."),
+}
+
+
+def failed_reason_text(reason: str, language: str) -> str:
+    if reason == "no_stored_text":
+        return "saklı metin yok" if language.startswith("tr") else "no stored text"
+    return reason.replace("_", " ")
+
 
 # Citation searching (PRISMA-S item 5), written only when a discovery run of this revision chained citations (D95).
 _CHAIN_TEMPLATES = {
@@ -47,7 +62,8 @@ def render_review_methodology(numbers: dict[str, Any], language: str, *, provide
         fetch_pdf=numbers["fetch_pdf"], pdf_other_copy=numbers["pdf_other_copy"],
         providers=providers, queries=queries, compiler_versions=compiler_versions,
         screening_models=screening_models, screening_criteria=screening_criteria,
-    ) + chain_provenance
+    ) + chain_provenance + (_ROW_TEMPLATES["tr" if language.startswith("tr") else "en"].format(**numbers["rows"])
+                            if "rows" in numbers else "")
 
 
 def render_limitations(numbers: dict[str, Any], language: str) -> str:
@@ -143,13 +159,25 @@ def limitations_core(store: Store, reports: ReportStore, report_id: str,
     )
     keys = ("recall_measurement", "open_access_bias_note", "no_full_text_share", "analyst_inference_share",
             "kill_search_status", "phrase_repair_exceptions", "truncation")
-    return {"version": 1, "kind": "limitations", "as_of": "before_viii", "corpus": corpus,
+    result = {"version": 1, "kind": "limitations", "as_of": "before_viii", "corpus": corpus,
             "recall_measurement": None, "open_access_bias_note": True, "included": included,
             "full_text": full_text, "no_full_text_share": share,
             "analyst_inference_share": counts, "kill_search_status": "not_run",
             "phrase_repair_exceptions": repairs, "truncation": truncation,
             "items": [{"number": i, "key": key, "text": sentence}
                       for i, (key, sentence) in enumerate(zip(keys, texts), 1)]}
+    if snapshot.get("failed_rows"):
+        result["failed_rows"] = [{"source_version_id": row["source_version_id"],
+                                  "name": row["source_key"] or row["title"], "reason": row["reason"]}
+                                 for row in snapshot["failed_rows"]]
+        names = "; ".join(f"{row['name']} ({failed_reason_text(row['reason'], language)})"
+                          for row in result["failed_rows"])
+        text = (f"Kanıt tablosu satırları tamamlanmadı: {names}. Bu satırlar raporun kanıt değerlendirmesine "
+                "ve toplulaştırma paydalarına alınmadı." if tr else
+                f"The evidence-table rows for {names} did not complete. These rows were excluded from the report's "
+                "evidence assessment and aggregation denominators.")
+        result["items"].append({"number": 8, "key": "failed_rows", "text": text})
+    return result
 
 
 def _chain_provenance(steps: list[dict[str, Any]], language: str) -> str:
@@ -244,6 +272,8 @@ def write_review_methodology(store: Store, reports: ReportStore, report_id: str,
                "full_text_ratio": corpus["full_text"] / included if included else 0.0,
                "fetch_pdf": sum(step["kind"] == "fetch_pdf" for step in steps),
                "pdf_other_copy": sum(step["kind"] == "pdf_other_copy" for step in steps)}
+    if snapshot.get("failed_rows"):
+        numbers["rows"] = dict(snapshot["row_counts"])
     text = render_review_methodology(
         numbers, language, providers=providers, queries=queries, compiler_versions=compiler_versions,
         screening_models=screening_models, screening_criteria=screening_criteria,

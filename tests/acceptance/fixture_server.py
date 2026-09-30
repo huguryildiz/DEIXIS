@@ -13,7 +13,9 @@ queue work by a script, so case J finds one row of each kind it needs), "[protoc
 protocol, so it is a `confirm_results` row), "[comparator]" (with `DEIXIS_FIXTURE_COMPARATOR=on`, case S, slice 28: the
 criterion names a comparator and both reading runs find no part of one more work, so code does not exclude it and it is
 a `comparator_exclusion_withheld` row), "[read-fails]" (the first reading run of the
-person's file of case L answers nothing usable, so the file is not read until the person asks again).
+person's file of case L answers nothing usable, so the file is not read until the person asks again),
+"[fill-fails-one-row]" (every extraction for the fixed bisection study returns invalid JSON, including its bounded
+repair; the other rows fill normally, so the missing-row report choice can be exercised).
 
 `DEIXIS_FIXTURE_QUEUE=on` (case J, slice 17) switches on retrieval and reading and serves the queue works below instead
 of the A–I records; every other case leaves it unset and gets the server it always had. `DEIXIS_FIXTURE_AUDIT=on` (cases
@@ -367,6 +369,10 @@ class ScriptedCodex:
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
         if "[slow-cells]" in question and task == "cell_extraction":
             await asyncio.sleep(1.5)
+        if "[fill-fails-one-row]" in question and task == "cell_extraction" and any(
+            source["title"] == "SYNTHETIC molecule release scheduling with bisection" for source in si["sources"]
+        ):
+            return ModelStepResult("completed", raw_text="SYNTHETIC invalid extraction", resolved_model=requested_model)
         if task == "fulltext_adjudication" and any("Journal of Relay Studies" in p["text"] for p in si["passages"]):
             # Case L: the person's file. Under "[read-fails]" its first reading run answers nothing usable, so the
             # file is left unread; the run the person's retry opens reads it.

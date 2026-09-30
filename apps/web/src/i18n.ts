@@ -25,6 +25,10 @@ export function t(text: string, vars?: Record<string, string | number>): string 
 }
 
 const tr: Record<string, string> = {
+  '{n} of {m} sources did not complete the table (missing cells: {cells}). These rows will be excluded from the report’s evidence assessment and aggregation denominators.': "{m} kaynağın {n}'ünde tablo doldurma tamamlanmadı; {cells} hücre eksik. Bu satırlar raporun kanıt değerlendirmesine ve toplulaştırma paydalarına alınmayacak.",
+  '{n} of {m} sources did not complete the table (missing cells: {cells}). These rows were excluded from the report’s evidence assessment and aggregation denominators.': "{m} kaynağın {n}'ünde tablo doldurma tamamlanmadı; {cells} hücre eksik. Bu satırlar raporun kanıt değerlendirmesine ve toplulaştırma paydalarına alınmadı.",
+  'Write the report with missing rows': 'Eksik satırlarla raporu yaz',
+  'no stored text': 'saklı metin yok',
   'Evidence report': 'Kanıt raporu',
   'Source record unavailable': 'Kaynak kaydı kullanılamıyor',
   'Open evidence report': 'Kanıt raporunu aç',

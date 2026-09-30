@@ -8,6 +8,7 @@ from typing import Any
 
 from deixis.domain.rules import RevisionConflict
 from deixis.workflow.report.store import DISPLAY_ORDER, ReportStore
+from deixis.workflow.report.review_methodology import failed_reason_text
 from deixis.workflow.store import NotFound, Store
 
 MEDIA_TYPES = {"markdown": "text/markdown; charset=utf-8"}
@@ -197,6 +198,17 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
         lines.extend([f"> {_label(f'DRAFT: {count} sections not validated.', tr, f'TASLAK: {count} bölüm doğrulanmadı.')}", ""])
     lines.extend([f"# {_md(title)}", _label("Evidence report · draft" if draft else f'Evidence report · V{view["report_version"]}',
                                           tr, "Kanıt raporu · taslak" if draft else f'Kanıt raporu · V{view["report_version"]}'), ""])
+    missing = view.get("missing_rows")
+    if missing:
+        counts = missing["counts"]
+        lines.extend([_label(
+            f"{counts['failed']} of {counts['included']} sources did not complete the table (missing cells: {counts['cells_missing']}). "
+            "These rows were excluded from the report's evidence assessment and aggregation denominators.", tr,
+            f"{counts['included']} kaynağın {counts['failed']} tanesinde tablo doldurma tamamlanmadı; {counts['cells_missing']} hücre eksik. "
+            "Bu satırlar raporun kanıt değerlendirmesine ve toplulaştırma paydalarına alınmadı."), ""])
+        lines.extend(f"- {_md(row['source_key'] or row['title'])}: {_md(failed_reason_text(row['reason'], 'tr' if tr else 'en'))}"
+                     for row in missing["failed_rows"])
+        lines.append("")
     edited = view.get("edited_after_version")
     if edited is not None:
         lines.extend([_label(f"Edited by hand after version {edited}; edited text was not checked again.", tr,

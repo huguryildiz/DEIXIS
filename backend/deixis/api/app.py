@@ -249,6 +249,7 @@ class CreateTable(BaseModel):
 
 class StartReport(BaseModel):
     table_id: str
+    continue_with_failed: bool = False
 
 
 class ReportClaimEdit(BaseModel):
@@ -1849,7 +1850,8 @@ def create_app(
     @app.post("/api/researches/{research_id}/reports", status_code=202)
     async def start_report(research_id: str, body: StartReport, request: Request,
                            idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
-        run = reports_of(request).request_report(research_id, body.table_id, idempotency_key)
+        run = reports_of(request).request_report(research_id, body.table_id, idempotency_key,
+                                                continue_with_failed=body.continue_with_failed)
         request.app.state.worker.wake()
         return run
 

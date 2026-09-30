@@ -332,7 +332,14 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                            "version_label": source["version_label"],
                            "open_passage_id": first_passage.get(source_id) or fallback})
     table_i = None
+    missing_rows = None
     if frozen:
+        failed_ids = {row["source_version_id"] for row in frozen.get("failed_rows", [])}
+        if failed_ids:
+            missing_rows = {"counts": frozen["row_counts"],
+                            "failed_rows": [{key: row[key] for key in (
+                                "source_version_id", "source_key", "title", "reason", "missing_columns")}
+                                for row in frozen["failed_rows"]]}
         frozen_sources = {}
         for row in frozen["rows"]:
             source = store.conn.execute(
@@ -351,7 +358,8 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
             "rows": [{"source_version_id": row["source_version_id"],
                       "ref_number": numbers.get(row["source_version_id"]),
                       "source_key": frozen_sources[row["source_version_id"]]["source_key"] if frozen_sources[row["source_version_id"]] else None,
-                      "title": frozen_sources[row["source_version_id"]]["title"] if frozen_sources[row["source_version_id"]] else None}
+                      "title": frozen_sources[row["source_version_id"]]["title"] if frozen_sources[row["source_version_id"]] else None,
+                      **({"failed": True} if row["source_version_id"] in failed_ids else {})}
                      for row in frozen["rows"]],
             "cells": [{"cell_id": cell["cell_id"], "column_id": cell["column_id"], "source_version_id": cell["source_version_id"],
                        "state": cell["state"], "value": cell["value"],
@@ -361,7 +369,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
     run = store.conn.execute("SELECT id, status, pause_reason FROM runs WHERE id = ?", (report["run_id"],)).fetchone()
     return report | {"sections": sections, "evidence_changes": {key: value for key, value in changes.items() if key != "sections"},
                      "edited_after_version": report["report_version"] if edited else None,
-                     "references": references, "table_i": table_i,
+                     "references": references, "table_i": table_i, "missing_rows": missing_rows,
                      "run": dict(run) if run else None}
 
 

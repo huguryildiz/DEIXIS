@@ -672,7 +672,7 @@ export type TableView = {
   column_suggestions: { run_id: string; step_id: string; columns: ColumnSuggestion[]; notes: string } | null
 }
 export type TableSummary = { id: string; title: string; version: number; created_at: string; updated_at: string; rows: number; columns: number
-  report_ready: { ready: boolean; cells_left: number; cells_total: number; failed_rows: number } }
+  report_ready: { ready: boolean; cells_left: number; cells_total: number; failed_rows: number; can_continue_with_failed: boolean; failed_cells: number; included_rows: number } }
 export type ReportSummary = { id: string; status: 'in_progress' | 'valid' | 'draft'; report_version: number | null; created_at: string }
 export type ReportLink = { passage_id: string | null; cell_id: string | null; source_version_id: string; ref_number: number; open_passage_id: string | null
   anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null }
@@ -687,9 +687,11 @@ export type ReportReview = { status: 'reviewed'; step_input_id: string; sections
   | { status: 'not_reviewed'; reason: string; detail: unknown; sections_reviewed: string[]; sections_not_reviewed: { section_id: string; reason: string }[]
     findings: []; notes: string; reverted: []; not_reverted: [] }
 export type ReportDetail = ReportSummary & { language: string; updated_at: string; sections: ReportSection[]; edited_after_version: number | null; review: ReportReview | null
+  missing_rows: { counts: { included: number; completed: number; failed: number; cells_missing: number; cells_total: number }
+    failed_rows: { source_version_id: string; source_key: string | null; title: string; reason: string; missing_columns: { column_id: string; name: string; reason: string }[] }[] } | null
   evidence_changes: { any: boolean; changed_cells: number; removed_sources: number; added_sources: number; revised_columns: number; not_checked: string[] }
   references: { number: number; source_version_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; version_label: string | null; open_passage_id: string | null }[]
-  table_i: { columns: { column_id: string; name: string; answer_format: AnswerFormat; options: ColumnOption[] | null }[]; rows: { source_version_id: string; ref_number: number | null; source_key: string | null; title: string | null }[]
+  table_i: { columns: { column_id: string; name: string; answer_format: AnswerFormat; options: ColumnOption[] | null }[]; rows: { source_version_id: string; ref_number: number | null; source_key: string | null; title: string | null; failed?: boolean }[]
     cells: { cell_id: string; column_id: string; source_version_id: string; state: CellState; value: CellValue | null; evidence_passage_ids: string[] }[] } | null
   run: { id: string; status: RunStatus; pause_reason: string | null } | null }
 export type TableTemplate = { id: string; name: string; columns: ColumnSpec[]; created_at: string }
@@ -910,7 +912,7 @@ export const api = {
   saveEnglishQuestion: (id: string, body: { text: string; expected_version: number } | { use_question: true; expected_version: number }) =>
     request<ResearchView>(`/api/researches/${id}/english-question`, json('PUT', body)),
   tables: (id: string) => request<TableSummary[]>(`/api/researches/${id}/tables`),
-  startReport: (id: string, tableId: string, key: string) => request<Run>(`/api/researches/${id}/reports`, json('POST', { table_id: tableId }, { 'Idempotency-Key': key })),
+  startReport: (id: string, tableId: string, key: string, options?: { continueWithFailed?: boolean }) => request<Run>(`/api/researches/${id}/reports`, json('POST', { table_id: tableId, ...(options?.continueWithFailed ? { continue_with_failed: true } : {}) }, { 'Idempotency-Key': key })),
   report: (id: string, reportId: string) => request<ReportDetail>(`/api/researches/${id}/reports/${reportId}`),
   reportMarkdown,
   editReportClaim: (id: string, reportId: string, claimId: string, body: { expected_version: number; text?: string; note?: string | null; restore_from?: string }) =>

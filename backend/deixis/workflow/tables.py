@@ -738,10 +738,14 @@ class TableStore:
         )]
         included_count = len(self.store.included_sources(research_id))
         for row in rows:
-            readiness = report_ready(self.store, research_id, row["id"])
-            row["report_ready"] = {"ready": readiness["ready"], "cells_left": len(readiness["missing"]),
+            readiness = report_ready(self.store, research_id, row["id"], continue_with_failed=True)
+            row["report_ready"] = {"ready": bool(included_count and row["columns"]) and not readiness["missing"], "cells_left": len(readiness["missing"]),
                                    "cells_total": included_count * row["columns"],
-                                   "failed_rows": len(readiness["failed_rows"])}
+                                   "failed_rows": len(readiness["failed_rows"]),
+                                   "can_continue_with_failed": readiness["ready"],
+                                   "failed_cells": sum(item["source_version_id"] in readiness["failed_rows"]
+                                                       for item in readiness["missing"]),
+                                   "included_rows": included_count}
         return rows
 
     def _revision_view(self, revision: dict[str, Any]) -> dict[str, Any]:
@@ -872,11 +876,12 @@ def report_ready(store: Store, research_id: str, table_id: str, continue_with_fa
                if source_id not in active_rows or states.get((source_id, column_id)) not in terminal]
 
     failed_pairs = {pair for pair, state in states.items() if state == "inaccessible"}
+    failure_reasons = {}
     scope_revision = store.research(research_id)["current_scope_revision"]
     for row in store.conn.execute(
-        "SELECT r.target_json, s.operation_key FROM runs r JOIN run_steps s ON s.run_id = r.id"
+        "SELECT r.target_json, s.operation_key, s.error_code FROM runs r JOIN run_steps s ON s.run_id = r.id"
         " WHERE r.research_id = ? AND r.kind = 'table_fill' AND json_extract(r.target_json, '$.table_id') = ?"
-        " AND r.scope_revision = ? AND s.kind = 'model:cell_extraction' AND s.status IN ('failed', 'outcome_unknown')",
+        " AND r.scope_revision = ? AND s.kind = 'model:cell_extraction' AND s.status IN ('failed', 'outcome_unknown') ORDER BY s.rowid",
         (research_id, table_id, scope_revision),
     ):
         target = json.loads(row["target_json"])
@@ -888,15 +893,42 @@ def report_ready(store: Store, research_id: str, table_id: str, continue_with_fa
             if not batch.isdigit():
                 continue
             for column_id in source["column_ids"][int(batch) * MAX_COLUMNS_PER_CALL:(int(batch) + 1) * MAX_COLUMNS_PER_CALL]:
-                failed_pairs.add((source["source_version_id"], column_id))
+                pair = (source["source_version_id"], column_id)
+                failed_pairs.add(pair)
+                failure_reasons[pair] = row["error_code"] or "extraction_failed"
     missing_pairs = {(item["source_version_id"], item["column_id"]) for item in missing}
     failed_rows = [source_id for source_id in included if source_id in active_rows
                    and any((source_id, column_id) in missing_pairs for column_id in column_ids)
                    and all((source_id, column_id) in failed_pairs for column_id in column_ids
                            if (source_id, column_id) in missing_pairs)]
-    return {"ready": bool(included and columns) and (not missing or
-            (continue_with_failed and all(item["source_version_id"] in failed_rows for item in missing))),
+    result = {"ready": bool(included and columns) and (not missing or
+            (continue_with_failed and len(failed_rows) < len(included)
+             and all(item["source_version_id"] in failed_rows for item in missing))),
             "missing": missing, "failed_rows": failed_rows}
+    if continue_with_failed and failed_rows:
+        details = []
+        for source_id in tables.active_rows(table_id):
+            if source_id not in failed_rows:
+                continue
+            source = store.conn.execute(
+                "SELECT v.title, w.source_key FROM source_versions v JOIN works w ON w.id = v.work_id WHERE v.id = ?",
+                (source_id,),
+            ).fetchone()
+            missing_columns = [{"column_id": column["id"], "name": column["name"],
+                                "reason": "no_stored_text" if states.get((source_id, column["id"])) == "inaccessible"
+                                else failure_reasons.get((source_id, column["id"]), "extraction_failed")}
+                               for column in columns if (source_id, column["id"]) in missing_pairs]
+            existing_cells = [dict(cell) for cell in store.conn.execute(
+                "SELECT c.id AS cell_id, r.id AS cell_revision_id, c.column_id, r.state FROM evidence_cells c"
+                " JOIN cell_revisions r ON r.id = c.current_revision_id WHERE c.table_id = ?"
+                " AND c.source_version_id = ? AND r.state = 'inaccessible' ORDER BY c.rowid",
+                (table_id, source_id),
+            ) if cell["column_id"] in column_ids]
+            details.append({"source_version_id": source_id, "source_key": source["source_key"],
+                            "title": source["title"], "missing_columns": missing_columns,
+                            "reason": missing_columns[0]["reason"], "existing_cells": existing_cells})
+        result["failed_row_details"] = details
+    return result
 
 
 def purge_tables(conn: Any, research_id: str) -> None:

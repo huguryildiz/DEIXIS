@@ -11,6 +11,7 @@ from typing import Any, Callable
 from deixis.domain import contracts, phrasebank
 from deixis.workflow.report import phrasing, review_methodology
 from deixis.workflow.report.store import ReportStore
+from deixis.workflow.report.snapshot import evidence_row_ids
 from deixis.workflow.store import Store
 
 
@@ -310,7 +311,7 @@ def _check_corpus_counts(store: Store, reports: ReportStore, report_id: str) -> 
 
 def _check_count_fields(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
     snapshot = reports.snapshot(report_id)
-    rows = {row["source_version_id"] for row in snapshot["rows"]}
+    rows = set(evidence_row_ids(snapshot))
     columns = {column["column_id"] for column in snapshot["columns"]}
     cells = {(cell["source_version_id"], cell["column_id"]): cell for cell in snapshot["cells"]}
     issues = []
@@ -387,7 +388,7 @@ def _check_banned_words(store: Store, reports: ReportStore, report_id: str) -> l
 
 def _check_bibliography(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
     snapshot = reports.snapshot(report_id)
-    sources = {row["source_version_id"] for row in snapshot["rows"]}
+    sources = set(evidence_row_ids(snapshot))
     cells = {cell["cell_id"]: cell for cell in snapshot["cells"]}
     issues = []
     for link in _links(store, report_id):
@@ -416,7 +417,7 @@ def _check_gap_bases(store: Store, reports: ReportStore, report_id: str) -> list
     snapshot = reports.snapshot(report_id)
     plan = reports.report(report_id)["plan"] or {}
     cells = {cell["cell_id"]: cell for cell in snapshot["cells"]}
-    sources = {row["source_version_id"] for row in snapshot["rows"]}
+    sources = set(evidence_row_ids(snapshot))
     gaps = _gaps(store, report_id)
     gap_ids = {gap["gap_id"] for gap in gaps}
     sections = {section["section_id"]: section for section in reports.sections(report_id)}

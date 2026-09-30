@@ -20,6 +20,7 @@ export function ReportReadiness({ researchId, view, tables, onTable, onChanged }
   const activeReport = view.runs.some(run => run.kind === 'report' && working.has(run.status))
   const blockedByRun = view.runs.some(run => working.has(run.status))
   const ready = eligible.filter(item => item.report_ready.ready)
+  const incomplete = eligible.filter(item => !item.report_ready.ready && item.report_ready.can_continue_with_failed)
   if (activeReport && !fill) return null
   const action = async (fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -32,11 +33,16 @@ export function ReportReadiness({ researchId, view, tables, onTable, onChanged }
       <Depth cells={[[table.report_ready.cells_total - table.report_ready.cells_left, t('cells filled')], [table.report_ready.cells_left, t('cells left')]]} />
       <div className="report-ready-bar" role="progressbar" aria-valuenow={table.report_ready.cells_total - table.report_ready.cells_left} aria-valuemax={table.report_ready.cells_total} aria-label={t('Cells filled')}><span style={{ width: `${table.report_ready.cells_total ? (1 - table.report_ready.cells_left / table.report_ready.cells_total) * 100 : 0}%` }} /></div>
       <div className="pdf-ready-actions"><Button variant="outline" disabled={busy} onClick={() => void action(() => api.controlRun(fill.id, fill.status === 'paused' ? 'resume' : 'pause'))}>{fill.status === 'paused' ? <Play size={15} aria-hidden /> : <Pause size={15} aria-hidden />}{t(fill.status === 'paused' ? 'Resume' : 'Pause')}</Button><button type="button" className="text-link" onClick={() => onTable(table.id)}>{t('Open the table')}</button></div>
-    </> : ready.length ? <>
+    </> : ready.length || incomplete.length ? <>
       <div className="pdf-ready-head"><FileText size={17} aria-hidden /><h2>{t('Evidence report')}</h2></div>
       {ready.map(item => <div className="report-ready-choice" key={item.id}>
         <Button disabled={busy || blockedByRun} title={blockedByRun ? t('Available when the active run finishes') : undefined} aria-describedby={blockedByRun ? 'report-ready-reason' : undefined} onClick={() => void action(() => api.startReport(researchId, item.id, crypto.randomUUID()))}>{t('Write report')}{ready.length > 1 ? ` · ${item.title}` : ''}</Button>
         <p>{t('Writes a sectioned report from “{table}” and its quotes.', { table: item.title })}</p>
+      </div>)}
+      {incomplete.map(item => <div className="report-ready-choice" key={item.id}>
+        <p>{t('{n} of {m} sources did not complete the table (missing cells: {cells}). These rows will be excluded from the report’s evidence assessment and aggregation denominators.', { n: item.report_ready.failed_rows, m: item.report_ready.included_rows, cells: item.report_ready.cells_left })}</p>
+        <Button className="max-w-full h-auto min-h-9 whitespace-normal text-left" disabled={busy || blockedByRun} aria-describedby={blockedByRun ? 'report-ready-reason' : undefined} onClick={() => void action(() => api.startReport(researchId, item.id, crypto.randomUUID(), { continueWithFailed: true }))}>{t('Write the report with missing rows')}{ready.length + incomplete.length > 1 ? ` · ${item.title}` : ''}</Button>
+        <button type="button" className="text-link" onClick={() => onTable(item.id)}>{t('Open the table')}</button>
       </div>)}
       {blockedByRun && <span id="report-ready-reason" className="sr-only">{t('Available when the active run finishes')}</span>}
     </> : <p className="pdf-ready-lede">{table.report_ready.cells_total === 0 ? t('A report needs included sources and a filled column.') : t('A report needs a filled evidence table: {n} cells left in “{table}”.', { n: table.report_ready.cells_left, table: table.title })} <button type="button" className="text-link" onClick={() => onTable(table.id)}>{t('Open the table')}</button></p>}

@@ -70,6 +70,7 @@ const pauseReasons: Record<string, string> = {
   search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.',
 }
 export const pauseReasonText = (reason: string | null) => (reason ? t(pauseReasons[reason] ?? reason) : '')
+export const failedRowReasonText = (reason: string) => reason === 'no_stored_text' ? t('no stored text') : reason.replaceAll('_', ' ')
 // How many more times resuming may ask the model to write the query; the pause carries it (D92).
 export const searchQueryTriesLeft = (run: { error: unknown }) => (run.error as { retries_left?: number } | null)?.retries_left ?? 1
 

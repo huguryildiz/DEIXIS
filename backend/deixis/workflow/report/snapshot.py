@@ -15,13 +15,22 @@ def included_table_rows(store: Store, research_id: str, table_id: str) -> list[s
     return [source_id for source_id in TableStore(store).active_rows(table_id) if source_id in included]
 
 
-def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, Any]:
+def evidence_row_ids(snapshot: dict[str, Any]) -> list[str]:
+    """Only completed rows may supply content evidence; older snapshots keep their original boundary."""
+    failed = {row["source_version_id"] for row in snapshot.get("failed_rows", [])}
+    return [row["source_version_id"] for row in snapshot.get("rows", []) if row["source_version_id"] not in failed]
+
+
+def build_snapshot(store: Store, research_id: str, table_id: str,
+                   readiness: dict[str, Any] | None = None) -> dict[str, Any]:
     """Copy current source, column, cell and quote records; this function does not write."""
     tables = TableStore(store)
     table = tables._table(research_id, table_id)
     columns = tables.target_columns(research_id, table_id)
     included = store.included_sources(research_id)
     source_ids = included_table_rows(store, research_id, table_id)
+    failed_rows = (readiness or {}).get("failed_row_details", [])
+    failed_ids = {row["source_version_id"] for row in failed_rows}
     column_ids = {column["id"] for column in columns}
     cells = []
     for row in store.conn.execute(
@@ -29,7 +38,7 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
         " r.state, r.value_json, r.reading_depth FROM evidence_cells c"
         " JOIN cell_revisions r ON r.id = c.current_revision_id WHERE c.table_id = ?", (table_id,),
     ):
-        if row["source_version_id"] not in source_ids or row["column_id"] not in column_ids:
+        if row["source_version_id"] not in source_ids or row["source_version_id"] in failed_ids or row["column_id"] not in column_ids:
             continue
         evidence = [{"passage_id": link["passage_id"], "quote": link["anchor_text"]} for link in store.conn.execute(
             "SELECT passage_id, anchor_text FROM cell_evidence_links WHERE cell_revision_id = ? ORDER BY rowid",
@@ -69,7 +78,7 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
         " WHERE i.research_id = ? AND i.scope_revision = ? AND i.task_type = 'screening'",
         (research_id, revision),
     ).fetchone()[0]
-    return {
+    result = {
         "table_revision": table["version"],
         "columns": [{"column_id": column["id"], "revision": column["current_revision"], "name": column["name"],
                      "instruction": column["instruction"], "answer_format": column["answer_format"]} for column in columns],
@@ -78,3 +87,9 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
         "corpus": {"found": found, "unique": unique, "screened": screened, "included": len(included),
                    "full_text": sum(store.has_pdf_text(source_id) for source_id in included)},
     }
+    if failed_rows:
+        result["failed_rows"] = failed_rows
+        result["row_counts"] = {"included": len(source_ids), "completed": len(source_ids) - len(failed_rows),
+                                "failed": len(failed_rows), "cells_total": len(source_ids) * len(columns),
+                                "cells_missing": len(readiness["missing"])}
+    return result

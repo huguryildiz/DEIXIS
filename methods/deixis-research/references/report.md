@@ -117,6 +117,10 @@ your rewrite still reads as valid and may keep the original if your rewrite chan
 
 ## Report review (`report_review`)
 
+`report_target.review_sections` contains the claims of each shown section, their citation anchors, and the
+sentences changed by a phrase repair (`repairs[].before` and `repairs[].after`). Copy `claim_key` and
+`sentence_id` from those records; do not invent identifiers. Insufficient-evidence reasons are outside this review.
+
 Read one or more already-written sections against their cited passages and cells. Return a flat list of
 findings; you never edit the report yourself. Use `support_broken` only for a repaired sentence (its
 `sentence_id` set) whose meaning no longer matches what its citations support — the application reverts that

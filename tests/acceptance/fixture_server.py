@@ -369,10 +369,19 @@ class ScriptedCodex:
 
     def respond(self, si: dict[str, Any], question: str) -> dict[str, Any]:
         output = json.loads(valid_response(si))
+        if si["task_type"] == "report_review" and "[report-review-finding]" in question:
+            first = si["report_target"]["review_sections"][0]
+            output["findings"] = [{"claim_key": first["claims"][0]["claim_key"], "sentence_id": None,
+                                   "code": "other", "text": "SYNTHETIC: the cited wording may need another reading."}]
+        if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "VII":
+            # VII claims need a gap basis (P7 assembly rule 8) and this fixture has no gaps: VII says so instead.
+            output |= {"claims": [], "citation_anchors": [], "insufficient_evidence": [{
+                "context": "VII", "reason": "It is beyond the scope of this synthetic fixture to add a claim."}]}
         if si["task_type"] == "report_section":
             cell = next((cell for cell in si["report_target"]["cells"]
                          if cell.get("value") and any(e.get("quote") for e in cell.get("evidence", []))), None)
-            if cell is not None:
+            # Section VII needs a gap basis (P7 assembly rule 8), which this scripted cell claim does not have.
+            if cell is not None and si["report_target"]["section_id"] != "VII":
                 section = si["report_target"]["section_id"]
                 claim_key = f"{section}.{len(output['claims']) + 1}"
                 output["claims"].append({

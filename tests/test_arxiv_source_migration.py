@@ -104,7 +104,7 @@ def test_the_passages_rebuild_keeps_every_row_link_trigger_and_fts_entry(tmp_pat
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("INSERT INTO passages (id, source_version_id, kind, abstract_origin, text, text_sha256, retrieved_at, created_at, text_source)"
                      " VALUES ('psg_U', ?, 'abstract', 'x', 'y', 'h', ?, ?, 'unknown')", (svid, ts, ts))
-    assert max(r[0] for r in conn.execute("SELECT version FROM schema_migrations")) == 56  # 0056 follows the rebuild
+    assert max(r[0] for r in conn.execute("SELECT version FROM schema_migrations")) == 57  # 0057 follows the rebuild
 
 
 # ---- contracts ------------------------------------------------------------------------------------------------------------

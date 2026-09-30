@@ -348,6 +348,19 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
         issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
     elif report_target is not None:
+        review_sections = report_target["review_sections"]
+        if (review_sections is not None) != (step_input["task_type"] == "report_review"):
+            issues.append(Issue("review_sections_mismatch", "/report_target/review_sections", step_input["task_type"]))
+        if review_sections is not None:
+            shown = [section["section_id"] for section in review_sections]
+            if report_target["review_scope"] != shown:
+                issues.append(Issue("review_scope_mismatch", "/report_target/review_scope", str(shown)))
+            for i, section in enumerate(review_sections):
+                for j, claim in enumerate(section["claims"]):
+                    for k, citation in enumerate(claim["citations"]):
+                        pid, cid = citation["passage_id"], citation["cell_id"]
+                        if (pid is not None and pid not in allow["passage_ids"]) or (cid is not None and cid not in allow.get("cell_ids", [])) or (pid is None and cid is None):
+                            issues.append(Issue("review_citation_not_allowed", f"/report_target/review_sections/{i}/claims/{j}/citations/{k}", str(citation)))
         wants_core = step_input["task_type"] == "report_section" and report_target["section_id"] == "VIII"
         if (report_target["limitations_core"] is not None) != wants_core:
             issues.append(Issue("limitations_core_mismatch", "/report_target/limitations_core", step_input["task_type"]))
@@ -1152,7 +1165,20 @@ def _check_report_phrase_repair(step_input: dict[str, Any], draft: dict[str, Any
 
 def _check_report_review(step_input: dict[str, Any], draft: dict[str, Any],
                          report: ValidationReport) -> None:
-    pass  # Report-level semantic review and support-breaking repair handling arrive in 1f.
+    claims = {claim["claim_key"]: section for section in step_input["report_target"]["review_sections"]
+              for claim in section["claims"]}
+    repairs = {repair["sentence_id"]: section for section in step_input["report_target"]["review_sections"]
+               for repair in section["repairs"]}
+    for i, finding in enumerate(draft["findings"]):
+        key, sentence = finding["claim_key"], finding["sentence_id"]
+        if key is not None and key not in claims:
+            report.issues.append(Issue("review_claim_unknown", f"/findings/{i}/claim_key", key))
+        if sentence is not None and (sentence not in repairs or (key is not None and claims.get(key) is not repairs.get(sentence))):
+            report.issues.append(Issue("review_sentence_not_repaired", f"/findings/{i}/sentence_id", sentence))
+        if sentence is not None and key is not None and not sentence.startswith(key + "#"):
+            report.issues.append(Issue("review_sentence_claim_mismatch", f"/findings/{i}/sentence_id", sentence))
+        if finding["code"] == "support_broken" and sentence is None:
+            report.issues.append(Issue("support_broken_without_sentence", f"/findings/{i}/sentence_id", "required"))
 
 
 def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:

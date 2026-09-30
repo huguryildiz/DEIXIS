@@ -4755,13 +4755,14 @@ class ResearchFlow:
                           adjudication_target: dict[str, Any] | None = None,
                           limiter: ModelCallLimiter | None = None, budget_short: str = "pause",
                           recheck: Callable[[list[dict[str, Any]]], list[dict[str, Any]] | None] | None = None,
+                          step_output_extra: dict[str, Any] | None = None,
                           ) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run. `budget_short="skip"` is the sw
         stages' rule (D86): a call the budget no longer holds is closed and returned as invalid instead of pausing
         the run, because those stages count what the budget did not reach and a later run reads it."""
         if report_target is not None:
-            report_target = {"limitations_core": None, **report_target}
+            report_target = {"limitations_core": None, "review_sections": None, **report_target}
         run_id, rid = run["id"], run["research_id"]
         step = self.store.step(run_id, operation_key, f"model:{task_type}")
         if step["status"] == "succeeded":
@@ -4900,6 +4901,8 @@ class ResearchFlow:
                     report.result = contracts.name_sources_in_prose(payload, report.result)
                 output = {"output_type": report.output_type, "result": report.result,
                           "step_input_id": payload["step_input_id"], "resolved_model": result.resolved_model, "warnings": warnings}
+                if step_output_extra:
+                    output = output | step_output_extra
                 self.store.complete_model_step(session, recorded, step["id"], "succeeded", output=output)
                 return output
             repair_issues = [vars(i) for i in report.issues]

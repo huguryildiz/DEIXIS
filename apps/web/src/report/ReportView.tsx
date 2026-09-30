@@ -25,6 +25,17 @@ const HEADINGS: Record<string, [string, string]> = {
 const finished = new Set(['completed', 'failed', 'cancelled'])
 const support = reportSupportLabels
 const revision = reportRevisionLabels
+const reviewCodes: Record<string, string> = {
+  support_broken: 'Support no longer matches', count_error: 'Count', terminology_inconsistent: 'Terminology',
+  abstract_body_mismatch: 'Abstract and body differ', equation_mismatch: 'Equation',
+  comparability_error: 'Comparability', other: 'Other',
+}
+const reviewReasons: Record<string, string> = {
+  input_too_large: 'the input was too large', budget_exhausted: 'the model-call budget was exhausted',
+  nothing_to_review: 'there was nothing it could read',
+  model_mismatch: 'the model did not match the selected model', model_call_failed: 'the model call failed',
+  invalid_model_output: 'the model output was invalid',
+}
 
 function valueText(value: Record<string, unknown> | null, options: { id: string; label: string }[] | null) {
   if (!value) return ''
@@ -112,6 +123,19 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
   const allLinks = report?.sections.flatMap(section => section.claims.flatMap(claim => claim.evidence)) ?? []
   const located = allLinks.filter(link => link.anchor_match !== null).length
   const labels = (id: string) => HEADINGS[id]?.[report?.language === 'tr' ? 1 : 0] ?? id
+  const review = report?.review
+  const reviewNote = !review
+    ? t('No model or person review is recorded for this report; whether each passage supports its claim was not checked by code.')
+    : review.status === 'not_reviewed'
+      ? t('No accepted review result exists for this report ({reason}); whether the model read it in part is not established by this record.', { reason: t(reviewReasons[review.reason] ?? 'the review step failed') })
+      : [t(review.findings.length === 1
+          ? 'A model read the claims of {n} of {m} sections against their cited passages and cells in an extra review call using the same model that wrote the report, and flagged {k} possible problem. That is a model’s reading, not peer review, and it can miss errors; whether each passage supports its claim was not checked by code.'
+          : 'A model read the claims of {n} of {m} sections against their cited passages and cells in an extra review call using the same model that wrote the report, and flagged {k} possible problems. That is a model’s reading, not peer review, and it can miss errors; whether each passage supports its claim was not checked by code.',
+          { n: review.sections_reviewed.length, m: review.sections_reviewed.length + review.sections_not_reviewed.length, k: review.findings.length }),
+        review.reverted.length ? t(review.reverted.length === 1
+          ? 'The model flagged {r} rewritten sentence as possibly no longer matching its sources; it was returned to its original wording.'
+          : 'The model flagged {r} rewritten sentences as possibly no longer matching their sources; they were returned to their original wording.', { r: review.reverted.length }) : '',
+        review.sections_not_reviewed.length ? t('Not read: {sections}.', { sections: review.sections_not_reviewed.map(item => labels(item.section_id)).join(', ') }) : ''].filter(Boolean).join(' ')
   const equationNumbers = new Map<string, number>()
   for (const id of DISPLAY) for (const claim of report?.sections.find(section => section.section_id === id)?.claims ?? [])
     if (claim.equation_ref && !equationNumbers.has(claim.equation_ref)) equationNumbers.set(claim.equation_ref, equationNumbers.size + 1)
@@ -158,7 +182,8 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
             {!section.claims.length && !section.draft?.text && (section.draft?.insufficient_evidence?.length ? section.draft.insufficient_evidence.map((entry, index) => <p key={index}>{t('Not enough evidence: {reason}', { reason: entry.reason })}</p>) : <p>{t('No text was written for this section.')}</p>)}
           </section>
         })}<section className="evidence-report-section"><h2>{labels('references')}</h2><ol className="evidence-report-references">{report.references.map(ref => <li key={ref.number}><span>[{ref.number}] {ref.authors.join(', ')}{ref.authors.length ? ', ' : ''}</span>{ref.open_passage_id ? <button type="button" onClick={() => onOpenCitation(ref.open_passage_id!, null, false)}>{ref.title}</button> : ref.title}{ref.venue ? `, ${ref.venue}` : ''}{ref.year ? `, ${ref.year}` : ''}</li>)}</ol></section></div>
-        <p className="evidence-report-provenance">{located === allLinks.length ? t('Anchors were located in the cited passages or cells.') : t('{n} of {m} citation anchors were located in their passages or cells; the others open without a mark.', { n: located, m: allLinks.length })} {t('Whether each passage supports its claim was not checked, and this report was not reviewed by a model or a person.')}</p>
+        <p className="evidence-report-provenance">{located === allLinks.length ? t('Anchors were located in the cited passages or cells.') : t('{n} of {m} citation anchors were located in their passages or cells; the others open without a mark.', { n: located, m: allLinks.length })} {reviewNote}</p>
+        {review?.status === 'reviewed' && review.findings.length > 0 && <details className="evidence-report-history"><summary><ChevronRight size={14} aria-hidden className="closed" /><ChevronDown size={14} aria-hidden className="opened" />{t('Review findings ({k})', { k: review.findings.length })}</summary><p>{t('Model findings')}</p><ul>{review.findings.map((finding, index) => <li key={index}>{finding.section_id ? labels(finding.section_id) : t('Report')} · {t(reviewCodes[finding.code] ?? 'Other')} · {finding.text}</li>)}</ul></details>}
       </>}
     </article></div>
   </SheetContent></Sheet>

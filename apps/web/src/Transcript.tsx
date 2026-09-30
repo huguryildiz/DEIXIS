@@ -52,6 +52,7 @@ const basisLabels: Record<string, string> = { metadata_only: 'metadata only', ti
 function phaseOf(kind: string): PhaseKey | null {
   if (kind === 'model:report_plan') return 'plan'
   if (kind === 'model:report_section' || kind === 'model:report_phrase_repair') return 'sections'
+  if (kind === 'model:report_review') return 'assembly'
   if (kind === 'model:search_plan') return 'plan'
   // An sw run plans its search in code and asks the user before it searches; those steps are its plan phase, so the
   // phase does not read "waiting" while the run has counted its terms and is waiting for the user.
@@ -324,6 +325,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
 
   // What the finished phase found, from the counts and fields the model already wrote; nothing is narrated for it.
   const report = (key: PhaseKey, state: PhaseState, group: Step[]): ReactNode => {
+    if (run.kind === 'report' && key === 'assembly' && group.some(step => step.kind === 'model:report_review')) return <p>{t('Report review')}</p>
     if (run.kind === 'report' && key === 'sections' && group.length) return <>{group.filter(step => step.kind === 'model:report_section').map(step => {
       const section = step.operation_key.replace('report_section:', '')
       const needsRewrite = run.pause_reason === 'section_must_be_rewritten' &&
@@ -581,7 +583,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
     {run.status === 'paused' && <div className="chat-note is-warning">
       <p>{pauseReasonText(run.pause_reason)}</p>
       {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
-      {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
+      {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
       {/* Code does not translate a question, so this stop is answered in the revision form and nowhere else (SW2.1). */}
       {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
       {/* Resume asks the model once more while a try is left; this button never asks it again (D92). */}

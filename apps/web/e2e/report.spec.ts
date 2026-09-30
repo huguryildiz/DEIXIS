@@ -6,7 +6,7 @@ import path from 'node:path'
 
 // SYNTHETIC records and a scripted report model exercise the UI, not the quality of a research report.
 const REPO = path.resolve(process.cwd(), '..', '..')
-const PYTHON = path.join(REPO, '.venv', 'bin', 'python')
+const PYTHON = process.env.DEIXIS_TEST_PYTHON ?? path.join(REPO, '.venv', 'bin', 'python')
 const SERVER = path.join(REPO, 'tests', 'acceptance', 'fixture_server.py')
 const OUT = path.resolve(process.env.DEIXIS_ACCEPTANCE_DIR ?? 'test-results/acceptance')
 mkdirSync(OUT, { recursive: true })
@@ -83,6 +83,47 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await expect(sheet).toContainText('TABLE I')
     await expect(sheet.locator('.cite-chip').first()).toContainText('[1]')
     const report = await (await api.get(`/api/researches/${researchId}/reports/${reportId}`)).json()
+    expect(report.review.status).toBe('reviewed')
+    const reviewed = report.review.sections_reviewed.length
+    const total = reviewed + report.review.sections_not_reviewed.length
+    const provenance = sheet.locator('.evidence-report-provenance')
+    await expect(provenance).toContainText(`A model read the claims of ${reviewed} of ${total} sections against their cited passages and cells in an extra review call using the same model that wrote the report, and flagged 0 possible problems. That is a model’s reading, not peer review, and it can miss errors; whether each passage supports its claim was not checked by code.`)
+    if (report.review.sections_not_reviewed.length) {
+      const names: Record<string, string> = { abstract: 'Abstract', I: 'I. Introduction', III: 'III. Background and Taxonomy',
+        IV: 'IV. Literature Synthesis', V: 'V. Comparative Findings', VI: 'VI. Candidate Unanswered Aspects',
+        VII: 'VII. Future Directions', VIII: 'VIII. Limitations and Threats to Validity', IX: 'IX. Conclusion',
+        index_terms: 'Index Terms' }
+      await expect(provenance).toContainText(`Not read: ${report.review.sections_not_reviewed.map((s: { section_id: string }) => names[s.section_id]).join(', ')}.`)
+    }
+    await page.keyboard.press('Escape')
+    const reportPath = `/api/researches/${researchId}/reports/${reportId}`
+    await page.route(`**${reportPath}`, route => route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ...report, review: { status: 'not_reviewed', reason: 'budget_exhausted', detail: null,
+        sections_reviewed: [], sections_not_reviewed: report.sections.filter((s: { section_id: string }) => s.section_id !== 'II').map((s: { section_id: string }) => ({ section_id: s.section_id, reason: 'budget_exhausted' })),
+        findings: [], notes: '', reverted: [], not_reverted: [] } }),
+    }))
+    await page.getByRole('button', { name: 'Open evidence report' }).click()
+    await expect(reportSheet(page).locator('.evidence-report-provenance')).toContainText('No accepted review result exists for this report (the model-call budget was exhausted); whether the model read it in part is not established by this record.')
+    await page.keyboard.press('Escape')
+    await page.unroute(`**${reportPath}`)
+    await page.route(`**${reportPath}`, route => route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ...report, review: null }),
+    }))
+    await page.getByRole('button', { name: 'Open evidence report' }).click()
+    await expect(reportSheet(page).locator('.evidence-report-provenance')).toContainText('No model or person review is recorded for this report; whether each passage supports its claim was not checked by code.')
+    await page.keyboard.press('Escape')
+    await page.unroute(`**${reportPath}`)
+    await page.route(`**${reportPath}`, route => route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ ...report, review: { ...report.review, findings: [{ claim_key: null, sentence_id: null,
+        section_id: null, code: 'abstract_body_mismatch', text: 'SYNTHETIC report-level mismatch.' }] } }),
+    }))
+    await page.getByRole('button', { name: 'Open evidence report' }).click()
+    await expect(reportSheet(page).locator('.evidence-report-provenance')).toContainText(`A model read the claims of ${reviewed} of ${total} sections against their cited passages and cells in an extra review call using the same model that wrote the report, and flagged 1 possible problem. That is a model’s reading, not peer review, and it can miss errors; whether each passage supports its claim was not checked by code.`)
+    await reportSheet(page).locator('.evidence-report-history summary').filter({ hasText: 'Review findings (1)' }).click()
+    await expect(reportSheet(page)).toContainText('Report · Abstract and body differ · SYNTHETIC report-level mismatch.')
+    await page.keyboard.press('Escape')
+    await page.unroute(`**${reportPath}`)
+    await page.getByRole('button', { name: 'Open evidence report' }).click()
     await expect(sheet.locator('.evidence-report-references')).toContainText(report.references[0].title)
     await sheet.locator('.cite-chip').first().click()
     await expect(page.getByRole('dialog', { name: 'Source details' })).toBeVisible()
@@ -160,5 +201,51 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await shot(page, 'report-stale-desktop')
     await page.setViewportSize({ width: 390, height: 844 })
     await shot(page, 'report-stale-390')
+  } finally { await api.dispose(); await page.close(); await server.stop() }
+})
+
+test('a scripted report review finding appears as a model flag', async ({ browser }) => {
+  const server = new ReportServer()
+  await server.start()
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
+  try {
+    await page.goto(server.url())
+    await page.getByLabel('Research question').fill('SYNTHETIC: How are molecule release schedules compared? [report-review-finding]')
+    await page.getByRole('button', { name: 'Start research' }).click()
+    await page.waitForURL(/#\/research\//)
+    const researchId = page.url().split('/research/')[1].split('/')[0]
+    await page.getByRole('tab', { name: /Evidence/ }).click()
+    await page.getByRole('button', { name: /Add a column/ }).click()
+    const editor = page.getByRole('dialog', { name: 'Add column' })
+    await editor.getByLabel('Short name').fill('SYNTHETIC method')
+    await editor.getByLabel('Instruction').fill('Record the method named by the source.')
+    await editor.getByRole('button', { name: 'Add column' }).click()
+    await page.getByRole('button', { name: /^Fill empty cells/ }).click()
+    await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write report' })).toBeEnabled({ timeout: 60_000 })
+    await page.getByRole('tab', { name: 'Answer' }).click()
+    await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
+    await expect(page.getByRole('button', { name: 'Open evidence report' })).toContainText('Evidence report · V1', { timeout: 60_000 })
+    const summaries = await (await api.get(`/api/researches/${researchId}/reports`)).json() as { id: string }[]
+    const report = await (await api.get(`/api/researches/${researchId}/reports/${summaries[0].id}`)).json()
+    expect(report.review.findings).toHaveLength(1)
+    await page.getByRole('button', { name: 'Open evidence report' }).click()
+    const sheet = reportSheet(page)
+    const reviewed = report.review.sections_reviewed.length
+    const total = reviewed + report.review.sections_not_reviewed.length
+    await expect(sheet.locator('.evidence-report-provenance')).toContainText(`A model read the claims of ${reviewed} of ${total} sections against their cited passages and cells in an extra review call using the same model that wrote the report, and flagged 1 possible problem. That is a model’s reading, not peer review, and it can miss errors; whether each passage supports its claim was not checked by code.`)
+    await sheet.locator('.evidence-report-history summary').filter({ hasText: 'Review findings (1)' }).click()
+    await expect(sheet).toContainText('Model findings')
+    await expect(sheet).toContainText('SYNTHETIC: the cited wording may need another reading.')
+    const review = sheet.locator('.evidence-report-provenance')
+    await review.scrollIntoViewIfNeeded()
+    await shot(page, 'report-review-desktop')
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await review.scrollIntoViewIfNeeded()
+    await shot(page, 'report-review-dark-desktop')
+    await page.emulateMedia({ colorScheme: 'light' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await review.scrollIntoViewIfNeeded()
+    await shot(page, 'report-review-390')
   } finally { await api.dispose(); await page.close(); await server.stop() }
 })

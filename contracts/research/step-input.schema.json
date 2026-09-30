@@ -680,7 +680,7 @@
     "report_target": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["report_id", "section_id", "columns", "plan", "cells", "gap_candidates", "prior_summaries", "repair_request", "review_scope", "limitations_core"],
+      "required": ["report_id", "section_id", "columns", "plan", "cells", "gap_candidates", "prior_summaries", "repair_request", "review_scope", "review_sections", "limitations_core"],
       "properties": {
         "report_id": { "type": "string", "pattern": "^rpt_[0-9A-Za-z]{8,40}$" },
         "section_id": {
@@ -822,6 +822,43 @@
           ]
         },
         "review_scope": { "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }] },
+        "review_sections": {
+          "anyOf": [{
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["section_id", "claims", "repairs"],
+              "properties": {
+                "section_id": { "type": "string", "enum": ["abstract", "I", "III", "IV", "V", "VI", "VII", "VIII", "IX", "index_terms"] },
+                "claims": {
+                  "type": "array", "minItems": 1,
+                  "items": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["claim_key", "text", "support_type", "table_ref", "equation_ref", "count", "citations"],
+                    "properties": {
+                      "claim_key": { "type": "string" }, "text": { "type": "string" },
+                      "support_type": { "type": "string", "enum": ["source_stated", "analyst_inference"] },
+                      "table_ref": { "type": ["string", "null"] }, "equation_ref": { "type": ["string", "null"] },
+                      "count": { "type": ["object", "null"] },
+                      "citations": { "type": "array", "items": {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["passage_id", "cell_id", "anchor_text"],
+                        "properties": { "passage_id": { "type": ["string", "null"] },
+                                        "cell_id": { "type": ["string", "null"] },
+                                        "anchor_text": { "type": ["string", "null"] } }
+                      } }
+                    }
+                  }
+                },
+                "repairs": { "type": "array", "items": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["sentence_id", "before", "after"],
+                  "properties": { "sentence_id": { "type": "string" }, "before": { "type": "string" }, "after": { "type": "string" } }
+                } }
+              }
+            }
+          }, { "type": "null" }]
+        },
         "limitations_core": {
           "anyOf": [{
             "type": "object", "additionalProperties": false,

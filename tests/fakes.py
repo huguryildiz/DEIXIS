@@ -175,6 +175,17 @@ def valid_response(si: dict[str, Any]) -> str:
     })
 
 
+def scripted_report_review(base: Callable[[dict[str, Any]], str],
+                           findings: Callable[[dict[str, Any]], list[dict[str, Any]]]) -> Callable[[dict[str, Any]], str]:
+    """Override only the review findings while preserving a test's other scripted tasks."""
+    def respond(step_input: dict[str, Any]) -> str:
+        output = json.loads(base(step_input))
+        if step_input["task_type"] == "report_review":
+            output["findings"] = findings(step_input)
+        return json.dumps(output)
+    return respond
+
+
 class FakeAdapter:
     connection = "fake"
 

@@ -681,7 +681,12 @@ export type ReportClaim = { id: string; claim_key: string; version: number; text
   support_type: 'source_stated' | 'analyst_inference'; paragraph: number; table_ref: string | null; equation_ref: string | null; evidence: ReportLink[] }
 export type ReportSection = { section_id: string; status: string; word_count: number | null; draft: { text?: string; insufficient_evidence?: { reason: string }[] } | null
   validation: unknown; claims: ReportClaim[]; evidence_changes: { open: { key: string; kind: string; via: string; source_version_id?: string; column_id?: string }[]; acknowledged_count: number; unresolved_refs: number } }
-export type ReportDetail = ReportSummary & { language: string; updated_at: string; sections: ReportSection[]; edited_after_version: number | null
+export type ReportReview = { status: 'reviewed'; step_input_id: string; sections_reviewed: string[]; sections_not_reviewed: { section_id: string; reason: string }[]
+  findings: { claim_key: string | null; sentence_id: string | null; section_id: string | null; code: string; text: string }[]; notes: string
+  reverted: { sentence_id: string; section_id: string }[]; not_reverted: { sentence_id: string; section_id: string; reason: string }[] }
+  | { status: 'not_reviewed'; reason: string; detail: unknown; sections_reviewed: string[]; sections_not_reviewed: { section_id: string; reason: string }[]
+    findings: []; notes: string; reverted: []; not_reverted: [] }
+export type ReportDetail = ReportSummary & { language: string; updated_at: string; sections: ReportSection[]; edited_after_version: number | null; review: ReportReview | null
   evidence_changes: { any: boolean; changed_cells: number; removed_sources: number; added_sources: number; revised_columns: number; not_checked: string[] }
   references: { number: number; source_version_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; version_label: string | null; open_passage_id: string | null }[]
   table_i: { columns: { column_id: string; name: string; answer_format: AnswerFormat; options: ColumnOption[] | null }[]; rows: { source_version_id: string; ref_number: number | null; source_key: string | null; title: string | null }[]

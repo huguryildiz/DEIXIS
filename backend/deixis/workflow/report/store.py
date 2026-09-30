@@ -47,10 +47,10 @@ class ReportStore:
                 raise RevisionConflict("Include sources and fill every active evidence-table column before starting a report")
 
             section_count = sum(map(len, ROUNDS))
-            # (Plan + model-written sections + optional research title + one optional phrase repair per section)
+            # (Plan + model-written sections + optional research title + one optional phrase repair per section + review)
             # times (initial call + bounded schema repairs per model step).
             # The owner set a floor of 50 on 2026-09-18 so an unforeseen extra call cannot truncate a report.
-            max_model_calls = max(REPORT_CALL_FLOOR, (1 + section_count + 1 + section_count) * (1 + MAX_SCHEMA_REPAIRS))
+            max_model_calls = max(REPORT_CALL_FLOOR, (1 + section_count + 1 + section_count + 1) * (1 + MAX_SCHEMA_REPAIRS))
             budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__ | {
                 "max_model_calls": max_model_calls,
                 "max_provider_requests": 0,
@@ -87,7 +87,16 @@ class ReportStore:
         result = dict(row)
         plan_json = result.pop("plan_json")
         result["plan"] = json.loads(plan_json) if plan_json else None
+        review_json = result.pop("review_json")
+        result["review"] = json.loads(review_json) if review_json else None
         return result
+
+    def save_review(self, report_id: str, record: dict[str, Any]) -> None:
+        with transaction(self.conn):
+            self.report(report_id)
+            self.conn.execute("UPDATE reports SET review_json = ?, updated_at = ? WHERE id = ?",
+                              (dumps(record), now(), report_id))
+            self._event(report_id, "report_review_saved", status=record["status"])
 
     def set_plan(self, report_id: str, plan: dict[str, Any]) -> None:
         with transaction(self.conn):
@@ -468,6 +477,86 @@ class ReportStore:
                 (new_id("rpr"), report_id, section_id, sentence_id, before, after, outcome, now()),
             )
             self._event(report_id, "report_phrase_repair_saved", section_id=section_id, outcome=outcome)
+
+    def revert_repair(self, report_id: str, section_id: str, sentence_id: str) -> str:
+        """Restore one shown claim sentence, provided both stored copies and assembly still agree."""
+        from deixis.domain import phrasebank
+        from deixis.workflow.report import assembly
+        from deixis.workflow.report.phrasing import _location
+        from deixis.workflow.report.sections import _word_count
+
+        def errors() -> list[dict[str, Any]]:
+            return [issue for issue in assembly.run_assembly_checks(self.store, self, report_id)
+                    if not (issue["rule"].endswith("_warning") and issue["detail"].startswith("WARNING:"))]
+
+        class WouldBreakAssembly(Exception):
+            pass
+
+        try:
+            with transaction(self.conn):
+                row = self.conn.execute(
+                    "SELECT before, after, outcome FROM report_phrase_repairs"
+                    " WHERE report_id = ? AND section_id = ? AND sentence_id = ? ORDER BY rowid DESC LIMIT 1",
+                    (report_id, section_id, sentence_id),
+                ).fetchone()
+                if row is not None and row["outcome"] == "reverted_exception":
+                    return "reverted"
+                if errors():
+                    return "report_has_assembly_errors"
+                if row is None or row["outcome"] != "kept":
+                    return "not_kept"
+                section = self.section(report_id, section_id)
+                draft = section["draft"]
+                location = _location(draft, sentence_id) if draft is not None else None
+                claim_key = sentence_id.split("#", 1)[0]
+                claim = self.conn.execute(
+                    "SELECT c.id, c.text FROM report_claims c WHERE c.report_section_id = ? AND c.claim_key = ?",
+                    (section["id"], claim_key),
+                ).fetchone()
+                if location is None or claim is None:
+                    return "text_changed"
+                owner, field, position = location
+                draft_sentences = phrasebank.sentences(owner[field])
+                claim_sentences = phrasebank.sentences(claim["text"])
+                if (position >= len(draft_sentences) or position >= len(claim_sentences)
+                        or draft_sentences[position] != row["after"] or claim_sentences[position] != row["after"]
+                        or draft_sentences != claim_sentences):
+                    return "text_changed"
+                def replace_at(text: str, parts: list[str]) -> str:
+                    # Find the selected sentence in sequence, preserving every separator and other sentence.
+                    cursor = 0
+                    for part in parts[:position]:
+                        start = text.find(part, cursor)
+                        if start < 0:
+                            raise ValueError("Stored sentence is not contiguous in its claim")
+                        cursor = start + len(part)
+                    start = text.find(row["after"], cursor)
+                    if start < 0:
+                        raise ValueError("Repaired sentence is not contiguous in its claim")
+                    return text[:start] + row["before"] + text[start + len(row["after"]):]
+
+                try:
+                    restored_draft = replace_at(owner[field], draft_sentences)
+                    restored_claim = replace_at(claim["text"], claim_sentences)
+                except ValueError:
+                    return "text_changed"
+                owner[field] = restored_draft
+                self.conn.execute("UPDATE report_claims SET text = ? WHERE id = ?",
+                                  (restored_claim, claim["id"]))
+                self.conn.execute("UPDATE report_sections SET draft_json = ?, word_count = ?, updated_at = ? WHERE id = ?",
+                                  (dumps(draft), _word_count(draft), now(), section["id"]))
+                self.conn.execute(
+                    "INSERT INTO report_phrase_repairs"
+                    " (id, report_id, section_id, sentence_id, before, after, outcome, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, 'reverted_exception', ?)",
+                    (new_id("rpr"), report_id, section_id, sentence_id, row["after"], row["before"], now()),
+                )
+                if errors():
+                    raise WouldBreakAssembly
+                self._event(report_id, "report_repair_reverted", section_id=section_id, sentence_id=sentence_id)
+                return "reverted"
+        except WouldBreakAssembly:
+            return "would_break_assembly"
 
     def finalize(self, report_id: str, status: str) -> int | None:
         if status not in ("valid", "draft"):

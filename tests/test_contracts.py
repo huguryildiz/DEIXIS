@@ -61,6 +61,19 @@ def test_report_target_requires_frozen_cells_and_gap_candidates():
     assert "step_input_schema_invalid" in {issue.code for issue in contracts.check_step_input(si)}
 
 
+def test_report_review_sections_are_required_only_for_review_and_match_scope():
+    section = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
+    section["report_target"]["review_sections"] = []
+    assert "review_sections_mismatch" in {issue.code for issue in contracts.check_step_input(section)}
+    review = json.loads(json.dumps(STEP_INPUTS["C_report_review"]))
+    assert contracts.check_step_input(review) == []
+    review["report_target"]["review_sections"] = None
+    assert "review_sections_mismatch" in {issue.code for issue in contracts.check_step_input(review)}
+    review["report_target"]["review_sections"] = STEP_INPUTS["C_report_review"]["report_target"]["review_sections"]
+    review["report_target"]["review_scope"] = []
+    assert "review_scope_mismatch" in {issue.code for issue in contracts.check_step_input(review)}
+
+
 def test_report_target_requires_limitations_core_and_only_viii_may_receive_it():
     si = json.loads(json.dumps(STEP_INPUTS["C_report_section_IV"]))
     del si["report_target"]["limitations_core"]

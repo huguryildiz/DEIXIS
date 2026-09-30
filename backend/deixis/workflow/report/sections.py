@@ -10,6 +10,7 @@ from deixis.workflow.flow import OptionalStepFailed
 from deixis.workflow.report import assembly, gaps, review_methodology, selection
 from deixis.workflow.report.phrasing import flagged_sentences, repair_section
 from deixis.workflow.report.plan import freeze_plan
+from deixis.workflow.report.review import run_report_review
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.tables import TableStore, report_ready
 
@@ -274,4 +275,6 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     else:
         reports.finalize(report_id, "valid")
         flow.store.update_run(run_id, event="report_finalized", pause_reason=None)
-    # Report review is added by 1f; structural finalization does not wait for it in this batch.
+    flow._checkpoint(run_id, run["scope_revision"])
+    await run_report_review(flow, run, scope, reports, report_id)
+    flow._checkpoint(run_id, run["scope_revision"])

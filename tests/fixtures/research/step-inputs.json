@@ -602,6 +602,7 @@
    "prior_summaries": [],
    "repair_request": null,
    "review_scope": null,
+   "review_sections": null,
    "limitations_core": null
   }
  },
@@ -846,6 +847,7 @@
    "prior_summaries": [],
    "repair_request": null,
    "review_scope": null,
+   "review_sections": null,
    "limitations_core": null
   }
  },
@@ -1102,7 +1104,8 @@
      }
     ]
    },
-   "review_scope": null
+   "review_scope": null,
+   "review_sections": null
   }
  },
  "C_report_review": {
@@ -1304,6 +1307,17 @@
    "review_scope": [
     "IV"
    ],
+   "review_sections": [{
+    "section_id": "IV",
+    "claims": [{
+     "claim_key": "IV.1", "text": "SYNTHETIC claim about release scheduling.",
+     "support_type": "source_stated", "table_ref": null, "equation_ref": null, "count": null,
+     "citations": [{"passage_id": "psg_SYNA1pg003", "cell_id": null,
+                    "anchor_text": "The objective minimizes expected bit error probability"}]
+    }],
+    "repairs": [{"sentence_id": "IV.1#1", "before": "SYNTHETIC original claim.",
+                 "after": "SYNTHETIC claim about release scheduling."}]
+   }],
    "limitations_core": null
   }
  },
@@ -1557,6 +1571,7 @@
    "prior_summaries": [],
    "repair_request": null,
    "review_scope": null,
+   "review_sections": null,
    "limitations_core": null
   }
  },

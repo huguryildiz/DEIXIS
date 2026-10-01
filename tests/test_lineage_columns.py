@@ -290,4 +290,4 @@ def test_api_add_development_columns(tmp_path):
 
 def test_skill_package_hash_unchanged_by_l1():
     # L1 left the package untouched at its own commit; L3 deliberately moved this current pin.
-    assert load_skill_package().package_hash == "sha256:371fcecb7977fec6cce031f101a68cba9e4688383118951fe663614f342b2e8c"
+    assert load_skill_package().package_hash == "sha256:8e1e4a8453a286ac9da8628dd095dd7796f3a49ae374d7930cb3ef06c546ee76"

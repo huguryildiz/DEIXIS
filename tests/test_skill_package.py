@@ -11,6 +11,29 @@ def test_package_integrity():
     assert skill.integrity_issues() == []
 
 
+def test_candidate_tasks_load_candidate_check_md_and_the_hash_moved():
+    before = "sha256:371fcecb7977fec6cce031f101a68cba9e4688383118951fe663614f342b2e8c"
+    package = skill.load_skill_package()
+    for task in ("claim_decomposition", "kill_search_query", "claim_assessment"):
+        assert skill.RUNTIME_FILES[task] == ("SKILL.md", "references/candidate-check.md")
+        assert '<method-file path="references/candidate-check.md">' in package.runtime_text(task)
+    assert package.package_hash != before
+    assert skill.integrity_issues() == []
+    text = " ".join((SKILL_DIR / "SKILL.md").read_text().split())
+    assert ("Literature synthesis across idea chains, candidate research-question development, "
+            "claim-specific kill-search, and experiment design or execution are **not available**.") in text
+    assert ("That includes proposing research gaps, directions or candidate questions in a `grounded_answer`: "
+            "do not offer them as claims, not even as `analyst_inference`; name them in `unanswered_aspects` instead.") in text
+    assert "`grounded_answer`, `answer_review` and the report tasks" in text
+    provenance = json.loads((SKILL_DIR / "provenance.json").read_text())
+    entry = next(e for e in provenance["adaptations"] if e["deixis_file"] == "references/candidate-check.md")
+    assert entry["derived_from"] == []
+    for marker in ("2026-10-01", "D143", "D145", "not upstream text", "Loaded only",
+                   "claim_decomposition", "kill_search_query", "claim_assessment", "Not measured", "tried against no model"):
+        assert marker in entry["change"]
+    assert "tests/model_behavior/candidate_cases.json" in provenance["behavioral_validation"]
+
+
 def test_lineage_links_loads_synthesis_md_and_the_hash_moved():
     before = "sha256:cef7c08662f102f5e7dd56f5203ecb142fc28b91eebeddbfb5b3bb0bbad3b6bb"
     assert skill.RUNTIME_FILES["lineage_links"] == ("SKILL.md", "references/synthesis.md")

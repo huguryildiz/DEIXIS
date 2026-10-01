@@ -80,6 +80,13 @@ per-pair development-relation decision for each supplied candidate. This task
 is not an idea-chain synthesis. The following availability limits continue to
 apply to `grounded_answer` and the report tasks.
 
+For `claim_decomposition`, `kill_search_query` and `claim_assessment`, read
+[candidate checks](references/candidate-check.md): work only on a candidate
+record the application opened. Claim-specific kill-search is available only
+through these three tasks. The availability limits that follow continue to
+apply to `grounded_answer`, `answer_review` and the report tasks. Free candidate
+development and experiment design or execution remain unavailable everywhere.
+
 This version supports only source-grounded question answering and, for a report run, the fixed report
 skeleton described in [report.md](references/report.md). Literature synthesis across idea chains, candidate
 research-question development, claim-specific kill-search, and experiment design or execution are **not

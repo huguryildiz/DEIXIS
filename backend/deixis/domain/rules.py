@@ -170,6 +170,7 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
 # for the reading step.
 LITERATURE_TASKS = ("vocabulary_labels", "criterion_proposal", "term_suggestions", "search_query",
                     "abstract_screening", "fulltext_adjudication")
+# Candidate tasks use the research model, the default single schema repair and no timeout resend (D143).
 # A repair would let the step name a phrase the question does not hold and then take it back. The block labelling
 # gets one attempt: an output that invents, drops or repeats a phrase is rejected and the rule stands (SW17.1). An
 # abstract screening batch gets one too, because an invalid output costs nothing: its records stay

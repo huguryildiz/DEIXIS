@@ -95,7 +95,7 @@ CHAIN_RANK_BASE = 1_000_000_000
 # Steps whose records are shown as short handles instead of stored identifiers, because long random IDs were
 # mis-copied (D12). The abstract stage joined them in slice 09: its batches name 20 candidates each.
 HANDLE_TASKS = ("grounded_answer", "answer_review", "cell_extraction", "abstract_screening",
-                "fulltext_adjudication", "lineage_links") + contracts.REPORT_TASKS
+                "fulltext_adjudication", "lineage_links") + contracts.REPORT_TASKS + contracts.CANDIDATE_TASKS
 FORMULATION_SCORE_THRESHOLD = 3
 FORMULATION_TERMS = re.compile(
     r"\b(?:minimi[sz]e|maximi[sz]e|subject\s+to|s\.\s*t|objective\s+function|constraints?|decision\s+variables?"
@@ -4632,7 +4632,8 @@ class ResearchFlow:
                     screening_target: dict[str, Any] | None = None,
                     suggestion_target: dict[str, Any] | None = None,
                     adjudication_target: dict[str, Any] | None = None,
-                    lineage_target: dict[str, Any] | None = None) -> dict[str, Any]:
+                    lineage_target: dict[str, Any] | None = None,
+                    candidate_target: dict[str, Any] | None = None) -> dict[str, Any]:
         candidates = []
         for c in candidate_rows:
             source = self.store.source(c["source_version_id"])
@@ -4674,8 +4675,12 @@ class ResearchFlow:
             target["adjudication_target"] = adjudication_target
         if lineage_target is not None:
             target["lineage_target"] = lineage_target
+        if candidate_target is not None:
+            target["candidate_target"] = candidate_target
         allowlist = {"candidate_ids": [c["candidate_id"] for c in candidates], "source_ids": [s["source_id"] for s in sources],
                      "passage_ids": [p["passage_id"] for p in passages]}
+        if task_type == "claim_assessment" and candidate_target is not None and candidate_target["version"] is not None:
+            allowlist["element_ids"] = [e["element_id"] for e in candidate_target["version"]["elements"]]
         if vocabulary_target is not None:
             # The allowlist for this step is the phrase list itself: it may label those phrases and name no other.
             allowlist["phrases"] = [entry["phrase"] for entry in vocabulary_target["phrases"]]
@@ -4760,6 +4765,7 @@ class ResearchFlow:
                           resend_guard: Callable[[], bool] | None = None,
                           send_gate: Callable[[], None] | None = None,
                           attempt_record: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+                          candidate_target: dict[str, Any] | None = None,
                           ) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run. `budget_short="skip"` is the sw
@@ -4871,7 +4877,7 @@ class ResearchFlow:
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
                                        claims or [], model, extraction_target, report_target, vocabulary_target,
-                                       screening_target, suggestion_target, adjudication_target, lineage_target)
+                                       screening_target, suggestion_target, adjudication_target, lineage_target, candidate_target)
             if attempt_record is not None:
                 extra = (step_output_extra or {}) | attempt_record(payload)
             if issues := contracts.check_step_input(payload):
@@ -4960,7 +4966,7 @@ class ResearchFlow:
                                                **sent_output())
                 halt("model_mismatch", mismatch)
             output_text = result.raw_text or ""
-            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS:
+            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS + contracts.CANDIDATE_TASKS:
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             # Field names from the alias table are put right before validation and the renames recorded (D86).
             output_text, normalised_changes = contracts.normalise_output(task_type, output_text)

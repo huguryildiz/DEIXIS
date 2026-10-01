@@ -2017,6 +2017,1420 @@
      }
     ]
    }
+  },
+  {
+   "name": "candidate_claim_decomposition_valid",
+   "step_input": "J_claim_decomposition",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.claim_decomposition.v1",
+    "step_input_id": "sti_SYNTHCAND01",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "claim_statement": "SYNTHETIC: buffering reduces delay under bounded arrivals.",
+    "conditions": [
+     "SYNTHETIC: bounded arrivals"
+    ],
+    "elements": [
+     {
+      "element_ref": "e1",
+      "text": "SYNTHETIC: buffering",
+      "kind": "mechanism"
+     },
+     {
+      "element_ref": "e2",
+      "text": "SYNTHETIC: bounded arrivals",
+      "kind": "condition"
+     },
+     {
+      "element_ref": "e3",
+      "text": "SYNTHETIC: reduced delay",
+      "kind": "outcome"
+     }
+    ],
+    "nearest_simple_explanation": "SYNTHETIC: buffering spreads arrivals.",
+    "critical_assumption": "SYNTHETIC: the arrival bound holds.",
+    "validation_plan": "SYNTHETIC: compare the claimed delay with the stated bound.",
+    "source_ids": [
+     "srv_SYNTHCAND01"
+    ],
+    "passage_ids": [
+     "psg_SYNTHCAND01"
+    ],
+    "rationale": "SYNTHETIC: the supplied claim names a mechanism, condition and outcome."
+   }
+  },
+  {
+   "name": "candidate_claim_decomposition_owner_text_valid",
+   "step_input": "J_claim_decomposition_owner_text",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.claim_decomposition.v1",
+    "step_input_id": "sti_SYNTHCAND02",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "claim_statement": "SYNTHETIC: buffering reduces delay under bounded arrivals.",
+    "conditions": [
+     "SYNTHETIC: bounded arrivals"
+    ],
+    "elements": [
+     {
+      "element_ref": "e1",
+      "text": "SYNTHETIC: buffering",
+      "kind": "mechanism"
+     },
+     {
+      "element_ref": "e2",
+      "text": "SYNTHETIC: bounded arrivals",
+      "kind": "condition"
+     },
+     {
+      "element_ref": "e3",
+      "text": "SYNTHETIC: reduced delay",
+      "kind": "outcome"
+     }
+    ],
+    "nearest_simple_explanation": null,
+    "critical_assumption": "SYNTHETIC: the arrival bound holds.",
+    "validation_plan": "SYNTHETIC: compare the claimed delay with the stated bound.",
+    "source_ids": [],
+    "passage_ids": [],
+    "rationale": "SYNTHETIC: the supplied claim names a mechanism, condition and outcome."
+   }
+  },
+  {
+   "name": "candidate_kill_search_query_valid",
+   "step_input": "J_kill_search_query",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.kill_search_query.v1",
+    "step_input_id": "sti_SYNTHCAND03",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [
+     {
+      "term": "synthetic queues",
+      "kind": "topic",
+      "why": "SYNTHETIC setting"
+     }
+    ],
+    "task": [
+     {
+      "term": "bounded delay",
+      "kind": "other",
+      "why": "SYNTHETIC outcome"
+     }
+    ],
+    "setting_backup": [],
+    "task_backup": []
+   }
+  },
+  {
+   "name": "candidate_claim_assessment_valid",
+   "step_input": "J_claim_assessment",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "unrelated",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_decomposition_unknown_source_id",
+   "step_input": "J_claim_decomposition",
+   "expect_ok": false,
+   "expect_codes": [
+    "unknown_source_id"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_decomposition.v1",
+    "step_input_id": "sti_SYNTHCAND01",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "claim_statement": "SYNTHETIC: buffering reduces delay under bounded arrivals.",
+    "conditions": [
+     "SYNTHETIC: bounded arrivals"
+    ],
+    "elements": [
+     {
+      "element_ref": "e1",
+      "text": "SYNTHETIC: buffering",
+      "kind": "mechanism"
+     },
+     {
+      "element_ref": "e2",
+      "text": "SYNTHETIC: bounded arrivals",
+      "kind": "condition"
+     },
+     {
+      "element_ref": "e3",
+      "text": "SYNTHETIC: reduced delay",
+      "kind": "outcome"
+     }
+    ],
+    "nearest_simple_explanation": "SYNTHETIC: buffering spreads arrivals.",
+    "critical_assumption": "SYNTHETIC: the arrival bound holds.",
+    "validation_plan": "SYNTHETIC: compare the claimed delay with the stated bound.",
+    "source_ids": [
+     "srv_SYNTHCAND01",
+     "srv_SYNTHUNKNOWN01"
+    ],
+    "passage_ids": [
+     "psg_SYNTHCAND01"
+    ],
+    "rationale": "SYNTHETIC: the supplied claim names a mechanism, condition and outcome."
+   }
+  },
+  {
+   "name": "candidate_decomposition_unknown_passage_id",
+   "step_input": "J_claim_decomposition",
+   "expect_ok": false,
+   "expect_codes": [
+    "unknown_passage_id"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_decomposition.v1",
+    "step_input_id": "sti_SYNTHCAND01",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "claim_statement": "SYNTHETIC: buffering reduces delay under bounded arrivals.",
+    "conditions": [
+     "SYNTHETIC: bounded arrivals"
+    ],
+    "elements": [
+     {
+      "element_ref": "e1",
+      "text": "SYNTHETIC: buffering",
+      "kind": "mechanism"
+     },
+     {
+      "element_ref": "e2",
+      "text": "SYNTHETIC: bounded arrivals",
+      "kind": "condition"
+     },
+     {
+      "element_ref": "e3",
+      "text": "SYNTHETIC: reduced delay",
+      "kind": "outcome"
+     }
+    ],
+    "nearest_simple_explanation": "SYNTHETIC: buffering spreads arrivals.",
+    "critical_assumption": "SYNTHETIC: the arrival bound holds.",
+    "validation_plan": "SYNTHETIC: compare the claimed delay with the stated bound.",
+    "source_ids": [
+     "srv_SYNTHCAND01"
+    ],
+    "passage_ids": [
+     "psg_SYNTHCAND01",
+     "psg_SYNTHUNKNOWN01"
+    ],
+    "rationale": "SYNTHETIC: the supplied claim names a mechanism, condition and outcome."
+   }
+  },
+  {
+   "name": "candidate_decomposition_duplicate_element_ref",
+   "step_input": "J_claim_decomposition",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_element_ref",
+    "element_ref_order"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_decomposition.v1",
+    "step_input_id": "sti_SYNTHCAND01",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "claim_statement": "SYNTHETIC: buffering reduces delay under bounded arrivals.",
+    "conditions": [
+     "SYNTHETIC: bounded arrivals"
+    ],
+    "elements": [
+     {
+      "element_ref": "e1",
+      "text": "SYNTHETIC: buffering",
+      "kind": "mechanism"
+     },
+     {
+      "element_ref": "e1",
+      "text": "SYNTHETIC: bounded arrivals",
+      "kind": "condition"
+     },
+     {
+      "element_ref": "e3",
+      "text": "SYNTHETIC: reduced delay",
+      "kind": "outcome"
+     }
+    ],
+    "nearest_simple_explanation": "SYNTHETIC: buffering spreads arrivals.",
+    "critical_assumption": "SYNTHETIC: the arrival bound holds.",
+    "validation_plan": "SYNTHETIC: compare the claimed delay with the stated bound.",
+    "source_ids": [
+     "srv_SYNTHCAND01"
+    ],
+    "passage_ids": [
+     "psg_SYNTHCAND01"
+    ],
+    "rationale": "SYNTHETIC: the supplied claim names a mechanism, condition and outcome."
+   }
+  },
+  {
+   "name": "candidate_decomposition_element_ref_order",
+   "step_input": "J_claim_decomposition",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_element_ref",
+    "element_ref_order"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_decomposition.v1",
+    "step_input_id": "sti_SYNTHCAND01",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "claim_statement": "SYNTHETIC: buffering reduces delay under bounded arrivals.",
+    "conditions": [
+     "SYNTHETIC: bounded arrivals"
+    ],
+    "elements": [
+     {
+      "element_ref": "e3",
+      "text": "SYNTHETIC: buffering",
+      "kind": "mechanism"
+     },
+     {
+      "element_ref": "e2",
+      "text": "SYNTHETIC: bounded arrivals",
+      "kind": "condition"
+     },
+     {
+      "element_ref": "e3",
+      "text": "SYNTHETIC: reduced delay",
+      "kind": "outcome"
+     }
+    ],
+    "nearest_simple_explanation": "SYNTHETIC: buffering spreads arrivals.",
+    "critical_assumption": "SYNTHETIC: the arrival bound holds.",
+    "validation_plan": "SYNTHETIC: compare the claimed delay with the stated bound.",
+    "source_ids": [
+     "srv_SYNTHCAND01"
+    ],
+    "passage_ids": [
+     "psg_SYNTHCAND01"
+    ],
+    "rationale": "SYNTHETIC: the supplied claim names a mechanism, condition and outcome."
+   }
+  },
+  {
+   "name": "candidate_decomposition_blank_text",
+   "step_input": "J_claim_decomposition",
+   "expect_ok": false,
+   "expect_codes": [
+    "blank_text"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_decomposition.v1",
+    "step_input_id": "sti_SYNTHCAND01",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "claim_statement": "   ",
+    "conditions": [
+     "SYNTHETIC: bounded arrivals"
+    ],
+    "elements": [
+     {
+      "element_ref": "e1",
+      "text": "SYNTHETIC: buffering",
+      "kind": "mechanism"
+     },
+     {
+      "element_ref": "e2",
+      "text": "SYNTHETIC: bounded arrivals",
+      "kind": "condition"
+     },
+     {
+      "element_ref": "e3",
+      "text": "SYNTHETIC: reduced delay",
+      "kind": "outcome"
+     }
+    ],
+    "nearest_simple_explanation": "SYNTHETIC: buffering spreads arrivals.",
+    "critical_assumption": "SYNTHETIC: the arrival bound holds.",
+    "validation_plan": "SYNTHETIC: compare the claimed delay with the stated bound.",
+    "source_ids": [
+     "srv_SYNTHCAND01"
+    ],
+    "passage_ids": [
+     "psg_SYNTHCAND01"
+    ],
+    "rationale": "SYNTHETIC: the supplied claim names a mechanism, condition and outcome."
+   }
+  },
+  {
+   "name": "candidate_decomposition_validation_plan_design_terms",
+   "step_input": "J_claim_decomposition",
+   "expect_ok": false,
+   "expect_codes": [
+    "validation_plan_design_terms"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_decomposition.v1",
+    "step_input_id": "sti_SYNTHCAND01",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "claim_statement": "SYNTHETIC: buffering reduces delay under bounded arrivals.",
+    "conditions": [
+     "SYNTHETIC: bounded arrivals"
+    ],
+    "elements": [
+     {
+      "element_ref": "e1",
+      "text": "SYNTHETIC: buffering",
+      "kind": "mechanism"
+     },
+     {
+      "element_ref": "e2",
+      "text": "SYNTHETIC: bounded arrivals",
+      "kind": "condition"
+     },
+     {
+      "element_ref": "e3",
+      "text": "SYNTHETIC: reduced delay",
+      "kind": "outcome"
+     }
+    ],
+    "nearest_simple_explanation": "SYNTHETIC: buffering spreads arrivals.",
+    "critical_assumption": "SYNTHETIC: the arrival bound holds.",
+    "validation_plan": "SYNTHETIC: choose a protocol.",
+    "source_ids": [
+     "srv_SYNTHCAND01"
+    ],
+    "passage_ids": [
+     "psg_SYNTHCAND01"
+    ],
+    "rationale": "SYNTHETIC: the supplied claim names a mechanism, condition and outcome."
+   }
+  },
+  {
+   "name": "candidate_nearest_explanation_without_basis",
+   "step_input": "J_claim_decomposition_owner_text",
+   "expect_ok": false,
+   "expect_codes": [
+    "nearest_explanation_without_basis"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_decomposition.v1",
+    "step_input_id": "sti_SYNTHCAND02",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "claim_statement": "SYNTHETIC: buffering reduces delay under bounded arrivals.",
+    "conditions": [
+     "SYNTHETIC: bounded arrivals"
+    ],
+    "elements": [
+     {
+      "element_ref": "e1",
+      "text": "SYNTHETIC: buffering",
+      "kind": "mechanism"
+     },
+     {
+      "element_ref": "e2",
+      "text": "SYNTHETIC: bounded arrivals",
+      "kind": "condition"
+     },
+     {
+      "element_ref": "e3",
+      "text": "SYNTHETIC: reduced delay",
+      "kind": "outcome"
+     }
+    ],
+    "nearest_simple_explanation": "SYNTHETIC invented explanation",
+    "critical_assumption": "SYNTHETIC: the arrival bound holds.",
+    "validation_plan": "SYNTHETIC: compare the claimed delay with the stated bound.",
+    "source_ids": [],
+    "passage_ids": [],
+    "rationale": "SYNTHETIC: the supplied claim names a mechanism, condition and outcome."
+   }
+  },
+  {
+   "name": "candidate_assessment_unknown_element_ref",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "claim_cell_missing",
+    "unknown_element_ref"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHUNKNOWN01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_duplicate_claim_cell",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_claim_cell"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_claim_cell_missing",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "claim_cell_missing"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_alignment_missing",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "alignment_missing"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": null,
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_alignment_on_no_match",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "alignment_on_no_match"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": "aligned",
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_support_without_evidence",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "support_without_evidence"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_unrelated_needs_no_match_cells",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "unrelated_needs_no_match_cells"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "unrelated",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_related_needs_support_cell",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "related_needs_support_cell"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_uncertain_needs_uncertain_cell",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "uncertain_needs_uncertain_cell"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "uncertain",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_whole_claim_without_evidence",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "whole_claim_without_evidence"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": true,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_whole_claim_evidence_without_flag",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "whole_claim_evidence_without_flag"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [
+     {
+      "passage_id": "psg_SYNTHCAND01",
+      "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+     }
+    ],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_whole_claim_needs_related",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "uncertain_needs_uncertain_cell",
+    "whole_claim_needs_related"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "uncertain",
+    "states_whole_claim": true,
+    "whole_claim_evidence": [
+     {
+      "passage_id": "psg_SYNTHCAND01",
+      "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+     }
+    ],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_unknown_passage_id",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "unknown_passage_id"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHUNKNOWN01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_anchor_not_in_passage",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "anchor_not_in_passage"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC invented words absent from all supplied passages."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_duplicate_evidence_quote",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_evidence_quote"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       },
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "SYNTHETIC: no match in the supplied text."
+   }
+  },
+  {
+   "name": "candidate_assessment_blank_text",
+   "step_input": "J_claim_assessment",
+   "expect_ok": false,
+   "expect_codes": [
+    "blank_text"
+   ],
+   "output": {
+    "schema_version": "deixis.claim_assessment.v1",
+    "step_input_id": "sti_SYNTHCAND04",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "work_relevance": "related",
+    "states_whole_claim": false,
+    "whole_claim_evidence": [],
+    "cells": [
+     {
+      "element_ref": "ele_SYNTHCAND01",
+      "relation": "explicit_support",
+      "condition_alignment": "aligned",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCAND01",
+        "quote": "SYNTHETIC: buffering reduces delay under bounded arrivals."
+       }
+      ],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND02",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     },
+     {
+      "element_ref": "ele_SYNTHCAND03",
+      "relation": "no_match_in_supplied_text",
+      "condition_alignment": null,
+      "evidence": [],
+      "note": "SYNTHETIC: no shown match."
+     }
+    ],
+    "nearest_match_summary": "   "
+   }
+  },
+  {
+   "name": "candidate_query_too_many_query_terms",
+   "step_input": "J_kill_search_query",
+   "expect_ok": false,
+   "expect_codes": [
+    "too_many_query_terms"
+   ],
+   "output": {
+    "schema_version": "deixis.kill_search_query.v1",
+    "step_input_id": "sti_SYNTHCAND03",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [
+     {
+      "term": "setting 0",
+      "kind": "topic",
+      "why": "SYNTHETIC"
+     },
+     {
+      "term": "setting 1",
+      "kind": "topic",
+      "why": "SYNTHETIC"
+     },
+     {
+      "term": "setting 2",
+      "kind": "topic",
+      "why": "SYNTHETIC"
+     },
+     {
+      "term": "setting 3",
+      "kind": "topic",
+      "why": "SYNTHETIC"
+     }
+    ],
+    "task": [
+     {
+      "term": "task 0",
+      "kind": "other",
+      "why": "SYNTHETIC"
+     },
+     {
+      "term": "task 1",
+      "kind": "other",
+      "why": "SYNTHETIC"
+     },
+     {
+      "term": "task 2",
+      "kind": "other",
+      "why": "SYNTHETIC"
+     }
+    ],
+    "setting_backup": [],
+    "task_backup": []
+   }
+  },
+  {
+   "name": "candidate_query_empty_query_block",
+   "step_input": "J_kill_search_query",
+   "expect_ok": false,
+   "expect_codes": [
+    "schema_invalid"
+   ],
+   "output": {
+    "schema_version": "deixis.kill_search_query.v1",
+    "step_input_id": "sti_SYNTHCAND03",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [],
+    "task": [
+     {
+      "term": "bounded delay",
+      "kind": "other",
+      "why": "SYNTHETIC outcome"
+     }
+    ],
+    "setting_backup": [],
+    "task_backup": []
+   }
+  },
+  {
+   "name": "candidate_query_query_term_empty",
+   "step_input": "J_kill_search_query",
+   "expect_ok": false,
+   "expect_codes": [
+    "query_term_empty"
+   ],
+   "output": {
+    "schema_version": "deixis.kill_search_query.v1",
+    "step_input_id": "sti_SYNTHCAND03",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [
+     {
+      "term": "synthetic queues",
+      "kind": "topic",
+      "why": "SYNTHETIC setting"
+     }
+    ],
+    "task": [
+     {
+      "term": "   ",
+      "kind": "other",
+      "why": "SYNTHETIC outcome"
+     }
+    ],
+    "setting_backup": [],
+    "task_backup": []
+   }
+  },
+  {
+   "name": "candidate_query_query_syntax_in_term",
+   "step_input": "J_kill_search_query",
+   "expect_ok": false,
+   "expect_codes": [
+    "query_syntax_in_term"
+   ],
+   "output": {
+    "schema_version": "deixis.kill_search_query.v1",
+    "step_input_id": "sti_SYNTHCAND03",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [
+     {
+      "term": "synthetic queues",
+      "kind": "topic",
+      "why": "SYNTHETIC setting"
+     }
+    ],
+    "task": [
+     {
+      "term": "queue AND delay",
+      "kind": "other",
+      "why": "SYNTHETIC outcome"
+     }
+    ],
+    "setting_backup": [],
+    "task_backup": []
+   }
+  },
+  {
+   "name": "candidate_query_query_term_too_long",
+   "step_input": "J_kill_search_query",
+   "expect_ok": false,
+   "expect_codes": [
+    "query_term_too_long"
+   ],
+   "output": {
+    "schema_version": "deixis.kill_search_query.v1",
+    "step_input_id": "sti_SYNTHCAND03",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [
+     {
+      "term": "synthetic queues",
+      "kind": "topic",
+      "why": "SYNTHETIC setting"
+     }
+    ],
+    "task": [
+     {
+      "term": "one two three four five",
+      "kind": "other",
+      "why": "SYNTHETIC outcome"
+     }
+    ],
+    "setting_backup": [],
+    "task_backup": []
+   }
+  },
+  {
+   "name": "candidate_query_duplicate_query_term",
+   "step_input": "J_kill_search_query",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_query_term"
+   ],
+   "output": {
+    "schema_version": "deixis.kill_search_query.v1",
+    "step_input_id": "sti_SYNTHCAND03",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "setting": [
+     {
+      "term": "synthetic queues",
+      "kind": "topic",
+      "why": "SYNTHETIC setting"
+     }
+    ],
+    "task": [
+     {
+      "term": "bounded delay",
+      "kind": "other",
+      "why": "SYNTHETIC outcome"
+     }
+    ],
+    "setting_backup": [],
+    "task_backup": [
+     {
+      "term": "synthetic queues"
+     }
+    ]
+   }
   }
  ]
 }

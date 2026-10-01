@@ -44,6 +44,9 @@ SCHEMA_FILES = {
     "ReportPhraseRepairDraft": "report-phrase-repair.schema.json",
     "ReportReview": "report-review.schema.json",
     "LineageLinksDraft": "lineage-links-draft.schema.json",
+    "ClaimDecomposition": "claim-decomposition.schema.json",
+    "KillSearchQuery": "kill-search-query.schema.json",
+    "ClaimAssessment": "claim-assessment.schema.json",
 }
 SCHEMA_VERSIONS = {
     "GroundedAnswerDraft": "deixis.grounded_answer_draft.v3",
@@ -62,6 +65,9 @@ SCHEMA_VERSIONS = {
     "ReportPhraseRepairDraft": "deixis.report_phrase_repair_draft.v1",
     "ReportReview": "deixis.report_review.v1",
     "LineageLinksDraft": "deixis.lineage_links_draft.v1",
+    "ClaimDecomposition": "deixis.claim_decomposition.v1",
+    "KillSearchQuery": "deixis.kill_search_query.v1",
+    "ClaimAssessment": "deixis.claim_assessment.v1",
 }
 # Model outputs each task may return. More than one output type is wrapped in an
 # object with one nullable property per type; exactly one must be non-null.
@@ -82,6 +88,9 @@ TASK_OUTPUTS = {
     "report_phrase_repair": ("ReportPhraseRepairDraft",),
     "report_review": ("ReportReview",),
     "lineage_links": ("LineageLinksDraft",),
+    "claim_decomposition": ("ClaimDecomposition",),
+    "kill_search_query": ("KillSearchQuery",),
+    "claim_assessment": ("ClaimAssessment",),
 }
 EXTRACTION_TASKS = ("cell_extraction", "table_columns")
 # The block-labelling step sorts a phrase list code extracted; it carries a vocabulary_target instead (SW17.1).
@@ -96,6 +105,13 @@ ADJUDICATION_TARGET_TASKS = ("fulltext_adjudication",)
 GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
 REPORT_TASKS = ("report_plan", "report_section", "report_phrase_repair", "report_review")
 LINEAGE_TASKS = ("lineage_links",)
+CANDIDATE_TASKS = ("claim_decomposition", "kill_search_query", "claim_assessment")
+CANDIDATE_SUPPORT_RELATIONS = ("explicit_support", "reasoned_inference", "partial_match")
+# A surface screen only: absence of these words does not establish the plan's scope or quality.
+VALIDATION_PLAN_DESIGN_TERMS = re.compile(
+    r"\b(?:protocol|sample\s+size|power\s+analysis|apparatus|equipment|instrumentation|reagents?"
+    r"|randomi[sz]ed|preregistered|pre-registered)\b", re.IGNORECASE,
+)
 # The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's (D37).
 MODEL_CELL_STATES = ("value", "unknown", "not_applicable", "not_found_in_inspected_scope")
 WRAPPER_KEYS: dict[str, str] = {}
@@ -338,6 +354,7 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
     elif adjudication_target is not None and not 1 <= adjudication_target["run"] <= adjudication_target["runs"]:
         issues.append(Issue("adjudication_run_out_of_range", "/adjudication_target/run", str(adjudication_target["run"])))
     issues.extend(_check_lineage_target(step_input, records))
+    issues.extend(_check_candidate_target(step_input, records))
     report_target = step_input.get("report_target")
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
         issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
@@ -481,6 +498,86 @@ def _check_lineage_target(step_input: dict[str, Any], records: dict[str, set[str
     return issues
 
 
+def _check_candidate_target(step_input: dict[str, Any], records: dict[str, set[str]]) -> list[Issue]:
+    issues: list[Issue] = []
+    task = step_input["task_type"]
+    candidate = task in CANDIDATE_TASKS
+    target = step_input.get("candidate_target")
+    allow = step_input["allowlist"]
+    if (target is not None) != candidate or (candidate and (
+        step_input["candidates"] or allow["candidate_ids"] or any(
+            field in step_input for field in ("extraction_target", "report_target", "vocabulary_target",
+                                              "screening_target", "suggestion_target", "adjudication_target",
+                                              "lineage_target")))):
+        issues.append(Issue("candidate_target_mismatch", "/candidate_target", task))
+    if not candidate:
+        return issues
+    keys = {"candidate_ids", "source_ids", "passage_ids"}
+    if task == "claim_assessment":
+        keys.add("element_ids")
+    for key in sorted(set(allow) - keys):
+        issues.append(Issue("candidate_allowlist_key", f"/allowlist/{key}", key))
+    if "claims_under_review" in step_input:
+        issues.append(Issue("candidate_unexpected_field", "/claims_under_review", "not a candidate input field"))
+    for field, key in (("sources", "source_id"), ("passages", "passage_id")):
+        first = _lineage_records_by_id(step_input[field], key)
+        for i, record in enumerate(step_input[field]):
+            if record != first[record[key]]:
+                issues.append(Issue("candidate_conflicting_record", f"/{field}/{i}", record[key]))
+    for key in ("source_ids", "passage_ids"):
+        for missing in sorted(records[key] - set(allow[key])):
+            issues.append(Issue("candidate_allowlist_mismatch", f"/allowlist/{key}", missing))
+    if len(records["passage_ids"]) > 24:
+        issues.append(Issue("candidate_passage_count", "/passages", "at most 24 unique passages"))
+    if task == "kill_search_query" and (step_input["sources"] or step_input["passages"]):
+        issues.append(Issue("candidate_no_records", "/sources", "query reads only the claim version"))
+    if task == "claim_assessment" and not step_input["passages"]:
+        issues.append(Issue("candidate_assessment_without_text", "/passages", "assessment needs shown text"))
+    if target is None:
+        return issues
+    path = "/candidate_target"
+    if ((target["origin"] == "owner_text" and (target["gap_kind"] is not None or target["basis"]))
+            or (target["origin"] == "report_gap" and target["gap_kind"] is None)):
+        issues.append(Issue("candidate_origin_mismatch", path, "owner text has no gap kind or basis; report gap needs a kind"))
+    decomposition = task == "claim_decomposition"
+    assessment = task == "claim_assessment"
+    version = target["version"]
+    if (version is None) != decomposition:
+        issues.append(Issue("candidate_version_mismatch", f"{path}/version", task))
+    if (target["origin_text"] is not None) != decomposition:
+        issues.append(Issue("candidate_origin_text_mismatch", f"{path}/origin_text", task))
+    if target["basis"] and not decomposition:
+        issues.append(Issue("candidate_basis_mismatch", f"{path}/basis", task))
+    sid = target["assessed_source_id"]
+    if ((sid is not None) != assessment or (assessment and (
+            len(step_input["sources"]) != 1 or records["source_ids"] != {sid} or sid not in allow["source_ids"]))):
+        issues.append(Issue("candidate_assessed_source_mismatch", f"{path}/assessed_source_id", task))
+    if assessment:
+        for i, passage in enumerate(step_input["passages"]):
+            if passage["source_id"] != sid:
+                issues.append(Issue("candidate_passage_not_assessed_work", f"/passages/{i}/source_id", passage["source_id"]))
+    for i, item in enumerate(target["basis"]):
+        pid = item["passage_id"]
+        if (pid is not None) != (item["kind"] == "passage"):
+            issues.append(Issue("candidate_basis_shape", f"{path}/basis/{i}", "only passage basis items carry a passage ID"))
+        if pid is not None and pid not in records["passage_ids"]:
+            issues.append(Issue("candidate_basis_passage_unknown", f"{path}/basis/{i}/passage_id", pid))
+    if version is not None:
+        elements = version["elements"]
+        if [e["position"] for e in elements] != list(range(1, len(elements) + 1)):
+            issues.append(Issue("candidate_element_positions", f"{path}/version/elements", "positions must be 1..n in list order"))
+        seen: set[str] = set()
+        for i, element in enumerate(elements):
+            eid = element["element_id"]
+            if eid in seen:
+                issues.append(Issue("duplicate_candidate_element", f"{path}/version/elements/{i}/element_id", eid))
+            seen.add(eid)
+    if assessment and ("element_ids" not in allow or version is None
+                       or sorted(allow["element_ids"]) != sorted(e["element_id"] for e in version["elements"])):
+        issues.append(Issue("candidate_allowlist_mismatch", "/allowlist/element_ids", "must equal the version's element IDs exactly"))
+    return issues
+
+
 def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any]) -> ValidationReport:
     report = ValidationReport()
     if isinstance(raw, str):
@@ -493,6 +590,8 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         data = raw
 
     task_type = step_input["task_type"]
+    if task_type in CANDIDATE_TASKS:
+        _check_utf8_text(data, report)
     validator = Draft202012Validator(step_output_schema(task_type))
     schema_errors = sorted(validator.iter_errors(data), key=lambda e: list(e.absolute_path))
     for err in schema_errors:
@@ -503,28 +602,62 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         # A step gets one repair, so the first report names what the rules would reject as well as what the schema
         # does; a draft whose shape the rules cannot read is reported on its schema errors alone (slice 13a, run 5).
         _semantic_checks_best_effort(step_input, data, report)
-        return report
-
-    outputs = TASK_OUTPUTS[task_type]
-    if len(outputs) == 1:
-        output_type, result = outputs[0], data
     else:
-        present = [o for o in outputs if data[WRAPPER_KEYS[o]] is not None]
-        if len(present) != 1:
-            report.issues.append(
-                Issue("ambiguous_result", "$", f"expected exactly one of {outputs}, got {present}")
-            )
-            return report
-        output_type, result = present[0], data[WRAPPER_KEYS[present[0]]]
-    report.output_type, report.result = output_type, result
+        outputs = TASK_OUTPUTS[task_type]
+        if len(outputs) == 1:
+            output_type, result = outputs[0], data
+        else:
+            present = [o for o in outputs if data[WRAPPER_KEYS[o]] is not None]
+            if len(present) != 1:
+                report.issues.append(
+                    Issue("ambiguous_result", "$", f"expected exactly one of {outputs}, got {present}")
+                )
+                return report
+            output_type, result = present[0], data[WRAPPER_KEYS[present[0]]]
+        report.output_type, report.result = output_type, result
 
-    for name in ENVELOPE_FIELDS:
-        if result[name] != step_input[name]:
-            report.issues.append(
-                Issue("envelope_mismatch", f"/{name}", f"expected {step_input[name]!r}, got {result[name]!r}")
-            )
-    _semantic_checks(step_input, output_type, result, report)
+        for name in ENVELOPE_FIELDS:
+            if result[name] != step_input[name]:
+                report.issues.append(
+                    Issue("envelope_mismatch", f"/{name}", f"expected {step_input[name]!r}, got {result[name]!r}")
+                )
+        _semantic_checks(step_input, output_type, result, report)
+
+    if task_type in CANDIDATE_TASKS:
+        # Diagnostics may echo rejected keys or values, including from the best-effort pass.
+        # Escape unencodable characters so storage and repair keep the invalid verdict.
+        for issue in report.issues + report.warnings:
+            for name in ("path", "message"):
+                text = getattr(issue, name)
+                try:
+                    text.encode("utf-8")
+                except UnicodeEncodeError:
+                    setattr(issue, name, text.encode("utf-8", "backslashreplace").decode("utf-8"))
     return report
+
+
+def _check_utf8_text(data: Any, report: ValidationReport) -> None:
+    """Check values and keys even on schema-invalid candidate outputs; report each path once."""
+    seen: set[str] = set()
+
+    def walk(value: Any, path: str) -> None:
+        if isinstance(value, str):
+            try:
+                value.encode("utf-8")
+            except UnicodeEncodeError:
+                if path not in seen:
+                    report.issues.append(Issue("text_not_encodable", path, "text must be encodable as UTF-8"))
+                    seen.add(path)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                child = path + "/" + str(key).replace("~", "~0").replace("/", "~1")
+                walk(key, child)
+                walk(item, child)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                walk(item, path + f"/{index}")
+
+    walk(data, "")
 
 
 def _semantic_checks_best_effort(step_input: dict[str, Any], data: Any, report: ValidationReport) -> None:
@@ -553,8 +686,8 @@ def _semantic_checks_best_effort(step_input: dict[str, Any], data: Any, report: 
         return path != "$" and not any(path == f or path.startswith(f + "/") or f.startswith(path + "/") for f in flagged)
 
     report.issues.extend(i for i in probe.issues if elsewhere(i.path) or (
-        step_input["task_type"] in REPORT_TASKS + LINEAGE_TASKS
-        and i.code in {"unknown_passage_id", "unknown_cell_id", "unknown_source_id", "unknown_column_id"}))
+        step_input["task_type"] in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS
+        and i.code in {"unknown_passage_id", "unknown_cell_id", "unknown_source_id", "unknown_column_id", "unknown_element_ref"}))
     report.warnings.extend(w for w in probe.warnings if elsewhere(w.path))
 
 
@@ -570,6 +703,10 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_cells(step_input, allow, result, report)
     elif output_type == "LineageLinksDraft":
         _check_lineage_links(step_input, allow, result, report)
+    elif output_type == "ClaimDecomposition":
+        _check_claim_decomposition(step_input, allow, result, report)
+    elif output_type == "ClaimAssessment":
+        _check_claim_assessment(step_input, allow, result, report)
     elif output_type == "TableColumnProposal":
         _check_column_proposal(step_input, result, report)
     elif output_type == "ResearchTitle":
@@ -580,7 +717,7 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_criterion_proposal(step_input, result, report)
     elif output_type == "TermSuggestions":
         _check_term_suggestions(allow, result, report)
-    elif output_type == "SearchQuery":
+    elif output_type in ("SearchQuery", "KillSearchQuery"):
         _check_search_query(result, report)
     elif output_type == "AbstractScreening":
         _check_abstract_screening(allow, result, report)
@@ -823,6 +960,117 @@ def _check_lineage_links(step_input: dict[str, Any], allow: dict[str, set[str]],
             report.issues.append(Issue("source_stated_without_mention_passage", f"{path}/evidence", sid))
     for missing in sorted(set(candidates) - seen):
         report.issues.append(Issue("candidate_without_decision", "/decisions", missing))
+
+
+def _check_nonblank_text(text: str, path: str, report: ValidationReport) -> bool:
+    # SQLite length() stops at NUL; lone surrogates cannot reach UTF-8 storage.
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        encodable = False
+    else:
+        encodable = True
+    if not text.strip() or "\x00" in text or not encodable:
+        report.issues.append(Issue("blank_text", path,
+                                   "text must not be whitespace-only or contain NUL; it must be encodable as UTF-8"))
+        return False
+    return True
+
+
+def _check_claim_decomposition(step_input: dict[str, Any], allow: dict[str, set[str]],
+                               draft: dict[str, Any], report: ValidationReport) -> None:
+    for field, code in (("source_ids", "unknown_source_id"), ("passage_ids", "unknown_passage_id")):
+        for i, identifier in enumerate(draft[field]):
+            if isinstance(identifier, str) and identifier not in allow[field]:
+                report.issues.append(Issue(code, f"/{field}/{i}", identifier))
+    seen: set[str] = set()
+    for i, element in enumerate(draft["elements"]):
+        ref = element["element_ref"]
+        if ref in seen:
+            report.issues.append(Issue("duplicate_element_ref", f"/elements/{i}/element_ref", ref))
+        seen.add(ref)
+        if ref != f"e{i + 1}":
+            report.issues.append(Issue("element_ref_order", f"/elements/{i}/element_ref", "refs must be e1..en in list order"))
+    texts = [(f"/{field}", draft[field]) for field in ("claim_statement", "critical_assumption", "validation_plan", "rationale")]
+    texts += [(f"/conditions/{i}", text) for i, text in enumerate(draft["conditions"])]
+    texts += [(f"/elements/{i}/text", element["text"]) for i, element in enumerate(draft["elements"])]
+    if draft["nearest_simple_explanation"] is not None:
+        texts.append(("/nearest_simple_explanation", draft["nearest_simple_explanation"]))
+    for path, text in texts:
+        _check_nonblank_text(text, path, report)
+    if draft["nearest_simple_explanation"] is not None and not step_input["candidate_target"]["basis"]:
+        report.issues.append(Issue("nearest_explanation_without_basis", "/nearest_simple_explanation", "no basis was shown"))
+    if match := VALIDATION_PLAN_DESIGN_TERMS.search(draft["validation_plan"]):
+        report.issues.append(Issue("validation_plan_design_terms", "/validation_plan", f"experiment-design term: {match.group()}"))
+
+
+def _check_claim_assessment(step_input: dict[str, Any], allow: dict[str, set[str]],
+                            draft: dict[str, Any], report: ValidationReport) -> None:
+    """Check coverage, consistency and quote location; never whether evidence supports the relation."""
+    passages = _lineage_records_by_id(step_input["passages"], "passage_id")
+    sid = step_input["candidate_target"]["assessed_source_id"]
+
+    def evidence_checks(items: list[dict[str, Any]], path: str) -> None:
+        # One span may support several cells. Duplicates are refused within each evidence list only.
+        located: set[tuple[str, str]] = set()
+        for j, item in enumerate(items):
+            pid = item["passage_id"]
+            if not isinstance(pid, str):
+                continue
+            passage = passages.get(pid)
+            item_path = f"{path}/{j}"
+            if pid not in allow["passage_ids"] or passage is None or passage["source_id"] != sid:
+                report.issues.append(Issue("unknown_passage_id", f"{item_path}/passage_id", pid))
+            elif (anchor := locate_anchor(item["quote"], passage["text"])) is None:
+                report.issues.append(Issue("anchor_not_in_passage", f"{item_path}/quote",
+                                           f"{sid}:{pid}: the quoted text was not found in the cited passage"))
+            elif (pid, anchor.text) in located:
+                report.issues.append(Issue("duplicate_evidence_quote", f"{item_path}/quote",
+                                           f"{sid}:{pid}: this quote repeats an earlier quote of the same passage"))
+            else:
+                located.add((pid, anchor.text))
+
+    seen: set[str] = set()
+    relations: list[str] = []
+    for i, cell in enumerate(draft["cells"]):
+        path, ref = f"/cells/{i}", cell["element_ref"]
+        if isinstance(ref, str):
+            if ref not in allow["element_ids"]:
+                report.issues.append(Issue("unknown_element_ref", f"{path}/element_ref", ref))
+            if ref in seen:
+                report.issues.append(Issue("duplicate_claim_cell", f"{path}/element_ref", ref))
+            seen.add(ref)
+        relation = cell["relation"]
+        relations.append(relation)
+        if relation in CANDIDATE_SUPPORT_RELATIONS:
+            if cell["condition_alignment"] is None:
+                report.issues.append(Issue("alignment_missing", f"{path}/condition_alignment", relation))
+            if not cell["evidence"]:
+                report.issues.append(Issue("support_without_evidence", f"{path}/evidence", "support needs a located quote"))
+        elif relation == "no_match_in_supplied_text" and cell["condition_alignment"] is not None:
+            report.issues.append(Issue("alignment_on_no_match", f"{path}/condition_alignment", relation))
+        if cell["note"] is not None:
+            _check_nonblank_text(cell["note"], f"{path}/note", report)
+        evidence_checks(cell["evidence"], f"{path}/evidence")
+    for element in step_input["candidate_target"]["version"]["elements"]:
+        if element["element_id"] not in seen:
+            report.issues.append(Issue("claim_cell_missing", "/cells", element["element_id"]))
+    relevance = draft["work_relevance"]
+    if relevance == "unrelated" and any(r != "no_match_in_supplied_text" for r in relations):
+        report.issues.append(Issue("unrelated_needs_no_match_cells", "/work_relevance", relevance))
+    if relevance == "related" and not any(r in CANDIDATE_SUPPORT_RELATIONS for r in relations):
+        report.issues.append(Issue("related_needs_support_cell", "/work_relevance", relevance))
+    if relevance == "uncertain" and "uncertain" not in relations:
+        report.issues.append(Issue("uncertain_needs_uncertain_cell", "/work_relevance", relevance))
+    whole = draft["states_whole_claim"]
+    if whole and not draft["whole_claim_evidence"]:
+        report.issues.append(Issue("whole_claim_without_evidence", "/whole_claim_evidence", "whole claim needs a located quote"))
+    if not whole and draft["whole_claim_evidence"]:
+        report.issues.append(Issue("whole_claim_evidence_without_flag", "/whole_claim_evidence", "flag is false"))
+    if whole and relevance != "related":
+        report.issues.append(Issue("whole_claim_needs_related", "/work_relevance", relevance))
+    evidence_checks(draft["whole_claim_evidence"], "/whole_claim_evidence")
+    _check_nonblank_text(draft["nearest_match_summary"], "/nearest_match_summary", report)
 
 
 def _check_cells(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
@@ -1096,6 +1344,9 @@ def _check_search_query(draft: dict[str, Any], report: ValidationReport) -> None
     seen: dict[str, str] = {}
     for block, index, term in listed:
         path = f"/{block}/{index}/term"
+        # Blank terms retain query_term_empty; invalid storage text never enters issue messages below.
+        if term.strip() and not _check_nonblank_text(term, path, report):
+            continue
         normalized = normalize_phrase(term)
         if not normalized:
             report.issues.append(Issue("query_term_empty", path, term))
@@ -1371,6 +1622,19 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
 
 
 # Explicit paths keep record conversion out of prose, quotes, revision IDs and envelope metadata.
+CANDIDATE_OUTPUT_ID_FIELDS = {
+    "claim_decomposition": (("source_ids/*", "srv_S"), ("passage_ids/*", "psg_P")),
+    "kill_search_query": (),
+    "claim_assessment": (("cells/*/element_ref", "ele_E"), ("cells/*/evidence/*/passage_id", "psg_P"),
+                         ("whole_claim_evidence/*/passage_id", "psg_P")),
+}
+CANDIDATE_INPUT_ID_FIELDS = (
+    ("passages/*/passage_id", "psg_P"), ("passages/*/source_id", "srv_S"),
+    ("sources/*/source_id", "srv_S"),
+    ("allowlist/passage_ids/*", "psg_P"), ("allowlist/source_ids/*", "srv_S"),
+    ("allowlist/element_ids/*", "ele_E"), ("candidate_target/basis/*/passage_id", "psg_P"),
+    ("candidate_target/assessed_source_id", "srv_S"), ("candidate_target/version/elements/*/element_id", "ele_E"),
+)
 LINEAGE_OUTPUT_ID_FIELDS = (
     ("decisions/*/from_source_id", "srv_S"), ("decisions/*/evidence/*/passage_id", "psg_P"),
 )
@@ -1501,6 +1765,27 @@ def lineage_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     return handles
 
 
+def candidate_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
+    """Number passages, sources, version elements, then remaining declared slots; first occurrence wins."""
+    handles: dict[str, str] = {}
+    counts = dict.fromkeys(("psg_P", "srv_S", "ele_E"), 0)
+
+    def add(identifier: Any, kind: str) -> None:
+        if isinstance(identifier, str) and identifier not in handles:
+            counts[kind] += 1
+            handles[identifier] = f"{kind}{counts[kind]:07d}"
+
+    version = (step_input.get("candidate_target") or {}).get("version") or {}
+    for records, key, kind in ((step_input["passages"], "passage_id", "psg_P"),
+                               (step_input["sources"], "source_id", "srv_S"),
+                               (version.get("elements", []), "element_id", "ele_E")):
+        for record in records:
+            add(record[key], kind)
+    for owner, key, kind, _ in _report_id_fields(step_input, CANDIDATE_INPUT_ID_FIELDS):
+        add(owner[key], kind)
+    return handles
+
+
 def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     """Short per-step identifiers shown to the model in place of passage and source IDs.
 
@@ -1512,6 +1797,8 @@ def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
         return report_citation_handles(step_input)
     if step_input.get("task_type") in LINEAGE_TASKS:
         return lineage_citation_handles(step_input)
+    if step_input.get("task_type") in CANDIDATE_TASKS:
+        return candidate_citation_handles(step_input)
     handles = {p["passage_id"]: f"psg_P{n:07d}" for n, p in enumerate(step_input["passages"], start=1)}
     columns = (step_input.get("extraction_target") or {}).get("columns", [])
     handles |= {c["column_id"]: f"col_C{n:07d}" for n, c in enumerate(columns, start=1)}
@@ -1524,8 +1811,9 @@ def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
 def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
     handles = citation_handles(step_input)
     shown = copy.deepcopy(step_input)
-    if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS:
-        fields = LINEAGE_INPUT_ID_FIELDS if step_input["task_type"] in LINEAGE_TASKS else REPORT_INPUT_ID_FIELDS
+    if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS:
+        fields = CANDIDATE_INPUT_ID_FIELDS if step_input["task_type"] in CANDIDATE_TASKS else (
+            LINEAGE_INPUT_ID_FIELDS if step_input["task_type"] in LINEAGE_TASKS else REPORT_INPUT_ID_FIELDS)
         for owner, key, _, _ in _report_id_fields(shown, fields):
             if isinstance(owner[key], str):
                 owner[key] = handles.get(owner[key], owner[key])
@@ -1623,7 +1911,7 @@ def salvage_answer_draft(step_input: dict[str, Any], draft: dict[str, Any]) -> t
     return draft, warnings
 
 
-PADDED_HANDLE = re.compile(r"^(psg_P|srv_S|col_C|cnd_C|cel_L)0*(\d{1,7})$")
+PADDED_HANDLE = re.compile(r"^(psg_P|srv_S|col_C|cnd_C|cel_L|ele_E)0*(\d{1,7})$")
 
 
 def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict[str, Any]:
@@ -1642,10 +1930,11 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
         return raw
     if not isinstance(data, dict):
         return raw
-    if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS:
-        fields = LINEAGE_OUTPUT_ID_FIELDS if step_input["task_type"] in LINEAGE_TASKS else (
+    if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS:
+        fields = CANDIDATE_OUTPUT_ID_FIELDS[step_input["task_type"]] if step_input["task_type"] in CANDIDATE_TASKS else (
+            LINEAGE_OUTPUT_ID_FIELDS if step_input["task_type"] in LINEAGE_TASKS else (
             REPORT_PLAN_ID_FIELDS if step_input["task_type"] == "report_plan" else (
-                REPORT_SECTION_ID_FIELDS if step_input["task_type"] == "report_section" else ()))
+                REPORT_SECTION_ID_FIELDS if step_input["task_type"] == "report_section" else ())))
         for owner, key, kind, _ in _report_id_fields(data, fields):
             identifier = owner[key]
             if isinstance(identifier, str) and identifier.startswith(kind):
@@ -1692,6 +1981,22 @@ def cell_links(step_input: dict[str, Any], cell: dict[str, Any]) -> list[dict[st
         links.setdefault(key, {"passage_id": passage["passage_id"], "source_version_id": passage["source_id"],
                                "anchor_text": anchor.text if anchor else None, "anchor_match": anchor.kind if anchor else None})
     return list(links.values())
+
+
+def claim_assessment_evidence(step_input: dict[str, Any], item: dict[str, Any]) -> dict[str, Any] | None:
+    """Map valid assessment evidence to K1's shape using source-owned located words.
+
+    K3 must stop publication on an unexpected None, never keep only the remaining evidence.
+    """
+    passage = _lineage_records_by_id(step_input["passages"], "passage_id").get(item["passage_id"])
+    if passage is None:
+        return None
+    anchor = locate_anchor(item["quote"], passage["text"])
+    if anchor is None:
+        return None
+    abstract = passage["locator"]["kind"] == "abstract"
+    return {"evidence_kind": "abstract" if abstract else "passage",
+            "passage_id": None if abstract else passage["passage_id"], "quote": anchor.text}
 
 
 def storable_cells(step_input: dict[str, Any], data: str | dict[str, Any]) -> list[dict[str, Any]]:

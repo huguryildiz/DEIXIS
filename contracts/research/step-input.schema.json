@@ -29,6 +29,115 @@
     "created_at"
   ],
   "properties": {
+    "candidate_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "origin",
+        "gap_kind",
+        "origin_text",
+        "basis",
+        "version",
+        "assessed_source_id"
+      ],
+      "properties": {
+        "candidate_id": {
+          "type": "string",
+          "pattern": "^rcd_[0-9A-Za-z]{8,40}$"
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "report_gap",
+            "owner_text"
+          ]
+        },
+        "gap_kind": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "stated_limitation",
+                "conflicting_evidence",
+                "corpus_absence"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin_text": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "basis": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "text",
+              "passage_id"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cell",
+                  "passage",
+                  "claim"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "passage_id": {
+                "anyOf": [
+                  {
+                    "$ref": "common.schema.json#/$defs/passage_id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "maxItems": 24
+        },
+        "version": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/candidate_version"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assessed_source_id": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/source_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "lineage_target": {
       "type": "object",
       "additionalProperties": false,
@@ -124,7 +233,10 @@
         "report_section",
         "report_phrase_repair",
         "report_review",
-        "lineage_links"
+        "lineage_links",
+        "claim_decomposition",
+        "kill_search_query",
+        "claim_assessment"
       ]
     },
     "scope_revision": {
@@ -1033,6 +1145,7 @@
         "passage_ids"
       ],
       "properties": {
+        "element_ids": {"type": "array", "items": {"type": "string", "pattern": "^ele_[0-9A-Za-z]{8,40}$"}},
         "candidate_ids": {
           "type": "array",
           "items": {
@@ -1120,6 +1233,90 @@
     }
   },
   "$defs": {
+    "candidate_version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "claim_statement",
+        "conditions",
+        "elements",
+        "nearest_simple_explanation",
+        "critical_assumption",
+        "validation_plan"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "claim_statement": {
+          "type": "string"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "elements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/candidate_element"
+          },
+          "minItems": 2,
+          "maxItems": 6
+        },
+        "nearest_simple_explanation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "critical_assumption": {
+          "type": "string"
+        },
+        "validation_plan": {
+          "type": "string"
+        }
+      }
+    },
+    "candidate_element": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "element_id",
+        "position",
+        "text",
+        "kind"
+      ],
+      "properties": {
+        "element_id": {
+          "type": "string",
+          "pattern": "^ele_[0-9A-Za-z]{8,40}$"
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "text": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "mechanism",
+            "condition",
+            "outcome",
+            "parameter"
+          ]
+        }
+      }
+    },
     "lineage_node": {
       "type": "object",
       "additionalProperties": false,

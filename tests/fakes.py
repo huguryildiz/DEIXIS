@@ -21,6 +21,35 @@ def envelope(si: dict[str, Any], version: str) -> dict[str, Any]:
 
 def valid_response(si: dict[str, Any]) -> str:
     task = si["task_type"]
+    if task == "claim_decomposition":
+        return json.dumps(envelope(si, "deixis.claim_decomposition.v1") | {
+            "claim_statement": "SYNTHETIC: buffering reduces delay under bounded arrivals.",
+            "conditions": ["SYNTHETIC: bounded arrivals"],
+            "elements": [{"element_ref": f"e{i}", "text": f"SYNTHETIC: {text}", "kind": kind}
+                         for i, (text, kind) in enumerate((("buffering", "mechanism"),
+                                                          ("bounded arrivals", "condition"),
+                                                          ("reduced delay", "outcome")), 1)],
+            "nearest_simple_explanation": "SYNTHETIC: buffering spreads arrivals." if si["candidate_target"]["basis"] else None,
+            "critical_assumption": "SYNTHETIC: the arrival bound holds.",
+            "validation_plan": "SYNTHETIC: compare the claimed delay with the stated bound.",
+            "source_ids": [s["source_id"] for s in si["sources"]],
+            "passage_ids": [p["passage_id"] for p in si["passages"]],
+            "rationale": "SYNTHETIC: the supplied claim names a mechanism, condition and outcome.",
+        })
+    if task == "kill_search_query":
+        return json.dumps(envelope(si, "deixis.kill_search_query.v1") | {
+            "setting": [{"term": "synthetic queues", "kind": "topic", "why": "SYNTHETIC setting"}],
+            "task": [{"term": "bounded delay", "kind": "other", "why": "SYNTHETIC outcome"}],
+            "setting_backup": [], "task_backup": [],
+        })
+    if task == "claim_assessment":
+        return json.dumps(envelope(si, "deixis.claim_assessment.v1") | {
+            "work_relevance": "unrelated", "states_whole_claim": False, "whole_claim_evidence": [],
+            "cells": [{"element_ref": e["element_id"], "relation": "no_match_in_supplied_text",
+                       "condition_alignment": None, "evidence": [], "note": "SYNTHETIC: no shown match."}
+                      for e in si["candidate_target"]["version"]["elements"]],
+            "nearest_match_summary": "SYNTHETIC: no match in the supplied text.",
+        })
     if task == "lineage_links":
         decisions = []
         for i, candidate in enumerate(si["lineage_target"]["candidates"]):

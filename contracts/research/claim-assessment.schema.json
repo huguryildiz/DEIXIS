@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "work_relevance",
+    "states_whole_claim",
+    "whole_claim_evidence",
+    "cells",
+    "nearest_match_summary"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "deixis.claim_assessment.v1"
+    },
+    "step_input_id": {
+      "$ref": "common.schema.json#/$defs/step_input_id"
+    },
+    "scope_revision": {
+      "$ref": "common.schema.json#/$defs/scope_revision"
+    },
+    "skill_package_hash": {
+      "$ref": "common.schema.json#/$defs/skill_package_hash"
+    },
+    "work_relevance": {
+      "type": "string",
+      "enum": [
+        "unrelated",
+        "related",
+        "uncertain"
+      ]
+    },
+    "states_whole_claim": {
+      "type": "boolean"
+    },
+    "whole_claim_evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "passage_id",
+          "quote"
+        ],
+        "properties": {
+          "passage_id": {
+            "$ref": "common.schema.json#/$defs/passage_id"
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        }
+      },
+      "minItems": 0,
+      "maxItems": 3
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "element_ref",
+          "relation",
+          "condition_alignment",
+          "evidence",
+          "note"
+        ],
+        "properties": {
+          "element_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "explicit_support",
+              "reasoned_inference",
+              "partial_match",
+              "no_match_in_supplied_text",
+              "uncertain"
+            ]
+          },
+          "condition_alignment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "aligned",
+                  "different_conditions",
+                  "unclear"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "passage_id",
+                "quote"
+              ],
+              "properties": {
+                "passage_id": {
+                  "$ref": "common.schema.json#/$defs/passage_id"
+                },
+                "quote": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              }
+            },
+            "minItems": 0,
+            "maxItems": 3
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 6
+    },
+    "nearest_match_summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400
+    }
+  },
+  "title": "ClaimAssessment",
+  "$id": "https://deixis.local/contracts/research/claim-assessment.schema.json"
+}

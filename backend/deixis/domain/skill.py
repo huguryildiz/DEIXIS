@@ -34,6 +34,9 @@ RUNTIME_FILES = {
     "report_phrase_repair": ("SKILL.md", "references/report.md", PHRASEBANK),
     "report_review": ("SKILL.md", "references/report.md"),
     "lineage_links": ("SKILL.md", "references/synthesis.md"),
+    "claim_decomposition": ("SKILL.md", "references/candidate-check.md"),
+    "kill_search_query": ("SKILL.md", "references/candidate-check.md"),
+    "claim_assessment": ("SKILL.md", "references/candidate-check.md"),
 }
 PROVENANCE_REQUIRED = (
     "package",

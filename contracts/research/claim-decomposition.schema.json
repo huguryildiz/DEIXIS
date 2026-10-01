@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "claim_statement",
+    "conditions",
+    "elements",
+    "nearest_simple_explanation",
+    "critical_assumption",
+    "validation_plan",
+    "source_ids",
+    "passage_ids",
+    "rationale"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "deixis.claim_decomposition.v1"
+    },
+    "step_input_id": {
+      "$ref": "common.schema.json#/$defs/step_input_id"
+    },
+    "scope_revision": {
+      "$ref": "common.schema.json#/$defs/scope_revision"
+    },
+    "skill_package_hash": {
+      "$ref": "common.schema.json#/$defs/skill_package_hash"
+    },
+    "claim_statement": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    },
+    "conditions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 300
+      },
+      "minItems": 0,
+      "maxItems": 6
+    },
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "element_ref",
+          "text",
+          "kind"
+        ],
+        "properties": {
+          "element_ref": {
+            "type": "string",
+            "pattern": "^e[1-6]$"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "mechanism",
+              "condition",
+              "outcome",
+              "parameter"
+            ]
+          }
+        }
+      },
+      "minItems": 2,
+      "maxItems": 6
+    },
+    "nearest_simple_explanation": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "critical_assumption": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    },
+    "validation_plan": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 800
+    },
+    "source_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/source_id"
+      },
+      "minItems": 0,
+      "maxItems": 8
+    },
+    "passage_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/passage_id"
+      },
+      "minItems": 0,
+      "maxItems": 12
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    }
+  },
+  "title": "ClaimDecomposition",
+  "$id": "https://deixis.local/contracts/research/claim-decomposition.schema.json"
+}

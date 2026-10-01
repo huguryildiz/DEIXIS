@@ -60,6 +60,7 @@ class Connector:
     # before D93, which names none, is read as it was (`reading`).
     sw_query: dict[str, Any] = field(default_factory=dict)
     endpoints: dict[str, Endpoint] = field(default_factory=dict)
+    requests_per_search: int = 1
 
     def api_key(self) -> str | None:
         return (os.environ.get(self.key_env) or None) if self.key_env else None
@@ -89,7 +90,8 @@ CONNECTORS = {c.provider_id: c for c in (
     Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS, page_gap=3.0, host=_host(arxiv.QUERY_URL)),
     Connector("biorxiv", biorxiv.search, biorxiv.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",  # searched through OpenAlex
               host=_host(openalex.WORKS_URL)),
-    Connector("pubmed", pubmed.search, pubmed.MAX_RESULTS, "NCBI_API_KEY", host=_host(pubmed.BASE_URL)),
+    # ESearch followed by EFetch; both have their own bounded HTTP retries.
+    Connector("pubmed", pubmed.search, pubmed.MAX_RESULTS, "NCBI_API_KEY", host=_host(pubmed.BASE_URL), requests_per_search=2),
     Connector("ieee_xplore", ieee_xplore.search, ieee_xplore.MAX_RESULTS, "IEEE_API_KEY", key_required=True,
               host=_host(ieee_xplore.SEARCH_URL)),
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,

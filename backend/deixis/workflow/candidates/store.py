@@ -162,6 +162,15 @@ class CandidateStore:
         return [self.version(row["id"]) for row in self._rows(
             "SELECT id FROM candidate_versions WHERE candidate_id = ? ORDER BY version", (candidate_id,))]
 
+    def runs(self, candidate_id: str, *, active_only=False, limit=5) -> list[dict]:
+        candidate = self.candidate(candidate_id)
+        rows = self._rows(
+            "SELECT id FROM runs WHERE research_id = ? AND kind IN ('claim_decomposition', 'kill_search')"
+            " AND json_extract(target_json, '$.candidate_id') = ?"
+            + (" AND status IN ('queued', 'running', 'pause_requested')" if active_only else "")
+            + " ORDER BY created_at DESC, id DESC LIMIT ?", (candidate["research_id"], candidate_id, limit))
+        return [self.store.run(row["id"]) for row in rows]
+
     @staticmethod
     def _cell_text(value, options_json) -> str:
         if isinstance(value, str):
@@ -364,6 +373,39 @@ class CandidateStore:
         self.version(candidate_version_id)
         return self._rows("SELECT * FROM kill_searches WHERE candidate_version_id = ? ORDER BY created_at, id",
                           (candidate_version_id,))
+
+    def search_for_run(self, run_id: str) -> dict | None:
+        row = self.conn.execute("SELECT * FROM kill_searches WHERE run_id = ?", (run_id,)).fetchone()
+        return dict(row) if row else None
+
+    def sync_search_outcome(self, run_id: str) -> dict | None:
+        """Idempotent lifecycle sync, also intended for Part B's read endpoints.
+
+        A read may perform this write after worker recovery. A terminal search is
+        never reopened, even in the window before its run is terminalised.
+        """
+        with self._transaction():
+            search = self.search_for_run(run_id)
+            if search is None or search["outcome"] in TERMINAL_OUTCOMES:
+                return search
+            run = self.store.run(run_id)
+            state = {"queued": "running", "running": "running", "pause_requested": "running",
+                     "paused": "paused", "cancelled": "stopped", "failed": "failed"}.get(run["status"])
+            if state == "failed":
+                # Outside-flow failures (including worker failure) also persist
+                # their code before making the search terminal.
+                summary = self.store.existing_step(run_id, "kill_search_summary")
+                if not summary or not (summary["output"] or {}).get("failure_code"):
+                    from deixis.workflow.candidates.run import search_summary
+                    summary = self.store.step(run_id, "kill_search_summary", "kill_search_summary")
+                    self.store.finish_step(summary["id"], "succeeded", output=search_summary(
+                        self.store, search["id"], failure_code=run["pause_reason"] or "search_failed"))
+            return self._set_state(search["id"], state) if state else search
+
+    def search_status(self, kill_search_id: str) -> dict:
+        search = self.kill_search(kill_search_id)
+        version = self.version(search["candidate_version_id"])
+        return self._derive(search, [e["id"] for e in version["elements"]])
 
     def queries(self, kill_search_id) -> list[dict]:
         self.kill_search(kill_search_id)

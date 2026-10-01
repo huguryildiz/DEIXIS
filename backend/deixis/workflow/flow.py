@@ -32,6 +32,7 @@ from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTR
                                  FULLTEXT_RUNS, MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES,
                                  PROVIDER_WAIT, SCREENING_BATCH, SEARCH_PARALLEL_HOSTS, SW_READ_LIMIT,
                                  after_invalid_output, effective_reviewer, schema_repairs, step_model)
+from deixis.domain.rules import RevisionConflict
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt
@@ -338,6 +339,14 @@ class ResearchFlow:
         self._held: dict[str, _Held] = {}
 
     async def execute(self, run_id: str) -> None:
+        try:
+            await self._execute_run(run_id)
+        finally:
+            if self.store.run(run_id)["kind"] == "kill_search":
+                from deixis.workflow.candidates.store import CandidateStore
+                CandidateStore(self.store).sync_search_outcome(run_id)
+
+    async def _execute_run(self, run_id: str) -> None:
         run = self.store.run(run_id)
         scope = self.store.scope(run["research_id"], run["scope_revision"])
         try:
@@ -364,6 +373,12 @@ class ResearchFlow:
                 await self._research_title(run, scope)
             elif run["kind"] == "report":
                 await self._report(run, scope)
+            elif run["kind"] == "claim_decomposition":
+                await self._claim_decomposition(run, scope)
+                self._candidate_send_gate(run)
+            elif run["kind"] == "kill_search":
+                await self._kill_search(run, scope)
+                self._candidate_send_gate(run)
             else:
                 await self._table_columns(run, scope)
         except RunStopped:
@@ -4514,6 +4529,309 @@ class ResearchFlow:
                 cell_version_at_request=cell_versions.get(column["column_id"]), recheck=recheck,
             )
         return len(cells)
+
+    # ---- candidates -------------------------------------------------------------------
+    def _candidate_send_gate(self, run: dict[str, Any]) -> None:
+        from deixis.workflow.candidates.store import CandidateStore, TERMINAL_OUTCOMES
+        self._checkpoint(run["id"], run["scope_revision"])
+        if self.store.run(run["id"])["status"] != "running":
+            raise RunStopped
+        if run["target"].get("skill_package_hash") != self.deps.package.package_hash:
+            if run["kind"] == "kill_search":
+                cs = CandidateStore(self.store)
+                search = cs.search_for_run(run["id"])
+                if search and search["outcome"] not in TERMINAL_OUTCOMES:
+                    # Preserve the failure code before terminalisation for crash recovery.
+                    self._kill_search_summary(run, search, {}, "skill_package_changed")
+                    cs.finish_kill_search(search["id"], "failed")
+            self._fail(run["id"], "skill_package_changed")
+        try:
+            candidate = CandidateStore(self.store)._pair(run["research_id"], run["target"]["candidate_id"])
+        except NotFound:
+            self._fail(run["id"], "candidate_unavailable")
+        if candidate["trashed_at"] is not None:
+            self._fail(run["id"], "candidate_unavailable")
+
+    def _candidate_measure(self, run: dict, scope: dict, task: str, target: dict, rows: list[dict]) -> int:
+        source_ids = list(dict.fromkeys(p["source_version_id"] for p in rows))
+        model = tuple(run["target"]["model"][task]) if run["kind"] == "kill_search" else step_model(scope, task)
+        payload = self._step_input(run, scope, new_id("stp"), task, [], source_ids, rows, [], model,
+                                   candidate_target=target)
+        return len(prompt.step_message(contracts.with_citation_handles(payload)))
+
+    async def _candidate_model(self, run: dict, scope: dict, key: str, task: str,
+                               target: dict, rows: list[dict], frozen_hit: dict | None = None, **kwargs) -> dict:
+        from deixis.workflow.candidates.run import MAX_MESSAGE_CHARS, FrozenPassagesUnavailable, frozen_passages
+        # Candidate calls are sequential; app.py's existing cancel path still
+        # interrupts adapters for both claim_decomposition and kill_search.
+        step = self.store.existing_step(run["id"], key)
+        if step and step["status"] == "succeeded":
+            return step["output"]
+        if step and step["status"] == "failed" and step["error_code"] in ("invalid_model_output", "message_too_large"):
+            return (step["output"] or {}) | {"invalid": True,
+                    "issues": json.loads(step["error_json"] or "[]"),
+                    "message_too_large": step["error_code"] == "message_too_large"}
+
+        def gate() -> None:
+            self._candidate_send_gate(run)
+            if frozen_hit is not None:
+                fresh = frozen_passages(frozen_hit, self.store.passages_for(frozen_hit["source_version_id"]))
+                if fresh is None:
+                    raise FrozenPassagesUnavailable
+                rows[:] = fresh
+
+        def resend() -> bool:
+            gate()
+            return self.store.run(run["id"])["usage"].get("model_calls", 0) < run["budget"]["max_model_calls"]
+
+        model = tuple(run["target"]["model"][task]) if run["kind"] == "kill_search" else step_model(scope, task)
+        return await self.deps.limiter.run(f"{run['id']}:{key}", lambda: self._model_step(
+            run, scope, key, task, source_ids=list(dict.fromkeys(p["source_version_id"] for p in rows)),
+            passage_rows=rows, candidate_target=target, model=model, limiter=self.deps.limiter,
+            resend_guard=resend, send_gate=gate, max_message_chars=MAX_MESSAGE_CHARS,
+            attempt_record=lambda payload: {"send_record": {"task": task}}, **kwargs))
+
+    def _candidate_record(self, run: dict, key: str, output: dict) -> None:
+        step = self.store.step(run["id"], key, key)
+        self.store.start_step(step["id"])
+        self.store.finish_step(step["id"], "succeeded", output=output)
+
+    async def _claim_decomposition(self, run: dict, scope: dict) -> None:
+        from deixis.workflow.candidates import run as candidates
+        from deixis.workflow.candidates.store import CandidateStore, InvalidCandidateInput
+        self._candidate_send_gate(run)
+        cs = CandidateStore(self.store)
+        candidate = cs.candidate(run["target"]["candidate_id"])
+        view = json.loads(candidate["origin_basis_view_json"])
+        current = {item["source_version_id"]: self.store.passages_for(item["source_version_id"])
+                   for item in view.get("basis_passage_ids", []) if not item.get("missing")}
+        built = candidates.pack_decomposition(candidates.decomposition_input(candidate, current),
+            lambda target, rows: self._candidate_measure(run, scope, "claim_decomposition", target, rows))
+        output = await self._candidate_model(run, scope, "decompose", "claim_decomposition", built["target"], built["passages"])
+        self._candidate_send_gate(run)
+        self._candidate_record(run, "claim_decomposition_summary", {"omitted": built["omitted"]})
+        if output.get("invalid"):
+            self._fail(run["id"], "invalid_model_output")
+        result = output["result"]
+        try:
+            with transaction(self.store.conn):
+                # No await between this post-call barrier and the guarded publication.
+                self._candidate_send_gate(run)
+                cs.add_version(run["research_id"], candidate["id"],
+                    **{k: result[k] for k in ("claim_statement", "conditions", "elements", "nearest_simple_explanation",
+                                             "critical_assumption", "validation_plan")},
+                    origin="model_decomposition", step_input_id=output["step_input_id"], expected_version=0,
+                    idempotency_key=f"decompose:{run['id']}")
+        except RunStopped:
+            self._candidate_send_gate(run)
+            raise
+        except RevisionConflict:
+            self._fail(run["id"], "candidate_version_changed")
+        except InvalidCandidateInput:
+            self._fail(run["id"], "candidate_publication_failed")
+
+    async def _kill_search_request(self, run: dict, query: dict) -> SearchOutcome:
+        """One logical query, no paging/enrichment; reservations survive uncertain delivery."""
+        from deixis.workflow.candidates.run import KILL_RECORDS
+        connector = CONNECTORS[query["provider_id"]]
+        transport = next(t for t in run["target"]["transport"]["providers"] if t["provider"] == connector.provider_id)
+        reserve = transport["requests_per_search"] * (1 + transport["rate_limit_retries"])
+        for attempt in range(transport["transient_attempts"]):
+            self._candidate_send_gate(run)
+            with transaction(self.store.conn):
+                used = self.store.run(run["id"])["usage"].get("provider_requests", 0)
+                if used + reserve > run["budget"]["max_provider_requests"]:
+                    return SearchOutcome("transport_budget", "before_send", "unsent: transport budget", connector.access_mode())
+                # Conservatively charge the whole possible HTTP attempt, never refund it.
+                self.store.add_usage(run["id"], "provider_requests", reserve)
+            outcome = await connector.search(self.deps.http, query["query_text"], KILL_RECORDS,
+                connector.api_key(), self.deps.settings.contact_email, **endpoint_options(query))
+            if outcome.delivery_class != "before_send" or outcome.status != "failed" or attempt + 1 == transport["transient_attempts"]:
+                return outcome
+            await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1))
+        raise AssertionError("bounded transport has no attempts")
+
+    def _kill_search_record_query(self, run: dict, search: dict, step: dict, position: int,
+                                  query: dict, outcome: SearchOutcome) -> None:
+        from deixis.workflow.candidates.store import CandidateStore, TERMINAL_OUTCOMES
+        ok = outcome.status in ("completed", "zero_results")
+        status = "succeeded" if ok else "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
+        with transaction(self.store.conn):
+            cs = CandidateStore(self.store)
+            if cs.kill_search(search["id"])["outcome"] in TERMINAL_OUTCOMES:
+                return
+            # Delivery consumes its reservation even after a stop or scope revision.
+            # Record it before the gate so resume cannot resend an uncertain query.
+            path = digest = None
+            if outcome.raw_payload is not None:
+                self.deps.settings.payloads_dir.mkdir(parents=True, exist_ok=True)
+                path = f"{step['id']}.json"
+                (self.deps.settings.payloads_dir / path).write_text(json.dumps(outcome.raw_payload), encoding="utf-8")
+                digest = canonical.sha256_hex(outcome.raw_payload)
+            cs.record_query(search["id"], position=position, provider=query["provider_id"],
+                query_text=query["query_text"], status=status, records=outcome.records if ok else [],
+                error_code=None if ok else outcome.status, raw_payload_path=path, payload_sha256=digest, step_id=step["id"])
+            self.store.finish_step(step["id"], status, output={"status": outcome.status, "result_count": len(outcome.records) if ok else 0},
+                error_code=None if ok else outcome.status, delivery_class=outcome.delivery_class,
+                error=None if ok else {"error": outcome.error, "http_status": outcome.http_status})
+
+    def _kill_search_summary(self, run: dict, search: dict, outcomes: dict, failure_code=None) -> dict:
+        from deixis.workflow.candidates.run import search_summary
+        summary = search_summary(self.store, search["id"], outcomes, failure_code)
+        self._candidate_record(run, "kill_search_summary", summary)
+        return summary
+
+    def _kill_search_finish(self, run: dict, search: dict, outcomes: dict, failure_code=None) -> None:
+        from deixis.workflow.candidates.store import CandidateStore
+        self._candidate_send_gate(run)
+        # Deliberately separate durable writes: recovery carries this exact failure code.
+        self._kill_search_summary(run, search, outcomes, failure_code)
+        CandidateStore(self.store).finish_kill_search(search["id"], "failed" if failure_code else "completed")
+        if failure_code:
+            self._fail(run["id"], failure_code)
+
+    async def _kill_search(self, run: dict, scope: dict) -> None:
+        from deixis.workflow.candidates import hits, run as candidates, terms
+        from deixis.workflow.candidates.store import CandidateStore
+        self._candidate_send_gate(run)
+        cs = CandidateStore(self.store)
+        plan = run["target"]
+        candidate = cs.candidate(plan["candidate_id"])
+        version = cs.version(plan["candidate_version_id"])
+        # The model sees the frozen eligible providers, never a later access fallback.
+        scope = dict(scope, providers=plan["providers"])
+        search = cs.search_for_run(run["id"])
+        if search:
+            if search["outcome"] == "failed":
+                summary = self.store.existing_step(run["id"], "kill_search_summary")
+                self._fail(run["id"], (summary["output"] or {})["failure_code"] if summary else "search_failed")
+            if search["outcome"] in ("completed", "stopped"):
+                return
+            if search["outcome"] == "paused":
+                search = cs.set_kill_search_state(search["id"], "running")
+        else:
+            try:
+                output = await self._candidate_model(run, scope, "query_terms", "kill_search_query",
+                    candidates.candidate_target(candidate, version), [], optional=True)
+            except OptionalStepFailed as exc:
+                # Before the freeze no search was attempted; a connection failure
+                # belongs to the run and cannot change the candidate's search status.
+                self._candidate_send_gate(run)
+                self._fail(run["id"], exc.reason, exc.detail)
+            self._candidate_send_gate(run)
+            if output.get("invalid"):
+                self._fail(run["id"], "query_terms_invalid")
+            blocks = output["result"]
+            try:
+                vocabulary = terms.block_vocabulary([t["term"] for t in blocks["setting"]], [t["term"] for t in blocks["task"]])
+            except terms.InvalidTerms:
+                self._fail(run["id"], "query_terms_invalid")
+            compiled = terms.compile_queries(vocabulary, plan["providers"], candidates.KILL_QUERIES)
+            search = cs.start_kill_search(run["research_id"], version["id"], run["id"],
+                query_block={k: blocks[k] for k in ("setting", "task", "setting_backup", "task_backup")},
+                rendered_queries=compiled, skipped_terms=[t for q in compiled for t in q.get("dropped_terms", [])],
+                selection={k: plan[k] for k in ("model", "providers", "budget", "transport")})
+        queries = json.loads(search["rendered_queries_json"])
+        if not queries:
+            self._kill_search_finish(run, search, {}, "no_query_compiled")
+        for position, query in enumerate(queries, 1):
+            self._candidate_send_gate(run)
+            if any(q["position"] == position for q in cs.queries(search["id"])):
+                continue
+            step = self.store.step(run["id"], f"search:{position}", f"provider_search:{query['provider_id']}")
+            if step["status"] == "outcome_unknown":
+                outcome = SearchOutcome(step["error_code"] or "outcome_unknown", "after_send_unknown", "recovered delivery unknown", "unknown")
+            else:
+                self.store.start_step(step["id"])
+                outcome = await self._kill_search_request(run, query)
+            self._kill_search_record_query(run, search, step, position, query, outcome)
+            self._candidate_send_gate(run)
+        outcomes = {}
+        if any(q["status"] == "succeeded" for q in cs.queries(search["id"])):
+            stored_plan = self.store.existing_step(run["id"], "kill_search_plan")
+            if stored_plan and stored_plan["status"] == "succeeded":
+                assessment_plan = stored_plan["output"]
+            else:
+                merged = hits.merge_and_cut(cs.query_records(search["id"]), keep=candidates.KILL_KEEP)
+                entries = []
+                for hit in merged["kept"]:
+                    svid = hit["source_version_id"]
+                    target = candidates.candidate_target(candidate, version, svid)
+                    shown = candidates.shown_passages(self.store.passages_for(svid),
+                        lambda rows: self._candidate_measure(run, scope, "claim_assessment", target, rows))
+                    entries.append({"source_version_id": svid,
+                        **{k: shown[k] for k in ("reading_depth", "omitted", "message_too_large")},
+                        "passages": [{"passage_id": p["id"], "text_sha256": candidates.text_sha256(p["text"])} for p in shown["passages"]]})
+                assessment_plan = {"merged": merged, "hits": entries}
+                self._candidate_send_gate(run)
+                self._candidate_record(run, "kill_search_plan", assessment_plan)
+            if not cs.kill_search(search["id"])["hits_recorded"]:
+                self._candidate_send_gate(run)
+                cs.record_hits(search["id"], assessment_plan["merged"],
+                    {h["source_version_id"]: h["reading_depth"] for h in assessment_plan["hits"]})
+            for hit in cs.hits(search["id"]):
+                self._candidate_send_gate(run)
+                if not hit["kept"] or hit["assessment_state"] != "pending":
+                    continue
+                svid = hit["source_version_id"]
+                key = f"assess:{svid}"
+                step = self.store.existing_step(run["id"], key)
+                # A succeeded assessment is published from its stored input before
+                # looking at live text, even if that text has since changed.
+                output = step["output"] if step and step["status"] == "succeeded" else None
+                if output is None:
+                    frozen = next(h for h in assessment_plan["hits"] if h["source_version_id"] == svid)
+                    rows = candidates.frozen_passages(frozen, self.store.passages_for(svid))
+                    if rows is None or not rows or frozen["reading_depth"] == "metadata_only":
+                        self._candidate_send_gate(run)
+                        cs.publish_assessment(search["id"], svid, assessment_state="insufficient_access")
+                        outcomes[svid] = {"outcome": "insufficient_access", "reason": "frozen_passage_unavailable"
+                                          if rows is None else "no_shown_text"}
+                        continue
+                    if frozen["message_too_large"]:
+                        outcomes[svid] = "message_too_large"
+                        continue
+                    try:
+                        output = await self._candidate_model(run, scope, key, "claim_assessment",
+                            candidates.candidate_target(candidate, version, svid), rows, frozen_hit=frozen, budget_short="skip")
+                    except candidates.FrozenPassagesUnavailable:
+                        self._candidate_send_gate(run)
+                        step = self.store.existing_step(run["id"], key)
+                        self.store.finish_step(step["id"], "cancelled", output=step["output"], error_code="frozen_passage_unavailable")
+                        cs.publish_assessment(search["id"], svid, assessment_state="insufficient_access")
+                        outcomes[svid] = {"outcome": "insufficient_access", "reason": "frozen_passage_unavailable"}
+                        continue
+                self._candidate_send_gate(run)
+                if output.get("invalid"):
+                    outcomes[svid] = "not_reached_budget" if output.get("not_reached") else "message_too_large" if output.get("message_too_large") else "invalid_output"
+                    if output.get("not_reached") or self.store.run(run["id"])["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"]:
+                        break
+                    continue
+                result = output["result"]
+                payload = self.store.step_input_payload(output["step_input_id"])
+                def quotes(items):
+                    values = [contracts.claim_assessment_evidence(payload, item) for item in items]
+                    if any(v is None for v in values):
+                        outcomes[svid] = {"outcome": "invalid_output", "reason": "candidate_evidence_unlocated"}
+                        self._kill_search_finish(run, search, outcomes, "candidate_evidence_unlocated")
+                    return values
+                cells = [{"element_id": c["element_ref"], "relation": c["relation"],
+                          "condition_alignment": c["condition_alignment"], "note": c["note"], "quotes": quotes(c["evidence"])}
+                         for c in result["cells"]]
+                whole = quotes(result["whole_claim_evidence"])
+                try:
+                    with transaction(self.store.conn):
+                        self._candidate_send_gate(run)
+                        cs.publish_assessment(search["id"], svid, assessment_state="assessed",
+                            work_relevance=result["work_relevance"], states_whole_claim=result["states_whole_claim"],
+                            note=result["nearest_match_summary"], step_input_id=output["step_input_id"],
+                            cells=cells, whole_claim_quotes=whole)
+                except RunStopped:
+                    self._candidate_send_gate(run)
+                    raise
+                outcomes[svid] = "assessed"
+        refused = any(q["error_code"] == "transport_budget" for q in cs.queries(search["id"]))
+        self._kill_search_finish(run, search, outcomes, "transport_budget" if refused else None)
 
     # ---- model steps -------------------------------------------------------------------
     def _lineage_send_gate(self, run: dict[str, Any]) -> None:

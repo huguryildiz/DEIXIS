@@ -713,7 +713,8 @@ class Store:
             run_id, ts = new_id("run"), now()
             stage = {"discovery": "discovery", "answer": "inspection", "pdf_collection": "inspection",
                      "fulltext_fetch": "inspection", "fulltext_adjudication": "inspection",
-                     "research_title": "intake", "lineage_links": "synthesis"}.get(kind, "extraction")
+                     "research_title": "intake", "lineage_links": "synthesis",
+                     "claim_decomposition": "candidate", "kill_search": "candidate"}.get(kind, "extraction")
             self.conn.execute(
                 "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
@@ -723,6 +724,20 @@ class Store:
             self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (ts, research_id))
             self._event(research_id, "run_queued", {"kind": kind}, run_id)
         return self.run(run_id)
+
+    def resume_run(self, run_id: str) -> dict[str, Any]:
+        """Resume any kind without renewing usage or bypassing the single-active-run rule."""
+        with transaction(self.conn):
+            run = self.run(run_id)
+            if run["status"] != "paused":
+                raise RevisionConflict("Only a paused run can resume")
+            active = self.conn.execute(
+                f"SELECT id FROM runs WHERE research_id = ? AND id != ?"
+                f" AND status IN ({','.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1",
+                (run["research_id"], run_id, *ACTIVE_RUN_STATUSES)).fetchone()
+            if active:
+                raise RevisionConflict(f"run {active['id']} is still active")
+            return self.update_run(run_id, event="run_resumed", status="queued", pause_reason=None, error_json=None)
 
     def discovery_completed(self, research_id: str) -> bool:
         """Whether the research's current scope revision has a completed discovery run (SW22, D106).

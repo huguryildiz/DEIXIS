@@ -12,14 +12,14 @@ import tempfile
 import time
 from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal
+from typing import Annotated, Any, Awaitable, Callable, Literal
 
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from keyring.errors import KeyringError
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 from deixis import credentials, local_tools
 from deixis.config import Settings, load_settings
@@ -67,6 +67,8 @@ from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow.lineage.run import LineagePlanner, stale_link_revisions
 from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
 from deixis.workflow.lineage.view import LineageView
+from deixis.workflow.candidates.run import KillSearchPlanner, candidate_evidence, decompose_budget, request_decomposition
+from deixis.workflow.candidates.store import CandidateStore, InvalidCandidateInput
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, report_view, research_view
 from deixis.workflow.worker import Worker
 
@@ -308,6 +310,130 @@ class FillRequest(BaseModel):
 class LineageRunRequest(BaseModel):
     preview_fingerprint: str = Field(min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
     retry_failed: bool = False
+
+
+class CandidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+def candidate_safe_text(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        raise InvalidCandidateInput("Candidate text must be encodable as UTF-8") from None
+    if not value.strip() or "\x00" in value:
+        raise InvalidCandidateInput("Candidate text must be non-blank and contain no NUL")
+    return value
+
+
+# Reject surrogates before Pydantic can echo them in a validation-error response.
+CandidateText = Annotated[str, BeforeValidator(candidate_safe_text)]
+
+
+class OwnerTextCandidate(CandidateRequest):
+    origin: Literal["owner_text"]
+    text: CandidateText = Field(min_length=1, max_length=2000)
+
+
+class GapCandidate(CandidateRequest):
+    origin: Literal["report_gap"]
+    report_id: str = Field(min_length=1, max_length=80)
+    gap_row_id: str = Field(min_length=1, max_length=80)
+
+
+class CandidateElement(CandidateRequest):
+    text: CandidateText = Field(min_length=1, max_length=2000)
+    kind: Literal["mechanism", "condition", "outcome", "parameter"]
+
+
+class CandidateVersionRequest(CandidateRequest):
+    claim_statement: CandidateText = Field(min_length=1, max_length=4000)
+    conditions: list[Annotated[CandidateText, Field(min_length=1, max_length=2000)]] = Field(max_length=24)
+    elements: list[CandidateElement] = Field(min_length=2, max_length=6)
+    nearest_simple_explanation: CandidateText | None = Field(max_length=4000)
+    critical_assumption: CandidateText = Field(max_length=4000)
+    validation_plan: CandidateText = Field(max_length=4000)
+    expected_version: int = Field(ge=0, strict=True)
+
+
+class CandidateKillSearchRequest(CandidateRequest):
+    preview_fingerprint: str = Field(min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+
+
+class CandidateOwnerDecision(CandidateRequest):
+    status: Literal["not_run", "undecided", "narrowed", "closed", "open"]
+    reason: CandidateText = Field(min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def nonblank_reason(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("reason must be non-blank")
+        return value.strip()
+
+
+class CandidateListItem(BaseModel):
+    id: str
+    origin: Literal["owner_text", "report_gap"]
+    origin_report_id: str | None
+    origin_gap_row_id: str | None
+    gap_kind: str | None
+    origin_changed: bool
+    current_version: int
+    trashed_at: str | None
+    claim_statement: str | None
+    status: dict[str, Any] | None
+    owner: dict[str, Any] | None
+    active_run_id: str | None
+
+
+class CandidateCard(BaseModel):
+    id: str
+    research_id: str
+    origin: Literal["owner_text", "report_gap"]
+    origin_report_id: str | None
+    origin_gap_row_id: str | None
+    gap_kind: str | None
+    origin_text: str
+    origin_basis: dict[str, Any]
+    origin_basis_view: dict[str, Any]
+    origin_provenance: dict[str, Any]
+    origin_fingerprint: str | None
+    origin_changed: bool
+    current_version: int
+    trashed_at: str | None
+    created_at: str
+    versions: list[dict[str, Any]]
+    current_version_id: str | None
+    owner_decisions: list[dict[str, Any]]
+    searches: list[dict[str, Any]]
+    status: dict[str, Any] | None
+    active_run: dict[str, Any] | None
+    runs: list[dict[str, Any]]
+    decompose_budget: dict[str, int]
+
+
+class CandidateMatrix(BaseModel):
+    search: dict[str, Any]
+    queries: list[dict[str, Any]]
+    counts: dict[str, int]
+    hits: list[dict[str, Any]]
+    cells: dict[str, dict[str, dict[str, Any]]]
+    evidence: list[dict[str, Any]]
+    summary: dict[str, Any] | None
+    search_status: dict[str, Any]
+    candidate_version_id: str
+    version: int
+    kill_search_id: str
+    is_latest_search_of_version: bool
+
+
+class CandidateEvidence(BaseModel):
+    source: dict[str, Any]
+    passages: list[dict[str, Any]]
+    quotes: list[dict[str, Any]]
 
 
 class ColumnChange(BaseModel):
@@ -1181,7 +1307,7 @@ def create_app(
             # The model was asked as many times as a run allows; the way on is the code's query or a new revision.
             raise HTTPException(409, "The model has had its second try; search with the code's query or revise the scope")
         elif action == "resume" and status == "paused":
-            run = store.update_run(run_id, event="run_resumed", status="queued", pause_reason=None, error_json=None)
+            run = store.resume_run(run_id)
             worker.wake()
         elif action == "cancel" and status in ("queued", "running", "pause_requested", "paused"):
             # The files this run held — those its plan took, or every waiting one while its plan was not frozen —
@@ -1192,10 +1318,15 @@ def create_app(
             worker.wake()
             if worker.current_run_id == run_id and run["kind"] not in ("table_fill", "lineage_links"):
                 # Roles may use different connections; only the running step's connection has a call to interrupt.
+                # Candidate decomposition and kill-search calls are sequential, so both kinds interrupt here.
+                if run["kind"] == "kill_search":
+                    CandidateStore(store).sync_search_outcome(run_id)
                 for adapter in request.app.state.adapters.values():
                     await adapter.cancel()
         else:
             raise HTTPException(409, f"Cannot {action} a run in status {status}")
+        if run["kind"] == "kill_search":
+            CandidateStore(store).sync_search_outcome(run_id)
         return run
 
     @app.patch("/api/researches/{research_id}/selections/{source_version_id}")
@@ -1799,6 +1930,172 @@ def create_app(
     @app.exception_handler(InvalidLineageInput)
     async def invalid_lineage_input(_: Request, exc: InvalidLineageInput):
         return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    @app.exception_handler(InvalidCandidateInput)
+    async def invalid_candidate_input(_: Request, exc: InvalidCandidateInput):
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    def candidate_of(request: Request, research_id: str, candidate_id: str) -> tuple[CandidateStore, dict]:
+        cs = CandidateStore(store_of(request))
+        cs.store.research(research_id)
+        candidate = cs._pair(research_id, candidate_id)
+        # Read endpoints deliberately perform this idempotent write: worker
+        # recovery or an outside-flow failure can leave a nonterminal search behind.
+        for version in cs.versions(candidate_id):
+            for search in cs.searches(version["id"]):
+                cs.sync_search_outcome(search["run_id"])
+        return cs, candidate
+
+    def decoded_candidate_row(row: dict) -> dict:
+        return {key.removesuffix("_json"): json.loads(value) if value is not None else None
+                for key, value in row.items() if key.endswith("_json")} | {
+                    key: value for key, value in row.items() if not key.endswith("_json") and key != "idempotency_key"}
+
+    def candidate_run_view(run: dict) -> dict:
+        return {key: run[key] for key in ("id", "kind", "status", "pause_reason")} | {
+            "error_code": (run.get("error") or {}).get("code") or (run["pause_reason"] if run["status"] == "failed" else None)}
+
+    def candidate_card(request: Request, research_id: str, candidate_id: str) -> dict:
+        cs, candidate = candidate_of(request, research_id, candidate_id)
+        versions = cs.versions(candidate_id)
+        current = next((v for v in versions if v["version"] == candidate["current_version"]), None)
+        searches = []
+        for version in versions:
+            for search in cs.searches(version["id"]):
+                searches.append({key: search[key] for key in ("id", "candidate_version_id", "run_id", "outcome", "created_at")}
+                                | {"version": version["version"], "counts": {k: search[k] for k in ("found", "kept", "rank_cut", "duplicates")}})
+        active = cs.runs(candidate_id, active_only=True, limit=1)
+        return decoded_candidate_row(candidate) | {
+            "versions": [decoded_candidate_row(v) for v in versions],
+            "current_version_id": current["id"] if current else None,
+            "owner_decisions": cs.overrides(current["id"]) if current else [], "searches": searches,
+            "status": cs.candidate_status(current["id"]) if current else None,
+            "active_run": candidate_run_view(active[0]) if active else None,
+            "runs": [candidate_run_view(r) for r in cs.runs(candidate_id)], "decompose_budget": decompose_budget()}
+
+    def candidate_search_of(cs: CandidateStore, candidate_id: str, kill_search_id: str) -> tuple[dict, dict]:
+        search = cs.kill_search(kill_search_id)
+        version = cs.version(search["candidate_version_id"])
+        if version["candidate_id"] != candidate_id:
+            raise NotFound(kill_search_id)
+        return search, version
+
+    def candidate_planner(request: Request) -> KillSearchPlanner:
+        return KillSearchPlanner(store_of(request), request.app.state.package.package_hash)
+
+    candidates_path = "/api/researches/{research_id}/candidates"
+    candidate_path = candidates_path + "/{candidate_id}"
+    kill_search_path = candidate_path + "/kill-searches/{kill_search_id}"
+
+    @app.post(candidates_path, status_code=201, response_model=CandidateCard)
+    async def open_candidate(research_id: str,
+                             body: Annotated[OwnerTextCandidate | GapCandidate, Field(discriminator="origin")],
+                             request: Request, idempotency_key: str | None = Header(default=None, max_length=200)) -> dict:
+        cs = CandidateStore(store_of(request))
+        cs.store.research(research_id)
+        if body.origin == "owner_text":
+            candidate = cs.open_from_owner_text(research_id, body.text,
+                f"{research_id}:{idempotency_key}" if idempotency_key else None)
+        else:
+            candidate = cs.open_from_gap(research_id, body.report_id, body.gap_row_id)
+        return candidate_card(request, research_id, candidate["id"])
+
+    @app.get(candidates_path, response_model=list[CandidateListItem])
+    async def list_candidates(research_id: str, request: Request) -> list[dict]:
+        cs = CandidateStore(store_of(request))
+        result = []
+        for candidate in cs.candidates(research_id):
+            card = candidate_card(request, research_id, candidate["id"])
+            current = next((v for v in card["versions"] if v["id"] == card["current_version_id"]), None)
+            result.append({key: card[key] for key in ("id", "origin", "origin_report_id", "origin_gap_row_id",
+                          "gap_kind", "origin_changed", "current_version", "trashed_at")} | {
+                "claim_statement": current["claim_statement"] if current else None,
+                "status": card["status"]["computed"] if card["status"] else None,
+                "owner": card["status"]["owner"] if card["status"] else None,
+                "active_run_id": card["active_run"]["id"] if card["active_run"] else None})
+        return result
+
+    @app.get(candidate_path, response_model=CandidateCard)
+    async def get_candidate(research_id: str, candidate_id: str, request: Request) -> dict:
+        return candidate_card(request, research_id, candidate_id)
+
+    @app.post(candidate_path + "/versions", status_code=201, response_model=CandidateCard)
+    async def edit_candidate(research_id: str, candidate_id: str, body: CandidateVersionRequest,
+                             request: Request, idempotency_key: str | None = Header(default=None, max_length=200)) -> dict:
+        cs, _ = candidate_of(request, research_id, candidate_id)
+        cs.add_version(research_id, candidate_id, **body.model_dump(), origin="human_edit", step_input_id=None,
+                       idempotency_key=f"{research_id}:{candidate_id}:{idempotency_key}" if idempotency_key else None)
+        return candidate_card(request, research_id, candidate_id)
+
+    @app.post(candidate_path + "/decompose", status_code=202)
+    async def decompose_candidate(research_id: str, candidate_id: str, request: Request,
+                                  body: CandidateRequest | None = None,
+                                  idempotency_key: str | None = Header(default=None, max_length=200)) -> dict:
+        store = store_of(request)
+        store.research(research_id)
+        # The Part A helper owns the decompose:<research>:<candidate>:<key> namespace.
+        run = request_decomposition(store, research_id, candidate_id, idempotency_key,
+                                    skill_package_hash=request.app.state.package.package_hash)
+        request.app.state.worker.wake()
+        return run
+
+    @app.get(candidate_path + "/kill-search/plan")
+    async def candidate_kill_search_plan(research_id: str, candidate_id: str, request: Request) -> dict:
+        candidate_of(request, research_id, candidate_id)
+        return candidate_planner(request).preview(research_id, candidate_id)
+
+    @app.post(candidate_path + "/kill-search", status_code=202)
+    async def start_candidate_kill_search(research_id: str, candidate_id: str, body: CandidateKillSearchRequest,
+                                        request: Request,
+                                        idempotency_key: str | None = Header(default=None, max_length=200)) -> dict:
+        store_of(request).research(research_id)
+        # The planner owns the killsearch:<research>:<candidate>:<key> namespace and replay check.
+        run = candidate_planner(request).request_run(research_id, candidate_id, body.preview_fingerprint, idempotency_key)
+        request.app.state.worker.wake()
+        return run
+
+    @app.get(kill_search_path, response_model=CandidateMatrix)
+    async def candidate_matrix(research_id: str, candidate_id: str, kill_search_id: str, request: Request) -> dict:
+        cs, _ = candidate_of(request, research_id, candidate_id)
+        search, version = candidate_search_of(cs, candidate_id, kill_search_id)
+        hits = []
+        for hit in cs.hits(kill_search_id):
+            if not hit["kept"]:
+                continue
+            source = cs.store.source(hit["source_version_id"])
+            hits.append({key: hit[key] for key in ("source_version_id", "reading_depth", "assessment_state",
+                         "work_relevance", "note")} | {"rank": hit["rank_key"],
+                         "states_whole_claim": bool(hit["states_whole_claim"]) if hit["states_whole_claim"] is not None else None,
+                         "source": {key: source[key] for key in ("title", "year", "venue", "doi", "version_label")}})
+        cells = {}
+        for cell in cs.cells(kill_search_id):
+            cells.setdefault(cell["source_version_id"], {})[cell["element_id"]] = cell
+        summary = cs.store.existing_step(search["run_id"], "kill_search_summary")
+        return {"search": decoded_candidate_row(search),
+                "queries": [{key: q[key] for key in ("position", "provider", "query_text", "status", "record_count", "error_code")}
+                            for q in cs.queries(kill_search_id)],
+                "counts": {key: search[key] for key in ("found", "kept", "rank_cut", "duplicates")},
+                "hits": hits, "cells": cells, "evidence": cs.evidence(kill_search_id),
+                "summary": summary["output"] if summary else None, "search_status": cs.search_status(kill_search_id),
+                "candidate_version_id": version["id"], "version": version["version"], "kill_search_id": kill_search_id,
+                "is_latest_search_of_version": cs.searches(version["id"])[-1]["id"] == kill_search_id}
+
+    @app.get(kill_search_path + "/hits/{source_version_id}", response_model=CandidateEvidence)
+    async def candidate_hit_evidence(research_id: str, candidate_id: str, kill_search_id: str,
+                                     source_version_id: str, request: Request) -> dict:
+        cs, _ = candidate_of(request, research_id, candidate_id)
+        candidate_search_of(cs, candidate_id, kill_search_id)
+        return candidate_evidence(cs.store, research_id, candidate_id, kill_search_id, source_version_id)
+
+    @app.post(candidate_path + "/versions/{version_id}/owner-decision", status_code=201, response_model=CandidateCard)
+    async def candidate_owner_decision(research_id: str, candidate_id: str, version_id: str,
+                                       body: CandidateOwnerDecision, request: Request) -> dict:
+        cs, _ = candidate_of(request, research_id, candidate_id)
+        if cs.version(version_id)["candidate_id"] != candidate_id:
+            raise NotFound(version_id)
+        # Owner decisions are append-only; this route intentionally has no Idempotency-Key.
+        cs.record_owner_decision(research_id, version_id, body.status, body.reason)
+        return candidate_card(request, research_id, candidate_id)
 
     def lineage_of(request: Request) -> LineagePlanner:
         flow = request.app.state.worker.flow

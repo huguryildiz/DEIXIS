@@ -67,6 +67,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO / "tests"), str(REPO / "backend")]
 
 import httpx  # noqa: E402
+import keyring  # noqa: E402
 import uvicorn  # noqa: E402
 
 from deixis.api.app import create_app  # noqa: E402
@@ -78,6 +79,8 @@ from deixis.storage import db  # noqa: E402
 from deixis.storage.db import now  # noqa: E402
 from deixis.workflow.store import Store  # noqa: E402
 from fakes import parse_step_input, valid_response  # noqa: E402
+from keyring.backend import KeyringBackend  # noqa: E402
+from keyring.errors import PasswordDeleteError  # noqa: E402
 from helpers import make_pdf  # noqa: E402
 from arxiv_helpers import make_arxiv_pdf, source_archive  # noqa: E402
 
@@ -636,6 +639,26 @@ def seed_stored_legacy(data_dir: Path) -> None:
     conn.close()
 
 
+class MemoryKeyring(KeyringBackend):
+    """Keys live in this process only; the same backend `tests/conftest.py` installs for pytest."""
+    priority = 1
+
+    def __init__(self):
+        super().__init__()
+        self.items: dict = {}
+
+    def get_password(self, service, username):
+        return self.items.get((service, username))
+
+    def set_password(self, service, username, password):
+        self.items[(service, username)] = password
+
+    def delete_password(self, service, username):
+        if (service, username) not in self.items:
+            raise PasswordDeleteError("not found")
+        del self.items[(service, username)]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, required=True)
@@ -644,6 +667,7 @@ def main() -> None:
     parser.add_argument("--write-replacement-pdf", type=Path, help="Write a SYNTHETIC PDF used to replace a source's file (D45) and exit")
     parser.add_argument("--write-waiting-pdf", type=Path, help="Write the SYNTHETIC publisher file case K drops and exit")
     args = parser.parse_args()
+    keyring.set_keyring(MemoryKeyring())  # a browser run never reads or writes the system keychain (P9 H0a, plan 4 rule 5)
     if args.write_hostile_pdf:
         args.write_hostile_pdf.write_bytes(make_pdf([HOSTILE_PDF_TEXT]))
         return

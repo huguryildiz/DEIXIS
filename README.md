@@ -40,7 +40,7 @@ The current checkout includes OpenAlex, Semantic Scholar, Crossref, arXiv, bioRx
 
 ## Quickstart
 
-For development, install Python 3.12, [uv](https://docs.astral.sh/uv/), Node.js/npm, and a model connection you can authenticate. The commands below build and run the local web app; they do not configure a scholarly provider or model account for you.
+For development, install Python 3.12, [uv](https://docs.astral.sh/uv/), Node.js/npm, and a model connection you can authenticate. **Supported environment:** macOS on Apple Silicon (arm64; observed on macOS 27.0.1, older versions untested) with a native arm64 Python 3.12 from `uv`, Node 22 (pinned in `.node-version` and `apps/web/package.json`) with npm 10, and system Google Chrome for the browser tests; Intel, Linux, Windows and other Node versions are not supported or tested. The commands below build and run the local web app; they do not configure a scholarly provider or model account for you.
 
 ```sh
 uv sync

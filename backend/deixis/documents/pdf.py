@@ -21,12 +21,20 @@ re-extracted (D45).
 A page left without text is named: an image page (a scan, which `ocr.py` can read on request, D51) or a blank page.
 
 The child process is limited in time, pages, total extracted text and memory. The memory
-limit is a watchdog on the child's peak resident size: it stops the child shortly after the
+limit is a watchdog on the child's resident size: it stops the child shortly after the
 limit is crossed rather than preventing the allocation. There is no memory limit on Windows yet.
+
+The watchdog that stops the child runs in the parent (`_run_watched`), not in the child (D138). A thread inside the
+child cannot be relied on: MuPDF's C calls hold the interpreter lock for as long as they run, and on a PDF whose
+decoded content is large the child grew past 1 GiB inside one such call and was never stopped (measured on macOS arm64).
+The in-child thread (`_watch_memory`) stays as a second guard for the other extraction children that share it.
 """
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
+import functools
 import json
 import os
 import re
@@ -270,6 +278,90 @@ def _watch_memory(limit: int) -> None:
     threading.Thread(target=watch, daemon=True).start()
 
 
+WATCH_INTERVAL_SECONDS = 0.05
+WATCH_LOST_TURNS = 20  # in a row (one second): a live child whose size cannot be read means the watch is lost, not a clean run
+
+
+class MemoryWatchLost(Exception):
+    """The memory limit could not be watched on a platform where it is supposed to be (D138)."""
+
+
+def _watch_supported() -> bool:
+    return sys.platform == "darwin" or sys.platform.startswith("linux")  # Windows has no memory limit yet
+
+
+@functools.lru_cache(maxsize=1)
+def _libproc():
+    try:
+        libproc = ctypes.CDLL(ctypes.util.find_library("proc") or "libproc.dylib", use_errno=True)
+        libproc.proc_pidinfo.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int]
+        libproc.proc_pidinfo.restype = ctypes.c_int
+        return libproc
+    except (OSError, AttributeError):
+        return None
+
+
+def _resident_bytes(pid: int) -> int | None:
+    """The current resident size of another process, or None when it cannot be read (a vanished process, a failed
+    read, a platform without a reader)."""
+    if sys.platform == "darwin":
+        libproc = _libproc()
+        if libproc is None:
+            return None
+        info = (ctypes.c_uint64 * 12)()  # struct proc_taskinfo, 96 bytes: six uint64 counters (the second is the resident size), then twelve int32
+        size = libproc.proc_pidinfo(pid, 4, 0, ctypes.byref(info), ctypes.sizeof(info))  # PROC_PIDTASKINFO
+        return int(info[1]) if size == ctypes.sizeof(info) else None
+    try:
+        with open(f"/proc/{pid}/statm") as handle:
+            return int(handle.read().split()[1]) * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _run_watched(argv: list[str], env: dict, timeout: float, max_memory: int) -> subprocess.CompletedProcess:
+    """Run a child to its end, killing it when it passes `timeout` seconds (TimeoutExpired), when its resident size
+    passes `max_memory` (returncode MEMORY_EXIT_CODE, stderr says so) or, where the size is supposed to be readable,
+    when it has been unreadable for WATCH_LOST_TURNS turns in a row (MemoryWatchLost). The check runs here, outside the
+    child, every WATCH_INTERVAL_SECONDS, so it works while the child sits in a long C call (D138)."""
+    deadline = time.monotonic() + timeout
+    supported = _watch_supported()
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen(argv, stdout=out, stderr=err, env=env)
+        exceeded, unread = False, 0
+        try:
+            while True:
+                try:
+                    proc.wait(max(0.0, min(WATCH_INTERVAL_SECONDS, deadline - time.monotonic())))
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+                if proc.poll() is not None:  # it ended between the wait and now; never report a lost watch for a finished child
+                    break
+                if supported:
+                    resident = _resident_bytes(proc.pid)
+                    unread = 0 if resident is not None else unread + 1
+                    if resident is not None and resident > max_memory:
+                        exceeded = True
+                        break
+                    if unread >= WATCH_LOST_TURNS:
+                        if proc.poll() is not None:  # it ended while the size was being read
+                            break
+                        raise MemoryWatchLost(f"resident size of pid {proc.pid} unreadable for {unread} turns")
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(argv, timeout)
+            if not exceeded and time.monotonic() > deadline:  # a child that ends after the deadline is a timeout all the same
+                raise subprocess.TimeoutExpired(argv, timeout)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+        out.seek(0), err.seek(0)
+        stdout, stderr = out.read(), err.read()
+    if exceeded:
+        return subprocess.CompletedProcess(argv, MEMORY_EXIT_CODE, stdout, b"memory limit exceeded\n")
+    return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+
+
 def extract_pdf(path: Path, max_chars: int = MAX_TEXT_CHARS, max_memory: int = MAX_MEMORY_BYTES,
                 placements: list[dict] | None = None) -> Extraction:
     """The PDF's text layer. `placements` (D104) are source equations to put in place of their region's lines:
@@ -282,14 +374,11 @@ def extract_pdf(path: Path, max_chars: int = MAX_TEXT_CHARS, max_memory: int = M
             with request:
                 json.dump(placements, request)
             argv.append(request.name)
-        completed = subprocess.run(
-            argv,
-            capture_output=True,
-            timeout=TIMEOUT_SECONDS,
-            env={"PYTHONPATH": str(Path(__file__).resolve().parents[2])},
-        )
+        completed = _run_watched(argv, {"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, TIMEOUT_SECONDS, max_memory)
     except subprocess.TimeoutExpired:
         return Extraction("failed", error="extraction timed out")
+    except MemoryWatchLost:
+        return Extraction("failed", error="extraction memory limit could not be watched")
     finally:
         if request is not None:
             Path(request.name).unlink(missing_ok=True)

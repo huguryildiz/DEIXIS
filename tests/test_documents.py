@@ -1,5 +1,10 @@
 import asyncio
+import os
+import subprocess
+import sys
 import time
+from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -118,6 +123,122 @@ def test_extraction_is_stopped_when_it_exceeds_the_memory_limit(tmp_path):
     result = pdf.extract_pdf(path, max_memory=100 * 1024 * 1024)
     assert (result.status, result.error) == ("failed", "extraction exceeded the memory limit")
     assert time.monotonic() - started < 30
+
+
+def _child(code: str) -> list[str]:
+    return [sys.executable, "-c", code]
+
+
+PLAIN_ENV = {"PATH": os.environ.get("PATH", "")}
+
+
+def test_the_parent_stops_a_child_that_holds_the_interpreter_lock_past_the_limit():
+    # The in-child watchdog is a thread and cannot run while a C call holds the lock (D138). This child reserves 300 MiB with
+    # `calloc` (untouched pages are not resident), reports `ready` while at about 30 MiB, then touches all of it inside
+    # `memset` called through PyDLL, which keeps the lock, and then sleeps 30 s in a PyDLL `sleep`. The size crosses the limit
+    # only inside those calls, so `ready` always precedes the stop; only a watcher outside the child can stop it, and it must
+    # do so long before the sleep ends.
+    code = ("import ctypes, sys\nlib = ctypes.PyDLL(None)\nlib.calloc.restype = ctypes.c_void_p\n"
+            "lib.memset.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t]\n"
+            "small = bytearray(30 * 1024 * 1024)\nfor i in range(0, len(small), 4096): small[i] = 1\n"
+            "big = lib.calloc(1, 300 * 1024 * 1024)\nsys.stdout.write('ready'); sys.stdout.flush()\n"
+            "lib.memset(big, 1, 300 * 1024 * 1024)\nlib.sleep(30)\n")
+    started = time.monotonic()
+    completed = pdf._run_watched(_child(code), PLAIN_ENV, timeout=60, max_memory=200 * 1024 * 1024)
+    assert completed.returncode == pdf.MEMORY_EXIT_CODE and b"memory limit exceeded" in completed.stderr
+    assert completed.stdout == b"ready"  # killed after it started, inside the lock-holding calls
+    assert time.monotonic() - started < 20  # far from the 30 s the child would have slept
+
+
+def test_a_child_under_the_limit_runs_to_its_end_with_its_output():
+    completed = pdf._run_watched(_child("import sys; sys.stdout.write('x' * 200000); sys.stderr.write('note'); sys.exit(0)"),
+                                 PLAIN_ENV, timeout=30, max_memory=1024 * 1024 * 1024)
+    assert (completed.returncode, len(completed.stdout), completed.stderr) == (0, 200000, b"note")
+
+
+def _wait_for_pid(pid_file) -> int:
+    deadline = time.monotonic() + 10
+    while not (pid_file.exists() and pid_file.read_text()):
+        assert time.monotonic() < deadline, "the child never wrote its pid"
+        time.sleep(0.05)
+    return int(pid_file.read_text())
+
+
+def test_a_child_past_the_time_limit_is_killed_and_reaped(tmp_path):
+    pid_file = tmp_path / "pid"
+    code = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(30)"
+    started = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        pdf._run_watched(_child(code), PLAIN_ENV, timeout=4, max_memory=1024 * 1024 * 1024)
+    assert time.monotonic() - started < 20
+    with pytest.raises(ProcessLookupError):
+        os.kill(_wait_for_pid(pid_file), 0)  # gone, not left behind
+
+
+def test_the_time_limit_holds_even_when_the_child_ends_just_after_it(monkeypatch):
+    # The clock is replaced: the first two reads (the start and the first wait) give 0 and every later read is far past the
+    # 10 s limit, while the child ends within its first 50 ms turn. A child that finishes after the deadline is a timeout all
+    # the same. (A child slower than one turn meets the loop's own deadline check instead; the test passes either way.)
+    reads = iter([0.0, 0.0])
+    monkeypatch.setattr(pdf, "time", SimpleNamespace(monotonic=lambda: next(reads, 1000.0), sleep=time.sleep))
+    with pytest.raises(subprocess.TimeoutExpired):
+        pdf._run_watched(_child("pass"), PLAIN_ENV, timeout=10, max_memory=1024 * 1024 * 1024)
+
+
+@pytest.mark.skipif(not pdf._watch_supported(), reason="the memory watch exists on macOS and Linux only")
+def test_a_watch_that_cannot_read_the_child_is_a_visible_failure_not_a_clean_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf, "_resident_bytes", lambda pid: None)
+    monkeypatch.setattr(pdf, "WATCH_LOST_TURNS", 10)
+    pid_file = tmp_path / "pid"
+    code = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(30)"
+    started = time.monotonic()
+    with pytest.raises(pdf.MemoryWatchLost):
+        pdf._run_watched(_child(code), PLAIN_ENV, timeout=60, max_memory=1024 * 1024 * 1024)
+    assert time.monotonic() - started < 15  # stopped after ten unreadable turns, not at the end of the sleep
+    with pytest.raises(ProcessLookupError):
+        os.kill(_wait_for_pid(pid_file), 0)  # killed and reaped
+
+
+@pytest.mark.skipif(not pdf._watch_supported(), reason="the memory watch exists on macOS and Linux only")
+def test_unreadable_turns_that_are_not_in_a_row_do_not_stop_a_child(monkeypatch):
+    # Four unreadable turns, then one readable, again and again: more than five in all, never five in a row.
+    reads = iter([None, None, None, None, 1] * 40)
+    monkeypatch.setattr(pdf, "_resident_bytes", lambda pid: next(reads, 1))
+    monkeypatch.setattr(pdf, "WATCH_LOST_TURNS", 5)
+    completed = pdf._run_watched(_child("import time; time.sleep(1.5)"), PLAIN_ENV, timeout=30, max_memory=1024 * 1024 * 1024)
+    assert completed.returncode == 0
+
+
+@pytest.mark.skipif(not pdf._watch_supported(), reason="the memory watch exists on macOS and Linux only")
+def test_a_child_that_ends_between_the_wait_and_the_read_is_not_a_lost_watch(monkeypatch):
+    # Every read fails, but the child is finished by the time the watcher looks: that is a normal end, not MemoryWatchLost.
+    monkeypatch.setattr(pdf, "WATCH_LOST_TURNS", 1)
+    monkeypatch.setattr(pdf, "_resident_bytes", lambda pid: time.sleep(0.5))  # the "read" outlasts the child, and returns None
+    completed = pdf._run_watched(["/bin/sleep", "0.2"], PLAIN_ENV, timeout=30, max_memory=1024 * 1024 * 1024)
+    assert completed.returncode == 0
+
+
+def test_a_lost_memory_watch_is_reported_as_a_failed_extraction(tmp_path, monkeypatch):
+    def lost(*args, **kwargs):
+        raise pdf.MemoryWatchLost("unreadable")
+
+    monkeypatch.setattr(pdf, "_run_watched", lost)
+    path = tmp_path / "small.pdf"
+    path.write_bytes(make_pdf(["SYNTHETIC"]))
+    result = pdf.extract_pdf(path)
+    assert (result.status, result.error) == ("failed", "extraction memory limit could not be watched")
+
+
+@pytest.mark.skipif(os.environ.get("DEIXIS_P9_PRODUCTION_THRESHOLD") != "1", reason="F09 at the production limit takes about 30 s; set DEIXIS_P9_PRODUCTION_THRESHOLD=1")
+def test_extraction_is_stopped_at_the_production_memory_limit(tmp_path):
+    # ~200 MiB of decoded page content in a file of about 200 KB makes the extraction child grow past 1 GiB (D138).
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "p9"))
+    import memory_probe
+
+    path = tmp_path / "expands-past-1gib.pdf"
+    memory_probe.build_pdf(path, 200 * 1024 * 1024)
+    result = pdf.extract_pdf(path)  # default max_memory: the production 1 GiB
+    assert (result.status, result.error) == ("failed", "extraction exceeded the memory limit")
 
 
 def resolver(*answers):

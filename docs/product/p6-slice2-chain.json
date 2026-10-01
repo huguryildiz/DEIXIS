@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "note": "Frozen before any search. Pairs are earlier -> later. roberta -> albert is deliberately absent. A table row identifies a work only if its normalized title STARTS with the match run, its year is in `years` and its first author carries `first_author`; a title match that fails identity never counts.",
+  "works": [
+    {"key": "elmo", "title": "Deep contextualized word representations", "match": "deep contextualized word representations", "first_author": "peters", "years": [2018]},
+    {"key": "bert", "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding", "match": "bert pre training of deep bidirectional transformers for language understanding", "first_author": "devlin", "years": [2018, 2019]},
+    {"key": "roberta", "title": "RoBERTa: A Robustly Optimized BERT Pretraining Approach", "match": "roberta a robustly optimized bert pretraining approach", "first_author": "liu", "years": [2019, 2020]},
+    {"key": "albert", "title": "ALBERT: A Lite BERT for Self-supervised Learning of Language Representations", "match": "albert a lite bert for self supervised learning of language representations", "first_author": "lan", "years": [2019, 2020]}
+  ],
+  "pairs": [["elmo", "bert"], ["bert", "roberta"], ["bert", "albert"]]
+}

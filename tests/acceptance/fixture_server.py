@@ -47,6 +47,8 @@ the report UI acceptance case a cell citation whose later edit can be observed; 
 "[report-banned-word]" puts "research gap" in section IV's cell claim so assembly refuses a draft.
 "[report-empty-section]" returns section IV with no claim or insufficiency entry so the report run pauses.
 "[report-bad-anchor]" gives section IV a cell quote absent from all stored quotes, including on repair.
+"[lineage]" serves six development-line works; "[lineage-reject]" adds a reverse mention and proposes it only
+in a second lineage run, after a selection change makes the target eligible again (synthetic directed-cycle refusal).
 """
 
 from __future__ import annotations
@@ -56,7 +58,9 @@ import asyncio
 import json
 import os
 import sys
+from copy import deepcopy
 from pathlib import Path
+from textwrap import fill
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
@@ -112,6 +116,61 @@ PDFS = {
                                          "SYNTHETIC page two: the bisection schedule minimizes bit error probability."],
     "https://fixture.example/w903-submitted.pdf": ["SYNTHETIC submitted manuscript page one: an early release schedule bound."],
 }
+
+# L7: provider ids A=W971, B=W972, C=W973, D=W974, E=W975, F=W976. Actual source-version and passage ids
+# are assigned by the application, then taken from each real StepInput (including its citation handles).
+# A: Alan Arden, 2010, high count. B: Bea Barton, 2011. C: Cal Chen, 2012. D: Dana Dover, 2013.
+# D mentions Barton (2011) without a development relation, and Zoe Arden (2010), a different author with
+# A's surname+year. The mention finder therefore produces A->D and B->D; BOTH are answered no_relation.
+# E mentions nobody. F's text cites only [1]; its provider record references W971, so A->F is a stored
+# citation edge, never a mention candidate. Exact base pairs: A->B, A->C, A->D, B->D.
+# Rejection variant: A's extra sentence mentions Barton (2011), adding candidate B->A. First run records
+# no_relation on it and publishes A->B. Exclude and re-include E through the API to change selection_revision:
+# pair fingerprints change without making the existing A->B link stale (L5). In the second run B->A is
+# proposed as a link, and publication refuses cycle against the EARLIER run's A->B regardless of pair order.
+LINEAGE_MODE = False
+LINEAGE_REJECT_MODE = False
+LINEAGE_QUOTES = {
+    'B': 'Arden (2010) supplies the release model; we extend its timing rule.',
+    'C': 'Arden (2010) supplies the release model; we change its search method.',
+    'A': 'Barton (2011) supplies a timing rule; we extend its measurement procedure.',
+}
+LINEAGE_PAGES = {
+    'A': 'SYNTHETIC A: a release model with fixed pulse spacing. We propose a model; results show a measured outcome.',
+    'B': 'SYNTHETIC B: adaptive timing for release experiments. ' + LINEAGE_QUOTES['B'],
+    'C': 'SYNTHETIC C: interval search for release experiments. ' + LINEAGE_QUOTES['C'],
+    'D': 'SYNTHETIC D: unrelated sediment sampling. Barton (2011) is mentioned only for context. Zoe Arden (2010) measured sediment density; this is a different author.',
+    'E': 'SYNTHETIC E: an isolated sensor study. We propose a sensor; results show a measured outcome.',
+    'F': 'SYNTHETIC F: numbered references in a pulse experiment. The comparison uses [1]. We propose a pulse; results show a measured outcome.',
+}
+LINEAGE_TITLES = [
+    'SYNTHETIC A foundational release model with fixed pulse spacing',
+    'SYNTHETIC B adaptive timing for release experiments',
+    'SYNTHETIC C interval search for release experiments',
+    'SYNTHETIC D unrelated sediment sampling in shallow water',
+    'SYNTHETIC E isolated sensor measurements in a tank',
+    'SYNTHETIC F numbered references in pulse experiments',
+]
+LINEAGE_WORKS = []
+for index, letter in enumerate('ABCDEF'):
+    record = work(f'W{971 + index}', LINEAGE_TITLES[index],
+                  'SYNTHETIC molecule release scheduling: we propose a method; results show a measured outcome.',
+                  'publishedVersion', {'pdf_url': f'https://fixture.example/l7-{letter}.pdf', 'version': 'publishedVersion'},
+                  f'https://doi.org/10.5555/l7-{letter.lower()}')
+    record.update(publication_year=2010 + index, type='review', cited_by_count=None if letter == 'E' else 900 - index * 100,
+                  authorships=[{'author': {'display_name': ['Alan Arden', 'Bea Barton', 'Cal Chen', 'Dana Dover', 'Eva Evans', 'Fay Finch'][index]}}],
+                  referenced_works=[f'https://openalex.org/{wid}' for wid in {'A': [], 'B': ['W971'], 'C': ['W971'], 'D': ['W972'], 'E': [], 'F': ['W971']}[letter]])
+    LINEAGE_WORKS.append(record)
+
+# The second research must not reuse the base research's already-stored PDFs. Its otherwise identical
+# records have distinct provider/DOI/file identities A=W981 through F=W986 and references mapped to those ids.
+LINEAGE_REJECT_WORKS = deepcopy(LINEAGE_WORKS)
+for index, record in enumerate(LINEAGE_REJECT_WORKS):
+    letter = 'ABCDEF'[index]
+    record['id'] = f'https://openalex.org/W{981 + index}'
+    record['doi'] = f'https://doi.org/10.5555/l7-reject-{letter.lower()}'
+    record['best_oa_location']['pdf_url'] = f'https://fixture.example/l7-reject-{letter}.pdf'
+    record['referenced_works'] = [ref.replace('W971', 'W981').replace('W972', 'W982') for ref in record['referenced_works']]
 
 # Case O (slice 22, D104): one work whose PDF is an arXiv version. Its identity (DOI, landing and OA-PDF URLs) and its
 # record's `submittedVersion` label make it eligible under decision 1's table; its file's own address and rotated
@@ -330,11 +389,16 @@ def openalex(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"meta": {"count": PROBE_COUNT}, "results": []})
     if RATE_LIMIT_MODE and request.url.host == "api.openalex.org" and "search.title_and_abstract" in params:
         return httpx.Response(429, headers={"retry-after": "0"})
-    works = QUEUE_WORKS if QUEUE_MODE else WORKS
+    works = LINEAGE_REJECT_WORKS if LINEAGE_REJECT_MODE else LINEAGE_WORKS if LINEAGE_MODE else QUEUE_WORKS if QUEUE_MODE else WORKS
     return httpx.Response(200, json={"meta": {"count": len(works)}, "results": works})
 
 
 async def fetch(url: str) -> FetchResult:
+    if url.startswith('https://fixture.example/l7-'):
+        letter = url.rsplit('-', 1)[-1].removesuffix('.pdf')
+        text = LINEAGE_PAGES[letter] + (' ' + LINEAGE_QUOTES['A'] if letter == 'A' and '/l7-reject-' in url else '')
+        text = fill(text, width=80)  # make_pdf writes literal lines; wrapping keeps mentions inside the page.
+        return FetchResult('ok', data=make_pdf([text]), final_url=url, media_type='application/pdf', http_status=200)
     pdfs = QUEUE_PDFS if QUEUE_MODE else PDFS
     if url not in pdfs or url in WITHHELD_PDFS:
         return FetchResult("http_error", final_url=url, http_status=404)
@@ -351,6 +415,7 @@ class ScriptedCodex:
     def __init__(self) -> None:
         self.failed_once: set[str] = set()
         self.unread_run: dict[str, str] = {}  # the one reading run per research that cannot read case L's file
+        self.first_lineage_run: dict[str, str] = {}
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         return {"connection": "codex", "ready": True, "reason": None, "installed": True, "signed_in": True,
@@ -361,6 +426,9 @@ class ScriptedCodex:
         si = parse_step_input(message)
         question, task = si["question"]["text"], si["task_type"]
         RATE_LIMIT_MODE = "[rate-limit]" in question
+        global LINEAGE_MODE, LINEAGE_REJECT_MODE
+        LINEAGE_REJECT_MODE = '[lineage-reject]' in question
+        LINEAGE_MODE = '[lineage]' in question or LINEAGE_REJECT_MODE
         if "[model-down]" in question and task == "abstract_screening" and si["research_id"] not in self.failed_once:
             self.failed_once.add(si["research_id"])
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
@@ -384,6 +452,27 @@ class ScriptedCodex:
 
     def respond(self, si: dict[str, Any], question: str) -> dict[str, Any]:
         output = json.loads(valid_response(si))
+        if si['task_type'] == 'cell_extraction' and ('[lineage]' in question or '[lineage-reject]' in question):
+            # The normal helper already emits contract-valid role cells with their own source's text and handles.
+            for cell, column in zip(output['cells'], si['extraction_target']['columns']):
+                cell['value'] = {'text': 'SYNTHETIC role cell: ' + column['name']}
+        if si['task_type'] == 'lineage_links' and ('[lineage]' in question or '[lineage-reject]' in question):
+            target = si['lineage_target']
+            names = {s['source_id']: s['title'] for s in si['sources']}
+            later = names[target['to']['source_id']].split()[1]
+            first = self.first_lineage_run.setdefault(si['research_id'], si['run_id'])
+            for decision, candidate in zip(output['decisions'], target['candidates']):
+                earlier = names[candidate['from']['source_id']].split()[1]
+                decision.update(decision='no_relation', relation=None, what_changed=None, support_type=None, evidence=[],
+                                note='SYNTHETIC: no development relation in this pair.')
+                if (earlier, later) in [('A', 'B'), ('A', 'C')] or (earlier == 'B' and later == 'A' and si['run_id'] != first):
+                    passage = next(p for p in si['passages'] if p['passage_id'] == candidate['mention_passage_ids'][0])
+                    # Extractor line wrapping may split the scripted sentence; the quote remains exact stored text.
+                    quote = passage['text']
+                    decision.update(decision='link', relation='changes_method' if later == 'C' else 'extends',
+                                    support_type='source_stated', what_changed=LINEAGE_QUOTES[later],
+                                    note='SYNTHETIC scripted development-link proposal.',
+                                    evidence=[{'passage_id': passage['passage_id'], 'quote': quote}])
         if si["task_type"] == "report_review" and "[report-review-finding]" in question:
             first = si["report_target"]["review_sections"][0]
             output["findings"] = [{"claim_key": first["claims"][0]["claim_key"], "sentence_id": None,

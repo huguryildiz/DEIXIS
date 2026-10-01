@@ -14,7 +14,10 @@ import { citationStyles, formatReference, formatReferenceText, type CitationStyl
 import { useToast, type ToastAction } from './Toast'
 import { t, uiLocale } from './i18n'
 import { SourceKey } from './SourceKey'
+import { DevelopmentLines } from './lineage/DevelopmentLines'
+import type { PassageTarget } from './lineage/LinkRow'
 import './EvidenceTable.css'
+import './lineage/lineage.css'
 import { Notice } from './Notice'
 import { UploadedTextNote } from './SemanticNotes'
 
@@ -23,8 +26,8 @@ import { UploadedTextNote } from './SemanticNotes'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 // Table runs are controlled where their work shows: the run line above the table (the research tab bar only links here).
-export const TABLE_RUN_KINDS = new Set(['table_fill', 'cell_recheck', 'table_columns'])
-const tableRunLabels: Record<string, string> = { table_fill: 'Filling empty cells', cell_recheck: 'Rechecking a cell', table_columns: 'Suggesting columns' }
+export const TABLE_RUN_KINDS = new Set(['table_fill', 'cell_recheck', 'table_columns', 'lineage_links'])
+const tableRunLabels: Record<string, string> = { table_fill: 'Filling empty cells', cell_recheck: 'Rechecking a cell', table_columns: 'Suggesting columns', lineage_links: 'Development links' }
 const MAX_WHOLE_PASSAGES = 48  // a source within this many passages (and 60,000 characters) is read whole
 const MAX_RECHECK_PASSAGES = 16
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -159,6 +162,8 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
   const [removing, setRemoving] = useState<TableColumn | null>(null)
   const [cellTarget, setCellTarget] = useState<{ columnId: string; sourceId: string } | null>(null)
   const [sourceTarget, setSourceTarget] = useState<string | null>(null)
+  const [subviews, setSubviews] = useState<Record<string, 'table' | 'lineage'>>({})
+  const [lineagePassage, setLineagePassage] = useState<PassageTarget | null>(null)
   const [addRowsOpen, setAddRowsOpen] = useState(false)
   const [templateName, setTemplateName] = useState<string | null>(null)
   const [discarded, setDiscarded] = useState<string[]>([])
@@ -168,10 +173,10 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
   const grid = useRef<HTMLTableElement>(null)
   const [fullscreen, setFullscreen] = useState(false)
   // Full screen covers the app with the table; Escape leaves it unless a panel or dialog on top takes the key first.
-  const overlayOpen = Boolean(cellTarget || editor || removing || cancelling)
+  const overlayOpen = Boolean(cellTarget || editor || removing || cancelling || lineagePassage)
   useEffect(() => {
     if (!fullscreen) return
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape' && !overlayOpen) setFullscreen(false) }
+    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape' && !overlayOpen && !document.querySelector('[role="dialog"]')) setFullscreen(false) }
     document.addEventListener('keydown', onKey)
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -232,7 +237,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
     : !reportState?.ready && !continueWithFailed ? t('A report needs a filled evidence table: {n} cells left in “{table}”.', { n: reportState?.cells_left ?? 0, table: table?.table.title ?? '' }) : ''
   const control = (target: Run, action: 'pause' | 'resume' | 'cancel') => act(() => api.controlRun(target.id, action))
   const cancelDialog = <ConfirmDialog open={Boolean(cancelling)} dark={dark} title={t('Cancel this run?')}
-    description={t('The run stops. Values already written stay in the table; the answer of a model call still in progress is not written. A cancelled run cannot be resumed; empty cells can be filled again later.')}
+    description={t(cancelling?.kind === 'lineage_links' ? 'The run stops. Development decisions already recorded are kept. A cancelled run cannot be resumed.' : 'The run stops. Values already written stay in the table; the answer of a model call still in progress is not written. A cancelled run cannot be resumed; empty cells can be filled again later.')}
     confirmLabel={t('Cancel run')} cancelLabel={t('Keep running')} busy={busy}
     onConfirm={() => { const target = cancelling; setCancelling(null); if (target) void control(target, 'cancel') }}
     onOpenChange={open => { if (!open) setCancelling(null) }} />
@@ -301,6 +306,18 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
   const cellColumn = cellTarget && columns.find(c => c.id === cellTarget.columnId)
   const cellRow = cellTarget && rows.find(r => r.source_version_id === cellTarget.sourceId)
   const sourceById = new Map(view.sources.map(s => [s.source_version_id, s]))
+  const openLineagePassage = async (target: PassageTarget) => {
+    if (!target.sourceVersionId || sourceById.has(target.sourceVersionId)) { setLineagePassage(target); return }
+    // Removed corpus members are absent from research.sources. Resolve their stored version through the Library,
+    // as the Library source sheet does, without substituting another version or restoring membership.
+    try {
+      if (!target.workId) throw new Error(t('Source record unavailable'))
+      const stored = await api.libraryWork(target.workId)
+      const version = stored.versions.find(v => v.source_version_id === target.sourceVersionId)
+      if (!version?.asset && !version?.abstract_passage_id) throw new Error(t('No stored text is available for this source version.'))
+      setLineagePassage({ passageId: version?.asset ? null : version!.abstract_passage_id, assetId: version?.asset?.id })
+    } catch (e) { toast('error', errorText(e)) }
+  }
   const style = savedStyle()
 
   const moveFocus = (e: KeyboardEvent<HTMLTableElement>) => {
@@ -343,6 +360,22 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
       </div>
     </div>
 
+    <div className="tab-strip lineage-switch" role="tablist" aria-label={t('Evidence views')} onKeyDown={e => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return
+      e.preventDefault()
+      const next = e.key === 'Home' ? 'table' : e.key === 'End' ? 'lineage' : (subviews[tableId] ?? 'table') === 'table' ? 'lineage' : 'table'
+      setSubviews(v => ({ ...v, [tableId]: next }))
+      e.currentTarget.querySelector<HTMLButtonElement>(`[data-subview="${next}"]`)?.focus()
+    }}>
+      <button type="button" role="tab" data-subview="table" aria-selected={(subviews[tableId] ?? 'table') === 'table'} aria-controls={`table-panel-${tableId}`} tabIndex={(subviews[tableId] ?? 'table') === 'table' ? 0 : -1} onClick={() => setSubviews(v => ({ ...v, [tableId]: 'table' }))}>{t('Table')}</button>
+      <button type="button" role="tab" data-subview="lineage" aria-selected={subviews[tableId] === 'lineage'} aria-controls={`lineage-panel-${tableId}`} tabIndex={subviews[tableId] === 'lineage' ? 0 : -1} onClick={() => setSubviews(v => ({ ...v, [tableId]: 'lineage' }))}>{t('Development lines')}</button>
+    </div>
+    {subviews[tableId] === 'lineage' ? <>
+      {runLine([])}{cancelDialog}
+      <DevelopmentLines key={tableId} researchId={researchId} tableId={tableId} tableVersion={table.table.version} eventCursor={view.last_event_id}
+        activeRun={activeRun} lineageRun={view.runs.find(r => r.kind === 'lineage_links' && r.target?.table_id === tableId)} sources={view.sources}
+        model={model} connection={view.scope.model_connection} dark={dark} onColumnsAdded={() => { void load() }} onRunStarted={onRunStarted} onPassage={target => { void openLineagePassage(target) }} />
+    </> : <div role="tabpanel" id={`table-panel-${tableId}`}>
     {/* Structure, then the model's suggestion, then what the table produces. Without columns the first-column prompt below carries Add column and Suggest columns. */}
     {continueWithFailed && reportState && <Notice tone="attention">{t('{n} of {m} sources did not complete the table (missing cells: {cells}). These rows will be excluded from the report’s evidence assessment and aggregation denominators.', { n: reportState.failed_rows, m: reportState.included_rows, cells: reportState.cells_left })}</Notice>}
     <div className="evidence-toolbar">
@@ -465,6 +498,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
         </div>
       </>}
     <p className="legacy-mini-note evidence-footnote"><ShieldAlert size={14} aria-hidden /><span><strong>{t('Semantic support not checked.')}</strong> {t('Each quote was located in a passage of its row’s source version; whether that passage supports the value has not been checked.')}</span></p>
+    </div>}
 
     {editor && <ColumnEditor key={editor.mode === 'edit' ? editor.column.id : editor.mode} target={editor} busy={busy} dark={dark}
       onSave={spec => saveColumn(editor, spec)} onClose={() => setEditor(null)} onRemove={column => { setEditor(null); setRemoving(column) }} />}
@@ -475,6 +509,9 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
         { label: t('Undo'), run: () => { void act(() => api.restoreColumn(researchId, tableId, column.id, column.version + 1), t('Column restored with its cells.')) } }) }}
       onOpenChange={open => { if (!open) setRemoving(null) }} />
     {sourceTarget && <PassageSheet researchId={researchId} passageId={null} sourceVersionId={sourceTarget} sources={view.sources} dark={dark} onClose={() => setSourceTarget(null)} />}
+    {lineagePassage && <PassageSheet researchId={researchId} passageId={lineagePassage.passageId} assetId={lineagePassage.assetId} sourceVersionId={lineagePassage.sourceVersionId} highlightTexts={lineagePassage.highlightTexts}
+      citationLabels={{ marked: t('Located text in the later work'), unmarked: t('The quoted text could not be marked on this page. Inspect the stored passage and PDF.'), mark: t('Located text in the later work') }}
+      initialPage={lineagePassage.initialPage} expectHighlight={Boolean(lineagePassage.highlightTexts?.length)} sources={view.sources} dark={dark} onClose={() => setLineagePassage(null)} />}
     {cellTarget && cellColumn && cellRow && <CellPanel researchId={researchId} tableId={tableId} column={cellColumn} row={cellRow} refresh={view.last_event_id}
       source={view.sources.find(s => s.source_version_id === cellRow.source_version_id)} activeRun={activeRun} rechecking={rechecking === `${cellColumn.id}:${cellRow.source_version_id}`}
       model={model} dark={dark} onChanged={() => { void load() }} onRunStarted={onRunStarted} onClose={() => setCellTarget(null)} />}

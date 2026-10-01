@@ -21,7 +21,7 @@ export const runStatusLabels: Record<RunStatus, string> = {
 }
 
 export const runKindLabels: Record<RunKind, string> = {
-  discovery: 'Search & screening', answer: 'Answer', report: 'Evidence report', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title',
+  discovery: 'Search & screening', answer: 'Answer', report: 'Evidence report', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title', lineage_links: 'Development links',
 }
 
 export const reportSupportLabels: Record<string, string> = { source_stated: 'Stated by the source', analyst_inference: 'Analyst inference' }
@@ -200,6 +200,8 @@ export const localToolIcon = (id: string) => (id === 'gemini_cli' ? 'gemini' : i
 export const providerRole = (role: string | undefined) => t(role === 'verification' ? 'Metadata verification' : 'Record search')
 
 export const stepLabel = (kind: string, key: string) => {
+  if (kind === 'model:lineage_links') return t('Development link proposals (model)')
+  if (kind === 'lineage_publication') return t('Recording development decisions (code)')
   if (kind === 'model:search_plan') return t('Search plan (model)')
   if (kind === 'model:screening') return t('Screening proposal (model)')
   if (kind === 'code:term_suggestions') return t('Other names for the search terms (code)')

@@ -93,6 +93,20 @@ export type LineageLinkEdit = LineageLinkFields & { based_on_revision_id: string
 // DELETE request fields are query parameters.
 export type LineageLinkRemove = { expected_version: number; based_on_revision_id: string; note?: string | null }
 
+// The public preview of LineagePlanner.preview, not the larger frozen run target.
+export type LineagePlanTarget = { to: string; class: 'new' | 'changed' | 'retry' | 'settled'; position: number; target_fp: string }
+export type LineagePlan = {
+  table_id: string; plan_version: number
+  counts: { live_rows: number; eligible_targets: number; selected: number; not_selected: number; calls: number
+    candidates: number; no_candidate: number; not_sent_budget: number; failed_unchanged: number
+    development_columns: number; missing_cells: number }
+  max_model_calls: number; max_provider_requests: number; calls: number; preview_fingerprint: string; retry_failed: boolean
+  selected: (LineagePlanTarget & { no_candidate: boolean; outcome: 'settled' | 'incomplete'; candidate_count: number; chunk_count: number })[]
+  not_selected: (LineagePlanTarget & { reason: 'settled' | 'beyond_work_limit' })[]
+  not_sent_budget: { to: string; from: string; reason: string; pair_fingerprint: string }[]
+  failed_unchanged: { to: string; from: string; pair_fp: string }[]
+}
+
 export type Scope = {
   research_id: string; revision: number; question: string; language_hint: string | null; source_scope: SourceScope
   seed_mode: 'question_only' | 'uploaded_seed'; seed_status: 'question_only' | 'missing' | 'ready' | 'stale'
@@ -144,7 +158,7 @@ export type SearchPlan = {
   concepts: { label: string; role: string; synonyms: string[] }[]
   queries: { provider_id: string; query_text: string; rationale: string }[]
 }
-export type RunKind = 'discovery' | 'answer' | 'report' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title'
+export type RunKind = 'discovery' | 'answer' | 'report' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   table_id: string; column_id?: string; source_version_id?: string; cell_version?: number
@@ -1026,6 +1040,20 @@ export const api = {
     request<TableView>(`/api/researches/${id}/tables/${tableId}/columns`, json('POST', { ...spec, expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
   addDevelopmentColumns: (id: string, tableId: string, expectedVersion: number, idempotencyKey: string) =>
     request<TableView>(`/api/researches/${id}/tables/${tableId}/lineage/columns`, json('POST', { expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+  lineage: (id: string, tableId: string) => request<LineageView>(`/api/researches/${id}/tables/${tableId}/lineage`),
+  lineageBaseline: (id: string, tableId: string) => request<LineageBaseline>(`/api/researches/${id}/tables/${tableId}/lineage/baseline`),
+  lineagePlan: (id: string, tableId: string, retryFailed: boolean) => request<LineagePlan>(`/api/researches/${id}/tables/${tableId}/lineage/plan?retry_failed=${retryFailed}`),
+  startLineageRun: (id: string, tableId: string, previewFingerprint: string, retryFailed: boolean, idempotencyKey: string) =>
+    request<Run>(`/api/researches/${id}/tables/${tableId}/lineage/runs`, json('POST', { preview_fingerprint: previewFingerprint, retry_failed: retryFailed }, { 'Idempotency-Key': idempotencyKey })),
+  addLineageLink: (id: string, tableId: string, body: LineageLinkAdd, idempotencyKey: string) =>
+    request<LineageView>(`/api/researches/${id}/tables/${tableId}/lineage/links`, json('POST', body, { 'Idempotency-Key': idempotencyKey })),
+  editLineageLink: (id: string, tableId: string, linkId: string, body: LineageLinkEdit, idempotencyKey: string) =>
+    request<LineageView>(`/api/researches/${id}/tables/${tableId}/lineage/links/${linkId}`, json('PUT', body, { 'Idempotency-Key': idempotencyKey })),
+  removeLineageLink: (id: string, tableId: string, linkId: string, body: LineageLinkRemove, idempotencyKey: string) => {
+    const query = new URLSearchParams({ expected_version: String(body.expected_version), based_on_revision_id: body.based_on_revision_id })
+    if (body.note != null) query.set('note', body.note)
+    return request<LineageView>(`/api/researches/${id}/tables/${tableId}/lineage/links/${linkId}?${query}`, { method: 'DELETE', headers: { 'Idempotency-Key': idempotencyKey } })
+  },
   // Only a table without columns takes a template's columns.
   applyTableTemplate: (id: string, tableId: string, templateId: string, expectedVersion: number, idempotencyKey: string) =>
     request<TableView>(`/api/researches/${id}/tables/${tableId}/template-columns`, json('POST', { template_id: templateId, expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),

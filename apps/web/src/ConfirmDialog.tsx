@@ -1,14 +1,16 @@
 import { Dialog } from '@base-ui/react/dialog'
 import { Info, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import type { ReactNode } from 'react'
 
 // neutral: an action that can be undone (removing a source from a research, starting a table); red stays for what cannot.
-export function ConfirmDialog({ open, dark, title, description, context, confirmLabel, cancelLabel, busy = false, neutral = false, onConfirm, onOpenChange }: {
+export function ConfirmDialog({ open, dark, title, description, context, children, confirmLabel, cancelLabel, busy = false, neutral = false, onConfirm, onOpenChange }: {
   open: boolean
   dark: boolean
   title: string
   description: string
   context?: string
+  children?: ReactNode
   confirmLabel: string
   cancelLabel: string
   busy?: boolean
@@ -28,6 +30,7 @@ export function ConfirmDialog({ open, dark, title, description, context, confirm
           </div>
         </div>
         {context && <p className="confirm-dialog-context" title={context}>{context}</p>}
+        {children}
         <div className="confirm-dialog-actions">
           <Button className="confirm-dialog-cancel" variant="outline" autoFocus disabled={busy} onClick={() => onOpenChange(false)}>{cancelLabel}</Button>
           <Button className={neutral ? undefined : 'confirm-dialog-danger'} variant={neutral ? 'default' : 'destructive'} disabled={busy} onClick={onConfirm}>{confirmLabel}</Button>

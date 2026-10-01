@@ -575,7 +575,7 @@ L1–L4'ün bağımsızlığı yalnız aşağıdaki arayüz sınırlarıyla geç
 **Çıkış.** Sentetik bağ kümeleriyle beklenen bileşenler, işaretler ve listeler; insan kararı sonraki model koşusunca ezilmez.
 **Göstermez.** Arayüzü; gerçek korpustaki çizgi kalitesini.
 
-### L7 — Arayüz (M–L)
+### L7 — Arayüz (M–L) ✅ commit: bu satırı ekleyen commit
 
 **Kapsam.** Evidence alt görünümü "Development lines" (§4.6): durum satırı, "Find development links" (çağrı tavanı gösterimi), çizgi listesi, `PassageSheet` bağlantısı, çapraz ilişkiler, yerleştirilemeyen, kabul edilmeyen, `unassessed_edge`, `not_sent_budget` listeleri, insan eylemleri ve bağ ekleme penceresi, alan tabanı paneli; EN/TR metinler.
 **Dosyalar.** `apps/web/src/` (yeni bileşenler `lineage/` altında, `EvidenceTable.tsx`, `ResearchView.tsx`, `api.ts`, `i18n.ts`, `labels.ts`), `apps/web/e2e/lineage.spec.ts`, fixture sunucusu işaretçileri.

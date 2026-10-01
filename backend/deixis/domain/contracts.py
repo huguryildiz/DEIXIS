@@ -20,6 +20,7 @@ from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
 from deixis.domain import phrasebank
+from deixis.domain.lineage import MAX_WHAT_CHANGED, valid_what_changed
 from deixis.paths import CONTRACTS_DIR, SKILL_DIR
 from deixis.workflow.criterion import (MAX_PHRASE_WORDS, PARTS_PER_PROPOSAL, PHRASES_PER_PART,
                                        holds as criterion_holds, norm as normalize_phrase)
@@ -784,6 +785,9 @@ def _check_lineage_links(step_input: dict[str, Any], allow: dict[str, set[str]],
             for field in fields:
                 if decision[field] is None:
                     report.issues.append(Issue("link_field_missing", f"{path}/{field}", field))
+            if decision["what_changed"] is not None and not valid_what_changed(decision["what_changed"]):
+                report.issues.append(Issue("what_changed_empty", f"{path}/what_changed",
+                                           f"what_changed requires non-whitespace text of 1 to {MAX_WHAT_CHANGED} characters"))
             if not decision["evidence"]:
                 report.issues.append(Issue("link_without_evidence", f"{path}/evidence", "a link requires a located quote"))
         else:

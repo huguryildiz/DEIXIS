@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from deixis.domain.contracts import locate_anchor
+from deixis.domain.lineage import MAX_WHAT_CHANGED, valid_what_changed
 from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.store import NotFound, Store
@@ -23,7 +24,6 @@ SUPPORT_TYPES = ("source_stated", "analyst_inference")
 DECISIONS = ("link", "no_relation", "insufficient_evidence", "removed")
 REVISION_KINDS = ("model_propose", "human_add", "human_edit", "human_remove")
 REJECTION_CODES = ("cycle", "anchor_not_found", "same_work", "endpoint_not_included", "superseded_by_human", "stale_input")
-MAX_WHAT_CHANGED = 500
 MAX_EVIDENCE = 5
 LIVE_ENDPOINT_SQL = (
     "SELECT 1 FROM table_rows t JOIN evidence_tables et_endpoint ON et_endpoint.id = t.table_id"
@@ -145,7 +145,7 @@ class LineageStore:
         changed = decision["what_changed"]
         if decision["relation"] not in RELATIONS or decision["support_type"] not in SUPPORT_TYPES:
             raise InvalidLineageInput("Unknown relation or support type")
-        if not isinstance(changed, str) or not changed.strip() or not 1 <= len(changed) <= MAX_WHAT_CHANGED:
+        if not valid_what_changed(changed):
             raise InvalidLineageInput(f"what_changed needs 1 to {MAX_WHAT_CHANGED} characters")
         if decision["relation"] == "independent_parallel" and decision["support_type"] != "source_stated":
             raise InvalidLineageInput("independent_parallel needs source_stated support")
@@ -172,20 +172,42 @@ class LineageStore:
                                 "anchor_text": match.text, "anchor_match": match.kind})
         return located
 
-    def _cycle(self, pair: dict[str, Any], stale_revisions: Mapping[str, str]) -> bool:
+    def _graph(self, table_id: str, stale_revisions: Mapping[str, str],
+               exclude_link_id: str | None = None) -> dict[str, set[str]]:
         graph: dict[str, set[str]] = {}
-        for edge in self.active_links(pair["table_id"]):
-            if (edge["id"] == pair["id"] or edge["relation"] == "independent_parallel"
+        for edge in self.active_links(table_id):
+            if (edge["id"] == exclude_link_id or edge["relation"] == "independent_parallel"
                     or stale_revisions.get(edge["id"]) == edge["revision_id"]):
                 continue
             a, b = edge["from_source_version_id"], edge["to_source_version_id"]
-            if self._live(pair["table_id"], a) and self._live(pair["table_id"], b):
+            if self._live(table_id, a) and self._live(table_id, b):
                 graph.setdefault(a, set()).add(b)
+        return graph
+
+    def reactivation_closes_cycle(self, table_id: str, before_stale: Mapping[str, str],
+                                  after_stale: Mapping[str, str]) -> bool:
+        """Refuse only reactivated revisions that lie on a post-restore cycle."""
+        graph = self._graph(table_id, after_stale)
+        for edge in self.active_links(table_id):
+            if (before_stale.get(edge["id"]) != edge["revision_id"]
+                    or after_stale.get(edge["id"]) == edge["revision_id"]):
+                continue
+            a, b = edge["from_source_version_id"], edge["to_source_version_id"]
+            if b in graph.get(a, ()) and self._reaches(graph, b, a):
+                return True
+        return False
+
+    def _cycle(self, pair: dict[str, Any], stale_revisions: Mapping[str, str]) -> bool:
+        graph = self._graph(pair["table_id"], stale_revisions, exclude_link_id=pair["id"])
         # Adding from -> to closes a directed cycle iff to already reaches from.
-        pending, seen = [pair["to_source_version_id"]], set()
+        return self._reaches(graph, pair["to_source_version_id"], pair["from_source_version_id"])
+
+    @staticmethod
+    def _reaches(graph: dict[str, set[str]], start: str, target: str) -> bool:
+        pending, seen = [start], set()
         while pending:
             node = pending.pop()
-            if node == pair["from_source_version_id"]:
+            if node == target:
                 return True
             if node not in seen:
                 seen.add(node)

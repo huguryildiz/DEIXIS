@@ -8,9 +8,10 @@ import pytest
 
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
+from deixis.workflow.lineage.run import build_node, node_snapshot, stale_link_reasons, stale_link_revisions
 from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore, REJECTION_CODES
 from deixis.workflow.store import NotFound, Store
-from deixis.workflow.tables import TableStore
+from deixis.workflow.tables import InvalidTableInput, TableStore
 
 TEXT = "SYNTHETIC: The later work extends the earlier method with a bounded scheduling rule."
 QUOTE = "extends the earlier method with a bounded scheduling rule"
@@ -613,12 +614,182 @@ def test_human_write_replay_and_foreign_key_reuse(lib):
     assert remove(lib, idempotency_key="remove-key", expected_version=0, based_on_revision_id="wrong") == removed
 
 
-@pytest.mark.parametrize("changes", [{"what_changed": ""}, {"what_changed": " "}, {"what_changed": "x" * 501},
+@pytest.mark.parametrize("changes", [{"what_changed": ""}, {"what_changed": " "}, {"what_changed": "   "},
+                                      {"what_changed": "\t"}, {"what_changed": "\n"}, {"what_changed": "x" * 501},
                                       {"relation": "invented"}, {"support_type": "invented"}])
 def test_what_changed_length_and_vocabularies(lib, changes):
     with pytest.raises(InvalidLineageInput):
         human(lib, **changes)
     assert human(lib, what_changed="x" * 500)
+
+
+def restore_scenario(lib, *, ordinary=False):
+    lib.tables.add_development_columns(lib.rid, lib.tid, lib.tables._table(lib.rid, lib.tid)["version"], None)
+    if ordinary:
+        cid = lib.tables.add_column(lib.rid, lib.tid, dict(name="SYNTHETIC ordinary", instruction="Record the method.",
+            answer_format="text", options=None, allow_multiple=False, unit_hint=None),
+            lib.tables._table(lib.rid, lib.tid)["version"], None)
+        column = lib.tables._column(lib.tid, cid)
+    else:
+        column = lib.tables._columns(lib.tid)[0]
+    inputs = {"from": node_snapshot(build_node(lib.store, lib.tid, lib.ids["a"])),
+              "to": node_snapshot(build_node(lib.store, lib.tid, lib.ids["b"])),
+              "mention_passage_ids": [lib.passages["b"]]}
+    result = model(lib, inputs=inputs)
+    assert result["current"] and result["disposition"] == "accepted"
+    assert stale_link_revisions(lib.store, lib.tid) == {}
+    lib.tables.remove_column(lib.rid, lib.tid, column["id"], column["version"])
+    if not ordinary:
+        assert stale_link_reasons(lib.store, lib.tid)[result["link_id"]] == (result["revision_id"], ("node_changed",))
+    return column, result
+
+
+def restore_state(lib):
+    return state(lib) | {t: [tuple(r) for r in lib.conn.execute(f"SELECT * FROM {t} ORDER BY rowid")]
+                        for t in ("table_columns", "column_revisions", "evidence_tables", "events")}
+
+
+def graph_has_cycle(lib, stale_revisions):
+    revisions = {edge["id"]: edge["revision_id"] for edge in lib.lineage.active_links(lib.tid)}
+    return lib.lineage.reactivation_closes_cycle(lib.tid, revisions, stale_revisions)
+
+
+def preexisting_human_cycle(lib, a="a", b="b", c="c"):
+    human(lib, a, b)
+    human(lib, b, c)
+    excluded = lib.store.set_user_selection(lib.rid, lib.ids[b], "excluded", 1, "SYNTHETIC exclusion")
+    human(lib, c, a)
+    lib.store.set_user_selection(lib.rid, lib.ids[b], "included", excluded["version"], "SYNTHETIC re-inclusion")
+    assert stale_link_revisions(lib.store, lib.tid) == {}
+    assert graph_has_cycle(lib, {})
+
+
+@pytest.mark.parametrize("case, expected", [
+    ("reactivated", True), ("not_stale_before", False), ("different_before_revision", False),
+    ("still_stale", False), ("unrelated_edge", False),
+])
+def test_reactivation_cycle_check_requires_the_named_revision_on_a_cycle(lib, case, expected):
+    preexisting_human_cycle(lib)
+    human(lib, "d", "z")
+    a, b = ("d", "z") if case == "unrelated_edge" else ("a", "b")
+    edge = lib.lineage.link(lib.tid, lib.ids[a], lib.ids[b])
+    before = {edge["id"]: edge["current_revision_id"]}
+    after = {}
+    if case == "not_stale_before":
+        before = {}
+    elif case == "different_before_revision":
+        before[edge["id"]] = "different-revision"
+    elif case == "still_stale":
+        after = before.copy()
+
+    assert lib.lineage.reactivation_closes_cycle(lib.tid, before, after) is expected
+
+
+def test_restore_succeeds_with_preexisting_cycle_unrelated_to_column(lib):
+    lib.tables.add_development_columns(lib.rid, lib.tid, lib.tables._table(lib.rid, lib.tid)["version"], None)
+    preexisting_human_cycle(lib)
+    column = lib.tables._columns(lib.tid)[0]
+    lib.tables.remove_column(lib.rid, lib.tid, column["id"], column["version"])
+    history = state(lib)
+    events = lib.conn.execute("SELECT COUNT(*) FROM events WHERE type = 'column_restored'").fetchone()[0]
+
+    lib.tables.restore_column(lib.rid, lib.tid, column["id"], column["version"] + 1)
+
+    assert lib.tables._column(lib.tid, column["id"])["removed_at"] is None
+    assert state(lib) == history
+    assert lib.conn.execute("SELECT COUNT(*) FROM events WHERE type = 'column_restored'").fetchone()[0] == events + 1
+    assert graph_has_cycle(lib, {})
+
+
+def test_restore_refuses_reactivated_cycle_despite_unrelated_preexisting_cycle(lib):
+    lib.tables.add_development_columns(lib.rid, lib.tid, lib.tables._table(lib.rid, lib.tid)["version"], None)
+    preexisting_human_cycle(lib, "c", "d", "z")
+    column, accepted = restore_scenario(lib)
+    stale = stale_link_revisions(lib.store, lib.tid)
+    human(lib, "b", "a", stale_revisions=stale)
+    assert graph_has_cycle(lib, stale)
+    before = restore_state(lib)
+
+    with pytest.raises(InvalidTableInput, match="re-activate.*cycle.*remove or edit"):
+        lib.tables.restore_column(lib.rid, lib.tid, column["id"], column["version"] + 1)
+
+    assert restore_state(lib) == before
+    assert stale_link_revisions(lib.store, lib.tid) == stale
+    assert lib.lineage.link_by_id(accepted["link_id"])["current_revision_id"] == accepted["revision_id"]
+    remove(lib, "b", "a")
+    lib.tables.restore_column(lib.rid, lib.tid, column["id"], column["version"] + 1)
+    assert lib.tables._column(lib.tid, column["id"])["removed_at"] is None
+    assert graph_has_cycle(lib, {})
+
+
+@pytest.mark.parametrize("three_nodes", [False, True], ids=["two-node-cycle", "three-node-cycle"])
+def test_restore_refuses_reactivated_cycle_and_preserves_every_record(lib, three_nodes):
+    column, accepted = restore_scenario(lib)
+    stale = stale_link_revisions(lib.store, lib.tid)
+    if three_nodes:
+        human(lib, "b", "c", stale_revisions=stale)
+        human(lib, "c", "a", stale_revisions=stale)
+        closing = ("c", "a")
+    else:
+        human(lib, "b", "a", stale_revisions=stale)
+        closing = ("b", "a")
+    before = restore_state(lib)
+    with pytest.raises(InvalidTableInput, match="re-activate.*cycle.*remove or edit"):
+        lib.tables.restore_column(lib.rid, lib.tid, column["id"], column["version"] + 1)
+    assert restore_state(lib) == before  # Includes column version, table timestamp, events and lineage history.
+    assert next(c for c in lib.tables._columns(lib.tid, include_removed=True)
+                if c["id"] == column["id"])["removed_at"] is not None
+    assert lib.lineage.link_by_id(accepted["link_id"])["current_revision_id"] == accepted["revision_id"]
+    assert lib.lineage.revisions(accepted["link_id"])[0]["disposition"] == "accepted"
+    assert not graph_has_cycle(lib, stale_link_revisions(lib.store, lib.tid))
+    remove(lib, *closing)
+    lib.tables.restore_column(lib.rid, lib.tid, column["id"], column["version"] + 1)
+    assert lib.tables._column(lib.tid, column["id"])["removed_at"] is None
+    assert stale_link_revisions(lib.store, lib.tid) == {}
+    assert not graph_has_cycle(lib, {})
+
+
+@pytest.mark.parametrize("case", ["path", "diamond", "ordinary", "independent_parallel", "non_live",
+                                   "scope_changed", "evidence_not_current"])
+def test_restore_succeeds_when_filtered_graph_has_no_cycle(lib, case, monkeypatch):
+    if case == "evidence_not_current":
+        from test_lineage_plan import attach
+        asset = attach(lib, lib.ids["b"], TEXT)
+        lib.passages["b"] = next(p["id"] for p in lib.store.passages_for(lib.ids["b"]) if p["asset_id"] == asset)
+    column, accepted = restore_scenario(lib, ordinary=case == "ordinary")
+    stale = stale_link_revisions(lib.store, lib.tid)
+    if case == "diamond":
+        for a, b in (("a", "c"), ("b", "d"), ("c", "d")):
+            human(lib, a, b, stale_revisions=stale)
+    elif case in ("path", "ordinary"):
+        human(lib, "b", "c", stale_revisions=stale)
+    else:
+        human(lib, "b", "a", stale_revisions=stale,
+              **({"relation": "independent_parallel", "support_type": "source_stated"}
+                 if case == "independent_parallel" else {}))
+        if case == "non_live":
+            lib.store.set_user_selection(lib.rid, lib.ids["a"], "excluded", 1, "SYNTHETIC exclusion")
+        elif case == "scope_changed":
+            lib.store.revise_scope(lib.rid, lib.store.research(lib.rid)["version"], "SYNTHETIC changed question?", None)
+        elif case == "evidence_not_current":
+            lib.store.remove_asset(lib.rid, lib.ids["b"], asset)
+    if case == "ordinary":
+        def unexpected_check(*args):
+            raise AssertionError("An ordinary column must skip the graph check")
+        monkeypatch.setattr(LineageStore, "reactivation_closes_cycle", unexpected_check)
+    history = state(lib)
+    events = lib.conn.execute("SELECT COUNT(*) FROM events WHERE type = 'column_restored'").fetchone()[0]
+    lib.tables.restore_column(lib.rid, lib.tid, column["id"], column["version"] + 1)
+    assert lib.tables._column(lib.tid, column["id"])["removed_at"] is None
+    assert state(lib) == history
+    assert lib.conn.execute("SELECT COUNT(*) FROM events WHERE type = 'column_restored'").fetchone()[0] == events + 1
+    reasons = stale_link_reasons(lib.store, lib.tid)
+    if case in ("scope_changed", "evidence_not_current"):
+        assert reasons[accepted["link_id"]] == (accepted["revision_id"], (case,))
+    else:
+        assert accepted["link_id"] not in reasons
+    if case != "ordinary":
+        assert not graph_has_cycle(lib, stale_link_revisions(lib.store, lib.tid))
 
 
 @pytest.mark.parametrize("kind", ["excluded", "removed_row", "removed_corpus"])

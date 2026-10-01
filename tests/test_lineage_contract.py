@@ -16,6 +16,7 @@ from deixis.storage import db
 from deixis.storage.db import transaction
 from deixis.workflow.flow import FlowDeps, HANDLE_TASKS, ResearchFlow, step_model
 from deixis.workflow.store import Store
+from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
 from fakes import FakeAdapter, parse_step_input, valid_response
 from test_contracts import CASES, STEP_INPUTS
 
@@ -303,6 +304,32 @@ def test_link_fields_and_evidence_count():
     draft['decisions'][0]['evidence'].append({'passage_id': si['passages'][0]['passage_id'],
                                            'quote': 'SYNTHETIC unique evidence sentence 5.'})
     assert 'schema_invalid' in verdict(si, draft).codes()
+
+
+@pytest.mark.parametrize('value', ['   ', '\t', '\n'])
+def test_whitespace_what_changed_has_actionable_validation_issue(value):
+    si, draft = fixture(), output()
+    draft['decisions'][0]['what_changed'] = value
+    report = verdict(si, draft)
+    assert not report.ok
+    issue = next(i for i in report.issues if i.code == 'what_changed_empty')
+    assert issue.path == '/decisions/0/what_changed'
+    assert 'non-whitespace' in issue.message
+
+
+@pytest.mark.parametrize('value,expected', [
+    (None, False), ('', False), ('   ', False), ('\t', False), ('\n', False),
+    ('x', True), ('x' * 500, True), ('x' * 501, False), ('x' * 500 + ' ', False), (42, False),
+])
+def test_l3_and_l4_agree_on_raw_what_changed_values(value, expected):
+    si, draft = fixture(), output()
+    draft['decisions'][0]['what_changed'] = value
+    assert verdict(si, draft).ok == expected
+    if expected:
+        LineageStore._shape(draft['decisions'][0])
+    else:
+        with pytest.raises(InvalidLineageInput):
+            LineageStore._shape(draft['decisions'][0])
 
 
 @pytest.mark.parametrize('decision', ['no_relation', 'insufficient_evidence'])

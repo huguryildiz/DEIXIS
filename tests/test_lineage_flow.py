@@ -178,6 +178,32 @@ def test_invalid_draft_after_one_repair_keeps_raw_output_and_makes_no_revision(l
     assert len(record["failed_pairs"]) == 1
 
 
+def test_whitespace_explanation_is_repaired_before_both_decisions_publish(factory):
+    lib = factory(mentions=(0, 2))
+
+    def respond(si):
+        answer = json.loads(all_links(si))
+        assert len(answer["decisions"]) == 2
+        if len(lib.adapter.calls) == 1:
+            answer["decisions"][0]["what_changed"] = "   "
+        return json.dumps(answer)
+
+    lib.adapter.responder = respond
+    run = queue(lib)
+    result = execute(lib, run)
+    assert result["status"] == "completed" and result["pause_reason"] != "lineage_publication_failed"
+    assert len(lib.adapter.calls) == 2
+    sessions = lib.conn.execute("SELECT validation_json, step_input_id FROM model_sessions ORDER BY rowid").fetchall()
+    assert "what_changed_empty" in sessions[0]["validation_json"]
+    repair = lib.conn.execute("SELECT user_message FROM step_inputs WHERE id = ?", (sessions[1]["step_input_id"],)).fetchone()[0]
+    assert "non-whitespace" in repair
+    links = lib.lineage.active_links(lib.tid)
+    assert len(links) == len(revisions(lib)) == 2
+    assert all(lib.lineage._current(link)["what_changed"] == "SYNTHETIC change" for link in links)
+    assert publication(lib, run)["counts"]["accepted"] == 2
+    assert publication(lib, run)["step_failed"] == []
+
+
 def test_nine_candidates_are_two_calls(factory):
     lib = factory(n=12, mentions=tuple(i for i in range(10) if i != 1), only_target=True)
     run = queue(lib)

@@ -469,7 +469,20 @@ class TableStore:
                 (table_id, column["lineage_role"], column_id),
             ).fetchone():
                 raise InvalidTableInput(f"Another active column already holds the {column['lineage_role']} role")
+            if column["lineage_role"] is not None:
+                from deixis.workflow.lineage.run import stale_link_revisions
+                from deixis.workflow.lineage.store import LineageStore
+
+                before_stale = stale_link_revisions(self.store, table_id)
             self.conn.execute("UPDATE table_columns SET removed_at = NULL, version = version + 1 WHERE id = ?", (column_id,))
+            if column["lineage_role"] is not None:
+                after_stale = stale_link_revisions(self.store, table_id)
+                # An outer transaction's caller owns rollback if it catches this refusal.
+                if LineageStore(self.store).reactivation_closes_cycle(table_id, before_stale, after_stale):
+                    raise InvalidTableInput(
+                        "Restoring this column would re-activate a development link that closes a cycle"
+                        " with another active link; remove or edit that link first"
+                    )
             self._touch(table_id)
             self.store._event(research_id, "column_restored", {"table_id": table_id, "column_id": column_id})
 

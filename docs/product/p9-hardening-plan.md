@@ -460,6 +460,8 @@ dondurulan değere eşit olduğu, kit hash'lerinin eşit olduğu, izole veri diz
 
 **Göstermez.** Sağlayıcı tarafındaki tamamlanma ve fatura; başka model/kota.
 
+P6 dilim 2'den devreden (D142): bağımsız gelişim çizgisi (lineage) ölçümü, P9 başında ayrı bir L9 işi olarak planlanır (H9 yalnız raporu kapsar); ve D141'in keşif bulgusu (varsayılan akış NLP sorusunda 99 işten 1'ini dahil etti, 69'u beklemede) ayrı bir ürün bulgusu olarak P9'da incelenir, bulundu / beklemede / bulunamadı ayrı sayılarak.
+
 ## 6. Sıra, bağımlılık, boyut
 
 | Batch | Bağlı olduğu | Boyut | Model |

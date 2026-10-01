@@ -535,8 +535,9 @@ def test_pair_decisions_list_every_pair_with_its_version(lib):
     lib.lineage.ensure_link(lib.tid, lib.ids["g"], lib.ids["h"])
     value = read(lib)
     assert len(value["pair_decisions"]) == 4
-    assert [p["version"] for p in value["pair_decisions"]] == [1, 1, 0, 0]
-    assert [p["decision"] for p in value["pair_decisions"]] == ["no_relation", "insufficient_evidence", None, None]
+    # Pair order follows generated ids, so compare (version, decision) pairs without order.
+    got = sorted(((p["version"], p["decision"] or "") for p in value["pair_decisions"]), reverse=True)
+    assert got == [(1, "no_relation"), (1, "insufficient_evidence"), (0, ""), (0, "")]
 
 
 def test_extraction_change_marks_a_link_stale_and_a_refreshed_revision_is_not_excluded_by_an_old_stale_map(lib):

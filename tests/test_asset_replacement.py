@@ -95,7 +95,8 @@ def test_replace_reextract_and_impact_api(tmp_path):
         base = f"/api/researches/{rid}/sources/{svid}/assets"
 
         impact = client.get(f"{base}/{aid}/impact").json()
-        assert impact == {"asset_id": aid, "researches": [{"id": rid, "title": impact["researches"][0]["title"]}], "cells": 0, "quotes": 0}
+        assert impact == {"asset_id": aid, "researches": [{"id": rid, "title": impact["researches"][0]["title"]}],
+                          "cells": 0, "quotes": 0, "lineage_links": 0}
 
         same = client.put(f"{base}/{aid}", files={"file": ("a.pdf", make_pdf(["SYNTHETIC molecule notes"]), "application/pdf")})
         assert same.status_code == 422

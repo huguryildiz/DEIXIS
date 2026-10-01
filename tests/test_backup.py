@@ -15,6 +15,35 @@ from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
 
 
+def test_backup_and_restore_keep_lineage_revisions_evidence_and_human_removals_identical(tmp_path):
+    from deixis.storage import db
+    from test_lineage_store import make_library, model, edit, remove, human, state
+
+    settings = Settings(data_dir=tmp_path / "lineage-data")
+    lib = make_library(settings.db_path)
+    try:
+        model(lib)
+        edit(lib)
+        remove(lib)
+        human(lib, "c", "d")
+        model(lib, "z", "d", decision={"decision": "no_relation", "relation": None, "what_changed": None,
+                                       "support_type": None, "evidence": [], "note": "SYNTHETIC negative decision"})
+        before = state(lib)
+        backup = create_backup(settings, tmp_path / "lineage-backups")
+        restored = Settings(data_dir=tmp_path / "lineage-restored")
+        restore_backup(backup, restored)
+        conn = db.connect(restored.db_path)
+        try:
+            db.migrate(conn)
+            from types import SimpleNamespace
+            assert state(SimpleNamespace(conn=conn)) == before
+            assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        finally:
+            conn.close()
+    finally:
+        lib.conn.close()
+
+
 def build_library(tmp_path):
     with TestClient(app_for(tmp_path)) as client:
         session(client)

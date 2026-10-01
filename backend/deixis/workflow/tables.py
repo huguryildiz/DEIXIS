@@ -255,7 +255,7 @@ class TableStore:
         with transaction(self.conn):
             check_expected_version(expected_version, self._table(research_id, table_id)["version"])
             if self.conn.execute(
-                "SELECT 1 FROM runs WHERE kind IN ('table_fill', 'cell_recheck', 'table_columns') AND json_extract(target_json, '$.table_id') = ?"
+                "SELECT 1 FROM runs WHERE kind IN ('table_fill', 'cell_recheck', 'table_columns', 'lineage_links') AND json_extract(target_json, '$.table_id') = ?"
                 f" AND status IN ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1", (table_id, *ACTIVE_RUN_STATUSES)
             ).fetchone():
                 raise RevisionConflict("Cancel or finish the run working on this table before moving it to the trash")
@@ -309,6 +309,12 @@ class TableStore:
                                        (table_id,)).fetchone()[0],
             "human_edits": self.conn.execute(f"SELECT COUNT(*) FROM cell_revisions WHERE cell_id IN ({cells})"
                                              " AND kind IN ('human_edit', 'accept_proposal')", (table_id,)).fetchone()[0],
+            "lineage_links": self.conn.execute(
+                "SELECT COUNT(*) FROM lineage_links l JOIN lineage_link_revisions r ON r.id = l.current_revision_id"
+                " WHERE l.table_id = ? AND r.disposition = 'accepted' AND r.decision = 'link'", (table_id,)).fetchone()[0],
+            "lineage_human_edits": self.conn.execute(
+                "SELECT COUNT(*) FROM lineage_link_revisions r JOIN lineage_links l ON l.id = r.link_id"
+                " WHERE l.table_id = ? AND r.author = 'human'", (table_id,)).fetchone()[0],
         }
 
     def add_rows(self, research_id: str, table_id: str, svids: list[str], expected_version: int) -> None:
@@ -974,6 +980,12 @@ def purge_tables(conn: Any, research_id: str) -> None:
 
 def _delete_tables(conn: Any, tables: str, params: tuple[Any, ...]) -> None:
     """Delete the selected tables and everything they hold; the caller holds a research or table purge authorization."""
+    links = f"SELECT id FROM lineage_links WHERE table_id IN ({tables})"
+    conn.execute(f"UPDATE lineage_links SET current_revision_id = NULL WHERE table_id IN ({tables})", params)
+    conn.execute(f"DELETE FROM lineage_link_evidence WHERE link_revision_id IN"
+                 f" (SELECT id FROM lineage_link_revisions WHERE link_id IN ({links}))", params)
+    conn.execute(f"DELETE FROM lineage_link_revisions WHERE link_id IN ({links})", params)
+    conn.execute(f"DELETE FROM lineage_links WHERE table_id IN ({tables})", params)
     cells = f"SELECT id FROM evidence_cells WHERE table_id IN ({tables})"
     conn.execute(f"UPDATE evidence_cells SET current_revision_id = NULL WHERE table_id IN ({tables})", params)
     conn.execute(f"DELETE FROM cell_evidence_links WHERE cell_revision_id IN (SELECT id FROM cell_revisions WHERE cell_id IN ({cells}))",

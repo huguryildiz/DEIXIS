@@ -2,6 +2,7 @@
 
 import shutil
 import sqlite3
+import re
 
 import pytest
 
@@ -19,6 +20,71 @@ REPORT_TABLES = {
 PRE_SECTION_II_IDS = ("I", "III", "IV", "V", "VI", "VII", "VIII", "IX", "abstract", "index_terms")
 # Every run kind the database held before the full-text retrieval run was added (slice 10, migration 0045).
 PRE_FULLTEXT_KINDS = (*PRE_REPORT_KINDS, "report")
+
+
+@pytest.mark.parametrize("populated", [True, False], ids=["all_old_run_kinds_and_dependents", "empty_pre_P6_copy"])
+def test_the_lineage_migration_keeps_every_run_and_every_row_that_points_at_one(tmp_path, monkeypatch, populated):
+    real = db.MIGRATIONS_DIR
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    for path in real.glob("*.sql"):
+        if int(path.name.split("_", 1)[0]) <= 58:
+            shutil.copy(path, migrations / path.name)
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    old_sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'runs'").fetchone()[0]
+    kinds = re.findall(r"'([^']+)'", re.search(r"kind IN \(([^)]+)\)", old_sql).group(1))
+    dependent_tables = ("run_steps", "cell_revisions", "chain_links")
+    if populated:
+        conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_test', 'SYNTHETIC', 'now', 'now')")
+        statuses = ("queued", "running", "pause_requested", "paused", "completed", "failed", "cancelled")
+        for n, kind in enumerate(kinds):
+            conn.execute(
+                "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, pause_reason, error_json, budget_json,"
+                " usage_json, idempotency_key, target_json, version, created_at, updated_at)"
+                " VALUES (?, 'res_test', ?, ?, ?, 'synthesis', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (f"run_{kind}", n + 1, kind, statuses[n % len(statuses)], f"pause-{n}", '{"SYNTHETIC_error": 1}',
+                 '{"limit": 7}', '{"input_tokens": 19}', f"SYNTHETIC-key-{n}", '{"table_id":"tbl_test","extra":42}', n + 5,
+                 f"created-{n}", f"updated-{n}"),
+            )
+        conn.execute("INSERT INTO works (id, created_at) VALUES ('wrk_test', 'now')")
+        conn.execute("INSERT INTO source_versions (id, work_id, title, origin, created_at) VALUES ('srv_test', 'wrk_test', 'SYNTHETIC', 'provider', 'now')")
+        conn.execute("INSERT INTO evidence_tables (id, research_id, title, created_at, updated_at) VALUES ('tbl_test', 'res_test', 'SYNTHETIC', 'now', 'now')")
+        conn.execute("INSERT INTO table_columns (id, table_id, position, origin, created_at) VALUES ('col_test', 'tbl_test', 0, 'user', 'now')")
+        conn.execute("INSERT INTO evidence_cells (id, table_id, column_id, source_version_id, created_at, updated_at) VALUES ('cel_test', 'tbl_test', 'col_test', 'srv_test', 'now', 'now')")
+        conn.execute("INSERT INTO run_steps (id, run_id, operation_key, kind, status, started_at) VALUES ('stp_test', 'run_answer', 'SYNTHETIC', 'SYNTHETIC', 'running', 'now')")
+        conn.execute("INSERT INTO cell_revisions (id, cell_id, kind, author, column_revision, state, run_id, created_at) VALUES ('crv_test', 'cel_test', 'human_edit', 'human', 1, 'unknown', 'run_answer', 'now')")
+        conn.execute("INSERT INTO chain_links (research_id, scope_revision, run_id, seed_source_version_id, linked_openalex_id, direction, passed_filter) VALUES ('res_test', 1, 'run_discovery', 'srv_test', 'W_SYNTHETIC', 'backward', 0)")
+    before = {t: [dict(r) for r in conn.execute(f"SELECT * FROM {t} ORDER BY rowid")] for t in ("runs", *dependent_tables)}
+    shutil.copy(real / "0059_lineage_links.sql", migrations / "0059_lineage_links.sql")
+    assert db.migrate(conn) == [59]
+    assert {t: [dict(r) for r in conn.execute(f"SELECT * FROM {t} ORDER BY rowid")] for t in before} == before
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    assert conn.execute("SELECT sql FROM sqlite_master WHERE name = 'runs_status'").fetchone()[0] == "CREATE INDEX runs_status ON runs(status, created_at)"
+    if not populated:
+        conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_test', 'SYNTHETIC', 'now', 'now')")
+    conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
+                 " VALUES ('run_lineage', 'res_test', 1, 'lineage_links', 'queued', 'synthesis', '{}', 'now', 'now')")
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
+        conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
+                     " VALUES ('run_unknown', 'res_test', 1, 'invented', 'queued', 'synthesis', '{}', 'now', 'now')")
+    conn.close()
+
+
+def test_lineage_vocabularies_equal_the_real_sql_check_lists(tmp_path):
+    from deixis.workflow.lineage.store import RELATIONS, SUPPORT_TYPES, DECISIONS, REVISION_KINDS, REJECTION_CODES
+
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'lineage_link_revisions'").fetchone()[0]
+    for column, values in (("relation", RELATIONS), ("support_type", SUPPORT_TYPES), ("decision", DECISIONS), ("kind", REVISION_KINDS)):
+        check = re.search(rf"CHECK \({column} IN \(([^)]+)\)\)", sql).group(1)
+        assert tuple(re.findall(r"'([^']+)'", check)) == values
+    assert REJECTION_CODES == ("cycle", "anchor_not_found", "same_work", "endpoint_not_included", "superseded_by_human", "stale_input")
+    assert "CHECK (rejection_code IN" not in sql
+    conn.close()
 
 
 def test_migration_adds_role_column_and_partial_unique_index(tmp_path, monkeypatch):
@@ -417,7 +483,7 @@ def test_the_europepmc_migration_keeps_every_pdf_lookup_row_and_accepts_the_new_
         store.record_pdf_discovery(rid, svid, "europepmc", "10.1/x", Lookup("zero_results", [], 200))
 
     monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
-    assert db.migrate(conn) == [55, 56, 57, 58]
+    assert db.migrate(conn) == [55, 56, 57, 58, 59]
     after = {table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")]
              for table in ("pdf_discovery_runs", "pdf_candidates")}
     assert after == before  # every row and column value kept, other_title_count included

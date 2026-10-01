@@ -200,7 +200,8 @@ def test_table_template_and_column_trash_api(tmp_path):
 
         client.delete(base, params={"expected_version": back.json()["table"]["version"]})
         purged = client.delete(f"/api/trash/tables/{tid}")
-        assert purged.status_code == 200 and purged.json() == {"deleted": True, "cells": 1, "human_edits": 1}
+        assert purged.status_code == 200 and purged.json() == {"deleted": True, "cells": 1, "human_edits": 1,
+                                                            "lineage_links": 0, "lineage_human_edits": 0}
         assert client.get("/api/trash").json()["tables"] == []
 
         other = table_with_edit(client, rid)

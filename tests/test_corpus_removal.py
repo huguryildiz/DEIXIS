@@ -20,6 +20,30 @@ from test_source_versions import library_at
 from test_table_extraction import cell, execute, fill, library
 
 
+def test_source_cited_only_by_lineage_cannot_be_purged_until_its_table_is_purged(tmp_path):
+    from test_lineage_store import make_library, model, remove
+
+    lib = make_library(tmp_path / "lineage.sqlite")
+    try:
+        model(lib)
+        remove(lib)
+        lib.conn.execute("DELETE FROM table_rows")
+        assert not lib.conn.execute("SELECT * FROM evidence_links").fetchall()
+        assert not lib.conn.execute("SELECT * FROM cell_evidence_links").fetchall()
+        source = lib.ids["b"]
+        lib.store.remove_sources(lib.rid, [source], "SYNTHETIC removal")
+        with pytest.raises(RevisionConflict, match="Evidence still cites"):
+            lib.store.purge_sources(lib.rid, [source])
+        assert lib.store.was_member(lib.rid, source)
+        lib.tables.trash_table(lib.rid, lib.tid, lib.tables._table(lib.rid, lib.tid)["version"])
+        lib.tables.purge_table(lib.tid)
+        assert lib.store.purge_sources(lib.rid, [source])[0] == [source]
+        assert not lib.store.was_member(lib.rid, source)
+        assert lib.conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        lib.conn.close()
+
+
 def mark_removed(store, rid, *svids):
     """Step 1 writes the removal directly; Store.remove_sources comes in step 2."""
     with db.transaction(store.conn):

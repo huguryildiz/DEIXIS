@@ -1588,8 +1588,11 @@ class Store:
             " JOIN passages p ON p.id = l.passage_id WHERE an.research_id = ? AND p.asset_id = ?"
             " UNION ALL SELECT 1 FROM cell_evidence_links l JOIN cell_revisions r ON r.id = l.cell_revision_id"
             " JOIN evidence_cells ce ON ce.id = r.cell_id JOIN evidence_tables t ON t.id = ce.table_id"
-            " JOIN passages p ON p.id = l.passage_id WHERE t.research_id = ? AND p.asset_id = ? LIMIT 1",
-            (research_id, asset_id, research_id, asset_id),
+            " JOIN passages p ON p.id = l.passage_id WHERE t.research_id = ? AND p.asset_id = ?"
+            " UNION ALL SELECT 1 FROM lineage_link_evidence e JOIN lineage_link_revisions r ON r.id = e.link_revision_id"
+            " JOIN lineage_links l ON l.id = r.link_id JOIN evidence_tables t ON t.id = l.table_id"
+            " JOIN passages p ON p.id = e.passage_id WHERE t.research_id = ? AND p.asset_id = ? LIMIT 1",
+            (research_id, asset_id, research_id, asset_id, research_id, asset_id),
         ).fetchone() is not None
 
     def asset_impact(self, asset_id: str) -> dict[str, Any]:
@@ -1606,7 +1609,12 @@ class Store:
         quotes = self.conn.execute(
             "SELECT COUNT(*) FROM evidence_links l JOIN passages p ON p.id = l.passage_id WHERE p.asset_id = ?", (asset_id,)
         ).fetchone()[0]
-        return {"asset_id": asset_id, "researches": researches, "cells": cells, "quotes": quotes}
+        lineage_links = self.conn.execute(
+            "SELECT COUNT(DISTINCT r.link_id) FROM lineage_link_evidence e"
+            " JOIN lineage_link_revisions r ON r.id = e.link_revision_id JOIN passages p ON p.id = e.passage_id"
+            " WHERE p.asset_id = ?", (asset_id,),
+        ).fetchone()[0]
+        return {"asset_id": asset_id, "researches": researches, "cells": cells, "quotes": quotes, "lineage_links": lineage_links}
 
     def remove_asset(self, research_id: str, svid: str, asset_id: str) -> None:
         """Withdraw an attachment from future use while retaining its immutable audit evidence."""
@@ -2286,8 +2294,11 @@ class Store:
             f"SELECT source_version_id FROM evidence_links WHERE source_version_id IN ({marks})"
             f" UNION SELECT source_version_id FROM table_rows WHERE source_version_id IN ({marks})"
             f" UNION SELECT source_version_id FROM evidence_cells WHERE source_version_id IN ({marks})"
-            f" UNION SELECT source_version_id FROM report_citation_links WHERE source_version_id IN ({marks})",
-            (*svids, *svids, *svids, *svids),
+            f" UNION SELECT source_version_id FROM report_citation_links WHERE source_version_id IN ({marks})"
+            f" UNION SELECT from_source_version_id FROM lineage_links WHERE from_source_version_id IN ({marks})"
+            f" UNION SELECT to_source_version_id FROM lineage_links WHERE to_source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM lineage_link_evidence WHERE source_version_id IN ({marks})",
+            (*svids, *svids, *svids, *svids, *svids, *svids, *svids),
         ).fetchall()
         return {row[0] for row in rows}
 

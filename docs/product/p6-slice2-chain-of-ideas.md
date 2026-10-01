@@ -551,7 +551,7 @@ L1–L4'ün bağımsızlığı yalnız aşağıdaki arayüz sınırlarıyla geç
 **Çıkış.** Modelsiz sözleşme testleri geçer; yeni görev tutamaklarla sahte adaptörden uçtan uca doğrulanır; `skill_package_hash` hareketi kayıtlı (eski hash → yeni hash); sıra kuralı kontrol edildi.
 **Göstermez.** Gerçek modelin sözleşmeye uyduğunu ya da tutamakların hata sıklığını düşürdüğünü; bağların doğruluğunu.
 
-### L4 — Kalıcı depolama (M)
+### L4 — Kalıcı depolama (M) ✅ commit: bu satırı ekleyen commit
 
 **Kapsam.** Migration: `lineage_links`, `lineage_link_revisions`, `lineage_link_evidence`, tetikleyiciler, `runs.kind` CHECK genişlemesi (`lineage_links`; `runs` yeniden kurulur, `deixis:foreign-keys-off`); `LineageStore`: model önerisi uygulama (sabit sıra, atomik, yönlü döngü ve diğer kurallar, reddedilen öneri kaydı), insan ekleme/düzenleme/kaldırma revizyonları (`expected_version`, `based_on_revision_id`), insan kararlı çiftlerin aday dışı bırakılması; yaşam döngüsü bağları (§5): `_delete_tables` (işaretçileri NULL yapıp kanıt → revizyon → çift sırasıyla siler; tetikleyiciler araştırma ve tablo silme yetkisini tanır), `Store.cited_source_versions`, `research_cites_asset`, `asset_impact`, `table_impact` ve `trash_table`'ın etkin lineage koşusunu reddetmesi.
 **Dosyalar.** `storage/migrations/00NN_lineage_links.sql`, `workflow/lineage/store.py`, `workflow/tables.py`, `workflow/store.py`, `tests/test_lineage_store.py`, `tests/test_migrations.py`, `tests/test_backup.py`, `tests/test_corpus_removal.py`.

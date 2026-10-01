@@ -55,7 +55,7 @@ Makale doğrudan PDF olarak okunmadı; PDF içeriği ikili/sıkıştırılmış 
 - Bir bağ hiçbir zaman yalnız kronolojiden ya da yalnız bir atıf kenarından **türetilmez**. Her bağ, sonraki çalışmanın pasajında yerleştirilmiş bir alıntıya dayanır; destek türü `source_stated` ya da açıkça `analyst_inference`'tır.
 - Rakip dallar ve çapraz bağlar korunur; tek zorlanmış çizgi yanlıştır. Görünüm bir grafiği sessizce ağaca çeviremez: iki dalın aynı düğümde birleşmesi gösterilir.
 - Zincir ve aday sayısı soruya, kapsama ve bütçeye göre ölçeklenir; CoI-Agent'ın sabit uzunluğu ve ikili novelty çıktısı devralınmaz.
-- Bir işin ön baskısı ve yayımlanmış hâli görünümde tek düğüm olarak **gruplanabilir**; ama bağın kanıtı sürüm düzeyindedir (hangi sürümün hangi pasajı, hangi hücre revizyonu). Baş sürüm değişirse bağ yeniden değerlendirme ya da `stale` işareti alır, sessizce yeni başa taşınmaz.
+- Bir işin ön baskısı ve yayımlanmış hâli görünümde tek düğüm olarak **gruplanabilir**; ama bağın kanıtı sürüm düzeyindedir (hangi sürümün hangi pasajı, hangi hücre revizyonu). Baş sürüm değişirse bağ yeniden değerlendirme ya da `stale` işareti alır, sessizce yeni başa taşınmaz. **L6 notu (D136):** karar anındaki baş sürüm saklanmadığı için migration olmadan "karardan sonra baş değişti" ayırt edilemez; L6 bunu yalnız `not_head_ends` gösterim bayrağıyla işaretler, `stale` saymaz. Bu, bu maddenin bilinçli gevşetilmesidir.
 - Okuma derinliği görünür kalır; bir özet, "yöntemde ne değişti" gibi ayrıntılı bir hücreyi destekleyemez. "PDF metni saklı" ile "tam metin incelendi" birleştirilmez.
 - Tek ana ajan; model araçsız çalışır; eşzamanlı model çağrıları ayrı bir ajan mimarisi değildir.
 - Farklı deney koşullarında ters sonuçlar hizalanmadan çelişki sayılmaz (T11): `corrects_or_contradicts`, `what_changed` alanında koşul farkını açıkça yazar.
@@ -439,7 +439,7 @@ Vakalar geliştirme korpusunda koşulur; sonuçları L9 ölçümü sayılmaz (§
 
 **Web.** `npm run build`, `npm run lint`; Playwright (fixture sunucusu, senaryolu model): "Add development columns"; iki-üç düğümlü sentetik çizgi; bağa tıklayınca `PassageSheet` doğru sayfada; yerleştirilemeyen ve kabul edilmeyen listeleri görünür; insan kaldırma/ekleme kalıcı; masaüstü ve 390 px, açık/koyu, klavye.
 
-**Test–batch eşlemesi.** Her batch'in ilgili §12 testleri kendi çıkış koşuludur (L7'de `prefers-reduced-motion` doğrulaması dahil). T11'in sözleşme bölümü L3'te, `no_relation` çıktısının bağ yayımlamadığı entegrasyon L5b'de sınanır; L6'nın "model koşusu insan kararını ezmez" testi L5b'ye bağlıdır ve L5b'den sonra kapanır. L4 testleri ayrıca kabul edilmiş model taslağının kendiliğinden güncel yapılmamasını, kanıtsız aktif bağın reddini ve altı yaşam döngüsü noktasını ayrı ayrı kapsar. Aday bulma testleri uzun ve tireli soyadı, aksan, token içi yanlış eşleşme ve stopword içeren başlık vakalarını içerir.
+**Test–batch eşlemesi.** Her batch'in ilgili §12 testleri kendi çıkış koşuludur (L7'de `prefers-reduced-motion` doğrulaması dahil). T11'in sözleşme bölümü L3'te, `no_relation` çıktısının bağ yayımlamadığı entegrasyon L5b'de sınanır; L6'nın "model koşusu insan kararını ezmez" testi L5b'ye bağlıdır ve L5b'den sonra kapanır. (L6'da kapandı: `tests/test_lineage_api.py::test_a_model_run_does_not_overwrite_a_human_decision`.) L4 testleri ayrıca kabul edilmiş model taslağının kendiliğinden güncel yapılmamasını, kanıtsız aktif bağın reddini ve altı yaşam döngüsü noktasını ayrı ayrı kapsar. Aday bulma testleri uzun ve tireli soyadı, aksan, token içi yanlış eşleşme ve stopword içeren başlık vakalarını içerir.
 
 **Bu dilimde geçmeyecekler:** rapor entegrasyonu (2c); ileri denetim ve genişleme (2b); kill-search (dilim 3); LaTeX (dilim 5).
 
@@ -567,7 +567,7 @@ L1–L4'ün bağımsızlığı yalnız aşağıdaki arayüz sınırlarıyla geç
 **Çıkış.** L5a: önizleme ile koşu planı aynı parmak izini taşır, ikinci koşu ilk 25 işi tekrar seçmez. L5b: sahte adaptörle bir koşu adayları bulur, çağırır, uygular; duraklatma/iptal/devam ve yeniden başlatma idempotent; reddedilen öneriler kayıtlı; bütçe aşımı sessizce "ilişki yok" üretmez.
 **Göstermez.** Gerçek sağlayıcı paralelliğini ya da süreyi; gerçek model kalitesini.
 
-### L6 — Montaj ve insan düzenleme API'si (M)
+### L6 — Montaj ve insan düzenleme API'si (M) ✅ commit: bu satırı ekleyen commit
 
 **Kapsam.** `workflow/lineage/assembly.py` (güncel bağlardan zayıf bağlı bileşen, kök/dallanma/birleşme, §4.5'teki yerleştirilemeyen iş nedenleri, stale işaretleri ve stale/kapsam dışı geçmiş bağların ayrı listesi, `independent_parallel` ayrı), görünüm modeli `GET .../lineage` (çizgiler, çapraz ilişkiler, yerleştirilemeyenler, kabul edilmeyenler, `unassessed_edge`, `not_sent_budget`, sütun/dolgu durumu) ve `GET .../lineage/baseline`; `POST/PUT/DELETE .../lineage/links` (CSRF, `expected_version`, insan eklemesinde sonraki işin pasajı + yerleştirilmiş alıntı).
 **Dosyalar.** `workflow/lineage/assembly.py`, `workflow/views.py` ya da `workflow/lineage/view.py`, `api/app.py`, `apps/web/src/api.ts` (tipler), `tests/test_lineage_assembly.py`, `tests/test_lineage_api.py`.

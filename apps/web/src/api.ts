@@ -4,6 +4,95 @@ export type RunStatus = 'queued' | 'running' | 'pause_requested' | 'paused' | 'c
 export type SourceScope = 'academic' | 'attached' | 'attached_and_academic'
 export type Effort = 'quick' | 'standard' | 'detailed'
 
+export type LineageRelation = 'extends' | 'relaxes_assumption' | 'changes_method' | 'new_domain_or_condition'
+  | 'corrects_or_contradicts' | 'independent_parallel'
+export type LineageSupport = 'source_stated' | 'analyst_inference'
+export type LineageDecision = 'link' | 'no_relation' | 'insufficient_evidence' | 'removed'
+export type LineageEdgeState = 'present' | 'absent_in_read_list' | 'unresolved' | 'not_read'
+export type LineageReason = 'not_run' | 'no_pdf_text' | 'no_candidate' | 'no_relation' | 'insufficient_evidence'
+  | 'rejected' | 'not_sent_budget' | 'step_failed' | 'human_removed' | 'cross_relation_only' | 'stale_only'
+export type LineageStaleReason = 'evidence_not_current' | 'scope_changed' | 'node_changed' | 'passage_changed'
+export type LineageCurrency = { current: boolean | null; stale_reasons: LineageStaleReason[]; unchecked: string[] }
+export type LineageNode = {
+  source_version_id: string; work_id: string; source_key: string | null; title: string; year: number | null
+  version_label: string | null; live: boolean; position: number | null; eligible: boolean | null
+  access_level: 'pdf_available' | 'abstract' | 'metadata' | null
+}
+export type LineagePairDecision = {
+  link_id: string; from: string; to: string; version: number; current_revision_id: string | null
+  decision: LineageDecision | null; author: 'model' | 'human' | null; disposition: 'accepted' | 'rejected' | null
+}
+export type LineageLink = {
+  link_id: string; version: number; revision_id: string; from: string; to: string; relation: LineageRelation
+  what_changed: string; support_type: LineageSupport; author: 'model' | 'human'; human_edited: boolean; note: string | null
+  edge_state: LineageEdgeState | null; unexpected_no_citation_edge: boolean; year_order_warning: boolean
+  not_head_ends: ('from' | 'to')[]; output_status: 'structurally_valid' | 'unverified_draft' | null
+  scope_revision: number | null; run_id: string | null; created_at: string
+  evidence: { passage_id: string; anchor_text: string; anchor_match: 'exact' | 'normalized' | 'fuzzy'
+    physical_page: number | null; printed_label: string | null; kind: string }[]
+  stale_reasons: LineageStaleReason[]
+}
+export type LineageComponent = {
+  id: string // Derived at read time from members, never a persistent identity.
+  members: string[]; links: LineageLink[]
+  adjacency: { source_version_id: string; in_from: string[]; out_to: string[] }[]
+  roots: string[]; branches: string[]; merges: string[]; has_cycle: boolean
+}
+export type LineageStepOutcome = LineageCurrency & {
+  kind: 'failed_pair' | 'unsent_pair' | 'step_failed' | 'skipped'; from: string | null; to: string
+  key: string | null; pair_fp: string | null; reason: string | null
+  run_id: string; scope_revision: number; recorded_at: string
+}
+export type LineageUnplaceableDetail = LineageCurrency & {
+  reason: LineageReason; from: string | null; to: string | null; link_id: string | null; revision_id: string | null
+  run_id: string | null; scope_revision: number | null; recorded_at: string | null
+}
+export type LineageLastRun = { run_id: string; scope_revision: number; recorded_at: string }
+export type LineageUnplaceable = {
+  source_version_id: string; reasons: LineageReason[]; details: LineageUnplaceableDetail[]; last_run: LineageLastRun | null
+}
+export type LineageNotAccepted = {
+  link_id: string; from: string; to: string; revision_id: string; rejection_code: string; decision: LineageDecision
+  relation: LineageRelation | null; what_changed: string | null; support_type: LineageSupport | null; note: string | null
+  run_id: string; created_at: string; superseded: boolean
+  pair_state: { decision: LineageDecision | 'none'; author: 'model' | 'human' | null }
+}
+export type LineageView = {
+  table_id: string; table_version: number
+  status: { roles: Record<'problem' | 'change' | 'uncertainty', boolean>; live_rows: number; pdf_text_rows: number
+    nodes_complete: number; nodes_partial: number; missing_cells: number; placed_rows: number; unplaced_rows: number }
+  nodes: Record<string, LineageNode>; pair_decisions: LineagePairDecision[]; components: LineageComponent[]
+  cross_relations: LineageLink[]; unplaceable: LineageUnplaceable[]; not_accepted: LineageNotAccepted[]
+  unassessed_edges: { from: string; to: string }[]
+  edges_into_unscanned_targets: { from: string; to: string; to_reason: 'no_pdf_text' | 'not_run' }[]
+  step_outcomes: LineageStepOutcome[]; not_sent_budget: LineageStepOutcome[]; failed_pairs: LineageStepOutcome[]
+  history: { stale: LineageLink[]; out_of_scope: (LineageLink & { not_live_ends: ('from' | 'to')[] })[] }
+  counts: { components: number; current_links: number; cross_relations: number; history_stale: number; history_out_of_scope: number
+    unplaceable: { total: number; reasons: Record<LineageReason, number> }; not_accepted: number; unassessed_edges: number
+    edges_into_unscanned_targets: number; not_sent_budget: number; failed_pairs: number; step_outcomes: number; human_edited_links: number
+    // Citation-list states of live ordered pairs of different works, not link counts.
+    edge_states: Record<LineageEdgeState, number> }
+}
+export type LineageBaselineEntry = {
+  work_id: string; source_version_id: string; source_key: string | null; title: string; year: number | null
+  cited_by_count: number | null; cited_by_count_at: string | null; publication_type: string | null
+  cited_by_included_works: { count: number | null; other_works: number; lists_read: number; target_resolved: boolean }
+}
+export type LineageBaselineList = { total: number; shown: LineageBaselineEntry[]; entries: LineageBaselineEntry[]; note: string }
+export type LineageBaseline = {
+  table_id: string; scope: 'Among the works this research included'
+  representatives: { work_id: string; source_version_id: string; reason: 'head' | 'other_version'; versions_considered: string[] }[]
+  most_cited_in_corpus: LineageBaselineList; review_in_corpus: LineageBaselineList; unknown_count_works: number
+}
+export type LineageLinkFields = {
+  relation: LineageRelation; what_changed: string; support_type: LineageSupport
+  evidence: { passage_id: string; quote: string }[]; note?: string | null; expected_version: number
+}
+export type LineageLinkAdd = LineageLinkFields & { from_source_version_id: string; to_source_version_id: string }
+export type LineageLinkEdit = LineageLinkFields & { based_on_revision_id: string }
+// DELETE request fields are query parameters.
+export type LineageLinkRemove = { expected_version: number; based_on_revision_id: string; note?: string | null }
+
 export type Scope = {
   research_id: string; revision: number; question: string; language_hint: string | null; source_scope: SourceScope
   seed_mode: 'question_only' | 'uploaded_seed'; seed_status: 'question_only' | 'missing' | 'ready' | 'stale'

@@ -64,8 +64,9 @@ from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound
                                    SeedUnavailable, Store, LegacyResearchReadOnly, DISCOVERY_RUN_KINDS,
                                    legacy_research_read_only)
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
-from deixis.workflow.lineage.run import LineagePlanner
-from deixis.workflow.lineage.store import InvalidLineageInput
+from deixis.workflow.lineage.run import LineagePlanner, stale_link_revisions
+from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
+from deixis.workflow.lineage.view import LineageView
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, report_view, research_view
 from deixis.workflow.worker import Worker
 
@@ -327,6 +328,30 @@ class CellEdit(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
     keep_evidence_from: str | None = Field(default=None, max_length=40)  # a revision of this cell whose evidence the value keeps
     expected_version: int  # of the cell; 0 for a cell without revisions
+
+
+class LineageEvidence(BaseModel):
+    passage_id: str = Field(min_length=1)
+    quote: str = Field(min_length=1)
+
+
+class LineageLinkFields(BaseModel):
+    relation: Literal["extends", "relaxes_assumption", "changes_method", "new_domain_or_condition",
+                      "corrects_or_contradicts", "independent_parallel"]
+    what_changed: str = Field(min_length=1, max_length=500)
+    support_type: Literal["source_stated", "analyst_inference"]
+    evidence: list[LineageEvidence] = Field(min_length=1, max_length=5)
+    note: str | None = Field(default=None, max_length=2000)
+    expected_version: int = Field(ge=0, strict=True)
+
+
+class LineageLinkAdd(LineageLinkFields):
+    from_source_version_id: str = Field(min_length=1)
+    to_source_version_id: str = Field(min_length=1)
+
+
+class LineageLinkEdit(LineageLinkFields):
+    based_on_revision_id: str = Field(min_length=1)
 
 
 class ExpectedVersion(BaseModel):
@@ -1860,6 +1885,46 @@ def create_app(
                                               body.retry_failed, idempotency_key)
         request.app.state.worker.wake()
         return run
+
+    @app.get(table_path + "/lineage")
+    async def lineage_view(research_id: str, table_id: str, request: Request) -> dict[str, Any]:
+        return LineageView(store_of(request)).view(research_id, table_id)
+
+    @app.get(table_path + "/lineage/baseline")
+    async def lineage_baseline(research_id: str, table_id: str, request: Request) -> dict[str, Any]:
+        return LineageView(store_of(request)).baseline(research_id, table_id)
+
+    @app.post(table_path + "/lineage/links", status_code=201)
+    async def lineage_add_link(research_id: str, table_id: str, body: LineageLinkAdd, request: Request,
+                               idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        store = store_of(request)
+        TableStore(store)._table(research_id, table_id)
+        fields = body.model_dump(exclude={"from_source_version_id", "to_source_version_id"})
+        LineageStore(store).add_link(research_id, table_id, body.from_source_version_id, body.to_source_version_id,
+                                     **fields, idempotency_key=idempotency_key,
+                                     stale_revisions=stale_link_revisions(store, table_id))
+        return LineageView(store).view(research_id, table_id)
+
+    @app.put(table_path + "/lineage/links/{link_id}")
+    async def lineage_edit_link(research_id: str, table_id: str, link_id: str, body: LineageLinkEdit, request: Request,
+                                idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        store = store_of(request)
+        TableStore(store)._table(research_id, table_id)
+        LineageStore(store).edit_link(research_id, table_id, link_id, **body.model_dump(),
+                                      idempotency_key=idempotency_key,
+                                      stale_revisions=stale_link_revisions(store, table_id))
+        return LineageView(store).view(research_id, table_id)
+
+    @app.delete(table_path + "/lineage/links/{link_id}")
+    async def lineage_remove_link(research_id: str, table_id: str, link_id: str, request: Request,
+                                  expected_version: int = Query(ge=0), based_on_revision_id: str = Query(min_length=1),
+                                  note: str | None = Query(default=None, max_length=2000),
+                                  idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        store = store_of(request)
+        TableStore(store)._table(research_id, table_id)
+        LineageStore(store).remove_link(research_id, table_id, link_id, note, based_on_revision_id,
+                                        expected_version, idempotency_key)
+        return LineageView(store).view(research_id, table_id)
 
     @app.post(table_path + "/template-columns", status_code=201)
     async def apply_table_template(research_id: str, table_id: str, body: TemplateApply, request: Request,

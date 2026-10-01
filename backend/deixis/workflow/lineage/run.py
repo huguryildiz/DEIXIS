@@ -408,8 +408,30 @@ class LineagePlanner:
         return stale_link_revisions(self.store, table_id)
 
 
-def stale_link_revisions(store: Store, table_id: str) -> dict[str, str]:
-    """Name stale active revisions for L4's cycle graph; never rewrite decisions."""
+def scope_node_reasons(store: Store, table_id: str, scope_revision: int | None,
+                       current_scope: int, inputs: dict, frm: str, to: str,
+                       nodes: dict[str, dict]) -> tuple[str, ...]:
+    """Compare recorded scope and node content, including non-live endpoints."""
+    for sid in (to, frm):
+        if sid not in nodes:
+            nodes[sid] = node_snapshot(build_node(store, table_id, sid))
+    reasons = []
+    if scope_revision != current_scope:
+        reasons.append("scope_changed")
+    if inputs.get("to") != nodes[to] or inputs.get("from") != nodes[frm]:
+        reasons.append("node_changed")
+    return tuple(reasons)
+
+
+def current_passage_ids(store: Store, to: str) -> set[str]:
+    return {p["id"] for p in store.passages_for(to)}
+
+
+def stale_link_reasons(store: Store, table_id: str) -> dict[str, tuple[str, tuple[str, ...]]]:
+    """L5 active-link policy: evidence currency, then model scope and nodes.
+
+    Mention-only changes and selection revisions do not make an active link stale.
+    """
     with transaction(store.conn):
         snapshot = build_snapshot(store, table_id)
         nodes = {r.work.source_version_id: node_snapshot(json.loads(r.node_json)) for r in snapshot.rows}
@@ -418,21 +440,40 @@ def stale_link_revisions(store: Store, table_id: str) -> dict[str, str]:
         for link in lineage.active_links(table_id):
             revision = lineage._current(link)
             evidence = lineage.evidence(revision["id"])
-            current = {p["id"] for p in store.passages_for(link["to_source_version_id"])}
-            bad = any(e["passage_id"] not in current for e in evidence)
+            current = current_passage_ids(store, link["to_source_version_id"])
+            reasons = ["evidence_not_current"] if any(e["passage_id"] not in current for e in evidence) else []
             if revision["author"] == "model":
                 inputs = json.loads(revision["inputs_json"] or "{}").get("inputs", {})
-                # Exclusion changes endpoint eligibility, not the node's stored content.
-                # L4 handles non-live ends; still compare their actual snapshots here.
-                for sid in (link["to_source_version_id"], link["from_source_version_id"]):
-                    if sid not in nodes:
-                        nodes[sid] = node_snapshot(build_node(store, table_id, sid))
-                bad |= (revision["scope_revision"] != snapshot.scope_revision or
-                        inputs.get("to") != nodes.get(link["to_source_version_id"]) or
-                        inputs.get("from") != nodes.get(link["from_source_version_id"]))
-            if bad:
-                stale[link["id"]] = revision["id"]
+                reasons.extend(scope_node_reasons(store, table_id, revision["scope_revision"], snapshot.scope_revision,
+                                                 inputs, link["from_source_version_id"], link["to_source_version_id"], nodes))
+            if reasons:
+                stale[link["id"]] = (revision["id"], tuple(reasons))
         return stale
+
+
+def stale_link_revisions(store: Store, table_id: str) -> dict[str, str]:
+    """Name stale active revisions for L4's cycle graph; never rewrite decisions."""
+    return {link_id: revision_id for link_id, (revision_id, _) in stale_link_reasons(store, table_id).items()}
+
+
+def decision_currency(store: Store, table_id: str, revision: dict, frm: str, to: str,
+                      snapshot: Snapshot, nodes: dict[str, dict]) -> dict:
+    """Negative model decisions compare mentions, separately from active links.
+
+    Revisions record mention IDs but no text digests, so text remains unchecked.
+    """
+    inputs = json.loads(revision["inputs_json"] or "{}").get("inputs", {})
+    reasons = list(scope_node_reasons(store, table_id, revision["scope_revision"], snapshot.scope_revision,
+                                     inputs, frm, to, nodes))
+    mentions = inputs.get("mention_passage_ids")
+    unchecked = ["passage_text"]
+    current = current_passage_ids(store, to)
+    if mentions is None:
+        unchecked.append("passages")
+    elif any(pid not in current for pid in mentions):
+        reasons.append("passage_changed")
+    return {"current": False if reasons else None if mentions is None else True,
+            "stale_reasons": reasons, "unchecked": unchecked}
 
 
 class ChunkSkipped(Exception):

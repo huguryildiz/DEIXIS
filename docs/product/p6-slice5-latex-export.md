@@ -1,1369 +1,311 @@
-# P6 dilim 5 — IEEEtran LaTeX dışa aktarma: uygulama planı
+<!-- Tasarım kararları ve denetimi (gpt-6.1-sol · high, salt okunur): karar turu (Q1-Q22) Claude ile ortak; tasarım denetimi turları aşağıda "Denetim kaydı" bölümünde. Ham cevaplar /tmp/x0-q-answer.md, /tmp/x0-r1-answer.md ... -->
+# P6 dilim 5 — raporun IEEEtran LaTeX dışa aktarımı: tasarım notu
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+**Tarih:** 17 Eylül 2026 (taslak), 2 Ekim 2026 (yeniden yazım, `58676f1` üzerinde). **Durum:** uygulamaya kabul için hazırlandı; kararlar §10'da, batch'ler §11'de, kalıcı karar girdisi `docs/decisions.md`'ye bu değişiklikte eklenir, numarası önerilen D149'dur (§11). Bu not bir tasarımdır: kod, migration, model çağrısı ve ürün ölçümü yoktur; kabul, uygulamanın doğrulandığı anlamına gelmez. Eski taslak dilim 1'in kodundan önce yazılmıştı; kodla karşılaştırılan durum §0 ve §1'de, TeX ile yapılan ölçümler §2'de kayıtlıdır.
 
-**Goal:** Dilim 1'in rapor çalışmasına (`report` run kind, henüz kodda yok, yalnız `docs/product/p6-slice1-report-run.md`'de plan olarak var) ikinci bir dışa aktarma biçimi eklemek: `IEEEtran` (journal modu) için tek bir `.tex` dosyası ve ayrı bir `.bib` dosyası, `format=latex` parametresiyle dilim 1'in dışa aktarma rotasından bir zip olarak indirilir. Dönüşüm saf metin işlemidir, hiçbir TeX kurulumu gerektirmez ve hiçbir model çağrısı yapmaz; dilim 1'in `report/export.py::to_markdown`'ının yürüdüğü aynı bölüm/iddia/tablo/denklem yapısını yürür (paylaşılan bir ara doküman modeli çıkarılmaz, bkz. "Neden ayrı bir ara model yok"). Beş zor kısım gerçek kodla çözülür: (1) `domain/contracts.py`'nin kaçışa duyarlı matematik-aralığı tarayıcısı yeniden kullanılarak düzyazının LaTeX kaçışı ve matematiğin dokunulmadan geçmesi; (2) KaTeX'in kabul edip IEEEtran/amsmath'in etmediği (ya da tersi) yapıların bir liste üzerinden onarılması ya da işaretlenmesi; (3) hiçbir derleme yapılmadığı açıkça söylenmesi ve yalnız `latexmk`/`tectonic` varsa çalışan isteğe bağlı bir geliştirici testi; (4) D59'un iş anahtarlarıyla (`source_key`) `\cite{}`, `bibliography.py`'nin BibTeX yazıcısı küçük, geriye dönük uyumlu bir parametreyle yeniden kullanılarak; (5) tablo hücresi durumlarının düz yazılı biçimi ve 10–13 sütunlu, ~50 satırlı bir tablonun `table*` + `tabularx` ile bölünerek verilmesi.
+## Kısaca
 
-**Architecture:** Yeni, saf ve model çağırmayan dört modül `backend/deixis/workflow/report/` altına eklenir: `latex_text.py` (kaçış ve matematik-aralığı ayrımı), `latex_math.py` (KaTeX/LaTeX fark denetimi ve `$$…$$` dönüşümü), `latex_table.py` (hücre durumlarının düz metni ve `table*` bölme), `latex_bib.py` (D59 anahtarlarıyla `bibliography.py`'nin yeniden kullanımı) ve bunları birleştiren `latex_export.py`. `latex_export.py`'nin asıl işi iki katmanlıdır: saf bir `render_latex(report, sections, sources, gaps) -> LatexBundle` fonksiyonu (yalnız sözlüklerle çalışır, `ReportStore`'a bağlı değildir, golden-file testleri bunu çağırır) ve ince bir `to_latex(store, reports, report_id) -> LatexBundle` sarmalayıcısı (dilim 1'in `ReportStore`'undan bu sözlükleri okur — tam alan adları dilim 1 kodlanınca kesinleşir, bkz. Açık noktalar). `backend/deixis/workflow/bibliography.py`'ye küçük, geriye dönük uyumlu bir `keys: list[str] | None = None` parametresi eklenir (varsayılan `None` bugünkü `_keys()` davranışını korur); `latex_bib.py` bu parametreyi D59 anahtarlarıyla doldurarak çağırır. `domain/contracts.py`'ye `_math_spans`/`_without_math`'ın davranışını değiştirmeyen iki genel takma ad (`math_spans`, `without_math`) eklenir; bunlar dışında dilim 1'in ya da mevcut kodun hiçbir özel (`_` önekli) adı doğrudan içe aktarılmaz. API tarafında dilim 1'in `GET .../reports/{id}/export?format=markdown` rotası `format=latex` dalıyla genişler: `zipfile`'la bellekte kurulan bir zip, `Content-Disposition` ile indirilir; dışa aktarma uyarıları (KaTeX/LaTeX farkı, Marker/OCR kökenli denklemler) küçük, sınırlı sayıda bir `X-Deixis-Export-Warnings` başlığında JSON dizi olarak döner (bkz. görev 5f). Frontend'de `ReportView.tsx`'e Markdown düğmelerinin yanına bir "Download LaTeX (.zip)" düğmesi eklenir; bu düğme `fetch()` ile indirir, başlıktaki uyarıları okur ve varsa `useToast()` ile tek bir uyarı bildirimi gösterir (D50'nin bugünkü tek-toast deseni, `apps/web/src/Toast.tsx`). Hiçbir yeni migration, şema ya da görev türü **yoktur**: bu dilim hiçbir model adımı eklemez, `skill_package_hash` değişmez.
+Rapor ekranındaki Markdown dışa aktarımının (D120) yanına ikinci bir çıktı gelir: `format=latex` bir zip döner. Zip'te iki dosya vardır: IEEEtran (`journal` seçeneği) kullanan bir `.tex` ve ayrı bir `.bib`. Dönüşüm saf bir metin işlemidir. Hiçbir model çağırmaz, ağa çıkmaz, TeX gerektirmez ve veritabanına yazmaz. Girdisi, Markdown'ın da kullandığı `report_view` sözlüğüdür; atıf numaraları bu yüzden iki biçimde aynı yerde hesaplanır ve `.tex` içindeki referans sırası ekrandaki `[n]` sırasıyla aynı kalır.
 
-**Tech Stack:** Python 3.12 (uv, native arm64), stdlib `zipfile`/`re` (yeni bağımlılık yok), FastAPI, pytest; TypeScript/React 19 (`apps/web`), `fetch`/`Blob`/`URL.createObjectURL` (tarayıcı yerlisi, yeni kütüphane yok). Gerçek TeX derlemesi yalnız isteğe bağlı bir geliştirici testinde, sistemde `latexmk` ya da `tectonic` varsa.
+Çıktıda üç şey özellikle korunur: (1) D120'nin asıl ilkesi, yani ekrandaki "denetlenmedi" sınırlarının dosyaya yazılması; (2) her atıfın bir D59 anahtarıyla `\cite{}` olarak kaynakçaya bağlanması; (3) sessiz veri kaybı olmaması. Üçüncüsü eski planın gözden kaçırdığı bir noktaydı ve ölçümle bulundu: `table*` içindeki uzun bir tablo LaTeX'te hata vermeden satır kaybeder (§2). Bu yüzden tablo `longtable` ile sayfalara, en çok yedi veri sütunluk gruplar hâlinde bölünür.
 
-**Spec:** docs/product/p6-report-design.md (§2 karar 9 ve 11, §9 "Dışa aktarma"/"Okuma biçimi", §12 madde 5); docs/product/p6-slice1-report-run.md (bkz. "Dilim 1'den beklenenler")
+Bu notun varsayımları, bu makinedeki TeX Live 2021'de geçici dosyalar derlenerek sınandı (§2); ürün TeX gerektirmez. Dışa aktarımın "derlenir" iddiası yalnızca sabit örnek raporlar için ve yalnızca TeX kurulu bir makinede ölçülür (§9).
 
-## Neden ayrı bir ara doküman modeli yok
+## Eski plana göre ne değişti
 
-Dilim 1'in `export.py::to_markdown` dolaşımı (bölüm → `paragraph` numarasına göre birleştirilmiş iddialar → `table_ref` gördüğünde TABLE I gömme → `equation_ref` gördüğünde numaralı denklem → sonda kaynakça) zaten dosyaya yazılmış, kodlanmamış bir plandır; ne mevcut ne de dilim 1'de paylaşılan bir ara model (`ReportDocument` gibi) önerilmiş, dilim 1'in kendisi de `export.py`'yi tek bir `to_markdown` fonksiyonu olarak tanımlar (bkz. p6-slice1-report-run.md, task 1j). Bu dolaşımı ayrı bir ara modele çıkarmak dilim 1'in henüz yazılmamış kodunu varsaymadan yapılamaz ve talimatın izin verdiği "küçük, sınırları belli bir refactor" ölçüsünü aşar: iki format (Markdown ve LaTeX) aynı sıralama/gruplama mantığını paylaşsa da, LaTeX'in kaçış, matematik dönüşümü ve tablo bölme adımları Markdown'da hiç yoktur, yani paylaşılacak olan yalnız "hangi sırayla, hangi alanları oku" bilgisidir — bu da zaten her iki modülün de aynı `report_sections`/`report_claims` satırlarını aynı `ordinal`/`paragraph` alanlarıyla okumasıyla paylaşılır, ayrı bir sınıf gerektirmez. Bu yüzden dilim 1'in yürüyüşü **taklit edilir** (aynı alanlar, aynı sıralama), ortak bir sınıf çıkarılmaz. Dilim 1 kodlandıktan sonra iki yürüyüşün gerçekten aynı olduğu görülürse, bu ortaklığı çıkarmak ayrı, küçük bir refactor görevidir (bkz. Açık noktalar).
+1. Eski plan `report` run kind'ının kodda olmadığını söylüyordu. Bugün `reports`, `report_sections`, `report_claims`, `report_citation_links`, `report_gaps`, `report_snapshot` tabloları (`0035_report_run_kind.sql`, sonra `0036`, `0056`, `0057`), `ReportStore`, `report_view` ve Markdown dışa aktarımı kodda var.
+2. Eski plan kendine D60 numarası veriyordu. Bu notu yazarken `58676f1`'de en yüksek karar D145'ti; `origin/main` o zamandan beri ilerledi (D146 dilim 3 K3, D147 dilim 4 tasarımı), dilim 4 E1 çalışma ağacı D148'i almıştır; bu not D149'u alır ve numara işlenirken yeniden kontrol edilir (§11).
+3. Eski plan `export.py::to_markdown(store, reports, report_id)` ve `numbering.py` varsayıyordu. Gerçek imza `to_markdown(view, *, title, corpus)`'dır, `numbering.py` yoktur ve D120 bilerek yapmadı. Yeni `to_latex` aynı biçimde `view` üzerinde saf bir fonksiyondur.
+4. Eski plan Markdown'daki D120 sınırlarının (TASLAK gerekçesi, eksik satırlar, elle düzenleme, kanıt değişimi, çapa sayısı, inceleme notu, model bulguları, boş/yetersiz-kanıt bölümleri) hiçbirini LaTeX'e taşımıyordu. Bu not hepsini zorunlu içerik yapar (Q18).
+5. Eski plan `\R`, `\htmlClass`, `\href` komutlarının DEIXIS'in KaTeX'inde bulunmadığını söylüyordu. Yanlış: `katex_commands.json` bunların hepsini bilir. KaTeX-LaTeX farkı elle yazılmış bir listeyle değil, veriyle ve TeX ile üretilmiş bir dosyayla denetlenir (Q5).
+6. Eski plan tabloyu 20 satırlık `table*` parçalarına bölüyordu. Ölçüm bunun yanlış olduğunu ve sığmayan satırların hata kodu olmadan kesildiğini gösterdi. Yerine `\onecolumn` + `longtable` gelir; ama `longtable` da sayfadan yüksek bir satırı bölemez ve 13 sütun × 500 karakterlik hücrelerde içerik kaybeder, bu yüzden en çok 7 veri sütunluk gruplar kullanılır (Q7, M9, M10).
+7. Eski plan `.bib` anahtarı için D59'u "başka oturumun işi" sayıyordu. D59 kodda ve `works.source_key` tüm kütüphanede tekildir; ama iki kaynak sürümü aynı anahtarı paylaşır ve eski plan bunu hesaba katmıyordu (Q3).
+8. Eski plan uyarıları Türkçe metin olarak bir HTTP başlığına koyuyordu; başlıklar latin-1 dışı karakteri taşıyamaz. Uyarılar `.tex` başına yorum olarak girer, başlık yalnızca sayıyı taşır (Q8).
+9. Eski plan `contracts.py`'ye genel takma adlar ekliyordu. Dilim 3 K2 aynı dosyayı yoğun değiştiriyor ve `assembly.py` özel adları zaten doğrudan kullanıyor; bu dilim `contracts.py`'ye dokunmaz (Q5).
+10. Eski plan matematik için "bozuk aralık derlenebilirliği korur" diyordu. Kod yalnızca parantez ve ortam dengesini denetler ve bunu da düz bir kalıpla yapar; derlenebilirlik garantisi verilmez. Buna karşılık ham TeX'in çalıştırabileceği komutlara izinli kümeye dayanan kapalı bir sınır konur (Q17); eski planda yoktu.
+11. Eski plan `hyperref` yüklüyor ve `url` paketini unutuyordu. `.bib`'de `url` alanı varken `url` paketi yoksa derleme hata verir (§2). Preamble yeniden kuruldu.
+12. Eski planın "açık noktaları" (alan adları, dosya sınırı, test dosyası adı, derleme eşiği, XeLaTeX seçimi) ya koddan ya ölçümden çözüldü; kalanlar Q kararlarına girdi.
 
-## Global Constraints
+## 0. Eski planın bugünkü koda göre yanlış kalan yerleri
 
-- Python 3.12 `uv` ile, venv native arm64: `python3 -c "import platform; print(platform.machine())"` → `arm64`.
-- Backend testleri: `PYTHONPATH=backend uv run pytest` (tümü); odaklı: `PYTHONPATH=backend uv run pytest tests/test_report_latex.py -q`.
-- Frontend: `cd apps/web && npm ci && npm run build && npm run lint` (oxlint); `.impeccable.md` görsel değişiklikten önce okunur, ara onay istenmez — değişikliği kendin build/ekran görüntüsüyle doğrula.
-- Tek SQLite bağlantısı API ve worker arasında paylaşılır; bu dilim hiçbir yeni tablo ya da yazma eklemez, yalnız var olan `ReportStore` okumalarını (dilim 1) LaTeX'e çevirir.
-- Bu dilim şema/sözleşme değişikliği **gerektirmez**: yeni görev türü yok, `contracts/research/*.schema.json` değişmez, `skill_package_hash` değişmez, `tests/fixtures/research/*.json` ve `tests/fakes.py::valid_response` değişmez.
-- Bu dilim migration **gerektirmez**: yeni tablo yok, `runs.kind`'a dokunulmaz.
-- Fixture kayıtları SYNTHETIC etiketlidir; geçen bir birim testi dönüşümün doğruluğunu gösterir, gerçek bir TeX derlemesinin başarısını değil (bkz. görev 5g).
-- Rapor dili sorunun dilidir (yanıtla aynı kural, dilim 1'den değişmeden); LaTeX çıktısı da aynı dilde yazılır, yalnız hücre durumu ve "Evet"/"Hayır" gibi sabit sözcükler dile göre seçilir (`latex_table.py::_STATE_TEXT`).
-- Denklemler LaTeX'tir ve yanıtın 7. maddesindeki sırayı izler (önce değişkenler ve anlamları, sonra amaç, sonra kısıtlar; yalnız alıntılanan pasajın verdiği parçalar için) — bu dilim denklemin **içeriğini** değiştirmez, yalnız `$…$`/`$$…$$` çevresini LaTeX'in kabul ettiği bir ortama taşır.
-- Nesnede iç kimlikler görünmez: `claim_key`, kısa tutamaçlar, `support_type`, ham JSON hiçbir zaman `.tex`/`.bib` dosyasına yazılmaz (§2 karar 9'un dışa aktarma tarafı).
-- Commit'ler doğrudan `main`'e gider (kullanıcının global git kuralı): açıklayıcı İngilizce cümle, AI ilişkilendirmesi/ortak yazarlık yok, yalnız o görevin dosyaları `git commit -- <paths>` ile stage edilir (başka oturumlar aynı ağacı düzenliyor olabilir), sonra `git push origin main`.
-- Bu dilimde alınan kalıcı karar `docs/decisions.md`'ye yürütme anındaki ilk boş D numarasıyla eklenir; bu not yazılırken en yüksek numara **D59**'dur (`grep -n '^## D' docs/decisions.md | head -3` ile teyit edildi, tek bir D57 var, çakışma yok) — yürütmeden hemen önce yine de tekrar teyit edilmeli, çünkü dilim 1 ya da başka bir dilim bu arada yeni bir D numarası almış olabilir.
-- Dilim 1'in kendisi bu not yazılırken kodda **yoktur** (`backend/deixis/workflow/report/` dizini, `contracts/research/report-*.schema.json`, migration 0034 — hiçbiri yok); bu dilim dilim 1'in planındaki adları tüketir, dilim 1 gerçekten kodlanana kadar bu plandaki dilim-1-bağımlı görevler (5e Task 1'in `to_latex` sarmalayıcısı, 5f'nin rota değişikliği) çalıştırılamaz. Saf dönüşüm görevleri (5a–5d, 5e Task 2'nin golden-file testi, 5g, 5h'nin i18n kısmı) dilim 1'den bağımsız, herhangi bir sırada yazılabilir ve test edilebilir.
-
-## Dosya yapısı
-
-Yeni dosyalar:
-
-- `backend/deixis/workflow/report/latex_text.py` — kaçışa duyarlı matematik-aralığı ayrımı (`split_math_spans`), düzyazı LaTeX kaçışı (`escape_prose`), ikisini birleştiren `escape_mixed`.
-- `backend/deixis/workflow/report/latex_math.py` — KaTeX/LaTeX fark tablosu, bilinmeyen makro denetimi (`check_unsupported_macros`), `$$…$$` → `equation`/`aligned`/`gathered` dönüşümü (`convert_math_span`).
-- `backend/deixis/workflow/report/latex_table.py` — hücre durumunun düz metni (`cell_text`), `table*`/`tabularx` bölme (`render_table`).
-- `backend/deixis/workflow/report/latex_bib.py` — D59 iş anahtarlarının çözümü (`resolve_cite_keys`), `bibliography.to_bibtex`'in yeniden kullanımı (`to_bibtex_for_report`).
-- `backend/deixis/workflow/report/latex_export.py` — saf `render_latex()`, `ReportStore` sarmalayıcısı `to_latex()`, `to_zip()`, `filename()`.
-- `tests/test_report_latex_text.py`, `tests/test_report_latex_math.py`, `tests/test_report_latex_table.py`, `tests/test_report_latex_bib.py` — birim testleri.
-- `tests/test_report_latex_export.py` — golden-file testi (tam SYNTHETIC sabit) ve isteğe bağlı derleme testi.
-- `tests/fixtures/research/report-latex-golden.py` — golden fixture'ın Python sözlükleri (rapor/bölüm/kaynak/aday) ve beklenen `.tex`/`.bib` sabitleri, testler arasında paylaşılsın diye ayrı modülde.
-
-Değiştirilecek dosyalar:
-
-- `backend/deixis/domain/contracts.py` — `math_spans = _math_spans`, `without_math = _without_math` genel takma adları (`_math_spans`/`_without_math` tanımlarının hemen altına, davranış değişmeden).
-- `backend/deixis/workflow/bibliography.py` — `to_bibtex(sources, keys: list[str] | None = None)`; `keys is None` iken bugünkü `_keys(sources)` davranışı birebir korunur.
-- `backend/deixis/workflow/report/export.py` (dilim 1'de yaratılır) — `MEDIA_TYPES`'a `"latex": "application/zip"` eklenir; bu dosyanın kendisi yoksa (dilim 1 henüz kodlanmadıysa) görev 5f bu satırı `latex_export.py`'de tek başına tutar ve dilim 1 kodlanınca birleştirilir (bkz. Açık noktalar).
-- `backend/deixis/api/app.py` — dilim 1'in rapor dışa aktarma rotasına `format == "latex"` dalı.
-- `apps/web/src/report/ReportView.tsx` (dilim 1'de yaratılır) — "Download LaTeX (.zip)" düğmesi.
-- `apps/web/src/i18n.ts` — yeni İngilizce/Türkçe dizeler (görev 5h).
-- `docs/decisions.md` — bu dilimin kalıcı kararı (yeni D numarası).
-- `docs/product/p6-report-design.md` — §12 madde 5'in durum satırı.
-
-## Görevler
-
-### 5a — Kaçışa duyarlı matematik ayrımı ve düzyazı kaçışı
-
-#### Task 1: `contracts.py`'de genel takma adlar
-
-**Files:**
-- Modify: `backend/deixis/domain/contracts.py`
-- Test: `tests/test_contracts.py`
-
-**Interfaces:**
-- Consumes: `contracts._math_spans`, `contracts._without_math` (mevcut, değişmez).
-- Produces: `contracts.math_spans`, `contracts.without_math` (aynı fonksiyonlara genel takma ad).
-
-Bu, "özel adı dikkatsizce içe aktarma" riskini kapatan bilinçli, küçük ve sınırları belli bir ekleme: `_math_spans` kaçışa duyarlı, doğru bir tarayıcıdır (`\$` bir aralık başlatmaz, satır içi aralık satırı geçemez, çift `$$` çok satırlı olabilir — `_check_math`'ın zaten dayandığı kurallar); onu ikinci bir regex'le yeniden yazmak iki uygulamanın zamanla ayrışması riskini taşır. Ekleme yalnız iki isim; `_math_spans`/`_without_math`'ın kendisi, imzası ya da davranışı değişmez.
-
-- [ ] **Step 1: Başarısız testi yaz**
-
-```python
-# tests/test_contracts.py'ye eklenir
-def test_math_spans_and_without_math_have_public_aliases_for_reuse_outside_this_module():
-    assert contracts.math_spans is contracts._math_spans
-    assert contracts.without_math is contracts._without_math
-```
-
-- [ ] **Step 2: Çalıştır, başarısız olduğunu doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_contracts.py -k public_aliases -v`
-Expected: FAIL — `AttributeError: module 'deixis.domain.contracts' has no attribute 'math_spans'`.
-
-- [ ] **Step 3: Takma adları ekle**
-
-`_math_spans` tanımının hemen altına:
-
-```python
-math_spans = _math_spans
-"""Public alias: reused by report/latex_text.py so it does not re-implement this escaping-aware scanner (P6 slice 5)."""
-```
-
-`_without_math` tanımının hemen altına aynı desenle `without_math = _without_math`.
-
-- [ ] **Step 4: Çalıştır, geçtiğini doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_contracts.py -k public_aliases -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/deixis/domain/contracts.py tests/test_contracts.py
-git commit -m "Expose contracts' math-span scanner under public names for reuse by the LaTeX exporter" -- backend/deixis/domain/contracts.py tests/test_contracts.py
-git push origin main
-```
-
----
-
-#### Task 2: `latex_text.py` — kaçış ve ayrım
-
-**Files:**
-- Create: `backend/deixis/workflow/report/latex_text.py`
-- Test: `tests/test_report_latex_text.py`
-
-**Interfaces:**
-- Consumes: `contracts.math_spans` (task 1).
-- Produces:
-
-```python
-def escape_prose(text: str) -> str: ...
-def split_math_spans(text: str) -> list[tuple[bool, str]]: ...  # (is_math, chunk), covers the whole string in order
-def escape_mixed(text: str, convert_math: Callable[[str], tuple[str, list[str]]]) -> tuple[str, list[str]]: ...
-```
-
-- [ ] **Step 1: Başarısız testleri yaz**
-
-```python
-# tests/test_report_latex_text.py
-from deixis.workflow.report.latex_text import escape_prose, split_math_spans, escape_mixed
-
-
-def test_escapes_the_ten_latex_special_characters():
-    assert escape_prose("50% of A&B_C #1 {x}~y^2 back\\slash") == \
-        r"50\% of A\&B\_C \#1 \{x\}\textasciitilde{}y\textasciicircum{}2 back\textbackslash{}slash"
-
-
-def test_turkish_letters_pass_through_unescaped_for_xelatex():
-    assert escape_prose("İncelenen çalışmalar gecikmeyi ölçmüştür (ığşĞÜÇÖİ).") == \
-        "İncelenen çalışmalar gecikmeyi ölçmüştür (ığşĞÜÇÖİ)."
-
-
-def test_straight_quotes_become_opening_and_closing_ligatures():
-    assert escape_prose('He said "no" today') == "He said ``no'' today"
-
-
-def test_non_breaking_space_becomes_latexs_own_tie():
-    assert escape_prose("Section\u00a0I") == "Section~I"
-
-
-def test_split_math_spans_separates_prose_from_untouched_math():
-    chunks = split_math_spans(r"Gecikme $T_{\max}$ ile 50% sınırlanır.")
-    assert chunks == [(False, "Gecikme "), (True, r"$T_{\max}$"), (False, " ile 50% sınırlanır.")]
-
-
-def test_split_math_spans_handles_display_math_and_a_trailing_prose_tail():
-    text = "Denklem: $$a+b=c$$ burada a, b, c > 0."
-    chunks = split_math_spans(text)
-    assert chunks[1] == (True, "$$a+b=c$$")
-    assert chunks[-1] == (False, " burada a, b, c > 0.")
-
-
-def test_escaped_dollar_sign_is_not_treated_as_a_math_boundary():
-    # contracts.math_spans already treats \$ as literal; split_math_spans must not invent a span here.
-    chunks = split_math_spans(r"Price is \$5, not math.")
-    assert chunks == [(False, r"Price is \$5, not math.")]
-
-
-def test_escape_mixed_escapes_prose_and_delegates_math_to_the_given_converter():
-    calls = []
-
-    def convert_math(span):
-        calls.append(span)
-        return span.upper(), [f"warned about {span}"]
-
-    text, warnings = escape_mixed(r"50% ölçüldü: $T_{\max}$.", convert_math)
-    assert text == r"50\% ölçüldü: $T_{\MAX}$."
-    assert calls == [r"$T_{\max}$"]
-    assert warnings == [r"warned about $T_{\max}$"]
-```
-
-- [ ] **Step 2: Çalıştır, başarısız olduğunu doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_text.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'deixis.workflow.report'`.
-
-- [ ] **Step 3: `latex_text.py`'yi yaz**
-
-```python
-"""Prose-to-LaTeX text transform for the report's LaTeX export (P6 slice 5, hard part 1).
-
-Reuses domain.contracts' escaping-aware math-span scanner (contracts.math_spans, a public alias added
-in this slice) so a claim's inline $...$ and display $$...$$ math is located exactly the way
-_check_math already validates it; this module never re-implements that scanning with a second regex.
-Text outside a math span is LaTeX-escaped here; a math span is left to report/latex_math.py, which
-handles the KaTeX-only constructs that can appear inside it (hard part 2).
-
-XeLaTeX (see latex_export.py's preamble) renders every Unicode code point through a loaded Unicode
-font, so Turkish letters (ç ğ ı İ ö ş ü and their capitals) need no escaping or font-encoding package;
-only the ten LaTeX-special ASCII characters, a non-breaking space and straight quotes need handling.
-"""
-from __future__ import annotations
-
-from collections.abc import Callable
-
-from deixis.domain.contracts import math_spans
-
-_ESCAPE = {
-    "\\": r"\textbackslash{}", "{": r"\{", "}": r"\}", "&": r"\&", "%": r"\%",
-    "$": r"\$", "#": r"\#", "_": r"\_", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}",
-}
-_NBSP = "\u00a0"
-
-
-def escape_prose(text: str) -> str:
-    """Escape LaTeX-special characters in text known to contain no math span (a table caption, a
-    keyword, or a chunk already separated out by split_math_spans). A straight double quote is turned
-    into LaTeX's opening/closing quote ligature; a quote at the start of the string or after
-    whitespace is treated as opening, any other as closing."""
-    out: list[str] = []
-    for i, ch in enumerate(text):
-        if ch == _NBSP:
-            out.append("~")
-        elif ch == '"':
-            out.append("``" if i == 0 or text[i - 1].isspace() else "''")
-        else:
-            out.append(_ESCAPE.get(ch, ch))
-    return "".join(out)
-
-
-def split_math_spans(text: str) -> list[tuple[bool, str]]:
-    """(is_math, chunk) pairs covering the whole string in order. Uses contracts.math_spans's own
-    escaping-aware span list (in order of appearance, non-overlapping) and locates each span's start
-    with a forward-only search, rather than a second boundary-finding regex that could disagree with
-    the first about an escaped dollar sign or a display math's line-crossing rule."""
-    spans = math_spans(text)
-    chunks: list[tuple[bool, str]] = []
-    cursor = 0
-    for span in spans:
-        start = text.index(span, cursor)
-        if start > cursor:
-            chunks.append((False, text[cursor:start]))
-        chunks.append((True, span))
-        cursor = start + len(span)
-    if cursor < len(text):
-        chunks.append((False, text[cursor:]))
-    return chunks
-
-
-def escape_mixed(text: str, convert_math: Callable[[str], tuple[str, list[str]]]) -> tuple[str, list[str]]:
-    """Escape the non-math parts of text with escape_prose and pass each math span (including its $
-    or $$ delimiters) through convert_math, collecting its warnings in appearance order."""
-    warnings: list[str] = []
-    out: list[str] = []
-    for is_math, chunk in split_math_spans(text):
-        if is_math:
-            converted, span_warnings = convert_math(chunk)
-            out.append(converted)
-            warnings += span_warnings
-        else:
-            out.append(escape_prose(chunk))
-    return "".join(out), warnings
-```
-
-- [ ] **Step 4: Çalıştır, geçtiğini doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_text.py -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/deixis/workflow/report/latex_text.py tests/test_report_latex_text.py
-git commit -m "Add LaTeX prose escaping and a math-span split reused from contracts' scanner" -- backend/deixis/workflow/report/latex_text.py tests/test_report_latex_text.py
-git push origin main
-```
-
-### 5b — KaTeX/LaTeX fark denetimi ve `$$…$$` dönüşümü
-
-#### Task 1: KaTeX'in kabul edip IEEEtran/amsmath'in reddettiği (ya da tersi) yapılar
-
-DEIXIS'in kendi KaTeX çağrısında (`apps/web/src/MathText.tsx`) `trust` **kapalıdır** ve hiçbir özel `macros` tanımlanmamıştır (`katex.renderToString(..., { displayMode, throwOnError: false })`); bu yüzden `\htmlClass`, `\href` gibi yalnız `trust` açıkken çalışan komutlar ya da `\R` gibi DEIXIS'te tanımlanmamış bir kısayol makro zaten kırık (kırmızı) çizilmiş olurdu — bu denetim bunu **ikinci kez**, saklanan ham metin üzerinde, statik olarak arar; bir garanti değildir.
-
-| Yapı | DEIXIS'in KaTeX'inde (trust kapalı, macros yok) | IEEEtran/amsmath'te | Karar |
+| # | Eski plan diyordu | `58676f1`'de durum | Bu notta karşılığı |
 |---|---|---|---|
-| `\text{...}` | destekli | `amsmath` gerekir | Preamble'a paket (`amsmath` zaten her zaman yüklü) |
-| `\operatorname{...}` | destekli | `amsmath` gerekir | Preamble'a paket |
-| `\mathbb{...}` | destekli | `amssymb` gerekir | Preamble'a paket |
-| `\boldsymbol{...}` | destekli | `amsmath`/`bm` gerekir | Preamble'a paket (`amsmath` + `bm`) |
-| `\dfrac{}{}` | destekli | `amsmath` gerekir | Preamble'a paket |
-| `\tag{...}` | destekli | `amsmath` gerekir, ama raporun kendi numaralandırmasıyla (`equation_ref`) çakışır | **Onarılır**: `\tag{...}` silinir, uyarı yazılır |
-| `$$…$$` içinde `aligned`/`gathered` | destekli | `equation`in doğrudan içinde değil, `equation`i sarmalayan bir ortam olarak kullanılır | **Onarılır**: `$$…$$` `\begin{equation}\label{...}` içine alınır, iç ortam korunur |
-| `$$…$$` içinde üst düzey `align` | destekli (KaTeX display modunda) | kendi numaralandırmasını yapar, raporun tek numarasıyla çakışır | **Onarılır**: `align` → `aligned`'e çevrilir, tek `equation` numarası verilir |
-| Ortamsız çıplak `\\` (satır sonu) | destekli (display modunda gevşek) | `equation` tek satırlıdır, çıplak `\\` hata verir | **Onarılır**: içerik `gathered` içine alınır |
-| `\lt` / `\gt` | destekli (KaTeX'in kendi `<`/`>` takma adı) | düz LaTeX/amsmath'te tanımsız | **Onarılır**: `<`/`>` ile değiştirilir |
-| `\R`, `\N` gibi kısayol makrolar | **desteksiz** (DEIXIS'in KaTeX'inde özel makro yok; zaten kırık çizilirdi) | `\newcommand` olmadan tanımsız | **İşaretlenir** (yeniden yazılmaz — hangi anlama geldiği belirsiz) |
-| `\htmlClass{}{}`, `\href{}{}` | **desteksiz** (`trust` kapalı; KaTeX zaten reddeder) | karşılığı yok | **İşaretlenir** (sarmalayıcı otomatik soyulmaz: `\href`'in ikinci argümanı görünen metin, `\htmlClass`'ınki matematiğin kendisidir — ikisini karıştırmak içeriği sessizce kaybettirir ya da yinelerdi) |
-| `\color{}`, `\textcolor{}{}` | destekli | `xcolor` gerekir | Preamble'a paket (`xcolor`) |
-
-**Files:**
-- Create: `backend/deixis/workflow/report/latex_math.py`
-- Test: `tests/test_report_latex_math.py`
-
-**Interfaces:**
-- Produces:
-
-```python
-def check_unsupported_macros(span: str) -> list[str]: ...
-def convert_math_span(span: str, label: str | None) -> tuple[str, list[str]]: ...
-```
-
-- [ ] **Step 1: Başarısız testleri yaz**
-
-```python
-# tests/test_report_latex_math.py
-from deixis.workflow.report.latex_math import check_unsupported_macros, convert_math_span
-
-
-def test_known_amsmath_and_amssymb_macros_are_not_flagged():
-    assert check_unsupported_macros(r"T_{\text{gecikme}} \leq \dfrac{L}{R} \in \mathbb{R}") == []
-
-
-def test_unrecognized_macro_is_flagged_without_being_rewritten():
-    warnings = check_unsupported_macros(r"\R \to \mathbb{R}")
-    assert any("\\R" in w for w in warnings)
-    assert r"\R" in r"\R \to \mathbb{R}"  # not rewritten
-
-
-def test_katex_trust_only_commands_are_flagged_as_unsupported():
-    warnings = check_unsupported_macros(r"\htmlClass{foo}{x}")
-    assert any("unsupported" in w and "htmlClass" in w for w in warnings)
-
-
-def test_inline_math_is_untouched_except_for_katex_only_aliases():
-    tex, warnings = convert_math_span(r"$a \lt b \gt c$", label=None)
-    assert tex == r"$a < b > c$"
-    assert any("lt" in w for w in warnings)
-
-
-def test_tag_is_stripped_from_display_math_with_a_warning():
-    tex, warnings = convert_math_span(r"$$a+b=c \tag{7}$$", label="eq:EQ1")
-    assert r"\tag" not in tex
-    assert "\\begin{equation}" in tex and "\\label{eq:EQ1}" in tex
-    assert any("tag" in w for w in warnings)
-
-
-def test_plain_display_math_becomes_one_labelled_equation():
-    tex, warnings = convert_math_span(r"$$T \leq \dfrac{L}{R} + \tau$$", label="eq:EQ1")
-    assert tex == "\\begin{equation}\n\\label{eq:EQ1}\nT \\leq \\dfrac{L}{R} + \\tau\n\\end{equation}"
-    assert warnings == []
-
-
-def test_bare_line_break_is_wrapped_in_gathered():
-    tex, warnings = convert_math_span(r"$$a=1 \\ b=2$$", label="eq:EQ2")
-    assert "\\begin{gathered}" in tex and tex.count("\\begin{equation}") == 1
-    assert any("gathered" in w for w in warnings)
-
-
-def test_aligned_block_gets_exactly_one_equation_number():
-    tex, warnings = convert_math_span(r"$$\begin{aligned} a &= 1 \\ b &= 2 \end{aligned}$$", label="eq:EQ3")
-    assert tex.count("\\begin{equation}") == 1
-    assert "\\begin{aligned}" in tex
-
-
-def test_top_level_align_is_rewritten_to_aligned_for_one_shared_number():
-    tex, warnings = convert_math_span(r"$$\begin{align} a &= 1 \\ b &= 2 \end{align}$$", label="eq:EQ4")
-    assert "\\begin{aligned}" in tex and "\\begin{align}" not in tex
-    assert any("align" in w for w in warnings)
-```
-
-- [ ] **Step 2: Çalıştır, başarısız olduğunu doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_math.py -v`
-Expected: FAIL — `ModuleNotFoundError`.
-
-- [ ] **Step 3: `latex_math.py`'yi yaz** (yukarıdaki tablo, koddaki `_KNOWN_MACROS`/`_GREEK`/`_UNSUPPORTED` sabitleriyle):
-
-```python
-"""KaTeX-only constructs vs. plain LaTeX/IEEEtran+amsmath (P6 slice 5, hard part 2). See this file's
-table in the plan for the per-construct decision. This is a static, best-effort check on stored text,
-not a compiler; it can both miss a macro that truly breaks compilation and flag one that would have
-compiled fine (task 5g's optional developer test is the only thing that actually compiles anything).
-"""
-from __future__ import annotations
-
-import re
-
-_LT_GT = [(re.compile(r"\\lt\b"), "<"), (re.compile(r"\\gt\b"), ">")]
-_TAG = re.compile(r"\\tag\{[^{}]*\}")
-_UNSUPPORTED_NAMES = {"htmlClass", "href", "colorbox", "class", "style", "includegraphics"}
-
-_KNOWN_MACROS = {
-    "frac", "dfrac", "tfrac", "sqrt", "sum", "int", "iint", "prod", "lim", "sup", "inf", "min", "max",
-    "sin", "cos", "tan", "log", "ln", "exp", "times", "cdot", "div", "pm", "mp", "leq", "geq", "neq",
-    "approx", "sim", "propto", "in", "notin", "subset", "subseteq", "supset", "cup", "cap", "forall",
-    "exists", "nabla", "partial", "infty", "cdots", "ldots", "vdots", "ddots", "begin", "end", "left",
-    "right", "mathbf", "mathit", "mathrm", "mathcal", "mathbb", "mathsf", "mathtt", "boldsymbol", "bm",
-    "overline", "underline", "hat", "tilde", "bar", "vec", "dot", "ddot", "binom", "choose", "text",
-    "operatorname", "quad", "qquad", "label", "ref", "eqref", "color", "textcolor", "big", "Big",
-    "bigg", "Bigg", "langle", "rangle", "lceil", "rceil", "lfloor", "rfloor", "top", "bot", "perp",
-    "parallel", "wedge", "vee", "oplus", "otimes", "circ", "star", "dagger", "ddagger", "hbar", "ell",
-    "Re", "Im", "aligned", "gathered", "array", "matrix", "pmatrix", "bmatrix", "vmatrix",
-}
-_GREEK = {
-    "alpha", "beta", "gamma", "delta", "epsilon", "varepsilon", "zeta", "eta", "theta", "vartheta",
-    "iota", "kappa", "lambda", "mu", "nu", "xi", "pi", "rho", "sigma", "varsigma", "tau", "upsilon",
-    "phi", "varphi", "chi", "psi", "omega", "Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi", "Sigma",
-    "Upsilon", "Phi", "Psi", "Omega",
-}
-_MACRO = re.compile(r"\\([a-zA-Z]+)")
-
-
-def check_unsupported_macros(span: str) -> list[str]:
-    found = []
-    for match in _MACRO.finditer(span):
-        name = match.group(1)
-        if name in _KNOWN_MACROS or name in _GREEK or name in {"lt", "gt", "tag"}:
-            continue
-        if name in _UNSUPPORTED_NAMES:
-            found.append(f"unsupported KaTeX-only command \\{name} has no plain-LaTeX equivalent")
-        else:
-            found.append(f"unrecognized macro \\{name}, not on the known-safe list; check this equation compiles")
-    return found
-
-
-def _rewrite_katex_only(inner: str) -> tuple[str, list[str]]:
-    warnings = []
-    for pattern, replacement in _LT_GT:
-        if pattern.search(inner):
-            warnings.append(f"rewrote KaTeX's {pattern.pattern!r} to {replacement!r}")
-            inner = pattern.sub(replacement, inner)
-    if _TAG.search(inner):
-        warnings.append("removed \\tag{...}: the report numbers this equation itself via equation_ref")
-        inner = _TAG.sub("", inner)
-    return inner, warnings
-
-
-def convert_math_span(span: str, label: str | None) -> tuple[str, list[str]]:
-    """span includes its delimiters. label is an 'eq:EQ<n>' LaTeX label for display math with an
-    equation_ref; inline ($...$) math is never wrapped in a numbered environment and label is ignored."""
-    display = span.startswith("$$")
-    inner = span[2:-2] if display else span[1:-1]
-    inner, warnings = _rewrite_katex_only(inner)
-    warnings += check_unsupported_macros(inner)
-    if not display:
-        return f"${inner}$", warnings
-    env_match = re.search(r"\\begin\{(aligned|gathered|align)\}", inner)
-    if env_match:
-        env = env_match.group(1)
-        if env == "align":
-            inner = inner.replace("\\begin{align}", "\\begin{aligned}").replace("\\end{align}", "\\end{aligned}")
-            warnings.append("rewrote a top-level align inside $$...$$ to aligned so it gets one shared equation number")
-        tex = f"\\begin{{equation}}\n\\label{{{label}}}\n{inner.strip()}\n\\end{{equation}}"
-    elif "\\\\" in inner:
-        warnings.append("wrapped a bare line break in gathered so the equation environment accepts it")
-        tex = f"\\begin{{equation}}\n\\label{{{label}}}\n\\begin{{gathered}}\n{inner.strip()}\n\\end{{gathered}}\n\\end{{equation}}"
-    else:
-        tex = f"\\begin{{equation}}\n\\label{{{label}}}\n{inner.strip()}\n\\end{{equation}}"
-    return tex, warnings
-```
-
-- [ ] **Step 4: Çalıştır, geçtiğini doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_math.py -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/deixis/workflow/report/latex_math.py tests/test_report_latex_math.py
-git commit -m "Add the KaTeX-vs-LaTeX construct check and display-math environment conversion" -- backend/deixis/workflow/report/latex_math.py tests/test_report_latex_math.py
-git push origin main
-```
-
-### 5c — Kaynakça: D59 iş anahtarlarıyla `\cite{}`
-
-#### Task 1: `bibliography.to_bibtex`'e geriye dönük uyumlu `keys` parametresi
-
-**Files:**
-- Modify: `backend/deixis/workflow/bibliography.py`
-- Test: `tests/test_bibliography.py` (mevcut dosya; yoksa dosya adı `tests/test_bibliography_export.py` olabilir — yürütmeden önce `grep -rl "to_bibtex" tests/` ile teyit edilir)
-
-**Interfaces:**
-- Consumes: mevcut `bibliography._keys`, `bibliography._TYPES`, `bibliography._tex`, `bibliography._version_note` (değişmez, hepsi aynı modül içinde kalır).
-- Produces: `to_bibtex(sources: list[dict[str, Any]], keys: list[str] | None = None) -> str`.
-
-- [ ] **Step 1: Başarısız testi yaz**
-
-```python
-def test_to_bibtex_accepts_explicit_keys_and_keeps_default_behavior_when_omitted(lib):
-    sources = [make_source(title="A Long Title", authors=["Ada Lovelace"], year=2020)]
-    assert "@article{lovelace2020long," in to_bibtex(sources)          # unchanged default behavior
-    assert "@article{Lovelace20," in to_bibtex(sources, keys=["Lovelace20"])
-```
-
-- [ ] **Step 2: Çalıştır, başarısız olduğunu doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_bibliography.py -k explicit_keys -v`
-Expected: FAIL — `TypeError: to_bibtex() got an unexpected keyword argument 'keys'`.
-
-- [ ] **Step 3: `to_bibtex`'i genişlet**
-
-```python
-def to_bibtex(sources: list[dict[str, Any]], keys: list[str] | None = None) -> str:
-    entries = []
-    for key, s in zip(keys if keys is not None else _keys(sources), sources):
-        entry_type, venue_field, _ = _TYPES[_kind(s["publication_type"])]
-        ...  # unchanged body
-```
-
-(Fonksiyonun geri kalanı birebir aynı kalır; yalnız `for key, s in zip(_keys(sources), sources):` satırı yukarıdaki gibi değişir.)
-
-- [ ] **Step 4: Testleri çalıştır (yeni + mevcut regresyon)**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_bibliography.py -v`
-Expected: PASS — bugünkü `/api/researches/{id}/bibliography` rotasının davranışı değişmez (o rota `keys` geçirmez, `None` varsayılanı bugünkü `_keys()`'i kullanmaya devam eder).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/deixis/workflow/bibliography.py tests/test_bibliography.py
-git commit -m "Let to_bibtex take explicit citation keys, defaulting to its own word-based keys as before" -- backend/deixis/workflow/bibliography.py tests/test_bibliography.py
-git push origin main
-```
-
----
-
-#### Task 2: `latex_bib.py` — D59 anahtarlarının çözümü ve geri düşüş
-
-`backend/deixis/workflow/source_keys.py` bu not yazılırken **commit edilmiştir** (migration `0033_work_source_keys.sql`, `Store.source_key(work_id)`, `Store.assign_source_keys()` — bkz. `tests/test_source_keys.py`); MEMORY.md'deki "başka bir oturumun süren işi" notu artık güncel değildir, bu güncel bulgu §"Dilim 1'den beklenenler"de ayrıca kaydedilir. Bağımlılık yine de gerçektir: `works.source_key` bir işe yalnız `assign_source_keys()` çalıştıktan sonra atanır (uygulama başlangıcında) ve tekil bir işe hiç yazar/başlık bulunamazsa `key_stem` yine de `"Source" + yıl` üretir, yani `source_key` pratikte hep bir değer taşır — **null olduğu tek durum**, işin son başlangıçtan sonra eklenmiş olması ve henüz bir sonraki başlangıcın `assign_source_keys()`'ini görmemiş olmasıdır. Bu görev bu boşluk için raporun kendi kapsamında (kütüphane genelinde değil, yalnız bu dışa aktarımda) hesaplanan ve çakışmayan bir yedek anahtar üretir.
-
-**Files:**
-- Create: `backend/deixis/workflow/report/latex_bib.py`
-- Test: `tests/test_report_latex_bib.py`
-
-**Interfaces:**
-- Consumes: `store.source_key(work_id)` (mevcut, `backend/deixis/workflow/store.py:949`), `source_keys.key_stem`, `source_keys.suffixes` (mevcut, `backend/deixis/workflow/source_keys.py`), `bibliography.to_bibtex(sources, keys=...)` (task 1).
-- Produces:
-
-```python
-def resolve_cite_keys(store: Store, sources: list[dict[str, Any]]) -> list[str]: ...
-def to_bibtex_for_report(store: Store, sources: list[dict[str, Any]]) -> str: ...
-```
-
-- [ ] **Step 1: Başarısız testleri yaz**
-
-```python
-# tests/test_report_latex_bib.py
-def test_resolve_cite_keys_uses_the_stored_work_source_key(lib):
-    store, svid = seed_source_with_key(lib, source_key="Nakano13")
-    source = {"work_id": store.source(svid)["work_id"], "authors": ["Tokuko Nakano"], "title": "T", "year": 2013}
-    assert resolve_cite_keys(store, [source]) == ["Nakano13"]
-
-
-def test_resolve_cite_keys_falls_back_when_a_work_has_no_stored_key_yet(lib):
-    store, svid = seed_source_with_key(lib, source_key=None)
-    source = {"work_id": store.source(svid)["work_id"], "authors": ["Ada Lovelace"], "title": "T", "year": 2020}
-    assert resolve_cite_keys(store, [source]) == ["Lovelace20"]
-
-
-def test_resolve_cite_keys_avoids_a_local_collision_between_a_stored_and_a_fallback_key(lib):
-    store, svid1 = seed_source_with_key(lib, source_key="Lovelace20")
-    _, svid2 = seed_source_with_key(lib, source_key=None)
-    sources = [
-        {"work_id": store.source(svid1)["work_id"], "authors": ["Ada Lovelace"], "title": "T", "year": 2020},
-        {"work_id": store.source(svid2)["work_id"], "authors": ["Ada Lovelace"], "title": "U", "year": 2020},
-    ]
-    assert resolve_cite_keys(store, sources) == ["Lovelace20", "Lovelace20b"]
-
-
-def test_to_bibtex_for_report_keys_entries_by_source_key_not_the_word_based_default(lib):
-    store, svid = seed_source_with_key(lib, source_key="Nakano13")
-    source = make_source(svid, title="Molecular Communication Scheduling", authors=["Tokuko Nakano"], year=2013)
-    assert "@article{Nakano13," in to_bibtex_for_report(store, [source])
-```
-
-- [ ] **Step 2: Çalıştır, başarısız olduğunu doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_bib.py -v`
-Expected: FAIL — `ModuleNotFoundError`.
-
-- [ ] **Step 3: `latex_bib.py`'yi yaz**
-
-```python
-"""Cite keys for the LaTeX export, from the D59 work key (Store.source_key, backend/deixis/workflow/
-source_keys.py), reusing bibliography.py's field-building and escaping (D16) with those keys instead of
-its own word-based _keys(). D59 is committed and wired (migration 0033, Store.assign_source_keys at
-startup); a None here means only that a work was added since the last startup's backfill."""
-from __future__ import annotations
-
-from typing import Any
-
-from deixis.workflow import bibliography, source_keys
-from deixis.workflow.store import Store
-
-
-def resolve_cite_keys(store: Store, sources: list[dict[str, Any]]) -> list[str]:
-    seen = {k for k in (store.source_key(s["work_id"]) for s in sources) if k}
-    keys: list[str] = []
-    for s in sources:
-        key = store.source_key(s["work_id"])
-        if key is None:
-            stem, _basis = source_keys.key_stem(s["authors"], s["title"], s["year"])
-            for suffix in source_keys.suffixes():
-                candidate = stem + suffix
-                if candidate not in seen:
-                    key = candidate
-                    seen.add(candidate)
-                    break
-        keys.append(key)
-    return keys
-
-
-def to_bibtex_for_report(store: Store, sources: list[dict[str, Any]]) -> str:
-    return bibliography.to_bibtex(sources, keys=resolve_cite_keys(store, sources))
-```
-
-- [ ] **Step 4: Çalıştır, geçtiğini doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_bib.py -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/deixis/workflow/report/latex_bib.py tests/test_report_latex_bib.py
-git commit -m "Key the LaTeX bibliography by each work's D59 source_key with a local fallback for a missing one" -- backend/deixis/workflow/report/latex_bib.py tests/test_report_latex_bib.py
-git push origin main
-```
-
-**Neden klasik `bibtex`, `biblatex`/`biber` değil.** `bibliography.py` zaten Zotero'nun BibTeX çevirmenini hedefler ve klasik `\bibliographystyle{IEEEtran}` + `bibtex` (biber değil) kullanır. Klasik `bibtex`'in Unicode ile bilinen sorunu **sıralamadır** (aksanlı harflerin harmanlama sırası); IEEEtran'ın `IEEEtran` stili **sırasız**dır (metindeki ilk geçiş sırasını korur, §9), yani sıralama hiç devreye girmez. Alan içerikleri (başlık, yazar) `bibtex` tarafından yalnız kopyalanıp `.bbl`'e yazılır, tipografiye karışmaz; dosya UTF-8 kaydedildiği ve XeLaTeX Unicode yerlisi olduğu sürece Türkçe başlık/yazar adları sorunsuz basılır. Bu yüzden `biblatex`+`biber` gibi yeni bir bağımlılık zinciri eklenmez.
-
-### 5d — Tablo hücresi durumları ve `table*` bölme
-
-#### Task 1: Hücre durumunun düz metni
-
-**Files:**
-- Create: `backend/deixis/workflow/report/latex_table.py` (bu görevde yalnız `cell_text`)
-- Test: `tests/test_report_latex_table.py`
-
-**Interfaces:**
-- Consumes: `latex_text.escape_prose`, `latex_math.convert_math_span` (yalnız `text` biçimli değer hücrelerinde, satır içi matematik taşıyabilir).
-- Produces: `cell_text(cell: dict, language: str) -> tuple[str, list[str]]` (metin, uyarılar).
-
-Yedi hücre durumu Markdown dışa aktarımıyla (dilim 1) aynı düz sözcüklerle yazılır — `apps/web/src/EvidenceTable.tsx`'in bugünkü İngilizce etiketleriyle birebir, artı Türkçe karşılıkları:
-
-| Durum | English (EvidenceTable.tsx) | Türkçe |
+| F1 | `report` run kind, rapor tabloları, `ReportStore` kodda yok | Var (`0035`…`0057`, `workflow/report/store.py`, `views.py:253` `report_view`) | `to_latex` `report_view` çıktısını okur (Q2) |
+| F2 | `numbering.py::number_equations` var | Yok; D120 bilerek yapmadı. Atıf numarası `report_view` içinde (`views.py:284`), denklem numarası Markdown'da (`export.py:241-246`) ve ekranda (`ReportView.tsx`) ayrı hesaplanır | LaTeX denklem sayacını LaTeX verir; ekranla aynı olacağı iddia edilmez (Q6) |
+| F3 | Kaynak alanları `report_view`'dan gelir | `references` yalnız `number, source_version_id, source_key, title, authors, year, venue, doi, version_label, open_passage_id` taşır (`views.py:329-333`); `publication_type`, `volume`, `issue`, `pages`, `landing_url` `source_versions`'tan, `arxiv_id` `identifier_mappings`'tan okunmalıdır (`bibliography.py:49-59` bunu `export_sources` ile yapar) | `.bib` için ayrı, aynı okuma anında alınan satırlar (Q10, Q20) |
+| F4 | `\R`, `\htmlClass` KaTeX'te yok | `katex_commands.json` 976 komut içerir; `R`, `N`, `Z`, `lt`, `gt`, `htmlClass`, `href`, `def`, `newcommand` dahil | Veriye dayalı denetim (Q5) |
+| F5 | `table*` + 20 satırlık parçalar yeterli | Ölçümle yanlış; taşan satır sessizce kesilir (§2) | `longtable` (Q7) |
+| F6 | HTTP başlığında Türkçe uyarı metni | Başlık latin-1 ile sınırlı | `.tex` başında yorum bloğu, başlıkta sayı (Q8) |
+| F7 | D59 anahtarı işe aittir, `\cite` anahtarı olarak yeter | Anahtar işe aittir; aynı işin iki kaynak sürümü aynı anahtarı paylaşır (`0033_work_source_keys.sql`, `works_source_key`) | İkinci sürüm `-2`, `-3` alır (Q3) |
+| F8 | `contracts.py`'ye genel takma ad | `assembly.py:535-536` `contracts._is_escaped` ve `contracts._math_spans`'i doğrudan kullanır; `contracts.py` başka sohbetlerde değişiyor | Dokunulmaz (Q5) |
+| F9 | Dışa aktarım yalnız Markdown'ın aynısını LaTeX'e çevirir | Markdown'ın taşıdığı D120 sınırları: `export.py:196-217` TASLAK satırı ve reddedilen kural adları, `:220-237` eksik satırlar, elle düzenleme, kanıt değişimi, `:251-284` bölüm notları, `:306-321` çapa ve inceleme notu ve bulgular | Hepsi zorunlu içerik (Q18) |
+| F10 | Dilim 1 tamam olunca yazılabilir | Dilim 1 kodlandı | Dilim 1'e bağımlılık kalmadı; ama dilim 4 (D147) aynı dışa aktarım dosyasına dokunuyor: X2 bağımsız, X1 dilim 4 E1/E2'den sonra (Q22, §11) |
+
+## 1. Kodda bugün olan (`58676f1`'de doğrulandı)
+
+Satır numaraları `58676f1`'e aittir. `origin/main` o zamandan beri ilerledi (dilim 3 K3 `api/app.py`, `flow.py`, `store.py` içinde değişiklik getirdi; dilim 4 tasarım notu geldi); bu not dışa aktarım koduna ve rapor görünümüne dokunan bir değişiklik görmedi, ama batch'ler başlamadan taban yeniden karşılaştırılır (§11).
+
+| Parça | Durum | Bu dilimde kullanımı |
 |---|---|---|
-| `not_applicable` | Not applicable | Uygulanamaz |
-| `inaccessible` | No text | Metin yok |
-| `not_found_in_inspected_scope` | Not found in the text read | İncelenen metinde bulunamadı |
-| `not_reported` | (tabloda ayrı etiketlenmez, "Not reported" bugünkü koddan) | Bildirilmedi |
-| `unknown` | (tabloda ayrı etiketlenmez) | Bilinmiyor |
-| `not_verified` | (tabloda ayrı etiketlenmez) | Doğrulanmamış |
+| `workflow/report/export.py` | `MEDIA_TYPES` (`:14`), `HEADINGS` (`:16`), `_md` (`:44`), `_table` (`:94`), `_review_note` (`:160`, bölüm adlarına içeride `_md` uygular), `to_markdown(view, *, title, corpus)` (`:192`), `export_markdown(store, research_id, report_id)` (`:324`; bitmemiş rapor için `RevisionConflict` → 409, başlık, `snapshot(report_id)["corpus"]`, dosya adı `report-<slug>-<suffix>.md`) | LaTeX bunun ikizi olur; ortak iki dilli metinler `export_text.py`'ye çıkar (X1) |
+| `api/app.py:1963-1968` | `GET /api/researches/{id}/reports/{report_id}/export`, `fmt: Literal["markdown"]`, `Response(text, media_type=MEDIA_TYPES[fmt], Content-Disposition)` | `Literal["markdown", "latex"]` (X4) |
+| `workflow/views.py:253-380` | `report_view`: bölümler `DISPLAY_ORDER` sırasında, iddialar paragraf ilk görülme sırasında; `numbers` atıf numarasını `source_version_id`'ye bağlar; `references` (`:319-333`) `source_key` taşır (`works.source_key`, `None` olabilir); `table_i` `columns` (`options` dahil), `rows` (`ref_number`, `source_key`, `failed`), `cells` | Tek girdi |
+| `workflow/bibliography.py` | `to_bibtex(sources)` (`:67`) `_keys()` ile kelime tabanlı anahtar; `_tex` (`:131`) kaçış; `_raw` (`:140`) doi/url/eprint; `export_sources` (`:49`) arXiv kimliğini `identifier_mappings`'tan okur; `tests/test_bibliography.py` | `keys` ve `latex_report` parametreleri (X3) |
+| `workflow/store.py:1385-1412`, `0033` | `works.source_key` yeni işe verilir, başlangıçta eksikler doldurulur; `works_source_key` büyük-küçük harfe duyarsız tekil indeks | Yalnızca okunur (`report_view` zaten taşır) |
+| `domain/contracts.py` | `MATH` (`:743`), `_is_escaped` (`:751`), `_math_spans` (`:758`), `_math_span_is_well_formed` (`:783`; yalnız süslü parantez ve ortam dengesi) | `_math_spans` doğrudan alınır (`assembly.py:535-536` emsali); güvenlik taraması bu denge denetimine dayanmaz (§4) |
+| `documents/arxiv_source.py:624-645` | `katex_known()`, `katex_unknown(latex)` (KaTeX'in bilmediği komut ve ortamlar) | `katex_known` kümesi kullanılır; `katex_unknown`'a güvenlik için dayanılmaz (§4) |
+| `documents/katex_commands.json`, `latex_kernel_names.json` | KaTeX 0.16.47 komutları/ortamları/simgeleri; article+amsmath+amssymb çekirdek adları (pdfLaTeX) | İkincisi bu preamble için yetmez (IEEEtran, XeLaTeX); yeni bir adlar dosyası üretilir (Q5) |
+| `apps/web/src/MathText.tsx` | `katex.renderToString(..., { displayMode, throwOnError: false })`, `trust` kapalı, özel makro yok | Ekranda çizilemeyen komut, burada da güvenilmez sayılır |
+| `workflow/tables.py:20-22` | `CELL_STATES` yedi durum; `MAX_TEXT_VALUE = 500`; sütun sayısına üst sınır yok | Hücre ve tablo kuralları (Q7, Q19) |
+| `assembly.py:535-591` | Denklem iddiası `equation_origin_json` taşır; `ocr`/`marker` kökenli için uyarı kaydı vardır; `report_view` bunu dışarı vermez | Dışa aktarım Marker/OCR kökenini bilmez; Limits'e yazılır |
+| `ReportView.tsx:90-110, 171`, `api.ts:850`, `report.css:47`, `Toast.tsx`, `e2e/report.spec.ts:116-130` | Markdown kopyala/indir düğmeleri, tek toast, dar ekranda etiket gizleme, Playwright dışa aktarma testi | Üçüncü düğme (X5) |
+| `tests/test_report_export.py` (12 test), `test_report_failure_display.py`, `test_p6_measure_report.py:699` | `_md`, `_table`, `to_markdown`, `export_markdown`'ı doğrudan çağırır | Bu adlar yerinde kalır (X1) |
+| `tests/test_ocr.py:23` | `needs_tesseract = pytest.mark.skipif(shutil.which(...) is None, ...)` | Derleme testinin atlama kalıbı |
+| Yok olanlar | `report/numbering.py`, LaTeX üreten herhangi bir kod, `latex_names.json`, ortak "denetlenmedi" metin modülü | Bu dilim kurar |
 
-Okuma derinliği hücrede **ayrı gösterilmez** (§9'un renk olmadan gösterme sorusu): renk yoktur, madalyon yoktur; VIII'in özet/tam-metin oranı zaten toplulaştırılmış olarak anlatır (§6, §8 kural #7 "II ve VIII'deki sayılar corpus ile birebir"). Hücre başına derinliği tekrar yazmak tabloyu kalabalıklaştırır ve zaten paydalı toplama cümlesiyle çelişme riski taşır; bu yüzden atlanır, bu bir kayıptır ve Açık noktalar'da yazılır.
+Gerçek bir modelle tek bir tam rapor vardır: 18 Eylül'de 11 bölümün 11'i yazıldı, 24 model çağrısı (`docs/product/p6-slice1-handoff.md`, commit `4582b64`). O rapor sonraki sözleşmelerden (D125–D129, D127 tutamaçları, montaj kuralları) önce üretildi; sonraki P16 koşu serisi (D124, D126, D128) bölüm IV'te durdu ve tamamlanmadı. Bugünkü sözleşmeyle gerçek modelle tamamlanmış bir rapor yoktur; bu dışa aktarım yalnızca sentetik raporlarla sınanır ve özellikle `index_terms` iddialarının güncel model çıktısındaki biçimi görülmedi.
 
-- [ ] **Step 1: Başarısız testleri yaz**
+## 2. TeX ile yapılan ölçümler (2 Ekim 2026, bu makine, TeX Live 2021)
 
-```python
-def test_state_cells_use_the_same_plain_wording_as_the_markdown_export(lib):
-    assert cell_text({"state": "not_applicable", "value": None}, "en") == ("Not applicable", [])
-    assert cell_text({"state": "not_applicable", "value": None}, "tr") == ("Uygulanamaz", [])
-    assert cell_text({"state": "not_found_in_inspected_scope", "value": None}, "tr") == ("İncelenen metinde bulunamadı", [])
+Dosyalar `/tmp/x0-tex/` altında (M4–M6 için temiz, adlandırılmış girdiler `/tmp/x0-tex/ref/`), depoya girmez. Ölçüm, tasarımın dayandığı varsayımları sınamak içindi; bir ürün testi değildir ve yalnız bu TeX dağıtımı için geçerlidir. Tabloda kayıp ölçümünde her hücreye benzersiz bir bitiş işareti (`ENDr3c5x`) konup `pdftotext` çıktısında aranmıştır; satır sayısını ya da ilk işareti saymak yetmez, çünkü kesilen hücrelerin başı görünür.
 
+| # | Soru | Sonuç |
+|---|---|---|
+| M1 | XeLaTeX + `IEEEtran[journal]` + `fontspec` Türkçe harfleri basar mı? | Evet (ığşĞÜÇÖİ başlıkta, özette, kaynakçada). `\author` yoksa yalnız uyarı. Times yazı tipi biçimleri için "Font shape undefined" uyarısı çıkar, varsayılan yazı tipine düşer. |
+| M2 | Düz metindeki `≥` ve `α`? | Latin Modern'de yok. Derleme hata vermez, glif düşer ("p ≥ 0.05" → "p  0.05"), yalnız log'da "Missing character" olur. pdfLaTeX + utf8 aynı karakterde sert hata verirdi (ölçülmedi, bilinen davranış). `\ensuremath{\geq}` ve `\ensuremath{\alpha}` doğru basılır. |
+| M3 | `\eqref` | Kendi parantezini basar; `(\eqref{x})` "((1))" olur. `\ref` düz sayı verir. |
+| M4 | IEEEtran.bst başlık büyük-küçük harfi (`ref/m4_*`) | Başlığı küçük harfe çevirir: "MIMO … DNA" → "Mimo … dna", `A\_B` → `a_b`. Başlığı çift süslü parantezle (`{{…}}`) sarmak özgün harfleri korudu. Önceki çalıştırmada kullanılan dosyalar sonradan değiştirildiği için ölçüm temiz girdilerle tekrarlandı ve aynı sonuç alındı. |
+| M5 | `.bib`'de `url` alanı (`ref/m5_*`) | Preamble'da `url` paketi yoksa derleme hata verir (adresteki `_` için "Missing $ inserted", `%` için "File ended while scanning use of \url"); paketle `%` içeren adres de derlenir. Bu yalnız sınanan iki adres içindir. IEEEtran.bst (TL2021) `doi` alanını basmadı, `url`'yi bastı. |
+| M6 | Referans sırası (`ref/m4_*_url`) | `.bib` sırası K1, K2; metindeki ilk `\cite` sırası K2, K1: liste ilk `\cite` sırasıyla çıktı (K2 = [1]). Bu, iki mekanizmayı ayırır. `\cite{A,B}` bitişik. Abstract ve `IEEEkeywords` içinde `\cite` derlenir. |
+| M7 | Büyük tablo, `table*` + `tabularx`, `\scriptsize` | LaTeX hata kodu üretmez, ama log'da "Float too large for page" ve çok sayıda Overfull uyarısı çıkar ve sığmayan satırlar basılmaz. 8 sözcüklük hücrelerle 13 sütunda 30 satırın hücrelerinin 260/390'ının sonu, 15 sözcüklükte 15 satırın 130/195'inin sonu PDF'te yoktu; bir sözcüklük hücrelerde 50 satır sığdı. Eski planın `MAX_ROWS_PER_PART = 20` değeri bu yüzden genel bir güvenli üst sınır değildir ve satır sayısı doğru ölçüt değildir. |
+| M8 | `\onecolumn` + `longtable` (`p{…}` sütunları, `\endfirsthead`/`\endhead`) + `\twocolumn` | 30 satır × 13 sütun, 8 sözcüklük hücrelerle: tüm bitiş işaretleri basıldı, üç sayfaya bölündü, başlık satırı her sayfada, caption "TABLE I: … (continued)". `xltabular` de çalıştı; `longtable` LaTeX'in çekirdek `tools` paketinde olduğu için seçildi. |
+| M9 | `longtable` ile tek satırın yüksekliği (düzeltilmiş ölçüm) | Satır sayfadan yüksekse `longtable` onu bölemez ve içerik kaybolur: 13 sütun × 500 karakterlik hücrelerde bir satırda 12/13 hücrenin sonu yoktu (400 karakterde 13/13 vardı); log'da bu durumda "Overfull \vbox … has occurred while \output is active" çıkar. Önceki taslakta bu satırın "sığdığı" yazılmıştı; yalnız satır başlıklarını saydığım için yanlıştı. |
+| M10 | Sütun sayısı sınırı | 500 karakterlik hücrelerle 6, 7 ve 8 sütunda 8 satır ve 7 sütunda 40 satır: hiçbir hücre kaybolmadı, Overfull yok. 9 sütunda ilk Overfull \hbox (sözcük sütundan geniş), 10 sütunda 99. 13 sütun × 200 karakter × 30 satırda hücre kaybı yok ama 2.596 Overfull \hbox (komşu sütuna taşan yazı). Bu yüzden `longtable` en çok 7 veri sütunluk gruplara bölünür (Q7). |
+| M11 | Türkçe ortam adları | `\renewcommand{\abstractname}{Özet}`, `\IEEEkeywordsname`, `\refname` IEEEtran'da çalışır; `polyglossia` gerekmez. |
+| M12 | KaTeX'in bildiği, bu preamble'ın tanımlamadığı komutlar | 976 KaTeX komutundan 238'i `\ifdefined` ile tanımsız çıktı (`R`, `N`, `Z`, `lt`, `gt`, `argmax`, `mathscr`, `cancel`, `htmlClass`, `includegraphics`, renk adları …). Ölçümde `hyperref` yüklü olduğu için `\href` ve `\url` listede yoktu; ürün preamble'ında `hyperref` yok, kesin liste üretim scriptinden gelir. |
 
-def test_value_cell_prints_by_answer_format():
-    assert cell_text({"state": "value", "value": {"number": 40, "unit": "düğüm"}}, "tr") == ("40 düğüm", [])
-    assert cell_text({"state": "value", "value": {"answer": "no"}}, "tr") == ("Hayır", [])
-    assert cell_text({"state": "value", "value": {"answer": "yes"}}, "en") == ("Yes", [])
-    cell = {"state": "value", "value": {"option_ids": ["opt_1"]}, "column_options": [{"id": "opt_1", "label": "Gecikme"}]}
-    assert cell_text(cell, "tr") == ("Gecikme", [])
+Bu makinede ölçülmeyenler: pdfLaTeX, LuaLaTeX, Overleaf, TeX Live 2021 dışı sürümler, gerçek bir rapor.
 
+## 3. Çıktının biçimi
 
-def test_text_value_cell_escapes_prose_and_converts_inline_math():
-    cell = {"state": "value", "value": {"text": r"50% $T_{\max}$ ile sınırlı"}}
-    text, warnings = cell_text(cell, "tr")
-    assert text == r"50\% $T_{\max}$ ile sınırlı"
-    assert warnings == []
+Preamble sabittir (`latex_preamble.py`, X2): `\documentclass[journal]{IEEEtran}`, `fontspec`, `amsmath`, `amssymb`, `bm`, `xcolor`, `cite`, `url`, `booktabs`, `longtable`, `array`. `hyperref` ve `tabularx` yoktur. Motor XeLaTeX, kaynakça BibTeX + `IEEEtran.bst`. Dosyanın ilk satırları yorumdur: derleme komutu (`latexmk -xelatex <stem>.tex`), gereken yazılım (XeLaTeX, BibTeX, IEEEtran sınıfı ve stili), dışa aktarım notları (§7).
+
+Gövde sırası:
+
+1. `\title{<araştırma başlığı>}`, `\maketitle`. `\author` yoktur (M1: yalnızca uyarı).
+2. Rapor kimliği satırı ("Evidence report · draft" ya da "… · V<n>", Markdown'daki gibi, dile göre) ve ardından, varsa, yukarıdaki denetlenmedi blokları: TASLAK satırı ve reddedilen kuralların adları, eksik satırlar ve gerekçeleri, elle düzenleme notu, kanıt değişti notu. Hepsi `\noindent` düz paragraf, abstract'tan önce.
+3. `abstract` ortamı (`abstract` bölümünün iddiaları, paragraflara göre) ve `IEEEkeywords` ortamı (`index_terms` iddiaları virgülle birleşir; atıfları `\cite` olarak korunur).
+4. `I`–`IX` bölümleri `\section*{I. Introduction}` biçiminde, `HEADINGS`'teki metinle aynen. IEEEtran'ın otomatik numarası kullanılmaz; çünkü eksik bir bölüm numarayı kaydırırdı. II ve VIII'in `draft.text` değeri, ardından varsa iddiaları, bölüm notları (doğrulanmadı, yetersiz kanıt, "metin yazılmadı") ve VI önsözü Markdown'daki sırayla ve yerlerle yazılır.
+5. Tablo I (§5), Markdown'daki yerinde: ilk `table_ref = TABLE_I` paragrafının ardından, hiçbiri yoksa IV'ün başında.
+6. `\section*{Report notes}` (Türkçede `Rapor notları`): korpus alt bilgisi, çapa cümlesi (geçmiş kontrol sonucu olarak, "pasajlar denetlenebilir" izlenimi vermeden), inceleme notu, model bulguları listesi, §5'te tanımlanan "Long table values" / "Uzun tablo değerleri" listesi (tam metinler; §7'deki 20 kayıt ve 200 karakter sınırları bu listeye uygulanmaz, o sınırlar yalnız dışa aktarım notlarının `.tex` başındaki yorum bloğu içindir) ve izlenebilirlik sınırı: çıktı raporu ve kaynakçayı taşır; alıntı pasajları, hücre kanıtları ve konumlanmış çapalar DEIXIS'te kalır (Q21).
+7. `\bibliographystyle{IEEEtran}`, `\bibliography{<stem>}` en sonda (IEEE sırası).
+
+Türkçe raporda `\abstractname` "Özet", `\IEEEkeywordsname` "Dizin Terimleri", `\refname` "Kaynaklar" olur. Dil, Markdown gibi `view["language"]` değerinin `tr` ile başlamasına bağlıdır.
+
+Tüm kayıtlı metin (iddia, başlık, hücre, birim, sütun adı, bulgu, kaynakça alanı) tek bir kaçış yolundan geçer (`latex_text.py`): on LaTeX özel karakteri kaçırılır, düz metindeki `\$` gerçek bir dolar işareti sayılır ve başka her ters bölü düz karakterdir, boşluk dizileri tek boşluğa iner (matematik aralıkları hariç), `"` açılış/kapanış tırnağına, `U+00A0` `~`'ye döner. Düz metinde TeX komutu çalışmaz. Kapalı bir simge tablosu (`≤ ≥ ≠ ≈ ± × ÷ − · ° µ`, Yunan harfleri, `→ ← ∞ ∈ ∑`…; kesin liste X2'de) metinde `\ensuremath{…}` ile, matematik içinde doğrudan komutla yazılır. Latin Temel, Latin-1, Latin Genişletilmiş-A ve genel noktalama (U+2010–U+2027) dışındaki, tabloda olmayan karakterler için belge başına tek uyarı verilir (ilk 10 kod noktası ve toplam). Bu küme yazı tipi kapsamının doğrulaması değildir; M2'de görülen sessiz glif düşmesine karşı bir uyarıdır.
+
+## 4. Matematik
+
+Matematik aralıkları `contracts._math_spans` ile bulunur (aralık içindeki kaçırılmış `\$` ve satır kuralları onun). Her aralık için sıra şudur: önce **saklı girdi** kapalı tarayıcıdan geçer; geçerse girdi üzerinde kayıpsız yeniden yazım ve simge dönüşümü yapılır; en son yazım sınıfı seçilir. Tarayıcı yalnız saklı girdiyi doğrular. Dışa aktarıcının kendi ürettiği komutlar (`\ensuremath`, `\alpha`, `\geq`, `equation` sarmalayıcıları) kapalı tablodan gelir ve yeniden taranmaz; saklı girdide `\ensuremath` yazılıysa KaTeX bilmediği için sınıf A'dır.
+
+**Aşama 1 — kapalı tarama (sınıf A).** `contracts.py`'deki `katex_unknown` ve `_math_span_is_well_formed` bu iş için yetmez: ikisi de `\begin{…}` biçimini düz bir kalıpla arar ve `\begin {document}` gibi boşluklu yazımı kaçırır (Sol bunu bellekte çalıştırarak gösterdi). Bu yüzden `latex_math.py` kendi tarayıcısını yazar; tarayıcı her kontrol dizisini ve her ortam adını **izinli kümeye karşı** denetler, listeye göre yasaklamaz:
+
+- Her kontrol sözcüğü KaTeX'in bildiği komutlardan (`katex_commands.json::commands`) olmalı ve deny listesinde olmamalı; her kontrol simgesi `katex_commands.json::symbols` kümesinde olmalı. Deny listesi en az şunları içerir: `def gdef edef xdef let futurelet newcommand renewcommand providecommand global expandafter verb begingroup endgroup url href includegraphics htmlClass htmlData htmlId htmlStyle` (kesin liste X2'de 976 adın gözden geçirilmesiyle sabitlenir). KaTeX'in bilmediği her şey (`\input`, `\write`, `\csname`, `\catcode`, `\label`, `\ref`, `\cite`, `\immediate`, `\openout`, `\mbox`, `\ensuremath` …) bu yüzden kendiliğinden dışarıda kalır. Tarama aralığın tamamında, iç içe argümanlar dahil çalışır.
+- `\begin` ve `\end`, boşluk ve satır sonu atlanarak, yalnız `{ad}` ile ve `ad` izinli ortam kümesinde olduğunda kabul edilir; yığın kendi sayacımızla eşleşmeli (ad ve sıra). İzinli ortamlar: `aligned alignedat gathered split cases array matrix pmatrix bmatrix Bmatrix vmatrix Vmatrix smallmatrix subarray` ve E kümesi (aşağıda). Başka ad, `\begin` sonrasında `{` yokluğu, `\end{document}`, eşleşmeyen ya da çapraz iç içelik sınıf A'dır.
+- `^^` dizisi, kaçırılmamış `%` ve `#`, aralıkta boş satır, NUL ve kontrol karakterleri sınıf A'dır.
+- Metin argümanları (`\text`, `\textrm`, `\textbf`, `\textit`, `\textsf`, `\texttt`) ayrı işlenir: içeride yalnız `\& \% \$ \# \_ \{ \} \, \;`, `\quad`, `\qquad` ve iç içe metin komutları (derinlik ≤ 3) serbesttir; başka kontrol dizisi sınıf A'dır.
+- **Bağlam kuralları.** Ortam başına politika: `&` kabul eden ortamlar `aligned alignedat array matrix pmatrix bmatrix Bmatrix vmatrix Vmatrix cases split smallmatrix subarray align align* alignat alignat* flalign flalign*`; `&` kabul etmeyenler `gathered gather gather* multline multline* equation equation*`. `\\` hepsinde geçerlidir, `equation` ve `equation*` dışında. Bir `&` ya da `\\` yalnızca, en içteki ortamı bunu kabul eden ve ortamın başlangıcından beri süslü parantez derinliği 0 olan yerde geçerlidir; ortam dışında ve derinlik 0'da ise aşağıdaki sarmalama kuralı uygulanır; başka her yerde (`{x&y}`, `\frac{x&y}{z}`, `gathered` içinde `&` gibi) sınıf A. Tek istisna `\substack{…}` argümanı içindeki `\\`'dır. `\left`, `\right` ve `\middle` ayrı bir yığınla eşleştirilir; eşleşmeyen sınıf A. Süslü parantez dengesi ve bu iki denetim, argüman sayısını (`\frac{x}`) denetlemez: böyle bir aralık derlenmeyebilir. Bu bir derleme riskidir, güvenlik ya da veri kaybı değildir; ayrı bir uyarı üretilmez ve §12'de sınır olarak yazılıdır. `_math_spans` içinde `$` bulunan bir `\text{$x$}` aralığını iki parçaya böler; iki parça da süslü parantez dengesi bozuk olduğundan sınıf A olur ve düz metin yazılır (X2'de test). `\tag`, `\nonumber` ve `\notag` yalnızca display aralığında, hiçbir ortamın ve süslü parantezin içinde olmadığında geçerlidir (amsmath `aligned` içinde `\tag`'ı reddeder); satır içinde ya da başka yerde sınıf A.
+- Sınıf A'daki aralık özgün karakterleriyle, §3'ün düz metin kaçışından geçirilerek yazılır (matematik gösterimi kaybolur) ve uyarı üretir. Fazla reddetmek güvenlidir; bu sınır güvenlik içindir (Q17), derlenebilirliğin kanıtı değildir.
+
+**Aşama 2 — kayıpsız yeniden yazım ve simge.** Tarayıcıdan geçen girdide `\lt` → `<`, `\gt` → `>` (KaTeX'e özgü, LaTeX'te karşılığı birebir); Unicode simgeler (`α`, `≥` …) §3'ün kapalı tablosuyla matematik içinde doğrudan komuta, metin argümanlarında `\ensuremath{…}` ile yazılır. Başka yeniden yazım yoktur.
+
+**Aşama 3 — yazım sınıfı.** Sınıf A değilse:
+
+| Aralık | Koşul | Çıktı |
+|---|---|---|
+| Satır içi `$…$` | Üst düzeyde `&`/`\\` yok (bağlam kuralları) ve E kümesinden ortam yok | Değişmeden. Aksi hâlde sınıf A |
+| Display, E | Gövde (kenar boşlukları atılınca) tek bir E ortamı: `align align* alignat alignat* gather gather* multline multline* flalign flalign* equation equation*` | Ortam olduğu gibi yazılır, ek sarmalayıcı ve etiket yok; numarayı LaTeX verir |
+| Display, E dışında bir yerde E ortamı ya da birden çok E ortamı | | Sınıf A |
+| Display, üst düzey `\tag`/`\nonumber`/`\notag` içeren | Üst düzey `&`/`\\` yok | `equation*`; sayaç kullanılmaz, etiket yok |
+| Display, üst düzey `\tag`/`\nonumber`/`\notag` ile üst düzey `&`/`\\` birlikte | | Sınıf A |
+| Display, üst düzey `&` | | `equation`/`equation*` içinde `aligned` |
+| Display, yalnızca üst düzey `\\` | | `equation`/`equation*` içinde `gathered` |
+| Diğer display | | `equation`/`equation*` |
+
+`equation` ya da `equation*` seçimi Q6'nın etiket kuralına bağlıdır. Yalnız son üç satır etiket alabilen aralıklardır; E ve `\tag` sınıfları değişmeden ve etiketsiz yazılır.
+
+**Uyarı bayrağı (sınıf B).** Aşama 1'den geçen bir aralıkta KaTeX'in bildiği ama bu preamble'ın tanımlamadığı bir komut ya da ortam varsa (`latex_names.json`; ör. `\R`, `\mathscr`) aralık değişmeden yazılır ve "bu komut dışa aktarım preamble'ında tanımlı değil, derleme durabilir" uyarısı eklenir.
+
+**Tablo hücresinde `$$`.** Düz sınıfa giriyorsa (E, `\tag`, `&`, `\\` yok) satır içi yazılır ve uyarı verilir; değilse sınıf A.
+
+**`latex_names.json`** `scripts/latex_export_names.py` ile üretilir (TeX gerektirir, yalnız geliştirici makinesinde, bir kez ve preamble ya da `katex_commands.json` değişince). Script KaTeX komutlarını `\ifdefined`, ortamları `\@ifundefined{ad}` ve `\@ifundefined{endad}` ile denetler. Dosya şunları taşır: preamble'ın sha256'sı, `katex_commands.json`'un sha256'sı, KaTeX sürümü, motorun sürüm satırı, yüklenen sınıf ve paketlerin `\listfiles` sürümleri, tanımsız komutlar ve tanımsız ortamlar. Saf bir test iki hash'i güncel kodla karşılaştırır, bayat dosyada başarısız olur. Çalışma zamanı TeX istemez. Liste bir uyumluluk uyarısı kaynağıdır; derleme ya da güvenlik kanıtı değildir.
+
+**Denklem etiketi ve numarası (Q6).** Etiket hedefleri rapor genelinde bir kez, okuma sırasında belirlenir: her `equation_ref` için, ref'i taşıyan iddialar arasında okuma sırasındaki ilk **etiket alabilen** display aralığı hedeftir; hedef `equation` + `\label{eq:EQn}` yazılır, o ref'in diğer **etiket alabilen** aralıkları `equation*` olur; E ve `\tag` sınıfındaki aralıklar hangi ref'e ait olursa olsun değişmeden ve etiketsiz kalır. İddia kendi hedefini içeriyorsa ek bir şey yazılmaz (numarayı LaTeX basar). Ref taşıyan ama hedefi başka yerde olan ve kendi display matematiği olmayan iddianın sonuna ` \eqref{eq:EQn}` eklenir; kendi başka bir display aralığı varsa `\eqref` eklenmez ve ref'in iki farklı ifadeye bağlandığı uyarılır. Hedef bulunamazsa (ref'in hiçbir aralığı etiket alamıyor) hiçbir `\eqref` yazılmaz, böylece "??" çıkmaz; tek bir uyarı verilir. Numarayı LaTeX'in sayacı belirler; Markdown ve ekrandaki numarayla aynı olacağı iddia edilmez. `\tag` varsa görünen numara o etikettir.
+## 5. Tablo I
+
+Tablo, `view["table_i"]`'den, Markdown'daki aynı yerde ve aynı sırayla yazılır. IEEEtran'ın sayacı "TABLE I"i kendisi basar; `\caption` metni Markdown'daki "TABLE I." önekini taşımaz. Tablo satırlara bölünmez (M7); her biri en çok 7 veri sütunu taşıyan `longtable`'lara sütun gruplarıyla bölünür (M9, M10). `longtable` her başlangıçta tablo sayacını artırır (TL2021 `longtable.sty`'de `\refstepcounter{table}`); ikinci ve sonraki grup "TABLE II" olmasın diye her devam grubunun önüne `\addtocounter{table}{-1}` yazılır (iki gruplu bir denemede iki başlık da "TABLE I" çıktı):
+
+```
+\onecolumn
+{\scriptsize
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.6in} >{\raggedright\arraybackslash}p{<w>} ...}
+\caption{<başlık>[ (columns a–b of N)]}\\ \toprule <başlık satırı> \\ \midrule \endfirsthead
+\caption[]{<başlık> (columns a–b of N) (continued)}\\ \toprule <başlık satırı> \\ \midrule \endhead
+\bottomrule \endlastfoot
+<satırlar>
+\end{longtable}}
+% sonraki sütun grubu varsa: \addtocounter{table}{-1} ve aynı kaynak sütunuyla yeni bir longtable
+\twocolumn
 ```
 
-- [ ] **Step 2: Çalıştır, başarısız olduğunu doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_table.py -k cell_text -v`
-Expected: FAIL — `ModuleNotFoundError`.
-
-- [ ] **Step 3: `cell_text`'i yaz**
-
-```python
-"""Table I as one or more table* floats (P6 slice 5, hard part 5)."""
-from __future__ import annotations
+Veri sütunu sayısı `n` (grup başına ≤ 7) için `<w> = \dimexpr(\textwidth-0.6in-2\tabcolsep)/n-2\tabcolsep\relax`; kaynak sütunu da sarılır (uzun başlık düşüşü, Markdown'daki `row.get("source_key") or row.get("title")` kuralı). Aynı satırlar her grupta kaynak sütunuyla yinelenir; grup sınırı yalnız sütunlardadır. 7 sınırı M10'daki ölçümdür ve iddiası "bu ölçümde 500 karakterlik hücrelerle kayıp ve Overfull yok"tur; genel bir sınır değildir. Genişlik formülü ve 0.6in kaynak sütunu X3'te derleme örneğiyle yeniden sınanır; ölçüm yalnızca `l` kaynak sütunu ve 0.7in bütçesiyle yapılmıştı.
 
-from deixis.workflow.report.latex_math import convert_math_span
-from deixis.workflow.report.latex_text import escape_mixed, escape_prose
-
-_STATE_TEXT = {
-    "en": {"not_applicable": "Not applicable", "inaccessible": "No text",
-           "not_found_in_inspected_scope": "Not found in the text read", "not_reported": "Not reported",
-           "unknown": "Unknown", "not_verified": "Not verified"},
-    "tr": {"not_applicable": "Uygulanamaz", "inaccessible": "Metin yok",
-           "not_found_in_inspected_scope": "İncelenen metinde bulunamadı", "not_reported": "Bildirilmedi",
-           "unknown": "Bilinmiyor", "not_verified": "Doğrulanmamış"},
-}
-_YES_NO = {"en": {"yes": "Yes", "no": "No"}, "tr": {"yes": "Evet", "no": "Hayır"}}
-
-
-def cell_text(cell: dict, language: str) -> tuple[str, list[str]]:
-    state = cell["state"]
-    if state != "value":
-        return _STATE_TEXT[language][state], []
-    value = cell["value"]
-    if "text" in value:
-        return escape_mixed(value["text"], lambda span: convert_math_span(span, label=None))
-    if "number" in value:
-        unit = f" {value['unit']}" if value.get("unit") else ""
-        return f"{value['number']}{unit}", []
-    if "answer" in value:
-        return _YES_NO[language][value["answer"]], []
-    if "option_ids" in value:
-        labels = [o["label"] for o in cell["column_options"] if o["id"] in value["option_ids"]]
-        return escape_prose(", ".join(labels)), []
-    return "", []
-```
-
-- [ ] **Step 4: Çalıştır, geçtiğini doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_table.py -k cell_text -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/deixis/workflow/report/latex_table.py tests/test_report_latex_table.py
-git commit -m "Print every evidence-cell state and value format the same way for the LaTeX table" -- backend/deixis/workflow/report/latex_table.py tests/test_report_latex_table.py
-git push origin main
-```
-
----
-
-#### Task 2: `table*` bölme
-
-Bir `table*` **bölünemeyen bir float**tır: sayfa yüksekliğini aşan bir tabloyu (10–13 sütun, ~50 satır, `\scriptsize`'da bile) hiçbir ortam sayfalar arasında otomatik bölemez, çünkü float içeriği tek bir kutu olarak yerleştirilir. `longtable`/`ltablex` gibi paketler bunu tek sütun genişliğinde çözer, ama iki sütunlu bir `table*`'ın genişliğini (`\textwidth`, iki sütun birden) korurken sayfalar arası bölünmeyi de istemek (`ltxtable`/`ltablex`'in iki sütunlu düzenle güvenilir birleşimi yoktur, elle sayfa kırılması duyarlılığı gerektirir ve derlemeden doğrulanamaz) bu dilimin kapsamı dışında bırakılır. Bunun yerine **bölme stratejisi** seçildi: `MAX_ROWS_PER_PART` (varsayılan 20) satırdan uzun bir tablo TABLE I(a), I(b)… gibi ayrı `table*` parçalarına bölünür, her biri kendi sayfasına sığacak kadar küçüktür. **Kaybedilen:** (1) tek bir "Tablo I" nesnesi yerine harfli parçalar; düzyazı hâlâ yalnız "Tablo I" der, ama basılı tablo birden çok yerde görünür. (2) Bölme noktası **gerçek satır yüksekliğine değil sabit satır sayısına** dayanır — hiçbir derleme yapılmadığı için (§ genel kısıt) olağandışı uzun bir hücre metni olan bir parçanın yine de sayfayı taşırması mümkündür; bu ölçülmedi, yalnız söylenir. Alternatif olarak düşünülüp reddedilen: yatay (landscape) döndürme (`pdflscape`) — bir `table*`'ı IEEEtran'ın iki sütunlu gövdesi içinde döndürmek, float yerleştirmesiyle güvenilir birleşmez ve derlenmeden doğrulanamayacak bir sayfa-kırılması duyarlılığı ekler; bu yüzden v1'de uygulanmadı, yalnız not edildi.
-
-**Files:**
-- Modify: `backend/deixis/workflow/report/latex_table.py`
-- Test: `tests/test_report_latex_table.py`
-
-**Interfaces:**
-- Produces: `render_table(columns: list[dict], rows: list[dict], language: str, caption: str) -> tuple[str, list[str]]`. `columns`: `[{"name": str}, ...]`. `rows`: `[{"source_key": str, "cells": [cell, ...]}, ...]` (bir hücre `cell_text`'in beklediği şekil).
-
-- [ ] **Step 1: Başarısız testleri yaz**
-
-```python
-def test_a_table_within_the_row_limit_is_one_table_star_with_a_plain_caption():
-    columns = [{"name": "Yöntem"}]
-    rows = [{"source_key": "Nakano13", "cells": [{"state": "value", "value": {"text": "X"}}]}]
-    tex, warnings = render_table(columns, rows, "tr", "TABLE I. Included sources")
-    assert tex.count("\\begin{table*}") == 1
-    assert "\\caption{TABLE I. Included sources}" in tex
-    assert warnings == []
-
-
-def test_a_table_over_the_row_limit_is_split_into_lettered_parts(monkeypatch):
-    import deixis.workflow.report.latex_table as mod
-    monkeypatch.setattr(mod, "MAX_ROWS_PER_PART", 2)
-    columns = [{"name": "Yöntem"}]
-    rows = [{"source_key": f"S{i}", "cells": [{"state": "unknown", "value": None}]} for i in range(5)]
-    tex, warnings = render_table(columns, rows, "en", "TABLE I. Included sources")
-    assert tex.count("\\begin{table*}") == 3
-    assert "TABLE I. Included sources(a) (1 of 3)" in tex
-    assert "TABLE I. Included sources(c) (3 of 3)" in tex
-
-
-def test_cell_conversion_warnings_are_collected_across_the_whole_table():
-    columns = [{"name": "Yöntem"}]
-    rows = [{"source_key": "S1", "cells": [{"state": "value", "value": {"text": r"$\R$"}}]}]
-    _tex, warnings = render_table(columns, rows, "en", "TABLE I")
-    assert any("\\R" in w for w in warnings)
-```
-
-- [ ] **Step 2: Çalıştır, başarısız olduğunu doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_table.py -k render_table -v`
-Expected: FAIL — `AttributeError: module has no attribute 'render_table'`.
-
-- [ ] **Step 3: `render_table`'ı ekle**
-
-```python
-MAX_ROWS_PER_PART = 20
-
-
-def render_table(columns: list[dict], rows: list[dict], language: str, caption: str) -> tuple[str, list[str]]:
-    parts = [rows[i:i + MAX_ROWS_PER_PART] for i in range(0, len(rows), MAX_ROWS_PER_PART)] or [[]]
-    align = "l" + " X" * len(columns)
-    source_header = {"en": "Source", "tr": "Kaynak"}[language]
-    warnings: list[str] = []
-    out: list[str] = []
-    for i, part in enumerate(parts):
-        label = f"{caption}({chr(ord('a') + i)}) ({i + 1} of {len(parts)})" if len(parts) > 1 else caption
-        out += [
-            "\\begin{table*}[t]", f"\\caption{{{escape_prose(label)}}}", "\\centering", "\\scriptsize",
-            f"\\begin{{tabularx}}{{\\textwidth}}{{{align}}}", "\\toprule",
-            " & ".join([source_header] + [escape_prose(c["name"]) for c in columns]) + " \\\\", "\\midrule",
-        ]
-        for row in part:
-            printed = [row["source_key"]]
-            for cell in row["cells"]:
-                text, cell_warnings = cell_text(cell, language)
-                printed.append(text)
-                warnings += cell_warnings
-            out.append(" & ".join(printed) + " \\\\")
-        out += ["\\bottomrule", "\\end{tabularx}", "\\end{table*}"]
-    return "\n".join(out), warnings
-```
-
-- [ ] **Step 4: Çalıştır, geçtiğini doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_table.py -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/deixis/workflow/report/latex_table.py tests/test_report_latex_table.py
-git commit -m "Split TABLE I into page-sized table* parts instead of one unbreakable float" -- backend/deixis/workflow/report/latex_table.py tests/test_report_latex_table.py
-git push origin main
-```
-
-### 5e — Ana derleyici ve golden-file testi
-
-#### Task 1: `render_latex()` — saf birleştirici
-
-**Files:**
-- Create: `backend/deixis/workflow/report/latex_export.py`
-
-**Interfaces:**
-- Consumes: `latex_text.escape_prose`/`escape_mixed`, `latex_math.convert_math_span`, `latex_table.render_table`, `latex_bib.to_bibtex_for_report`.
-- Produces:
-
-```python
-from dataclasses import dataclass
-
-@dataclass
-class LatexBundle:
-    tex: str
-    bib: str
-    warnings: list[str]
-    filename_stem: str
-
-def render_latex(report: dict, sections: list[dict], sources: list[dict], store, table: dict) -> LatexBundle:
-    """Pure: report/sections/sources/table are plain dicts (report_view/report/table shape), no I/O.
-    store is only used for latex_bib.to_bibtex_for_report's D59 lookups (source_key), never for other reads."""
-```
-
-`render_latex` şu sırayı yürür (dilim 1'in `to_markdown`'ıyla aynı yürüyüş, farklı çıktı dili):
-
-1. `\documentclass[journal]{IEEEtran}` ve sabit preamble (bkz. golden fixture) — XeLaTeX seçildi çünkü Türkçe harfler (`ı İ ğ ş ç ö ü`) `fontspec` altında herhangi bir font-kodlaması olmadan doğrudan basılır; `pdfLaTeX` + `inputenc`/`babel`'in Türkçe noktasız-ı için bilinen özel-durum haritalaması gerektirmesi (klasik bir LaTeX tuzağı) böylece atlanır. Bedeli: görev 5g'nin isteğe bağlı derleme testi `xelatex` ister, `pdflatex` değil.
-2. `\title{}` rapor planının kapsam cümlesinden türeyen başlık (dilim 1'in `research_title` adımı); `\author{}` gerçek bir kişiyi taklit etmez, sabit "Generated by DEIXIS / Hakem denetiminden geçmemiştir" bloğu.
-3. Rapor `draft` ise `\maketitle`'dan hemen sonra düz, renksiz bir "TASLAK: `<section>` doğrulanmadı." paragrafı (§2 karar 11; sürüm numarası hiç yazılmaz).
-4. `\begin{abstract}…\end{abstract}`, sonra `\begin{IEEEkeywords}…\end{IEEEkeywords}` (D44 kavram sözlüğünden, yeni terim eklenmez).
-5. Sabit iskeletteki her bölüm `\section{<Türkçe/İngilizce başlık>}`; `paragraph` numarasına göre gruplanmış iddialar tek paragrafta `escape_mixed` ile yazılır; `table_ref: "TABLE_I"` gören iddiadan hemen sonra `latex_table.render_table` gömülür; `equation_ref` gören her denklem `latex_math.convert_math_span(span, label=f"eq:{equation_ref}")` ile numaralanır ve düzyazıda `\eqref{eq:EQ1}` olarak anılır (aşağıdaki not).
-6. VI'nın adayları düz paragraf, "denetlenmemiş aday; kill-search yapılmadı" ibaresiyle (§7, kod hiçbir sözcüğü değiştirmez, yalnız kaçışlar).
-7. `\bibliographystyle{IEEEtran}` + `\bibliography{<filename_stem>}`.
-8. Kapanış satırı: "DEIXIS ile üretildi; korpus: …" (II'nin sayılarından, dilim 1'in Markdown kapanışıyla birebir aynı sayılar).
-
-**Denklem numaralandırması `\eqref` ile, metne gömülü sabit sayıyla değil.** Dilim 1'in Markdown dışa aktarımı `equation_ref`'i düz metne "(1)" olarak gömer (`numbering.py::number_equations`, sabit bir sayı). LaTeX'te bunun yerine `equation` ortamının **kendi otomatik sayacı** kullanılır ve metindeki her `equation_ref` kullanımı `\eqref{eq:EQ<n>}`'e çevrilir: ikisi aynı sayıyı üretir, çünkü her iki numaralandırma da aynı sırayla (bölüm `ordinal`'ı, sonra `paragraph`, sonra iddia sırası) yürür ve her görüntülenen denklem dosyada tam bir kez basılır. Bu, LaTeX'in kendi sayacıyla `number_equations()`'ın hesapladığı sayının **aynı belge içinde asla ayrışmayacağını** derleme olmadan da garanti eder (aynı sırayı iki kez yürütmek yerine LaTeX'e devredilir) ve `\eqref`'in çapraz-referans/`hyperref` bağlantısı bedavadan gelir. Golden-file testi (task 2) bunun `number_equations()`'ın sırasıyla aynı olduğunu doğrudan karşılaştırarak doğrular.
-
-- [ ] **Step 1–4:** Bu görev saf bir birleştirme fonksiyonudur; kendi başarısız/geçen testi **task 2'nin golden-file testidir** (ayrı, daha küçük testler yazmak burada gereksiz tekrar olurdu — birleştiricinin her dalı zaten alt modüllerde test edildi). Bu yüzden 5e Task 1 ve Task 2 tek bir commit'te birlikte yürütülür.
-
-#### Task 2: Golden-file testi — SYNTHETIC sabit rapor
-
-**Files:**
-- Create: `tests/fixtures/research/report-latex-golden.py`, `tests/test_report_latex_export.py`
-
-Sentetik rapor (etiket: SYNTHETIC): 3 kaynak, 4 sütunlu bir tablo (her 7 hücre durumu en az bir kez), IV'te satır içi matematikli bir iddia ve görüntülenen bir denklem, VI'da iki aday (`corpus_absence`, `stated_limitation`), rapor durumu `draft` (VI doğrulanmadı).
-
-```python
-# tests/fixtures/research/report-latex-golden.py
-"""SYNTHETIC fixture for the LaTeX export golden-file test (P6 slice 5)."""
-
-REPORT = {
-    "id": "rpt_test1", "status": "draft", "language": "tr", "report_version": None,
-    "draft_reason_section": "VI",
-    "title": "Gecikmeyle Sınırlı Moleküler Haberleşme Çizelgelemesi Üzerine Sınırlı Kanıt Raporu",
-    "abstract": "Bu rapor, gecikmeyle sınırlı moleküler haberleşme çizelgelemesi konusunda incelenen "
-                "3 kaynaktan üretilmiştir; bulgular özet ve tam metin karışımına dayanır ve TASLAK "
-                "durumundadır.",
-    "index_terms": ["moleküler haberleşme", "çizelgeleme", "gecikme"],
-    "corpus": {"found": 120, "unique": 95, "screened": 40, "included": 3, "full_text": 2},
-}
-
-SOURCES = [
-    {"work_id": "wrk_1", "source_key": "Nakano13", "authors": ["Tokuko Nakano"], "year": 2013,
-     "title": "Molecular Communication Scheduling with Bounded Delay",
-     "venue": "IEEE Transactions on Molecular, Biological and Multi-Scale Communications",
-     "publication_type": "journal-article", "doi": "10.1109/TMBMC.2013.000001",
-     "landing_url": None, "arxiv_id": None, "version_label": "publishedVersion",
-     "volume": None, "issue": None, "pages": None},
-    {"work_id": "wrk_2", "source_key": "Ozturk21", "authors": ["Ayşe Öztürk"], "year": 2021,
-     "title": "Enerji Kısıtlı Ağlarda Gecikme Modellemesi", "venue": "SYNTHETIC Workshop on Networks",
-     "publication_type": "journal-article", "doi": None, "landing_url": None, "arxiv_id": None,
-     "version_label": "submittedVersion", "volume": None, "issue": None, "pages": None},
-    {"work_id": "wrk_3", "source_key": None, "authors": ["J. Ford"], "year": 2022,
-     "title": "SYNTHETIC Energy-Aware Routing", "venue": None, "publication_type": "journal-article",
-     "doi": None, "landing_url": None, "arxiv_id": None, "version_label": None,
-     "volume": None, "issue": None, "pages": None},
-]
-
-TABLE = {
-    "columns": [{"name": "Yöntem"}, {"name": "Örneklem"}, {"name": "Hakemli mi?"}, {"name": "Ölçüt"}],
-    "rows": [
-        {"source_key": "Nakano13", "cells": [
-            {"state": "value", "value": {"text": r"Gecikmeyi $T_{\max}$ ile sınırlayan rastgele erişim tabanlı bir çizelgeleme yaklaşımı önerilmiştir."}},
-            {"state": "value", "value": {"number": 40, "unit": "düğüm"}},
-            {"state": "not_verified", "value": None},
-            {"state": "value", "value": {"option_ids": ["opt_delay"]}, "column_options": [{"id": "opt_delay", "label": "Gecikme"}, {"id": "opt_throughput", "label": "Verim"}]},
-        ]},
-        {"source_key": "Ozturk21", "cells": [
-            {"state": "not_found_in_inspected_scope", "value": None},
-            {"state": "inaccessible", "value": None},
-            {"state": "value", "value": {"answer": "no"}},
-            {"state": "not_applicable", "value": None},
-        ]},
-        {"source_key": "Ford22", "cells": [
-            {"state": "unknown", "value": None},
-            {"state": "not_reported", "value": None},
-            {"state": "value", "value": {"answer": "yes"}},
-            {"state": "value", "value": {"option_ids": ["opt_throughput"]}, "column_options": [{"id": "opt_delay", "label": "Gecikme"}, {"id": "opt_throughput", "label": "Verim"}]},
-        ]},
-    ],
-}
-
-SECTIONS = [
-    {"section_id": "II", "ordinal": 1, "paragraph_text":
-        "İnceleme 120 kaydı buldu, tekilleştirmeden sonra 95 iş kaldı, 40'ı tarandı ve 3'ü dahil "
-        "edildi; dahil kaynaklardan 2'sinin tam metni okunabildi."},
-    {"section_id": "IV", "ordinal": 2, "claims": [
-        {"claim_key": "IV.1", "paragraph": 1, "table_ref": "TABLE_I", "citation_source_keys": [],
-         "text": "Tablo I, incelenen kaynaklardan çıkarılan kanıtı özetler."},
-        {"claim_key": "IV.2", "paragraph": 2, "table_ref": None, "citation_source_keys": ["Nakano13"],
-         "text": r"Gecikmeyi $T_{\max}$ ile sınırlayan rastgele erişim tabanlı bir çizelgeleme yaklaşımı önerilmiştir."},
-        {"claim_key": "IV.3", "paragraph": 3, "table_ref": None, "equation_ref": "EQ1",
-         "citation_source_keys": ["Ozturk21"],
-         "text": r"İncelenen pasajda aşağıdaki gecikme kısıtı verilmiştir: "
-                 r"$$T_{\text{gecikme}} \leq \dfrac{L}{R} + \tau, \quad \tau \geq 0$$ "
-                 r"Bu ifade Marker ile okunmuştur ve sayfayla karşılaştırılarak denetlenmelidir."},
-        {"claim_key": "IV.4", "paragraph": 3, "table_ref": None, "citation_source_keys": [],
-         "text": "Tam metni incelenen 2 kaynağın 1'i gecikmeyi doğrudan ölçmüştür."},
-    ]},
-    {"section_id": "VI", "ordinal": 3, "gaps": [
-        {"gap_id": "gap1", "kind": "corpus_absence",
-         "text": "İncelenen 3 kaynağın tam metni okunan 2'sinde enerji tüketimi ele alınmamıştır; "
-                 "bu aday incelenmemiştir, kill-search yapılmadı."},
-        {"gap_id": "gap2", "kind": "stated_limitation",
-         "text": "Nakano13 kendi sınırlaması olarak örneklem büyüklüğünün küçük olduğunu belirtir; "
-                 "bu aday incelenmemiştir, kill-search yapılmadı."},
-    ]},
-]
-```
-
-Beklenen `.tex` (tam, `render_latex(REPORT, SECTIONS, SOURCES, store, TABLE).tex`'in eşiti — testte `textwrap.dedent`/üçlü tırnakla tek sabit olarak tutulur):
-
-```latex
-\documentclass[journal]{IEEEtran}
-\usepackage{fontspec}
-\usepackage{amsmath}
-\usepackage{amssymb}
-\usepackage{bm}
-\usepackage{xcolor}
-\usepackage{cite}
-\usepackage{tabularx}
-\usepackage{booktabs}
-\usepackage{hyperref}
-
-\begin{document}
-
-\title{Gecikmeyle Sınırlı Moleküler Haberleşme Çizelgelemesi Üzerine Sınırlı Kanıt Raporu}
-\author{\IEEEauthorblockN{Generated by DEIXIS}\IEEEauthorblockA{Hakem denetiminden geçmemiştir; tek bir araştırma oturumundan üretilmiştir.}}
-
-\maketitle
-
-\noindent\textbf{TASLAK: VI doğrulanmadı.}
-
-\begin{abstract}
-Bu rapor, gecikmeyle sınırlı moleküler haberleşme çizelgelemesi konusunda incelenen 3 kaynaktan üretilmiştir; bulgular özet ve tam metin karışımına dayanır ve TASLAK durumundadır.
-\end{abstract}
-
-\begin{IEEEkeywords}
-moleküler haberleşme, çizelgeleme, gecikme
-\end{IEEEkeywords}
-
-\section{Review Methodology}
-İnceleme 120 kaydı buldu, tekilleştirmeden sonra 95 iş kaldı, 40'ı tarandı ve 3'ü dahil edildi; dahil kaynaklardan 2'sinin tam metni okunabildi.
-
-\section{Literature Synthesis}
-Tablo I, incelenen kaynaklardan çıkarılan kanıtı özetler.
-
-\begin{table*}[t]
-\caption{TABLE I. Included sources and extracted evidence}
-\centering
-\scriptsize
-\begin{tabularx}{\textwidth}{l X X X X}
-\toprule
-Kaynak & Yöntem & Örneklem & Hakemli mi? & Ölçüt \\
-\midrule
-Nakano13 & Gecikmeyi $T_{\max}$ ile sınırlayan rastgele erişim tabanlı bir çizelgeleme yaklaşımı önerilmiştir. & 40 düğüm & Doğrulanmamış & Gecikme \\
-Ozturk21 & İncelenen metinde bulunamadı & Metin yok & Hayır & Uygulanamaz \\
-Ford22 & Bilinmiyor & Bildirilmedi & Evet & Verim \\
-\bottomrule
-\end{tabularx}
-\end{table*}
-
-Gecikmeyi $T_{\max}$ ile sınırlayan rastgele erişim tabanlı bir çizelgeleme yaklaşımı önerilmiştir \cite{Nakano13}.
-
-İncelenen pasajda aşağıdaki gecikme kısıtı verilmiştir:
-\begin{equation}
-\label{eq:EQ1}
-T_{\text{gecikme}} \leq \dfrac{L}{R} + \tau, \quad \tau \geq 0
-\end{equation}
-Bu ifade Marker ile okunmuştur ve sayfayla karşılaştırılarak denetlenmelidir \cite{Ozturk21}. Tam metni incelenen 2 kaynağın 1'i gecikmeyi doğrudan ölçmüştür.
-
-\section{Candidate Unanswered Aspects}
-İncelenen 3 kaynağın tam metni okunan 2'sinde enerji tüketimi ele alınmamıştır; bu aday incelenmemiştir, kill-search yapılmadı.
-
-Nakano13 kendi sınırlaması olarak örneklem büyüklüğünün küçük olduğunu belirtir; bu aday incelenmemiştir, kill-search yapılmadı.
-
-\bibliographystyle{IEEEtran}
-\bibliography{rpt_test1}
-
-DEIXIS ile üretildi; korpus: bulunan 120, tekil 95, taranan 40, dahil 3, tam metinli 2.
-
-\end{document}
-```
-
-Beklenen `.bib` (yalnız atıf alan iki kaynak; Ford22 tabloda var ama hiç `\cite` almadığı için kaynakçada yok, §8 kural #8 "her kayıt en az bir atıfta"):
-
-```bibtex
-@article{Nakano13,
-  title = {Molecular Communication Scheduling with Bounded Delay},
-  author = {Tokuko Nakano},
-  year = {2013},
-  journal = {IEEE Transactions on Molecular, Biological and Multi-Scale Communications},
-  doi = {10.1109/TMBMC.2013.000001},
-  note = {Source version read in DEIXIS: published version},
-}
-
-@article{Ozturk21,
-  title = {Enerji Kısıtlı Ağlarda Gecikme Modellemesi},
-  author = {Ayşe Öztürk},
-  year = {2021},
-  journal = {SYNTHETIC Workshop on Networks},
-  note = {Source version read in DEIXIS: submitted manuscript},
-}
-```
-
-- [ ] **Step 1: Başarısız testi yaz**
-
-```python
-# tests/test_report_latex_export.py
-from tests.fixtures.research.report_latex_golden import REPORT, SOURCES, TABLE, SECTIONS
-EXPECTED_TEX = """...yukarıdaki tam metin..."""
-EXPECTED_BIB = """...yukarıdaki tam metin..."""
-
-
-def test_render_latex_matches_the_golden_fixture_byte_for_byte(store_with_sources):
-    bundle = render_latex(REPORT, SECTIONS, SOURCES, store_with_sources, TABLE)
-    assert bundle.tex == EXPECTED_TEX
-    assert bundle.bib == EXPECTED_BIB
-    assert "unrecognized macro" not in " ".join(bundle.warnings)  # this fixture's math is all known-safe
-    assert bundle.filename_stem == "rpt_test1"
-
-
-def test_no_internal_identifier_leaks_into_the_tex_or_bib(store_with_sources):
-    bundle = render_latex(REPORT, SECTIONS, SOURCES, store_with_sources, TABLE)
-    for leaked in ("claim_key", "IV.2", "source_stated", "cel_", "gap1", '"'):
-        assert leaked not in bundle.tex
-        assert leaked not in bundle.bib
-```
-
-- [ ] **Step 2: Çalıştır, başarısız olduğunu doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_export.py -v`
-Expected: FAIL — `ModuleNotFoundError` ya da (dosya varsa) metin farkı.
-
-- [ ] **Step 3: `render_latex`'i yaz** (yukarıdaki 8 adımlı sıra; sabit preamble ve bölüm başlıkları dile göre `{"tr": {...}, "en": {...}}` sözlüğünden).
-
-- [ ] **Step 4: Çalıştır, geçtiğini doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_export.py -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/deixis/workflow/report/latex_export.py tests/test_report_latex_export.py \
-  tests/fixtures/research/report-latex-golden.py
-git commit -m "Add the LaTeX export assembler with a golden-file test covering every table cell state" -- backend/deixis/workflow/report/latex_export.py tests/test_report_latex_export.py tests/fixtures/research/report-latex-golden.py
-git push origin main
-```
-
-### 5f — Zip teslimatı ve API rotası
-
-**Files:**
-- Modify: `backend/deixis/workflow/report/latex_export.py` (bu görevde `to_zip`, `filename`, `to_latex` sarmalayıcısı eklenir), `backend/deixis/api/app.py`
-- Test: `tests/test_report_latex_export.py`, `tests/test_report_api.py` (dilim 1'de yaratılır; bu görev orada bir dal ekler)
-
-**Interfaces:**
-- Consumes: dilim 1'in `ReportStore` (tam alan adları dilim 1 kodlanınca teyit edilir — bkz. Açık noktalar), `render_latex` (5e).
-- Produces:
-
-```python
-def to_zip(bundle: LatexBundle) -> bytes: ...
-def filename(bundle: LatexBundle) -> str: ...  # "deixis-<slug>-report.zip", bibliography.filename()'in deseni
-def to_latex(store: Store, reports: "ReportStore", report_id: str) -> LatexBundle: ...  # dilim 1'e bağlı ince sarmalayıcı
-```
-
-Rota (dilim 1'in `GET .../reports/{report_id}/export?format=markdown`'ını genişletir):
-
-```python
-@app.get("/api/researches/{research_id}/reports/{report_id}/export")
-async def export_report(research_id: str, report_id: str, request: Request, format: str = "markdown") -> Response:
-    if format == "latex":
-        bundle = latex_export.to_latex(store, reports_of(request), report_id)
-        body = latex_export.to_zip(bundle)
-        headers = {
-            "Content-Disposition": f'attachment; filename="{latex_export.filename(bundle)}"',
-            "X-Deixis-Export-Warnings": json.dumps(bundle.warnings[:20]),
-        }
-        return Response(body, media_type="application/zip", headers=headers)
-    text = report_export.to_markdown(store, reports_of(request), report_id)  # dilim 1'in mevcut dalı, değişmez
-    ...
-```
-
-`X-Deixis-Export-Warnings` en fazla 20 uyarı taşır (HTTP başlık boyutu için güvenli bir üst sınır; her uyarı zaten kısa bir cümledir, task 5b/5d'nin ürettiği metinler); 20'den fazlası varsa son eleman `"... and N more"` ile kapatılır.
-
-- [ ] **Step 1: Başarısız testleri yaz**
-
-```python
-def test_to_zip_contains_the_tex_and_bib_files_named_by_the_report_id():
-    bundle = LatexBundle(tex="\\documentclass{...}", bib="@article{...}", warnings=[], filename_stem="rpt_test1")
-    with zipfile.ZipFile(io.BytesIO(to_zip(bundle))) as zf:
-        assert set(zf.namelist()) == {"rpt_test1.tex", "rpt_test1.bib"}
-        assert zf.read("rpt_test1.tex").decode() == bundle.tex
-
-
-def test_export_route_with_format_latex_returns_a_zip_with_a_warnings_header(tmp_path):
-    ...  # app_for/session/create/start_report/wait_run deseni (dilim 1'in 1k testlerindeki gibi)
-    resp = client.get(f"/api/researches/{rid}/reports/{report_id}/export?format=latex")
-    assert resp.status_code == 200
-    assert resp.headers["content-type"] == "application/zip"
-    assert "attachment" in resp.headers["content-disposition"]
-    warnings = json.loads(resp.headers["x-deixis-export-warnings"])
-    assert isinstance(warnings, list)
-
-
-def test_export_route_with_format_markdown_is_unchanged():
-    ...  # dilim 1'in mevcut testinin regresyon kontrolü
-```
-
-- [ ] **Step 2: Çalıştır, başarısız olduğunu doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_export.py tests/test_report_api.py -k latex -v`
-Expected: FAIL.
-
-- [ ] **Step 3: `to_zip`/`filename`/`to_latex`'i ve rota dalını yaz**
-
-```python
-import io
-import zipfile
-
-
-def to_zip(bundle: LatexBundle) -> bytes:
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{bundle.filename_stem}.tex", bundle.tex)
-        zf.writestr(f"{bundle.filename_stem}.bib", bundle.bib)
-    return buf.getvalue()
-
-
-def filename(bundle: LatexBundle) -> str:
-    return f"deixis-{bundle.filename_stem}-report.zip"
-```
-
-`to_latex(store, reports, report_id)`: `reports.report(report_id)`, `reports.sections(report_id)`, dahil kaynakların listesini `research_view`'dan (`bibliography.export_sources`'ın yaptığı gibi) okuyup `render_latex`'e geçirir — kesin alan adları dilim 1 kodlanınca netleşir (Açık noktalar).
-
-- [ ] **Step 4: Çalıştır, geçtiğini doğrula**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_export.py tests/test_report_api.py -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/deixis/workflow/report/latex_export.py backend/deixis/api/app.py \
-  tests/test_report_latex_export.py tests/test_report_api.py
-git commit -m "Deliver the LaTeX export as a zip through the report export route's format parameter" -- backend/deixis/workflow/report/latex_export.py backend/deixis/api/app.py tests/test_report_latex_export.py tests/test_report_api.py
-git push origin main
-```
-
-### 5g — İsteğe bağlı geliştirici derleme testi
-
-DEIXIS hiçbir TeX kurulumu **gerektirmez**; bu görev yalnız geliştiricinin makinesinde `xelatex`/`latexmk`/`tectonic` varsa çalışan, yoksa atlanan tek bir testtir. Bu test geçtiğinde bile "dosya derlenir" iddiası yalnız **o fixture için, o TeX dağıtımında** doğrulanmış olur; CI'da hiçbir zaman çalışmaz (TeX kurulu değildir) ve bu yüzden normal test koşusunda "derlenebilirlik" hiç ölçülmez — bu açıkça söylenir, gizlenmez.
-
-**Files:**
-- Modify: `tests/test_report_latex_export.py`
-
-**Interfaces:**
-- Consumes: `shutil.which` (stdlib), `tests/test_ocr.py`'nin `needs_tesseract` deseni (mevcut).
-
-- [ ] **Step 1: İşareti ve testi yaz**
-
-```python
-import shutil
-import subprocess
-
-needs_xelatex = pytest.mark.skipif(shutil.which("latexmk") is None, reason="latexmk is not installed")
-
-
-@needs_xelatex
-def test_the_golden_fixture_actually_compiles_with_xelatex(tmp_path):
-    """Optional, developer-machine-only: proves nothing about CI, which has no TeX installed."""
-    bundle = render_latex(REPORT, SECTIONS, SOURCES, store_with_sources(), TABLE)
-    (tmp_path / f"{bundle.filename_stem}.tex").write_text(bundle.tex)
-    (tmp_path / f"{bundle.filename_stem}.bib").write_text(bundle.bib)
-    result = subprocess.run(
-        ["latexmk", "-xelatex", "-interaction=nonstopmode", "-halt-on-error", f"{bundle.filename_stem}.tex"],
-        cwd=tmp_path, capture_output=True, text=True, timeout=120,
-    )
-    assert result.returncode == 0, result.stdout[-4000:]
-    assert (tmp_path / f"{bundle.filename_stem}.pdf").exists()
-```
-
-- [ ] **Step 2: Çalıştır (varsa `latexmk`, yoksa atlanır)**
-
-Run: `PYTHONPATH=backend uv run pytest tests/test_report_latex_export.py -k compiles -v`
-Expected: `latexmk` yoksa `SKIPPED`; varsa PASS. (Yürütme ortamında `which latexmk` ile önce kontrol edilmeli; bu görev CI'da hiçbir şeyi kırmaz çünkü CI'da atlanır.)
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add tests/test_report_latex_export.py
-git commit -m "Add an optional developer-only compile check for the LaTeX export, skipped without latexmk" -- tests/test_report_latex_export.py
-git push origin main
-```
-
-### 5h — Arayüz: dışa aktarma seçeneği, i18n, uyarı bildirimi
-
-`.impeccable.md` önce okunur (`docs/product/p6-report-design.md`'nin "Aesthetic Direction"/"Design Principles" ile aynı restrained, editorial yön; ayrı görsel onay istenmez, build + ekran görüntüsüyle kendin doğrula).
-
-**Files:**
-- Modify: `apps/web/src/report/ReportView.tsx` (dilim 1'de yaratılır), `apps/web/src/i18n.ts`
-- Test: yok (Playwright acceptance kapsamı dilim 1'in `report.spec.ts`'sine dilim 1 kodlanınca eklenir; bu görev yalnız build/lint ve elle doğrulama ister)
-
-**Interfaces:**
-- Consumes: `useToast()`/`ToastAction` (`apps/web/src/Toast.tsx`, mevcut), `t()` (`i18n.ts`, mevcut).
-- Produces: `ReportView.tsx`'e "Download LaTeX (.zip)" düğmesi.
-
-- [ ] **Step 1: `npm run build`'in tip hatası verdiğini doğrula** (öncesinde düğme yok, bu adım yalnız mevcut dosyayı elle inceleyerek doğrulanır çünkü dilim 1 henüz kodda değil)
-
-- [ ] **Step 2: Düğmeyi ve indirme akışını ekle**
-
-```tsx
-async function downloadLatex() {
-  const resp = await fetch(`/api/researches/${researchId}/reports/${report.id}/export?format=latex`)
-  if (!resp.ok) { toast('error', t('LaTeX export failed')); return }
-  const warnings: string[] = JSON.parse(resp.headers.get('x-deixis-export-warnings') ?? '[]')
-  const blob = await resp.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = resp.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] ?? 'report.zip'
-  a.click()
-  URL.revokeObjectURL(url)
-  if (warnings.length) {
-    const shown = warnings.length > 3 ? `${warnings.slice(0, 3).join('; ')}; ${t('and {n} more', { n: warnings.length - 3 })}` : warnings.join('; ')
-    toast('warning', t('LaTeX export has {n} warnings: {list}', { n: warnings.length, list: shown }))
-  }
-}
-```
-
-Markdown "Copy"/"Download Markdown" düğmelerinin yanına: `<Button variant="outline" onClick={downloadLatex}>{t('Download LaTeX (.zip)')}</Button>`.
-
-`i18n.ts`'e: `'Download LaTeX (.zip)': 'LaTeX indir (.zip)'`, `'LaTeX export failed': 'LaTeX dışa aktarımı başarısız oldu'`, `'LaTeX export has {n} warnings: {list}': 'LaTeX dışa aktarımında {n} uyarı var: {list}'`, `'and {n} more': 've {n} tane daha'`.
-
-- [ ] **Step 3: Build/lint çalıştır, ekran görüntüsüyle doğrula**
-
-Run: `cd apps/web && npm run build && npm run lint`
-Expected: PASS (dilim 1 kodda olduğunda; bu görev dilim 1'den önce çalıştırılırsa yalnız `i18n.ts` değişikliği bağımsız test edilir, düğme eklemesi dilim 1'e ertelenir).
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add apps/web/src/report/ReportView.tsx apps/web/src/i18n.ts
-git commit -m "Add a LaTeX export download with a warnings toast next to the Markdown export" -- apps/web/src/report/ReportView.tsx apps/web/src/i18n.ts
-git push origin main
-```
-
-### 5i — Karar kaydı ve tasarım notu durum güncellemesi
-
-- [ ] **Step 1: `docs/decisions.md`'ye yeni girdi** (dosyanın başına, D1 kuralına uygun; en yüksek numara yürütme anında `grep -n '^## D' docs/decisions.md | head -3` ile teyit edilir, bu not yazılırken D60 boş):
-
-```markdown
-## D60 — Export the report as IEEEtran LaTeX and BibTeX, with a static KaTeX-vs-LaTeX check
-
-**Status:** accepted (<execution date>). **Date:** <execution date>. **Context:** P6 slice 5
-(`docs/product/p6-slice5-latex-export.md`), a second export format alongside slice 1's Markdown export
-(`docs/product/p6-slice1-report-run.md`).
-**Decision:** A `format=latex` branch of the report export route returns a zip of a single `.tex`
-(IEEEtran, journal mode, XeLaTeX) and a `.bib` file; math is escaped and converted from KaTeX-accepted
-constructs to plain LaTeX/amsmath by a static, non-compiling checker that records unsupported macros as
-export warnings; citation keys reuse each work's D59 `source_key` with a local fallback; TABLE I splits
-into page-sized `table*` parts instead of one unbreakable float; compilation is never required at
-runtime and is only checked by an optional, skip-marked developer test.
-**Evidence:** the golden-file test (`tests/test_report_latex_export.py`) and, when `latexmk` is present
-on the developer's machine, the optional compile check.
-**Limits:** the static macro check is a heuristic (can both miss and over-flag); the table split point is
-a fixed row count, not measured page height, since nothing is compiled by default; reading depth is not
-shown per cell in the LaTeX table, only in VIII's aggregate prose.
-```
-
-- [ ] **Step 2: `p6-report-design.md`'nin §12 madde 5'ine durum satırı ekle** (mevcut metni SİLMEDEN): "Dilim 5 uygulandı, bkz. D60 ve `p6-slice5-latex-export.md`."
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add docs/decisions.md docs/product/p6-report-design.md
-git commit -m "Record the LaTeX export as a durable decision and update the design note's slice 5 status" -- docs/decisions.md docs/product/p6-report-design.md
-git push origin main
-```
-
-## Self-review
-
-- **Kaçış (hard part 1):** `latex_text.py::escape_prose`/`split_math_spans`/`escape_mixed` (5a Task 2), `contracts.math_spans` genel takma adı (5a Task 1) — `_math_spans` yeniden yazılmaz, yalnız genel adla çağrılır.
-- **KaTeX/LaTeX farkı (hard part 2):** yukarıdaki tablo (5b), `check_unsupported_macros`/`convert_math_span` ve her satır için ayrı bir test (5b Task 1).
-- **Derleme yok (hard part 3):** hiçbir görev TeX derlemesi çalıştırmaz (5a–5f, 5h); yalnız 5g isteğe bağlı, `skipif`'li, CI'da hiç çalışmayan bir geliştirici testidir; bu açıkça söylenir.
-- **Kaynakça (hard part 4):** `bibliography.to_bibtex`'in geriye dönük uyumlu `keys` parametresi (5c Task 1), `latex_bib.py::resolve_cite_keys`/`to_bibtex_for_report` (5c Task 2), D59'un artık commit edilmiş olduğunun teyidi (5c Task 2 girişi ve "Dilim 1'den beklenenler").
-- **Tablo hücresi (hard part 5):** `cell_text` (5d Task 1, her 7 durum + 4 değer biçimi), `render_table`'ın bölme stratejisi ve kaybedilenin açık yazımı (5d Task 2).
-- **UI (madde 6):** `ReportView.tsx`'e düğme, `i18n.ts` dizeleri, uyarı bildirimi `useToast()` ile (5h); `.impeccable.md` referansı görev başlığında.
-- **§2 karar 9 (insan okur biçimi, iç kimlik sızmaması):** golden-file testinin `test_no_internal_identifier_leaks_into_the_tex_or_bib`'i (5e Task 2).
-- **§2 karar 11 (taslak banner, sürüm numarasız):** `render_latex`'in 3. adımı ve golden fixture'ın `status: "draft"` durumu (5e).
-- **§9 "Dışa aktarma" (IEEEtran, `\cite` `source_key`'den, `table*`, denklemler değişmeden):** 5c, 5d, 5e birlikte.
-- **§12 madde 5:** bu planın tamamı; kapanış görevi 5i.
-
-## Dilim 1'den beklenenler
-
-Dilim 1 bu not yazılırken kodda yoktur (yalnız plan); bu dilim aşağıdaki adları **tükettiği gibi** kullanır, hiçbirini yeniden tanımlamaz. Dilim 1 gerçekten kodlanınca bu adlardan biri değişirse (özellikle `ReportStore`'un tam metot imzaları, plan metninde yalnız prosa olarak verildi, literal kod olarak değil), yalnız 5e Task 1'in `to_latex()` sarmalayıcısı ve 5f'nin rota dalı güncellenir — 5a–5d ve 5e Task 2'nin golden-file testi bu adlara hiç dokunmaz, saf sözlüklerle çalışır.
-
-- `backend/deixis/workflow/report/export.py::to_markdown(store, reports, report_id) -> str` — bu dilimin `to_latex`'i aynı imzayı taklit eder; `MEDIA_TYPES` sözlüğüne bu dilim `"latex": "application/zip"` ekler.
-- `backend/deixis/workflow/report/numbering.py::number_citations(sections) -> dict`, `number_equations(sections) -> dict` — bu dilim `number_equations`'ı doğrudan çağırmaz (LaTeX kendi `equation` sayacını kullanır, bkz. 5e Task 1'in "Denklem numaralandırması" notu), ama iki numaralandırmanın aynı sırayı yürüdüğünü doğrulamak isteyen bir gelecek test bu fonksiyonu import edebilir.
-- `ReportStore` ve tabloları: `reports`, `report_sections`, `report_claims`, `report_citation_links`, `report_gaps`, `report_snapshot` (migration 0034, henüz uygulanmadı).
-- Route `GET /api/researches/{research_id}/reports/{report_id}/export?format=markdown` — bu dilim `format=latex` dalını aynı rotaya ekler; rotanın gerçek fonksiyon adı (`export_report` varsayıldı, `bibliography.py`'nin `export_bibliography` adlandırma deseninden) dilim 1 kodlanınca teyit edilmeli.
-- Frontend `apps/web/src/report/ReportView.tsx` — Markdown "Copy"/"Download Markdown" düğmelerinin yanına bu dilim üçüncü bir düğme ekler.
-- `ReportDetail`/`ReportSectionView` tipleri (`api.ts`) — bu dilim frontend tarafında bunlara dokunmaz, yalnız yeni bir `fetch()` çağrısı ekler.
-- **Güncel bulgu (dilim 1'in kendi notunu düzeltir):** dilim 1'in Global Constraints'i "D59 iki kez talep edilmiş" ve dilim 2'nin notu "`source_keys.py` başka bir oturumun süren işi" der; bu ikisi artık **geçersizdir** — `git log --oneline -1 -- backend/deixis/workflow/source_keys.py` ve `backend/deixis/storage/migrations/0033_work_source_keys.sql` bunun commit edilmiş olduğunu gösteriyor (`Store.source_key`, `Store.assign_source_keys`, `tests/test_source_keys.py` hepsi kodda var). Bu dilim D59'u **hazır bir bağımlılık** olarak kullanır, dilim 1'in varsaydığı gibi "başka bir oturumun bitmemiş işi" olarak değil.
-- Highest D number bu not yazılırken **D59**'dur (`docs/decisions.md`, tek bir D57 var, dilim 1'in bahsettiği çakışma da artık yok); bu dilimin kararı D60'ı dener, yürütmeden hemen önce yeniden teyit eder.
-
-## Açık noktalar
-
-- **`ReportStore`'un tam okuma metotları bilinmiyor.** 5e Task 1'in `to_latex()` sarmalayıcısı ve 5f'nin rota dalı, dilim 1'in `ReportStore.report(id)`/`.sections(id)` gibi adları taşıyacağını varsayar (dilim 1'in kendi plan metninden, `report/export.py`'nin `Consumes` satırı); gerçek imzalar dilim 1 kodlanınca netleşene kadar bu iki görev **yazılamaz**, yalnız tasarlanabilir. 5a–5d ve 5e Task 2 bundan bağımsızdır.
-- **`export.py`/`latex_export.py` dosya sınırı.** Bu plan `MEDIA_TYPES`'ı `report/export.py`'de (dilim 1) değiştirmeyi önerir ama o dosya henüz yok; dilim 1 kodlanana kadar bu satır `latex_export.py`'nin kendi modül-seviyesi sabiti olarak durur (`LATEX_MEDIA_TYPE = "application/zip"`) ve dilim 1 birleşince `export.py::MEDIA_TYPES`'a taşınır — küçük bir birleştirme adımı, ayrı yazılmadı.
-- **Okuma derinliğinin tabloda gösterilmemesi** (5d Task 1) bir kayıptır: renk yoktur, madalyon yoktur, yalnız VIII'in toplulaştırılmış cümlesi vardır. Sahip bunun yeterli olup olmadığına yürütmeden önce karar vermeli; yeterli değilse her hücreye küçük bir üstsimge (`\textsuperscript{FT}`/`\textsuperscript{Ö}`) eklemek küçük bir ek görevdir.
-- **`table*` bölme eşiği (`MAX_ROWS_PER_PART = 20`) ölçülmedi.** Gerçek bir 50 satırlık, 13 sütunlu tablonun `\scriptsize`'da bir sayfaya sığıp sığmadığı yalnız görev 5g'nin isteğe bağlı derlemesiyle, gerçek bir raporla denenebilir; bu plan bir sabit önerir, doğrulamaz.
-- **Bilinmeyen makro listesi (`_KNOWN_MACROS`) tüketici değildir.** Yaygın ama listede olmayan meşru bir amsmath makrosu yanlışlıkla "kontrol et" diye işaretlenebilir (yanlış pozitif); listede olmayan gerçekten kırık bir makro varsa ve tesadüfen tek harfli/bilinen bir örüntüye benziyorsa kaçabilir (yanlış negatif). Bu heuristiktir, garanti değildir (görev 5b'nin kendi metninde de yazılı).
-- **XeLaTeX seçimi tersine çevrilemez değildir.** pdfLaTeX + `inputenc`/`babel`(turkish) alternatifi düşünüldü ve Türkçe noktasız-ı özel durumunun elle haritalanması gerektirdiği için reddedildi; XeLaTeX kurulu olmayan bir geliştirici makinesinde görev 5g atlanır ama bu üretim davranışını etkilemez (hiç derleme yapılmaz).
-- **`bibliography.py`'nin test dosyasının gerçek adı teyit edilmedi** (5c Task 1, `tests/test_bibliography.py` varsayıldı); yürütmeden önce `grep -rl "to_bibtex" tests/` ile kesinleştirilmeli.
-- **Ortak ara doküman modeli çıkarılmadı** (bkz. "Neden ayrı bir ara doküman modeli yok"); dilim 1 kodlandıktan sonra iki yürüyüşün (Markdown, LaTeX) gerçekten ayrışmadığı görülürse bu ayrı, küçük bir refactor görevidir, bu planın konusu değildir.
+**Tablo hücresinde matematik.** Hücre, sütun başlığı ve kaynak sütunu metni, karakter sayısından bağımsız olarak yüksek olabilir (`$\begin{array}{c}x\\[1000pt]y\end{array}$` 41 karakterdir ve §4'ün bağlam kurallarını karşılar; KaTeX bunu kabul eder; `longtable` satırı sayfadan yüksekse bölemez ve diğer hücreleri de düşürür; bu karşı örnek sözdiziminden çıkarıldı, derlemeyle ölçülmedi). Bu yüzden tablo hücrelerinde matematik yalnızca kapalı bir alt kümedeyse matematik olarak yazılır: ortam yok, `\\` yok, sayı + TeX birimi (`pt em ex cm mm in bp pc mu sp dd cc px`) yok, ve `\rule \vphantom \hphantom \phantom \smash \raisebox \substack \genfrac \hspace \vspace \kern \mkern \hskip \mskip` ile yazı boyutu komutları (`\Huge \huge \LARGE \Large \large \normalsize \small \footnotesize \scriptsize \tiny`) yok. Bu denetim hücre, sütun başlığı ve kaynak sütunu metnindeki matematik aralıklarına, §4 aşama 1'den sonra ve aşama 2'den önce, özgün (dönüştürülmemiş) girdi üzerinde uygulanır; alt kümenin dışındaki aralık özgün TeX'i, §3'ün düz metin kaçışından geçirilerek, düz metin olarak yazılır ve uyarı verir. Bu liste yükseklik içindir, güvenlik için değildir; listede olmayan başka bir yükseklik kurucusu hâlâ satır yüksekliğini sınırsız bırakabilir. Bu bir bilinen sınırdır (§12) ve derleme fixture'ı yalnız bu listeyi sınar.
+
+**Uzun değerler kayıpsız yola alınır.** Sınırsız olan değerler vardır (`MAX_TEXT_VALUE = 500` yalnız `text` değerlerini sınırlar; bir seçenek etiketi, sütun adı ya da kaynak başlığı bellekte denendiğinde 13 bin karakterde kabul edildi). Bir tablo hücresinin, sütun başlığının ya da kaynak sütunu metninin uzunluğu eşiği aşarsa (hücre ve sütun başlığı 400 karakter, kaynak sütunu 200 karakter; eşik X3'te derleme örneğiyle yeniden sınanır) hücrede yalnızca "see note k" / "k numaralı nota bakın" yazılır ve değerin tamamı aynı dosyada `Report notes` içinde "Long table values" / "Uzun tablo değerleri" listesine yazılır; dışa aktarım notu da sayıyı bildirir. **Sözleşme:** eşik, durum açıklamaları ("doğrulanmadı" parantezi gibi) dahil **son biçimlendirilmiş metne** ve TeX kaçışından önce uygulanır. Liste 1'den başlar, tablo okuma sırasında numaralanır: önce sütun başlıkları (sütun sırasıyla), sonra satırlar sırasıyla (önce kaynak sütunu, sonra hücreler sütun sırasıyla). Kayıt biçimleri: `k. Column c heading: <tam metin>` (c sütun sırası), `k. Row r source (<[n] source_key> ya da yoksa row r): <tam metin>`, `k. Row r, column c (<[n] source_key>): <tam metin>`; kaynakça numarası olmayan satıra numara uydurulmaz, satır sırası kullanılır. Aynı değer sütun gruplarında tekrar ederse (kaynak sütunu) aynı not numarası yeniden kullanılır. İki dilin başlığı ve göndermeleri (`see note k`, `k numaralı nota bakın`) golden testlerdedir. Böylece nota taşınan hiçbir değer dosyada kaybolmaz ve tablodaki satırlar, kural gereği, ölçülen koşulların (≤ 7 sütun, ≤ 400 karakter) içinde kalır. PDF'te kayıpsızlık yalnızca §2'de ölçülen örneklerde gösterilmiştir (M8–M10). Yeni genişlik formülü, eşikler ve matematik alt kümesi X3 ve X4'ün fixture'larıyla sınanacaktır; başarı iddiası yalnızca geçen örneklerle sınırlı olacaktır ve genel bir garanti değildir (bilinmeyen yükseklik kurucuları için §12).
+
+Birinci sütun düz `[n] source_key` metnidir (Markdown'daki gibi); `\cite` değildir. Böylece tablo `.bbl` sırasını değiştirmez ve aynı işin iki sürümü `[n]` ile ayırt edilir. Hücre metni Markdown'ın kuralıyla aynıdır: değer biçimine göre yazılır, `not_verified` iki dilli "doğrulanmadı: bağlı alıntı yok" parantezini alır, diğer durumlar `state.replace("_", " ")` sözcükleriyle yazılır (Türkçe raporda da İngilizce durum sözcükleri; D120'nin mevcut sınırı, iki çıktı için ortak backlog), kayıt olmayan hücre `—`. Satır içi matematik hücrede §4'e göre işlenir. Okuma derinliği hücrede gösterilmez (Markdown da göstermiyor). Başarısız satırlar Markdown'daki gibi işaretlenir (`—` hücreler, üstte eksik satır listesi).
+
+Kalan risk: bir sözcük sütundan genişse (7 sütunda ~13 karakter/satır) komşu sütuna taşar; bu bir Overfull \hbox uyarısıdır ve metin kaybı değil okunabilirlik sorunudur. Çok uzun, boşluksuz bir değer (adres gibi) bu yüzden taşabilir; yalnız bunun için ayrı bir derleme fixture'ı vardır ve orada `Overfull \hbox` beklenen sonuçtur (§9).
+## 6. Kaynakça
+
+Her `view["references"]` girdisi bir `\cite` anahtarı alır: `source_key` (D59); aynı anahtarı taşıyan ikinci ve sonraki sürümler `<anahtar>-2`, `-3`; anahtar `None` ise `ref<n>` ve uyarı. D59 anahtarları yalnızca harf ve rakamdan oluştuğu için `-2` biçimi başka bir işin anahtarıyla çakışmaz. Atıf `source_version_id` üzerinden eşlenir, anahtarların dosya içinde (büyük-küçük harfe duyarsız) tekil olduğu denetlenir; çakışma kalırsa dışa aktarım hata verir. Bir iddia `\cite{a,b}` olarak yazılır, anahtarlar iddianın atıf sırasındadır, tekrarlar atılır. Bir atıf bağı kaynak kaydı bulunamayan bir sürüme işaret ediyorsa (`report_view` böyle bir referansı sessizce atlar, `views.py:325`) dışa aktarım 409 ile reddedilir; sessiz atlama ve yeniden numaralandırma yoktur.
+
+`.bib` yalnızca `references`'taki kaynakları içerir. Alanlar aynı okuma anında `source_versions` ve `identifier_mappings`'tan alınır; zenginleştirme ya da ağ yoktur. `bibliography.to_bibtex(sources, keys=None, *, latex_report=False)`: `keys` verilirse sayısı ve tekilliği denetlenir (`zip` sessizce kaynak düşürmesin); `latex_report=True` başlığı çift süslü parantezle sarar (M4), metin alanlarında kaçıştan sonra §3'ün simge tablosunu uygular (çift kaçış olmaz) ve içinde ters bölü ya da kontrol karakteri bulunan `doi`/`url`/`eprint` değerlerini yazmaz. Çıkarılan her alan, kaynak anahtarı ve alan adıyla bir dışa aktarım notu olur; bibliyografi simge uyarıları da aynı not listesine toplanır (X3'te `to_bibtex` notları bir listeyle döndüren bir iç işleve ayrılır, `latex_report=False` yolu eskisi gibi yalnız metin döner). Varsayılan çağrının (Zotero dışa aktarımı, D16) çıktısı bayt düzeyinde değişmez; bunu mevcut test ve yeni bir tam çıktı karşılaştırması sabitler. IEEEtran.bst `doi` alanını basmaz (M5); `.bib`'de kalır.
+
+## 7. Teslim
+
+`GET /api/researches/{id}/reports/{report_id}/export?format=latex` ayrı bir yol açmaz; mevcut rotanın `format` değerini genişletir. 409 ("The report is still being written") ve 404 kuralları aynıdır. Yanıt `application/zip`, dosya adı `<stem>-latex.zip`, `<stem>` Markdown'un dosya adı gövdesidir (`report-<slug>-<draft|vN>`); içinde `<stem>.tex` ve `<stem>.bib` vardır. IEEEtran sınıfı ve stili paketlenmez. Okuma tek bir okuma anında yapılır (`workflow/queue.py::_snapshot` bağlamı; `views.research_view` da bunu kullanır): `report_view`, başlık, korpus ve kaynak satırları aynı veritabanı durumundan gelir.
+
+Dışa aktarım notları (§3'te sayılan uyarılar ve §4–§6'daki uyarılar) kararlı sırada, tekrarsız ve satır başına en çok 200 karakterle `.tex`in en üstüne `%` yorum bloğu olarak yazılır; en çok 20 tanesi listelenir, fazlası "and N more". Yanıt başlığı `X-Deixis-Export-Notes: <toplam sayı>` yalnızca ASCII sayıyı taşır. Notlar yorum bloğundan bağımsız olarak, D120 sınırları PDF'in kendisinde görünür (§3 madde 2 ve 6).
+
+## 8. Arayüz
+
+`ReportView.tsx` araç çubuğuna Markdown düğmelerinin yanına "Download LaTeX" düğmesi eklenir; dar ekranda yalnız simge kalır, erişilebilir adı ve açıklaması korunur (`report.css:47` kalıbı). Düğme `api.reportLatex` ile blob indirir; hata, mevcut Markdown akışındaki gibi hata toast'ı gösterir ve indirme yapmaz. Not sayısı 0'dan büyükse tek bir `warning` toast'ı: ilgili sayı ve "ilk 20'si .tex dosyasının başında" (toplam 20'yi aşarsa bunu söyler). Tüm dizeler `t()` üzerinden, İngilizce ve Türkçe. Düğme, rapor bitmeden Markdown düğmeleriyle aynı koşulla kapalıdır.
+
+## 9. Testler ve atlanan derleme testi
+
+Ana kanıt saf metin dönüşümünün golden testleridir: SYNTHETIC bir `view`'dan beklenen `.tex` ve `.bib` bayt bayt karşılaştırılır (`tests/fixtures/report_latex/`). Bu testler TeX istemez ve her makinede koşar. Golden küme İngilizce ve Türkçe, taslak ve geçerli, incelenmiş ve incelenmemiş durumları, Q18'deki beş D120 grubunu ve Q22'nin altıncı grubunu, matematik sınıflarını ve denklem etiketi durumlarını (tekrarlanan E ortamı, bir iddiada birden çok display, önce etiketli sonra etiketsiz ifade, aynı ref'in farklı ifadeleri, hedefi olmayan ref), iki sürümlü aynı iş anahtarını, `None` anahtarı, `index_terms` atıfını, haritalanmamış karakter uyarısını, 8 ve 13 sütunlu tabloyu ve not bloğunu içerir. Ek değişmezler: çıktıda iç kimlik yok (`claim_key`, `psg_`, `cel_`, `support_type`); ilk görülen benzersiz `\cite` anahtarlarının sırası `view["references"]` sırasıdır; her `\cite` anahtarı `.bib`'de ve her `.bib` girdisi bir `\cite`'te vardır; her `\eqref` etiketi tanımlıdır ve her etiket tektir; ortamlar dengelidir; saklı metinden gelen hiçbir kontrol dizisi (`\input`, `\def`, `\begin {document}` …) çıktıya TeX olarak geçmez.
+
+Ürün TeX gerektirmez, ama **isteğe bağlı bir derleme testi** vardır (`tests/test_report_latex_compile.py`). `latexmk`, `xelatex`, `bibtex`, `pdftotext` ve `kpsewhich`'in bulabildiği `IEEEtran.cls`, `IEEEtran.bst`, `fontspec`, `cite`, `url`, `booktabs`, `longtable`, `array`, `amsmath`, `amssymb`, `bm`, `xcolor` yoksa test **atlanır** (`skipif`, `needs_tesseract` kalıbı) ve atlama nedeni raporda yazılır. Atlanması, "derlenir" iddiasının TeX'siz makinede hiç ölçülmediği ve yalnız metin testlerinin koştuğu anlamına gelir; rapor bunu söyler. Bağımlılık eksikliği atlamadır, derleme hatası başarısızlıktır. Test, golden örneği ve ek bir tablo fixture'ını `-no-shell-escape` ile derler. Fixture: 8, 13 ve 20 sütun; her hücrede benzersiz bir bitiş işareti ve uzun hücreler (400 ve 500 karakter, ikincisi eşiğin üstünde olduğu için nota taşınır); eşiğin altında ve üstünde uzun kaynak başlığı ve uzun seçenek etiketi; Unicode simgeler; ayrı bir fixture'da boşluksuz uzun değer. **Başarısızlık** sayılanlar: derleme hatası; log'da `Missing character`, `Overfull \vbox`, **`Overfull \hbox`**, `Float too large for page`, tanımsız atıf ya da etiket, `LaTeX Error`; `pdftotext` çıktısında (boşluk ve tireler iki yandan silinerek) her hücre metninin ve işaretinin bulunmaması; tablo grup başlıklarının hepsinin "TABLE I" olmaması; `.bbl` sırasının beklenen referans sırasından farklı olması. Fixture'lar 12 karakteri aşmayan sözcüklerle yazılır ki doğal taşma uyarısı çıkmasın. **Açıklamalı istisna:** boşluksuz uzun değer ayrı, tek hücreli bir fixture'dadır; orada `Overfull \hbox` beklenir ve testin kendisi onun varlığını doğrular. Başka hiçbir fixture'da `Overfull \hbox` kabul edilmez. Geçmesi yalnızca bu örnekler ve bu dağıtım için kanıttır; her kullanıcı raporunun derleneceğini göstermez.
+
+Bu dilim gerçek model çağrısı ve ürün ölçümü içermez. Hiçbir test bir kullanıcı kütüphanesine dokunmaz.
+
+## 10. Kararlar
+
+Karar turu Claude ve gpt-6.1-sol (high, salt okunur) arasındadır; sahibe sorulmadı. Her kararın yanında Sol'un katıldığı ya da değiştirdiği yer yazılıdır. "Tur 1" işaretli kısımlar tasarım denetiminin ilk turunda değişen yerlerdir (§14).
+
+| Q | Karar | Not |
+|---|---|---|
+| Q1 | XeLaTeX + `IEEEtran[journal]` + §3'teki preamble; `hyperref` ve pdfLaTeX yok. Çıktı "IEEEtran kullanan dışa aktarım"dır; dergi gönderimine uygunluğu doğrulanmadı. | Claude önerdi, Sol katıldı ve gönderim uygunluğu cümlesini ekletti. Unicode çözümü (Q12) zorunlu tamamlayıcı. |
+| Q2 | `to_latex(view, *, title, corpus, bib_sources)` saf; ara belge modeli yok. Ortak iki dilli metinler `export_text.py`'ye çıkar: sabit cümleler kaçışsız döner, kayıtlı değerler çağıranın verdiği `esc` işleviyle geçer (§11 X1'de hangi metnin parça, hangisinin bütün olarak kaçırıldığı sabitlenir); Markdown çıktısı bayt düzeyinde değişmez. X1 önce çok durumlu bir Markdown golden kümesi yazar. | Sol çok durumlu golden kümesini ve ham metin sözleşmesini ekletti (`_review_note`'un içeride `_md` uygulaması LaTeX'e Markdown kaçışı taşırdı). Tur 1: "hiçbir kaçış işlevi çağırmaz" koşulu `esc` geri çağrısıyla çelişiyordu, düzeltildi. |
+| Q3 | `\cite{<source_key>}`; aynı işin sonraki sürümleri `-2`, `-3`; `None` → `ref<n>` + uyarı; eşleme `source_version_id` üzerinden, dosya içi tekillik denetli. Tablo ilk sütunu düz `[n] source_key`. Golden koşul: ilk görülen benzersiz anahtarların sırası `references` sırasıdır. | Sol tabloda yalnız anahtar yerine `[n] source_key` istedi ve golden koşulunu "tüm tekrarlar" yerine "ilk görülme sırası" yaptı. |
+| Q4 | `IEEEkeywords` içinde `\cite` korunur; `\nocite` değil. Estetik bedeli yazılı. | Sol katıldı. |
+| Q5 | `contracts.py`'ye dokunulmaz; `_math_spans` doğrudan alınır (`assembly.py:535-536` emsali). Güvenlik taraması `contracts` yardımcılarına dayanmaz: `latex_math.py` izinli kümeye karşı çalışan kendi tarayıcısını yazar (§4). Elle liste yok: TeX ile üretilen `latex_names.json` (hash'li, sürüm kayıtlı, bayat testli). Yalnız kayıpsız yeniden yazım: `\lt`, `\gt`. `align → aligned` dönüşümü yok; display ortamlar olduğu gibi. Derlenebilirlik garantisi yok. | Sol ilk önerideki "bozuk aralık derlenebilirliği korur" cümlesini ve `align → aligned` dönüşümünü reddetti (amsmath `aligned` içinde `\tag`'a izin vermez; denge denetimi yetmez). Tur 1: `katex_unknown` ve denge denetimi `\begin {document}` biçimini kaçırıyor; tarayıcı yeniden kuruldu ve sınıf tablosu yazım aşamasından ayrıldı. |
+| Q6 | Etiket hedefi rapor genelinde, ref başına bir kez, okuma sırasındaki ilk etiket alabilen display aralığında; o ref'in diğer **etiket alabilen** aralıkları `equation*`; E ve `\tag` sınıfları değişmeden ve etiketsiz; hedefi başka yerde olan, kendi display'i olmayan iddiaya `\eqref`; hedef yoksa `\eqref` yok; farklı ifade uyarısı. Ekranla aynı numara iddia edilmez (§4 son paragraf). | Sol katıldı ve "etiketli hedef yoksa `\eqref` üretme" ile `\tag` istisnasını ekletti. Tur 1: etiket alabilen sınıflar ile E sınıfının çelişkisi giderildi. Tur 2: "diğer bütün aralıklar" ifadesi hâlâ E ile çelişiyordu, "etiket alabilen" olarak daraltıldı. Denklem numarası üç yerde ayrı hesaplanır (Markdown, ekran, LaTeX). |
+| Q7 | `\onecolumn` + `longtable` + `\twocolumn`; satır sayısına göre bölme yok; en çok 7 veri sütunluk gruplar, kaynak sütunu her grupta ve sarılır; devam gruplarının önünde `\addtocounter{table}{-1}` (hepsi "TABLE I"); tekrarlanan başlık, "continued" caption, yalnız tablo için `\scriptsize`; durum sözcükleri Markdown'la aynı; hücrede matematik yalnız kapalı bir alt kümedeyse (ortam, `\\`, birim, boyut komutu ve yükseklik kurucuları yok) matematik, `$$` yalnız düzse satır içi, aksi hâlde özgün TeX düz metin; eşiği aşan hücre, sütun başlığı ve kaynak metni "see note k" olur ve tam metin `Report notes` içinde yazılır (§5). | Sol çok satırlı display'i satır içi yapmayı reddetti. Tur 1: M9 yanlış okunmuştu; 500 karakterlik hücrelerle 13 sütunda `longtable` da içerik kaybeder. Sütun grubu sınırı ölçümle kondu (M10). Tur 2: her grubun yeni bir tablo numarası alması ve sınırsız seçenek/başlık metinleri bulundu; sayaç düzeltmesi ve kayıpsız uzun değer yolu eklendi. |
+| Q8 | Notlar `.tex` başında yorum; başlıkta ASCII toplam sayı; en çok 20, kararlı sıra, tekrarsız, satır uzunluğu sınırlı; toast 20'yi aşınca bunu açıkça söyler. | Sol toplam sayı ve toast metni ayrımını ekletti. |
+| Q9 | Zip: `<stem>.tex` + `<stem>.bib`; sınıf ve stil paketlenmez; derleme yorumu XeLaTeX + BibTeX + `IEEEtran.bst` gereksinimini söyler. | Sol katıldı, BibTeX ve `.bst` gereksinimini ekletti. |
+| Q10 | `to_bibtex(sources, keys=None, *, latex_report=False)`; `keys` uzunluk ve tekillik denetli; alanlar `source_version_id` ile; `arxiv_id` `identifier_mappings`'tan; varsayılan çıktı bayt düzeyinde aynı; çift kaçış yok; `doi`/`url`/`eprint` içinde ters bölü ya da kontrol karakteri varsa yazılmaz ve not olur. | Claude `keys` ve `protect_title` önermişti, Sol katıldı; `keys` doğrulamasını, `arxiv_id`'nin `source_versions`'ta olmadığını ve çift kaçış riskini o ekletti. Başlık koruması, simge tablosu ve `url` kuralı tek `latex_report` bayrağında toplandı: bu birleştirme Claude'un notu işlerken verdiği karardır. Tur 1: çıkarılan alanların not olması ve uyarı toplama yolu eklendi. |
+| Q11 | `\section*{I. Introduction}` sabit başlıklar; Türkçe ortam adları; rapor kimliği ("draft"/"V<n>") görünür; denetlenmedi blokları `\maketitle` sonrası, abstract öncesi; notlar bibliyografiden önce `Report notes`/`Rapor notları`. | Sol Türkçe ortam adlarını ve rapor kimliğini ekletti; ölçüldü (M11). |
+| Q12 | Unicode politikası bütün kayıtlı metni (başlık, hücre, birim, bulgu, kaynakça) ve matematik içini kapsar; kapalı simge tablosu; metin argümanlarında `\ensuremath`, matematikte doğrudan komut; bilinmeyen karakter için belge başına tek uyarı (ilk 10 kod noktası + toplam); "Latin güvenlidir" yazı tipi doğrulaması sayılmaz. | Sol kapsamı düzyazıdan tüm belgeye ve matematiğe genişletti. Tur 1: `\text{…}` içindeki dönüşüm ayrıca tanımlandı (§4). |
+| Q13 | İsteğe bağlı derleme testi: bağımlılıklar yoksa atlanır ve nedeni yazılır; her hücre metni ve işareti, referans sırası, grup başlıkları sayılır; log'da eksik glif, `Overfull \vbox`, `Overfull \hbox`, `Float too large`, tanımsız atıf/etiket başarısızlıktır; tek açıklamalı istisna ayrı fixture'daki boşluksuz değerin `Overfull \hbox`'ı; başarı yalnız örnekler için kanıt. | Sol bağımlılık listesini, bütün hücrelerin sayılmasını ve log denetimini ekletti. Tur 1: "log'da yok sayılır" ifadesi ters yazılmıştı. Tur 2: istisna genel başarısızlık listesine bağlanmamıştı, düzeltildi. |
+| Q14 | Migration, run kind, model sözleşmesi, `skill_package_hash`, `contracts.py` değişikliği yok; zenginleştirme ve ağ yok. | Sol katıldı. |
+| Q15 | Aynı rota, zip yanıtı, mevcut 409/404; düğme, `t()` dizeleri, tek `warning` toast; Playwright başarıyı, notlu toast'ı ve 409'da indirme olmamasını sınar; zip'in iki doğru dosyayı içerdiği backend testiyle. | Sol katıldı, `PK` baytının yalnız zip imzası olduğunu belirtip backend testini ekletti. |
+| Q16 | Beş batch (§11); X1 dilim 4'ün `export.py` değişikliklerinden sonra başlar, X2 bağımsızdır; `export_text` ham metin sözleşmesi bu notta sabit; X3 ikisini bekler. Karar numarası işlenirken yeniden kontrol edilir. | Sol D numarasının tasarım anında sabitlenmemesini istedi. Tur 1: ana depoda D146 ve D147 başka işlere verilmiş (§11). Tur 2: dilim 4 (D147) aynı dosyaya dokunuyor, sıra belirlendi (Q22). |
+| Q17 | Ham TeX'e kapalı sınır (§4 aşama 1): izinli küme dışındaki her komut ve ortam, `^^`, `%`, `#`, boş satır → düz metin + uyarı; derleme testi `-no-shell-escape`. | Sol önerdi, Claude katıldı. |
+| Q18 | D120'nin beş grubu iki biçimin golden kapsamındadır: (1) bölümler geçerli olsa bile birleştirme reddinin taslak gerekçesi, (2) eksik satır sayıları, paydadan dışlama cümlesi ve kaynak başına gerekçe, (3) `insufficient_evidence` gerekçeleri ve "metin yazılmadı" satırı, (4) inceleme yok/kabul edilmedi gerekçesi ya da bölüm kapsamı, okunmayan bölümler, geri döndürülen cümle sayısı, (5) II/VIII `draft.text` ile iddiaların birlikte yazılması ve taslak/sürüm kimliği. Altıncı grup dilim 4 ile gelir (Q22). | Sol önerdi, Claude katıldı. |
+| Q19 | Tek satırın sayfadan yüksek olması ya da bölünmez değerin sütundan geniş olması: sütun grupları (≤ 7 veri sütunu) ve uzun değerlerin nota taşınması (§5) ilkini ölçülen koşullarda önler; derleme fixture'ı 8/13/20 sütun, 400 ve 500 karakterlik hücre, uzun kaynak başlığı ve seçenek etiketi içerir; hepsi geçmeden "sessiz kayıp çözüldü" denmez, geçse de iddia yalnız ölçülen koşullar ve fixture içindir; hücre matematiği için yükseklik alt kümesi (§5) ve boşluksuz değerin taşması bilinen sınırlardır. | Sol önerdi. Tur 1: Claude'un "13×500 sığdı" cümlesi yanlıştı (M9), Sol çürüttü; çözüm backlog'dan X3 kapsamına alındı. Tur 2: Sol, 7 sütun sınırının sınırsız metinleri kapsamadığını gösterdi; nota taşıma kuralı eklendi. |
+| Q20 | `report_view`, başlık, korpus ve kaynak satırları tek okuma anında; eksik kaynak kaydı 409 ile reddedilir, sessiz atlama yok. | Sol önerdi; gözlenmiş bir yarış hatası iddia edilmedi, bu yeni okuma yolunun tutarlılık sözleşmesidir. |
+| Q21 | `Report notes` içinde çıktının raporu ve kaynakçayı taşıdığı; alıntı pasajları, hücre kanıtları ve konumlanmış çapaların DEIXIS'te kaldığı yazılır. Çapa cümlesi geçmiş kontrol sonucunu anlatır. | Sol önerdi. |
+| Q22 | Dilim 4 (D147) Markdown dışa aktarımına üç durumlu "elle düzenlendi" cümlesi, `has_human_edits`, atlanan kurallar ve etkin atıf kümesini getiriyor (E1, E2; ikisi de `export.py` ve `views.py`'ye dokunur). LaTeX bunların hepsini ortak metin modülünden aynen yazar ve golden kapsamına altıncı grup olarak girer: hiçbir düzenleme, güncel denetim, eski denetim, taslakta düzenleme, sıfır etkin atıflı iddia. Sıra: X1, dilim 4 E1 ve E2 `origin/main`'e girdikten sonra başlar ya da onların `export.py` tabanını alır; Markdown'ın değişmezlik koşulu yalnız X1'in kendi tabanına bağlıdır. | Sol tur 2'de bulguladı (çıktı sözleşmesi çakışması), Claude katıldı. |
+
+## 11. Batch'ler
+
+Sıra: X2 bağımsız başlar; X1 dilim 4 E1 ve E2'den sonra başlar (Q22); X3 ikisini bekler → X4 → X5 (dilim 4 E3'ten sonra). Her batch kendi `docs/decisions.md` girdisini taşır (K1/K2 emsali). **Karar numarası:** bu tasarım için önerilen numara D149'dur ve karar girdisi bu değişiklikte `docs/decisions.md`'ye eklenir; numara geçicidir. `origin/main`'de en yüksek numara D147'dir (D146 dilim 3 K3, D147 dilim 4 tasarımı); `../DEIXIS-e1` çalışma ağacında D148 (dilim 4 E1, işlenmemiş) vardır, `../DEIXIS-k4` D146'da durur ve dilim 3 K4 sıradaki numarayı alacaktır. Her batch commit'ten hemen önce `git show origin/main:docs/decisions.md | grep -m3 '^## D'` ve diğer çalışma ağaçlarının `decisions.md` başlıklarına bakıp ilk boş numarayı alır; X1–X5 sonraki boş numaralardır. **Çakışma kontrolü:** batch başında taban commit'i `origin/main` ile karşılaştırılır (`git diff <taban>..origin/main -- <izinli dosyalar>`), `git worktree list` ile etkin çalışma ağaçlarında aynı dosyalara dokunan işlemeyenler aranır; `api/app.py`, `workflow/report/export.py`, `workflow/views.py`, `workflow/report/assembly.py`, `ReportView.tsx`, `i18n.ts`, `api.ts` ve `decisions.md` paylaşılan dosyalardır; dilim 4 E1 ve E2 `export.py` ve `views.py`'ye, E3 `ReportView.tsx` ve `i18n.ts`'e dokunur. X1 E1 ve E2'den sonra, X5 E3'ten sonra başlar ya da onların değişikliklerini taban alır (Q22). Birleştirmeden sonra X4 ve X5'in ortak testleri yeniden koşulur. Her batch `git diff --check` ve ilgili test dosyalarıyla biter; X3'ten sonra tüm pytest koşulur.
+
+### X1 — Markdown sabitleme ve ortak metin çıkarma (S–M; model yok)
+
+- **Kapsam.** Önce, bugünkü koda karşı (dilim 4 E1 ve E2 birleştikten sonraki `origin/main` tabanında; bu yüzden Q22'nin altıncı grubu da zorunludur), Q18'in beş grubunu ve Q22'nin altıncı grubunu ve iki dili kapsayan el yapımı `view`'larla `to_markdown` çıktısını bayt bayt sabitleyen golden testleri (en az: taslak+reddedilen kural, geçerli V n, eksik satırlar, elle düzenleme, kanıt değişti, yetersiz kanıt + boş bölüm, inceleme yok / incelenmemiş / incelenmiş (bulgu, okunmayan bölüm, geri döndürülen), konumlanmamış çapa, II/VIII `draft.text`; her biri en ve tr). Sonra, davranışı değiştirmeden, sabit iki dilli cümleleri `report/export_text.py`'ye çıkar. **Kaçış sözleşmesi:** `export_text.py` biçime özgü bir kaçış işlevi (`_md`, `escape_prose`) içe aktarmaz; çağıranın verdiği `esc` geri çağrısını kullanabilir. Bugünkü sınırlar korunur: TASLAK satırı ve eksik satırlar tamamlanmış bir cümle olarak döner, Markdown çağıranı bütününe `_md` uygular; `review_note` bölüm adlarını ve gerekçeyi `esc` ile parça parça kaçırır ve bütününe başka kaçış uygulanmaz; her işlevin hangi biçimde olduğu docstring'te yazılıdır. `HEADINGS`, `REVIEW_CODES`, `REVIEW_REASONS` oradan alınır ve `export.py` aynı adlarla yeniden dışa verir. Bitmemiş rapor kapısı ve dosya adı gövdesi küçük paylaşılan yardımcılara çıkar.
+- **İzinli dosyalar.** `backend/deixis/workflow/report/export.py`, `backend/deixis/workflow/report/export_text.py` (yeni), `tests/test_report_export.py`, `tests/test_report_export_pin.py` (yeni), `docs/decisions.md`.
+- **Testler.** Golden sabitleme testleri refaktörden önce mevcut koda karşı geçer, sonra aynen geçmeye devam eder. `_md`, `_table`, `to_markdown`, `export_markdown`, `MEDIA_TYPES`, `HEADINGS` adları kalır.
+- **Kontroller.** `PYTHONPATH=backend uv run pytest tests/test_report_export.py tests/test_report_export_pin.py tests/test_report_failure_display.py tests/test_report_api.py tests/test_p6_measure_report.py`; tam pytest; `git diff --check`.
+- **Bitti sayılır.** Hiçbir Markdown baytı değişmedi (golden önce/sonra aynı), mevcut Markdown testleri aynen geçer, `export_text.py` biçime özgü kaçış işlevi içe aktarmaz.
+
+### X2 — Saf metin ve matematik dönüşümü (M; model yok, çalışma zamanında TeX yok)
+
+- **Kapsam.** `latex_preamble.py` (preamble sabiti ve sha256'sı), `latex_text.py` (§3 kaçış, `\$`, tırnak, `~`, boşluk, simge tablosu, bilinmeyen karakter toplayıcı), `latex_math.py` (§4 üç aşama, bu sırayla: kapalı tarama, kayıpsız yeniden yazım ve simge, yazım ve etiket hedefleri; tablo hücresi için matematik alt kümesi; deny listesi 976 adın gözden geçirilmesiyle sabitlenir), `scripts/latex_export_names.py` ve bir kez üretilmiş `report/latex_names.json` (komut ve ortam listeleri). `contracts.py` değişmez.
+- **İzinli dosyalar.** `backend/deixis/workflow/report/latex_preamble.py`, `latex_text.py`, `latex_math.py`, `latex_names.json` (hepsi yeni), `scripts/latex_export_names.py` (yeni), `tests/test_report_latex_text.py`, `tests/test_report_latex_math.py` (yeni), `docs/decisions.md`.
+- **Testler.** Kaçış tablosu, `\$`, tırnak, `~`, boşluk, simge tablosu (metin, matematik ve `\text{}` içi), bilinmeyen karakter uyarısı; her yazım satırı için en az bir örnek (satır içi, E, `\tag`, `&`, `\\`, düz, hücre) ve §4'teki her sınıf A girdisi için: deny listesinin her üyesi, `\input`, `\write`, `\csname`, `\catcode`, `^^`, `%`, `#`, boş satır, dengesiz süslü parantez, bilinmeyen ortam, `\end{document}`, **`\begin {document}` ve `\begin{\n document}` gibi boşluklu ya da satır sonlu yazımlar**, iç içe ve çapraz ortamlar, hatalı argümanlı `\begin`, metin argümanında izinsiz komut; `$x&y$`, `${x&y}$`, `$$\frac{x&y}{z}$$`, `$x\\y$`, `$x\tag{a}$`, `$$\begin{aligned}x&=y\tag{a}\end{aligned}$$`, bir aralıkta birden çok display ortamı, `\tag` + `&`, `\substack` içinde `\\`, saklı girdide `\ensuremath` ve `\mbox`; `\R` için sınıf B; `\lt`/`\gt`; etiket hedefi senaryoları (§9); bölme testi: her KaTeX komutu izinli ya da deny listesindedir (ikisi birden değil), izinli olan B ile işaretli olabilir; `latex_names.json` hash testi (preamble ve `katex_commands.json`); çıktıdaki her ters bölü üretilen komuttan ya da kapalı taramadan geçmiş girdiden gelir.
+- **Kontroller.** İlgili pytest dosyaları; script bir kez TeX'li makinede çalıştırılır ve çıktı JSON commit'e girer (hangi sürümle üretildiği JSON'da); `git diff --check`.
+- **Bitti sayılır.** Bölme ve hash testleri yeşil, script çıktısı JSON'da, sınıf A karşı örnekleri hiçbiri TeX olarak yazılmıyor, hiçbir test TeX gerektirmiyor.
+
+### X3 — Birleştirici, kaynakça ve golden dosya testleri (L; model yok)
+
+- **Kapsam.** `report/latex.py`: `to_latex(view, *, title, corpus, bib_sources) -> LatexBundle` (§3 sırası, §5 tablo ve sütun grupları, §6 anahtarlar, not bloğu), `bibliography.to_bibtex(sources, keys=None, *, latex_report=False)` ve notları döndüren iç işlev. Beş D120 grubu ve Q22'nin altıncı grubu, denklem etiketi durumları, iki sürümlü iş, `None` anahtar, `index_terms` atıfı, simge ve tablo durumları.
+- **İzinli dosyalar.** `backend/deixis/workflow/report/latex.py` (yeni), `backend/deixis/workflow/bibliography.py`, `tests/test_report_latex.py`, `tests/report_latex_cases.py`, `tests/fixtures/report_latex/*.tex|*.bib` (yeni), `tests/test_bibliography.py` (yeni test eklenir, mevcutlar değişmez), `docs/decisions.md`.
+- **Testler.** §9'daki golden küme ve değişmezler; `keys` uzunluk/tekillik hataları; `latex_report=False` çıktısının tam metin karşılaştırması (bayt aynı); `latex_report` başlık koruması, `url` kuralı ve çıkarılan alan notları; saklı metinden gelen `\input`/`\def`/`\begin {document}` çıktıya TeX olarak geçmez; tablo hücresi matematik alt kümesi (ortamlı, `\\[1000pt]`'li, birimli, boyut komutlu örnekler düz metne iner), sütun grupları (7, 8, 13, 20 sütun), grup başlıklarının hepsinin "TABLE I" olması (`\addtocounter`), eşiği aşan ve aşmayan uzun hücre, sütun başlığı, kaynak başlığı ve seçenek etiketi (nota taşıma; tam metin `Report notes`'ta), `Long table values` notu.
+- **Kontroller.** İlgili pytest dosyaları, tam pytest, `git diff --check`; TeX'li makinede golden çıktı bir kez elle derlenir (geçici kontrol; kalıcı derleme testi X4'tedir).
+- **Bitti sayılır.** Golden `.tex` ve `.bib` bayt bayt eşit, değişmezler yeşil, mevcut bibliyografi testleri aynen geçer.
+
+### X4 — Rota, zip ve isteğe bağlı derleme testi (M; model yok)
+
+- **Kapsam.** `export_latex(store, research_id, report_id) -> (zip bytes, filename, note count)` (tek okuma anı, 409 kuralları, eksik kaynak → 409), `export` rotası `Literal["markdown", "latex"]`, `X-Deixis-Export-Notes`; `tests/test_report_latex_compile.py` (§9).
+- **İzinli dosyalar.** `backend/deixis/workflow/report/latex.py`, `backend/deixis/api/app.py`, `tests/test_report_latex_export.py` (yeni), `tests/test_report_latex_compile.py` (yeni), `docs/decisions.md`.
+- **Testler.** Gerçek rapor akışı (`test_report_export.py::complete`/`app_for` kalıbı) üzerinden: zip'in iki doğru dosyayı ve içeriği içerdiği, başlıklar, 409 ve 404, Markdown yolunun değişmediği, eksik kaynak kaydı; derleme testi §9'daki gibi; bağımlılık yoksa atlanır ve nedeni raporlanır.
+- **Kontroller.** İlgili pytest dosyaları, tam pytest; bu makinede derleme testi koşar ve çıktısı raporda yazılır; TeX'siz makinede atlandığı, derleme iddiasının orada ölçülmediği açıkça yazılır.
+- **Bitti sayılır.** Rota testleri yeşil, derleme testi (TeX'li makinede) yeşil ya da neden atlandığı yazılı, `skill_package_hash` ve migration listesi değişmedi.
+
+### X5 — Arayüz, e2e ve kapanış (S–M; model yok)
+
+- **Kapsam.** `api.reportLatex`, `ReportView.tsx` düğmesi, `t()` dizeleri (en/tr), toast; dar ekran. `docs/product/p6-report-design.md` §12 madde 5'e durum satırı.
+- **İzinli dosyalar.** `apps/web/src/api.ts`, `apps/web/src/report/ReportView.tsx`, `apps/web/src/i18n.ts`, `apps/web/src/report/report.css` (gerekirse), `apps/web/e2e/report.spec.ts`, `docs/product/p6-report-design.md`, `docs/decisions.md`.
+- **Testler.** Playwright: başarı (indirme adı kalıbı `^report-.*-v1-latex\.zip$`), not başlığı sayısı varsa tek `warning` toast (başlık yanıtı yakalanarak), 409'da indirme olmaması. Backend zip içeriği X4'te sınanır.
+- **Kontroller.** `cd apps/web && npm run build && npm run lint`; `DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance` (taze build); masaüstü ve dar görünüm, açık ve koyu tema, klavye odağı ve Enter/Space ile etkinleştirme ekranda kontrol edilir (`.impeccable.md`); `git diff --check`.
+- **Bitti sayılır.** Build ve lint yeni uyarı olmadan, acceptance yeşil, iki görünümde ve iki temada düğme kullanılabilir ve odak görünür, dizeler iki dilde.
+
+## 12. Sınırlar
+
+- Bu bir tasarım kaydıdır. Hiçbir kod yazılmadı, model çağrılmadı, ürün ölçümü yapılmadı. §2'deki derlemeler geçici dosyalarla ve tek bir TeX dağıtımında, tasarım varsayımlarını sınamak için yapıldı.
+- Dışa aktarım yapıyı ve metni taşır; matematiğin ya da iddianın bilimsel doğruluğunu denetlemez. Marker/OCR kökenli denklem uyarıları `report_view`'da bulunmadığı için LaTeX'e geçmez; ekrandaki ve Markdown'daki durum bu bakımdan aynıdır.
+- Statik makro denetimi bir uyumluluk uyarısıdır; hem kaçırabilir hem gereksiz uyarabilir. Sınıf A güvenlik sınırıdır ama bir TeX sandbox'ı değildir; derlenmiş dosyanın güvenliği kullanıcının TeX yapılandırmasına da bağlıdır.
+- Kapalı simge tablosunun dışındaki karakterler yazı tipinde yoksa PDF'te düşer; uyarı verilir, çözülmez.
+- Referans listesi sırası ve numaraları `.tex` içindeki ilk `\cite` sırasıdır; ekrandaki `[n]` ile aynı olması golden testle (metin düzeyinde) ve derleme testi örneğinde `.bbl` düzeyinde sabitlenir.
+- Denklem numaraları LaTeX'in kendi sayacıdır; Markdown ve ekrandakilerle aynı olacağı iddia edilmez.
+- IEEEtran.bst başlıklarda `doi` basmaz (M5); büyük harf koruması yalnız `latex_report` yolunda vardır.
+- Tablo: sütun grupları ve `longtable` M9–M10'daki koşullar için kayıpsızdı (500 karakterlik hücre, 7 sütun, 40 satır). Bu koşulların dışı (uzun kaynak başlığı, boşluksuz değerler, 7'den az sütunda daha yüksek satır) fixture'la sınanır ama ölçülmedi. Sayfa sonları ve boş sayfa estetik bedeldir.
+- Tablo hücresi matematik alt kümesi yükseklik içindir; listede olmayan bir yükseklik kurucusu satırı sayfadan yüksek yapabilir (derleme fixture'ı yalnız listeyi sınar). Argüman sayısı ve `\frac{x}` gibi biçimler taranmaz; bunlar derleme riskidir.
+- Türkçe hecelemesi yoktur; Türkçe raporda durum sözcükleri İngilizce kalır.
+- Bugünkü sözleşmeyle gerçek modelle tamamlanmış rapor yok (18 Eylül'deki tam rapor sonraki sözleşmelerden önceydi; P16 serisi tamamlanmadı); güncel dışa aktarım gerçek bir raporla sınanmadı ve `index_terms` iddialarının güncel biçimi görülmedi, virgülle birleştirme bir varsayımdır.
+
+## 13. Ertelenenler ve backlog
+
+- Times yerine `TeX Gyre Termes` (`\setmainfont`) ile "Font shape undefined" uyarılarını gidermek.
+- Türkçe hecelemesi (`polyglossia`) ve Türkçe durum sözcükleri (iki çıktı için ortak).
+- `\R`, `\N` gibi KaTeX'in bildiği kısayol makrolar için preamble'a `\providecommand` tanımları (sınıf B'yi azaltır).
+- Boşluksuz uzun değerleri `\allowbreak` ile bölmek (Overfull \hbox istisnasını kaldırır).
+- Hücre başına okuma derinliği simgesi.
+- Simge tablosunu genişletmek; yazı tipi kapsamını gerçekten denetlemek.
+- Marker/OCR kökenli denklem uyarısını `report_view`'a ve iki dışa aktarıma taşımak.
+- IEEEtran.bst'nin `doi` basmaması için `.bib` alanını `note`'a ya da `url`'ye taşımak.
+- Argüman sayısı ve `\left`/`\right` dışındaki ayraç eşleşmesini (`\frac{x}`) taramak.
+
+Tasarım denetiminin orta ve düşük bulguları ilgili turda işlendi (§14).
+
+## 14. Denetim kaydı
+
+**Tur 0 (karar turu, /tmp/x0-q-answer.md).** 16 öneri, Sol 4'üne katıldı, 11'ine değişiklikle katıldı, Q5'e katılmadı; 5 ek soru (Q17–Q21) önerdi. Hepsi §10'a işlendi.
+
+**Tur 1 (/tmp/x0-r1-answer.md): hazır değil, 11 yüksek, 3 orta, 1 düşük.** Yüksekler: sınıf A taraması boşluklu `\begin {document}`'ı kaçırıyordu; M9 yanlış okunmuştu (13×500 karakterde `longtable` da içerik kaybeder); M7'de "uyarı yok" yanlıştı (`Float too large`); M11'de `href` örneği yanlıştı; sınıf tablosu bazı birleşimleri yanlış yönlendiriyordu; `\text{}` işlenmesi tanımsızdı; E sınıfı ile etiket kuralı çelişiyordu; kaynak sütunu sarılmıyordu; §9 "log yok sayılır" ters yazılmıştı; X1 kaçış sözleşmesi kendi içinde çelişiyordu; D146 numarası başka işe verilmişti. Hepsi işlendi (§2, §4, §5, §9, §11). Orta ve düşük bulgular işlendi: çıkarılan bib alanları not olur, ölçümler temiz girdilerle tekrarlandı, çakışma kontrolü ve tema/odak kontrolü eklendi, satır numaraları düzeltildi.
+
+**Tur 2 (/tmp/x0-r2-answer.md): hazır değil, 7 yüksek, 1 orta, 1 düşük.** Yüksekler: üretilen `\ensuremath` kapalı taramadan geçmiyordu; `&`/`\tag` bağlamı süslü parantez derinliğine bakmadan geçerli sayılıyordu; E sınıfı ile "diğer bütün aralıklar `equation*`" hâlâ çelişiyordu; 7 sütun sınırı sınırsız seçenek etiketi ve başlıkları kapsamıyordu; her sütun grubu tablo sayacını artırıyordu (TABLE II); dilim 4 (D147) çıktı sözleşmesi çakışması; "gerçek modelle tamamlanmış rapor yok" yanlıştı (18 Eylül'de tam rapor vardı). Orta: `Overfull \hbox` genel başarısızlık listesinde yoktu. Düşük: D148 mevcutmuş gibi yazılmıştı. Hepsi işlendi; sayaç düzeltmesi iki gruplu bir derlemeyle doğrulandı (düzeltmeli ve düzeltmesiz kaynak, PDF ve log ayrı adlarla `/tmp/x0-tex/ref/counter/`'da).
+
+**Tur 3 (/tmp/x0-r3-answer.md): hazır değil, 1 yüksek, 3 orta, 1 düşük.** Yüksek: karakter eşiği satır yüksekliğini sınırlamıyor (`\\[1000pt]` içeren kısa bir matematik hücresi `longtable` satırını sayfadan yüksek yapar). Orta: "see note k" numaralama ve kayıt biçimi tanımsız; ayraç/argüman/`gathered` politikası eksik, `\text{$x$}` bölünmesi; F10, X1–X3 kapsamları §4 ve Q22 ile uyuşmuyordu. Düşük: sayaç ölçümünün olumlu dosya çifti saklanmamıştı. Hepsi işlendi (§4, §5, §11, §12).
+
+**Tur 4 (/tmp/x0-r4-answer.md): hazır değil, 1 yüksek, 1 orta, 2 düşük.** Yüksek: "hiçbir değer tabloda kesilmez" cümlesi, listede olmayan yükseklik kurucularının bilinen sınırıyla çelişiyordu. Orta: hücre matematiği filtresinin aşama sırası yazılı değildi. Düşük: `Long table values` listesi §3 ve §7 ile ilişkilendirilmemişti; §9, Q7 ve Q19 özetleri eşit değildi. Hepsi işlendi.
+
+**Tur 5 (/tmp/x0-r5-answer.md): hazır değil, 1 yüksek.** "Fixture için gösterilmiştir" cümlesi henüz yazılmamış testi tamamlanmış kanıt gibi sunuyordu. Cümle "§2'de ölçülen örneklerde gösterilmiştir; yeni formül, eşikler ve alt küme X3/X4 fixture'larıyla sınanacaktır" olarak düzeltildi.
+
+**Tur 6 (/tmp/x0-r6-answer.md): hazır, yüksek bulgu yok.** Notun tamamı "yapılmamış şeyi yapılmış gibi söyleyen" cümle için tarandı; başkası bulunmadı.
+
+Özet: karar turu + 6 tasarım denetimi turu; yüksek bulgu sayıları 11, 7, 1, 1, 1, 0. Model: `gpt-6.1-sol`, `model_reasoning_effort="high"`, salt okunur. Orta ve düşük bulguların hepsi ilgili turda metne işlendi; bu notta açık kalan orta ya da düşük bulgu yoktur. Kalan riskler §12'de, geliştirme önerileri §13'tedir.

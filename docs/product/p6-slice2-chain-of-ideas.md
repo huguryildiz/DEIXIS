@@ -523,7 +523,7 @@ Her batch ayrı bir commit olur; commit ve push yalnız sahibin istediği zaman,
 | L6 Montaj ve insan düzenleme API'si | L1, L2, L4 | M | hayır |
 | L7 Arayüz | L1, L5, L6 | M–L | hayır (scripted) |
 | L8 Geliştirme davranış koşuları ve kapanış | L7 ve önceki bütün batch'lerin kabulü | S–M | **evet** |
-| L9 Bağımsız gerçek-model ölçümü | L8, dondurma incelemesi, sahip onayı | L | **evet** |
+| L9 Bağımsız gerçek-model ölçümü ✅ (D141: korpus kapılarında durdu, R12–R15 ölçülmedi) | L8, dondurma incelemesi, sahip onayı | L | **evet** |
 
 L1–L4'ün bağımsızlığı yalnız aşağıdaki arayüz sınırlarıyla geçerlidir: L2 yalnız kendisine verilen kaynak/pasaj anlık görüntüleri üzerinde çalışan **saf** hesapları kurar (DB'den düğüm okuma yok); rol sütunlarını ve mevcut hücre revizyonlarını okuyup `lineage_target` oluşturma, aday seçimi ve koşu orkestrasyonu L5'tedir; L3 `_step_input`/`_model_step` parametre geçişini, görev dispatch'ini, tutamak ve sözleşme yolunu kurar, iş mantığı kurmaz. Migration numaraları tek noktadan tahsis edilir; L1 ve L4 migration'ları birleşmiş sırada birlikte sınanır. Ayrı worktree kullanmak ortak dosya (`flow.py`, `contracts.py`, `api/app.py`) ve numara çakışmalarını kendiliğinden çözmez; L3 `methods/` değiştirdiği için sıra kuralına tabidir.
 
@@ -591,7 +591,7 @@ L1–L4'ün bağımsızlığı yalnız aşağıdaki arayüz sınırlarıyla geç
 **Çıkış.** Her vaka için beklenen/gözlenen kayıt; bulgular ya düzeltildi ya da açık yazıldı.
 **Göstermez.** Bağımsız ölçüm değerini (L9); oran ya da genelleme.
 
-### L9 — Bağımsız gerçek-model ölçümü (L) — **model gerekir, ayrı dondurma kuralı**
+### L9 — Bağımsız gerçek-model ölçümü (L) — **model gerekir, ayrı dondurma kuralı** ✅ D141 (1 Ekim 2026): dondurma `62812a1`; tek hazırlık denemesinde ürün 99 işten 1'ini dahil etti, K1–K3 geçmedi, lineage koşusu yapılmadı, R12–R15 ölçülemedi; sonuç `p6-slice2-results.md`
 
 **Kapsam.** §14: R12–R15 ve yapısal sayılar, yeni korpusta, tek koşu, müdahalesiz; dondurma commit'i ve gpt-6.1-sol dondurma incelemesi ölçümden önce; sonuç belgesi ve `decisions.md` kaydı (başarı ya da başarısızlık ayrı karar).
 **Dosyalar.** `docs/product/p6-slice2-expectations.md` (dondurma), `docs/product/p6-slice2-results.md`, `docs/decisions.md`.

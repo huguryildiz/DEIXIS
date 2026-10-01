@@ -312,6 +312,48 @@ class ReportStore:
             revisions.append(revision)
         return revisions
 
+    def effective_links(self, report_id: str) -> list[dict]:
+        """E1 uses all original links; citation selection belongs to E2."""
+        return [dict(row) for row in self.conn.execute(
+            "SELECT l.*, c.claim_key, s.section_id FROM report_citation_links l"
+            " JOIN report_claims c ON c.id = l.claim_id"
+            " JOIN report_sections s ON s.id = c.report_section_id"
+            " WHERE s.report_id = ? ORDER BY l.rowid", (report_id,),
+        )]
+
+    def check_edits(self, research_id: str, report_id: str) -> dict:
+        from deixis.workflow.report import assembly, edit_check
+
+        with transaction(self.conn):
+            report = self.report(report_id)
+            if report["research_id"] != research_id:
+                raise NotFound(report_id)
+            self.store.research(research_id)  # a trashed research is not found, so nothing is written
+            run = self.store.run(report["run_id"])
+            if report["status"] not in ("valid", "draft") or run["status"] not in ("completed", "failed", "cancelled"):
+                raise RevisionConflict("A report can be checked once its run has finished")
+            fingerprint = edit_check.fingerprint(edit_check.manifest(self.store, self, report_id))
+            row = self.conn.execute("SELECT * FROM report_edit_checks WHERE report_id = ? AND input_fingerprint = ?",
+                                    (report_id, fingerprint)).fetchone()
+            if row is not None:
+                return edit_check.record(row)
+            result = assembly.run_current_checks(self.store, self, report_id)
+            check_id = new_id("rec")
+            self.conn.execute(
+                "INSERT INTO report_edit_checks (id, report_id, checker_version, input_fingerprint, result_json, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (check_id, report_id, result["checker_version"], fingerprint, edit_check.canonical(result), now()),
+            )
+            self._event(report_id, "report_edits_checked", check_id=check_id)
+            return edit_check.record(self.conn.execute("SELECT * FROM report_edit_checks WHERE id = ?",
+                                                       (check_id,)).fetchone())
+
+    def edit_check_state(self, report_id: str) -> dict | None:
+        from deixis.workflow.report import edit_check
+
+        with transaction(self.conn):
+            return edit_check.state(self.store, self, report_id)
+
     def evidence_changes(self, report_id: str) -> dict[str, Any]:
         """Compare stored cell and row identities with live records; passage extraction is not measured."""
         report = self.report(report_id)

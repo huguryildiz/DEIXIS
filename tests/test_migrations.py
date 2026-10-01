@@ -22,6 +22,55 @@ PRE_SECTION_II_IDS = ("I", "III", "IV", "V", "VI", "VII", "VIII", "IX", "abstrac
 PRE_FULLTEXT_KINDS = (*PRE_REPORT_KINDS, "report")
 
 
+@pytest.mark.parametrize("populated", [False, True])
+def test_edit_check_migration_preserves_pre_0061_library_and_foreign_keys(tmp_path, monkeypatch, populated):
+    real = db.MIGRATIONS_DIR
+    migrations = tmp_path / "edit-check-migrations"
+    migrations.mkdir()
+    for path in real.glob("*.sql"):
+        if int(path.name.split("_", 1)[0]) <= 60:
+            shutil.copy(path, migrations / path.name)
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
+    if populated:
+        from tests.test_report_assembly import report_with_sections
+        fixture = report_with_sections.__wrapped__(tmp_path)
+        lib = next(fixture)
+        conn = lib["store"].conn
+    else:
+        conn = db.connect(tmp_path / "library.sqlite")
+        db.migrate(conn)
+    try:
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name != 'schema_migrations'")]
+        def rows():
+            return {t: sorted((tuple(r) for r in conn.execute(f'SELECT * FROM "{t}"')), key=repr) for t in tables}
+        before = rows()
+        shutil.copy(real / "0061_report_edit_checks.sql", migrations / "0061_report_edit_checks.sql")
+        assert db.migrate(conn) == [61]
+        assert rows() == before
+        assert conn.execute("SELECT * FROM report_edit_checks").fetchall() == []
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        if populated:
+            from tests.test_report_edit_check import finish, check
+            finish(lib)
+            check(lib)
+            with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+                conn.execute("DELETE FROM report_edit_checks")
+            with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+                conn.execute("UPDATE report_edit_checks SET result_json = '{}'")
+            rid = lib["reports"].report(lib["report_id"])["research_id"]
+            lib["store"].trash_research(rid)
+            lib["store"].purge_research(rid)
+            assert conn.execute("SELECT * FROM report_edit_checks").fetchall() == []
+            assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        if populated:
+            with pytest.raises(StopIteration):
+                next(fixture)
+        else:
+            conn.close()
+
+
 @pytest.mark.parametrize("populated", [True, False], ids=["all_pre_0060_kinds_and_dependents", "empty_pre_0060"])
 def test_the_candidate_migration_keeps_every_run_and_every_row_that_points_at_one(tmp_path, monkeypatch, populated):
     from deixis.workflow.store import Store
@@ -565,7 +614,7 @@ def test_the_europepmc_migration_keeps_every_pdf_lookup_row_and_accepts_the_new_
         store.record_pdf_discovery(rid, svid, "europepmc", "10.1/x", Lookup("zero_results", [], 200))
 
     monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
-    assert db.migrate(conn) == [55, 56, 57, 58, 59, 60]
+    assert db.migrate(conn) == [55, 56, 57, 58, 59, 60, 61]
     after = {table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")]
              for table in ("pdf_discovery_runs", "pdf_candidates")}
     assert after == before  # every row and column value kept, other_title_count included

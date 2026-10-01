@@ -410,3 +410,28 @@ def test_a_removed_source_an_answer_quotes_is_kept_and_the_trash_row_says_it_is_
         assert response.status_code == 409, response.text
         assert client.get(f"/api/researches/{rid}").json()["answers"][0]["claims"][0]["evidence"][0]["source_version_id"] == svid
         assert client.get(f"/api/researches/{rid}/assets/{cited['access']['assets'][0]['id']}").status_code == 200
+
+
+def test_research_trash_restore_keeps_edit_checks_and_purge_removes_them(tmp_path):
+    from tests.test_report_assembly import report_with_sections
+    from tests.test_report_edit_check import finish, check
+    fixture = report_with_sections.__wrapped__(tmp_path)
+    lib = next(fixture)
+    try:
+        rid = finish(lib)
+        check(lib)
+        conn = lib["store"].conn
+        before = [tuple(row) for row in conn.execute("SELECT * FROM report_edit_checks ORDER BY rowid")]
+        lib["store"].trash_research(rid)
+        assert [tuple(row) for row in conn.execute("SELECT * FROM report_edit_checks ORDER BY rowid")] == before
+        lib["store"].restore_research(rid)
+        assert [tuple(row) for row in conn.execute("SELECT * FROM report_edit_checks ORDER BY rowid")] == before
+        lib["store"].trash_research(rid)
+        lib["store"].purge_research(rid)
+        assert conn.execute("SELECT * FROM report_edit_checks").fetchall() == []
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        try:
+            next(fixture)
+        except StopIteration:
+            pass

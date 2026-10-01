@@ -3,6 +3,8 @@
 import asyncio
 import re
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from deixis.storage.db import new_id
@@ -13,6 +15,56 @@ from deixis.workflow.views import report_view
 from test_api_flow import app_for, create, session
 from test_report_api import upload_and_include, create_table, fill_table
 from test_report_flow import ReportAdapter, report_flow
+
+
+@pytest.mark.parametrize("language", ["en", "tr"])
+@pytest.mark.parametrize("version", [None, 1])
+@pytest.mark.parametrize("state", ["absent", "current", "historical"])
+def test_three_edit_check_export_states_and_base_review_boundary(language, version, state):
+    view = {"language": language, "status": "draft" if version is None else "valid",
+            "report_version": version, "edited_after_version": version, "has_human_edits": True,
+            "sections": [], "references": [], "review": {"status": "reviewed", "sections_reviewed": [],
+                "sections_not_reviewed": [], "findings": [], "reverted": []}}
+    if state != "absent":
+        view["edit_check"] = {"current": state == "current", "created_at": "2026-10-02T12:00:00Z",
+                              "errors": 2, "warnings": 1,
+                              "items": [{"rule": "banned_word", "section_id": "III", "severity": "error",
+                                         "detail": "ERROR: <SYNTHETIC> [stored]"}],
+                              "skipped_rules": [{"rule": "phrase_frames", "section_id": "III", "claim_key": "III.1",
+                                                 "reason": "human_text"}],
+                              "not_checked": ["semantic_support", "numbers_written_as_words", "passages"]}
+    text = to_markdown(view, title="SYNTHETIC report", corpus=None)
+    tr = language == "tr"
+    if state == "absent":
+        expected = (("Elle düzenlendi; düzenlenen metin yeniden denetlenmedi." if version is None else
+                     "1. sürümden sonra elle düzenlendi; düzenlenen metin yeniden denetlenmedi.") if tr else
+                    ("Edited by hand; edited text was not checked again." if version is None else
+                     "Edited by hand after version 1; edited text was not checked again."))
+        assert expected in text
+    else:
+        if state == "current":
+            assert ("düzenlenen metin kod kurallarıyla denetlendi" if tr else "the edited text was checked by code rules") in text
+            assert ("2 hata, 1 uyarı" if tr else "2 errors, 1 warnings") in text
+        else:
+            assert ("güncel girdileri kapsamıyor" if tr else "does not cover the current inputs") in text
+            assert "2 errors" not in text and "2 hata" not in text
+        assert "2026-10-02T12:00:00Z" in text
+        assert "banned_word" in text and "phrase_frames (human_text)" in text
+        assert _md("ERROR: <SYNTHETIC> [stored]") in text
+        assert ("Denetlenmedi:" if tr else "Not checked:") in text
+        assert ("sözcükle yazılmış sayılar" if tr else "numbers written as words") in text
+        assert ("pasajlar" if tr else "passages") in text
+    assert ("modelin temel sürümünü kapsar; insan düzenlemeleri incelenmedi" if tr else
+            "covers the model's base version; human edits were not reviewed") in text
+
+
+def test_hand_built_view_fallback_and_explicit_unedited_state():
+    view = {"language": "en", "status": "valid", "report_version": 1, "edited_after_version": 1,
+            "sections": [], "references": []}
+    expected = "Edited by hand after version 1; edited text was not checked again."
+    assert expected in to_markdown(view, title="SYNTHETIC", corpus=None)
+    view["has_human_edits"] = False
+    assert expected not in to_markdown(view, title="SYNTHETIC", corpus=None)
 
 
 def complete(tmp_path):

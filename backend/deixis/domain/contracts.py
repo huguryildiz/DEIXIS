@@ -1436,10 +1436,14 @@ def _check_report_plan(step_input: dict[str, Any], allow: dict[str, set[str]],
             report.issues.append(Issue(code, f"/{field}", column_id))
 
 
+def limitations_number_restated(text: str) -> bool:
+    without_item_refs = re.sub(r"\b(?:item|öğe|madde)\s+\d+\b", "", text, flags=re.IGNORECASE)
+    return re.search(r"\d", without_item_refs) is not None
+
+
 def limitations_claim_issues(claim: dict[str, Any]) -> list[Issue]:
     issues = []
-    without_item_refs = re.sub(r"\b(?:item|öğe|madde)\s+\d+\b", "", claim["text"], flags=re.IGNORECASE)
-    if re.search(r"\d", without_item_refs):
+    if limitations_number_restated(claim["text"]):
         issues.append(Issue("limitations_number_restated", "/text",
                             "VIII claim restates a number outside an item reference"))
     if claim["support_type"] == "source_stated" and not claim["passage_ids"] and not claim["cell_ids"]:

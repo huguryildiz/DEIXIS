@@ -376,6 +376,10 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
             run["error"] = error
     return report | {"sections": sections, "evidence_changes": {key: value for key, value in changes.items() if key != "sections"},
                      "edited_after_version": report["report_version"] if edited else None,
+                     "has_human_edits": edited is not None,
+                     "edit_check": reports.edit_check_state(report_id) if edited or store.conn.execute(
+                         "SELECT 1 FROM report_edit_checks WHERE report_id = ? LIMIT 1", (report_id,),
+                     ).fetchone() else None,
                      "references": references, "table_i": table_i, "missing_rows": missing_rows,
                      "run": run}
 

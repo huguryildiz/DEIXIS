@@ -2257,6 +2257,12 @@ def create_app(
     async def get_report(research_id: str, report_id: str, request: Request) -> dict[str, Any]:
         return report_view(store_of(request), research_id, report_id)
 
+    @app.post("/api/researches/{research_id}/reports/{report_id}/check-edits")
+    async def check_report_edits(research_id: str, report_id: str, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        ReportStore(store).check_edits(research_id, report_id)
+        return report_view(store, research_id, report_id)
+
     @app.get("/api/researches/{research_id}/reports/{report_id}/export")
     async def export_report(research_id: str, report_id: str, request: Request,
                             fmt: Literal["markdown"] = Query("markdown", alias="format")) -> Response:

@@ -189,6 +189,46 @@ def _review_note(view: dict[str, Any], tr: bool) -> str:
     return " ".join(parts)
 
 
+def _edit_note(view: dict[str, Any], tr: bool) -> list[str]:
+    edited = view.get("edited_after_version")
+    if not view.get("has_human_edits", edited is not None):
+        return []
+    check = view.get("edit_check")
+    if check is None:
+        text = (_label(f"Edited by hand after version {edited}; edited text was not checked again.", tr,
+                       f"{edited}. sürümden sonra elle düzenlendi; düzenlenen metin yeniden denetlenmedi.")
+                if edited is not None else _label("Edited by hand; edited text was not checked again.", tr,
+                                                 "Elle düzenlendi; düzenlenen metin yeniden denetlenmedi."))
+        return [text, ""]
+    date = _md(check["created_at"])
+    prefix = (f"{edited}. sürümden sonra elle düzenlendi" if edited is not None else "Elle düzenlendi") if tr else (
+        "Edited by hand" + (f" after version {edited}" if edited is not None else ""))
+    if check["current"]:
+        text = _label(
+            f"{prefix}; the edited text was checked by code rules ({date}): {check['errors']} errors, "
+            f"{check['warnings']} warnings; whether the cited evidence supports each sentence was not checked.", tr,
+            f"{prefix}; düzenlenen metin kod kurallarıyla denetlendi ({date}): {check['errors']} hata, "
+            f"{check['warnings']} uyarı; atıf yapılan kanıtın her cümleyi destekleyip desteklemediği denetlenmedi.")
+    else:
+        text = _label(
+            f"{prefix}; the last check ({date}) does not cover the current inputs; "
+            "whether the cited evidence supports each sentence was not checked.", tr,
+            f"{prefix}; son denetim ({date}) güncel girdileri kapsamıyor; "
+            "atıf yapılan kanıtın her cümleyi destekleyip desteklemediği denetlenmedi.")
+    lines = [text, ""]
+    for item in check["items"]:
+        lines.append(f"- {_md(item['section_id'])} · {_md(item['rule'])} ({_md(item['severity'])}): {_md(item['detail'])}")
+    lines.extend(["", _label("Not checked:", tr, "Denetlenmedi:")])
+    for item in check["skipped_rules"]:
+        lines.append(f"- {_md(item['section_id'])} · {_md(item['claim_key'])}: {_md(item['rule'])} ({_md(item['reason'])})")
+    limits = {"semantic_support": ("whether the cited evidence supports each sentence", "atıf yapılan kanıtın her cümleyi destekleyip desteklemediği"),
+              "numbers_written_as_words": ("numbers written as words", "sözcükle yazılmış sayılar"),
+              "passages": ("passages", "pasajlar")}
+    lines.extend(f"- {_md(limits[value][int(tr)] if value in limits else value)}" for value in check["not_checked"])
+    lines.append("")
+    return lines
+
+
 def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None) -> str:
     tr = str(view.get("language", "")).startswith("tr")
     draft = view["status"] == "draft"
@@ -228,10 +268,7 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
         lines.extend(f"- {_md(row['source_key'] or row['title'])}: {_md(failed_reason_text(row['reason'], 'tr' if tr else 'en'))}"
                      for row in missing["failed_rows"])
         lines.append("")
-    edited = view.get("edited_after_version")
-    if edited is not None:
-        lines.extend([_label(f"Edited by hand after version {edited}; edited text was not checked again.", tr,
-                             f"{edited}. sürümden sonra elle düzenlendi; düzenlenen metin yeniden denetlenmedi."), ""])
+    lines.extend(_edit_note(view, tr))
     if view.get("evidence_changes", {}).get("any"):
         lines.extend([_label("Evidence changed after this report was written; the report text was not changed. Passage text was not checked.",
                              tr, "Bu rapor yazıldıktan sonra kanıt değişti; rapor metni değişmedi. Pasaj metni denetlenmedi."), ""])
@@ -309,7 +346,11 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
                     "Atıf çapaları ilgili pasajlarda veya hücrelerde bulundu.") if located == len(links) else _label(
                         f"{located} of {len(links)} citation anchors were located in their passages or cells; the others open without a mark.",
                         tr, f"{len(links)} atıf çapasının {located} tanesi ilgili pasajlarda veya hücrelerde bulundu; diğerleri işaretsiz açılır.")
-    lines.extend([f"{anchor} {_review_note(view, tr)}", ""])
+    review_note = _review_note(view, tr)
+    if (view.get("review") or {}).get("status") == "reviewed":
+        review_note += _label(" The review covers the model's base version; human edits were not reviewed.", tr,
+                              " İnceleme modelin temel sürümünü kapsar; insan düzenlemeleri incelenmedi.")
+    lines.extend([f"{anchor} {review_note}", ""])
     review = view.get("review")
     if review and review["status"] == "reviewed" and review["findings"]:
         lines.extend([_label("Model findings", tr, "Model bulguları"), ""])

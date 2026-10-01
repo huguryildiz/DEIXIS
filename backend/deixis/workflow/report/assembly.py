@@ -33,15 +33,24 @@ def _issue(rule: str, section_id: str, detail: str) -> dict[str, Any]:
     return {"rule": rule, "section_id": section_id, "detail": detail}
 
 
-def _claims(store: Store, report_id: str) -> list[dict[str, Any]]:
-    return [dict(row) for row in store.conn.execute(
+def _claims(store: Store, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
+    claims = [dict(row) for row in store.conn.execute(
         "SELECT c.*, s.section_id, s.ordinal AS section_ordinal FROM report_claims c"
         " JOIN report_sections s ON s.id = c.report_section_id"
         " WHERE s.report_id = ? ORDER BY s.ordinal, c.ordinal", (report_id,),
     )]
+    if current:
+        for claim in claims:
+            if claim["current_revision_id"] is not None:
+                revision = store.conn.execute("SELECT text FROM report_claim_revisions WHERE id = ?",
+                                              (claim["current_revision_id"],)).fetchone()
+                claim["text"] = revision["text"]
+    return claims
 
 
-def _links(store: Store, report_id: str) -> list[dict[str, Any]]:
+def _links(store: Store, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
+    if current:
+        return ReportStore(store).effective_links(report_id)
     return [dict(row) for row in store.conn.execute(
         "SELECT l.*, c.claim_key, s.section_id FROM report_citation_links l"
         " JOIN report_claims c ON c.id = l.claim_id"
@@ -107,9 +116,9 @@ def _draft_items(section: dict, field: str, issues: list[dict[str, Any]]) -> lis
     return items
 
 
-def _section_texts(store: Store, reports: ReportStore, report_id: str) -> list[tuple[int, str, str]]:
+def _section_texts(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[tuple[int, str, str]]:
     claim_texts: dict[str, list[str]] = defaultdict(list)
-    for claim in _claims(store, report_id):
+    for claim in _claims(store, report_id, current=current):
         claim_texts[claim["section_id"]].append(claim["text"])
     result = []
     for section in reports.sections(report_id):
@@ -139,9 +148,9 @@ def _check_duplicate_claim_keys(store: Store, reports: ReportStore, report_id: s
     return issues
 
 
-def _check_glossary_order(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
+def _check_glossary_order(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     plan = reports.report(report_id)["plan"] or {}
-    texts = _section_texts(store, reports, report_id)
+    texts = _section_texts(store, reports, report_id, current=current)
     issues = []
     for entry in plan.get("glossary", []):
         term = str(entry.get("term") or "").strip()
@@ -186,10 +195,10 @@ def _check_body_refs(store: Store, reports: ReportStore, report_id: str) -> list
     return issues
 
 
-def _claim_depths(store: Store, reports: ReportStore, report_id: str) -> dict[str, str]:
+def _claim_depths(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> dict[str, str]:
     cells = {cell["cell_id"]: cell for cell in reports.snapshot(report_id).get("cells", [])}
     depths: dict[str, list[str]] = defaultdict(list)
-    rows = store.conn.execute(
+    rows = _links(store, report_id, current=True) if current else store.conn.execute(
         "SELECT l.claim_id, l.passage_id, l.cell_id, p.kind AS passage_kind"
         " FROM report_citation_links l"
         " JOIN report_claims c ON c.id = l.claim_id"
@@ -201,16 +210,21 @@ def _claim_depths(store: Store, reports: ReportStore, report_id: str) -> dict[st
         if row["cell_id"]:
             depth = cells.get(row["cell_id"], {}).get("reading_depth")
         else:
-            depth = "abstract" if row["passage_kind"] == "abstract" else "selected_sections"
+            if current:
+                passage = store.conn.execute("SELECT kind FROM passages WHERE id = ?", (row["passage_id"],)).fetchone()
+                kind = passage["kind"] if passage else None
+                depth = "abstract" if kind == "abstract" else "selected_sections" if kind is not None else None
+            else:
+                depth = "abstract" if row["passage_kind"] == "abstract" else "selected_sections"
         if depth in _DEPTH_ORDER:
             depths[row["claim_id"]].append(depth)
     return {claim_id: min(values, key=_DEPTH_ORDER.__getitem__) for claim_id, values in depths.items()}
 
 
-def _check_derived_strength(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
+def _check_derived_strength(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     claims = _claims(store, report_id)
     by_key = {claim["claim_key"]: claim for claim in claims}
-    depths = _claim_depths(store, reports, report_id)
+    depths = _claim_depths(store, reports, report_id, current=current)
     issues = []
     for claim in claims:
         if claim["section_id"] not in _DERIVED_SECTIONS:
@@ -231,7 +245,7 @@ def _check_derived_strength(store: Store, reports: ReportStore, report_id: str) 
             ))
         body_depths = [depths[body["id"]] for body in body_claims if body["id"] in depths]
         derived_depth = depths.get(claim["id"])
-        if derived_depth and body_depths:
+        if derived_depth and body_depths and (not current or len(body_depths) == len(ref_keys)):
             weakest_depth = min(body_depths, key=_DEPTH_ORDER.__getitem__)
             if _DEPTH_ORDER[derived_depth] > _DEPTH_ORDER[weakest_depth]:
                 issues.append(_issue(
@@ -309,13 +323,13 @@ def _check_corpus_counts(store: Store, reports: ReportStore, report_id: str) -> 
     return issues
 
 
-def _check_count_fields(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
+def _check_count_fields(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     snapshot = reports.snapshot(report_id)
     rows = set(evidence_row_ids(snapshot))
     columns = {column["column_id"] for column in snapshot["columns"]}
     cells = {(cell["source_version_id"], cell["column_id"]): cell for cell in snapshot["cells"]}
     issues = []
-    for claim in _claims(store, report_id):
+    for claim in _claims(store, report_id, current=current):
         if claim["count_json"] is None:
             continue
         count = _json_record(claim, "count_json", "report_claims", claim["claim_key"], claim["section_id"], issues)
@@ -349,7 +363,7 @@ def _check_count_fields(store: Store, reports: ReportStore, report_id: str) -> l
     return issues
 
 
-def _check_banned_words(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
+def _check_banned_words(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     issues = []
     def scan(section: str, where: str, value: Any) -> None:
         if not isinstance(value, str):
@@ -368,7 +382,7 @@ def _check_banned_words(store: Store, reports: ReportStore, report_id: str) -> l
                 continue
             issues.append(_issue("banned_word", section, f"ERROR: {match.group()!r} in {where}."))
 
-    for claim in _claims(store, report_id):
+    for claim in _claims(store, report_id, current=current):
         if claim["section_id"] != "II":
             scan(claim["section_id"], f"claim {claim['claim_key']}", claim["text"])
     for section in reports.sections(report_id):
@@ -386,12 +400,12 @@ def _check_banned_words(store: Store, reports: ReportStore, report_id: str) -> l
     return issues
 
 
-def _check_bibliography(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
+def _check_bibliography(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     snapshot = reports.snapshot(report_id)
     sources = set(evidence_row_ids(snapshot))
     cells = {cell["cell_id"]: cell for cell in snapshot["cells"]}
     issues = []
-    for link in _links(store, report_id):
+    for link in _links(store, report_id, current=current):
         source = link["source_version_id"]
         section = link["section_id"]
         if source not in sources:
@@ -413,7 +427,7 @@ def _check_bibliography(store: Store, reports: ReportStore, report_id: str) -> l
     return issues
 
 
-def _check_gap_bases(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
+def _check_gap_bases(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     snapshot = reports.snapshot(report_id)
     plan = reports.report(report_id)["plan"] or {}
     cells = {cell["cell_id"]: cell for cell in snapshot["cells"]}
@@ -457,8 +471,9 @@ def _check_gap_bases(store: Store, reports: ReportStore, report_id: str) -> list
             if ref not in gap_ids:
                 issues.append(_issue("gap_ref_unknown", claim["section_id"], f"ERROR: {claim['claim_key']} names {ref}."))
         if claim["section_id"] == "VII":
-            cell_links = store.conn.execute("SELECT cell_id FROM report_citation_links WHERE claim_id = ?",
-                                            (claim["id"],))
+            cell_links = ([link for link in _links(store, report_id, current=True) if link["claim_id"] == claim["id"]]
+                          if current else store.conn.execute("SELECT cell_id FROM report_citation_links WHERE claim_id = ?",
+                                                             (claim["id"],)))
             has_future_cell = any(cells.get(row["cell_id"], {}).get("column_id") == plan.get("future_work_column_id")
                                   and row["cell_id"] in cells for row in cell_links if row["cell_id"])
             if not valid_refs and not has_future_cell:
@@ -519,16 +534,16 @@ def _check_gap_bases(store: Store, reports: ReportStore, report_id: str) -> list
     return issues
 
 
-def _check_equations(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
+def _check_equations(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     sections = {section["section_id"]: section for section in reports.sections(report_id)}
     section_steps = {section_id: section["step_id"] for section_id, section in sections.items()}
     links_by_claim: dict[str, list[dict]] = defaultdict(list)
-    for link in _links(store, report_id):
+    for link in _links(store, report_id, current=current):
         links_by_claim[link["claim_id"]].append(link)
     issues = []
     checked_payload_sections: set[str] = set()
     malformed_sections: set[str] = set()
-    for claim in _claims(store, report_id):
+    for claim in _claims(store, report_id, current=current):
         if claim["section_id"] == "II":
             continue
         section, key, text = claim["section_id"], claim["claim_key"], claim["text"]
@@ -594,10 +609,10 @@ def _check_equations(store: Store, reports: ReportStore, report_id: str) -> list
     return issues
 
 
-def _check_anchors(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
+def _check_anchors(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     cells = {cell["cell_id"]: cell for cell in reports.snapshot(report_id)["cells"]}
     issues = []
-    for link in _links(store, report_id):
+    for link in _links(store, report_id, current=current):
         section, key = link["section_id"], link["claim_key"]
         anchor = link["anchor_text"]
         if not link["anchor_match"] or not anchor:
@@ -631,14 +646,14 @@ def _check_conflict_links(store: Store, reports: ReportStore, report_id: str) ->
     return issues
 
 
-def _check_phrase_frames(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
+def _check_phrase_frames(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     report = reports.report(report_id)
     sections = {section["section_id"]: section for section in reports.sections(report_id)}
     claims_by_section: dict[str, list[dict]] = defaultdict(list)
-    for claim in _claims(store, report_id):
+    for claim in _claims(store, report_id, current=current):
         claims_by_section[claim["section_id"]].append(claim)
     links_by_claim: dict[str, set[str]] = defaultdict(set)
-    for link in _links(store, report_id):
+    for link in _links(store, report_id, current=current):
         links_by_claim[link["claim_id"]].add(link["source_version_id"])
     latest = {}
     for row in store.conn.execute("SELECT section_id, sentence_id, before, after, outcome"
@@ -679,7 +694,8 @@ def _check_phrase_frames(store: Store, reports: ReportStore, report_id: str) -> 
         ):
             continue
         fields = [{"claim_key": claim["claim_key"], "text": claim["text"],
-                   "support_type": claim["support_type"]} for claim in claims_by_section[section_id]]
+                   "support_type": claim["support_type"]} for claim in claims_by_section[section_id]
+                  if not current or claim["current_revision_id"] is None]
         fields.extend(_draft_items(section, "insufficient_evidence", issues))
         for flagged in phrasing.flagged_sentences(section_id, fields, phrasebank_text, language):
             repair = latest.get((section_id, flagged["sentence_id"]))
@@ -691,15 +707,24 @@ def _check_phrase_frames(store: Store, reports: ReportStore, report_id: str) -> 
     return issues
 
 
-def _check_word_budgets(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
-    del store
+def _check_word_budgets(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     plan = reports.report(report_id)["plan"] or {}
     budgets = plan.get("section_budgets", {})
     sections = reports.sections(report_id)
     issues = []
     total = 0
+    claims_by_section: dict[str, list[dict]] = defaultdict(list)
+    if current:
+        for claim in _claims(store, report_id, current=True):
+            claims_by_section[claim["section_id"]].append(claim)
     for section in sections:
         word_count = section["word_count"]
+        edited = current and any(claim["current_revision_id"] is not None
+                                 for claim in claims_by_section[section["section_id"]])
+        if edited:
+            word_count = sum(len(claim["text"].split()) for claim in claims_by_section[section["section_id"]])
+            word_count += sum(len(entry["reason"].split()) for entry in
+                              _draft_items(section, "insufficient_evidence", issues))
         if word_count is None:
             continue
         maximum = budgets.get(section["section_id"], {}).get("max_words")
@@ -708,7 +733,7 @@ def _check_word_budgets(store: Store, reports: ReportStore, report_id: str) -> l
         if maximum is not None and word_count > maximum:
             issues.append(_issue(
                 "section_word_count_over_budget", section["section_id"],
-                f"ERROR: stored word_count {word_count} exceeds the frozen upper budget {maximum}.",
+                f"ERROR: {'current' if edited else 'stored'} word_count {word_count} exceeds the frozen upper budget {maximum}.",
             ))
     total_maximum = sum(
         budget["max_words"] for budget in budgets.values() if isinstance(budget.get("max_words"), int)
@@ -716,7 +741,7 @@ def _check_word_budgets(store: Store, reports: ReportStore, report_id: str) -> l
     if total_maximum and total > total_maximum:
         issues.append(_issue(
             "report_word_count_over_budget", "report",
-            f"ERROR: stored report word_count {total} exceeds the frozen upper budget {total_maximum}.",
+            f"ERROR: {'current' if current else 'stored'} report word_count {total} exceeds the frozen upper budget {total_maximum}.",
         ))
     return issues
 
@@ -758,3 +783,40 @@ def run_assembly_checks(store: Store, reports: ReportStore, report_id: str) -> l
             seen_malformed.add(key)
         result.append(issue)
     return result
+
+
+def run_current_checks(store: Store, reports: ReportStore, report_id: str) -> dict:
+    """Read working text without publishing, validating or rewriting the base report."""
+    from deixis.workflow.report.edit_check import shape_result
+
+    reports.report(report_id)
+    unchanged = {_check_duplicate_claim_keys, _check_body_refs, _check_corpus_counts, _check_conflict_links}
+    items = [item for check in _CHECKS for item in
+             (check(store, reports, report_id) if check in unchanged else
+              check(store, reports, report_id, current=True))]
+    claims = _claims(store, report_id, current=True)
+    by_key = {claim["claim_key"]: claim for claim in claims}
+    depths = _claim_depths(store, reports, report_id, current=True)
+    skipped = []
+
+    def skip(claim: dict, rule: str, reason: str) -> None:
+        skipped.append({"rule": rule, "section_id": claim["section_id"],
+                        "claim_key": claim["claim_key"], "reason": reason})
+
+    for claim in claims:
+        if claim["count_json"] is not None and not re.search(r"\b\d+\b", contracts._without_math(claim["text"])):
+            skip(claim, "count_text_not_checked", "no_integer_in_text")
+        if claim["section_id"] in _DERIVED_SECTIONS:
+            refs = [row["ref_value"] for row in store.conn.execute(
+                "SELECT ref_value FROM report_claim_refs WHERE claim_id = ? AND ref_kind = 'body_ref'",
+                (claim["id"],))]
+            if claim["id"] not in depths or any(key not in by_key or by_key[key]["id"] not in depths for key in refs):
+                skip(claim, "derived_depth_not_checked", "no_citation_depth")
+        if claim["current_revision_id"] is not None:
+            skip(claim, "phrase_frames", "human_text")
+            if claim["section_id"] == "VIII" and contracts.limitations_number_restated(claim["text"]):
+                items.append(_issue("limitations_number_restated", "VIII",
+                                    f"ERROR: {claim['claim_key']} restates a number outside an item reference."))
+    return shape_result(items, skipped, [check.__name__.removeprefix("_check_") for check in _CHECKS]
+                        + ["limitations_number_restated"],
+                        sum(claim["current_revision_id"] is not None for claim in claims))

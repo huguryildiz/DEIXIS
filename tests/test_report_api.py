@@ -16,6 +16,49 @@ from test_api_flow import app_for, create, session, wait_run
 from test_report_flow import COLUMN, FUTURE_WORK_COLUMN, LIMITATIONS_COLUMN, ReportAdapter, report_flow
 
 
+@pytest.mark.parametrize("case,expected", [("running", 409), ("other", 404), ("unknown", 404),
+                                          ("csrf", 403), ("success", 200)])
+def test_check_edits_route_without_model_or_worker(tmp_path, case, expected):
+    import httpx
+    from deixis.api.app import create_app
+    from deixis.config import Settings
+    from tests.test_report_assembly import report_with_sections
+    from tests.test_report_edit_check import finish, edit
+    fixture = report_with_sections.__wrapped__(tmp_path)
+    lib = next(fixture)
+    try:
+        rid = finish(lib, "draft")
+        edit(lib, "A novel SYNTHETIC revision.")
+        if case == "running":
+            lib["store"].update_run(lib["reports"].report(lib["report_id"])["run_id"], status="running")
+        if case == "other":
+            rid = lib["store"].create_research("SYNTHETIC other research", "attached", "quick", [], "fake", "fake", "en")
+        report_id = "rpt_unknown" if case == "unknown" else lib["report_id"]
+        def refuse_http(request):
+            raise AssertionError("No provider or network call is allowed")
+        http = httpx.AsyncClient(transport=httpx.MockTransport(refuse_http))
+        app = create_app(Settings(data_dir=tmp_path), adapters={}, http_client=http,
+                         start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+        with TestClient(app) as client:
+            if case != "csrf":
+                session(client)
+            response = client.post(f"/api/researches/{rid}/reports/{report_id}/check-edits")
+            assert response.status_code == expected, response.text
+            if case == "success":
+                view = response.json()
+                assert view["has_human_edits"] is True and view["edited_after_version"] is None
+                assert view["edit_check"]["current"] is True
+                assert view["edit_check"]["errors"] == 1
+                assert view["edit_check"]["skipped"] == 1
+                assert view["edit_check"]["skipped_rules"] == [{"rule": "phrase_frames", "section_id": "III",
+                                                             "claim_key": "III.1", "reason": "human_text"}]
+                assert client.get(f"/api/researches/{rid}/reports/{report_id}").json()["edit_check"] == view["edit_check"]
+        asyncio.run(http.aclose())
+    finally:
+        with pytest.raises(StopIteration):
+            next(fixture)
+
+
 def upload_and_include(client, research_id):
     response = client.post(
         f"/api/researches/{research_id}/uploads",

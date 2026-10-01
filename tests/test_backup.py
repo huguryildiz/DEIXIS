@@ -15,6 +15,35 @@ from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
 
 
+def test_backup_restore_preserves_report_edit_checks_identically_without_models(tmp_path):
+    from deixis.storage import db
+    from tests.test_report_assembly import report_with_sections
+    from tests.test_report_edit_check import finish, check, edit
+    settings = Settings(data_dir=tmp_path / "edit-check-data")
+    settings.data_dir.mkdir()
+    fixture = report_with_sections.__wrapped__(settings.data_dir)
+    lib = next(fixture)
+    try:
+        finish(lib)
+        check(lib)
+        edit(lib, "A SYNTHETIC human revision.")
+        check(lib)
+        before = [tuple(row) for row in lib["store"].conn.execute("SELECT * FROM report_edit_checks ORDER BY rowid")]
+        backup = create_backup(settings, tmp_path / "edit-check-backups")
+        restored = Settings(data_dir=tmp_path / "edit-check-restored")
+        restore_backup(backup, restored)
+        conn = db.connect(restored.db_path)
+        try:
+            db.migrate(conn)
+            assert [tuple(row) for row in conn.execute("SELECT * FROM report_edit_checks ORDER BY rowid")] == before
+            assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        finally:
+            conn.close()
+    finally:
+        with pytest.raises(StopIteration):
+            next(fixture)
+
+
 def test_backup_and_restore_keep_candidates_searches_hits_cells_overrides_and_payload_files_identical(tmp_path):
     from types import SimpleNamespace
     from deixis.storage import db

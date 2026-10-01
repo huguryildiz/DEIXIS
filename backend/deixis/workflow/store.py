@@ -313,6 +313,10 @@ class Store:
             from deixis.workflow.candidates.store import purge_candidates
             purge_candidates(self.conn, research_id)
             self.conn.execute(
+                "DELETE FROM report_edit_checks WHERE report_id IN"
+                " (SELECT id FROM reports WHERE research_id = ?)", (research_id,),
+            )
+            self.conn.execute(
                 "DELETE FROM report_stale_acknowledgements WHERE report_id IN"
                 " (SELECT id FROM reports WHERE research_id = ?)", (research_id,),
             )

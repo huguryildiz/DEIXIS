@@ -189,12 +189,14 @@ Her batch ayrı bir commit olur; commit ve push yalnız sahibin istediği zaman,
 
 | Batch | Bağlı olduğu | Boyut | Model |
 |---|---|---|---|
-| E1 Düzenlenmiş raporun denetimi | — | M | hayır |
+| E1 Düzenlenmiş raporun denetimi — yapıldı (D148); commit: bu satırı ekleyen commit | — | M | hayır |
 | E2 Atıf kaldırma ve kayıtlı etkin atıf kümesi | E1 | M–L | hayır |
 | E3 Arayüz | E1, E2 | M | hayır (senaryolu) |
 | E4 Senaryo dizisi, kapanış ve P9 borcu | E1–E3 | S–M | hayır |
 
 ### E1 — Düzenlenmiş raporun denetimi (M)
+
+**Durum:** yapıldı (D148); commit: bu satırı ekleyen commit.
 
 **Kapsam.** `assembly.py`'ye "güncel" kip (temel kip ve mevcut çağrılar değişmez) ve tek bir etkin-atıf okuma noktası (E1'de "bütün bağlar", E2'de değişir); §5 tablosu; `report_edit_checks` migration'ı; `ReportStore.check_edits`; `POST .../reports/{id}/check-edits`; `report_view`'a `has_human_edits` ve `edit_check` (güncel/eski); dışa aktarımın üç durumlu cümlesi; VIII sayı yeniden anma denetiminin düzenlenmiş iddialara uygulanması; çalıştırılan/atlanan kural listesi; kanonik girdi parmak izi ve tek-işlemli değerlendirme+kayıt; **`report_edit_checks`'in yaşam döngüsü**: `purge_research` sırası, silme yetkisi tetikleyicisi, yedek-geri yükleme (kayıt doluyken araştırma silme ve yedek testi).
 **Dosyalar.** `storage/migrations/00NN_report_edit_checks.sql`, `workflow/report/assembly.py`, `workflow/report/store.py`, `workflow/store.py` (`purge_research`), `backup.py`, `workflow/views.py`, `workflow/report/export.py`, `api/app.py`, `domain/contracts.py` (yalnız VIII denetimini yeniden kullanılabilir yapmak), `tests/test_report_edit_check.py`, `tests/test_report_assembly.py`, `tests/test_report_api.py`, `tests/test_backup.py`, `tests/test_corpus_removal.py` (purge ve yedek, kayıt doluyken).

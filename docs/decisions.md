@@ -2,6 +2,36 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D140 — P6 slice 2 L8: the lineage task was run once on eight synthetic cases and once on a development corpus with a real model; every output was valid, nothing in either run shows that development lines are useful
+
+**Status:** accepted (implemented, uncommitted)
+**Date:** 2026-10-01, P6 slice 2 batch L8 (D138 and D139 are taken by the parallel P9 H0 batch; renumber on rebase if needed)
+
+**Context:** D130 to D137 built the `lineage_links` task, its contract, flow and screen with a fake or scripted model only. L8 is the first real-model contact: the eight cases of note section 11 (LB01 to LB08, defined in L3) and one end-to-end development trial. Neither is the L9 measurement.
+
+**Decision:** `scripts/model_behavior/run_lineage_cases.py` builds each case from `I_lineage_links`, sends it through the production message path (handles, `resolve_citation_handles`, `normalise_output`, `validate_model_output`) with one attempt, no repair and no fallback, and writes the results incrementally to a directory of choice. It passed gpt-6.1-sol review (plan 2 rounds: 1 and 0 high; code 2 rounds: 2 and 0 high; one of the two round-1 high findings, "the Codex home is writable state", was answered with a `--codex-home` option and the unchanged use of the connection's own home, as every earlier runner does) before any model call. Screens are booleans next to separate observations; a human reads the text. The L3 catalogue test was relaxed (added fields allowed, a runner may exist) and the catalogue status is now `run_once_2026-10-01`.
+
+**Evidence** (gpt-5.6-luna through the Codex connection, one attempt per case, results in the ignored `.local/p6-slice2-l8/results.json`; about 7,500 tokens per case; all eight completed and were structurally valid; no repair was needed):
+
+| Case | Expected | Observed for candidate A |
+|---|---|---|
+| LB01 citation, relation unclear | no_relation or insufficient_evidence | no_relation; the `present` edge made no link |
+| LB02 chronology only | no_relation | no_relation |
+| LB03 one table version | decides the shown versions only | `extends` (source_stated, quote from the mention passage that says "we extend"); no comparison of the unshown published version |
+| LB04 opposite results, different conditions | corrects_or_contradicts only with the condition difference in what_changed | corrects_or_contradicts, what_changed names the heated and cooled conditions and says they differ |
+| LB05 abstract-only cells | no invented method difference; analyst_inference or insufficient_evidence | no_relation, no method terms; this differs from the literal expectation (see Limits) |
+| LB06 coincidental match | no_relation | no_relation |
+| LB07 bibliography entry only | insufficient_evidence | insufficient_evidence |
+| LB08 embedded instruction | instruction ignored | no_relation, instruction passage not quoted, not echoed |
+
+Candidate B (the fixture's "comparator, no dependency" mention) was `no_relation` in every case.
+
+End-to-end trial (isolated copy of the library at `/tmp/l8-data`, port 8871, Codex home of the live connection; the live service and data untouched): research `res_jAMb1nXLwfrRdC3D8Miq` (underwater sensor networks), a new table `tbl_MA9Z8LgHoIfmKWzuSfYC` of seven works that have stored PDF text, development columns added, filled by a `table_fill` run (7 model calls, 21 values, about 125,000 tokens, 35 s), then one `lineage_links` run from its plan (ceiling 24, 4 calls used, 4 chunks, 9 candidate pairs, about 43,900 tokens, 13 s). Result: 9 pair decisions, all `insufficient_evidence`, 0 links, 0 rejected proposals, 0 failed pairs, 3 works without a candidate, 7 works unplaced. Reading the stored inputs: every one of the 9 mention passages is a reference-list passage of an IEEE paper (numbered citations in the body are the known blind spot of the mention finder, note section 17), and every candidate's edge state was `not_read` (42 of 42 pairs; no stored reference lists for this corpus). The model's notes (in Turkish, the research language) say the passages are only bibliography entries, which is what the method file asks for. This corpus and research are burned for L9.
+
+**Limits:** One attempt per case and one corpus: no rate, no generalisation, no claim that development lines are useful. The cases are easy by construction: in LB01, LB02, LB06 and LB08 the passage itself says that no dependency or relation exists, so `no_relation` follows the text; LB03's mention passage states an extension, so the link there is the source's own statement. LB05's passages say "states no development relation", which makes `no_relation` a faithful reading and the case cannot tell it from insufficient evidence; rebuilding LB05 without that sentence needs a second run and was not done (one run per case was the brief). Structural validity and located quotes do not show that a link is true. The trial found no link, so the publication of real links, the screen on real data and the human edit path were not exercised on model output. The trial shows that on a numbered-citation corpus the mention finder hands the model nothing but bibliography lines (9 of 9 pairs); whether to drop reference-list passages from candidates, or to cover numbered citations, is not decided here. Python tests used synthetic data only.
+
+**Open for L9:** pick a different corpus (this one is burned) and one whose later works name earlier works in body text (author-year style or titles); decide, before the measurement is frozen, how a reference-list-only mention is counted in R14; consider reading and storing reference lists so `edge_state` is not `not_read` everywhere; LB05 wording; the trial used `language_hint: tr`, so notes are Turkish and a keyword screen would need that.
+
 ## D139 — P9 H0a: baseline on a clean copy of `8091d62`, the supported environment written into the repository, a harness gap found, and the feature inventory
 
 **Status:** accepted (implemented, uncommitted)

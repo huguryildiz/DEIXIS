@@ -583,7 +583,7 @@ L1–L4'ün bağımsızlığı yalnız aşağıdaki arayüz sınırlarıyla geç
 **Çıkış.** §13 kabul senaryosu geçer; hiçbir liste gizlenmez; bağ satırı alıntıyı doğru sayfada açar.
 **Göstermez.** Gerçek kullanıcı akışında kullanılabilirliği; model kalitesini.
 
-### L8 — Geliştirme davranış koşuları ve kapanış (S–M) — **model gerekir**
+### L8 — Geliştirme davranış koşuları ve kapanış (S–M) — **model gerekir** ✅ commit: bu satırı ekleyen commit (D140)
 
 **Kapsam.** §11'deki sekiz vaka `gpt-5.6-luna` ile bir kez; sonuç `.local/`'e; geliştirme korpusunda bir uçtan uca deneme (bulunanlar L9'a taşınmaz, korpus yanmıştır); bulgulara göre düzeltmeler bu batch'te biter; `decisions.md` kapanış kaydı (Evidence/Limits); §17'nin doğrulanmamış varsayımları hâlâ doğrulanmadıysa açıkça yazılır.
 **Dosyalar.** `scripts/model_behavior/run_lineage_cases.py`, `tests/model_behavior/lineage_cases.json`, `docs/decisions.md`.

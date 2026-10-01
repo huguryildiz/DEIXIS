@@ -40,10 +40,12 @@ def _sha256(path: Path) -> str:
 def _referenced_files(conn: sqlite3.Connection) -> dict[str, dict[str, str | None]]:
     """File name -> recorded sha256 (None when the record has no hash), per backup subfolder."""
     papers = {row[0]: row[1] for row in conn.execute("SELECT storage_path, sha256 FROM source_assets")}
-    # Abstract passages point at their source version's payload file; PDF passages hold character ranges, not files.
+    # Abstract passages can own a later query payload; PDF passages hold character ranges, not files.
     payloads = {row[0]: None for row in conn.execute(
         "SELECT raw_payload_path FROM search_runs WHERE raw_payload_path IS NOT NULL"
-        " UNION SELECT provider_payload_path FROM source_versions WHERE provider_payload_path IS NOT NULL")}
+        " UNION SELECT provider_payload_path FROM source_versions WHERE provider_payload_path IS NOT NULL"
+        " UNION SELECT raw_payload_path FROM kill_search_queries WHERE raw_payload_path IS NOT NULL"
+        " UNION SELECT payload_ref FROM passages WHERE kind = 'abstract' AND payload_ref IS NOT NULL")}
     refs = {"papers": papers, "provider-payloads": payloads}
     for folder, names in refs.items():
         for name in names:

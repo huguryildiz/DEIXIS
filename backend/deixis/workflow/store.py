@@ -296,7 +296,22 @@ class Store:
                 "SELECT raw_payload_path FROM search_runs WHERE research_id = ? AND raw_payload_path IS NOT NULL",
                 (research_id,),
             )]
+            candidate_searches = (
+                "SELECT s.id FROM kill_searches s JOIN candidate_versions v ON v.id = s.candidate_version_id"
+                " JOIN research_candidates c ON c.id = v.candidate_id WHERE c.research_id = ?"
+            )
+            source_ids.extend(r[0] for r in self.conn.execute(
+                f"SELECT source_version_id FROM kill_search_query_records WHERE kill_search_id IN ({candidate_searches})"
+                f" UNION SELECT source_version_id FROM kill_search_hits WHERE kill_search_id IN ({candidate_searches})",
+                (research_id, research_id),
+            ))
+            payloads.extend(r[0] for r in self.conn.execute(
+                f"SELECT raw_payload_path FROM kill_search_queries WHERE kill_search_id IN ({candidate_searches})"
+                " AND raw_payload_path IS NOT NULL", (research_id,),
+            ))
             self.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (research_id,))
+            from deixis.workflow.candidates.store import purge_candidates
+            purge_candidates(self.conn, research_id)
             self.conn.execute(
                 "DELETE FROM report_stale_acknowledgements WHERE report_id IN"
                 " (SELECT id FROM reports WHERE research_id = ?)", (research_id,),
@@ -345,8 +360,10 @@ class Store:
             for source_id in source_ids:
                 # A provider source may be shared by another research. Keep its evidence and files in that case.
                 shared = self.conn.execute(
-                    "SELECT 1 FROM corpus_memberships WHERE source_version_id = ? UNION SELECT 1 FROM candidates WHERE source_version_id = ? LIMIT 1",
-                    (source_id, source_id),
+                    "SELECT 1 FROM corpus_memberships WHERE source_version_id = ? UNION SELECT 1 FROM candidates WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM kill_search_query_records WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM kill_search_hits WHERE source_version_id = ? LIMIT 1",
+                    (source_id, source_id, source_id, source_id),
                 ).fetchone()
                 if shared:
                     continue
@@ -355,6 +372,10 @@ class Store:
                     continue
                 if source["provider_payload_path"]:
                     payloads.append(source["provider_payload_path"])
+                payloads.extend(r[0] for r in self.conn.execute(
+                    "SELECT payload_ref FROM passages WHERE source_version_id = ?"
+                    " AND kind = 'abstract' AND payload_ref IS NOT NULL", (source_id,),
+                ))
                 orphan_files.extend(r[0] for r in self.conn.execute("SELECT storage_path FROM source_assets WHERE source_version_id = ?", (source_id,)))
                 self.conn.execute("DELETE FROM record_links WHERE source_version_id = ? OR other_source_version_id = ?"
                                   " OR parent_source_version_id = ?", (source_id, source_id, source_id))
@@ -371,7 +392,9 @@ class Store:
             # Files are content-addressed and may be referenced by another asset or search run.
             orphan_files = [p for p in set(orphan_files) if not self.conn.execute("SELECT 1 FROM source_assets WHERE storage_path = ?", (p,)).fetchone()]
             payloads = [p for p in set(payloads) if not self.conn.execute(
-                "SELECT 1 FROM search_runs WHERE raw_payload_path = ? UNION SELECT 1 FROM source_versions WHERE provider_payload_path = ?", (p, p)
+                "SELECT 1 FROM search_runs WHERE raw_payload_path = ? UNION SELECT 1 FROM source_versions WHERE provider_payload_path = ?"
+                " UNION SELECT 1 FROM kill_search_queries WHERE raw_payload_path = ?"
+                " UNION SELECT 1 FROM passages WHERE payload_ref = ?", (p, p, p, p)
             ).fetchone()]
         return orphan_files, payloads
 
@@ -1591,8 +1614,12 @@ class Store:
             " JOIN passages p ON p.id = l.passage_id WHERE t.research_id = ? AND p.asset_id = ?"
             " UNION ALL SELECT 1 FROM lineage_link_evidence e JOIN lineage_link_revisions r ON r.id = e.link_revision_id"
             " JOIN lineage_links l ON l.id = r.link_id JOIN evidence_tables t ON t.id = l.table_id"
-            " JOIN passages p ON p.id = e.passage_id WHERE t.research_id = ? AND p.asset_id = ? LIMIT 1",
-            (research_id, asset_id, research_id, asset_id, research_id, asset_id),
+            " JOIN passages p ON p.id = e.passage_id WHERE t.research_id = ? AND p.asset_id = ?"
+            " UNION ALL SELECT 1 FROM claim_matrix_evidence e JOIN kill_searches s ON s.id = e.kill_search_id"
+            " JOIN candidate_versions v ON v.id = s.candidate_version_id"
+            " JOIN research_candidates c ON c.id = v.candidate_id JOIN passages p ON p.id = e.passage_id"
+            " WHERE c.research_id = ? AND p.asset_id = ? AND e.evidence_kind = 'passage' LIMIT 1",
+            (research_id, asset_id, research_id, asset_id, research_id, asset_id, research_id, asset_id),
         ).fetchone() is not None
 
     def asset_impact(self, asset_id: str) -> dict[str, Any]:
@@ -1614,7 +1641,12 @@ class Store:
             " JOIN lineage_link_revisions r ON r.id = e.link_revision_id JOIN passages p ON p.id = e.passage_id"
             " WHERE p.asset_id = ?", (asset_id,),
         ).fetchone()[0]
-        return {"asset_id": asset_id, "researches": researches, "cells": cells, "quotes": quotes, "lineage_links": lineage_links}
+        candidate_quotes = self.conn.execute(
+            "SELECT COUNT(*) FROM claim_matrix_evidence e JOIN passages p ON p.id = e.passage_id"
+            " WHERE p.asset_id = ?", (asset_id,),
+        ).fetchone()[0]
+        return {"asset_id": asset_id, "researches": researches, "cells": cells, "quotes": quotes,
+                "lineage_links": lineage_links, "candidate_quotes": candidate_quotes}
 
     def remove_asset(self, research_id: str, svid: str, asset_id: str) -> None:
         """Withdraw an attachment from future use while retaining its immutable audit evidence."""
@@ -2297,8 +2329,10 @@ class Store:
             f" UNION SELECT source_version_id FROM report_citation_links WHERE source_version_id IN ({marks})"
             f" UNION SELECT from_source_version_id FROM lineage_links WHERE from_source_version_id IN ({marks})"
             f" UNION SELECT to_source_version_id FROM lineage_links WHERE to_source_version_id IN ({marks})"
-            f" UNION SELECT source_version_id FROM lineage_link_evidence WHERE source_version_id IN ({marks})",
-            (*svids, *svids, *svids, *svids, *svids, *svids, *svids),
+            f" UNION SELECT source_version_id FROM lineage_link_evidence WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM claim_matrix_cells WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM claim_matrix_evidence WHERE source_version_id IN ({marks})",
+            (*svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids),
         ).fetchall()
         return {row[0] for row in rows}
 
@@ -2350,7 +2384,9 @@ class Store:
                 # The source may still belong to another research; its record, passages and file stay in that case.
                 if self.conn.execute(
                     "SELECT 1 FROM corpus_memberships WHERE source_version_id = ?"
-                    " UNION SELECT 1 FROM candidates WHERE source_version_id = ? LIMIT 1", (svid, svid),
+                    " UNION SELECT 1 FROM candidates WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM kill_search_query_records WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM kill_search_hits WHERE source_version_id = ? LIMIT 1", (svid, svid, svid, svid),
                 ).fetchone():
                     continue
                 source = self.conn.execute("SELECT work_id, provider_payload_path FROM source_versions WHERE id = ?", (svid,)).fetchone()
@@ -2358,6 +2394,10 @@ class Store:
                     continue
                 if source["provider_payload_path"]:
                     payloads.append(source["provider_payload_path"])
+                payloads.extend(r[0] for r in self.conn.execute(
+                    "SELECT payload_ref FROM passages WHERE source_version_id = ?"
+                    " AND kind = 'abstract' AND payload_ref IS NOT NULL", (svid,),
+                ))
                 orphan_files.extend(r[0] for r in self.conn.execute("SELECT storage_path FROM source_assets WHERE source_version_id = ?", (svid,)))
                 self.conn.execute("DELETE FROM record_links WHERE source_version_id = ? OR other_source_version_id = ?"
                                   " OR parent_source_version_id = ?", (svid, svid, svid))
@@ -2375,7 +2415,9 @@ class Store:
             # Files are content-addressed and may be referenced by another asset or search run.
             orphan_files = [p for p in set(orphan_files) if not self.conn.execute("SELECT 1 FROM source_assets WHERE storage_path = ?", (p,)).fetchone()]
             payloads = [p for p in set(payloads) if not self.conn.execute(
-                "SELECT 1 FROM search_runs WHERE raw_payload_path = ? UNION SELECT 1 FROM source_versions WHERE provider_payload_path = ?", (p, p)
+                "SELECT 1 FROM search_runs WHERE raw_payload_path = ? UNION SELECT 1 FROM source_versions WHERE provider_payload_path = ?"
+                " UNION SELECT 1 FROM kill_search_queries WHERE raw_payload_path = ?"
+                " UNION SELECT 1 FROM passages WHERE payload_ref = ?", (p, p, p, p)
             ).fetchone()]
         return chosen, orphan_files, payloads
 

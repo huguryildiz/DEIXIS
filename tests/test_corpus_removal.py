@@ -20,6 +20,48 @@ from test_source_versions import library_at
 from test_table_extraction import cell, execute, fill, library
 
 
+def test_source_cited_only_by_candidate_assessment_cell_cannot_be_purged_until_owning_research_is_purged(tmp_path):
+    from test_candidate_store import make_library, with_hits, publish, another_research
+    lib = make_library(tmp_path / "candidate-cited.sqlite")
+    try:
+        s, records = with_hits(lib)
+        publish(lib, s, records, relevance="unrelated")
+        svid = records[0]["source_version_id"]
+        other = another_research(lib)
+        lib.store.add_to_corpus(other, svid, "search")
+        lib.store.remove_sources(other, [svid], "SYNTHETIC removal")
+        assert not lib.conn.execute("SELECT 1 FROM claim_matrix_evidence").fetchone()
+        with pytest.raises(RevisionConflict, match="Evidence still cites"):
+            lib.store.purge_sources(other, [svid])
+        lib.store.trash_research(lib.rid)
+        lib.store.purge_research(lib.rid)
+        assert lib.store.purge_sources(other, [svid])[0] == [svid]
+        assert not lib.conn.execute("SELECT 1 FROM source_versions WHERE id = ?", (svid,)).fetchone()
+    finally:
+        lib.conn.close()
+
+
+def test_another_research_purge_sources_preserves_a_source_only_candidate_hit_holds(tmp_path):
+    from test_candidate_store import make_library, with_hits, another_research
+    lib = make_library(tmp_path / "candidate-held.sqlite")
+    try:
+        s, records = with_hits(lib)
+        svid = records[0]["source_version_id"]
+        # Delete query-record ownership only under the proper research authorization, to isolate the hit guard.
+        lib.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (lib.rid,))
+        lib.conn.execute("DELETE FROM kill_search_query_records WHERE kill_search_id = ?", (s["id"],))
+        lib.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (lib.rid,))
+        other = another_research(lib)
+        lib.store.add_to_corpus(other, svid, "search")
+        lib.store.remove_sources(other, [svid], "SYNTHETIC removal")
+        assert lib.store.cited_source_versions([svid]) == set()
+        assert lib.store.purge_sources(other, [svid])[0] == [svid]
+        assert lib.conn.execute("SELECT 1 FROM source_versions WHERE id = ?", (svid,)).fetchone()
+        assert len(lib.candidate_store.hits(s["id"])) == 1
+    finally:
+        lib.conn.close()
+
+
 def test_source_cited_only_by_lineage_cannot_be_purged_until_its_table_is_purged(tmp_path):
     from test_lineage_store import make_library, model, remove
 

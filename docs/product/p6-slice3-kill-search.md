@@ -246,7 +246,7 @@ Her batch ayrı bir commit olur; commit ve push yalnız sahibin istediği zaman,
 
 | Batch | Bağlı olduğu | Boyut | Model |
 |---|---|---|---|
-| K1 Depolama ve saf hesaplar | — | M | hayır |
+| K1 Depolama ve saf hesaplar | — | M | hayır — **yapıldı** (D144, `0060_candidates.sql`; commit: bu satırı ekleyen commit) |
 | K2 Sözleşmeler ve yöntem paketi | — | M–L | hayır (sahte) |
 | K3 Akış ve API | K1, K2 | L | hayır (sahte) |
 | K4 Arayüz | K3 | M | hayır (senaryolu) |

@@ -15,6 +15,74 @@ from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
 
 
+def test_backup_and_restore_keep_candidates_searches_hits_cells_overrides_and_payload_files_identical(tmp_path):
+    from types import SimpleNamespace
+    from deixis.storage import db
+    from test_candidate_store import make_library, state, version, with_hits, publish, query, start
+    settings = Settings(data_dir=tmp_path / "candidate-data")
+    lib = make_library(settings.db_path)
+    try:
+        settings.payloads_dir.mkdir()
+        for name in ("SYNTHETIC-query.json", "SYNTHETIC-failed.json"):
+            (settings.payloads_dir / name).write_text("SYNTHETIC payload")
+        v = version(lib)
+        s, records = with_hits(lib, v, raw_payload_path="SYNTHETIC-query.json")
+        publish(lib, s, records, whole=True)
+        lib.candidate_store.finish_kill_search(s["id"], "completed")
+        lib.candidate_store.record_owner_decision(lib.rid, v["id"], "open", "SYNTHETIC owner reason")
+        lib.candidate_store.record_owner_decision(lib.rid, v["id"], "closed", "SYNTHETIC second reason")
+        lib.candidate_store.trash_candidate(lib.rid, v["candidate_id"])
+        # Failed queries retain payloads even with no source records.
+        query(lib, start(lib, v), [], status="failed", raw_payload_path="SYNTHETIC-failed.json")
+        before = state(lib)
+        backup = create_backup(settings, tmp_path / "candidate-backups")
+        restored = Settings(data_dir=tmp_path / "candidate-restored")
+        restore_backup(backup, restored)
+        conn = db.connect(restored.db_path)
+        try:
+            db.migrate(conn)
+            assert state(SimpleNamespace(conn=conn)) == before
+            assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+            for name in ("SYNTHETIC-query.json", "SYNTHETIC-failed.json"):
+                assert (restored.payloads_dir / name).read_text() == "SYNTHETIC payload"
+        finally:
+            conn.close()
+    finally:
+        lib.conn.close()
+
+
+def test_missing_candidate_query_payload_file_makes_backup_fail(tmp_path):
+    from test_candidate_store import make_library, start, query
+    settings = Settings(data_dir=tmp_path / "candidate-missing-data")
+    lib = make_library(settings.db_path)
+    try:
+        query(lib, start(lib), [], status="outcome_unknown", raw_payload_path="SYNTHETIC-missing.json")
+        with pytest.raises(BackupError, match="referenced file is missing"):
+            create_backup(settings, tmp_path / "candidate-missing-backups")
+    finally:
+        lib.conn.close()
+
+
+def test_pdf_passage_character_range_is_not_a_provider_payload_file_and_backup_succeeds(tmp_path):
+    import hashlib
+    from deixis.storage.backup import _referenced_files
+    from test_candidate_store import make_library, attach_asset
+    settings = Settings(data_dir=tmp_path / "candidate-pdf-data")
+    lib = make_library(settings.db_path)
+    try:
+        asset, _ = attach_asset(lib, lib.ids["a"])
+        settings.papers_dir.mkdir()
+        pdf = make_pdf(["SYNTHETIC PDF range"])
+        (settings.papers_dir / "SYNTHETIC.pdf").write_bytes(pdf)
+        lib.conn.execute("UPDATE source_assets SET sha256 = ?, byte_size = ? WHERE id = ?",
+                         (hashlib.sha256(pdf).hexdigest(), len(pdf), asset))
+        assert "chars:0-120" not in _referenced_files(lib.conn)["provider-payloads"]
+        backup = create_backup(settings, tmp_path / "candidate-pdf-backups")
+        assert (backup / "papers" / "SYNTHETIC.pdf").read_bytes() == pdf
+    finally:
+        lib.conn.close()
+
+
 def test_backup_and_restore_keep_lineage_revisions_evidence_and_human_removals_identical(tmp_path):
     from deixis.storage import db
     from test_lineage_store import make_library, model, edit, remove, human, state

@@ -355,6 +355,9 @@ class ResearchFlow:
                 await self._pdf_ocr(run)
             elif run["kind"] == "table_fill":
                 await self._table_fill(run, scope)
+            elif run["kind"] == "lineage_links":
+                await self._lineage_links(run, scope)
+                self._lineage_send_gate(run)
             elif run["kind"] == "cell_recheck":
                 await self._cell_recheck(run, scope)
             elif run["kind"] == "research_title":
@@ -4513,6 +4516,113 @@ class ResearchFlow:
         return len(cells)
 
     # ---- model steps -------------------------------------------------------------------
+    def _lineage_send_gate(self, run: dict[str, Any]) -> None:
+        self._checkpoint(run["id"], run["scope_revision"])
+        if self.store.run(run["id"])["status"] != "running":
+            raise RunStopped
+
+    async def _lineage_links(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+        from deixis.workflow.lineage import run as lineage
+        from deixis.workflow.lineage.store import LineageStore
+
+        self._lineage_send_gate(run)
+        plan = run["target"]
+
+        def table_available() -> None:
+            row = self.store.conn.execute("SELECT trashed_at FROM evidence_tables WHERE id = ?",
+                                          (plan["table_id"],)).fetchone()
+            if row is None or row["trashed_at"] is not None:
+                self._fail(run["id"], "table_unavailable")
+
+        table_available()
+        publication = self.store.existing_step(run["id"], "lineage_publication")
+        if publication and publication["status"] == "succeeded":
+            return
+        outputs: list[tuple[dict, lineage.LineageJob]] = []
+
+        async def call(job: lineage.LineageJob) -> dict:
+            # Stored successes are judged at publication even after exclusion or a human edit.
+            step = self.store.existing_step(run["id"], job.key)
+            if step and step["status"] == "succeeded":
+                output = step["output"]
+            elif step and step["status"] == "failed" and step["error_code"] in ("invalid_model_output", "message_too_large"):
+                output = step["output"] | {"invalid": True,
+                                           "issues": step["output"].get("issues", json.loads(step["error_json"] or "[]")),
+                                           "message_too_large": step["error_code"] == "message_too_large"}
+            else:
+                try:
+                    target, passages = lineage.refresh_job(self.store, plan["table_id"], job)
+
+                    def gate() -> None:
+                        self._lineage_send_gate(run)
+                        # Health/repair awaits may change cells or passages. Refresh before the real payload is built.
+                        fresh, rows = lineage.refresh_job(self.store, plan["table_id"], job)
+                        target.clear()
+                        target.update(fresh)
+                        passages[:] = rows
+
+                    def resend() -> bool:
+                        self._lineage_send_gate(run)
+                        return self.store.run(run["id"])["usage"].get("model_calls", 0) < run["budget"]["max_model_calls"]
+
+                    output = await self._model_step(
+                        run, scope, job.key, "lineage_links", source_ids=[job.chunk["to"], *job.chunk["from"]],
+                        passage_rows=passages, lineage_target=target, limiter=self.deps.limiter,
+                        model=tuple(plan["model"]), step_output_extra={"chunk_key": job.key},
+                        max_message_chars=48_000, send_gate=gate, resend_guard=resend,
+                        attempt_record=lambda payload: lineage.send_record(self.store, payload, plan["model"][2]),
+                    )
+                except lineage.ChunkSkipped as exc:
+                    step = self.store.step(run["id"], job.key, "model:lineage_links")
+                    output = (step["output"] or {}) | {"skipped": str(exc), "chunk_key": job.key}
+                    self.store.finish_step(step["id"], "cancelled", output=output, error_code=str(exc))
+            outputs.append((output, job))
+            return output
+
+        def jobs():
+            for job in lineage.lineage_jobs(plan):
+                self._lineage_send_gate(run)
+                yield job
+
+        stop = await self._send_through_limiter(run, jobs(), call, lambda completed: None)
+        if stop is not None:
+            raise stop
+        self._lineage_send_gate(run)
+        if len(outputs) != len(plan["chunks"]):
+            self._fail(run["id"], "lineage_nonterminal")
+        try:
+            with transaction(self.store.conn):
+                self._lineage_send_gate(run)
+                table_available()
+                proposals = lineage.publication_proposals(self.store, run, outputs, self.lineage_step_input)
+                results = LineageStore(self.store).apply_model_proposals(
+                    proposals, stale_revisions=lineage.stale_link_revisions(self.store, plan["table_id"]))
+                record = lineage.publication_record(plan, outputs, proposals, results)
+                step = self.store.step(run["id"], "lineage_publication", "lineage_publication")
+                self.store.start_step(step["id"])
+                self.store.finish_step(step["id"], "succeeded", output=record)
+        except RunStopped:
+            # A pause/cancel written inside a rolled-back transaction must still be recorded.
+            self._lineage_send_gate(run)
+            table_available()
+            raise
+        except Exception as exc:
+            self._fail(run["id"], "lineage_publication_failed", {"error": f"{type(exc).__name__}: {exc}"})
+
+    def lineage_step_input(self, research_id: str, scope_revision: int, lineage_target: dict[str, Any],
+                           passage_rows: list[dict[str, Any]], max_model_calls: int) -> dict[str, Any]:
+        scope = self.store.scope(research_id, scope_revision)
+        run = {"id": new_id("run"), "research_id": research_id, "scope_revision": scope_revision,
+               "budget": {"max_model_calls": max_model_calls, "max_provider_requests": 0}}
+        source_ids = [lineage_target["to"]["source_id"],
+                      *[c["from"]["source_id"] for c in lineage_target["candidates"]]]
+        return self._step_input(run, scope, new_id("stp"), "lineage_links", [], source_ids, passage_rows, [],
+                                step_model(scope, "lineage_links"), lineage_target=lineage_target)
+
+    def lineage_message_chars(self, payload: dict[str, Any]) -> int:
+        shown = contracts.with_citation_handles(payload)
+        return len(prompt.step_message(shown))
+
     def _step_input(self, run: dict[str, Any], scope: dict[str, Any], step_id: str, task_type: str,
                     candidate_rows: list[dict[str, Any]], source_ids: list[str], passage_rows: list[dict[str, Any]],
                     claims: list[dict[str, Any]], model: tuple[str, str | None, str | None],
@@ -4646,6 +4756,10 @@ class ResearchFlow:
                           recheck: Callable[[list[dict[str, Any]]], list[dict[str, Any]] | None] | None = None,
                           step_output_extra: dict[str, Any] | None = None,
                           lineage_target: dict[str, Any] | None = None,
+                          max_message_chars: int | None = None,
+                          resend_guard: Callable[[], bool] | None = None,
+                          send_gate: Callable[[], None] | None = None,
+                          attempt_record: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
                           ) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run. `budget_short="skip"` is the sw
@@ -4675,6 +4789,8 @@ class ResearchFlow:
 
         def unchanged() -> bool:
             """Whether a rate-limited call may be resent as it is: no work of its input was decided meanwhile."""
+            if resend_guard is not None and not resend_guard():
+                return False
             wanted = recheck(candidate_rows or []) if recheck is not None else candidate_rows or []
             return wanted is not None and len(wanted) == len(candidate_rows or [])
 
@@ -4684,8 +4800,48 @@ class ResearchFlow:
         # `attempt` numbers every call this step sends; `repairs` counts only the schema repairs among them, so the
         # one resend after a turn timeout (slice 13e) takes nothing from the repairs the step is allowed.
         attempt, repairs, timeout_resent = -1, 0, False
+        extra = step_output_extra or {}
+        sent_extra, sent_input = None, None
+        attempt_records = {}
+        if attempt_record is not None:
+            # Opt-in recovery: session validation is durable even if a stop/crash precedes its repair.
+            previous = self.store.conn.execute(
+                "SELECT si.attempt, si.id, m.raw_output, m.validation_json FROM step_inputs si"
+                " JOIN model_sessions m ON m.step_input_id = si.id WHERE si.step_id = ?"
+                " ORDER BY si.rowid, m.rowid", (step["id"],)).fetchall()
+            invalids = [r for r in previous if r["validation_json"] and not json.loads(r["validation_json"]).get("ok")]
+            repairs = len({r["id"] for r in invalids})
+            attempt = self.store.conn.execute(
+                "SELECT COALESCE(MAX(attempt), -1) FROM step_inputs WHERE step_id = ?", (step["id"],)).fetchone()[0]
+            if invalids:
+                last = invalids[-1]
+                repair_issues = json.loads(last["validation_json"])["issues"]
+                invalid_raw, invalid_input = last["raw_output"], last["id"]
+            if step["output"]:
+                attempt_records = dict(step["output"].get("attempt_records", {}))
+                # Older outputs keep only one record. It still needs a session to count as sent.
+                legacy_id = step["output"].get("step_input_id")
+                if legacy_id and "send_record" in step["output"]:
+                    attempt_records.setdefault(legacy_id, (step_output_extra or {}) |
+                                               {"send_record": step["output"]["send_record"]})
+                for row in reversed(previous):
+                    if row["id"] in attempt_records:
+                        sent_input = row["id"]
+                        sent_extra = attempt_records[sent_input]
+                        break
+
+        def sent_output() -> dict[str, Any]:
+            # finish_step clears output by default. Only the attempt-record hook preserves
+            # provenance. A prepared input is sent only once it owns a model session.
+            return {"output": (sent_extra or {}) | {"step_input_id": sent_input,
+                    "attempt_records": attempt_records}} if attempt_record is not None else {}
+
         while True:
             attempt += 1
+            # All opt-in gates, payload/record construction and session start share a synchronous
+            # section: no await after health/limiter waits or between these checks and the send.
+            if send_gate is not None:
+                send_gate()
             if recheck is not None:
                 # The last look before each send (slice 16), the first one and every resend: a person may have
                 # decided a work while the connection was checked or while an earlier attempt was out. The candidates
@@ -4693,29 +4849,35 @@ class ResearchFlow:
                 # run opens the step again, and sends it if the decision was taken back.
                 wanted = recheck(candidate_rows or [])
                 if wanted is None:
-                    self.store.finish_step(step["id"], "cancelled", error_code="human_decided")
+                    self.store.finish_step(step["id"], "cancelled", error_code="human_decided", **sent_output())
                     return {"invalid": True, "issues": [], "step_input_id": None, "human_decided": True}
                 candidate_rows = wanted if candidate_rows is not None else candidate_rows
             if self.store.run(run_id)["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"]:
                 if repair_issues is not None and budget_short == "skip":
                     # A repair the budget no longer holds is skipped (D86): the invalid answer stands for this run,
                     # as an unrepaired one does, and the run goes on to what it can still afford.
-                    self.store.finish_step(step["id"], "failed", output={"step_input_id": invalid_input},
+                    output = sent_output().get("output", {"step_input_id": invalid_input})
+                    self.store.finish_step(step["id"], "failed", output=output,
                                            error_code="invalid_model_output", error=repair_issues)
                     return {"invalid": True, "raw_output": invalid_raw, "issues": repair_issues,
-                            "step_input_id": invalid_input, "repair_skipped": "budget_exhausted"}
+                            "step_input_id": invalid_input, "repair_skipped": "budget_exhausted"} | output
                 if budget_short == "skip":
                     # A concurrent sender checked the room before this call and a repair in flight took it. The
                     # work is not reached: no decision is written for it and the run finishes rather than pausing.
-                    self.store.finish_step(step["id"], "failed", error_code="budget_exhausted")
-                    return {"invalid": True, "issues": [], "step_input_id": None, "not_reached": True}
-                self.store.finish_step(step["id"], "failed", error_code="budget_exhausted")
+                    self.store.finish_step(step["id"], "failed", error_code="budget_exhausted", **sent_output())
+                    return {"invalid": True, "issues": [], "step_input_id": None, "not_reached": True} | sent_output().get("output", {})
+                self.store.finish_step(step["id"], "failed", error_code="budget_exhausted", **sent_output())
+                # Resume keeps the counter and ceiling: cancel and request a new preview to progress.
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
                                        claims or [], model, extraction_target, report_target, vocabulary_target,
                                        screening_target, suggestion_target, adjudication_target, lineage_target)
+            if attempt_record is not None:
+                extra = (step_output_extra or {}) | attempt_record(payload)
             if issues := contracts.check_step_input(payload):
-                self.store.finish_step(step["id"], "failed", error_code="step_input_invalid", error=[vars(i) for i in issues])
+                blocked = {"output": sent_output()["output"] | {"blocked_step_input_id": payload["step_input_id"],
+                           "blocked_send_record": extra}} if attempt_record is not None else {}
+                self.store.finish_step(step["id"], "failed", error_code="step_input_invalid", error=[vars(i) for i in issues], **blocked)
                 halt("step_input_invalid", fail=True)
             schema = contracts.step_output_schema(task_type)
             base = prompt.BASE_INSTRUCTIONS
@@ -4743,9 +4905,28 @@ class ResearchFlow:
                 message = prompt.repair_message(shown, contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues,
                                                 anchor_context)
             self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema, selection_revision)
+            if max_message_chars is not None and len(message) > max_message_chars:
+                # An oversized repair was never sent. Known-failed pairs keep the last sent
+                # fingerprint; the blocked input remains stored separately for the size audit.
+                output = {"invalid": True, "issues": [], "step_input_id": sent_input or payload["step_input_id"],
+                          "message_too_large": True} | (sent_extra or extra)
+                if attempt_record is not None:
+                    output = {"invalid": True, "issues": [], "message_too_large": True} | sent_output()["output"]
+                    output["blocked_step_input_id"] = payload["step_input_id"]
+                    output["blocked_send_record"] = extra
+                self.store.finish_step(step["id"], "failed", output=output, error_code="message_too_large",
+                                       error=repair_issues)
+                return output
+            if attempt_record is not None:
+                # A crash before session start leaves a prepared record, without replacing
+                # the last sent attempt. Recovery selects only session-backed records.
+                attempt_records[payload["step_input_id"]] = extra
+                self.store.set_step_output(step["id"], sent_output()["output"])
+            sent_extra, sent_input = extra, payload["step_input_id"]
             session, result = await self._call_adapter(
                 run_id, rid, step["id"], payload["step_input_id"], connection, requested_model, adapter, base, developer,
-                message, schema, reasoning_effort, limiter, unchanged if recheck is not None else None,
+                message, schema, reasoning_effort, limiter,
+                unchanged if recheck is not None or resend_guard is not None else None,
             )
             if session is None:
                 continue  # rate-limited, and a work of this input was decided since: the next attempt is built anew
@@ -4755,12 +4936,12 @@ class ResearchFlow:
             }
             if result.status == "isolation_violation" or result.tool_item_types:
                 self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_isolation_violation",
-                                               error={"tool_item_types": result.tool_item_types, "error": result.error})
+                                               error={"tool_item_types": result.tool_item_types, "error": result.error}, **sent_output())
                 halt("model_isolation_violation", {"tool_item_types": result.tool_item_types, "error": result.error})
             if result.status != "completed":
                 final = "outcome_unknown" if result.delivery_class == "after_send_unknown" else "failed"
                 self.store.complete_model_step(session, recorded, step["id"], final, error_code=f"model_{result.status}",
-                                               error=result.error, delivery_class=result.delivery_class)
+                                               error=result.error, delivery_class=result.delivery_class, **sent_output())
                 self._checkpoint(run_id)
                 if (task_type in TIMEOUT_RETRIED_TASKS and not timeout_resent and turn_timed_out(result)
                         and self.store.run(run_id)["usage"].get("model_calls", 0) < run["budget"]["max_model_calls"]):
@@ -4775,7 +4956,8 @@ class ResearchFlow:
             if not requested_model or (result.resolved_model != requested_model and not result.requested_model_verified):
                 # Output from any model other than the one chosen for this step's role is recorded but never used.
                 mismatch = {"requested_model": requested_model, "resolved_model": result.resolved_model}
-                self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_mismatch", error=mismatch)
+                self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_mismatch", error=mismatch,
+                                               **sent_output())
                 halt("model_mismatch", mismatch)
             output_text = result.raw_text or ""
             if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS:
@@ -4801,15 +4983,20 @@ class ResearchFlow:
                     report.result = contracts.name_sources_in_prose(payload, report.result)
                 output = {"output_type": report.output_type, "result": report.result,
                           "step_input_id": payload["step_input_id"], "resolved_model": result.resolved_model, "warnings": warnings}
-                if step_output_extra:
-                    output = output | step_output_extra
+                if extra:
+                    output = output | extra
+                if attempt_record is not None:
+                    output = output | sent_output()["output"]
                 self.store.complete_model_step(session, recorded, step["id"], "succeeded", output=output)
                 return output
             repair_issues = [vars(i) for i in report.issues]
             invalid_raw, invalid_input = result.raw_text, payload["step_input_id"]
             if after_invalid_output(repairs, max_repairs) == "store_unverified_draft":
-                self.store.complete_model_step(session, recorded, step["id"], "failed", output={"step_input_id": payload["step_input_id"]},
+                provenance = sent_output()["output"] if attempt_record is not None else {"step_input_id": payload["step_input_id"]}
+                self.store.complete_model_step(session, recorded, step["id"], "failed",
+                                               output=provenance,
                                                error_code="invalid_model_output", error=repair_issues)
-                return {"invalid": True, "raw_output": result.raw_text, "issues": repair_issues, "step_input_id": payload["step_input_id"]}
+                return {"invalid": True, "raw_output": result.raw_text, "issues": repair_issues,
+                        "step_input_id": payload["step_input_id"]} | (provenance if attempt_record else {})
             repairs += 1
             self.store.finish_model_session(session, **recorded)

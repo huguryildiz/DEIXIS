@@ -559,7 +559,7 @@ L1–L4'ün bağımsızlığı yalnız aşağıdaki arayüz sınırlarıyla geç
 **Çıkış.** Depolama primitifleri akıştan bağımsız çalışır; yaşam döngüsü bağları testli; `runs` yeniden kurulumu mevcut satırları korur.
 **Göstermez.** Akışın duraklama/devam davranışını; arayüzü; gerçek modelin ürettiği veriyle çalışmayı.
 
-### L5 — Akış (M–L; iki ardışık iç kabul adımı)
+### L5 — Akış (M–L; iki ardışık iç kabul adımı) ✅ commit: bu satırı ekleyen commit
 
 **Kapsam.** `workflow/lineage/run.py` + `flow.py` dalı. **L5a (modelsiz):** rol sütunlarını ve mevcut hücre revizyonlarını okuyup `lineage_target` kurma (L1, L2 çıktıları ve L3 sözleşmesiyle), aday seçimi, gerçek paketleme, modelsiz önizleme `GET .../lineage/plan` ve `POST .../lineage/runs` (202, `Idempotency-Key`, önizleme parmak izi değişmişse 409), hazırlık planının `runs.target_json`'a atomik yazılması (§9), girdi parmak izi, ikinci koşu seçimi. **L5b (sahte adaptör):** gönderim bütçesi (§9), parçalı çağrılar, `ModelCallLimiter`, `_checkpoint` ve geç sonuç kuralı, onarım/yeniden gönderim, `outcome_unknown`, duraklatma/devam/recovery, yayınlama transaction'ı (§4.3: bariyer, sabit sıra, yeniden denetimler, L4 primitifleriyle), `Store.create_run` ile tek-etkin-run kuralı, worker dallanması. L5b, L5a'ya bağlıdır; ikisi de aynı batch'in (tek commit'in) iç kabul adımlarıdır.
 **Dosyalar.** `workflow/lineage/run.py`, `workflow/flow.py`, `workflow/worker.py` (gerekirse), `api/app.py`, `tests/test_lineage_plan.py` (L5a), `tests/test_lineage_flow.py` (L5b), `tests/acceptance/fixture_server.py` (senaryolu model).

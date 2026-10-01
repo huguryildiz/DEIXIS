@@ -238,7 +238,8 @@ class LineageStore:
                              decision: dict[str, Any], edge_state: str, run_id: str, step_id: str, step_input_id: str,
                              scope_revision: int, link_version_at_request: int | None, inputs: dict[str, Any],
                              input_fingerprint: str, output_status: str, idempotency_key: str | None = None,
-                             stale_revisions: Mapping[str, str] | None = None) -> dict[str, Any]:
+                             stale_revisions: Mapping[str, str] | None = None,
+                             input_stale: bool = False) -> dict[str, Any]:
         with self._proposal_transaction():
             pair = self.link(table_id, from_svid, to_svid)
             if replay := self._replay(pair, idempotency_key, step_input_id):
@@ -262,7 +263,7 @@ class LineageStore:
                 rejection = "endpoint_not_included"
             elif current and current["author"] == "human":
                 rejection = "superseded_by_human"
-            elif scope_revision != self.store.research(research_id)["current_scope_revision"] or (0 if link_version_at_request is None else link_version_at_request) != pair["version"]:
+            elif input_stale or scope_revision != self.store.research(research_id)["current_scope_revision"] or (0 if link_version_at_request is None else link_version_at_request) != pair["version"]:
                 rejection = "stale_input"
             elif decision["decision"] == "link":
                 located = self._locate(to_svid, decision["evidence"])

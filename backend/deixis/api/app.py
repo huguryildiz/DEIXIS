@@ -64,6 +64,8 @@ from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound
                                    SeedUnavailable, Store, LegacyResearchReadOnly, DISCOVERY_RUN_KINDS,
                                    legacy_research_read_only)
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
+from deixis.workflow.lineage.run import LineagePlanner
+from deixis.workflow.lineage.store import InvalidLineageInput
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, report_view, research_view
 from deixis.workflow.worker import Worker
 
@@ -300,6 +302,11 @@ class FillRequest(BaseModel):
     column_ids: list[str] | None = Field(default=None, min_length=1, max_length=200)  # None: every active column
     include_stale: bool = False  # also ask again for values made under an earlier column revision; they come back as proposals
     expected_version: int  # of the table whose fill estimate the user saw
+
+
+class LineageRunRequest(BaseModel):
+    preview_fingerprint: str = Field(min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+    retry_failed: bool = False
 
 
 class ColumnChange(BaseModel):
@@ -1158,7 +1165,7 @@ def create_app(
             run = store.update_run(run_id, event="run_cancelled", status="cancelled", pause_reason="user_cancelled")
             worker.flow.queue_person_reading(run["research_id"])
             worker.wake()
-            if worker.current_run_id == run_id and run["kind"] != "table_fill":
+            if worker.current_run_id == run_id and run["kind"] not in ("table_fill", "lineage_links"):
                 # Roles may use different connections; only the running step's connection has a call to interrupt.
                 for adapter in request.app.state.adapters.values():
                     await adapter.cancel()
@@ -1764,6 +1771,15 @@ def create_app(
     async def invalid_table_input(_: Request, exc: InvalidTableInput):
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
+    @app.exception_handler(InvalidLineageInput)
+    async def invalid_lineage_input(_: Request, exc: InvalidLineageInput):
+        return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    def lineage_of(request: Request) -> LineagePlanner:
+        flow = request.app.state.worker.flow
+        return LineagePlanner(store_of(request), flow.lineage_step_input, flow.lineage_message_chars,
+                              flow.deps.package.package_hash)
+
     table_path = "/api/researches/{research_id}/tables/{table_id}"
     cell_path = table_path + "/cells/{column_id}/{source_version_id}"
 
@@ -1831,6 +1847,19 @@ def create_app(
         tables = tables_of(request)
         tables.add_development_columns(research_id, table_id, body.expected_version, idempotency_key)
         return tables.table_view(research_id, table_id)
+
+    @app.get(table_path + "/lineage/plan")
+    async def lineage_plan(research_id: str, table_id: str, request: Request,
+                           retry_failed: bool = False) -> dict[str, Any]:
+        return lineage_of(request).preview(research_id, table_id, retry_failed)
+
+    @app.post(table_path + "/lineage/runs", status_code=202)
+    async def lineage_run(research_id: str, table_id: str, body: LineageRunRequest, request: Request,
+                          idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        run = lineage_of(request).request_run(research_id, table_id, body.preview_fingerprint,
+                                              body.retry_failed, idempotency_key)
+        request.app.state.worker.wake()
+        return run
 
     @app.post(table_path + "/template-columns", status_code=201)
     async def apply_table_template(research_id: str, table_id: str, body: TemplateApply, request: Request,

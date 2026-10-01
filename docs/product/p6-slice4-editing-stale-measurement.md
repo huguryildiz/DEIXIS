@@ -1,547 +1,227 @@
-# P6 dilim 4 — rapor düzenleme, bayatlama işareti ve P6 kapanış ölçümü: tasarım notu
+<!-- Tasarım kararları ve denetimi (gpt-6.1-sol · high, salt okunur): karar turu (§13, Q1–Q9 + dört ek) Claude ile ortak; tasarım denetimi: tur 1 hazır değil (4 yüksek, 3 orta; hepsi işlendi), tur 2 hazır değil (1 yüksek, 1 orta; işlendi), tur 3 hazır (0 yüksek, 1 orta; işlendi) Ham cevaplar /tmp/s4d-a1.md (karar turu), s4d-a2.md, s4d-a3.md, s4d-a4.md (denetim). -->
+# P6 dilim 4 — düzenlenmiş raporun denetimi ve kaynak çıkarma: tasarım notu
 
-**Tarih:** 17 Eylül 2026, 29 Eylül 2026'da güncellendi. **Durum:** §12'nin soruları koordinatörün varsayılanlarıyla kapandı (sahip 29 Eylül'de "bilmiyorum, devam edelim" dedi, seçim yapmadı); uygulanan küçük sürümün kapsamı §0'dadır. §1–§13 17 Eylül taslağı olarak aşağıda aynen duruyor; §0 ile çelişen yerde §0 geçerlidir.
+**Tarih:** 17 Eylül 2026 (taslak), 29 Eylül 2026 (küçük sürüm, D112), 2 Ekim 2026 (yeniden yazım, `58676f1` üzerinde). **Durum:** uygulamaya kabul için hazırlandı; kararlar §13'te, batch'ler §14'te, kalıcı kayıt `docs/decisions.md` D147. Bu not bir tasarımdır: kod, migration, model çağrısı ve ölçüm yoktur; kabul, uygulamanın doğrulandığı anlamına gelmez. 17 Eylül taslağı (§1–§13) ve 29 Eylül'ün §0 güncellemesi git geçmişindedir; bu not onların yerine geçer. D112'nin istemi (`p6-slice4-prompt.md`) tarihi bir kayıttır, bu notun eski §0'ına atıf yapar ve değiştirilmedi. Sahibin 2 Ekim isteği gereği dilim **dar** tutuldu: **dört batch**, hiçbirinde model çağrısı yok; kapanış ölçümü P9'a borç olarak taşındı (§10).
 
-## 0. 29 Eylül 2026 güncellemesi: yanıtlar, bugünkü kod ve küçük sürüm
+## Kısaca
 
-**Bugünkü durum (29 Eylül'de doğrulandı).** 17 Eylül'deki "dilim 1 kodda yok" bulgusu artık geçerli değil. `backend/deixis/workflow/report/` var (`store.py`, `sections.py`, `snapshot.py`, `assembly.py`, …); migration `0035_report_run_kind.sql` ve `0036_report_section_ii.sql` uygulandı; `POST/GET /api/researches/{id}/reports` rotaları ve `views.py::report_view` çalışıyor; 18 Eylül'de `gpt-5.6-luna` ile kopya kütüphanede ilk tam rapor `valid` bitti (on bir bölümün on biri, `4582b64`). Dilim 1'in açık kalan partileri: P6 (VIII'in sayısal çekirdeği), P7 (kalan sekiz montaj kuralı), P9 (`report_review`), P10–P16; özellikle **P11, okuma biçimli rapor ekranı, yok**: `apps/web/src` içinde rapor gösteren hiçbir bileşen yok ve `api.ts` rapor tiplerini taşımıyor. Taslaktaki "rapor düzeyi bant" (`staleBand`) da `report_view`'da yok. Dilim 2 (Chain of Ideas) ve dilim 3 (kill-search) kodda yok; `0050_chain_links.sql` sw araştırmasının atıf zinciridir (D95), dilim 2'nin tabloları değildir.
+D112 ve D113 ile bir bitmiş raporun iddiası elle düzeltilebiliyor, geçmişi tutuluyor, kanıt değişince bölüm işaretleniyor ve ekranda "Düzenle", "Geçmiş", "Geri yükle", "Böyle kalsın" var. İki şey eksik kaldı ve bu dilim yalnız onları kurar. Birincisi, düzenlenmiş metin hiçbir denetimden geçmiyor: dışa aktarılan dosya ve ekran "düzenlenen metin yeniden denetlenmedi" diyor, çünkü montaj kuralları `report_claims.text`'i, yani **modelin** metnini okuyor. Dilim, düzenlenmiş raporu kodla, modelsiz, yeniden denetleyen salt-okunur bir **"Düzenlemeleri denetle"** eylemi ekler; sonucu kayda yazılır, ekranda ve dışa aktarımda "bu denetim şu düzenleme sürümleri için yapıldı" diye görünür, bir şey değişirse "eski" olur. İkincisi, yanlış bir atıf bugün düzeltilemiyor: metin düzenlenir ama kanıt bağı aynen kalır. Dilim iddiadan **atıf kaldırma**yı (geri alınabilir, geçmişe bağlı) ekler. Rapor sürüm numarası, "Yayımla" eylemi, bölüm yeniden yazımı, kararlı kimlik katmanı ve tüm gerçek-model ölçümü bu dilimde **yoktur** (§12).
 
-**§12'nin yanıtları.** Sahip seçim yapmadan devam etmeyi istedi; her soruda taslağın kendi "yanıt yoksa alınacak" seçeneği koordinatörün varsayılanı olarak alındı (29 Eylül 2026). Tek sapma soru 6'dadır, nedeni altında.
+Bu dilim hiçbir şeyi "doğrulanmış" yapmaz: denetim biçim ve yasak sözcük gibi kod kurallarını yeniden çalıştırır, bir cümlenin kanıtı gerçekten desteklediğini göstermez (AGENTS.md "Never overstate what was established"). Bir düzenleme yeni bir atıf eklemez; atıf kaldırma kanıtı azaltır, artırmaz.
 
-| Soru | Alınan | Bu dilimde |
-|---|---|---|
-| 1. Düzenleme birimi | a, iddia | Uygulandı |
-| 2. Düzenlenmiş raporun `report_version`'ı | a, ayrı bir "Yayımla" eylemi yeni numara verir | Yanıt kaydedildi; "Yayımla" **ertelendi** (montaj denetimlerinin insan metniyle yeniden koşması P7'nin kalan kurallarını bekliyor). Şimdilik düzenleme numarayı değiştirmez; görünüm "bu sürümden sonra elle düzenlendi" der |
-| 3. İnsan düzenlemesi incelemeye gitsin mi | a, otomatik değil | Uygulandı (hiçbir model çağrısı yok); isteğe bağlı inceleme eylemi `report_review` (P9) gelince |
-| 4. "Böyle kalsın" ne zaman dolar | a, hiç dolmaz; sonraki bağımsız değişiklik yeni işaret açar | Uygulandı |
-| 5. İnsan düzenlemesi varken model yeniden yazabilir mi | a, evet ama bekleyen öneri olarak | Yanıt kaydedildi; bölüm yeniden yazma akışı **ertelendi** (bugün tamamlanmış bir rapor için bölüm yeniden yazma diye bir işlem yok). Bu gelene kadar koruma kodda: insan düzenlemesi olan bir bölümün iddialarını `save_claims` silmeyi reddeder |
-| 6. Bayatlama ne zaman hesaplanır | Taslağın a'sı (yazma anı) yerine **b, okuma anı** | Uygulandı; gerekçe aşağıda |
-| 7. Kapanış ölçümü dilim 2/3'ü bekler mi | c, kısmi | Kapanış ölçümünün tamamı **ertelendi** (gerçek model koşusu ister) |
-| 8. Kapanış ölçümünde kim etiketler | b, Claude | Ölçümle birlikte ertelendi |
-| 9. Hangi tutulmuş soru | a, Kurt 2017 | Ölçümle birlikte ertelendi |
+## 0. Taslağın bugünkü koda göre yanlış kalan yerleri
 
-**Soru 6'daki sapmanın gerekçesi.** Yazma anı bayrağı, bayrağı yazan işlemin o anda rapor iddialarını bulabilmesine dayanır. Oysa anlık görüntü rapor koşusunun başında alınır, iddialar bölüm bölüm sonra yazılır: arada düzeltilen bir hücrenin bayrağı, henüz iddiası olmadığı için hiç yazılmazdı. Ayrıca kanıtı değiştiren her yola (`tables.py::_set_current`, seçim ve üyelik değişiklikleri, ileride dilim 2/3) ayrı bir kanca gerekirdi ve unutulan her kanca sessiz bir yanlış negatif olurdu. Anlık görüntü (`report_snapshot.snapshot_json`) her hücrenin donduğu `cell_revision_id`'yi ve dahil satırları zaten saklıyor; rapor görünümü açılırken atıf yapılan hücrelerin canlı revizyonunu ve kaynağın hâlâ dahil olup olmadığını karşılaştırmak ucuz (bir rapor en fazla birkaç yüz atıf taşır) ve değişikliğin hangi kayıttan geldiğini kaybetmez. "Böyle kalsın" kaydı, kabul edilen değişikliğin anahtarını saklar; anahtar canlı revizyonu içerdiği için aynı hücrenin sonraki bir değişikliği yeni bir işaret açar (soru 4'ün a'sı).
-
-**Uygulanan küçük sürüm (bu dilim).**
-
-1. **İddia düzenleme ve geçmiş.** Yeni tablo `report_claim_revisions` (ekle-yalnız, güncelleme/silme tetikleyiciyle reddedilir, silme yalnız araştırma silme yetkisiyle). `report_claims.text` modelin yazdığı metin olarak hiç değişmez; geçerli metin son revizyondur. `report_claims`'e `current_revision_id` ve `version` eklenir. Düzenleme `expected_version` taşır, uyuşmazlıkta 409; `Idempotency-Key` tekrarında aynı revizyon döner. Eski bir revizyona ya da modelin metnine dönmek, o metni kopyalayan yeni bir `human_restore` revizyonudur; hiçbir şey silinmez. Atıflar her zaman taşınır (atıf kaldırma bu dilimde yok). Kaydederken matematik aralığı iyi-biçimlilik denetimi uyarı olarak yazılır, kaydı durdurmaz; kalıp (phrasebank) denetimi insan metninde çalışmaz; `count` taşıyan bir iddia düzenlenirse "sayı yeniden denetlenmedi" uyarısı yazılır. Rapor koşusu bitmeden (rapor `in_progress` ya da koşu bitmemişken) düzenleme 409 ile reddedilir.
-2. **"Bu rapordan sonra kanıt değişti" işareti.** `report_view` rapor düzeyinde anlık görüntüden sonra değişen hücre, çıkan ve eklenen kaynak ve revize edilen sütun sayılarını verir. Satır kümesi anlık görüntüdeki kuralla aynı hesaplanır: tablonun etkin satırları ile dahil kaynakların kesişimi; yani tablodan çıkarılan ama hâlâ dahil olan bir kaynak da "çıktı" sayılır. Bölüm düzeyinde o bölümün iddialarının atıf yaptığı hücrelerden değişenleri ve atıf yaptığı kaynaklardan artık satır kümesinde olmayanları listeler; `body_ref` (Abstract/I/IX'in gövde iddialarına bağı) ve `gap_ref` (VI/VII'nin boşluğunun `basis_cell_ids`/`basis_claim_keys` temeli) üzerinden bir düzey daha taşır. Rapor metni, `report_version`'ı ve atıfları değişmez. **Denetlenmeyen:** PDF yeniden çıkarımı ve pasaj değişiklikleri; anlık görüntü çıkarım kimliği saklamadığı için bunlar görünmez ve sonuç bunu `not_checked` alanında söyler.
-3. **"Böyle kalsın".** Bölüm başına, görülen değişiklik anahtarlarını kabul eden bir uç; kabul edilen anahtar bir daha işaret açmaz, yeni bir değişiklik (yeni anahtar) açar. Hücre anahtarı canlı revizyonu, kaynak anahtarı kaynağı dışarıda tutan geçişin zaman damgasını taşır; kaynak geri gelip yeniden çıkarsa yeni damga, yeni işaret demektir (aynı milisaniyedeki iki çıkış aynı anahtarı paylaşır; bilinen sınır). Artık canlı olmayan bir anahtar gönderilirse 409 (sayfa yenilenmeli).
-4a. **Araştırma silme.** `purge_research` bugün rapor satırlarını silmiyor; bu dilim rapor tablolarını (yenileri dahil) silme sırasına ekler. Tablo silme (`purge_table`) raporlu tabloda değiştirilmez, birikim listesinde.
-4b. **Görünüm sözleşmesi.** Düzenlenmiş bir iddianın `text`'i kişinin çalışma metnidir, yeniden doğrulanmamıştır; bölümün `draft`/`validation`/`word_count` alanları ve raporun `report_version`'ı "Yayımla" gelene kadar modelin yazdığı, doğrulanmış sürümü anlatır.
-4. **Ekran yok.** Rapor ekranı (dilim 1 P11) olmadığı için bu dilim yalnız arka uç ve görünüm modelidir; düzenleme formu, bant ve "Böyle kalsın" düğmesi P11 ile birlikte gelir. `api.ts`'e tip eklenmez (P3'ün aynı kararı).
-
-**Ertelenenler.** "Yayımla" eylemi ve düzenleme sonrası yeni `report_version` (soru 2); bölüm yeniden yazma önerisi akışı, `report_section_revisions` (S3/S4); kararlı kimlik katmanı, `report_stable_claims`/`report_stable_gaps`/`report_claim_matches` (§5; yeniden yazma olmadan eşleştirilecek bir şey yok); `scope_statement` düzenleme ve `report_plan_revisions`; çizgi bağı ve aday bayatlaması (dilim 2/3 kodda yok); PDF yeniden çıkarımı ve pasaj değişikliklerinin hiçbir düzeyde algılanması (anlık görüntüye çıkarım kimliği eklemek gerekir); sütun revizyonunun bölüm düzeyi işareti (yalnız rapor düzeyinde sayılır); atıf kaldırma (`keep_citations_from`); isteğe bağlı düzenleme incelemesi; ekran ve Playwright; P6 kapanış ölçümü (§9, R18–R21, gerçek model koşusu ister). Uygulama istemi: [`p6-slice4-prompt.md`](p6-slice4-prompt.md).
-
-**Kısaca (17 Eylül taslağı; bugünkü durum için §0):** O gün rapor (P6 dilim 1) yalnız bir tasarım planıdır; `backend/deixis/workflow/report/` dizini ve migration `0034` henüz kodda yok (17 Eylül 2026'da doğrulandı, bkz. §1). Bu dilim üç şeyi tek notta toplar, çünkü üçü de aynı soruya dayanıyor: "rapor donduktan sonra ne olur". Birincisi, **düzenleme**: sahip bir bölümün tek bir iddiasını elle düzeltebilir ya da modele bölümü yeniden yazdırabilir; insanın yazdığı hiçbir zaman modelle ezilmez (T09), model sonucu insan düzenlemesi varken her zaman bekleyen bir öneri olarak gelir — P5'teki hücre kuralının (D37) aynısı, kanıt tablosundan rapor iddiasına taşınmış hâli. İkincisi, **bayatlama**: kanıt (hücre, PDF, kaynak, sütun, çizgi bağı, aday durumu, rapor planı) değiştiğinde hangi bölümün buna dayandığını kod bilir ve bölümü "bu kanıt değişti" diye işaretler; işaret hiçbir zaman kendiliğinden onarmaz, sahip ya yeniden yazdırır ya "böyle kalsın" der ya elle düzeltir. Üçüncüsü, bunların hepsinin üzerine oturan **kimlik kararlılığı** sorunu: rapor bölümü her yeniden yazıldığında `claim_key` ve `gap_id` yeniden verilir (dilim 1'in kendi kuralı); bu, insan düzenlemesini bir sonraki yazıma taşımayı ve dilim 3'ün aday kartının "aynı gerçek soru"ya sürekli işaret etmesini zorlaştırır. Bu not, per-revizyon kimliklerin üstüne kalıcı bir "kararlı kimlik" katmanı önerir ve nerede kırılabileceğini açıkça yazar. Son olarak, P6'yı kapatacak ölçüm P5 dilim 5'in deseniyle tanımlanır: tutulmuş bir soru, dondurulmuş beklentiler, korpus kapsamı ile rapor kalitesinin ayrı raporlanması, düzenleme/bayatlama davranışının senaryolu bir denetimi.
-
-## 1. Kodda ve önceki dilimlerde bugün olanlar
-
-**Önemli bulgu (17 Eylül 2026, doğrulandı):** `backend/deixis/workflow/report/` dizini yok, migration dosyaları `0033`'te duruyor (`0034_report_run_kind.sql` henüz uygulanmadı). Yani P6 dilim 1 kodda **hiç yok**; yalnız [`p6-slice1-report-run.md`](p6-slice1-report-run.md) adlı, checkbox'ları işaretlenmemiş bir uygulama planı var. Bu not, o planın verdiği tablo/sınıf/alan adlarını (`ReportStore`, `reports`, `report_sections`, `report_claims`, `report_claim_refs`, `report_citation_links`, `report_gaps`, `report_snapshot`, `report_phrase_repairs`, `build_snapshot`, `run_assembly_checks`, `run_report_review`, `/api/researches/{id}/reports`, `apps/web/src/report/ReportView.tsx`) olduğu gibi kullanıyor; dilim 1 yürütülürken bu adlardan biri değişirse bu not da güncellenmeli (bkz. §10). Aynı şekilde dilim 2 ([`p6-slice2-chain-of-ideas.md`](p6-slice2-chain-of-ideas.md)) ve dilim 3 ([`p6-slice3-kill-search.md`](p6-slice3-kill-search.md)) da taslak durumda; bu notun onlara bağımlı kısımları (§4.3, §11) o notlardaki tablo adlarını (`chain_links`, `chain_link_revisions`, `research_candidates`, `candidate_versions`) kullanır ve aynı uyarı geçerlidir.
-
-| Parça | Doğrulanan durum | Bu dilim için anlamı |
-|---|---|---|
-| P5 dilim 1 kanıt tablosu (`backend/deixis/workflow/tables.py`, D37/D38) | `evidence_cells`/`cell_revisions` append-only revizyon zinciri; `edit_cell` insan yazısını `expected_version` ile korur (409 `RevisionConflict`), `keep_evidence_from` parametresiyle kanıtı isteyerek taşır ya da düşürür; `decide_proposal` bekleyen model önerisini kabul/red eder; model sonucu yalnız boş hücrede geçerli değer olur, aksi hâlde `model_proposal` bekler. | Rapor iddiası düzenlemesinin **tam kopyalanacağı** kalıp budur (§3, §4). `keep_evidence_from` → rapor tarafında `keep_citations_from`; `decide_proposal` → bölüm yeniden yazımı önerisinin kabul/red akışı. |
-| `backend/deixis/api/app.py` (`ExpectedVersion`, `RevisionConflict`, `@app.exception_handler`) | Optimistic concurrency her mutasyon ucunda aynı desenle: `expected_version` gövdede/sorguda, uyuşmazlıkta 409 ve "sayfa son durumu gösteriyor" mesajı. | Rapor iddiası ve rapor planı düzenleme uçları aynı deseni birebir kullanır; yeni bir eşzamanlılık mekanizması icat edilmez. |
-| P5 dilim 3 çöp ve geri alma (D50) | Çöpe atma/çıkarma görünürlük durumudur, silme değildir; "Geri al" bildirimi mevcut geri getirme ucunu çağırır, ayrı bir "undo günlüğü" yoktur. | Bu dilimde "undo" **trash değil, revizyon geçmişidir** (görev tanımının istediği gibi): eski bir revizyona dönmek, o revizyonun metnini kopyalayan **yeni** bir `human_edit` yazmaktır — D50'nin trash kalıbı burada kullanılmaz, çünkü hiçbir şey silinmiyor. |
-| `answers.report_version` (migration `0023`) | Yalnız `structurally_valid` yanıtlar arasında sayılır, atanınca sabittir; D56 "yalnız alıntısız/tekrarlı/başıboş atıfları düşürerek nihai taslak yayımla" kararıyla, yapısal geçerlilik ile "yayımlanmış" olmak arasına bir ayrım koydu. | Dilim 1'in `reports.report_version`'ı da aynı kuralı taşıyor (yalnız `valid` durumdayken atanır). Bu dilim, düzenleme SONRASI bu numaranın ne olacağını sorar (§11 soru 2); D56'nın "yapısal geçerlilik ≠ yayım" ayrımı emsal olarak kullanılır. |
-| `scripts/p4_eval/measure.py` (`snapshot`, `score`, `cells`, `cells-score`, `compare`, `review.md`) | P4/P5 ölçümünün tek aracı; alt komutlar bağlantı/kimlik denetimi, bilinen küme kapsamı, hücre inceleme sayfası üretir; çıktılar `.local/`'e gider, depoya girmez. | §9'daki `measure_report.py` (dilim 1'in planladığı) bu aracın alt komut deseninin devamıdır; bu dilim ona `stale`/`edit` senaryoları için yeni alt komutlar ekler, ayrı bir araç açmaz. |
-| D55 (P5 kapanışı) | Dahil bilinen eserlerin DEIXIS yollarıyla PDF metni alma oranı 0/7 ve 0/5; tutulmuş soruda bilinen eser geri çağırımı 4/15. | P6 kapanış ölçümünün (§9) M3/M1 karşılığı; rapor kalitesi bu sayılardan **ayrı** raporlanır (AGENTS.md "evidence boundaries", "preserve reading depth"). |
-| `docs/product/implementation-plan.md` §6.2, §10 | "İnsan düzeltmesi eski değeri yok etmez; yeniden inceleme bir öneri sürümü üretir... Kanıt veya iddia değişince bağımlı rapor, CoI bağlantısı ve kill-search sonucu `needs_review` olur." T09: "Recheck yeni öneri üretir; eski ekran veya model insan sürümünü ezmez" (P5–P6). P6 çıkış koşulu (§9 tablosu): "Yakın çalışma/karşı kanıt/erişim sınırı doğru iddiaya bağlanır; boş arama özgünlük sayılmaz; düzenlenmiş rapor korunur." | Bu dilimin adı zaten plandaydı (§12 madde 4: "Bölüm düzenleme (T09), bölüm düzeyinde `stale`, düzenleme sonrası kimlik kararlılığı, tutulmuş soruyla kapanış ölçümü"). `needs_review` terimi planda geçiyor; rapor tasarımı notu aynı kavramı `stale` diye adlandırdı (§4.2). Bu not `stale` terimini kullanır (rapor tasarımıyla tutarlı), ama ikisinin aynı şeyi kastettiğini kaydeder. |
-| `p6-report-design.md` §4.2, §5, §8, §10 | Üç ayrı durum kümesi (run/bölüm/rapor); kanıt anlık görüntüsü (`report_snapshot`) donduktan sonra hiçbir canlı değişiklik raporun donmuş metnini etkilemez; tek bant "Bu rapordan sonra kanıt değişti" (rapor düzeyi, dilim 1); "plan değişirse sonraki bölümler yeniden yazılır, önceki bölümler `stale` işaretlenir" (§5 son cümle); montaj denetimi `body_refs`/`gap_refs`'in var olduğunu doğrular, ama bunların **rewrite sonrası hâlâ geçerli olduğunu** değil. | Bu dilim, rapor DÜZEYİ bandın (dilim 1, sayaç karşılaştırması) yanına BÖLÜM düzeyi işareti ekliyor; ikisi aynı mekanizma değil (§6). `claim_key`/`gap_id`'nin rewrite'ta yeniden verilmesi, montaj denetiminin `body_refs`/`gap_refs` doğrulamasını bir sonraki rewrite'ta kırabilir; bu notun kimlik katmanı (§5) tam olarak bunu önlemek için var. |
-| `p6-slice2-chain-of-ideas.md` §4.2, §5 | Çizgi bağı düzenlemesi (insan siler/yeniden etiketler/alıntısız ekler) `cell_revisions`in aynısı olan `chain_link_revisions`'a append-only yazılır; "sonraki `chain_links` çalışması onu ezmez, yalnız yeni öneri üretir" (S6). III'ün "alanın gelişimi" alt bölümü ve VI'nın dördüncü aday türü (`chain_end_uncertainty`) bu bağlara dayanır. | Bir çizgi bağı düzenlendiğinde/silindiğinde III'ün ilgili cümlesi ve o çizgi ucundan doğan VI/VII adayı **stale** olmalı (§3, §4.3); dilim 2'nin notu bunu açıkça dilim 4'e bırakıyor. |
-| `p6-slice3-kill-search.md` §5, §6 | "İki tablo, tek doğruluk kaynağı": `report_gaps.kill_search_status` kod tarafından `research_candidates.status` her değiştiğinde **aynı işlemde** kopyalanan bir görünüm sütunu; "rozet canlı, metin donuk" — rozet güncellenir ama VI/VII'nin **metni** (ör. "kill-search yapılmadı" cümlesi) değişmez. `research_candidates.source_gap_id TEXT UNIQUE REFERENCES report_gaps.id`. | Rozetin canlı olması metnin doğru kalmasını GARANTİ ETMEZ: durum `not_run`dan `narrowed`/`closed`/`open`a geçtiğinde, bölümün "kill-search yapılmadı" diyen cümlesi artık **yanlış bir iddia** olur (AGENTS.md "Never overstate what was established" — burada tersi: understatement da bir doğruluk hatasıdır). Bu, VI/VII metninin stale olması gerektiğinin somut nedenidir (§3 S-gap). Ayrıca `source_gap_id`'nin per-report-version `report_gaps.id`'ye değil, bu notun önerdiği kararlı kimliğe bağlanması gerekir (§5, "ne kırılıyor"). |
-| `contracts/research/step-input.schema.json`, `domain/contracts.py::locate_anchor` | Kimlik desenleri (`col_`, `cel_`, `psg_`), zarf alanları, tek onarım kuralı, alıntı konumlandırma. | Yeni tablo/uç adları bu kalıpları izler; yeni bir doğrulama mimarisi kurulmaz. |
-
-## 2. Senaryolar
-
-### S1. Sahip bir iddiayı elle düzeltir
-
-Rapor `valid`. Sahip IV bölümünde bir cümlenin yazımını ya da vurgusunu düzeltir (ör. "birçok çalışma" yerine "üç çalışma"). Ekran o iddianın geçerli sürümünü (`report_claims.version`) gösteriyordu; düzenleme isteği bunu taşır. Sunucu insanın metnini yeni bir `human_edit` revizyonu olarak yazar, kanıt bağlarını (`citation_anchors`) aynen taşır (sahip silmedikçe), banned-word/`count`/matematik denetimlerini kod tarafından tekrar çalıştırır (uyarı, ret değil) ve **kalıp (phrasebank) denetimini bir daha çalıştırmaz** (§3). Rapor `report_version`'ı değişmez; bölüm zaman çizelgesinde "elle düzenlendi" satırı görünür.
-
-### S2. Aynı iddiaya iki sekme yarışır
-
-A ve B aynı raporu, aynı iddia sürümünü görüyor. A düzenlemeyi kaydeder, sürüm artar. B'nin (arada yenilemediği) düzenlemesi 409 alır, mevcut ileti gösterilir ("Uygulanmadı… sayfa son durumu gösteriyor" — tables.py'nin bugünkü mesajı), B'nin taslağı formda kalır (D37/T09 desenlerinin birebir aynısı, rapor iddiasına taşınmış).
-
-### S3. Sahip bir bölümü modele yeniden yazdırır, bölümde insan düzenlemesi var
-
-IV'te iki iddia elle düzenlenmiş. Sahip "Bu bölümü yeniden yaz" der. `report_section` adımı yeniden çalışır (yeni `claim_key`'lerle, §5); sonuç doğrudan geçerli hâle **gelmez**, bir **bekleyen bölüm önerisi** olarak saklanır (`report_section_revisions`, kind=`model_rewrite`, durum `pending`). Ekran eski (insan düzenlemeli) bölümü göstermeye devam eder, üstte "Model bu bölüm için yeni bir taslak yazdı" bandı ve "Bu taslağı kullan" / "Mevcut kalsın" seçenekleri durur. Kabul edilirse eski iddialar (ve onların insan düzenlemeleri) geçmişte kalır, kimlik eşleştirmesi (§5) hangi eski düzenlemenin hangi yeni iddiaya karşılık geldiğini işaretlemeye çalışır; eşleşmeyen düzenlemeler "yeni bölümde karşılığı bulunamadı" diye ayrıca listelenir.
-
-### S4. Sahip bölümde hiç insan düzenlemesi yokken yeniden yazdırır
-
-Aynı istek, ama bölümde hiç `human_edit` yok. Yeni sonuç P5'in "boş hücreyi model doldurur" kuralının aynısıyla **doğrudan geçerli** olur, bekleyen öneri oluşmaz — çünkü ezilecek bir insan kararı yok.
-
-### S5. Bir hücre düzeltilir, rapor bunu miras alır
-
-Rapor donduktan sonra sahip kanıt tablosunda bir hücreyi `cell_recheck` ile düzeltir ya da elle `human_edit` yazar. Yazma işlemi aynı transaction içinde `report_citation_links`'ten o hücreye bağlı bütün `report_claims`'i bulur, her birinin `report_id`/`section_id` çiftine bir `report_stale_flags` satırı ekler. Rapor görünümü açıldığında IV (ve IV'e `body_refs` ile bağlı Abstract/IX gibi türetilmiş iddialar varsa onlar da) "bu bölüm bu rapordan sonra değişen bir kanıta dayanıyor" satırını gösterir; rapor donmuş metni, `report_version`'ı ve dışa aktarımı **aynen okunabilir kalır** (AGENTS.md: "preserve revisions... mark stale... instead of silently rewriting history").
-
-### S6. PDF eklenir, okuma derinliği değişir
-
-Sahip önceden yalnız özeti olan bir kaynağın PDF'ini yükler, `reextract_asset` tam metin pasajları üretir. O satırın okunma derinliği `abstract`'tan `full_text`'e çıkar. Bu, o satırın hücrelerine dayanan IV/V iddialarını stale yapar; ayrıca VI'nın `corpus_absence` adaylarının "üç tam-metinli satır" eşiğini de etkileyebilir — kod bu durumda yeni bir aday üretmeye **çalışmaz** (adaylar yalnız bölüm yazımında üretilir, dilim 1 kuralı), yalnız VI'yı stale işaretler ki sahip "yeniden yaz" derse yeni bir `corpus_absence` adayı doğabilir.
-
-### S7. Kaynak araştırmadan çıkarılır ya da geri gelir
-
-D50'nin "araştırmadan çıkarma" işlemi (P5 dilim 3) bir satırı `corpus_memberships.removed_at` ile işaretler. Bu satırın kanıt tablosundaki hücreleri kalır ama satır gizlenir (D50 kuralı); rapor tarafında bu satıra dayanan her iddia stale olur, çünkü II/VIII'in `corpus`/`included` sayıları artık donmuş anlık görüntüyle uyuşmuyordur (rapor düzeyi bant zaten bunu yakalar, §1); bölüm düzeyinde ek olarak, o satırın hücrelerine dayanan IV/V/VI iddiaları da ayrıca işaretlenir.
-
-### S8. Bir çizgi bağı düzenlenir (dilim 2 varsa)
-
-Sahip dilim 2'nin çizgi görünümünde yanlış bir bağı siler ya da yeniden etiketler (`chain_link_revisions`, kind=`human_edit`/`human_remove`). III'ün "alanın gelişimi" alt bölümündeki, o bağa dayanan cümle ve (bağ bir çizgi ucuna değiyorsa) VI'daki `chain_end_uncertainty` adayı stale olur. Dilim 2 henüz kodda yoksa bu senaryo inert kalır (§4.3).
-
-### S9. Bir adayın kill-search durumu değişir (dilim 3 varsa)
-
-Sahip dilim 3'te bir kill-search'ü bitirir, aday `not_run`dan `narrowed`a geçer. `report_gaps.kill_search_status` aynı işlemde (slice3'ün kendi tasarımı) güncellenir — bu **rozet**tir, ekranda anında görünür, stale değildir. Ama VI/VII'nin o adayı anlatan cümlesi hâlâ "kill-search yapılmadı" diyorsa, bu artık yanlış bir iddiadır; aynı işlem bölüme bir `report_stale_flags` satırı da yazar (rozet ile metin ayrı yollardan güncellenir, §3). Sahip "yeniden yaz" derse VI/VII'nin ilgili cümlesi yeni duruma göre yeniden yazılır; "böyle kalsın" derse bant kalır ama rozet zaten doğru durumu gösteriyordur.
-
-### S10. Sahip bir stale işaretini onaylar ("böyle kalsın")
-
-Sahip S5'teki bandı görür, PDF'i açıp değerin hâlâ makul olduğuna karar verir, "Böyle kalsın" der. Kod, o bölümün o anki bütün canlı (`acknowledged_at IS NULL`) `report_stale_flags` satırlarını "kabul edildi" diye damgalar (silmez, §4); bant kalkar. Bir sonraki bağımsız değişiklik (başka bir hücre düzenlemesi) yeni bir bayrak açar; eski kabul o yeni bayrağı kapatmaz.
-
-### S11. Rapor yayımlanır
-
-Sahip bir dizi düzenlemeden sonra "Yayımla" der (§11 soru 2). Kod montaj denetimini (dilim 1'in 14 kuralı, artık insan metniyle) yeniden çalıştırır; geçerse rapora yeni bir `report_version` atanır (ya da ilk kez atanır); geçmezse hangi bölümün hâlâ sorunlu olduğu listelenir, önceki yayımlı sürüm (varsa) değişmeden kalır.
-
-## 3. Kurallar
-
-- **İnsanın metni modelle asla ezilmez (T09).** Model sonucu yalnız hiç insan yazısı olmayan bir iddia/bölüm için doğrudan geçerli olur; aksi hâlde her zaman bekleyen bir öneridir. Kabul yalnız sahip kararıyla olur.
-- **Düzenlenen bir iddia kalıp (phrasebank) denetiminden geçmez.** Kanıta sadakat kalıba sadakatten önce gelir (rapor tasarımı §2 karar 12); insan düzyazısı modelin biçimsel kalıbına uydurulmaz. Buna karşılık banned-word listesi, `count` üye/derinlik/sayı denetimi ve matematik aralığı iyi-biçimliliği **her zaman** tekrar çalışır — bunlar biçim değil, doğruluk denetimidir; ihlal ret değil uyarıdır ve ekranda görünür.
-- **Kanıt bağı sahip silmedikçe kalır.** `keep_citations_from` deseni (tables.py'nin `keep_evidence_from`'unun aynısı): sahip yalnız yazımı düzeltiyorsa eski alıntılar taşınır; sahip bilerek bir alıntıyı kaldırırsa iddia `not_verified`e benzer bir "kanıtsız insan metni" durumuna düşer ve ekranda böyle görünür (rapor asla "kanıtlı" görünüp kanıtsız kalmaz).
-- **Bayatlama bir bayraktır, bir durum değildir.** `reports.status`/`report_sections.status` (dilim 1) değişmez; stale, bunların üzerine binen ayrı, çoklu ve append-only bir kayıttır. Bir bölüm aynı anda hem `valid` hem stale olabilir.
-- **Bayatlama kendiliğinden onarmaz.** Üç yol vardır: yeniden yazdır (modelle, §2 S3/S4 kuralı geçerli), böyle kalsın (kaydedilen bir kabul, hangi değişikliğe karşı verildiği damgalanır), elle düzelt (§ S1). Kod hiçbir zaman sessizce bir bölümü kendiliğinden yeniden yazmaz ya da bayrağı temizlemez.
-- **Rozet ile metin ayrı yollardan güncellenir (dilim 3 varsa).** `kill_search_status` gibi kod tarafından türetilen görünüm sütunları canlı kalabilir; ama o sütunun anlattığı **düzyazı** (rapor bölümünün kendi cümlesi) ayrı bir kayıttır ve stale mekanizmasına tabidir (S9). Bir rozetin canlı olması, altındaki cümlenin doğru kaldığı anlamına gelmez.
-- **Stale bir rapor okunabilir ve dışa aktarılabilir kalır.** Bant/işaretler ekranda görünür ama rapor gövdesini gizlemez; dışa aktarılan dosya hangi bölümlerin değişen kanıda dayandığını düz bir satırda söyler (§7).
-- **Maliyet kontrolü: bayrak yazma-anında hesaplanır, okuma-anında yalnız okunur.** Tek SQLite bağlantısı ve kısa senkron işlem kuralı (CLAUDE.md) gereği, hangi bölümün neye bağlı olduğu zaten kayıtlı (`report_citation_links`, `report_claim_refs`) olduğundan, kanıtı değiştiren işlem (hücre düzenleme, PDF ekleme, kaynak çıkarma, çizgi bağı düzenleme, aday durumu değişimi, plan düzenleme, bölüm yeniden yazımı) **aynı transaction'da** etkilenen `(report_id, section_id)` çiftlerini bulur ve bayrak yazar; rapor görünümü açılışta yalnız "bu bölümde canlı bayrak var mı" diye ucuz bir SELECT yapar, karşılaştırma yapmaz. Dilim 1'in rapor-düzeyi bandı (canlı `evidence_tables.version` ile donmuş `report_snapshot.table_revision` karşılaştırması) ayrıca ve okuma-anında hesaplanmaya devam eder — o tek sayı karşılaştırması ucuzdur ve DEĞİŞTİRİLMEZ; bu dilim ona bölüm düzeyi bayrağı **ekler**, yerine geçmez.
-- **Kimlik kararlılığı bir en iyi çabadır, garanti değildir.** Eşleşme bulunamazsa (§5) insan düzenlemesi yeni sürüme taşınmaz; bu durum sessiz kalmaz, ekranda "N düzenlemeniz yeni yazımda eşleşmedi" diye sayılır.
-
-## 4. Veri modeli taslağı
-
-SQL'in geçerli hâli migration dosyası olur; bu bir niyet taslağıdır ve dilim 1'in `0034`'ü uygulandıktan sonraki ilk boş numarayı alır (bu not yazılırken 0034 bile uygulanmamış; yürütme anında `ls backend/deixis/storage/migrations/` ile teyit edilir — muhtemelen `0035` ya da üzeri). Tablo adı önekleri (`rcv_`, `rsv_`, `rsf_`, `rsi_`, `rgs_`) önerilmiş kısaltmalardır; dilim 1'in gerçek `new_id()` kullanımıyla yürütme anında uzlaştırılır.
-
-```sql
--- Human-authored and model-rewrite revisions of one report_claims row. Same append-only pattern as
--- cell_revisions (0020): the current text is a pointer, never an in-place update.
-CREATE TABLE report_claim_revisions (
-  id TEXT PRIMARY KEY,                 -- rcv_
-  claim_id TEXT NOT NULL REFERENCES report_claims(id),
-  kind TEXT NOT NULL CHECK (kind IN ('model_write', 'human_edit', 'human_restore')),
-  author TEXT NOT NULL CHECK (author IN ('model', 'human')),
-  based_on_revision_id TEXT REFERENCES report_claim_revisions(id),  -- human_restore: the earlier revision copied back
-  text TEXT NOT NULL,
-  keep_citations INTEGER NOT NULL DEFAULT 1,   -- 0 when the human explicitly dropped this claim's citations
-  validation_json TEXT,                -- banned-word/count/math warnings recomputed at save time (never blocking)
-  note TEXT,                           -- human's reason, optional
-  idempotency_key TEXT UNIQUE,
-  created_at TEXT NOT NULL,
-  CHECK ((kind = 'model_write') = (author = 'model')),
-  CHECK (kind <> 'human_restore' OR based_on_revision_id IS NOT NULL)
-);
-CREATE INDEX report_claim_revisions_claim ON report_claim_revisions(claim_id, created_at);
-ALTER TABLE report_claims ADD COLUMN current_revision_id TEXT REFERENCES report_claim_revisions(id);
-ALTER TABLE report_claims ADD COLUMN version INTEGER NOT NULL DEFAULT 0;
--- + no-update/no-delete trigger on report_claim_revisions (0020 pattern), purge authority excepted.
-
--- One attempted rewrite of a whole section, kept beside the section's current (possibly human-edited) claims
--- until the owner accepts or dismisses it — the section-level generalization of cell_revisions' model_proposal.
-CREATE TABLE report_section_revisions (
-  id TEXT PRIMARY KEY,                 -- rsv_
-  report_section_id TEXT NOT NULL REFERENCES report_sections(id),
-  step_id TEXT REFERENCES run_steps(id),
-  status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'dismissed')),
-  draft_json TEXT NOT NULL,            -- the new claims/citation_links/gaps, same shape as report_section_draft output
-  claim_match_json TEXT,               -- §5: old claim_id -> new claim_key mapping this rewrite proposed, and unmatched old edits
-  decided_at TEXT, decided_note TEXT,
-  created_at TEXT NOT NULL
-);
-CREATE INDEX report_section_revisions_section ON report_section_revisions(report_section_id, created_at);
-
--- Section-level "evidence changed since this text was written" flags. Written by the SAME transaction that
--- changes the underlying record (cell edit, asset re-extraction, source removal/restore, column revision,
--- chain link edit, candidate status change, plan edit, or a sibling section's rewrite). Never deleted; an
--- acknowledgement stamps acknowledged_at instead, so a later independent change opens a fresh, live row.
-CREATE TABLE report_stale_flags (
-  id TEXT PRIMARY KEY,                 -- rsf_
-  report_id TEXT NOT NULL REFERENCES reports(id),
-  section_id TEXT NOT NULL,
-  reason TEXT NOT NULL CHECK (reason IN (
-    'cell_changed', 'asset_reextracted', 'source_removed', 'source_restored', 'column_revised',
-    'chain_link_changed', 'candidate_status_changed', 'plan_edited', 'dependency_section_rewritten'
-  )),
-  detail_json TEXT NOT NULL,           -- which record (cell_id / source_version_id / column_id / chain_link_id / candidate_id / section_id)
-  acknowledged_at TEXT,                -- NULL = live
-  created_at TEXT NOT NULL
-);
-CREATE INDEX report_stale_flags_open ON report_stale_flags(report_id, section_id) WHERE acknowledged_at IS NULL;
-
--- Dependency edges recorded when a section is written, so a later mutation knows which (report_id, section_id)
--- pairs to flag without re-deriving the graph from citation_links each time (report_citation_links already
--- gives the passage/cell edges; this table adds the two edge kinds report_citation_links cannot express).
-CREATE TABLE report_section_dependencies (
-  report_section_id TEXT NOT NULL REFERENCES report_sections(id),
-  dep_kind TEXT NOT NULL CHECK (dep_kind IN ('chain_link', 'candidate', 'body_ref_section')),
-  dep_ref TEXT NOT NULL,               -- chain_link_id, candidate_id, or another report_sections.id (dep_kind='body_ref_section')
-  PRIMARY KEY (report_section_id, dep_kind, dep_ref)
-);
-```
-
-Rapor plan alanları (`scope_statement`) düzenlenebilir bir alan olarak `reports.plan_json` üzerinde doğrudan güncellenmez (append-only ilkesiyle çelişir); onun yerine aynı `report_claim_revisions` deseninin plan-düzeyi bir eşi:
-
-```sql
-CREATE TABLE report_plan_revisions (
-  id TEXT PRIMARY KEY,                 -- rpv_
-  report_id TEXT NOT NULL REFERENCES reports(id),
-  kind TEXT NOT NULL CHECK (kind IN ('model_write', 'human_edit')),
-  scope_statement TEXT NOT NULL,
-  idempotency_key TEXT UNIQUE,
-  created_at TEXT NOT NULL
-);
-```
-
-`reports.plan_json`'ın geçerli `scope_statement`'ı bu tablonun en son satırından okunur (görünüm hesaplar); bir `human_edit` yazıldığında rapor tasarımı §5'in kuralı ("plan değişirse sonraki bölümler yeniden yazılır, önceki bölümler stale") tetiklenir: kod, planın bu alanına bağlı bütün bölümler için `report_stale_flags(reason='plan_edited')` yazar. Yalnız `scope_statement` düzenlenebilir kılınıyor; `research_questions`/`glossary`/`axes` model çıktısıdır ve kanıta bağlıdır (bir tanımın hangi pasajdan geldiğini insan icat edemez), bu yüzden bu dilimde düzenlenmez — değişikliği isteyen sahip tüm planı yeniden ürettirir (§11 soru 8'e bağlı bir sınır, açıkça yazılıyor).
-
-## 5. Kimlik kararlılığı: `claim_key` ve `gap_id`
-
-Dilim 1'in kuralı şudur: `claim_key` ve `gap_id` **bir rapor içinde** benzersizdir ve **bölüm yeniden yazılınca yeniden verilir** (p6-report-design.md §4, "Bölüm şeması"). Bu, iki şeyi kırar: (1) bir bölüm yeniden yazıldığında, o bölüme `body_refs`/`gap_refs` ile bağlı başka bölümlerin (Abstract/I/IX, VII) referansları artık var olmayan eski `claim_key`/`gap_id`'lere işaret eder; (2) dilim 3'ün `research_candidates.source_gap_id` alanı doğrudan `report_gaps.id`'ye bağlanıyor (per-rapor-versiyon bir satır), oysa bir aday kartı raporun kendisinden bağımsız yaşıyor ve raporun ikinci, üçüncü versiyonunda da "aynı gerçek soru"yu göstermesi gerekiyor.
-
-**Öneri: iki katmanlı kimlik.** Per-revizyon kimlikler (`claim_key`, `gap_id`) olduğu gibi kalır — model çıktısı bunları üretmeye devam eder, montaj denetimi bunları aynen kullanır. Bunların üstüne, hiçbir zaman değişmeyen bir **kararlı kimlik** eklenir; per-revizyon kimlikler bu kararlı kimliğe bir eşleştirme kaydıyla bağlanır.
-
-```sql
--- Survives a section rewrite (scoped to one report_id): the same real claim keeps this id across rewrites of
--- the section that contains it, so human edits and stale-acknowledgements can be carried forward.
-CREATE TABLE report_stable_claims (
-  id TEXT PRIMARY KEY,                 -- rsi_
-  report_id TEXT NOT NULL REFERENCES reports(id),
-  section_id TEXT NOT NULL,
-  first_seen_claim_key TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
--- Which per-revision report_claims row currently represents which stable claim (1:1 at any moment; the
--- historical mapping lives in report_claim_matches for audit).
-ALTER TABLE report_claims ADD COLUMN stable_claim_id TEXT REFERENCES report_stable_claims(id);
-
-CREATE TABLE report_claim_matches (
-  id TEXT PRIMARY KEY,                 -- rcm_
-  report_section_revision_id TEXT NOT NULL REFERENCES report_section_revisions(id),
-  old_claim_id TEXT NOT NULL REFERENCES report_claims(id),
-  new_claim_key TEXT,                  -- NULL when no match was found above the similarity floor
-  stable_claim_id TEXT REFERENCES report_stable_claims(id),
-  citation_overlap REAL NOT NULL,      -- Jaccard over {passage_id, cell_id} sets, 0..1
-  paragraph_delta INTEGER,             -- |old.paragraph - new.paragraph|; NULL if unmatched
-  text_similarity REAL,                -- normalized token-overlap ratio, tie-break only
-  created_at TEXT NOT NULL
-);
-
--- Survives across DIFFERENT reports.id rows of the same research (a research_candidates row outlives any one
--- report run). kind + basis_fingerprint together identify "the same real gap"; the fingerprint's claim
--- references use stable_claim_id, never a literal per-revision claim_key (see "ne kırılıyor" below).
-CREATE TABLE report_stable_gaps (
-  id TEXT PRIMARY KEY,                 -- rgs_
-  research_id TEXT NOT NULL REFERENCES researches(id),
-  kind TEXT NOT NULL,                  -- domain.contracts.GAP_KINDS, same open list as report_gaps.kind
-  basis_fingerprint TEXT NOT NULL,     -- deterministic hash of the sorted basis set (see below)
-  first_seen_report_id TEXT NOT NULL REFERENCES reports(id),
-  last_seen_report_id TEXT NOT NULL REFERENCES reports(id),
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-  UNIQUE (research_id, kind, basis_fingerprint)
-);
-ALTER TABLE report_gaps ADD COLUMN stable_gap_id TEXT REFERENCES report_stable_gaps(id);
-```
-
-**Eşleştirme kuralı — iddialar (kararlı, ama bulanık).** Bir bölüm yeniden yazıldığında, kod eski bölümün geçerli iddialarını (varsa insan düzenlemeleriyle) yeni bölümün taslak iddialarıyla eşleştirmeye çalışır:
-
-1. Aday çiftler: `citation_overlap` (eski/yeni iddianın `passage_id ∪ cell_id` kümeleri arasındaki Jaccard benzerliği) ≥ **0.6** olan çiftler.
-2. Bu eşiği geçen birden çok aday varsa, `paragraph_delta` en küçük olan (aynı ya da bitişik paragraf) tercih edilir.
-3. Hâlâ eşitse `text_similarity` (basit normalize edilmiş token örtüşme oranı) ile tek bir en iyi eşleşme seçilir.
-4. Hiçbir aday 0.6 eşiğini geçmezse, o eski iddia **eşleşmemiş** sayılır: `report_claim_matches.new_claim_key = NULL`, insan düzenlemesi yeni sürüme taşınmaz ve ekranda ayrıca listelenir (§3, §2 S3).
-5. Bir eşleşme bulunursa, yeni `report_claims` satırı eski iddianın `stable_claim_id`'sini devralır; eski iddia insan tarafından düzenlenmişse (§4), o düzenleme yeni iddiaya **otomatik uygulanmaz** — sahibe "eski düzenlemeniz: '…'; yeni model metni: '…'" karşılaştırması gösterilir ve sahip "eskisini koru" ya da "yenisini kabul et" der (bu, §2 S3'ün "bekleyen bölüm önerisi" akışının bir parçasıdır, ayrı bir onay değildir).
-
-Eşikler (0.6 Jaccard) **ölçülmemiş önerilen varsayılanlardır**; §9'daki kapanış ölçümü bunları gerçek bir rewrite üzerinde sınar.
-
-**Eşleştirme kuralı — gap'ler (deterministik, çünkü temel küme yapılandırılmış veridir).** Aynı `kind` + aynı temel küme ⇒ aynı `stable_gap_id`:
-
-- `corpus_absence`: temel küme = `{column_id}`.
-- `stated_limitation`: temel küme = alıntının geldiği `{cell_id}` kümesi (ya da pasaj tabanlıysa `{passage_id}`).
-- `conflicting_evidence`: temel küme = dayandığı V iddiasının **kararlı** kimliği (`stable_claim_id`), literal `claim_key` DEĞİL (bkz. "ne kırılıyor").
-- `chain_end_uncertainty` (dilim 2): temel küme = `{chain_end_node_id}`.
-
-`basis_fingerprint`, bu kümenin sıralanmış, kanonik bir JSON kodlamasının hash'idir. Bir bölüm yazıldığında (dilim 1'in `gaps.py`'si ya da bu dilimin genişlettiği hâli), her aday gap için önce temel küme kurulur, `report_stable_gaps`'te aynı `(research_id, kind, basis_fingerprint)` aranır; bulunursa `stable_gap_id` o satıra bağlanır ve `last_seen_report_id` güncellenir, bulunmazsa yeni satır açılır. Dilim 3'ün `research_candidates.source_gap_id` alanı bu notun önerisiyle **`report_gaps.id` yerine `report_stable_gaps.id`'ye** bağlanmalıdır; bu, dilim 3'ün notunda düzeltilmesi gereken bir noktadır (§10).
-
-**Ne kırılıyor (dürüstçe).**
-
-1. **Sıra bağımlılığı.** `conflicting_evidence` gap'inin temel kümesi V'nin **kararlı** iddia kimliğine dayanır; bu yüzden V bölümü yeniden yazıldığında önce V'nin iddia eşleştirmesi (yukarıdaki adım) tamamlanmalı, VI'nın gap fingerprint'i ondan SONRA hesaplanmalıdır. Sıra ters çevrilirse iki farklı gerçek çelişki aynı kararlı kimlikte birleşebilir ya da aynı çelişki iki ayrı kimlik alabilir. Bu dilim bu sırayı `sections.py::run_report`'un tur mantığına (VI, V'den sonraki turda zaten çalışıyor, dilim 1 §4) bir ön koşul olarak ekler, ama bunun her durumda doğru sırayı garanti ettiği **ayrıca test edilmeli**.
-2. **İnsan alıntı düzenlemesi kendi geleceğini bozabilir.** Sahip bir iddianın alıntı kümesini değiştirirse (`keep_citations_from` ile bir kısmını düşürürse), bir SONRAKİ rewrite'ta o iddianın `citation_overlap` hesaplaması artık farklı bir kümeye dayanır; bu, kendi düzenlemesinin gelecekte kendisiyle eşleşmemesine (dolayısıyla düzenlemesinin kaybolmasına) yol açabilir. Kod bunu önleyemez, yalnız görünür kılabilir (§3 son madde).
-3. **Zaten var olan veri yok.** Dilim 3 henüz kodda olmadığı için `source_gap_id`'nin `report_gaps.id`'ye mi `report_stable_gaps.id`'ye mi bağlanacağı konusunda geriye dönük bir geçiş sorunu **şimdilik yok**; ama dilim 3 bu dilimden önce uygulanırsa (bağımlılık sırası tersine dönerse), geriye dönük bir migration (`research_candidates.source_gap_id`'yi var olan `report_gaps.id`'lerden `report_stable_gaps.id`'lere birebir eşleyerek doldurma) gerekir. §11 soru 8, sıralamayı buna göre soruyor.
-4. **Kararlılık bir garanti değil, bir en iyi çabadır.** Bu tasarım "aynı gerçek gap her zaman aynı kimliği alır" demez; "temel kümesi değişmeyen bir gap aynı kimliği korur" der. Temel kümenin kendisi değişirse (ör. sütun silinip yeniden eklenirse, farklı bir `column_id` ile), kimlik de değişir — bu bir hata değil, dürüst bir sınırdır.
-
-## 6. Durum makineleri
-
-Dilim 1'in üç durum kümesi (run/bölüm/rapor, p6-report-design.md §4.2) **değişmez**. Bu dilim iki şey ekler; ikisi de yeni bir `status` sütunu değil, ayrı işaretlerdir.
-
-| Katman | Yeni alan | Değerler | Kim yazar | Kim okur |
-|---|---|---|---|---|
-| İddia (`report_claims`) | `current_revision_id`, `version` | — (append-only işaretçi) | `report_claim_revisions` yazan uç | Rapor görünümü, düzenleme formu |
-| Bölüm yeniden yazımı (`report_section_revisions`) | `status` | `pending`, `accepted`, `dismissed` | Yeniden yazma isteği (`pending`), kabul/red ucu | Rapor görünümü (S3 bandı) |
-| Bölüm bayatlaması (`report_stale_flags`) | `acknowledged_at` | `NULL` (canlı) / dolu (kabul edilmiş) | Kanıtı değiştiren her mutasyon (yazar), kabul ucu (damgalar) | Rapor görünümü, zaman çizelgesi |
-
-Bölüm yeniden yazımının kabul edilmesi, dilim 1'in mevcut akışını (yeni claim'leri `report_claims`'e yazma, montaj denetimini çalıştırma) **yeniden kullanır**; tek fark, sonucun doğrudan `report_sections.status='valid'`e yazılması yerine önce `report_section_revisions`'ta bekletilmesidir (yalnız o bölümde canlı `human_edit` varsa; §2 S3/S4). Bir `report_section_revisions` kabul edildiğinde, o bölüme bağlı bütün açık `report_stale_flags` satırları da kapatılır (kabul, yeni kanıtla yeniden yazıldığı için o bayrakların nedeni ortadan kalkmıştır) — ama S3'ün "eşleşmeyen düzenlemeler" uyarısı ayrıca gösterilir.
-
-`reports.report_version`'ın düzenleme sonrası davranışı (yeni numara mı, aynı numara mı) §11 soru 2'ye bağlıdır; bu notun veri modeli her iki seçeneği de destekler (`finalize()` dilim 1'de zaten var, bu dilim yalnız onu düzenleme sonrasında tekrar çağırılabilir hâle getirir).
-
-## 7. Arayüz
-
-`.impeccable.md`'ye uyulur: pil yalnız kısa durum için, renk tek başına anlam taşımaz, hiyerarşi düz, hareket yalnız canlı işi gösterir. Aşağıda yalnız metin ve davranış var, görsel maket yok.
-
-1. **İddia düzenleme.** `ReportView.tsx`'te bir iddiaya tıklayınca (kanıt görünümü açıkken ya da ayrı bir "Edit" eylemiyle) düz metin alanı açılır; altında geçerli kanıt listesi (mevcut kanıt sayfasıyla aynı bileşen) ve her birinin yanında "Kaldır" bağlantısı durur (kaldırılan kanıt geri getirilebilir, kaydedilmeden önce). Kaydet düğmesi `expected_version`'ı taşır; 409'da tables.py'nin bugünkü ("Uygulanmadı… sayfa son durumu gösteriyor") mesajı aynen kullanılır ve taslak metin formda kalır. Kaydedilince "Elle düzenlendi" işareti (metinle, ayrı bir renk sözlüğü icat edilmeden) ve varsa uyarılar (banned word/count/math) düz metinle listelenir.
-2. **Bölüm yeniden yazma bandı (S3).** Bölümün üstünde: "Model bu bölüm için yeni bir taslak yazdı · {n} iddiadan {k} tanesi elle düzenlenmişti" ve iki eylem: "Bu taslağı kullan" (yeni bölümü açar, eski/yeni karşılaştırmasını gösterir, insan düzenlemesi eşleşmeyen her iddia için ayrı bir satır: "Bu düzenleme yeni yazımda karşılığı bulunamadı: '…'") ve "Mevcut kalsın" (öneriyi `dismissed` yapar, bölüm değişmez).
-3. **Stale bandı (bölüm düzeyi).** Rapor tasarımının rapor-düzeyi bandının ("Bu rapordan sonra kanıt değişti") **altında**, ilgili bölümlerin başında ayrı bir satır: "Bu bölüm bu rapordan sonra değişen kanıta dayanıyor" ve nedeni düz metinle ("bir hücre düzenlendi", "bir kaynak araştırmadan çıkarıldı", "bir çizgi bağı değişti", "bir adayın kill-search durumu değişti"). Üç eylem: "Yeniden yaz" (S3/S4 akışını başlatır), "Böyle kalsın" (kabul), "Elle düzelt" (§1'e gider). Kanıt görünümü açıkken hangi kayıtların (hücre/kaynak/çizgi bağı/aday) tetiklediği ayrıca listelenir; kapalıyken yalnız özet cümle görünür.
-4. **Kanıt görünümü işaretleri (dilim 3 varsa).** VI/VII'deki bir adayın rozeti (`not_run`/`narrowed`/`closed`/`open`) her zaman canlı gösterilir (kod hesaplar, bekleme gerekmez); rozetin yanındaki cümle stale ise ayrı bir küçük not ("bu cümle güncel durumu yansıtmıyor olabilir") ile işaretlenir, rozetle karıştırılmaz.
-5. **Yayımlama.** "Yayımla" eylemi yalnız bekleyen bölüm önerisi ve canlı stale bayrağı olmayan bir raporda tek adımdır; ikisinden biri varsa düğme devre dışıdır ve nedeni yazılır ("2 bölümde yeniden yazma önerisi bekliyor", "3 bölüm bayat işaretli").
-6. Masaüstü ve 390 px, açık ve koyu tema; klavyeyle düzenleme formuna erişim ve kaydetme.
-
-## 8. Testler (taslak)
-
-**Depolama ve eşzamanlılık**
-
-- `edit_claim` (adı önerilir, `edit_cell`in birebir eşi): boş revizyon yokken model sonucu geçerli olur; insan yazısı varken model sonucu öneri kalır; `expected_version` uyuşmazlığında 409, form korunur; aynı `Idempotency-Key` ile tekrar aynı revizyonu döner.
-- `keep_citations_from` yalnız aynı iddianın bir revizyonundan kanıt taşır; başka iddianın kanıtını taşımaya çalışmak reddedilir.
-- Düzenlenmiş iddiada banned-word/count/math denetimi çalışır (uyarı, ret değil); kalıp denetimi hiç çalışmaz (bir kalıba uymayan insan cümlesi hatasız kaydedilir).
-- `report_claim_revisions`/`report_section_revisions` üzerinde güncelleme/silme tetikleyicisi reddeder; yalnız purge yetkisiyle silinir.
-
-**Bölüm yeniden yazma**
-
-- İnsan düzenlemesi olmayan bölüm: yeniden yazma doğrudan `valid` olur, `report_section_revisions` açılmaz.
-- İnsan düzenlemesi olan bölüm: yeniden yazma `pending` bir `report_section_revisions` açar, eski bölüm değişmeden kalır; kabul eski iddiaları geçmişe taşır ve eşleşmeyenleri listeler; red eski bölümü hiç değiştirmez.
-- Kabul, o bölümün açık stale bayraklarını kapatır; red kapatmaz.
-
-**Kimlik eşleştirme (§5)**
-
-- Aynı kanıt kümesiyle yeniden yazılan bir iddia aynı `stable_claim_id`'yi korur (yüksek `citation_overlap`).
-- Kanıt kümesi tamamen değişen bir iddia eşleşmez (`new_claim_key = NULL`), insan düzenlemesi taşınmaz ve ayrı listelenir.
-- İki eşit derecede iyi aday olduğunda `paragraph_delta` küçük olan seçilir; o da eşitse `text_similarity` karar verir.
-- `corpus_absence` gap'i aynı `column_id` ile iki farklı rapor versiyonunda aynı `stable_gap_id`'yi alır; `column_id` değişince yeni kimlik açılır.
-- `conflicting_evidence` gap'inin fingerprint'i V'nin kararlı kimliğine dayanır: V yeniden yazılıp aynı çelişki aynı kanıtla yeniden kurulduğunda `stable_gap_id` değişmez.
-
-**Bayatlama**
-
-- Hücre `human_edit`/`cell_recheck` sonrası: o hücreye `report_citation_links` ile bağlı her iddianın bölümüne canlı bir bayrak açılır; bağlı olmayan bölümlere açılmaz.
-- Kaynak araştırmadan çıkarılır/geri gelir (D50): o satırın hücrelerine dayanan bölümler bayraklanır.
-- Sütun revizyonu değişir: o sütuna dayanan eksen/bölümler bayraklanır.
-- Çizgi bağı düzenlenir (dilim 2 varsa): III'ün ilgili cümlesi ve bağlı VI/VII adayı bayraklanır; dilim 2 kodda yokken bu test atlanır/inert kalır (`report_section_dependencies` boş).
-- Aday durumu değişir (dilim 3 varsa): `kill_search_status` rozeti güncellenir (bayraksız); VI/VII'nin metni bayraklanır.
-- Plan (`scope_statement`) düzenlenir: ona bağlı bütün bölümler bayraklanır (rapor tasarımı §5 son cümlesi).
-- "Böyle kalsın": bütün canlı bayraklar `acknowledged_at` alır; bir sonraki bağımsız değişiklik yeni, ayrı bir canlı bayrak açar (eskisini yeniden açmaz).
-- Bir bölümün rewrite'ı, ona `body_refs`/`gap_refs` ile bağlı diğer bölümleri (`report_section_dependencies(dep_kind='body_ref_section')`) bayraklar.
-
-**T09 kabul senaryosu (raporlarda)**
-
-- a. İnsan bir iddiayı düzenlerken aynı anda o bölüm için bir `cell_recheck` sonucu gelir: insanın metni değişmez, stale bandı açılır (öneri değil, çünkü bu bir bölüm yeniden yazımı değil bir kanıt değişimidir).
-- b. İki sekme aynı iddiayı düzenler: ilk kaydeden kazanır, ikinci 409 alır ve taslağı korur.
-- c. İnsan düzenlemesi olan bölüm yeniden yazılır, sahip "mevcut kalsın" der: eski bölüm ve insan düzenlemesi aynen kalır, öneri `dismissed` olarak saklanır (silinmez).
-- d. İnsan düzenlemesi olan bölüm yeniden yazılır, sahip "bu taslağı kullan" der: eşleşen iddialar yeni metne geçer, eşleşmeyen insan düzenlemesi kaybolduğu açıkça bildirilir.
-- e. Rapor yayımlanır, sonra bir hücre düzenlenir: yayımlı `report_version` değişmez, yalnız stale bandı açılır; dışa aktarılan eski kopya etkilenmez (yeni bir dışa aktarım isteği banda göre uyarı taşır).
-- f. Kill-search durumu `not_run`dan `closed`a geçer (dilim 3 varsa): rozet hemen günceli gösterir, VI/VII metni bayraklanır, sahip "yeniden yaz" demeden metin değişmez.
-
-**Web**
-
-- `npm run build`, `npm run lint`.
-- Playwright (fixture sunucusu, scriptlenmiş model): bir iddia düzenlenir → kaydedilir → "Elle düzenlendi" görünür → bölüm yeniden yazdırılır → bekleyen taslak bandı → "Bu taslağı kullan" → eski/yeni karşılaştırma → kabul. Ayrı bir senaryo: bir kanıt tablosu hücresi düzenlenir → rapor açılır → stale bandı görünür → "Böyle kalsın" → bant kapanır. Masaüstü ve 390 px, açık ve koyu.
-
-**Bu dilimde geçmeyecekler:** rapor planının `research_questions`/`glossary`/`axes` alanlarının elle düzenlenmesi (§4); dilim 2/3 kodda yoksa onlara bağlı bayatlama yollarının gerçek model ile ölçülmesi (yalnız sentetik/inert testler); iddia metninin cümle-cümle düzenlenmesi (birim: iddia, §11 soru 1); toplu "bütün raporu yeniden yaz" eylemi (yalnız bölüm başına).
-
-## 9. P6 kapanış ölçümü
-
-P5 dilim 5'in kuralı aynen geçerli: beklenti koşudan önce yazılır ve commit'lenir; sonuç sonradan yorumlanıp beklentiye uydurulmaz; korpus kapsamı ile rapor kalitesi ayrı raporlanır ve biri iyileşince diğeri iyileşmiş sayılmaz; bütün değerlendirmeler aksi belirtilmedikçe Claude'undur, "insan denetimi" değildir.
-
-### 9.1 Ne ölçülür
-
-P6 dilim 1'in kendi ölçüm tablosu zaten var (p6-report-design.md §13, R1–R11; dilim 1'in kendi `docs/product/p6-slice1-report-expectations.md`'i ayrı, erken bir koşuda bunları dondurur). Bu dilimin kapanış ölçümü o tabloyu **tekrarlamaz**, üstüne ekler:
-
-| # | Ne | Payda ve tanım | Kaynak |
+| # | Taslak diyordu | `58676f1`'de durum | Bu notta karşılığı |
 |---|---|---|---|
-| — | Korpus kapsamı (M1/M3, D55'in devamı) | Bilinen eserlerden bulunan/dahil edilen oranı; DEIXIS yollarıyla PDF metni alma oranı | P5 dilim 5 aracının aynısı, yeni koşu |
-| — | Rapor kalitesi (R1–R11) | p6-report-design.md §13 | dilim 1'in kendi ölçümü, burada yalnız referans verilir, tekrar koşulmaz |
-| — | Chain of Ideas metrikleri (R12–R17) | dilim 2'nin notu, §14 (dilim 2 kabul edilip uygulanmışsa) | dilim 2'nin ölçüm bölümü |
-| — | Kill-search metrikleri | dilim 3'ün notu, §13 (dilim 3 kabul edilip uygulanmışsa) | dilim 3'ün ölçüm bölümü |
-| R18 | Düzenleme bütünlüğü | T09 senaryolarının (§8) hepsi geçti mi/kaçı geçti; kaç insan düzenlemesi bir rewrite'tan sonra kayboldu (eşleşmedi) / toplam insan düzenlemesi | bu dilim |
-| R19 | Bayatlama doğruluğu | senaryolu bir kanıt değişikliği dizisinde (§9.3), beklenen bayrağın kaçı gerçekten açıldı (yanlış negatif) ve beklenmeyen kaçı açıldı (yanlış pozitif) | bu dilim |
-| R20 | Kimlik kararlılığı | bir rewrite'ta eşleşmesi beklenen N iddiadan kaçı gerçekten eşleşti (§5 eşiğinin gerçek verideki isabeti); `stable_gap_id`'nin rapor versiyonları arasında korunma oranı | bu dilim |
-| R21 | Süre ve maliyet (düzenleme dahil) | bir bölüm rewrite'ının süresi; bayrak yazma işleminin eklediği ek gecikme (varsa) | bu dilim |
+| F1 | Dilim 1 kodda yok, `staleBand` yok, rapor ekranı yok | Hepsi var (D112, D113, D116, D118, D120): rapor koşusu, 14 montaj kuralı, `report_review`, ekran, Markdown dışa aktarım, düzenleme formu, geçmiş, geri yükleme, "Böyle kalsın" | Bu dilim yalnız iki eksiği kurar (§Kısaca) |
+| F2 | "Yayımla" düzenleme sonrası yeni `report_version` verir (Q2a), montaj denetimi insan metniyle yeniden koşar | Hiçbiri yok. Üstelik montaj kuralları `report_claims.text`'i okur, güncel düzenleme sürümünü değil (`assembly._claims`, `_section_texts`); `reports.report_version` `finalize` ile bir kez atanır ve `(research_id, report_version)` benzersizdir | "Yayımla" ve yeni numara ertelendi (§12). Asıl boşluk, düzenlenmiş metnin denetlenmemesidir: ayrı bir okuma modu ve eylem (§2, §5) |
+| F3 | Bölüm yeniden yazma önerisi (S3/S4), `report_section_revisions` | Bitmiş bir rapor için bölüm yeniden yazma işlemi yok; `save_claims` insan düzenlemesi olan bölümü değiştirmeyi reddeder. Gerçek-model bir rapor, sabit P16 serisinde hiç tamamlanmadı (D124, D126, D128) | Ertelendi (§12) |
+| F4 | Kararlı kimlik (`report_stable_claims`, `report_claim_matches`, `report_stable_gaps`); dilim 3'ün `source_gap_id`'si ona bağlanır | Yeniden yazma yok, eşleştirilecek bir şey yok; dilim 3 aday kökenini düz metin ve parmak iziyle kopyalar, canlı gap satırına bağlanmaz (D143) | Ertelendi. **Dilim 4 artık dilim 3'ün bıraktığı kimlik eşleştirmesini üstlenmez**; bu D143'ün §15'inde "dilim 4" diye yazılı, kayıt düzeltilir (§12, D147) |
+| F5 | Bayatlama yazma anında bayrakla (§3, §4) | Okuma anında hesaplanıyor (D112, soru 6'daki sapma); tablo `report_stale_acknowledgements` | Değişmez; bu dilim yalnız atıf kaldırmanın bayatlamaya etkisini tanımlar (§4) |
+| F6 | `report_claim_revisions` `kind IN ('model_write','human_edit','human_restore')`, `keep_citations` | `0056`: `kind IN ('human_edit','human_restore')`, `restored_from`, `warnings_json`; atıf bilgisi yok; metin değişmeden düzenleme reddedilir | Yeni migration `0056`'ya dokunmaz; yeni sütun/tablo ekler (§6) |
+| F7 | Taslak "dilim 1 kodda yok" sonucuna göre yazılmıştı; §0 (29 Eylül) ve D112 "18 Eylül'de ilk tam rapor `valid` bitti (`4582b64`)" der | `4582b64` gerçek bir commit (kopya kütüphanede `gpt-5.6-luna` ile 11/11 bölüm, 24 model çağrısı); ama dondurulmuş P16 ölçüm serisi hiçbir tam rapor üretemedi (D124, D126, D128) ve bu ilk rapor `report_review`, D127 tutamaçları ve sekiz montaj kuralından **önceydi** | İkisi çelişmez ama ayrı iddiadır: bu not "gerçek modelle tamamlanmış bir rapor kaydı var" demez; bugünkü kodla tamamlanmış gerçek-model rapor yok. Ölçüm bu yüzden P9'a taşındı (§10) |
+| F8 | `edited_after_version` düzenleme işaretidir | Taslak rapor (`report_version` boş) düzenlenince `edited_after_version = null` olur ve ekran/dışa aktarım cümlesi kaybolur (`views.report_view`, `export.py`) | Bağımsız bir `has_human_edits` alanı eklenir (§2) |
+| F9 | Atıf kaldırma, kaynağın korunması | `research_cites_asset` ve `asset_impact` rapor atıflarını saymıyor (yalnız cevap, hücre, çizgi bağı, aday kanıtı); `cited_source_versions` sayıyor | Atıf kaldırmanın kaynak koruması bu açığı kapatmadan güvenli olmaz: E2'nin içinde kapatılır (§7) |
 
-Payda sıfırsa metrik "ölçülemedi" yazılır (P5 dilim 5 kuralı), 0 ya da 1 diye değil.
+## 1. Kodda bugün olan (`58676f1`'de doğrulandı)
 
-### 9.2 P6 çıkış koşulu ile ölçüm satırlarının eşlemesi
-
-`docs/product/implementation-plan.md` §9 tablosundaki P6 çıkış koşulu üç parçadır; her biri hangi ölçüm satırıyla gösterildiği aşağıda açıkça yazılır — plan yalnız bunu **iddia eder**, ölçüm bunu **gösterip göstermediğini** söyler:
-
-| Çıkış koşulu parçası | Hangi ölçüm satırı | Ne gösterir, ne göstermez |
+| Parça | Durum | Bu dilimde kullanımı |
 |---|---|---|
-| "Yakın çalışma/karşı kanıt/erişim sınırı doğru iddiaya bağlanır" | dilim 3'ün kill-search metrikleri (S1–S8 senaryoları, "Kim neyi doğrular" tablosu) | Matris hücrelerinin yapısal olarak doğru kaynağa bağlandığını gösterir; ilişkinin (`explicit_support` vb.) **semantik olarak doğru** okunduğunu göstermez — bu Claude'un okumasıdır, bağımsız doğrulama değildir. |
-| "Boş arama özgünlük sayılmaz" | dilim 3'ün S2/S3 senaryoları + bu dilimin R19 (VI/VII metninin `open` durumunda "novel"/"gap" sözcüğü taşımadığının montaj denetimi) | Yasak sözcük listesinin kod tarafından arandığını gösterir; adayın **gerçekten** özgün olup olmadığını hiçbir zaman göstermez (kill-search bir yokluk kanıtı değildir, AGENTS.md). |
-| "Düzenlenmiş rapor korunur" | R18 (düzenleme bütünlüğü), T09 senaryoları (§8) | İnsan düzenlemesinin model tarafından ezilmediğini, eşleşme bulunamadığında bunun görünür olduğunu gösterir; kimlik eşleştirmesinin **her durumda** doğru eşleştiğini göstermez (R20 bunun isabet oranını ayrıca ölçer, %100 değildir). |
+| `report_claim_revisions` (`0056`), `report_claims.current_revision_id`/`version`, `ReportStore.edit_claim` | Eklemeli; `expected_version` (409), `Idempotency-Key` (araştırma kapsamlı, başka iddiada çakışma), yalnız `human_edit`/`human_restore`; rapor koşusu bitmeden 409; metin/kısıtlı doğrulamalar (`math_not_well_formed`, `count_not_rechecked`); boş ya da aynı metin 422 | Aynen kalır; yalnız "yalnız atıf değişen" düzenleme ve etkin atıf kümesi eklenir (§2, §6) |
+| `ReportStore.evidence_changes`, `acknowledge_changes`, `report_stale_acknowledgements` | Okuma anında bayatlama; rapor düzeyi sayılar anlık görüntüyle; bölüm düzeyi atıf ve `body_ref`/`gap_ref` üzerinden; `not_checked: ["passages"]` | Sayılar değişmez; bölüm düzeyi yalnız etkin atıflardan türer (§4) |
+| `assembly.run_assembly_checks` (14 kural, D116) | `report_claims.text` ve `report_citation_links` okur; `ReportStore.finalize` sonucu `valid`/`draft` | Temel (taban) davranışı değişmez; yeni "güncel" kipi eklenir (§5) |
+| `domain/contracts.py` VIII sayı yeniden anma denetimi (~1444) | Bölüm yazımında VIII iddialarının kendi sayısını yeniden söylemesini reddeder; montaj kuralı değildir | Güncel kipte düzenlenmiş VIII iddialarına da uygulanır (§5) |
+| `report_view` | `edited_after_version`, `evidence_changes`, iddia başına `revisions`, `model_text`, `warnings`, `edited` | Eklenir: `has_human_edits`, `edit_check`, iddia başına etkin atıflar ve `evidence_basis` (§2, §8) |
+| `report/export.py` | "Edited by hand after version n; edited text was not checked again." | Üç durumlu cümle (§2) |
+| `ReportView.tsx`, `api.ts` | Düzenle, geçmiş, geri yükle, "Böyle kalsın" | Atıf kaldırma, "Düzenlemeleri denetle" (E3) |
+| `Store.purge_research`, `cited_source_versions`, `research_cites_asset`, `asset_impact`, backup | Rapor tabloları silme sırasında; `research_cites_asset`/`asset_impact` rapor atıfını saymaz (F9) | Yeni tablolar eklenir, açık kapatılır (§7) |
+| `reports.report_version` | `finalize` ile bir kez; temel model sürümünü tanımlar | Değişmez; düzenlemeler ayrı görünür (§12 "Yayımla") |
 
-### 9.3 Senaryolar
+## 2. Akış
 
-**S1. Tutulmuş soru, uçtan uca.** P5 dilim 5'in S1/S2 desenini izleyen, sahibin literatürünü bildiği bir soru (Kurt 2017 kümesi yeniden kullanılabilir ya da yeni bir tutulmuş küme; §11 soru 9) kopya kütüphanede baştan çalıştırılır: arama → tarama → PDF toplama → kanıt tablosu doldurma (eş zamanlı, dilim 0) → rapor yazımı (dilim 1) → [varsa] Chain of Ideas (dilim 2) → [varsa] bir aday üzerinde kill-search (dilim 3) → sahip ya da Claude bir iddiayı elle düzenler → bir bölüm yeniden yazdırılır → bir hücre değiştirilir, stale bandı gözlenir.
+**Düzenlemeleri denetle** (kod; model yok, yayım yok, durum ve numara değişmez). Rapor koşusu bitmiş (`valid` ya da `draft`) bir raporda sahip "Düzenlemeleri denetle" der. Kod:
+1. Güncel kipte denetimi koşar (§5): düzenlenmiş iddiaların güncel metni ve etkin atıf kümesi, düzenlenmemiş iddialarda ve bölüm gövdelerinde temel veri. Çalıştırılan ve atlanan kurallar açıkça listelenir.
+2. Sonucu `report_edit_checks`'e **eklemeli** yazar: maddeler (`rule`, `section_id`, `detail`, `severity` = `error` | `warning`), çalıştırılan ve atlanan kurallar ve **girdi parmak izi**. Parmak izi, denetleyici sürümünü ve denetimin okuduğu **her** girdiyi içeren kanonik bir JSON'un sha256'sıdır: denetleyici sürümü; her iddianın kimliği, güncel revizyon kimliği ve güncel metninin özeti; etkin atıf kimlikleri ve çapa metinleri; her bölümün saklı `draft_json`, `validation` ve `word_count` özetleri; plan; anlık görüntü içeriğinin özeti; `report_gaps` satırları; çapaların bulunduğu pasajların kimliği ve metin özeti (`text_source` dahil); kaynakça alanları (`references` için okunan kaynak sürümü alanları). Bu liste bir **bağımlılık manifestosudur** ve E1'de şu girdileri açıkça kapsar: her bölümün denetimin seçtiği adım girdisi (`_section_payload`'ın son girdi seçimi: adım ve girdi kimliği ile yük özeti; gap, denklem ve kalıp denetimleri bunu okur); iddia yapısı (`claim_key`, paragraf, `support_type`, `table_ref`, `equation_ref`, `axis_id`, `count_json`, `equation_origin_json`, `body_ref`/`gap_ref`); pasaj sahipliği ve türü; rapor dili ve kalıp girdileri (`report_phrase_repairs` son satırları); eksik girdi durumları da açık bir "yok" değeriyle manifestoya girer. Hiçbir bileşenin değişmezliği varsayılmaz (`report_snapshot` için tetikleyici yok): her biri içerik özetiyle girer. Değerlendirme ve kayıt **tek işlemde, tek tutarlı okuma durumu üzerinde** yapılır; yalnız seçilen adım girdisi değiştiğinde parmak izinin değiştiği bir regresyon testiyle kanıtlanır. Aynı parmak iziyle ikinci istek yeni satır yazmaz, var olan satırı döner; denetleyici sürümü parmak izinin içinde olduğundan sürüm yükseltmesi yeni bir kayıt yazar.
+3. Raporun durumunu, sürüm numarasını, bölüm durumlarını, `validation`'ını ya da `report_review` kaydını **değiştirmez**. Temel modelin D118 incelemesi görünümde modelin yazdığı sürüme bağlı kalır ("model temel sürümü incelendi; düzenlemeler incelenmedi").
+4. Görünüm ve dışa aktarım son denetimi okur ve parmak iziyle bugünkü durumu karşılaştırır: **güncel** (hiçbir iddia revizyonu, atıf kümesi, anlık görüntü ya da denetleyici sürümü sonradan değişmedi) ya da **eski** (değişti; kayıt tarihsel olarak kalır).
 
-**S2. Tekrar.** Rapor yazımı aynı girdilerle bir kez daha çalıştırılır (P5 dilim 5 S3 deseni); iki çalışma arasındaki fark, düzenleme etkisi sayılmadan önce bilinmesi gereken gürültüdür.
+Cümle, görünümde ve dışa aktarımda: denetim yoksa "Elle düzenlendi; düzenlenen metin yeniden denetlenmedi" (bugünkü), güncel denetim varsa "Elle düzenlendi; düzenlenen metin kod kurallarıyla denetlendi ({tarih}): {n} hata, {m} uyarı; anlam desteği denetlenmedi", eski denetim varsa "... denetim sonradan değişen düzenlemeleri kapsamıyor". `has_human_edits` düzenleme varsa her durumda doğrudur (taslak raporda `edited_after_version = null` olsa bile; F8).
 
-**S3. Düzenleme ve bayatlama senaryosu (yeni, dondurulmuş bir dizi).** Ölçümden ÖNCE yazılan, sabit bir olay dizisi (§8'deki testlerin gerçek-model karşılığı, ama burada model sonucu değil bayrak/eşleşme davranışı ölçülür):
+**Atıf kaldırma** (kod işi). İddia düzenleme isteği bir `link_ids` alanı taşıyabilir: iddianın **özgün** atıflarından tutulacak küme. Alan yoksa güncel küme taşınır. Her düzenleme ya da geri yükleme, iddianın etkin atıf kümesini eksiksiz kaydeden yeni bir revizyondur; yalnız atıfı değişen düzenleme (metin aynı) geçerlidir, ikisi de aynıysa 422. Geri yükleme (`restore_from`) o revizyonun **metnini ve atıf kümesini** birlikte geri getirir; `'model'` özgün metni ve bütün özgün atıfları. Atıf eklemek yoktur; yalnız iddianın özgün atıflarından seçilir. Bir iddianın etkin atıfı sıfır olursa iddia "Doğrudan atıf yok" diye gösterilir: `body_ref`, `gap_ref` ve `count` kayıtları hâlâ bir dayanak verebilir, bu yüzden bu bir ret değil, görünür bir durumdur.
 
-1. Geçerli bir rapor üret.
-2. IV'te bir iddiayı elle düzenle (kanıtı koru).
-3. Kanıt tablosunda o iddianın dayandığı bir hücreyi `cell_recheck` ile değiştir → **beklenen: IV'te bayrak açılır, insan düzenlemesi değişmez.**
-4. Bir kaynağı araştırmadan çıkar (D50) → **beklenen: o satırın hücrelerine dayanan bölümlerde bayrak; rapor düzeyi bant da açılır.**
-5. IV'ü yeniden yazdır → **beklenen: 2. adımdaki düzenleme eşleşirse korunur (karşılaştırmalı gösterilir), eşleşmezse "eşleşmedi" diye sayılır; 3. ve 4. adımın açtığı bayraklar kapanır.**
-6. [dilim 2 varsa] bir çizgi bağını sil → **beklenen: III'ün ilgili cümlesi ve varsa VI adayı bayraklanır.**
-7. [dilim 3 varsa] bir adayın kill-search'ünü bitir → **beklenen: rozet hemen güncellenir, VI/VII metni bayraklanır.**
-8. Raporu yayımla → **beklenen: canlı bayrak yokken yayım başarılı, `report_version` atanır/artar (§11 soru 2'nin cevabına göre).**
+## 3. Senaryolar
 
-Her adımda "beklenen" ile "gerçekleşen" satır satır karşılaştırılır; R19/R20 buradan hesaplanır.
+**S1. Düzenlenmiş iddia yasak sözcük taşıyor.** Sahip bir iddiayı "…bu bir boşluk" diye düzenler → kayıt serbest (D112: uyarı/ret yok) → "Düzenlemeleri denetle" yasak sözcüğü hata olarak listeler, rapor durumu `valid` kalır, sahip metni düzeltebilir.
+**S2. Sayı bozulması.** `count` taşıyan bir iddiada sahip 7'yi 9 yapar → denetim `count_number_mismatch` yazar (üye sayıları donuk, metindeki tamsayı uyuşmuyor); sahip sayıyı sözcükle yazarsa ("dokuz") ya da metinden tamsayıyı kaldırırsa karşılaştırılacak tamsayı kalmaz ve denetim bu iddiayı `count_text_not_checked` diye listeler, "temiz" saymaz.
+**S3. Yanlış atıf.** Sahip bir iddianın üç atfından birinin aslında başka bir kaynağa ait olduğunu görür → metni değiştirmeden `link_ids`'ten onu çıkarır → iddia iki atıfla görünür, geçmişte üç atıflı sürüm durur, geri yükleme üçünü de geri getirir. Raporun anlık görüntü değişikliği sayıları değişmez.
+**S4. Hepsi kaldırıldı.** Sahip iddianın bütün atıflarını kaldırır → iddia "Doğrudan atıf yok" gösterir, `support_type` temel veri olarak kalır ama etiketlenir ("modelin yazdığı sürümün türü"); "atıflar bulundu" başarısı üretilmez; `body_ref` ile buna bağlı Özet/I/IX iddiaları, düzenlenmiş bir temele dayandıkları için işaretlenir.
+**S5. Denetim eskir.** Denetimden sonra sahip bir iddiayı yeniden düzenler → görünüm denetimi "eski" gösterir; yeni denetim yeni satırdır, eskisi silinmez.
+**S6. İki sekme.** Biri atıf kaldırır, öteki eski sürümle düzenler → `expected_version` uyuşmazlığı 409, ikincinin taslağı formda kalır (D113 deseni).
+**S7. Kaynak sonradan araştırmadan çıkar.** Atfı kaldırılmış bir iddia o kaynağa artık atıf yapmıyorsa, kaynak çıkışı o bölümde işaret açmaz; ama rapor düzeyi sayı (anlık görüntüyle) hâlâ "bir kaynak çıktı" der.
 
-### 9.4 Kurallar (P5 dilim 5'ten aynen)
+## 4. Kurallar
 
-- Canlı kütüphaneye yazılmaz; kopya `DEIXIS_DATA_DIR`, ayrı port (8799 deseni).
-- Bütün gerçek model adımları `gpt-5.6-luna` ile, her rol ayrı ayrı yazılarak.
-- Beklenti çalıştırmadan önce dondurulur ve commit'lenir; sonradan değiştirilmez.
-- Etiket (bilinen küme, dondurulmuş dizi) ile sonuç ayrılır.
-- İnsan ve ajan etiketi ayrı raporlanır; ikisi aynı hücreye baktıysa uyuşma oranı yazılır (§11 soru 5).
-- Ayar/kod değişikliği ölçüm değildir; değişiklikten önceki/sonraki çalışma ayrı raporlanır.
-- Sonuç bir kalite iddiası değildir; tek soru ve tek model genelleme göstermez.
+- **Denetim bir hüküm değil, bir kod kontrolüdür.** Sonuç hiçbir bölümün ya da raporun durumunu yükseltmez, sürüm numarası vermez, "doğrulandı" ya da "yayımlandı" demez; anlam desteği ve atıf-iddia uyumu denetlenmez.
+- **İnsan metni için kalıp (phrasebank) denetimi çalışmaz** (D112 ile aynı): zorunlu kalıp çerçeveleri ve istisna eşleştirmesi düzenlenmiş iddialarda atlanır; kalıp-dışı yasaklı ifadelerin tanılayıcıları (kendi çalışma ve çoğul kaynak ifadeleri) çalışır (§5).
+- **Temel ile güncel ayrı kalır.** `run_assembly_checks`'in mevcut çağrıları (rapor koşusu sonu, `finalize`) aynen modelin metnini denetler; güncel kip yalnız yeni eylemde ve açıkça seçilir. Düzenlemeler `valid` bir raporu `draft` yapmaz.
+- **Etkin atıf tek tanımdan gelir.** Denetim, bayatlama (bölüm düzeyi), numaralandırma, görünüm ve dışa aktarım aynı "etkin atıf" tanımını okur. Özgün bağlar ve çapaları geçmişte kalır, hiçbir bağ silinmez.
+- **Atıf kaldırma bayatlamayı kaynağa göre değiştirir, anlık görüntü sayısını değil.** Bölüm işareti yalnız etkin atıflardan ve `body_ref`/`gap_ref`'ten türer; rapor düzeyi sayılar (değişen hücre, çıkan kaynak, eklenen kaynak, revize sütun) anlık görüntüden hesaplanmaya devam eder ve kaldırılan atıflardan bağımsızdır. Kaldırılmış bir atfın hücresi sonradan değişirse o iddiada işaret açılmaz; atıf geri yüklenirse, işaret o zamanki duruma göre yeniden türer. Kabul anahtarları değişmez.
+- **Düzenlenmiş temel iddiaya bağlı iddialar görünür.** `body_ref`/`gap_ref` ile bir düzenlenmiş iddiaya dayanan başka bölüm iddiası, görünümde "dayandığı iddia elle düzenlendi" notunu taşır; metni değişmez.
+- **Atlanan kural sessiz geçmez.** Bir kural girdisi eksik olduğu için (ör. atıfsız iddia için okuma derinliği) çalışamıyorsa denetim bunu `skipped` yazar ve o iddiayı "temiz" saymaz.
+- **Kaldırma ve denetim geri alınabilir ya da tarihseldir, silinmez.**
 
-### 9.5 Araç
+## 5. Denetim kapsamı
 
-`scripts/p6_eval/measure_report.py` (dilim 1'in planladığı, henüz yazılmadı) genişletilir; ayrı bir araç açılmaz (P5'in "tek ölçüm aracı" tercihiyle tutarlı, dilim 1 §1n). Yeni alt komutlar:
+Her satır kod işlevi adıdır (`assembly.py`); "güncel kip" düzenlenmiş iddiada güncel metni ve etkin atıfı kullanır.
 
-- `measure_report.py edit-diff --report <id> --before <snapshot> --after <snapshot>`: bir rewrite öncesi/sonrası `report_claim_matches` tablosunu okuyup eşleşen/eşleşmeyen iddia sayısını, `citation_overlap` dağılımını yazar (R20).
-- `measure_report.py stale-check --report <id> --events <events.json>`: §9.3'teki dondurulmuş olay dizisini uygular, her adımdan sonra `report_stale_flags`'i okuyup beklenen/gerçekleşen karşılaştırmasını (R19) `stale-review.md`'ye yazar.
-- `measure_report.py edit-score --sheet <review.md>`: işaretlenmiş inceleme sayfasını okuyup R18/R19/R20 özetini üretir (mevcut `score`/`cells-score` deseninin aynısı).
+| Kural | Düzenle değişebilir mi | Güncel kipte |
+|---|---|---|
+| `_check_duplicate_claim_keys`, `_check_body_refs`, `_check_conflict_links` (anahtar/ref yapısı) | Hayır: düzenleme anahtar ya da ref değiştirmez | Temel okuma; `conflict_links` atıfa dayanıyorsa etkin atıf |
+| `_check_glossary_order` | Evet (metin) | Güncel metin |
+| `_check_banned_words` | Evet (iddia metni) | Güncel metin; boşluk/başlık/dayanak metinleri modelin |
+| `_check_count_fields` | Evet (metindeki tamsayılar) | Güncel metin; üyelik donuk. Metinde hiç tamsayı yoksa mevcut kural karşılaştırma yapmaz (`if numbers`); güncel kip bunu başarı saymaz, o iddia için `count_text_not_checked` (atlandı: `no_integer_in_text`) yazar. Sözcükle yazılan sayı da bu yoldan söylenir |
+| `_check_corpus_counts` | Hayır (II/VIII sayıları yapısal, kod yazar) | Temel okuma |
+| `_check_derived_strength`, `_check_bibliography`, `_check_gap_bases`, `_check_anchors` | Atıf kaldırmayla evet | Etkin atıflar; okuma derinliği eksikse `skipped`, sessiz muaf değil |
+| `_check_word_budgets` | Evet (kelime sayısı) | Güncel iddia metinleri ve `insufficient_evidence` sebeplerinden yeniden sayılır (`sections._word_count` işleviyle); depolanan `word_count` değiştirilmez |
+| `_check_equations` | Evet (metin ve atıf) | Güncel metin, etkin atıflar; OCR/Marker kökenli uyarı kuralı korunur |
+| `_check_phrase_frames` | Düzenlenmiş iddiada atlanır | Zorunlu çerçeve ve istisna eşleştirmesi atlanır; `own_work_phrase_in_claim` ve `plural_sources_for_one_source` tanılayıcıları çalışır |
+| `domain/contracts.py` VIII sayı yeniden anma | Evet (VIII iddia metni) | Düzenlenmiş VIII iddialarına uygulanır |
 
-Çıktılar `.local/p6-eval-<tarih>/` altında kalır, depoya girmez; özet `docs/decisions.md`'ye D-girdisi olarak yazılır.
+Düzenleme zamanındaki uyarılar (`math_not_well_formed`, `count_not_rechecked`) değişmez; eşleşmeyen `$` ayraçları kendi başına bulunmaz (bilinen sınır). Bu denetim anlam desteği, bir sayının sözcükle yazılması ya da düzenlenmiş metnin bilimsel doğruluğu hakkında bir şey söylemez.
 
-### 9.6 Ön koşullar — sahipten önce alınması gerekenler
+## 6. Veri modeli (niyet; geçerli SQL migration'dır)
 
-1. Hangi tutulmuş soru(lar) kullanılacağı (Kurt 2017'nin tekrarı mı, yeni bir küme mi; §11 soru 9).
-2. Etiketleme sorumluluğu: sahip mi Claude mu, hangi oranda (§11 soru 5); P5 dilim 5'te sahip bunu Claude'a devretmişti (§11 D55'in kaydı), aynı devrin burada da geçerli olup olmayacağı sorulmalı.
-3. Dilim 2 ve 3'ün bu ölçüme dahil olup olmayacağı — ikisi de henüz kabul edilmiş bir tasarım değil (§11 soru 6).
-4. §9.3'teki dondurulmuş olay dizisinin sahip tarafından gözden geçirilmesi (adımların gerçekçi olup olmadığı).
-5. Sayısal eşiklerin (§5'teki 0.6 Jaccard gibi) bu ölçümden önce mi sonra mı kesinleştirileceği (bu not önerilen bir varsayılan veriyor, ölçülmedi).
+Migration numarası yazım anında `ls backend/deixis/storage/migrations/` ile son numaradan sonra alınır; `0056`'ya dokunulmaz.
 
-## 10. Varsayımlar
+- `report_claim_revisions`'a iki sütun (`ALTER ... ADD COLUMN`; `0056`'daki güncelleme tetikleyicisi şema değişimini engellemez, mevcut satırlar yeniden yazılmaz): `link_count INTEGER` (NULL = eski revizyon: "özgün atıfların tümü"; sayı = bu revizyonun etkin kümesinin boyutu, boş küme için 0) ve `request_hash TEXT` (NULL = eski revizyon; bkz. aşağıdaki idempotency maddesi).
+- `report_claim_revision_links`: `revision_id` → `report_claim_revisions`, `link_id` → `report_citation_links`, `PRIMARY KEY (revision_id, link_id)`; eklemeli (güncelleme tetikleyiciyle reddedilir, silme yalnız araştırma silme yetkisiyle). **Mühürleme:** revizyon satırı `link_count = N` ile eklenir, aynı işlemde N bağ satırı eklenir; `BEFORE INSERT` tetikleyicisi, revizyonun `link_count`'u NULL ise ya da o revizyon için zaten `link_count` kadar satır varsa ekleme yapılmasını reddeder (geç ekleme, boş küme ve eski revizyon dahil), ayrıca bağın revizyonun iddiasına ait olduğunu denetler; saklama işlevi işlem içinde satır sayısının `link_count`'a eşit olduğunu doğrular. Böylece yayımlanmış bir revizyonun atıf kümesi sonradan değişemez; geç ekleme açıkça testlenir. Her yeni revizyon (düzenleme ya da geri yükleme) tam kümeyi yazar; küme önceki revizyondan taşınır, geri yükleme hedef revizyonun kümesini kopyalar (hedef `link_count IS NULL` ise bütün özgün atıflar).
+- **Etkin atıf tanımı** tek yerde (bir SQL görünümü ya da tek bir saklama işlevi; ikisinden hangisi E2'de seçilir): iddianın `current_revision_id`'si yoksa ya da o revizyonun `link_count`'u NULL ise iddianın bütün `report_citation_links` satırları, aksi hâlde `report_claim_revision_links` satırları. Ham `report_citation_links` okuması bu tanım ve tarihsel yollar (geçmiş, yaşam döngüsü) dışında kalmaz; bir test bunu kaynak taramasıyla denetler.
+- `report_edit_checks` (`rec_`): `report_id` → `reports`, `checker_version`, `input_fingerprint`, `result_json`, `created_at`; `UNIQUE (report_id, input_fingerprint)`; eklemeli, silme yalnız araştırma silme yetkisiyle.
+- Düzenleme isteği: `link_ids` (isteğe bağlı; yoksa güncel küme taşınır), metin ve/veya `restore_from`; yalnız-atıf düzenlemesi geçerlidir; `restore_from` ile `text` ya da `link_ids` birlikte 422 (geri yükleme hedefin metnini ve kümesini taşır). **Idempotency uyumu (D112'nin bir davranışı değişir):** D112'de aynı iddiada aynı anahtar, içeriğe bakmadan önceki revizyonu döner ve `test_edit_history_restore_warnings_and_replay` bunu ister; yeni istekler için bu, içerik bağlı olur ve test buna göre güncellenir. Yeni her revizyon `request_hash` saklar: sha256(kanonik JSON: soyulmuş metin ya da `restore_from`, sıralı tekil `link_ids` ya da "belirtilmedi", not). Tekrar: aynı iddia ve anahtar için `request_hash` varsa eşit olmalı (eşitse yazmadan aynı revizyonu döner, `expected_version` bakılmadan, D112'deki sıra), farklıysa `RevisionConflict`; `request_hash` NULL olan eski revizyonlar D112 davranışını korur (yazmadan döner). Belirtilmeyen `link_ids` yeniden gönderimde belirtilmemiş sayılır; ara düzenleme sonrası tekrar özgün revizyonu döner. `edit_claim` revizyonu, atıf kümesini ve olayı tek işlemde yazar.
+- `report_view`: mevcut `claim.evidence` korunur ama yalnız **etkin** atıfları taşır ve her biri `link_id` alır (numara ya da kaynak anahtarı kimlik değildir); iddia başına `original_evidence_count`, `removed_links` (kümede olmayan özgün bağlar: kimlik, çapa, kaynak; geri yükleme için), `evidence_basis` (`direct` | `none`), `support_type_note` ("modelin yazdığı sürümün türü"), düzenlenmiş temele dayanma notu; her revizyonda `link_ids` ve `link_count` (NULL = özgün tümü), böylece geçmiş "3 atıf → 2 atıf" gösterebilir ve "Geri yükle" yalnız metin **ya da** küme farklıysa sunulur; rapor başına `has_human_edits`, `edit_check` (son kayıt ve `current`). Dışa aktarım: atıfı olmayan iddia numara işareti taşımaz ve künye paragrafı "n iddiada doğrudan atıf yok" der; atlanan kurallar ve tarihsel denetim bulguları denetim cümlesinin altında listelenir; D118 incelemesi "modelin temel sürümü" ibaresini korur.
 
-- Bu not, dilim 1'in **planındaki** adları kullanıyor; dilim 1 henüz uygulanmadığı için gerçek kod yürütme sırasında küçük farklar taşıyabilir (dilim 1'in kendi notunun "Uygulama farkları" bölümü gibi, bu not da yürütme sonunda güncellenmeli).
-- Düzenleme birimi **iddiadır** (bölüm ya da cümle değil); bu, §11 soru 1'in önerilen cevabıdır ve veri modeli (§4) buna göre kuruldu. Sahip başka bir birim seçerse §4'ün `report_claim_revisions` tasarımı yeniden gözden geçirilmeli.
-- Rapor planının yalnız `scope_statement` alanı düzenlenebilir; `research_questions`/`glossary`/`axes` bu dilimde düzenlenmez (§4).
-- Kimlik eşleştirme eşikleri (0.6 Jaccard vb.) ölçülmemiş önerilen varsayılanlardır; §9.3'teki ölçüm bunları sınar, gerekirse yürütme sırasında ayarlanır.
-- Dilim 2 ve 3 kodda yokken bu dilimin onlara bağlı kısımları (chain link/candidate bayatlaması, `stable_gap_id`'nin dilim 3 tarafından kullanılması) **inert** kalır: tablolar var ama hiçbir satır yazılmaz, testler sentetik veriyle veya atlanarak geçer. Bu, dilim 4'ün dilim 2/3'ten önce uygulanabileceği varsayımına dayanır (§11 soru 6).
-- Bir bölümün yeniden yazılması hâlâ dilim 1'in "bağımlıları durdurur" kuralına tabidir (§2 karar 11); bu dilim yalnız YAYIMLANMIŞ bir raporun düzenleme-sonrası akışını ekliyor, ilk yazım sırasındaki tur/bağımlılık mantığını değiştirmiyor.
-- "Yayımla" eylemi (§2 S11) bu notun **önerisidir**, dilim 1'in tasarımında yoktu; §11 soru 2 bunu sahibe soruyor. Sahip "her düzenlemede otomatik yeni versiyon" derse §6'daki durum makinesi basitleşir (yayımlama adımı kalkar).
+Durum için tablo yoktur: "güncel/eski" okuma anında parmak iziyle hesaplanır.
 
-## 11. Dilim 1, 2 ve 3'ten beklenenler
+## 7. Yaşam döngüsü, bütünlük ve güvenlik
 
-**Dilim 1'den (rapor çalışması) beklenenler** — bu not bunları olduğu gibi tüketir, üretmez:
+K olmadan, E1–E2'nin içinde:
 
-- `ReportStore`, `reports`, `report_sections`, `report_claims`, `report_claim_refs`, `report_citation_links`, `report_gaps`, `report_snapshot`, `report_phrase_repairs` tabloları ve sütun adları.
-- `report_claims.claim_key`, `report_gaps.gap_id`'nin per-rapor benzersizliği ve bölüm yeniden yazımında yeniden verilmesi kuralı (bu notun §5'i tam olarak bunun üstüne kurulur).
-- `build_snapshot`, `run_assembly_checks`, `run_report_review` fonksiyonları ve montaj denetiminin 14 kuralı (bu dilim onlara dokunmaz, yalnız insan düzenlemesi sonrası yeniden çalıştırır).
-- `report_sections.status` (`pending`/`running`/`valid`/`draft`/`failed`) ve `reports.status` (`in_progress`/`valid`/`draft`) durum makineleri; bu dilim bunları değiştirmez, üstüne ekler.
-- `reports.report_version`'ın yalnız `valid` durumda atanma kuralı (D23/D56 paraleli).
-- Rapor-düzeyi "kanıt değişti" bandı (`report_view`'daki `staleBand`) — bu dilim onu bölüm düzeyine tamamlayıcı olarak genişletir, yerine geçmez.
-- `/api/researches/{id}/reports` uç ailesi ve `ReportView.tsx`/`reportMarkdown.ts` — bu dilim buraya düzenleme formu ve stale bandı ekler.
+1. **Silme.** `purge_research`, `report_edit_checks`'i (E1) ve `report_claim_revision_links`'i (E2) atıfların ve revizyonların **önünde** siler; araştırma çöpe atma ve geri alma her şeyi korur. `purge_sources` ve kaynak koruması tarihsel bağları da sayar: kaldırılmış bir atıf geri yüklenebilir olduğundan, onun geçmişteki pasajı korunur.
+2. **Kaynak/pasaj koruması (F9).** `research_cites_asset` ve `asset_impact` `report_citation_links`'i (etkin ve kaldırılmış) sayar; `asset_impact` yeni bir `report_citations` anahtarı alır. Bu açık dilimden önce vardı; kaldırma onu daha tehlikeli yaptığından burada kapatılır.
+3. **Yedek ve geri yükleme.** Yeni tablolar tam geçmişi korur (revizyon kümeleri, denetim kayıtları, yabancı anahtarlar); testlenir.
+4. **Eşzamanlılık ve tekrar.** `expected_version`, içerik bağlı `Idempotency-Key`, revizyon/küme/olay tek işlemde (kısa, senkron; `await` yok).
+5. **Hiçbir model çağrısı yok.** Hiçbir yeni görev, sözleşme ya da yöntem dosyası yok; `skill_package_hash` değişmez.
 
-**Dilim 2'den (Chain of Ideas) beklenenler:**
+## 8. Arayüz (yalnız davranış)
 
-- `chains`, `chain_members`, `chain_links`, `chain_link_revisions`, `chain_link_evidence`, `chain_end_uncertainties` tabloları (henüz taslak).
-- Çizgi bağı düzenlemesinin `cell_revisions` deseniyle append-only olması (S6, dilim 2 §2) — bu notun §2 S8'i ve §4'ün `report_section_dependencies(dep_kind='chain_link')` satırı buna dayanır.
-- `report_gaps.kind = 'chain_end_uncertainty'` değerinin dilim 1'in genişleyebilir `kind` alanına eklenmesi.
-- **Dilim 2'nin notu bu dilimin konusuna hiç girmiyor** ("stale" kelimesi dilim 2'nin notunda hiç geçmiyor, doğrulandı); yani III/VI'nın çizgi bağı değişikliğinde bayatlaması tamamen bu notun önerisidir, dilim 2 tarafında bir karşılığı yok.
+`.impeccable.md` ve AGENTS.md hiyerarşisi geçerlidir; mevcut bileşenler yeniden kullanılır.
 
-**Dilim 3'ten (kill-search) beklenenler:**
+- **Atıf kaldırma.** Kanıt görünümünde her atfın yanında "Kaldır" (düzenleme formunda; kaydetmeden önce geri alınabilir); kaydedilen kümenin geçmişi "Geçmiş" listesinde ("3 atıf → 2 atıf") görünür; "Geri yükle" metni ve atıf kümesini birlikte getirir. Atıfı kalmamış iddia "Doğrudan atıf yok" yazar; `support_type` "modelin yazdığı sürümün türü" notuyla görünür.
+- **Düzenlemeleri denetle.** Rapor başlığında, düzenleme varsa görünür; sonuç listesi hata/uyarı, atlanan kurallar ve "anlam desteği denetlenmedi" cümlesiyle; "eski" etiketi metinle (yalnız renkle değil). Kayıt yok ya da eski ise başlık cümlesi §2'deki ilgili sürüm.
+- **Düzenlenmiş temele dayanan iddia** için kısa not.
+- Dışa aktarım aynı cümleleri taşır (D120 ilkesi: ekran ve dosya aynı okuma modelinden).
+- İngilizce ve Türkçe metin, 390 px ve masaüstü, açık ve koyu tema.
 
-- `research_candidates`, `candidate_versions`, `kill_searches`, `claim_search_memberships`, `claim_matrix_cells`, `candidate_status_history` tabloları (henüz taslak).
-- "İki tablo, tek doğruluk kaynağı" kuralı: `report_gaps.kill_search_status`'un `research_candidates.status`'tan aynı işlemde kopyalanması (rozet); metnin ayrı, donuk kalması (dilim 3 §5).
-- `research_candidates.source_gap_id TEXT UNIQUE REFERENCES report_gaps.id` — **bu not bu alanın `report_gaps.id` yerine `report_stable_gaps.id`'ye bağlanmasını önerir** (§5); bu, dilim 3'ün notunda düzeltilmesi istenen tek somut değişikliktir ve dilim 3 kabul edilmeden önce ona iletilmeli.
-- `undecided` durumunun (dilim 3 §6) `report_gaps.kill_search_status` CHECK listesine eklenmesi dilim 1'e bağımlıdır (dilim 3'ün kendi notunda zaten yazılı, §15.1); bu dilim ek bir bağımlılık getirmiyor.
+## 9. Testler
 
-## 12. Sahibe sorulanlar
+**Depolama ve saf hesap (E1–E2):** migration (boş ve dolu kopya, eski revizyonlar `link_count IS NULL` ve bütün atıflar etkin); mühürleme: geç bağ ekleme, boş küme ve eski revizyona ekleme reddedilir; D112 idempotency testi (eski anahtar yazmadan döner) ve yeni içerik bağlı tekrar (aynı içerik aynı revizyon, farklı içerik 409, ara düzenleme sonrası tekrar); `link_ids` sıra/yineleme kanonikleşmesi; `restore_from` ile `text`/`link_ids` 422; denetim parmak izi: sürüm yükseltmesi yeni kayıt, her girdi sınıfında bir değişiklik yeni kayıt; hiç tamsayı olmayan `count` iddiası `count_text_not_checked`; güncel kip her denetlenen kural için (§5 tablosu) sabit vakalarla; temel kipin eski sonuçları değişmez (mevcut `test_report_assembly` aynen geçer); atlanan kural `skipped` yazılır, temiz sayılmaz; parmak iziyle güncel/eski; aynı parmak izi ikinci kayıt yazmaz; denetim rapor durumunu, numarasını, bölüm durumunu, `report_review` kaydını değiştirmez; etkin atıf tanımı tek yerde (kaynak tarama testi); yalnız-atıf düzenleme; atıf geri yükleme; hedef revizyon `link_count IS NULL` ise bütün özgün atıf; başka iddianın bağı reddedilir; içerik bağlı idempotency ve D112 testinin güncellenmesi (eski anahtarlar korunur); bayatlama etkin atıftan türer, anlık görüntü sayıları kaldırmadan etkilenmez; kabul anahtarları kaldırma/geri yükleme sonrası tutarlı; yeni tablolar güncelleme/silme tetikleyicisi, purge, kaynak koruması, `research_cites_asset`/`asset_impact`, yedek-geri yükleme gidiş-dönüşü.
+**Akış/API:** iki sekme 409, denetim rapor koşusu bitmeden 409, başka araştırmanın raporu 404, `link_ids` bilinmeyen/başka iddia 422.
+**Web (E3, Playwright, senaryolu):** düzenle → denetle → hata listesi → düzelt → yeniden denetle ("eski" → "güncel"); atıf kaldır → geçmiş → geri yükle; hiç atıf kalmayan iddia; 390 px ve masaüstü, açık ve koyu tema.
+**E4 senaryo dizisi (sahte model, belirleyici):** geçerli rapor → iddia düzenle → bir atıf kaldır → atıfın hücresini `cell_recheck` ile değiştir (kaldırılan atıf işaret açmaz, kalan açar) → bir kaynağı araştırmadan çıkar → denetle → yeniden düzenle (denetim eski) → "Böyle kalsın" sonra yeni değişiklik → geri yükle → purge/yedek gidiş-dönüşü. Bu dizi kod davranışını sınar, model kalitesini ya da gerçek bir korpusu değil.
 
-Her soruda önerim ilk seçenektir; yanıt gelmezse ilk seçenek alınır ve uygulama ona göre başlar.
+## 10. Kapanış ölçümü: P9'a borç
 
-1. **Düzenleme birimi.**
-   - a. İddia (`report_claims` satırı) — kanıt bağının zaten bu düzeyde tutulduğu, D37'nin hücre biriminin aynısı. (öneri)
-   - b. Paragraf (birkaç iddianın birleşik okuma birimi) — insan gibi okur ama birden çok iddiayı tek metne indirip geri `claim_key`'lere bölmek gerekir, kanıt bağı belirsizleşir.
-   - c. Cümle — `report_phrase_repairs`'in `sentence_id`'sini yeniden kullanır gibi görünür ama o mekanizma kalıp onarımı içindir, kanıt bağı taşımaz; bir cümlenin kendi alıntısı yoktur.
-   
-   *Yanıt yoksa alınacak:* a — bu notun §4/§5'i bu varsayımla kuruldu.
+17 Eylül taslağının "P6 kapanış ölçümü" (R18–R21, tutulmuş soru, gerçek model) bu dilimde **yoktur**; P9'a borç olarak taşındı. Sahibin dilim 2 ölçümü (D141, D142) ve dilim 3'ün K6'sı için verdiği karar ile tutarlı. Neden: ölçüm bugünkü kodla tamamlanmış gerçek-model bir rapor ister ve dondurulmuş P16 serisi böyle bir rapor üretemedi (D124, D126, D128; F7); dilim 4'ün davranışı (denetim kuralları, atıf kümesi, bayatlama) kodun kendisi olup modelin ürettiği bir şeyin kalitesi değildir ve §9'un sentetik testleri onu zaten bütün olarak sınar. Eşleme:
 
-2. **Düzenlenmiş rapor `report_version`'ı ne olur.**
-   - a. Düzenlemeler yeni bir "Yayımla" eylemiyle toplanır; montaj denetimi geçerse ilk kez ya da bir sonraki `report_version` atanır (D56'nın "yapısal geçerlilik ≠ yayım" ayrımına paralel). Ara düzenlemeler sırasında numara sabit kalır. (öneri)
-   - b. Her kaydedilen düzenleme otomatik yeni bir `report_version` alır (answer'ın her structurally_valid sonucunun numara alması gibi).
-   - c. `report_version` düzenlemeden hiç etkilenmez; düzenlenmiş rapor hep aynı numarayı taşır, dışa aktarımda "düzenlendi" notu yeter.
-   
-   *Yanıt yoksa alınacak:* a.
+| Taslak satırı | Bu dilimde | P9'da |
+|---|---|---|
+| R18 düzenleme bütünlüğü | E4 sentetik dizisinin parçası olarak kod düzeyinde | Gerçek bir raporda düzenle-denetle-kaldır dizisi, ancak tamamlanmış bir gerçek-model rapor olunca |
+| R19 bayatlama doğruluğu | E4 dizisi (yanlış negatif/pozitif sentetik) | Aynı gerçek raporda |
+| R20 kimlik kararlılığı | Yok: kimlik katmanı ertelendi (§12), anlamsız | Yeniden yazma yapılırsa |
+| R21 süre ve maliyet | Yok | Gerçek raporda |
+| Bölüm yeniden yazma adımı (taslak §9.3 adım 5) | Yok (yeniden yazma ertelendi) | Yeniden yazma kurulursa |
 
-3. **İnsan düzenlemesi `report_review`'a gönderilsin mi.**
-   - a. Hayır, otomatik değil; ayrı, isteğe bağlı bir "Bu düzenlemeyi denetle" eylemi olur (D14'ün "isteğe bağlı inceleme ayrı bir sürümdür" ilkesiyle tutarlı, maliyeti sahip kontrol eder). (öneri)
-   - b. Evet, her kaydedilen düzenlemeden sonra otomatik çalışır.
-   - c. Yalnız "Yayımla" anında bütün düzenlenmiş bölümler için toplu bir inceleme çalışır.
-   
-   *Yanıt yoksa alınacak:* a.
+P9 borcuna yazılacak: gerçek-model rapor tamamlanmışsa bir kopya kütüphanede §9'daki dizinin gerçek-rapor sürümü; beklentiler koşudan önce ayrı dosyada dondurulur; sonuç anlam desteği iddiası değildir. Bu not P9 planına yeni bir ölçüm tanımı koymaz; yalnız borcu ve ön koşulunu (tamamlanmış gerçek-model rapor) bırakır.
 
-4. **"Böyle kalsın" kabulü ne zaman süresi dolar.**
-   - a. Hiç dolmaz; yalnız o kabulden SONRAKİ bağımsız bir değişiklik yeni bir canlı bayrak açar (§3, §4). Kabulün kendisi asla otomatik geri alınmaz. (öneri)
-   - b. Belirli bir süre (ör. 30 gün) sonra otomatik yeniden canlanır.
-   - c. Rapor her "Yayımla" işleminde bütün kabuller sıfırlanır, sahip yeniden gözden geçirir.
-   
-   *Yanıt yoksa alınacak:* a.
+## 11. Varsayımlar ve sınırlar
 
-5. **Model bir bölümü, o bölümde insan düzenlemesi varken yeniden yazabilir mi.**
-   - a. Evet, ama sonuç her zaman bekleyen bir öneridir (§2 S3); tek bölümün elle "Yeniden yaz" istenmesi sahibin kendi eylemidir, engellenmez. (öneri)
-   - b. Hayır; insan düzenlemesi olan bir bölüm önce "düzenlemeleri geri al" denmeden yeniden yazılamaz.
-   - c. Yalnız tek tek iddialar için izin verilir (`claim_key` düzeyinde kısmi rewrite), bölüm bütünü asla yeniden yazılmaz.
-   
-   *Yanıt yoksa alınacak:* a.
+- Denetim kod kurallarının yeniden koşmasıdır; semantik doğruluğu, atıf-iddia uyumunu ve sözcükle yazılmış sayıları göstermez.
+- Güncel kip, temel kuralların bir alt kümesini düzenlenmiş veriye uygular; kural sayısı ya da kapsamı ölçülmedi, hangi düzenlemelerin ne kadarını yakaladığı bilinmiyor.
+- Atıf kaldırma kanıtı azaltır, ekleyemez; yeni bir atıf eklemek (yeniden yazma ya da PDF'den alıntı) ertelendi.
+- Düzenlenmiş metin hâlâ `report_view`'daki bölümün `draft`/`validation`/`word_count` alanında yoktur; onlar modelin yazdığı sürümü anlatır. Temel `report_version` ve D118 incelemesi modelin sürümüne bağlı kalır.
+- Düzenleme sonrası rapor için yeni sürüm numarası yoktur: dışa aktarım dosya adı temel numarayı taşır ve "elle düzenlendi" cümlesi yanında durur.
+- PDF yeniden çıkarımı ve pasaj değişiklikleri hiçbir düzeyde algılanmaz (`not_checked: ["passages"]`); bu denetim ve atıf kaldırma bunu değiştirmez.
+- `purge_table` raporlu bir tabloda hâlâ başarısız olur (D112'nin açık borcu); bu dilim ona dokunmaz.
+- Sentetik/sahte-model testleri iş akışı davranışını gösterir, model kalitesini ya da gerçek korpus davranışını değil.
 
-6. **Bayatlama hesaplaması ne zaman yapılır.**
-   - a. Yazma-anında (kanıtı değiştiren transaction bayrağı da yazar); okuma yalnız canlı bayrakları listeler (§3, §4). (öneri)
-   - b. Okuma-anında (rapor her açıldığında donmuş anlık görüntü ile canlı kayıtlar karşılaştırılır, dilim 1'in rapor-düzeyi bandındaki gibi ama bölüm düzeyinde).
-   - c. Zamanlanmış bir arka plan işiyle periyodik.
-   
-   *Yanıt yoksa alınacak:* a — CLAUDE.md'nin "tek bağlantı, kısa senkron işlem" kuralıyla en uyumlu olan ve hangi kaydın tetiklediğini kaybetmeyen seçenek budur.
+## 12. Ertelenenler (nedeniyle)
 
-7. **P6 kapanış ölçümü dilim 2 ve 3'ü bekler mi.**
-   - a. Hayır; P6 dilim 0, 1, 4, 5 ile kapanır (bu notun R18–R21'i ve dilim 1'in R1–R11'i yeterli), dilim 2 ve 3 kendi kapanışlarını kendi notlarında tanımlar ve ayrı ölçülür. (öneri — dilim 2/3 henüz kabul edilmiş tasarım değil, onları beklemek P6'yı belirsiz süre asıntıya bırakır)
-   - b. Evet; kapanış ölçümü dördünü birlikte (0,1,2,3 ve 4) tek bir tutulmuş soru koşusunda ölçer.
-   - c. Kısmi: dilim 2/3 o ana kadar uygulanmışsa ölçüme dahil edilir, uygulanmamışsa §9.1'deki "dilim 2/3 varsa" satırları boş bırakılır (bu notun zaten varsaydığı davranış).
-   
-   *Yanıt yoksa alınacak:* c — bu, a ile b arasında bu notun zaten yazdığı orta yoldur ve ek bir karar gerektirmez.
+- **"Yayımla", düzenleme sonrası yeni `report_version`, montaj denetiminin insan metniyle yeniden koşup numara vermesi** (taslak Q2a): numara semantiği (`reports.report_version` bir `finalize` anında, `(research_id, report_version)` benzersiz) yeniden tasarım ister; bu dilimin "Düzenlemeleri denetle"si aynı kaygının büyük kısmını numarasız çözer. Bir sonraki dilim ya da P9 kararı.
+- **Bölüm yeniden yazma önerisi** (S3/S4), `report_section_revisions`, `claim_match`: bitmiş rapor için bölüm yeniden yazma işlemi yok; gerçek-model rapor bugünkü kodla tamamlanmadı (F3, F7).
+- **Kararlı kimlik katmanı** (`report_stable_claims`, `report_claim_matches`, `report_stable_gaps`, `report_gaps.stable_gap_id`) ve **rapor sürümleri arası aday eşleştirmesi**: yeniden yazma olmadan eşleştirilecek bir şey yok ve dilim 3'ün adayı kökenini kopyalar, canlı gap satırına bağlanmaz (F4). **Dilim 3'ün D143 §15'te "dilim 4" diye yazdığı bu iş dilim 4'ten çıkarıldı**; yeniden yazma kurulursa o zaman ele alınır (D147 bunu kayda geçirir).
+- **`scope_statement` düzenleme**, `report_plan_revisions`.
+- **PDF yeniden çıkarım/pasaj bayatlaması** (anlık görüntüye çıkarım kimliği yazmak, slice 1 kodunu etkiler), **bölüm düzeyi sütun bayatlaması**.
+- **Çizgi bağı ve aday bayatlaması:** dilim 2b/2c ve dilim 3 K3 yapılmadı.
+- **Düzenlemenin isteğe bağlı `report_review`'ı**; **toplu yeniden yazma**; **iddia içi cümle düzenleme**.
+- **P6 kapanış ölçümü** (§10).
 
-8. **Kim etiketler (kapanış ölçümünde).**
-   - a. Sahip küçük bir örneği etiketler, Claude kalanını; ikisi ayrı raporlanır ve örtüşen kısımda uyuşma yazılır (P5 dilim 5'in soru 2 önerisiyle aynı). (öneri)
-   - b. Sahip P5 dilim 5'te olduğu gibi etiketlemeyi tamamen Claude'a devreder; rapor "ajan denetimi" der.
-   - c. Sahip kendisi etiketler.
-   
-   *Yanıt yoksa alınacak:* b — P5 dilim 5'te sahip son anda tam bu devri seçti (§11 D55 kaydı); tekrarı en düşük sürtünmeli varsayımdır.
+## 13. Kararlar
 
-9. **Kapanış ölçümü hangi tutulmuş soru(lar)ı kullanır.**
-   - a. Kurt 2017 kümesini (D34/D55) aynen tekrar kullan; karşılaştırılabilirlik korunur, yeni bir bilinen küme hazırlamaya gerek kalmaz. (öneri)
-   - b. Yeni bir tutulmuş soru ve bilinen küme (sahip hazırlar).
-   - c. İkisi birden (Kurt + yeni bir soru), D55'in S1/S2 desenini birebir tekrarlar.
-   
-   *Yanıt yoksa alınacak:* a — en az hazırlık gerektiren ve D55 ile doğrudan karşılaştırılabilen seçenek.
+Kararlar sahibin talimatıyla **Claude ve gpt-6.1-sol tarafından, 2 Ekim 2026'da** birlikte verildi; sahibe soru sorulmadı. Karar turu `/tmp/s4d-a1.md`. Sol üç yerde Claude'un önerisinden ayrıldı (Q2, Q3, Q8) ve Claude kabul etti; Q1, Q4–Q7 ve Q9'da aynı fikirdeydiler, Sol dört tehlike kümesi ekledi (sonuç sözleşmesi, kural kapsamı, revizyon şeması, yaşam döngüsü ve görünüm).
 
-## 13. Alt adımlar
+1. **Q1 — "Yayımla" ve yeni numara.** Ertelendi; `report_version` modelin yazdığı sürümü tanımlamaya devam eder, insan revizyonu ayrı görünür. *Claude önerdi, Sol kabul etti.*
+2. **Q2 — "Not checked again" sınırı.** Yayımla yerine modelsiz, salt-okunur "Düzenlemeleri denetle"; sonuç eklemeli kayıt (kalıcılık "isteğe bağlı" değil zorunlu, Sol), girdiye bağlı parmak izi, çalıştırılan/atlanan kurallar, sürüm/numara değişmez. **Sol'un değişikliği:** kural listesi benim önerimden geniş: glossary sırası, denetim eşitlik/denklem kökeni, kendi çalışma ve çoğul kaynak tanılayıcıları dahil; kalıp çerçeveleri ve istisna eşleştirmesi insan metninde kapalı. *Claude önerdi, Sol değiştirdi, Claude kabul etti.*
+3. **Q3 — Atıf kaldırma.** Dahil (E2); **Sol'un değişikliği:** geri yükleme metni ve atıf kümesini birlikte kurtarır; sıfır atıf "doğrudan atıf yok"tur (`body_ref`/`gap_ref`/`count` dayanak olabilir), ret değil. *Claude önerdi, Sol ekledi.*
+4. **Q4 — Yeniden yazma, kararlı kimlik, `report_stable_gaps`.** Ertelendi; dilim 4'ün dilim 3'ün kimlik taahhüdünü artık yerine getirmediği kayda yazılır. *Claude ve Sol.*
+5. **Q5 — Bayatlama uzantıları.** Ertelendi; denetim mevcut işaretleri ve "pasajlar denetlenmedi" sınırını bozmaz. *Claude ve Sol.*
+6. **Q6 — Düzenleme incelemesi.** Ertelendi; D118 incelemesi modelin temel sürümüne bağlı olarak görünür kalır. *Claude ve Sol.*
+7. **Q7 — Kapanış ölçümü.** P9'a borç, sentetik belirleyici dizi dilimde test olarak kalır; taslak §9.3 adım 5 (yeniden yazma) açıkça çıkarıldı (§10). Dilim 2'nin ölçümü ve dilim 3'ün K6'sı ile tutarlı. *Claude ve Sol.*
+8. **Q8 — Batch'ler.** Dört batch; **Sol'un değişikliği:** boyutlar E1 M, E2 M–L (yaşam döngüsü dahil), E3 M, E4 S–M; bunlar planlama tahminidir, ölçüm değil. *Claude önerdi, Sol değiştirdi, Claude kabul etti.*
+9. **Q9 — Gizli bağımlılık.** Yok: E1/E2 dilim 3 K3'e ya da bekleyen P7/P9 işine bağlı değildir; aday rozeti, kill-search geri yazımı, yasak sözcük gevşetmesi ve yeni model çağrısı dışarıda. *Claude ve Sol.*
+- **X1. Taslağın "ilk tam rapor" iddiası.** `4582b64` gerçek ama dondurulmuş P16 serisi tamamlanmadı ve ilk rapor sonraki iyileştirmelerden önceydi; çelişki kayda geçti, not "tamamlanmış gerçek-model rapor kaydı var" demez (§0 F7). *Sol ekledi.*
+- **X2. `has_human_edits`.** `edited_after_version` taslak raporda boş olduğundan ayrı alan (F8). *Sol ekledi.*
+- **X3. `research_cites_asset`/`asset_impact` açığı.** E2'nin içinde kapatılır (F9). *Sol ekledi, Claude doğruladı.*
+- **X4. Kapsam dışı kalan taslak kararları** (§12 Q1a–Q9a): soru 1 (birim iddia), 3 (otomatik inceleme yok), 4 (kabul hiç dolmaz), 6 (okuma anı) D112'de verilmişti ve değişmez; soru 2, 5, 7, 8, 9 yukarıda yeniden karara bağlandı.
 
-Her alt adımda önce testler yazılır ve kırmızı görülür, sonra uygulanır; sırayla bağımlıdır (1–4 depolama, 5–8 davranış, 9–11 arayüz, 12–14 kapanış). Dosya yolları dilim 1'in `backend/deixis/workflow/report/` paketini ve `apps/web/src/report/`'u genişletir; migration numarası yürütme anında `ls backend/deixis/storage/migrations/` ile teyit edilir (bu not yazılırken en yükseği `0033`, dilim 1'in `0034`'ü henüz uygulanmamış).
+## 14. Batch'ler
 
-1. **Migration: iddia revizyonları.** `backend/deixis/storage/migrations/00NN_report_claim_revisions.sql` — `report_claim_revisions`, `report_claims.current_revision_id`/`version`. Test: `tests/test_migrations.py::test_migration_adds_report_claim_revisions` (tablo var, `runs`/`reports` etkilenmez). Çıkış: migration temiz bir veritabanında ve dilim 1'in test fixture'ında (varsa) hatasız çalışır.
-2. **`ReportStore.edit_claim`/`decide_section_rewrite` iskeleti.** `backend/deixis/workflow/report/store.py`'ye eklenir (yeni dosya açılmaz). Test: `tests/test_report_store.py::test_edit_claim_keeps_citations_by_default_and_creates_human_edit_revision`, `test_edit_claim_conflicts_on_stale_expected_version`. Çıkış: D37'nin `edit_cell` testlerinin birebir karşılığı geçer.
-3. **Migration: bölüm yeniden yazma önerisi ve bağımlılık/bayrak tabloları.** `00NN+1_report_stale_and_rewrite.sql` — `report_section_revisions`, `report_stale_flags`, `report_section_dependencies`. Test: `tests/test_migrations.py::test_migration_adds_stale_and_rewrite_tables`. Çıkış: foreign key denetimi temiz.
-4. **Migration: kararlı kimlikler.** `00NN+2_report_stable_identity.sql` — `report_stable_claims`, `report_claim_matches`, `report_stable_gaps`, `report_gaps.stable_gap_id`, `report_claims.stable_claim_id`. Test: `tests/test_migrations.py::test_migration_adds_stable_identity_tables`. Çıkış: dilim 1'in `report_gaps`/`report_claims` tabloları (varsa) etkilenmeden yeni sütunları alır.
-5. **Kanıt bağımlılığı ve bayrak yazma.** `backend/deixis/workflow/report/staleness.py` (yeni dosya): `flag_dependents_of_cell(store, reports, cell_id, reason)`, `flag_dependents_of_source(...)`, `flag_dependents_of_column(...)`, `flag_dependents_of_plan(...)`; her biri `report_citation_links`/`report_claim_refs`/`report_section_dependencies` üzerinden ilgili `(report_id, section_id)` çiftlerini bulup `report_stale_flags` yazar. Test: `tests/test_report_staleness.py` — §8'deki "Bayatlama" testlerinin her biri (hücre, kaynak, sütun, plan; çizgi bağı ve aday testleri dilim 2/3 sentetik veriyle ya da inert). Çıkış: tables.py'nin `edit_cell`/D50'nin `remove_sources`/`rename_column` gibi mevcut mutasyon noktalarına birer çağrı eklenir, mevcut testleri kırmaz.
-6. **Bayrak kabul ucu.** `POST /api/researches/{rid}/reports/{report_id}/sections/{sid}/acknowledge-stale` — `ReportStore`'a `acknowledge_stale(report_id, section_id)`. Test: `tests/test_report_api.py::test_acknowledge_stale_closes_open_flags_but_not_future_ones`. Çıkış: §2 S10 senaryosu geçer.
-7. **Bölüm yeniden yazma: bekleyen öneri akışı.** `backend/deixis/workflow/report/sections.py`'ye (dilim 1'in dosyası) eklenir: bir bölüm yeniden yazıldığında, o bölümde canlı `human_edit` varsa sonucu `report_section_revisions` (pending) olarak sakla, yoksa doğrudan yaz. Test: `tests/test_report_sections.py::test_rewrite_with_human_edits_creates_pending_proposal`, `test_rewrite_without_human_edits_applies_directly`. Çıkış: §2 S3/S4 geçer.
-8. **Kimlik eşleştirme.** `backend/deixis/workflow/report/identity.py` (yeni dosya): `match_claims(old_claims, new_draft_claims) -> list[ClaimMatch]` (Jaccard + paragraf + metin benzerliği, §5), `fingerprint_gap(kind, basis) -> str`, `resolve_stable_gap(store, research_id, kind, basis) -> str`. Test: `tests/test_report_identity.py` — §8'deki "Kimlik eşleştirme" testlerinin hepsi. Çıkış: eşik değerleri (0.6 Jaccard) test sabiti olarak modülün başında, değiştirilebilir.
-9. **Bölüm yeniden yazma önerisinin kabul/red ucu.** `POST .../sections/{sid}/rewrite-proposals/{rev}/accept` (eşleştirmeyi çalıştırır, eski iddiaları geçmişe taşır, eşleşmeyenleri `changed_claims` içinde döner), `.../dismiss`. Test: `tests/test_report_api.py::test_accept_rewrite_proposal_reports_unmatched_human_edits`. Çıkış: §8 T09 c/d senaryoları geçer.
-10. **Arayüz: iddia düzenleme formu.** `apps/web/src/report/ReportView.tsx`'e düzenleme modu (§7 madde 1); `apps/web/src/api.ts`'e `api.editReportClaim`. Test: `npm run build && npm run lint`; Playwright: bir iddia düzenlenir, 409 senaryosu (iki sekme). Çıkış: masaüstü ve 390 px, açık/koyu ekran görüntüsüyle kendi doğrulanır.
-11. **Arayüz: rewrite bandı ve stale bandı.** Aynı dosyaya §7 madde 2–5. Test: Playwright `apps/web/e2e/report-editing.spec.ts` (yeni dosya) — §8 Web senaryosu. Çıkış: fixture sunucusunda scriptlenmiş model ile uçtan uca geçer.
-12. **Yayımlama ucu ve durum makinesi.** `POST .../reports/{report_id}/publish` — canlı bayrak/bekleyen öneri varsa 409 ve nedeni; yoksa `finalize()` çağrılır. Test: `tests/test_report_api.py::test_publish_blocked_by_open_stale_flags_or_pending_rewrites`. Çıkış: §2 S11, §6 tablosu geçer.
-13. **Kapanış ölçümü aracı.** `scripts/p6_eval/measure_report.py`'ye `edit-diff`/`stale-check`/`edit-score` alt komutları (§9.5); önce modelsiz testlerle (`tests/test_measure_report_editing.py`, sentetik `report_claim_matches`/`report_stale_flags` JSON'u). Çıkış: alt komutlar sentetik veriyle çalışır, testler kırmızıdan yeşile döner.
-14. **Kapanış ölçümü koşusu ve kayıt.** §9.6'daki ön koşullar sahiple netleştikten sonra: kopya kütüphane, port 8799, `gpt-5.6-luna`; §9.3'ün S1/S2/S3 senaryoları çalıştırılır; sonuç dondurulmuş beklentilerle (bu alt adımdan önce ayrı bir dosyada donmuş, P5 dilim 5 kuralı) satır satır karşılaştırılır; `docs/decisions.md`'ye D-girdisi, `docs/product/p6-report-design.md`'ye "Durum" güncellemesi. Çıkış: tam backend suite, `npm run build && npm run lint`, acceptance, `git diff --check`; canlı kütüphaneye hiçbir şey yazılmaz.
+Her batch ayrı bir commit olur; commit ve push yalnız sahibin istediği zaman, doğrudan `main`'e (PR yok). Batch kabul edilirken tam takım (`PYTHONPATH=backend uv run pytest`, `npm run build`, `npm run lint`, tam Playwright) bir kez koşulur ve sayılar yazılır; geliştirme sırasında yalnız ilgili test dosyaları. Migration ve karar numarası yazım anında son numaradan sonra alınır. Canlı 8765 örneğine ve sahibin kütüphanesine dokunulmaz. Hiçbir batch'te model çağrısı yok: sahte adaptör. `skill_package_hash` hareket etmez; bu dilimin batch'leri H9 ölçüm penceresinin dışında kalır ya da H9 sabit bir checkout'ta koşar (dilim 3 ile aynı kural). Boyut: **S** yarım gün, **M** bir gün, **L** iki–üç gün; tahmin ölçüm değildir.
 
+| Batch | Bağlı olduğu | Boyut | Model |
+|---|---|---|---|
+| E1 Düzenlenmiş raporun denetimi | — | M | hayır |
+| E2 Atıf kaldırma ve kayıtlı etkin atıf kümesi | E1 | M–L | hayır |
+| E3 Arayüz | E1, E2 | M | hayır (senaryolu) |
+| E4 Senaryo dizisi, kapanış ve P9 borcu | E1–E3 | S–M | hayır |
+
+### E1 — Düzenlenmiş raporun denetimi (M)
+
+**Kapsam.** `assembly.py`'ye "güncel" kip (temel kip ve mevcut çağrılar değişmez) ve tek bir etkin-atıf okuma noktası (E1'de "bütün bağlar", E2'de değişir); §5 tablosu; `report_edit_checks` migration'ı; `ReportStore.check_edits`; `POST .../reports/{id}/check-edits`; `report_view`'a `has_human_edits` ve `edit_check` (güncel/eski); dışa aktarımın üç durumlu cümlesi; VIII sayı yeniden anma denetiminin düzenlenmiş iddialara uygulanması; çalıştırılan/atlanan kural listesi; kanonik girdi parmak izi ve tek-işlemli değerlendirme+kayıt; **`report_edit_checks`'in yaşam döngüsü**: `purge_research` sırası, silme yetkisi tetikleyicisi, yedek-geri yükleme (kayıt doluyken araştırma silme ve yedek testi).
+**Dosyalar.** `storage/migrations/00NN_report_edit_checks.sql`, `workflow/report/assembly.py`, `workflow/report/store.py`, `workflow/store.py` (`purge_research`), `backup.py`, `workflow/views.py`, `workflow/report/export.py`, `api/app.py`, `domain/contracts.py` (yalnız VIII denetimini yeniden kullanılabilir yapmak), `tests/test_report_edit_check.py`, `tests/test_report_assembly.py`, `tests/test_report_api.py`, `tests/test_backup.py`, `tests/test_corpus_removal.py` (purge ve yedek, kayıt doluyken).
+**Testler/kontroller.** §9 E1 satırları; temel kip değişmez; durum/numara değişmez; tam pytest.
+**Çıkış.** Düzenlenmiş bir rapor modelsiz denetlenir; sonuç API'de ve dışa aktarımda "güncel"/"eski" ve atlananlarla görünür; kayıt varken araştırma silinebilir ve yedeklenir. Ekranda görünüm E3'tür.
+**Göstermez.** Anlam desteğini, sayıların sözcükle yazıldığı ya da hiç tamsayı bulunmayan durumların denetlendiğini (bunlar atlandı olarak yazılır), gerçek-model raporda isabeti, ekranı; atıf kaldırmayı.
+
+### E2 — Atıf kaldırma ve kayıtlı etkin atıf kümesi (M–L)
+
+**Kapsam.** Migration (`link_count`, `request_hash`, `report_claim_revision_links` ve mühürleme tetikleyicisi); `edit_claim`'in `link_ids`'i, yalnız-atıf düzenleme, geri yükleme ile atıf kümesi, içerik bağlı idempotency; etkin atıf tanımının tek yere bağlanması (denetim, bayatlama, numaralandırma, görünüm, dışa aktarım); `evidence_changes`'in bölüm düzeyini etkin atıflardan türetmesi; düzenlenmiş temele dayanan iddia notu; `evidence_basis`/`support_type_note`; yaşam döngüsü (§7, revizyon-bağ tablosu için): purge, `research_cites_asset`/`asset_impact` açığı, kaynak koruması, yedek.
+**Dosyalar.** `storage/migrations/00NN+1_report_claim_links.sql`, `workflow/report/store.py`, `workflow/report/assembly.py`, `workflow/views.py`, `workflow/report/export.py`, `workflow/store.py`, `backup.py`, `api/app.py`, `tests/test_report_claim_links.py`, `tests/test_report_store.py`, `tests/test_asset_replacement.py`, `tests/test_backup.py`, `tests/test_migrations.py`.
+**Testler/kontroller.** §9 E2 satırları; ham `report_citation_links` okumasını sınırlayan kaynak tarama testi; tam pytest.
+**Çıkış.** Bir iddia atfını geri alınabilir biçimde kaybeder; denetim, bayatlama, numaralar ve dışa aktarım aynı etkin kümeyi okur; hiçbir bağ silinmez; kaynak koruması ve yedek tam geçmişi korur.
+**Göstermez.** Atıf eklemeyi, atıf-iddia uyumunu, gerçek raporda davranışı.
+
+### E3 — Arayüz (M)
+
+**Kapsam.** §8: atıf kaldırma, geçmişte atıf kümesi, "Doğrudan atıf yok" durumu, "Düzenlemeleri denetle" ve sonuç listesi, düzenlenmiş temele dayanma notu; `api.ts`, `i18n.ts`.
+**Dosyalar.** `apps/web/src/report/ReportView.tsx`, `apps/web/src/api.ts`, `apps/web/src/i18n.ts`, `apps/web/e2e/report.spec.ts`.
+**Testler/kontroller.** §9 Web satırı; `npm run build`, `npm run lint`, tam Playwright; 390 px ve masaüstü, iki tema, gözle doğrulama.
+**Çıkış.** Senaryolu modelle uçtan uca akış ekranda çalışır.
+**Göstermez.** Gerçek rapor kalitesini.
+
+### E4 — Senaryo dizisi, kapanış ve P9 borcu (S–M)
+
+**Kapsam.** §9'daki belirleyici dizi (sahte model); kayıt: `decisions.md` kapanış girdisi (Evidence, Limits), `p6-report-design.md` "Durum" satırı, P9 planına borç satırı (§10), D143 §15'in "dilim 4" cümlesinin düzeltilmesi.
+**Dosyalar.** `tests/test_report_edit_sequence.py`, `docs/decisions.md`, `docs/product/p6-report-design.md`, `docs/product/p9-hardening-plan.md`, `docs/product/p6-slice3-kill-search.md` (yalnız §15'in "dilim 4" cümlesine D147'ya işaret eden bir not; kabul edilmiş D143 girdisi geçmiş olarak değiştirilmez).
+**Testler/kontroller.** Tam takım; `git diff --check`.
+**Çıkış.** Dizi geçer; borç ve ertelenenler kayıtlı.
+**Göstermez.** Gerçek-model rapor davranışını, oran ya da genellemeyi.

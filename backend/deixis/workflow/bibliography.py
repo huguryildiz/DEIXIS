@@ -64,27 +64,69 @@ def filename(title: str, selection: Selection, fmt: Format) -> str:
     return f"deixis-{slug or 'research'}-{selection}.{'bib' if fmt == 'bibtex' else 'ris'}"
 
 
-def to_bibtex(sources: list[dict[str, Any]]) -> str:
+def to_bibtex(sources: list[dict[str, Any]], keys: list[str] | None = None, *, latex_report: bool = False) -> str:
+    return bibtex_with_notes(sources, keys, latex_report=latex_report)[0]
+
+
+def bibtex_with_notes(sources: list[dict[str, Any]], keys: list[str] | None = None, *,
+                      latex_report: bool = False, unmapped=None) -> tuple[str, list[str]]:
+    """Keep D16 bytes by default; the report path has its own field boundary."""
+    from deixis.workflow.report.latex_text import escape_text
+
+    original = sources
+    if latex_report:
+        # Invalid years must not enter automatic keys, even if the field is omitted.
+        sources = [s | {"year": s["year"] if type(s["year"]) is int else None} for s in sources]
+    given_keys = keys is not None
+    keys = _keys(sources) if keys is None else keys
+    if given_keys or latex_report:
+        if (len(keys) != len(sources)
+                or any(not isinstance(key, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", key) is None for key in keys)
+                or len({key.lower() for key in keys}) != len(keys)):
+            raise ValueError("BibTeX keys must match the source count, be valid and be unique ignoring case")
+    notes: list[str] = []
+
+    def tex(value: Any) -> str:
+        if not latex_report:
+            return _tex(value)
+        return escape_text(_line(value), unmapped).replace(r"\{", r"\textbraceleft{}").replace(r"\}", r"\textbraceright{}")
+
+    def author(value: str) -> str:
+        return f"{{{tex(value)}}}" if re.search(r"\band\b", value, re.IGNORECASE) else tex(value)
+
+    def raw(value: str | None, field: str, key: str) -> str:
+        if latex_report and value is not None and any(
+                ch == "\\" or unicodedata.category(ch) in {"Cc", "Cf", "Zl", "Zp", "Cs", "Co", "Cn"}
+                for ch in str(value)):
+            notes.append(f"Bibliography: omitted {field} of {key} because it holds a backslash or a control character.")
+            return ""
+        return _raw(value)
+
     entries = []
-    for key, s in zip(_keys(sources), sources):
+    for index, (key, s) in enumerate(zip(keys, sources)):
+        if latex_report and original[index]["year"] is not None and type(original[index]["year"]) is not int:
+            notes.append(f"Bibliography: omitted year of {key} because it is not a number.")
         entry_type, venue_field, _ = _TYPES[_kind(s["publication_type"])]
+        title = tex(s["title"])
+        identifiers = {field: raw(s[source_field], field, key) for field, source_field in
+                       (("doi", "doi"), ("url", "landing_url"), ("eprint", "arxiv_id"))}
         fields = [
-            ("title", _tex(s["title"])),
-            ("author", " and ".join(_author(a) for a in s["authors"] if a.strip())),
+            ("title", "{" + title + "}" if latex_report else title),
+            ("author", " and ".join(author(a) for a in s["authors"] if a.strip())),
             ("year", str(s["year"] or "")),
-            (venue_field, _tex(s["venue"] or "")),
-            ("volume", _tex(s.get("volume") or "")),
-            ("number", _tex(s.get("issue") or "")),
-            ("pages", _tex(s.get("pages") or "")),
-            ("doi", _raw(s["doi"])),
-            ("url", _raw(s["landing_url"])),
-            ("eprint", _raw(s["arxiv_id"])),
+            (venue_field, tex(s["venue"] or "")),
+            ("volume", tex(s.get("volume") or "")),
+            ("number", tex(s.get("issue") or "")),
+            ("pages", tex(s.get("pages") or "")),
+            ("doi", identifiers["doi"]),
+            ("url", identifiers["url"]),
+            ("eprint", identifiers["eprint"]),
             ("eprinttype", "arxiv" if s["arxiv_id"] else ""),
-            ("note", _tex(_version_note(s["version_label"]))),
+            ("note", tex(_version_note(s["version_label"]))),
         ]
         body = ",\n".join(f"  {name} = {{{value}}}" for name, value in fields if value)
         entries.append(f"@{entry_type}{{{key},\n{body}\n}}\n")
-    return "\n".join(entries)
+    return "\n".join(entries), notes
 
 
 def to_ris(sources: list[dict[str, Any]]) -> str:

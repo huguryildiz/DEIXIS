@@ -1,0 +1,48 @@
+% DEIXIS evidence report, IEEEtran export for XeLaTeX.
+% Compile with: latexmk -xelatex report-synthetic-report-v12.tex
+% Needs XeLaTeX, BibTeX and the IEEEtran class and IEEEtran.bst style; they are not included.
+% Export notes: none
+
+\documentclass[journal]{IEEEtran}
+\usepackage{fontspec}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{xcolor}
+\usepackage{cite}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+
+\begin{document}
+
+\renewcommand{\abstractname}{Özet}
+\renewcommand{\IEEEkeywordsname}{Dizin Terimleri}
+\renewcommand{\refname}{Kaynaklar}
+
+\title{SYNTHETIC report \& \ensuremath{\alpha}}
+
+\maketitle
+
+\noindent Kanıt raporu \ensuremath{\cdot} V12
+
+\noindent Bu rapor yazıldıktan sonra kanıt değişti; rapor metni değişmedi. Pasaj metni denetlenmedi.
+
+\section*{I. Giriş}
+
+SYNTHETIC claim. \cite{Synth26}
+
+\section*{Rapor notları}
+
+DEIXIS ile üretildi.
+
+Atıf çapaları ilgili pasajlarda veya hücrelerde bulundu. Bu rapor için model veya kişi incelemesi kaydedilmedi; kod, her pasajın ilgili iddiayı destekleyip desteklemediğini denetlemedi.
+
+Bu çıktı raporun metnini ve kaynakçasını taşır. Alıntı pasajları, tablo hücresi kanıtları ve konumlanmış atıf çapaları DEIXIS'te kalır.
+
+\bibliographystyle{IEEEtran}
+
+\bibliography{report-synthetic-report-v12}
+
+\end{document}

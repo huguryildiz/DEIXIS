@@ -1,0 +1,170 @@
+% DEIXIS evidence report, IEEEtran export for XeLaTeX.
+% Compile with: latexmk -xelatex report-synthetic-report-draft.tex
+% Needs XeLaTeX, BibTeX and the IEEEtran class and IEEEtran.bst style; they are not included.
+% Export notes: 4
+% 1. \R is not defined by the export preamble; the document may not compile
+% 2. Table I was split into 2 column groups of at most 7 data columns.
+% 3. 1 table value was moved to the Long table values list in Report notes.
+% 4. Unmapped characters: 2 occurrences; first code points: U+6587.
+
+\documentclass[journal]{IEEEtran}
+\usepackage{fontspec}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{xcolor}
+\usepackage{cite}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+
+\begin{document}
+
+\renewcommand{\abstractname}{Özet}
+\renewcommand{\IEEEkeywordsname}{Dizin Terimleri}
+\renewcommand{\refname}{Kaynaklar}
+
+\title{SYNTHETIC report \& \ensuremath{\alpha}}
+
+\maketitle
+
+\noindent Kanıt raporu \ensuremath{\cdot} taslak
+
+\noindent TASLAK: 1 bölüm doğrulanmadı.
+
+\noindent 4 kaynağın 1 tanesinde tablo doldurma tamamlanmadı; 2 hücre eksik. Bu satırlar raporun kanıt değerlendirmesine ve toplulaştırma paydalarına alınmadı.
+
+\begin{itemize}
+\item SYNTHETIC missing: saklı metin yok
+\end{itemize}
+
+\noindent Elle düzenlendi; düzenlenen metin kod kurallarıyla denetlendi (2026-10-02 12:00): 1 hata, 2 uyarı; atıf yapılan kanıtın her cümleyi destekleyip desteklemediği denetlenmedi.
+
+\begin{itemize}
+\item I \ensuremath{\cdot} count\_rule (error): SYNTHETIC 2 \& 3
+\end{itemize}
+
+\noindent Denetlenmedi:
+
+\begin{itemize}
+\item I \ensuremath{\cdot} SKIPPED\_SENTINEL: phrase\_rule (human edit)
+\item atıf yapılan kanıtın her cümleyi destekleyip desteklemediği
+\item sözcükle yazılmış sayılar
+\item pasajlar
+\item SYNTHETIC extra limit
+\end{itemize}
+
+\noindent Bu rapor yazıldıktan sonra kanıt değişti; rapor metni değişmedi. Pasaj metni denetlenmedi.
+
+\begin{abstract}
+
+SYNTHETIC abstract
+\begin{equation}
+\label{eq:EQ1}
+x
+\end{equation}
+\cite{Synth26}
+
+\end{abstract}
+
+\begin{IEEEkeywords}
+
+SYNTHETIC keywords $x$
+
+\end{IEEEkeywords}
+
+\section*{I. Giriş}
+
+SYNTHETIC later. \eqref{eq:EQ1} \cite{Synth26} SYNTHETIC $\R$ 文 $文$. \cite{Synth226}
+
+\section*{II. İnceleme Yöntemi}
+
+SYNTHETIC frozen counts.
+
+SYNTHETIC method claim.
+
+\section*{IV. Literatür Sentezi}
+
+SYNTHETIC table.
+
+\onecolumn
+{\scriptsize
+\begin{longtable}{>{\raggedright\arraybackslash}p{1.0in}>{\raggedright\arraybackslash}p{\dimexpr(\textwidth-1.0in-2\tabcolsep)/7-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr(\textwidth-1.0in-2\tabcolsep)/7-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr(\textwidth-1.0in-2\tabcolsep)/7-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr(\textwidth-1.0in-2\tabcolsep)/7-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr(\textwidth-1.0in-2\tabcolsep)/7-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr(\textwidth-1.0in-2\tabcolsep)/7-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr(\textwidth-1.0in-2\tabcolsep)/7-2\tabcolsep\relax}}
+\caption{Bu rapor için dondurulan kanıt tablosu (2 kaynak, 8 sütun). (8 sütundan 1–7)}\\
+\toprule
+Kaynak & SYNTHETIC C1 & SYNTHETIC C2 & SYNTHETIC C3 & SYNTHETIC C4 & SYNTHETIC C5 & SYNTHETIC C6 & SYNTHETIC C7 \\
+\midrule
+\endfirsthead
+\caption[]{Bu rapor için dondurulan kanıt tablosu (2 kaynak, 8 sütun). (8 sütundan 1–7) (devamı)}\\
+\toprule
+Kaynak & SYNTHETIC C1 & SYNTHETIC C2 & SYNTHETIC C3 & SYNTHETIC C4 & SYNTHETIC C5 & SYNTHETIC C6 & SYNTHETIC C7 \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+{}[1] Synth26 & 1 numaralı nota bakın & SYNTHETIC R1C2 & SYNTHETIC R1C3 & SYNTHETIC R1C4 & SYNTHETIC R1C5 & SYNTHETIC R1C6 & SYNTHETIC R1C7 \\
+SYNTHETIC row 2 & SYNTHETIC R2C1 & SYNTHETIC R2C2 & SYNTHETIC R2C3 & SYNTHETIC R2C4 & SYNTHETIC R2C5 & SYNTHETIC R2C6 & SYNTHETIC R2C7 \\
+\end{longtable}}
+\addtocounter{table}{-1}
+{\scriptsize
+\begin{longtable}{>{\raggedright\arraybackslash}p{1.0in}>{\raggedright\arraybackslash}p{\dimexpr(\textwidth-1.0in-2\tabcolsep)/1-2\tabcolsep\relax}}
+\caption{Bu rapor için dondurulan kanıt tablosu (2 kaynak, 8 sütun). (8 sütundan 8–8)}\\
+\toprule
+Kaynak & SYNTHETIC C8 \\
+\midrule
+\endfirsthead
+\caption[]{Bu rapor için dondurulan kanıt tablosu (2 kaynak, 8 sütun). (8 sütundan 8–8) (devamı)}\\
+\toprule
+Kaynak & SYNTHETIC C8 \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+{}[1] Synth26 & SYNTHETIC R1C8 \\
+SYNTHETIC row 2 & SYNTHETIC R2C8 \\
+\end{longtable}}
+\twocolumn
+
+\section*{VI. Cevaplanmamış Yön Adayları}
+
+Modelin kanıt tablosundan çıkardığı aday yönler; hiçbiri kapsamlı bir yoklama aramasıyla denetlenmedi.
+
+Bu bölüm için metin yazılmadı.
+
+\section*{VIII. Sınırlılıklar ve Geçerlilik Tehditleri}
+
+SYNTHETIC limits.
+
+\section*{IX. Sonuç}
+
+\noindent\textit{Bu bölüm doğrulanmadı ve yeniden yazılmalı.}
+
+Bu bölüm için metin yazılmadı.
+
+\section*{Rapor notları}
+
+DEIXIS ile üretildi; korpus: bulunan 8, tekil 7, taranan 6, dahil 4, tam metinli 3.
+
+Atıf çapaları ilgili pasajlarda veya hücrelerde bulundu. Raporu yazan model, ek bir inceleme çağrısında 3 bölümün 1 tanesindeki iddiaları atıf yapılan pasaj ve hücrelerle karşılaştırıp 2 olası sorun işaretledi. Bu, modelin okumasıdır; hakem incelemesi değildir ve hataları kaçırabilir. Kod, her pasajın ilgili iddiayı destekleyip desteklemediğini denetlemedi. Model, yeniden yazılan 1 cümlenin kaynaklarıyla artık uyuşmayabileceğini işaretledi; cümle özgün hâline döndürüldü. Okunmayan bölümler: VIII. Sınırlılıklar ve Geçerlilik Tehditleri, SYNTHETIC\_unknown. İnceleme modelin temel sürümünü kapsar; insan düzenlemeleri incelenmedi.
+
+\noindent\textbf{Model bulguları}
+
+\begin{itemize}
+\item I. Giriş \ensuremath{\cdot} Sayı \ensuremath{\cdot} SYNTHETIC finding 1: a \ensuremath{\geq} b \& c.
+\item Rapor \ensuremath{\cdot} Diğer \ensuremath{\cdot} SYNTHETIC finding 2: a \ensuremath{\geq} b \& c.
+\end{itemize}
+
+\noindent\textbf{Uzun tablo değerleri}
+
+\begin{itemize}
+\item[1.] Satır 1, sütun 1 ([1] Synth26): SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell SYNTHETIC long cell
+\end{itemize}
+
+Bu çıktı raporun metnini ve kaynakçasını taşır. Alıntı pasajları, tablo hücresi kanıtları ve konumlanmış atıf çapaları DEIXIS'te kalır.
+
+\bibliographystyle{IEEEtran}
+
+\bibliography{report-synthetic-report-draft}
+
+\end{document}

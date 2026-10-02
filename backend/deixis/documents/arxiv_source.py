@@ -1051,10 +1051,16 @@ class ChildResult:
 
 
 async def run_child(argv: list[str], stdin: bytes = b"", timeout: float = CHILD_TIMEOUT_SECONDS,
-                    max_stdout: int = MAX_CHILD_STDOUT, env: dict[str, str] | None = None) -> ChildResult:
+                    max_stdout: int = MAX_CHILD_STDOUT, env: dict[str, str] | None = None,
+                    max_memory: int | None = None) -> ChildResult:
     """Run a child, feeding `stdin` and draining stdout and stderr at the same time in their own tasks, so a full pipe
     never stalls it. stdout over `max_stdout` kills the child at once; stderr is read to its end and only its last
-    OUTPUT_TAIL_CHARS characters are kept; the whole run is killed after `timeout` seconds."""
+    OUTPUT_TAIL_CHARS characters are kept; the whole run is killed after `timeout` seconds. With `max_memory` the child's
+    resident size is read from here, outside the child, every `pdf.WATCH_INTERVAL_SECONDS` (D138, D159): over the limit
+    it is killed (`memory_limit`), and where the size is supposed to be readable but has not been for
+    `pdf.WATCH_LOST_TURNS` turns in a row it is killed too (`memory_watch_lost`)."""
+    from deixis.documents import pdf
+
     proc = await asyncio.create_subprocess_exec(*argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                 stderr=asyncio.subprocess.PIPE, env=env)
     out, err, failure = bytearray(), "", None
@@ -1082,7 +1088,27 @@ async def run_child(argv: list[str], stdin: bytes = b"", timeout: float = CHILD_
         while chunk := await proc.stderr.read(65536):
             err = (err + chunk.decode("utf-8", "replace"))[-OUTPUT_TAIL_CHARS:]
 
+    async def watch() -> None:
+        nonlocal failure
+        unread = 0
+        while proc.returncode is None and failure is None:
+            await asyncio.sleep(pdf.WATCH_INTERVAL_SECONDS)
+            if proc.returncode is not None or failure is not None:
+                return
+            resident = pdf._resident_bytes(proc.pid)
+            unread = 0 if resident is not None else unread + 1
+            if resident is not None and resident > max_memory:
+                failure = "memory_limit"
+            elif unread >= pdf.WATCH_LOST_TURNS:
+                failure = "memory_watch_lost"
+            if failure in ("memory_limit", "memory_watch_lost"):
+                if proc.returncode is None:
+                    proc.kill()
+                return
+
     tasks = [asyncio.create_task(feed()), asyncio.create_task(read_out()), asyncio.create_task(read_err())]
+    if max_memory is not None and pdf._watch_supported():
+        tasks.append(asyncio.create_task(watch()))
     try:
         async with asyncio.timeout(timeout):
             await asyncio.gather(*tasks)
@@ -1109,7 +1135,7 @@ async def read_source(data: bytes, pdf_path: Path, skip_pages: set[int], report:
     argv = [sys.executable, "-m", "deixis.documents.arxiv_source", str(pdf_path), json.dumps(sorted(skip_pages)),
             "report" if report else "placements", str(MAX_MEMORY_BYTES)]
     started = time.perf_counter()
-    result = await run_child(argv, data, env={"PYTHONPATH": str(Path(__file__).resolve().parents[2])})
+    result = await run_child(argv, data, env={"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, max_memory=MAX_MEMORY_BYTES)
     seconds = round(time.perf_counter() - started, 3)
     if result.failure:
         return {"content": "unreadable", "error": result.failure, "stderr": result.stderr_tail[-400:], "child_seconds": seconds}

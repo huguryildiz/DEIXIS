@@ -12,8 +12,11 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
 from arxiv_helpers import make_arxiv_pdf, make_tar, no_network, source_archive  # noqa: F401 - no_network is an autouse fixture
 from deixis.documents import arxiv_source as src
+from deixis.documents import pdf
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -453,6 +456,72 @@ def test_the_child_is_stopped_at_its_time_limit_and_its_output_limit():
     assert slow.failure == "timed_out"
     loud = asyncio.run(src.run_child([sys.executable, "-c", "import sys; sys.stdout.write('x' * 3_000_000)"], max_stdout=1_000_000))
     assert loud.failure == "output_too_large"
+
+
+MIB = 1024 * 1024
+needs_watch = pytest.mark.skipif(not pdf._watch_supported(), reason="the memory watch exists on macOS and Linux only")
+
+
+@needs_watch
+def test_the_parent_stops_a_source_child_that_holds_the_interpreter_lock_past_the_limit():
+    # D159: the in-child watchdog is a thread and cannot run while a C call holds the lock (D138), so run_child reads the
+    # child's size from outside. The child reserves 300 MiB with `calloc`, says `ready` at about 30 MiB, touches all of it
+    # inside `memset` called through PyDLL (lock held) and then sleeps 30 s in a PyDLL `sleep`: only a watcher outside the
+    # child can stop it before that.
+    code = ("import ctypes, sys\nlib = ctypes.PyDLL(None)\nlib.calloc.restype = ctypes.c_void_p\n"
+            "lib.memset.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t]\n"
+            "small = bytearray(30 * 1024 * 1024)\nfor i in range(0, len(small), 4096): small[i] = 1\n"
+            "big = lib.calloc(1, 300 * 1024 * 1024)\nsys.stdout.write('ready'); sys.stdout.flush()\n"
+            "lib.memset(big, 1, 300 * 1024 * 1024)\nlib.sleep(30)\n")
+    started = time.monotonic()
+    result = asyncio.run(src.run_child([sys.executable, "-c", code], timeout=60, max_memory=200 * MIB))
+    assert result.failure == "memory_limit" and result.stdout == b"ready"
+    assert time.monotonic() - started < 20
+
+
+@needs_watch
+def test_a_child_under_the_limit_ends_normally_and_a_quick_one_is_not_a_lost_watch():
+    ok = asyncio.run(src.run_child([sys.executable, "-c", "import time; time.sleep(0.5); print('{}')"], max_memory=1024 * MIB))
+    assert ok.failure is None and ok.returncode == 0
+    quick = asyncio.run(src.run_child([sys.executable, "-c", "pass"], max_memory=1024 * MIB))
+    assert quick.failure is None and quick.returncode == 0
+
+
+@needs_watch
+def test_a_source_child_whose_size_cannot_be_read_is_killed_as_a_lost_watch(monkeypatch):
+    monkeypatch.setattr(pdf, "_resident_bytes", lambda pid: None)
+    started = time.monotonic()
+    result = asyncio.run(src.run_child([sys.executable, "-c", "import time; time.sleep(30)"], timeout=60, max_memory=1024 * MIB))
+    assert result.failure == "memory_watch_lost" and time.monotonic() - started < 15
+
+
+def test_read_source_passes_the_production_memory_limit_to_the_watcher(tmp_path, monkeypatch):
+    seen = {}
+
+    async def fake(argv, stdin=b"", **kwargs):
+        seen.update(kwargs)
+        return src.ChildResult(None, b"", "SYNTHETIC", "memory_limit")
+    monkeypatch.setattr(src, "run_child", fake)
+    found = asyncio.run(src.read_source(source_archive(), tmp_path / "x.pdf", set()))
+    assert seen["max_memory"] == src.MAX_MEMORY_BYTES == 1024 * MIB
+    assert found["content"] == "unreadable" and found["error"] == "memory_limit"
+
+
+@pytest.mark.skipif(os.environ.get("DEIXIS_P9_PRODUCTION_THRESHOLD") != "1",
+                    reason="F09 for the arXiv source child takes about 30 s; set DEIXIS_P9_PRODUCTION_THRESHOLD=1")
+def test_the_source_child_is_stopped_at_the_production_memory_limit(tmp_path):
+    # ~200 MiB of decoded page content in a PDF of about 200 KB makes the matching step grow past 1 GiB (D159).
+    sys.path.insert(0, str(REPO / "scripts" / "p9"))
+    import memory_probe
+
+    path = tmp_path / "expands-past-1gib.pdf"
+    memory_probe.build_pdf(path, 200 * MIB)
+    # The production argv and limit; only the 60 s time limit is widened, so a loaded machine ends at the memory limit and
+    # not at the clock (growth here is about 30 MiB/s unloaded, slower under load).
+    argv = [sys.executable, "-m", "deixis.documents.arxiv_source", str(path), "[]", "placements", str(src.MAX_MEMORY_BYTES)]
+    env = {"PYTHONPATH": str(Path(src.__file__).resolve().parents[2])}
+    result = asyncio.run(src.run_child(argv, source_archive(), timeout=240, env=env, max_memory=src.MAX_MEMORY_BYTES))
+    assert result.failure == "memory_limit"
 
 
 def test_a_child_writing_a_megabyte_to_stderr_before_stdout_does_not_stall_and_keeps_only_the_tail():

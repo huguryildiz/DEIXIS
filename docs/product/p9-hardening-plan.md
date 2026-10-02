@@ -257,6 +257,8 @@ hata metni); tam pytest.
 
 **Göstermez.** Bellek sınırının başka dosya türlerinde ya da eşiğin altındaki kullanımda işlediğini; Windows'ta izleyici yok.
 
+**H0c (devam, D159).** OCR, JATS çizimi ve arXiv kaynağı alt süreçleri aynı üretim eşiğinde ölçüldü (`scripts/p9/child_memory_probe.py`): OCR ve JATS kendi süreç-içi izleyicisiyle durdu (geç: kernel tepe değeri sınırın yaklaşık 2,4 ve 1,5 katı), arXiv kaynağı durmadı ve D138'in ebeveyn izleyicisine alındı. D138'in açık maddesi kapandı.
+
 ### H1 — Temiz kurulum ve başlatma denetimi (M)
 
 **Kapsam.** `scripts/p9/install_check.sh` (ya da Python): verilen bir commit'i geçici klasöre dışa aktarır (çalışma ağacını

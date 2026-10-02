@@ -5,6 +5,7 @@ This is the placement contract from [D1](decisions.md), not a project-status boa
 ```text
 DEIXIS/
 ├── README.md                    project entry and methodological bibliography
+├── STATUS.md                    the one project-status page (Turkish), mirrored to Notion
 ├── docs/
 │   ├── README.md               document authority map
 │   ├── layout.md               this placement contract

@@ -48,7 +48,10 @@ REPO = Path(__file__).resolve().parents[2]
 BROWSER = Path(__file__).resolve().parent / "capacity_browser.mjs"
 OUT_ROOT = REPO / ".local" / "p9-h5"
 SHAPE_VERSION = 1
-PORTS = range(8900, 8921)
+PORT_FIRST = int(os.environ.get("P9_CAPACITY_PORT_FIRST", "8900"))  # the range is this port and the 20 after it (the matrix runner sets 8950)
+PORTS = range(PORT_FIRST, PORT_FIRST + 21)
+if any(p == 8765 or 8858 <= p <= 8864 for p in PORTS):
+    raise SystemExit(f"P9_CAPACITY_PORT_FIRST={PORT_FIRST}: the range {PORTS[0]} to {PORTS[-1]} touches a live-service port (8765, 8858 to 8864)")
 LOAD_LIMIT = 4.0
 SEED = 20261002
 
@@ -247,7 +250,7 @@ def guard_dir(path: str | os.PathLike[str]) -> Path:
 
 def guard_port(port: int) -> int:
     if port not in PORTS:
-        raise GuardError(f"port {port} is outside 8900 to 8920")
+        raise GuardError(f"port {port} is outside {PORTS[0]} to {PORTS[-1]}")
     return port
 
 
@@ -341,7 +344,7 @@ def pick_port() -> int:
         _port_cursor[0] += 1
         if port_free(port):
             return guard_port(port)
-    raise GuardError("no free port in 8900 to 8920")
+    raise GuardError(f"no free port in {PORTS[0]} to {PORTS[-1]}")
 
 
 def child_env(home: Path, data_dir: Path) -> dict[str, str]:

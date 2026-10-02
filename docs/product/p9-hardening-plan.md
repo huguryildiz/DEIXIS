@@ -454,6 +454,8 @@ ve RSS gibi değişken değerlerin aynen eşit olması beklenmez, eşikleri kar�
 
 **Göstermez.** Gerçek model davranışını; matrisin başka makinede tekrarlandığını (H1 ve I08 dışında).
 
+**Durum (2-3 Ekim 2026, D168).** `scripts/p9/run_matrix.sh` (+ `run_matrix.py`) sekiz aşamayı koşar ve 61 satırlık sonucu basar; kayıt `docs/product/p9-acceptance-record.md`. Üç tam koşu: 1. koşuda zorunlu `suite-playwright` satırı geçmedi (`report-edit.spec.ts:338`, tek spec, tek başına 5/5 ve dosyasıyla 3/3 geçiyor, test içi yarış), 2. ve 3. koşuda tüm zorunlu satırlar geçti; "iki koşuda aynı sonuç" koşulu 2. ve 3. koşu için sağlanıyor, 1. koşu için sağlanmıyor. I08, X07, R01, R02 ve B02 matriste ölçülmedi. Tek makine, sahte model, sentetik kayıt.
+
 ### H9 — Gerçek model: yeni korpusta rapor ölçümü (L) — **ayrı dondurma kuralı**
 
 **Kapsam.** Kapalı P16 serisinin dördüncü denemesi **değil**; yeni bir seri (P9-R), yeni bir korpus, tek koşu. Kuralı §7'de.

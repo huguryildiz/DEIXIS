@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# P9 acceptance matrix, one command. H1 adds the install and start rows (I01 to I05, I07; I08 is manual).
-# Later batches append their own rows below the harness call, each writing its raw output under .local/p9-<batch>/.
+# P9 acceptance matrix, one command: every automatic (S, G, A) row of plan section 4, then the result table.
+#   scripts/p9/run_matrix.sh [--only a,b] [--skip a,b] [--out-dir DIR] [--overlay-uncommitted] [--keep] [--self-test]
+# The work is in run_matrix.py; raw output goes to .local/p9-matrix/<stamp>/ (ignored by Git). Exit 0 only when every mandatory row is geçti.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 
-python3 scripts/p9/install_check.py "$@"
-status=$?
-
-# H2 and later: add the next harness here and fold its status into `status`.
-exit "$status"
+if [ "$(uname -m)" != "arm64" ]; then
+  echo "refused: native arm64 only (plan section 2); uname -m says $(uname -m)" >&2
+  exit 2
+fi
+PY=.venv/bin/python
+[ -x "$PY" ] || PY=python3
+exec "$PY" scripts/p9/run_matrix.py "$@"

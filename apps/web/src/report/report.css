@@ -15,7 +15,7 @@
 .evidence-report-claim-meta{padding:8px 0 10px 16px;border-left:1px solid var(--line);font-family:'DM Sans Variable',sans-serif;font-size:12px;color:var(--muted)}
 .evidence-report-claim-meta>span,.evidence-report-claim-meta>strong{display:inline-block;margin-right:12px}
 .evidence-report-claim-meta>div:not(.evidence-report-edit){display:flex;flex-direction:column;align-items:flex-start;gap:4px}
-.evidence-report-claim-meta button:not([data-slot=button]){max-width:100%;padding:0;border:0;background:none;color:var(--accent);text-align:left;font-size:12px;cursor:pointer;overflow-wrap:anywhere}
+.evidence-report-claim-meta button:not([data-slot=button]){max-width:100%;min-height:24px;padding:0;border:0;background:none;color:var(--accent);text-align:left;font-size:12px;cursor:pointer;overflow-wrap:anywhere}
 .evidence-report-history{margin-top:7px}
 .evidence-report-history summary{display:flex;align-items:center;gap:4px;cursor:pointer}
 .evidence-report-history .opened,.evidence-report-history[open] .closed{display:none}

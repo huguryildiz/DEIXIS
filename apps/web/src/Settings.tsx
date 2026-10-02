@@ -33,7 +33,7 @@ export function SettingsPage({ dark, tab, onTab }: { dark: boolean; tab: 'defaul
 
   return <section className="collection legacy-connections">
     <div className="section-label">{t('Settings')}</div>
-    <h1>{t('Settings')}</h1>
+    <h1 tabIndex={-1}>{t('Settings')}</h1>
     <p>{t('Defaults apply to new researches. Each research keeps the models it was created with, and you can change them for one research from the composer.')}</p>
     {error && <Notice tone="error">{error}</Notice>}
 

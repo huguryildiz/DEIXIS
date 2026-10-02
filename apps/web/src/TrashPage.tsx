@@ -150,7 +150,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     : t('Its column definitions are deleted. Tables started from it keep their own columns. This cannot be undone.')
 
   return <section className="trash-page">
-    <h1>{t('Trash')}</h1>
+    <h1 tabIndex={-1}>{t('Trash')}</h1>
     <p className="trash-hint">{t('Research, evidence tables, templates and sources removed from a research wait here until you restore or delete them. Nothing in the Trash expires.')}</p>
     {trash && !empty && <p className="trash-index">{[
       trash.researches.length > 0 && { href: '#trash-researches', text: t(trash.researches.length === 1 ? '{n} research' : '{n} research', { n: trash.researches.length }) },

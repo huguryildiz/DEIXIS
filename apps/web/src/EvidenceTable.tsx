@@ -19,6 +19,7 @@ import type { PassageTarget } from './lineage/LinkRow'
 import './EvidenceTable.css'
 import './lineage/lineage.css'
 import { Notice } from './Notice'
+import { focusWhenLost } from './focus'
 import { UploadedTextNote } from './SemanticNotes'
 
 // The Evidence tab (P5 slice 1, D37/D38): a table whose rows are source versions and whose cells are append-only
@@ -121,7 +122,7 @@ type EditorTarget = { mode: 'add' } | { mode: 'edit'; column: TableColumn } | { 
 // The live table run with its controls; a paused run offers Resume. Cancel asks first, since a cancelled run cannot be resumed.
 function TableRunLine({ run, detail, model, connection, busy, onControl }: { run: Run; detail: string; model: string; connection: string; busy: boolean; onControl: (action: 'pause' | 'resume' | 'cancel') => void }) {
   const live = ACTIVE.has(run.status)
-  return <div className={`evidence-run${live ? ' is-live' : ''}`} role="status">
+  return <div className={`evidence-run${live ? ' is-live' : ''}`} role="status" tabIndex={-1}>
     <span className="evidence-run-signal" aria-hidden><i /></span>
     <strong>{t(tableRunLabels[run.kind])}</strong>
     {(run.status !== 'running' || detail) && <span className="evidence-run-detail">{[run.status !== 'running' && t(runStatusLabels[run.status]), detail].filter(Boolean).join(' · ')}</span>}
@@ -334,7 +335,10 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
     if (target.mode === 'edit') await api.reviseColumn(researchId, tableId, target.column.id, spec, columns.find(c => c.id === target.column.id)?.version ?? target.column.version)
     else await api.addColumn(researchId, tableId, target.mode === 'suggestion' ? { ...spec, suggestion_step_id: target.stepId } : spec, table.table.version, newKey())
     setEditor(null)
-  }, t(target.mode === 'edit' ? 'Column saved.' : 'Column added.'))
+  }, t(target.mode === 'edit' ? 'Column saved.' : 'Column added.')).then(() => {
+    // The button that opened the editor may be gone (the empty-table prompt): the new column's header, the last one, takes the focus then.
+    if (target.mode !== 'edit') focusWhenLost(() => Array.from(grid.current?.querySelectorAll<HTMLElement>('.evidence-col-head') ?? []).at(-1))
+  })
   const suggestionSpec = (s: ColumnSuggestion): ColumnSpec => ({ name: s.name, instruction: s.instruction, answer_format: s.answer_format, options: s.options, allow_multiple: s.allow_multiple, unit_hint: s.unit_hint })
 
   return <section className={`evidence-panel${fullscreen ? ' is-fullscreen' : ''}`} aria-labelledby="evidence-heading">
@@ -390,7 +394,10 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
         <Button variant="ghost" disabled={!columns.length || !rows.length} title={t('Current values and their quotes as a CSV file; proposals waiting for a decision are left out.')} onClick={() => downloadTableCsv(table, view.sources)}><Download size={15} aria-hidden />{t('Export CSV')}</Button>
         <Button variant="ghost" disabled={busy || !columns.length} aria-expanded={templateName !== null} onClick={() => setTemplateName(name => (name === null ? table.table.title : null))}><Save size={15} aria-hidden />{t('Save as template')}</Button>
         <Button variant={fillable ? 'default' : 'outline'} disabled={busy || !fillable}
-          onClick={() => act(async () => { await api.fillTable(researchId, tableId, table.table.version, newKey()); onRunStarted() })}>
+          onClick={() => act(async () => { await api.fillTable(researchId, tableId, table.table.version, newKey()); onRunStarted() }).then(() => {
+            // The button is disabled while the fill runs: the run's status line takes the focus, and the table's current cell when that line leaves with the run's end.
+            focusWhenLost(() => document.querySelector<HTMLElement>('.evidence-run') ?? grid.current?.querySelector<HTMLElement>('[data-cell][tabindex="0"]'), 120_000, true)
+          })}>
           <Sparkles size={15} aria-hidden />{!estimate.sources ? t('No empty cells to fill') : t(estimate.sources === 1 ? 'Fill empty cells · {n} source · up to {calls} calls · {model}' : 'Fill empty cells · {n} sources · up to {calls} calls · {model}', { n: estimate.sources, calls: estimate.max_model_calls, model })}
         </Button>
       </span>

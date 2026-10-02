@@ -28,6 +28,7 @@ import { citationStyles, formatReference, formatReferenceText, type CitationStyl
 import { OCR_LABEL, ocrLanguagesText, ocrOffer } from './ocr'
 import { OcrButton, OcrNote } from './OcrNote'
 import { t, uiLocale } from './i18n'
+import { focusWhenLost } from './focus'
 import { SourceKey } from './SourceKey'
 import { scrollBehavior } from './motion'
 import { Notice } from './Notice'
@@ -254,7 +255,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     && source.has_pdf_text && source.access.assets.length > 0)
   const included = view.counts.included
 
-  const startAnswer = () => act(() => api.startRun(id, 'answer', crypto.randomUUID()))
+  // The button that starts or resumes a run is gone once the run exists; focus goes to the newest run's status line (its heading in the transcript, else the run strip).
+  const toRunStatus = () => { focusWhenLost(() => Array.from(document.querySelectorAll<HTMLElement>('.chat-turn .chat-toggle')).at(-1) ?? document.querySelector<HTMLElement>('.run-strip-status')) }
+  const startAnswer = () => act(() => api.startRun(id, 'answer', crypto.randomUUID())).then(toRunStatus)
   const startDiscovery = () => {
     if (!seedSearchReady) { toast('error', t('Choose a readable PDF to guide the search.')); return }
     return act(() => api.startRun(id, 'discovery', crypto.randomUUID()))
@@ -458,12 +461,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
         </button>
         : run && !CANDIDATE_KINDS.has(run.kind) && (active || run.status === 'paused') && <div className="run-strip">
-          <span className="run-strip-status">{active && <LoaderCircle size={13} className="chat-spin" aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
+          <span className="run-strip-status" tabIndex={-1}>{active && <LoaderCircle size={13} className="chat-spin" aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
           {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />{t('Pause')}</Button>}
           {/* A run stopped for the approval has no plain Resume: it would freeze a protocol nobody saw, and the
               backend refuses it. The approval card in the timeline carries the only way on (D80). */}
           {run.status === 'paused' && run.pause_reason !== 'protocol_approval_needed'
-            && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0) && <Button variant="default" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'resume'))}><Play size={14} />{t('Resume')}</Button>}
+            && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0) && <Button variant="default" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'resume')).then(toRunStatus)}><Play size={14} />{t('Resume')}</Button>}
           <Button variant="destructive" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'cancel'))}><X size={14} />{t('Cancel')}</Button>
         </div>}
       </div>
@@ -898,10 +901,13 @@ function ExportLinks({ researchId, sources }: { researchId: string; sources: 'in
   </span>
 }
 
-function ReasonForm({ busy, onSave }: { busy: boolean; onSave: (reason: string) => void }) {
+// focusOnOpen: the form opened because the person pressed Exclude, whose button is disabled by then, so the field takes the focus.
+function ReasonForm({ busy, onSave, focusOnOpen }: { busy: boolean; onSave: (reason: string) => void; focusOnOpen: boolean }) {
   const [text, setText] = useState('')
+  const field = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (focusOnOpen) field.current?.focus() }, [focusOnOpen])
   return <form className="reason-form" onSubmit={e => { e.preventDefault(); if (text.trim()) onSave(text.trim()) }}>
-    <input aria-label={t('Reason for excluding this source')} placeholder={t('Why exclude it? Optional; kept with your choice.')} maxLength={1000} value={text} onChange={e => setText(e.target.value)} />
+    <input ref={field} aria-label={t('Reason for excluding this source')} placeholder={t('Why exclude it? Optional; kept with your choice.')} maxLength={1000} value={text} onChange={e => setText(e.target.value)} />
     <Button type="submit" variant="outline" size="sm" disabled={busy || !text.trim()}>{t('Save reason')}</Button>
   </form>
 }
@@ -1036,6 +1042,9 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
   const unusable = candidates.filter(c => c.access_status !== 'downloaded').length
   const lookupSummary = [t('{p} services · {n} checks', { p: new Set(discoveries.map(d => d.provider)).size, n: discoveries.length }), unusable && t(unusable === 1 ? '{n} file not usable' : '{n} files not usable', { n: unusable })].filter(Boolean).join(' · ')
   const primaryAction = source.access.assets.length ? 'pdf' : 'abstract'
+  // Exclude and Save reason each end by removing the control they were pressed with; focus goes on to the field and then to the saved reason.
+  const [askedReason, setAskedReason] = useState(false)
+  const reasonNote = useRef<HTMLParagraphElement>(null)
   const ocrOffers = new Map(source.access.assets.map(asset => [asset.id, ocrOffer(asset, ocr.tool, ocr.runs)]))
   return <div className={`source-row has-pick is-${s.state}${other ? ' is-other-version' : ''}${picked ? ' is-picked' : ''}`}>
     <input type="checkbox" className="source-pick" checked={picked} onChange={e => onPick(e.target.checked)} aria-label={t('Select {title}', { title: source.title })} />
@@ -1058,10 +1067,10 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
       {source.applicability === 'stale_scope' && <p className="proposal is-stale">{t(s.proposal ? 'Found for question revision {n}; the proposal below was made for that question. Search again to screen it for the current question.' : 'Found for question revision {n}. Search again to screen it for the current question.', { n: source.found_in_revision ?? '?' })}</p>}
       {s.proposal && !other && <p className="proposal is-model"><span className="proposal-tag">{t('Model proposal:')}</span> <span><em className={`verdict is-${s.proposal}`}>{t(s.proposal)}</em> — {s.proposal_reason} <span>({t(s.proposal_basis?.replaceAll('_', ' ') ?? '')})</span>{s.origin === 'user' ? ` ${t('· overridden by you')}` : ''}</span></p>}
       {/* A selection the queue wrote reads as that answer; the backend names it from the stored link, never from the reason text. */}
-      {s.origin === 'user' && (s.queue_answer || s.user_reason) && <p className="proposal"><UserPen size={13} aria-hidden />{s.queue_answer
+      {s.origin === 'user' && (s.queue_answer || s.user_reason) && <p className="proposal" ref={reasonNote} tabIndex={-1}><UserPen size={13} aria-hidden />{s.queue_answer
         ? t('Your answer in the queue: {answer}', { answer: t(queueAnsweredText[s.queue_answer]) })
         : t('Your reason: {reason}', { reason: s.user_reason ?? '' })}</p>}
-      {s.origin === 'user' && s.state === 'excluded' && !s.user_reason && <ReasonForm busy={busy} onSave={onReason} />}
+      {s.origin === 'user' && s.state === 'excluded' && !s.user_reason && <ReasonForm busy={busy} focusOnOpen={askedReason} onSave={reason => { setAskedReason(false); onReason(reason); focusWhenLost(() => reasonNote.current) }} />}
       {finding && <PdfSearchStatus />}
       {source.access.assets.map(asset => asset.rejected_extraction && <p key={asset.id} className="proposal"><ScanText size={13} aria-hidden />{t('A later text extraction ({version}) was not used: {reason}. The earlier text stays in use.', { version: asset.rejected_extraction.extraction_version, reason: asset.rejected_extraction.rejection_reason })}</p>)}
       {[...ocrOffers.entries()].map(([assetId, offer]) => offer && <OcrNote key={assetId} offer={offer} />)}
@@ -1089,7 +1098,7 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
       </div>
     </div>
     {!other && <div className="selection-toggle" role="group" aria-label={t('Selection for {title}', { title: source.title })}>
-      {(['included', 'pending', 'excluded'] as const).map(state => <button key={state} className={`is-${state}`} aria-pressed={s.state === state} disabled={busy || s.state === state} onClick={() => onSelect(state)}>{t(state === 'included' ? 'Include' : state === 'excluded' ? 'Exclude' : 'Undecided')}</button>)}
+      {(['included', 'pending', 'excluded'] as const).map(state => <button key={state} className={`is-${state}`} aria-pressed={s.state === state} disabled={busy || s.state === state} onClick={() => { setAskedReason(state === 'excluded'); onSelect(state) }}>{t(state === 'included' ? 'Include' : state === 'excluded' ? 'Exclude' : 'Undecided')}</button>)}
     </div>}
   </div>
 }

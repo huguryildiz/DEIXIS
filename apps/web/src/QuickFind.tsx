@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
 import { FileText, FlaskConical, Plus, Search, Settings2 } from 'lucide-react'
 import { api, type QuickFindResult, type ResearchSummary } from './api'
@@ -15,14 +15,16 @@ const pages = (): Item[] => [
 const ICONS = { Pages: Settings2, Research: FlaskConical, Sources: FileText }
 const GROUP_HEADINGS = { Pages: 'PAGES', Research: 'RESEARCH', Sources: 'SOURCES' }
 
-export function QuickFind({ open, onOpenChange, recent, dark }: {
-  open: boolean; onOpenChange: (open: boolean) => void; recent: ResearchSummary[]; dark: boolean
+export function QuickFind({ open, onOpenChange, recent, dark, returnFocus }: {
+  open: boolean; onOpenChange: (open: boolean) => void; recent: ResearchSummary[]; dark: boolean; returnFocus: RefObject<HTMLElement | null>
 }) {
   const [query, setQuery] = useState('')
   const [found, setFound] = useState<{ text: string; result: QuickFindResult } | null>(null)
   const [error, setError] = useState('')
   const [active, setActive] = useState(0)
   const text = query.trim()
+  const chose = useRef(false)  // choosing a result on another page moves focus to that page; Escape and a same-page choice return it to the opener
+  useEffect(() => { if (open) chose.current = false }, [open])
 
   useEffect(() => {
     if (!text) return
@@ -56,6 +58,8 @@ export function QuickFind({ open, onOpenChange, recent, dark }: {
   }
   function choose(item: Item | undefined) {
     if (!item) return
+    // A new route hands focus to its page's heading (App); choosing the route that is already open changes nothing there, so the opener gets focus back.
+    chose.current = `#${item.hash}` !== window.location.hash
     window.location.hash = item.hash
     close(false)
   }
@@ -70,7 +74,7 @@ export function QuickFind({ open, onOpenChange, recent, dark }: {
   return <Dialog.Root open={open} onOpenChange={close}>
     <Dialog.Portal>
       <Dialog.Backdrop className="quick-find-backdrop" />
-      <Dialog.Popup className={`quick-find ${dark ? 'dark' : ''}`}>
+      <Dialog.Popup className={`quick-find ${dark ? 'dark' : ''}`} finalFocus={() => chose.current ? false : returnFocus.current?.isConnected ? returnFocus.current : null}>
         <Dialog.Title className="sr-only">{t('Quick find')}</Dialog.Title>
         <div className="quick-find-field">
           <Search size={16} aria-hidden="true" />

@@ -700,7 +700,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
 
   return <section className="collection library-page" ref={sectionRef} data-density={density} data-grouping={grouping}>
     <div className="library-mast">
-      <h1>{t('Library')}</h1>
+      <h1 tabIndex={-1}>{t('Library')}</h1>
       <p className="library-lede">{t('Every work saved across your research, with its versions and the projects that use it. Citation counts come from OpenAlex and are metadata, not a quality judgment.')}</p>
     </div>
 

@@ -1858,6 +1858,8 @@ const tr: Record<string, string> = {
   'read from: {depth}': 'okunan: {depth}',
   'run {id}': 'işlem {id}',
   'Evidence table': 'Kanıt tablosu',
+  'Evidence table, scrolls sideways': 'Kanıt tablosu, yana kaydırılır',
+  'PDF pages': 'PDF sayfaları',
   'Could not load the evidence table: {error}': 'Kanıt tablosu yüklenemedi: {error}',
   'Loading the evidence table…': 'Kanıt tablosu yükleniyor…',
   'Rows are source versions of this research; each cell links to passages of its own row’s version. A model fills only empty cells; anything else it returns waits for your decision.': 'Satırlar bu araştırmanın kaynak sürümleridir; her hücre kendi satırının sürümündeki pasajlara bağlanır. Model yalnız boş hücreleri doldurur; döndürdüğü diğer her şey kararınızı bekler.',

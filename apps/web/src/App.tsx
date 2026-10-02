@@ -11,6 +11,7 @@ import { LibraryPage } from './LibraryPage'
 import { QuickFind } from './QuickFind'
 import { BackgroundJobs } from './BackgroundJobs'
 import { useToast } from './Toast'
+import { focusWhenLost } from './focus'
 import { TrashPage } from './TrashPage'
 import { setUiLanguage, t, uiLanguage, uiLocale, type UiLanguage } from './i18n'
 import './App.css'
@@ -29,6 +30,8 @@ const recentStatusIcons: Record<RunStatus, LucideIcon> = {
 const activeRunStatuses = new Set<RunStatus>(['queued', 'running', 'pause_requested'])
 const SIDEBAR_MIN = 200
 const SIDEBAR_MAX = 420
+// Quick find has no trigger element, so the control that had focus when it opened is remembered and handed back on Escape.
+const rememberFocus = (ref: { current: HTMLElement | null }) => { const active = document.activeElement; if (active instanceof HTMLElement && !active.closest('.quick-find')) ref.current = active }
 const clampSidebar = (width: number) => Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)))
 
 function readSidebarWidth(): number | null {
@@ -89,11 +92,13 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeChoice>(readTheme)
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const [findOpen, setFindOpen] = useState(false)
+  const findOpener = useRef<HTMLElement | null>(null)
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('deixis-sidebar') === 'collapsed' } catch { return false } })
   const [recentsOpen, setRecentsOpen] = useState(() => { try { return localStorage.getItem('deixis-recents') !== 'closed' } catch { return true } })
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(readSidebarWidth)
   const [resizing, setResizing] = useState(false)
   const asideRef = useRef<HTMLElement>(null)
+  const [asideWidth, setAsideWidth] = useState(SIDEBAR_MIN)
   const [language, setLanguage] = useState<UiLanguage>(uiLanguage)
   const toast = useToast()
   const dark = theme === 'dark' || (theme === 'system' && systemDark)
@@ -102,7 +107,7 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k') { event.preventDefault(); setFindOpen(open => !open) }
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k') { event.preventDefault(); rememberFocus(findOpener); setFindOpen(open => !open) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -113,6 +118,14 @@ export default function App() {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+  // A new route (the composer's Start research, a quick find result, the browser's back button) hands focus to the page's heading when focus has been lost, which is
+  // the case when the control that led there has gone. Not on the first load, and not when focus is on a control that is still there (the sidebar button that was used).
+  const shownRoute = useRef(route)
+  useEffect(() => {
+    if (shownRoute.current === route) return
+    shownRoute.current = route
+    return focusWhenLost(() => document.querySelector<HTMLElement>('main h1'), 5000)
+  }, [route])
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
     const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches)
@@ -230,6 +243,15 @@ export default function App() {
     try { localStorage.setItem('deixis-sidebar', next ? 'collapsed' : 'expanded') } catch { /* the choice still applies for this tab */ }
   }
 
+  // A separator that can be focused needs its current value; with no width set by hand it is the rendered one.
+  useEffect(() => {
+    const node = asideRef.current
+    if (!node) return
+    const observer = new ResizeObserver(() => setAsideWidth(Math.round(node.offsetWidth)))
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
   // The sidebar starts at the left edge, so the pointer's x position is the new width. Saved once the drag ends.
   useEffect(() => {
     if (resizing) return
@@ -277,7 +299,7 @@ export default function App() {
         <button className="brand" aria-label={t('DEIXIS home')} onClick={() => go({ view: 'home' })}><span className="brand-mark" aria-hidden="true" /><span className="sidebar-label">DEIXIS</span></button>
         <Button variant="ghost" size="icon" className="sidebar-toggle" onClick={toggleCollapsed} aria-label={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')} title={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}>{collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</Button>
       </div>
-      <button type="button" className="sidebar-find" onClick={() => setFindOpen(true)} aria-label={t('Quick find')} aria-keyshortcuts="Meta+K Control+K" title={t('Quick find')}><Search size={16} /><span className="sidebar-label sidebar-find-label">{t('Search')}</span><kbd className="sidebar-label">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd></button>
+      <button type="button" className="sidebar-find" onClick={() => { rememberFocus(findOpener); setFindOpen(true) }} aria-label={t('Quick find')} aria-keyshortcuts="Meta+K Control+K" title={t('Quick find')}><Search size={16} /><span className="sidebar-label sidebar-find-label">{t('Search')}</span><kbd className="sidebar-label">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd></button>
       <nav aria-label={t('Main navigation')}>
         <button className={route.view === 'home' || route.view === 'research' ? 'selected' : ''} onClick={() => go({ view: 'home' })} title={t('Research')}><FlaskConical size={17} /> <span className="sidebar-label">{t('Research')}</span></button>
         <button className={route.view === 'library' ? 'selected' : ''} onClick={() => go({ view: 'library' })} title={t('Library')}><Library size={17} /> <span className="sidebar-label">{t('Library')}</span></button>
@@ -321,7 +343,7 @@ export default function App() {
         </span>
         {!collapsed && <span className="access-chip-note">{t(institutionalStatus === 'institutional' ? 'Campus network or university VPN detected.' : institutionalStatus === 'none' ? 'Turn on the university VPN for institutional Scopus access.' : institutionalStatus === 'unknown' ? 'Institutional access could not be verified.' : 'Checking the current network access.')}</span>}
       </div>
-      {!collapsed && <div className="sidebar-resizer" role="separator" aria-orientation="vertical" tabIndex={0} aria-label={t('Resize sidebar')} title={t('Drag to resize · double-click to reset')} aria-valuemin={SIDEBAR_MIN} aria-valuemax={SIDEBAR_MAX} aria-valuenow={sidebarWidth ?? undefined} onPointerDown={startResize} onKeyDown={resizeByKey} onDoubleClick={() => setSidebarWidth(null)} />}
+      {!collapsed && <div className="sidebar-resizer" role="separator" aria-orientation="vertical" tabIndex={0} aria-label={t('Resize sidebar')} title={t('Drag to resize · double-click to reset')} aria-valuemin={SIDEBAR_MIN} aria-valuemax={SIDEBAR_MAX} aria-valuenow={sidebarWidth ?? asideWidth} onPointerDown={startResize} onKeyDown={resizeByKey} onDoubleClick={() => setSidebarWidth(null)} />}
     </aside>
     <div className="main-shell">
       <header>
@@ -340,7 +362,7 @@ export default function App() {
         {route.view === 'settings' && <SettingsPage key={route.tab ?? 'defaults'} dark={dark} tab={route.tab ?? 'defaults'} onTab={tab => go({ view: 'settings', tab: tab === 'connections' ? 'connections' : undefined })} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
       </main>
-      <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} />
+      <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} returnFocus={findOpener} />
       <footer><span>{t('© 2026 DEIXIS · Designed & built by')} <a href="https://huguryildiz.com" target="_blank" rel="noopener noreferrer">Hüseyin Uğur Yıldız</a><a className="footer-github" href="https://github.com/huguryildiz/DEIXIS" target="_blank" rel="noopener noreferrer" aria-label={t('DEIXIS on GitHub')} title={t('DEIXIS on GitHub')}><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" /></svg></a></span></footer>
     </div>
   </div>

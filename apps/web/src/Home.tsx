@@ -361,7 +361,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   </div>
 
   return <section className="welcome">
-    <h1>{uiLanguage() === 'tr' ? <><em>Sorunuz</em> sizi nereye götürüyor?</> : <>Where does your <em>question</em>{' '}lead?</>}</h1>
+    <h1 tabIndex={-1}>{uiLanguage() === 'tr' ? <><em>Sorunuz</em> sizi nereye götürüyor?</> : <>Where does your <em>question</em>{' '}lead?</>}</h1>
     <p className="intro">{t('Ask a question. DEIXIS finds publications, lets you choose the sources, and links each claim to a passage you can open.')}</p>
     <form className="composer" onSubmit={e => { e.preventDefault(); void submit() }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); void addFiles(e.dataTransfer.files) }}>
       <label className="composer-label" htmlFor="research-question">{t('What would you like to investigate?')}</label>

@@ -20,6 +20,26 @@ from deixis.config import Settings, load_settings
 from deixis.storage import backup
 
 
+SHUTDOWN_EXIT_SECONDS = 6.0
+FORCED_EXIT_CODE = 1
+
+
+def watch_shutdown(server, seconds: float, exit_function, cancel: threading.Event) -> None:
+    """Once the server is asked to stop (SIGINT, SIGTERM), give it `seconds` more, then end the process.
+
+    A graceful shutdown waits for the worker, and the worker waits for a model call that can run for minutes; after a
+    Ctrl-C the interpreter also waits for an extraction thread. Nothing is cancelled here: the state at a forced exit is
+    the state after a SIGKILL, which the next start recovers (running steps `outcome_unknown`, runs `paused`)."""
+    while not server.should_exit:
+        if cancel.wait(0.1):
+            return
+    if cancel.wait(seconds):
+        return
+    sys.stderr.write(f"DEIXIS did not finish shutting down in {seconds:g} s; exiting\n")
+    sys.stderr.flush()
+    exit_function(FORCED_EXIT_CODE)
+
+
 def port_available(host: str, port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         if sys.platform != "win32":  # like uvicorn; lingering closed connections must not look like a running server
@@ -75,6 +95,9 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...]) ->
             time.sleep(0.1)
 
     threading.Thread(target=open_when_ready, daemon=True).start()
+    # Never cancelled here: the executor join it guards happens inside `asyncio.run`'s close, inside `server.run()`, so the
+    # thread is simply left running (the cancel event exists for the unit test).
+    threading.Thread(target=watch_shutdown, args=(server, SHUTDOWN_EXIT_SECONDS, os._exit, threading.Event()), daemon=True).start()
     server.run()
     return 0
 

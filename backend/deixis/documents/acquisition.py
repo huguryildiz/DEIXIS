@@ -12,7 +12,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-from deixis.documents import fetch, jats, pdf
+from deixis.documents import fetch, jats, pdf, pdf_files
 from deixis.providers import core, crossref
 from deixis.providers.common import ProviderRecord, normalize_doi
 from deixis.storage import db
@@ -467,9 +467,7 @@ async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_
                       retrieved_from: str | None, filename: str | None = None) -> str:
     sha = hashlib.sha256(data).hexdigest()
     papers_dir.mkdir(parents=True, exist_ok=True)
-    path = papers_dir / f"{sha}.pdf"
-    if not path.exists():
-        path.write_bytes(data)
+    path = pdf_files.store_pdf_file(papers_dir, sha, data)
     extraction = await asyncio.to_thread(pdf.extract_pdf, path)
     return store.add_asset_with_pages(source_version_id, sha, len(data), path.name, origin, retrieved_from, filename,
                                       extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)

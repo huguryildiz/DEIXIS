@@ -31,6 +31,7 @@ from deixis.documents.identity import MATCH_TEXT_CHARS, match_pdf_to_source
 from deixis.documents import local_embedding, math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
+from deixis.documents import pdf_files
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ, CHAIN_PLAN_ROOM,
@@ -1670,9 +1671,7 @@ def create_app(
                 continue
             sha = hashlib.sha256(data).hexdigest()
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
-            path = settings.papers_dir / f"{sha}.pdf"
-            if not path.exists():
-                path.write_bytes(data)
+            path = pdf_files.store_pdf_file(settings.papers_dir, sha, data)
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             # The file is the user's own copy from their library, like an upload; retrieved_from names the attachment.
             store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
@@ -1707,9 +1706,7 @@ def create_app(
                 continue
             sha = hashlib.sha256(data).hexdigest()
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
-            path = settings.papers_dir / f"{sha}.pdf"
-            if not path.exists():
-                path.write_bytes(data)
+            path = pdf_files.store_pdf_file(settings.papers_dir, sha, data)
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
                                        item.pdf_filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)

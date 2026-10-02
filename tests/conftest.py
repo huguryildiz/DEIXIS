@@ -47,6 +47,17 @@ def memory_keychain(monkeypatch):
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "field_distribution: the test's own transport answers the routing request (D93)")
+    config.addinivalue_line("markers", "process: starts and kills real processes (P9 H2); run with -m process -n 0")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Process tests (tests/process) are wall-clock and start real servers: they run only when -m names `process`."""
+    if "process" in (config.getoption("-m") or ""):
+        return
+    skipped = [item for item in items if item.get_closest_marker("process")]
+    if skipped:
+        config.hook.pytest_deselected(items=skipped)
+        items[:] = [item for item in items if item not in skipped]
 
 
 @pytest.fixture(autouse=True)

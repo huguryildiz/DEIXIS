@@ -25,7 +25,7 @@ import httpx
 
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
-from deixis.documents import acquisition, embeddings, identity, math_reader, ocr, pdf
+from deixis.documents import acquisition, embeddings, identity, math_reader, ocr, pdf, pdf_files
 from deixis.domain import canonical, contracts, expansion as phrase_candidates, phrasebank, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  CHAIN_ABSTRACT_READ, CHAIN_CITING_CAP, CHAIN_CITING_PAGE, FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
@@ -2686,9 +2686,7 @@ class ResearchFlow:
         sha = hashlib.sha256(result.data).hexdigest()
         papers = self.deps.settings.papers_dir
         papers.mkdir(parents=True, exist_ok=True)
-        path = papers / f"{sha}.pdf"
-        if not path.exists():
-            path.write_bytes(result.data)
+        path = pdf_files.store_pdf_file(papers, sha, result.data)
         extraction = await asyncio.to_thread(pdf.extract_pdf, path)
         asset_id = self.store.add_asset_with_pages(
             source["id"], sha, len(result.data), path.name, "download", result.final_url, None,

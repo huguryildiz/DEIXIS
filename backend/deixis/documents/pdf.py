@@ -38,6 +38,7 @@ import functools
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -58,6 +59,7 @@ MAX_TEXT_CHARS = 3_000_000
 MAX_MEMORY_BYTES = 1024 * 1024 * 1024
 MEMORY_EXIT_CODE = 3
 TIMEOUT_SECONDS = 90
+CHILD_LIFETIME_SECONDS = 100  # above the longest parent clock (this module's 90 s); every child that calls `_watch_memory` gets it
 CHUNK_CHARS = 1400
 # A licensing stamp added by the download site, not text of the publication. Only the whole notice matches, and each gap
 # is bounded, so body text next to it is kept.
@@ -261,7 +263,21 @@ def _extract_in_process(path: str, max_chars: int, placements: list[dict] | None
     return {"page_count": total, "pages": pages, "failed_pages": failed, "truncated": truncated}
 
 
+def _arm_lifetime() -> None:
+    """A hard end for the child, whatever its parent does. The parent's clock and memory watch (`_run_watched`) die with the
+    parent: after a SIGKILL the child was reparented to PID 1 and ran on. SIGALRM's default action (no Python handler) ends
+    the process even inside a C call that holds the interpreter lock. It bounds the child's time, not its memory."""
+    if not hasattr(signal, "alarm"):  # Windows
+        return
+    try:
+        seconds = int(os.environ.get("DEIXIS_CHILD_LIFETIME_SECONDS", ""))
+    except ValueError:
+        seconds = 0
+    signal.alarm(seconds if seconds > 0 else CHILD_LIFETIME_SECONDS)
+
+
 def _watch_memory(limit: int) -> None:
+    _arm_lifetime()
     try:
         import resource
     except ImportError:  # Windows

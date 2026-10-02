@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 DEIXIS is a local, single-user research workspace: question → scholarly search or attached PDFs → screening → passage inspection → source-linked answer with highlightable citation anchors. A FastAPI backend (`backend/deixis`) serves a React/Vite UI (`apps/web`) on loopback.
 
-**Read [AGENTS.md](AGENTS.md) first.** It is the working agreement for the whole repo (evidence semantics, timeline states, UI hierarchy); read [.impeccable.md](.impeccable.md) too before touching `apps/web`. The README's status paragraph is out of date: all providers in `providers/registry.py` and the Codex, Claude Code, Gemini and DeepSeek model connections are implemented.
+**Read [AGENTS.md](AGENTS.md) first.** It is the working agreement for the whole repo (evidence semantics, timeline states, UI hierarchy); read [.impeccable.md](.impeccable.md) too before touching `apps/web`. All providers in `providers/registry.py` and the Codex, Claude Code, Gemini and DeepSeek model connections are implemented, and the README's status paragraph says so (P9 H1).
 
 ## Commands
 

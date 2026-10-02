@@ -18,6 +18,7 @@ import uvicorn
 from deixis.api.app import create_app
 from deixis.config import Settings, load_settings
 from deixis.storage import backup
+from deixis.storage.db import SchemaCheckUnreadable, UnknownSchemaError, check_schema_known
 
 
 SHUTDOWN_EXIT_SECONDS = 6.0
@@ -66,6 +67,15 @@ def data_dir_problem(path: Path) -> str | None:
     return None
 
 
+def schema_problem(db_path: Path) -> str | None:
+    """Why the library at `db_path` must not be opened (written by a newer DEIXIS, or unreadable), or None. Writes nothing."""
+    try:
+        check_schema_known(db_path)
+    except (UnknownSchemaError, SchemaCheckUnreadable) as exc:
+        return str(exc)
+    return None
+
+
 def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...]) -> int:
     url = f"http://{settings.host}:{settings.port}/"
     if settings.host not in ("127.0.0.1", "localhost"):
@@ -78,6 +88,9 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...]) ->
     if problem := data_dir_problem(settings.data_dir):
         print(f"Cannot use the data directory {settings.data_dir}: it {problem}. "
               "Set DEIXIS_DATA_DIR to a folder you can write to.", file=sys.stderr)
+        return 2
+    if (message := schema_problem(settings.db_path)) is not None:
+        print(message, file=sys.stderr)
         return 2
     if not settings.web_dist.exists():
         print("UI build not found (apps/web/dist). The API will run; build the UI with `npm run build` in apps/web.")
@@ -110,6 +123,9 @@ def reextract(settings: Settings, dry_run: bool) -> int:
     from deixis.storage import db
     from deixis.workflow.store import RunInProgress, Store
 
+    if (message := schema_problem(settings.db_path)) is not None:
+        print(message, file=sys.stderr)
+        return 2
     conn = db.connect(settings.db_path)
     db.migrate(conn)
     store = Store(conn)

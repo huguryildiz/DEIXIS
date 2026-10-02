@@ -37,6 +37,7 @@ REPO = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 DRIVER = HERE / "p9_driver.py"
 BACKUP_DRIVER = HERE / "p9_backup_driver.py"
+RESTORE_DRIVER = HERE / "p9_restore_driver.py"
 REFUSED_PORTS = {8765, *range(8858, 8865)}
 QUESTION = "How is molecule release scheduling optimized?"
 

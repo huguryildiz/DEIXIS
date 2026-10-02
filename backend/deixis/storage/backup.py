@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -37,15 +38,27 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _column(conn: sqlite3.Connection, sql: str) -> list[tuple]:
+    """Rows of one reference source. A library written by older code has not got every table or column yet (the current
+    migrations run at the first start, after a backup may already have been asked for): that source holds no references."""
+    try:
+        return conn.execute(sql).fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc) or "no such column" in str(exc):
+            return []
+        raise
+
+
 def _referenced_files(conn: sqlite3.Connection) -> dict[str, dict[str, str | None]]:
     """File name -> recorded sha256 (None when the record has no hash), per backup subfolder."""
-    papers = {row[0]: row[1] for row in conn.execute("SELECT storage_path, sha256 FROM source_assets")}
+    papers = {row[0]: row[1] for row in _column(conn, "SELECT storage_path, sha256 FROM source_assets")}
     # Abstract passages can own a later query payload; PDF passages hold character ranges, not files.
-    payloads = {row[0]: None for row in conn.execute(
-        "SELECT raw_payload_path FROM search_runs WHERE raw_payload_path IS NOT NULL"
-        " UNION SELECT provider_payload_path FROM source_versions WHERE provider_payload_path IS NOT NULL"
-        " UNION SELECT raw_payload_path FROM kill_search_queries WHERE raw_payload_path IS NOT NULL"
-        " UNION SELECT payload_ref FROM passages WHERE kind = 'abstract' AND payload_ref IS NOT NULL")}
+    payloads: dict[str, str | None] = {}
+    for sql in ("SELECT raw_payload_path FROM search_runs WHERE raw_payload_path IS NOT NULL",
+                "SELECT provider_payload_path FROM source_versions WHERE provider_payload_path IS NOT NULL",
+                "SELECT raw_payload_path FROM kill_search_queries WHERE raw_payload_path IS NOT NULL",
+                "SELECT payload_ref FROM passages WHERE kind = 'abstract' AND payload_ref IS NOT NULL"):
+        payloads.update({row[0]: None for row in _column(conn, sql)})
     refs = {"papers": papers, "provider-payloads": payloads}
     for folder, names in refs.items():
         for name in names:
@@ -97,20 +110,53 @@ def create_backup(settings: Settings, destination: Path) -> Path:
     return target
 
 
-def restore_backup(backup: Path, settings: Settings) -> dict[str, Any]:
-    """Restore into a data directory that has no library yet. Existing model sign-in data is left in place."""
+RESTORING_PREFIX = ".restoring-"
+
+
+def _read_manifest(backup: Path) -> dict[str, Any]:
+    """The manifest, or BackupError: a wrong shape is not a backup, whatever the cause."""
     try:
         manifest = json.loads((backup / MANIFEST).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise BackupError(f"not a complete DEIXIS backup: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise BackupError("not a complete DEIXIS backup: the manifest is not a JSON object")
     if manifest.get("format") != FORMAT:
         raise BackupError(f"unsupported backup format {manifest.get('format')!r}")
+    entries = manifest.get("files")
+    if not isinstance(entries, list) or not all(
+            isinstance(e, dict) and isinstance(e.get("path"), str) and isinstance(e.get("sha256"), str) for e in entries):
+        raise BackupError("not a complete DEIXIS backup: the manifest has no usable file list")
+    return manifest
+
+
+def _place_file(source: Path, dest: Path, sha256: str) -> None:
+    """Copy to a temporary name next to `dest`, check its hash, then move it into place: `dest` is never half written."""
+    # A unique name made here, not `mkstemp`: a file `mkstemp` creates is mode 0600, and the restored file should get the
+    # permissions a copy gets.
+    temporary = dest.parent / f"{RESTORING_PREFIX}{uuid.uuid4().hex}.part"
+    try:
+        shutil.copyfile(source, temporary)
+        if _sha256(temporary) != sha256:
+            raise BackupError(f"restored file does not match the manifest: {dest.name}")
+        os.replace(temporary, dest)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def restore_backup(backup: Path, settings: Settings) -> dict[str, Any]:
+    """Restore into a data directory that has no library yet. Existing model sign-in data is left in place.
+
+    Every refusal happens before anything is written. A cut restore (SIGKILL) leaves `.restoring-*.part` files and maybe
+    finished files, never a half file under a final name; running it again finishes the job."""
+    manifest = _read_manifest(backup)
+    entries = manifest["files"]
 
     db_path = settings.db_path
     if any(Path(f"{db_path}{suffix}").exists() for suffix in ("", "-wal", "-shm")):
         raise BackupError(f"a library already exists at {db_path}; restore only into an empty data directory")
 
-    entries = manifest["files"]
     for entry in entries:
         parts = Path(entry["path"]).parts
         valid = parts == (DB_NAME,) or (len(parts) == 2 and parts[0] in FILE_DIRS and parts[1] not in ("", ".", ".."))
@@ -122,7 +168,7 @@ def restore_backup(backup: Path, settings: Settings) -> dict[str, Any]:
     if DB_NAME not in {e["path"] for e in entries}:
         raise BackupError("backup has no library database")
 
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    pending = []  # (entry, destination) of the files that are not in the target yet
     for entry in entries:
         if entry["path"] == DB_NAME:
             continue
@@ -132,8 +178,17 @@ def restore_backup(backup: Path, settings: Settings) -> dict[str, Any]:
             if _sha256(dest) != entry["sha256"]:
                 raise BackupError(f"a different file already exists at {dest}")
             continue
+        pending.append((entry, dest))
+
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    for folder in FILE_DIRS.values():
+        directory = getattr(settings, folder)
+        if directory.is_dir():  # only this code's own leftovers; a download's `tmp*.part` is not ours
+            for leftover in directory.glob(f"{RESTORING_PREFIX}*.part"):
+                leftover.unlink(missing_ok=True)
+    for entry, dest in pending:
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(backup / entry["path"], dest)
+        _place_file(backup / entry["path"], dest, entry["sha256"])
 
     staging = db_path.with_name(f"{DB_NAME}.restoring")
     shutil.copyfile(backup / DB_NAME, staging)
@@ -145,4 +200,4 @@ def restore_backup(backup: Path, settings: Settings) -> dict[str, Any]:
     finally:
         conn.close()
     os.replace(staging, db_path)
-    return {"files": len(entries), "researches": researches, "schema_versions": manifest["schema_versions"]}
+    return {"files": len(entries), "researches": researches, "schema_versions": manifest.get("schema_versions", [])}

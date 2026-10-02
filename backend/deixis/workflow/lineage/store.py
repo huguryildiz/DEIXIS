@@ -14,7 +14,7 @@ from typing import Any
 from deixis.domain.contracts import locate_anchor
 from deixis.domain.lineage import MAX_WHAT_CHANGED, valid_what_changed
 from deixis.domain.rules import RevisionConflict, check_expected_version
-from deixis.storage.db import dumps, new_id, now, transaction
+from deixis.storage.db import dumps, new_id, now, rollback_savepoint, transaction
 from deixis.workflow.store import NotFound, Store
 from deixis.workflow.tables import SOURCE_ACTIVE_SQL, TableStore
 
@@ -250,8 +250,7 @@ class LineageStore:
         try:
             yield
         except BaseException:
-            self.conn.execute(f"ROLLBACK TO {savepoint}")
-            self.conn.execute(f"RELEASE {savepoint}")
+            rollback_savepoint(self.conn, savepoint)
             raise
         else:
             self.conn.execute(f"RELEASE {savepoint}")

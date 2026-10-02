@@ -14,7 +14,7 @@ from typing import Any
 
 from deixis.domain.contracts import GAP_KINDS
 from deixis.domain.rules import RevisionConflict, check_expected_version
-from deixis.storage.db import dumps, new_id, now, transaction
+from deixis.storage.db import dumps, new_id, now, rollback_savepoint, transaction
 from deixis.workflow.candidates.hits import merge_and_cut
 from deixis.workflow.candidates.status import STATUSES, SUPPORT_RELATIONS, derive_status
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, NotFound, Store
@@ -82,8 +82,7 @@ class CandidateStore:
         try:
             yield
         except BaseException:
-            self.conn.execute(f"ROLLBACK TO {savepoint}")
-            self.conn.execute(f"RELEASE {savepoint}")
+            rollback_savepoint(self.conn, savepoint)
             raise
         else:
             self.conn.execute(f"RELEASE {savepoint}")

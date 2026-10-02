@@ -158,6 +158,17 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
         conn.execute("COMMIT")
 
 
+def rollback_savepoint(conn: sqlite3.Connection, name: str) -> None:
+    """Undo and close a savepoint after a failure, unless SQLite already rolled the whole transaction back.
+
+    A statement-level SQLITE_FULL ends the transaction, and with it every savepoint; `ROLLBACK TO` would then raise
+    "no such savepoint" and hide the real error, which the API turns into a 500 instead of the disk-full sentence.
+    """
+    if conn.in_transaction:
+        conn.execute(f"ROLLBACK TO {name}")
+        conn.execute(f"RELEASE {name}")
+
+
 # SQLite primary result codes (the low byte of `sqlite_errorcode`) that DEIXIS names for the person.
 _FAILURES = {
     13: ("disk_full", 507, "DEIXIS could not save because the disk is full. Free some space and try again."),

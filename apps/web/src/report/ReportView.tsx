@@ -9,6 +9,8 @@ import { Notice } from '../Notice'
 import { t, uiLocale } from '../i18n'
 import { useToast } from '../Toast'
 import './report.css'
+import { ReportAspects } from '../candidate/ReportAspects'
+import type { CandidateSelection } from '../candidate/CandidatesView'
 
 const DISPLAY = ['abstract', 'index_terms', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX']
 const HEADINGS: Record<string, [string, string]> = {
@@ -67,10 +69,11 @@ function ClaimEdit({ claim, conflicts, save, cancel, busy, error }: { claim: Rep
   </form>
 }
 
-export function ReportView({ researchId, reportId, view, title, dark, onClose, onOpenCitation, onChanged }: {
+export function ReportView({ researchId, reportId, view, title, dark, onClose, onOpenCitation, onChanged, onOpenCandidate }: {
   researchId: string; reportId: string; view: ResearchView; title: string; dark: boolean; onClose: () => void
   onOpenCitation: (passageId: string, highlightText: string | null, expectHighlight: boolean) => void
   onChanged: () => Promise<void>
+  onOpenCandidate: (candidate: CandidateSelection) => void
 }) {
   const toast = useToast()
   const [report, setReport] = useState<ReportDetail | null>(null)
@@ -207,6 +210,7 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
               })}</span>
             })}</p>{evidenceView && section.claims.filter(claim => claim.paragraph === number).map(claim => <div className="evidence-report-claim-meta" key={claim.id}><span>{t(support[claim.support_type])}</span>{claim.edited && <strong>{t('Edited by you')}</strong>}{claim.warnings.map((warning, i) => <span key={i}>{t(warning.kind === 'math_not_well_formed' ? 'A formula may be malformed: {detail}' : 'The count was not checked again after the edit.', { detail: warning.detail ?? '' })}</span>)}<div>{claim.evidence.map((link, i) => <button type="button" key={i} title={link.anchor_text ?? ''} onClick={() => cited(link)}>[{link.ref_number}] {refs.get(link.ref_number)?.source_key} · {(link.anchor_text ?? '').slice(0, 120)}{(link.anchor_text?.length ?? 0) > 120 ? '…' : ''}</button>)}</div><Button variant="ghost" size="sm" disabled={!finished.has(report.run?.status ?? '') || busy} title={!finished.has(report.run?.status ?? '') ? t('A report can be edited once its run has finished.') : undefined} onClick={() => { setEditing(claim.id); setEditError('') }}>{t('Edit')}</Button>{claim.revisions.length > 0 && <details className="evidence-report-history"><summary><ChevronRight size={14} aria-hidden className="closed" /><ChevronDown size={14} aria-hidden className="opened" />{t('History ({n})', { n: claim.revisions.length })}</summary><ol><li><span>{t('Model text')} · {new Date(report.created_at).toLocaleDateString(uiLocale())}</span><p>{claim.model_text}</p>{claim.text !== claim.model_text && <Button variant="ghost" size="sm" disabled={busy} onClick={() => void save(claim, { restore_from: 'model' })}>{t('Restore')}</Button>}</li>{claim.revisions.map(item => <li key={item.id}><span>{t(revision[item.kind] ?? item.kind)} · {new Date(item.created_at).toLocaleDateString(uiLocale())}{item.note ? ` · ${item.note}` : ''}</span><p>{item.text}</p>{claim.text !== item.text && <Button variant="ghost" size="sm" disabled={busy} onClick={() => void save(claim, { restore_from: item.id })}>{t('Restore')}</Button>}</li>)}</ol></details>}{editing === claim.id && <ClaimEdit claim={claim} conflicts={conflicts} busy={busy} error={editError} cancel={() => setEditing(null)} save={(text, note, expectedVersion) => void save(claim, { text, note }, expectedVersion)} />}</div>)}{id === 'IV' && firstTableParagraph === number && tableNode}</div>)}
             {!section.claims.length && !section.draft?.text && (section.draft?.insufficient_evidence?.length ? section.draft.insufficient_evidence.map((entry, index) => <p key={index}>{t('Not enough evidence: {reason}', { reason: entry.reason })}</p>) : <p>{t('No text was written for this section.')}</p>)}
+            {id === 'VI' && <ReportAspects researchId={researchId} reportId={reportId} eventCursor={view.last_event_id} valid={section.status === 'valid'} onOpen={onOpenCandidate} />}
           </section>
         })}<section className="evidence-report-section"><h2>{labels('references')}</h2><ol className="evidence-report-references">{report.references.map(ref => <li key={ref.number}><span>[{ref.number}] {ref.authors.join(', ')}{ref.authors.length ? ', ' : ''}</span>{ref.open_passage_id ? <button type="button" onClick={() => onOpenCitation(ref.open_passage_id!, null, false)}>{ref.title}</button> : ref.title}{ref.venue ? `, ${ref.venue}` : ''}{ref.year ? `, ${ref.year}` : ''}</li>)}</ol></section></div>
         <p className="evidence-report-provenance">{located === allLinks.length ? t('Anchors were located in the cited passages or cells.') : t('{n} of {m} citation anchors were located in their passages or cells; the others open without a mark.', { n: located, m: allLinks.length })} {reviewNote}</p>

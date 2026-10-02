@@ -69,7 +69,7 @@ from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
 from deixis.workflow.lineage.view import LineageView
 from deixis.workflow.candidates.run import KillSearchPlanner, candidate_evidence, decompose_budget, request_decomposition
 from deixis.workflow.candidates.store import CandidateStore, InvalidCandidateInput
-from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, report_view, research_view
+from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, report_gaps_view, report_view, research_view
 from deixis.workflow.worker import Worker
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -2260,6 +2260,10 @@ def create_app(
                                                 continue_with_failed=body.continue_with_failed)
         request.app.state.worker.wake()
         return run
+
+    @app.get("/api/researches/{research_id}/reports/{report_id}/gaps")
+    async def get_report_gaps(research_id: str, report_id: str, request: Request) -> list[dict[str, Any]]:
+        return report_gaps_view(store_of(request), research_id, report_id)
 
     @app.get("/api/researches/{research_id}/reports/{report_id}")
     async def get_report(research_id: str, report_id: str, request: Request) -> dict[str, Any]:

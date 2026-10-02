@@ -168,6 +168,12 @@ def request_decomposition(store: Store, research_id: str, candidate_id: str, ide
         replay = _replay(store, key, research_id, candidate_id, "claim_decomposition")
         if replay:
             return replay
+        paused = store.conn.execute(
+            "SELECT id FROM runs WHERE research_id = ? AND status = 'paused'"
+            " AND kind IN ('claim_decomposition', 'kill_search') AND json_extract(target_json, '$.candidate_id') = ?",
+            (research_id, candidate_id)).fetchone()
+        if paused:
+            raise RevisionConflict(f"Resume or cancel paused candidate run {paused['id']} first")
         candidate = CandidateStore(store)._pair(research_id, candidate_id)
         if candidate["trashed_at"] is not None or candidate["current_version"] != 0:
             raise RevisionConflict("Decompose only an available candidate without a version; use human edit for revisions")

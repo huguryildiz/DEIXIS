@@ -16,7 +16,7 @@ import { AUTHOR_NOTE, readablePassageText } from './pdfText'
 import { Notice } from './Notice'
 
 // Marks every located anchor; overlapping anchors are merged into one mark, and the first mark is scrolled into view.
-function HighlightedPassageText({ passage, highlightTexts, markLabel }: { passage: Passage; highlightTexts: string[]; markLabel?: string }) {
+export function HighlightedPassageText({ passage, highlightTexts, markLabel }: { passage: Pick<Passage, 'text' | 'kind'>; highlightTexts: string[]; markLabel?: string }) {
   const highlightRef = useRef<HTMLElement>(null)
   const ranges: [number, number][] = []
   for (const [start, end] of highlightTexts.map(text => [passage.text.indexOf(text), passage.text.indexOf(text) + text.length]).filter(([start]) => start >= 0).sort((a, b) => a[0] - b[0])) {

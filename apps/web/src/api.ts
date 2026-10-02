@@ -158,10 +158,13 @@ export type SearchPlan = {
   concepts: { label: string; role: string; synonyms: string[] }[]
   queries: { provider_id: string; query_text: string; rationale: string }[]
 }
-export type RunKind = 'discovery' | 'answer' | 'report' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links'
+export type RunKind = 'discovery' | 'answer' | 'report' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
-  table_id: string; column_id?: string; source_version_id?: string; cell_version?: number
+  table_id?: string; column_id?: string; source_version_id?: string; cell_version?: number
+  candidate_id?: string; candidate_version_id?: string; expected_version?: number
+  model?: CandidatePlan['model']; providers?: string[]; transport?: CandidatePlan['transport']; limits?: CandidatePlan['limits']
+  version?: number; scope_revision?: number; skill_package_hash?: string; plan_version?: number; preview_fingerprint?: string
   report_id?: string
   sources?: { source_version_id: string; column_ids: string[] }[]
   // pdf_ocr (D51): the PDF read and the Tesseract languages used.
@@ -801,6 +804,79 @@ export type ReportDetail = ReportSummary & { language: string; updated_at: strin
 export type TableTemplate = { id: string; name: string; columns: ColumnSpec[]; created_at: string }
 export type CellEdit = { state: CellState; value: CellValue | null; note: string | null; keep_evidence_from: string | null; expected_version: number }
 
+export type CandidateStatus = 'not_run' | 'undecided' | 'narrowed' | 'closed' | 'open'
+export type CandidateCounts = { found: number; kept: number; rank_cut: number; duplicates: number }
+export type CandidateDepth = 'abstract' | 'stored_passages' | 'metadata_only'
+export type CandidateComputed = {
+  status: CandidateStatus; reason: string; reasons: string[]; warnings: string[]
+  facts: CandidateCounts & { assessed: number; unread: number; queries_total: number; queries_succeeded: number; queries_failed: number; queries_unknown: number; reading_depths: Record<CandidateDepth, number> }
+}
+export type CandidateOwnerDecision = { id: string; candidate_version_id: string; status: CandidateStatus; reason: string; created_at: string }
+export type CandidateRunRef = { id: string; kind: RunKind; status: RunStatus; pause_reason: string | null; error_code: string | null }
+export type CandidateElementKind = 'mechanism' | 'condition' | 'outcome' | 'parameter'
+export type CandidateVersion = {
+  id: string; candidate_id: string; version: number; claim_statement: string; conditions: string[]; nearest_simple_explanation: string | null
+  critical_assumption: string; validation_plan: string; origin: 'model_decomposition' | 'human_edit'; step_input_id: string | null; created_at: string
+  elements: { id: string; candidate_version_id: string; position: number; text: string; kind: CandidateElementKind }[]
+}
+export type CandidateSearchOutcome = 'running' | 'paused' | 'completed' | 'failed' | 'stopped'
+export type CandidateSearchRef = { id: string; candidate_version_id: string; run_id: string; outcome: CandidateSearchOutcome; created_at: string; version: number; counts: CandidateCounts }
+export type CandidateListItem = {
+  id: string; origin: 'owner_text' | 'report_gap'; origin_report_id: string | null; origin_gap_row_id: string | null; gap_kind: string | null
+  origin_changed: boolean; current_version: number; trashed_at: string | null; claim_statement: string | null
+  status: CandidateComputed | null; owner: CandidateOwnerDecision | null; active_run_id: string | null
+}
+type CandidateBasisItem = { id: string; missing: true } | { id: string; text: string }
+export type CandidateCard = Omit<CandidateListItem, 'claim_statement' | 'status' | 'owner' | 'active_run_id'> & {
+  research_id: string; origin_text: string; origin_basis: Record<string, unknown>
+  origin_basis_view: { basis_cell_ids?: CandidateBasisItem[]; basis_passage_ids?: (CandidateBasisItem & { source_version_id?: string })[]; basis_claim_keys?: CandidateBasisItem[] }
+  origin_provenance: { origin?: 'code' | 'model'; section_id?: string; step_input_id?: string | null }
+  origin_fingerprint: string | null; created_at: string; versions: CandidateVersion[]; current_version_id: string | null
+  owner_decisions: CandidateOwnerDecision[]; searches: CandidateSearchRef[]
+  status: { computed: CandidateComputed; previous: CandidateComputed | null; owner: CandidateOwnerDecision | null } | null
+  active_run: CandidateRunRef | null; runs: CandidateRunRef[]; decompose_budget: { max_model_calls: number; max_provider_requests: number }
+}
+export type CandidateOpen = { origin: 'owner_text'; text: string } | { origin: 'report_gap'; report_id: string; gap_row_id: string }
+export type CandidateEdit = {
+  claim_statement: string; conditions: string[]; elements: { text: string; kind: CandidateElementKind }[]
+  nearest_simple_explanation: string | null; critical_assumption: string; validation_plan: string; expected_version: number
+}
+export type CandidatePlan = {
+  candidate_id: string; candidate_version_id: string; version: number; scope_revision: number; providers: string[]
+  model: { kill_search_query: [string, string, string | null]; claim_assessment: [string, string, string | null] }
+  budget: { max_model_calls: number; max_provider_requests: number; steps: { kill_search_query: number; claim_assessment: number; assessment_works: number } }
+  transport: { providers: { provider: string; requests_per_search: number; rate_limit_retries: number; transient_attempts: number; per_query: number }[]; max_provider_requests: number }
+  limits: { queries: number; records: number; keep: number; max_message_chars: number; basis_items: number; basis_text_chars: number; abstract_chars: number; page_passages: number; page_text_chars: number }
+  skill_package_hash: string; plan_version: number; preview_fingerprint: string
+}
+export type CandidateRelation = 'explicit_support' | 'reasoned_inference' | 'partial_match' | 'no_match_in_supplied_text' | 'uncertain'
+export type CandidateAlignment = 'aligned' | 'different_conditions' | 'unclear'
+export type CandidateCell = { id: string; kill_search_id: string; element_id: string; source_version_id: string; relation: CandidateRelation; condition_alignment: CandidateAlignment | null; note: string | null }
+export type CandidateQuote = { id: string; kill_search_id: string; source_version_id: string; element_id: string | null; matrix_cell_id: string | null; evidence_kind: 'abstract' | 'passage'; passage_id: string | null; quote: string }
+export type CandidateSource = { title: string; year: number | null; venue: string | null; doi: string | null; version_label: string | null }
+export type CandidateHit = {
+  source_version_id: string; reading_depth: CandidateDepth; assessment_state: 'pending' | 'assessed' | 'insufficient_access' | 'not_assessed_budget'
+  work_relevance: 'unrelated' | 'related' | 'uncertain' | null; note: string | null; rank: number; states_whole_claim: boolean | null; source: CandidateSource
+}
+export type CandidateQuery = { position: number; provider: string; query_text: string; status: 'succeeded' | 'failed' | 'outcome_unknown'; record_count: number; error_code: string | null }
+export type CandidateMatrix = {
+  search: CandidateCounts & { id: string; candidate_version_id: string; run_id: string; outcome: CandidateSearchOutcome; hits_recorded: boolean; created_at: string
+    query_block: { setting: { kind: string; term: string; why: string }[]; setting_backup: { term: string }[]; task: { kind: string; term: string; why: string }[]; task_backup: { term: string }[] }
+    rendered_queries: { provider_id: string; query_text: string; rationale: string; dropped_terms?: string[] }[]; skipped_terms: string[]
+    selection: Pick<CandidatePlan, 'model' | 'providers' | 'budget' | 'transport'> }
+  queries: CandidateQuery[]; counts: CandidateCounts; hits: CandidateHit[]; cells: Record<string, Record<string, CandidateCell>>; evidence: CandidateQuote[]
+  summary: { failure_code: string | null; counts: CandidateCounts; queries: Omit<CandidateQuery, 'query_text'>[]
+    hits: { source_version_id: string; reading_depth: CandidateDepth; outcome: string; reason: string | null; omitted: { page_limit?: number; message_size?: number } }[]
+    usage: { model_calls: number; provider_requests: number }; budget: CandidatePlan['budget']; frozen_reading_depth: boolean } | null
+  search_status: CandidateComputed; candidate_version_id: string; version: number; kill_search_id: string; is_latest_search_of_version: boolean
+}
+export type CandidateEvidence = {
+  source: CandidateSource & { source_version_id: string }
+  passages: { passage_id: string; source_id: string; text: string; reading_depth: string; locator: { kind: string; physical_page: number | null; printed_label: string | null }; abstract_origin: string | null; text_source: string | null }[]
+  quotes: CandidateQuote[]
+}
+export type ReportGap = { id: string; gap_id: string; kind: string; text: string }
+
 export class ApiError extends Error {
   status: number
   // A 422 from the approval route names every fault of the correction at once; the card shows them by their row.
@@ -1018,6 +1094,17 @@ export const api = {
   tables: (id: string) => request<TableSummary[]>(`/api/researches/${id}/tables`),
   startReport: (id: string, tableId: string, key: string, options?: { continueWithFailed?: boolean }) => request<Run>(`/api/researches/${id}/reports`, json('POST', { table_id: tableId, ...(options?.continueWithFailed ? { continue_with_failed: true } : {}) }, { 'Idempotency-Key': key })),
   report: (id: string, reportId: string) => request<ReportDetail>(`/api/researches/${id}/reports/${reportId}`),
+  reportGaps: (id: string, reportId: string) => request<ReportGap[]>(`/api/researches/${id}/reports/${reportId}/gaps`),
+  candidates: (id: string) => request<CandidateListItem[]>(`/api/researches/${id}/candidates`),
+  openCandidate: (id: string, body: CandidateOpen) => request<CandidateCard>(`/api/researches/${id}/candidates`, json('POST', body, { 'Idempotency-Key': crypto.randomUUID() })),
+  candidate: (id: string, cid: string) => request<CandidateCard>(`/api/researches/${id}/candidates/${cid}`),
+  editCandidate: (id: string, cid: string, body: CandidateEdit) => request<CandidateCard>(`/api/researches/${id}/candidates/${cid}/versions`, json('POST', body, { 'Idempotency-Key': crypto.randomUUID() })),
+  decomposeCandidate: (id: string, cid: string) => request<Run>(`/api/researches/${id}/candidates/${cid}/decompose`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }),
+  candidateKillSearchPlan: (id: string, cid: string) => request<CandidatePlan>(`/api/researches/${id}/candidates/${cid}/kill-search/plan`),
+  startCandidateKillSearch: (id: string, cid: string, preview_fingerprint: string) => request<Run>(`/api/researches/${id}/candidates/${cid}/kill-search`, json('POST', { preview_fingerprint }, { 'Idempotency-Key': crypto.randomUUID() })),
+  candidateMatrix: (id: string, cid: string, kid: string) => request<CandidateMatrix>(`/api/researches/${id}/candidates/${cid}/kill-searches/${kid}`),
+  candidateHit: (id: string, cid: string, kid: string, svid: string) => request<CandidateEvidence>(`/api/researches/${id}/candidates/${cid}/kill-searches/${kid}/hits/${svid}`),
+  candidateOwnerDecision: (id: string, cid: string, vid: string, body: { status: CandidateStatus; reason: string }) => request<CandidateCard>(`/api/researches/${id}/candidates/${cid}/versions/${vid}/owner-decision`, json('POST', body)),
   reportMarkdown,
   editReportClaim: (id: string, reportId: string, claimId: string, body: { expected_version: number; text?: string; note?: string | null; restore_from?: string }) =>
     request<ReportDetail>(`/api/researches/${id}/reports/${reportId}/claims/${claimId}`, json('PUT', body, { 'Idempotency-Key': crypto.randomUUID() })),

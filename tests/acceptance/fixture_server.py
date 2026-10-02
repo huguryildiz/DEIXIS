@@ -49,6 +49,8 @@ the report UI acceptance case a cell citation whose later edit can be observed; 
 "[report-bad-anchor]" gives section IV a cell quote absent from all stored quotes, including on repair.
 "[lineage]" serves six development-line works; "[lineage-reject]" adds a reverse mention and proposes it only
 in a second lineage run, after a selection change makes the target eligible again (synthetic directed-cycle refusal).
+"[candidate]" drives claim breakdown and a bounded claim search; "[candidate-access]" also returns a work
+without usable text. These markers affect only candidate-task calls and the distinct candidate query term.
 """
 
 from __future__ import annotations
@@ -119,6 +121,25 @@ PDFS = {
                                          "SYNTHETIC page two: the bisection schedule minimizes bit error probability."],
     "https://fixture.example/w903-submitted.pdf": ["SYNTHETIC submitted manuscript page one: an early release schedule bound."],
 }
+
+# K4: claim-search-only terms kfourclaim / kfouraccess select W-A=W991, W-B=W992, W-C=W993,
+# and (access variant only) W-D=W994. Discovery still gets WORKS above.
+# W-A: element 1 explicit_support/aligned, element 2 partial_match/different_conditions,
+# element 3 no_match_in_supplied_text. W-B and W-C: unrelated, all cells no_match_in_supplied_text.
+# W-C has an unrelated abstract that is supplied and shown. W-D has no abstract or stored passages:
+# code publishes insufficient_access, with no model assessment call. All other hits are assessed from abstracts.
+# [candidate] computes narrowed/partial_overlap; [candidate-access] computes undecided/insufficient_access.
+# Each work has a distinct DOI: OpenAlex/bioRxiv copies merge into ranks A, B, C (and D).
+# Five queries return 6/8 records, keeping 3/4 works with 3/4 duplicates and no rank cut.
+# Owner-text decomposition has no basis, so nearest_simple_explanation must be null (the validator requires it).
+CANDIDATE_QUOTES = ['SYNTHETIC buffering reduces delay under bounded arrivals.',
+                    'SYNTHETIC bounded arrivals are considered under different load conditions.']
+CANDIDATE_WORKS = [
+    work('W991', 'SYNTHETIC W-A novel buffering and gap conditions', ' '.join(CANDIDATE_QUOTES), 'publishedVersion', doi='https://doi.org/10.5555/k4-a'),
+    work('W992', 'SYNTHETIC W-B unrelated sediment measurements', 'SYNTHETIC sediment colour is recorded.', 'publishedVersion', doi='https://doi.org/10.5555/k4-b'),
+    work('W993', 'SYNTHETIC W-C unrelated abstract shown', 'SYNTHETIC unrelated hospital lighting is described.', 'publishedVersion', doi='https://doi.org/10.5555/k4-c'),
+]
+CANDIDATE_ACCESS_WORK = work('W994', 'SYNTHETIC W-D metadata only', '', 'publishedVersion', doi='https://doi.org/10.5555/k4-d')
 
 # L7: provider ids A=W971, B=W972, C=W973, D=W974, E=W975, F=W976. Actual source-version and passage ids
 # are assigned by the application, then taken from each real StepInput (including its citation handles).
@@ -373,6 +394,10 @@ RATE_LIMIT_MODE = False
 
 def openalex(request: httpx.Request) -> httpx.Response:
     params = request.url.params
+    candidate_query = params.get('search.title_and_abstract', '').lower()
+    if 'kfourclaim' in candidate_query or 'kfouraccess' in candidate_query:
+        works = CANDIDATE_WORKS + ([CANDIDATE_ACCESS_WORK] if 'kfouraccess' in candidate_query else [])
+        return httpx.Response(200, json={'meta': {'count': len(works)}, 'results': works})
     if EUROPEPMC_MODE and request.url.host == "www.ebi.ac.uk":
         return europepmc_search(request)
     if QUEUE_MODE and request.url.host != "api.openalex.org":
@@ -441,6 +466,9 @@ class ScriptedCodex:
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
         if "[slow-cells]" in question and task == "cell_extraction":
             await asyncio.sleep(1.5)
+        if ('[candidate]' in question or '[candidate-access]' in question) and task in (
+                'claim_decomposition', 'kill_search_query', 'claim_assessment'):
+            await asyncio.sleep(0.8)
         if "[fill-fails-one-row]" in question and task == "cell_extraction" and any(
             source["title"] == "SYNTHETIC molecule release scheduling with bisection" for source in si["sources"]
         ):
@@ -455,6 +483,25 @@ class ScriptedCodex:
 
     def respond(self, si: dict[str, Any], question: str) -> dict[str, Any]:
         output = json.loads(valid_response(si))
+        if '[candidate]' in question or '[candidate-access]' in question:
+            if si['task_type'] == 'claim_decomposition':
+                output['claim_statement'] = si['candidate_target']['origin_text']
+                # A non-null explanation is legal only with source-owned basis in the input.
+                if si['candidate_target']['basis']:
+                    output['nearest_simple_explanation'] = 'SYNTHETIC buffering spreads arrivals.'
+            if si['task_type'] == 'kill_search_query':
+                marker = 'kfouraccess' if '[candidate-access]' in question else 'kfourclaim'
+                output['setting'] = [{'term': marker, 'kind': 'topic', 'why': 'SYNTHETIC fixture-only setting'}]
+                output['task'] = [{'term': 'bounded delay', 'kind': 'other', 'why': 'SYNTHETIC fixture-only outcome'}]
+            if si['task_type'] == 'claim_assessment' and any('SYNTHETIC W-A' in s['title'] for s in si['sources']):
+                output['work_relevance'] = 'related'
+                passage = si['passages'][0]
+                for index, cell in enumerate(output['cells']):
+                    if index < 2:
+                        cell.update(relation='explicit_support' if index == 0 else 'partial_match',
+                                    condition_alignment='aligned' if index == 0 else 'different_conditions',
+                                    evidence=[{'passage_id': passage['passage_id'], 'quote': CANDIDATE_QUOTES[index]}],
+                                    note='SYNTHETIC scripted relation, semantic support not checked.')
         if si['task_type'] == 'cell_extraction' and ('[lineage]' in question or '[lineage-reject]' in question):
             # The normal helper already emits contract-valid role cells with their own source's text and handles.
             for cell, column in zip(output['cells'], si['extraction_target']['columns']):

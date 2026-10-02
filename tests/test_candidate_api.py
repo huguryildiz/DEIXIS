@@ -578,6 +578,7 @@ def test_run_keys_never_replay_across_researches_or_candidates(api):
 def test_api_has_no_candidate_trash_restore_or_extra_search_list_route(api):
     candidate = open_owner(api)
     base = candidate_url(api, candidate)
-    assert api.client.post(base + "/trash").status_code == 404
-    assert api.client.post(base + "/restore").status_code == 404
+    # 405 when a built SPA's catch-all GET route matches the path; either way no route handles it.
+    assert api.client.post(base + "/trash").status_code in (404, 405)
+    assert api.client.post(base + "/restore").status_code in (404, 405)
     assert api.client.get(base + "/kill-searches").status_code == 404

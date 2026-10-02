@@ -1,0 +1,60 @@
+.candidates-view { width: 100%; min-width: 0; max-width: 100%; color: var(--ink); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+/* Reset shared table/chip whitespace locally; stored text below keeps wrapping line breaks. */
+:is(.candidates-view, .candidate-editor, .candidate-evidence),
+:is(.candidates-view, .candidate-editor, .candidate-evidence) * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+.candidates-view h2 { font-size: 24px; margin: 12px 0; text-wrap: balance; }
+.candidates-view h3, .candidate-evidence h3 { font-size: 17px; font-weight: 600; margin: 14px 0 8px; text-wrap: balance; }
+.candidates-view h4, .candidate-editor h3 { font-size: 14px; font-weight: 600; margin: 14px 0 6px; text-wrap: balance; }
+.candidates-view p { margin: 8px 0; }
+.candidates-view ul, .candidates-view ol, .candidate-editor ol, .candidate-evidence ol { padding-left: 22px; margin: 10px 0; min-width: 0; }
+.candidates-view li { padding: 6px 0; min-width: 0; }
+.candidate-section, .candidate-version, .candidate-run { border-top: 1px solid var(--line); padding: 18px 0; }
+.candidate-head { display: block; height: auto; padding: 0; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.candidate-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; min-width: 0; }
+.candidate-actions button, .candidates-view button, .candidate-editor button { max-width: 100%; white-space: normal; height: auto; min-height: 36px; overflow-wrap: anywhere; }
+.candidate-fine { color: var(--muted); font-size: 12px; }
+.candidate-claim, .candidate-passage, .candidate-evidence blockquote { font-family: 'Newsreader Variable', serif; font-size: 18px; line-height: 1.6; font-weight: 450; white-space: pre-wrap; }
+.candidate-evidence h3.candidate-claim { font-family: 'Newsreader Variable', serif; }
+.candidate-list { list-style: none; padding: 0 !important; }
+.candidate-list > li { border-bottom: 1px solid var(--line); }
+.candidate-list-row { display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; padding: 16px 0; cursor: pointer; color: var(--ink); }
+.candidate-list-row:hover { color: var(--accent); }
+.candidate-list-claim { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.candidate-detail [data-stored-text], .candidate-evidence [data-stored-text], .candidate-aspects [data-stored-text] { white-space: pre-wrap; overflow-wrap: anywhere; }
+.candidate-form { min-width: 0; margin-top: 16px; }
+.candidate-form textarea, .candidate-form select { width: 100%; min-width: 0; max-width: 100%; }
+.candidate-plan { border-top: 1px solid var(--line); padding: 16px 0; margin-top: 16px; }
+.candidate-status-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+.candidate-status-columns > section { min-width: 0; }
+.candidate-attention { color: var(--warn-ink); }
+.candidate-attention svg { display: inline-block; margin-right: 6px; }
+.candidate-matrix { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 16px 0; }
+.candidate-matrix caption { text-align: left; color: var(--muted); padding: 12px 0; }
+.candidate-matrix th, .candidate-matrix td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; font-weight: 400; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.candidate-matrix thead th { font-weight: 600; }
+.candidate-matrix th:first-child { width: 30%; }
+.candidate-work-title { font-family: 'Newsreader Variable', serif; font-size: 17px; font-weight: 500; color: var(--accent); text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; overflow-wrap: anywhere; }
+.candidate-mobile-element { display: none; }
+.candidate-queries .connection-icon, .candidate-plan .connection-icon, .candidate-evidence .connection-icon { width: 14px; height: 14px; margin-right: 6px; }
+:is(.candidates-view, .candidate-editor, .candidate-evidence) :is(.model-name, .source-key) { min-width: 0; white-space: normal; }
+.candidates-view .model-name > span { min-width: 0; }
+.candidates-view .model-name .connection-icon { flex-shrink: 0; }
+.candidate-editor, .candidate-evidence { overflow-wrap: anywhere; }
+.candidate-evidence blockquote { margin: 16px 0; padding: 0 12px; border-left: 1px solid var(--line); }
+.candidate-passage { padding-block: 12px; border-block: 1px solid var(--line); font-size: 16px; }
+.candidate-evidence li { margin-bottom: 16px; }
+.candidates-view summary { cursor: pointer; padding: 8px 0; }
+.candidates-view button:focus-visible, .candidates-view summary:focus-visible, .candidate-editor button:focus-visible, .candidate-evidence button:focus-visible, .candidate-evidence a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+/* Same accent tint as the source sheet's located-text mark (80% transparent in light, 72% in dark). */
+.candidate-passage .citation-highlight { margin: 0 -.04em; padding: .06em .08em; border-radius: 3px; background: color-mix(in srgb, var(--accent), transparent 80%); color: var(--ink); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.dark .candidate-passage .citation-highlight, .candidate-evidence.dark .candidate-passage .citation-highlight { background: color-mix(in srgb, var(--accent), transparent 72%); }
+@media (max-width: 760px) {
+  .candidate-matrix caption { display: block; width: 100%; }
+  .candidates-view { max-width: calc(100vw - 40px); }
+  .candidate-status-columns { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .candidate-matrix, .candidate-matrix tbody, .candidate-matrix tr, .candidate-matrix th, .candidate-matrix td { display: block; width: 100%; }
+  .candidate-matrix thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .candidate-matrix tr { border-top: 1px solid var(--strong-line); margin-top: 18px; }
+  .candidate-matrix th:first-child { width: 100%; }
+  .candidate-mobile-element { display: block; font-weight: 600; margin-bottom: 8px; }
+}

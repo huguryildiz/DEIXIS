@@ -250,6 +250,16 @@ def ocr_state(store: Store, asset_id: str) -> dict[str, Any]:
             | json.loads(last["ocr_json"]) if last else None}
 
 
+def report_gaps_view(store: Store, research_id: str, report_id: str) -> list[dict[str, Any]]:
+    """Stored report aspects, in insertion order; opening one starts no search."""
+    store.research(research_id)
+    report = ReportStore(store).report(report_id)
+    if report["research_id"] != research_id:
+        raise NotFound(report_id)
+    return [dict(row) for row in store.conn.execute(
+        "SELECT id, gap_id, kind, text FROM report_gaps WHERE report_id = ? ORDER BY rowid", (report_id,))]
+
+
 def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any]:
     """An edited claim's text is working text, not revalidated; draft, validation, word_count and
     report_version still describe the model-written version until a publish step exists."""

@@ -45,3 +45,11 @@
 @media(prefers-reduced-motion:reduce){.report-ready-bar span{transition:none}}
 .report-toolbar-actions [data-slot=button][aria-pressed=true]{background:var(--selected-surface)}
 @media(max-width:600px){.report-toolbar-actions .report-export-label{display:none}}
+.candidate-aspects { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); font-family: 'DM Sans Variable', sans-serif; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.candidate-aspects, .candidate-aspects * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+.candidate-aspects h3 { font-size: 17px; font-weight: 600; text-wrap: balance; }
+.candidate-aspects ul { padding-left: 22px; }
+.candidate-aspects li { padding: 8px 0; }
+.candidate-aspects [data-stored-text] { white-space: pre-wrap; }
+.candidate-aspects button { height: auto; min-height: 36px; white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
+.candidate-aspects button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }

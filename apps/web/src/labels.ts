@@ -21,7 +21,7 @@ export const runStatusLabels: Record<RunStatus, string> = {
 }
 
 export const runKindLabels: Record<RunKind, string> = {
-  discovery: 'Search & screening', answer: 'Answer', report: 'Evidence report', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title', lineage_links: 'Development links',
+  discovery: 'Search & screening', answer: 'Answer', report: 'Evidence report', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title', lineage_links: 'Development links', claim_decomposition: 'Claim breakdown', kill_search: 'Prior-art search for a claim',
 }
 
 export const reportSupportLabels: Record<string, string> = { source_stated: 'Stated by the source', analyst_inference: 'Analyst inference' }
@@ -199,7 +199,13 @@ export const localToolIcon = (id: string) => (id === 'gemini_cli' ? 'gemini' : i
 // What a scholarly source is used for: searched for records, or asked what a record whose DOI is known is (D87).
 export const providerRole = (role: string | undefined) => t(role === 'verification' ? 'Metadata verification' : 'Record search')
 
-export const stepLabel = (kind: string, key: string) => {
+export const stepLabel = (kind: string, key: string, candidate = false) => {
+  if (kind === 'model:claim_decomposition') return t('Claim breakdown (model)')
+  if (kind === 'model:kill_search_query') return t('Search terms (model)')
+  if (kind === 'model:claim_assessment') return t('Claim assessment (model)')
+  if (kind === 'claim_decomposition_summary') return t('Claim breakdown summary (code)')
+  if (kind === 'kill_search_plan') return t('Frozen claim assessment plan (code)')
+  if (kind === 'kill_search_summary') return t('Claim search summary (code)')
   if (kind === 'model:lineage_links') return t('Development link proposals (model)')
   if (kind === 'lineage_publication') return t('Recording development decisions (code)')
   if (kind === 'model:search_plan') return t('Search plan (model)')
@@ -217,7 +223,7 @@ export const stepLabel = (kind: string, key: string) => {
   if (kind === 'model:table_columns') return t('Column suggestions (model)')
   if (kind === 'model:research_title') return t('Research title (model)')
   if (kind === 'table_no_text') return t('Source without stored text')
-  if (kind.startsWith('provider_search')) return t('{provider} search {n}', { provider: providerName(kind.split(':')[1] ?? ''), n: Number(key.split(':')[1]) + 1 })
+  if (kind.startsWith('provider_search')) return t('{provider} search {n}', { provider: providerName(kind.split(':')[1] ?? ''), n: Number(key.split(':')[1]) + (candidate ? 0 : 1) })
   if (kind === 'code:fulltext_plan') return t('Retrieval plan (code)')
   if (kind === 'code:fetch_baseline') return t('Retrieval baseline (code)')
   if (kind === 'code:fulltext_work') return t('Full text of one work')

@@ -463,11 +463,11 @@ needs_watch = pytest.mark.skipif(not pdf._watch_supported(), reason="the memory 
 
 
 @needs_watch
-def test_the_parent_stops_a_source_child_that_holds_the_interpreter_lock_past_the_limit():
-    # D159: the in-child watchdog is a thread and cannot run while a C call holds the lock (D138), so run_child reads the
-    # child's size from outside. The child reserves 300 MiB with `calloc`, says `ready` at about 30 MiB, touches all of it
-    # inside `memset` called through PyDLL (lock held) and then sleeps 30 s in a PyDLL `sleep`: only a watcher outside the
-    # child can stop it before that.
+def test_the_parent_watcher_stops_a_source_child_that_holds_the_interpreter_lock_past_the_limit():
+    # D159: run_child reads the child's size from outside. This child runs no watchdog of its own; it reserves 300 MiB
+    # with `calloc`, says `ready` at about 30 MiB, touches all of it inside `memset` called through PyDLL (lock held) and
+    # then sleeps 30 s in a PyDLL `sleep`. The test shows the parent-side watcher stops it; that an in-child thread could
+    # not have done so is D138's measurement, not this test's.
     code = ("import ctypes, sys\nlib = ctypes.PyDLL(None)\nlib.calloc.restype = ctypes.c_void_p\n"
             "lib.memset.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t]\n"
             "small = bytearray(30 * 1024 * 1024)\nfor i in range(0, len(small), 4096): small[i] = 1\n"
@@ -493,6 +493,23 @@ def test_a_source_child_whose_size_cannot_be_read_is_killed_as_a_lost_watch(monk
     started = time.monotonic()
     result = asyncio.run(src.run_child([sys.executable, "-c", "import time; time.sleep(30)"], timeout=60, max_memory=1024 * MIB))
     assert result.failure == "memory_watch_lost" and time.monotonic() - started < 15
+
+
+@needs_watch
+def test_a_memory_stop_is_not_overwritten_by_a_later_timeout(monkeypatch):
+    # The first failure written wins. The watcher's kill is swallowed once so the child outlives it and the 1 s clock
+    # runs out afterwards; the reported failure must still be memory_limit, not timed_out.
+    monkeypatch.setattr(pdf, "_resident_bytes", lambda pid: 2 * 1024 * MIB)
+    real_kill, calls = asyncio.subprocess.Process.kill, []
+
+    def kill_once_late(self):
+        calls.append(1)
+        if len(calls) > 1:
+            real_kill(self)
+
+    monkeypatch.setattr(asyncio.subprocess.Process, "kill", kill_once_late)
+    result = asyncio.run(src.run_child([sys.executable, "-c", "import time; time.sleep(30)"], timeout=1, max_memory=1024 * MIB))
+    assert len(calls) >= 2 and result.failure == "memory_limit" and result.returncode is not None
 
 
 def test_read_source_passes_the_production_memory_limit_to_the_watcher(tmp_path, monkeypatch):

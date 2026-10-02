@@ -1047,7 +1047,7 @@ class ChildResult:
     returncode: int | None
     stdout: bytes
     stderr_tail: str
-    failure: str | None  # timed_out, output_too_large, memory_limit, exit_<code>, or None
+    failure: str | None  # timed_out, output_too_large, memory_limit, memory_watch_lost, exit_<code>, or None; the first one written wins
 
 
 async def run_child(argv: list[str], stdin: bytes = b"", timeout: float = CHILD_TIMEOUT_SECONDS,
@@ -1079,7 +1079,8 @@ async def run_child(argv: list[str], stdin: bytes = b"", timeout: float = CHILD_
         while chunk := await proc.stdout.read(65536):
             out.extend(chunk)
             if len(out) > max_stdout:
-                failure = "output_too_large"
+                if failure is None:
+                    failure = "output_too_large"
                 proc.kill()
                 return
 
@@ -1114,7 +1115,8 @@ async def run_child(argv: list[str], stdin: bytes = b"", timeout: float = CHILD_
             await asyncio.gather(*tasks)
             await proc.wait()
     except TimeoutError:
-        failure = "timed_out"
+        if failure is None:
+            failure = "timed_out"
     finally:
         for task in tasks:
             task.cancel()

@@ -21,9 +21,14 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def file_is_whole(path: Path, sha256: str, size: int) -> bool:
+    """True when the file under its hash name really is the file the hash names (a torn one, left by an older version, is not)."""
+    return path.is_file() and path.stat().st_size == size and _file_sha256(path) == sha256
+
+
 def store_pdf_file(papers_dir: Path, sha256: str, data: bytes) -> Path:
     path = papers_dir / f"{sha256}.pdf"
-    if path.is_file() and path.stat().st_size == len(data) and _file_sha256(path) == sha256:
+    if file_is_whole(path, sha256, len(data)):
         return path
     fd, name = tempfile.mkstemp(dir=papers_dir, suffix=".part")  # unique: two processes on one data directory never share it
     os.close(fd)

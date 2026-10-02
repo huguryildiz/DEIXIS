@@ -539,10 +539,10 @@ async def store_upload(file: UploadFile, papers_dir: Path) -> tuple[str, int, Pa
         if head != b"%PDF-":
             raise UploadRefused(422, "upload_not_pdf", "Only PDF files are supported")
         path = papers_dir / f"{digest.hexdigest()}.pdf"
-        if path.exists():
+        if pdf_files.file_is_whole(path, digest.hexdigest(), size):
             os.unlink(partial)
         else:
-            os.replace(partial, path)
+            os.replace(partial, path)  # also replaces a torn file an older version left under this name
         return digest.hexdigest(), size, path
     except OSError as exc:
         Path(partial).unlink(missing_ok=True)

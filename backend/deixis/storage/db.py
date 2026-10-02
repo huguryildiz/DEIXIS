@@ -78,25 +78,25 @@ def _applied_versions_from_copy(path: Path) -> set[int] | None:
     `-wal`. A checkpoint between the two reads can tear the copy: the main file changing while it is copied, or a copy
     SQLite cannot read, is tried again."""
     for _ in range(3):
-        with tempfile.TemporaryDirectory(prefix="deixis-schema-check-") as folder:
-            before = path.stat()
-            try:
+        try:
+            with tempfile.TemporaryDirectory(prefix="deixis-schema-check-") as folder:
+                before = path.stat()
                 copy = _copy_live_files(path, Path(folder))
-            except OSError as exc:
-                raise SchemaCheckUnreadable(
-                    f"DEIXIS could not copy the library to check which version wrote it ({exc}); "
-                    "free some disk space or fix the permissions and try again.") from exc
-            after = path.stat()
-            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-                continue
-            try:
-                conn = sqlite3.connect(copy, timeout=5)
+                after = path.stat()
+                if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                    continue
                 try:
-                    return _applied_versions(conn)
-                finally:
-                    conn.close()
-            except sqlite3.DatabaseError:
-                continue
+                    conn = sqlite3.connect(copy, timeout=5)
+                    try:
+                        return _applied_versions(conn)
+                    finally:
+                        conn.close()
+                except sqlite3.DatabaseError:
+                    continue
+        except OSError as exc:
+            raise SchemaCheckUnreadable(
+                f"DEIXIS could not copy the library to check which version wrote it ({exc}); "
+                "free some disk space or fix the permissions and try again.") from exc
     raise SchemaCheckUnreadable(
         "DEIXIS could not read the library to check which version wrote it; try again with DEIXIS stopped.")
 
@@ -106,13 +106,13 @@ def check_schema_known(path: Path) -> None:
 
     Every recorded migration id missing from the packaged set counts (not only a higher one). A library with no
     `-wal` is read with the `immutable` URI, which creates nothing; one with a `-wal` is read from a copy."""
-    path = Path(path)
+    path = Path(path).resolve()
     if not _non_empty(path):
         return
     if _non_empty(Path(f"{path}-wal")):
         applied = _applied_versions_from_copy(path)
     else:
-        conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro&immutable=1", uri=True, timeout=5)
+        conn = sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True, timeout=5)
         try:
             applied = _applied_versions(conn)
         finally:
@@ -131,7 +131,7 @@ def check_schema_known(path: Path) -> None:
 def connect(path: Path) -> sqlite3.Connection:
     check_schema_known(path)  # before anything is created or written (journal_mode = WAL below writes)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=30, isolation_level=None, check_same_thread=False)
+    conn = sqlite3.connect(path.resolve(), timeout=30, isolation_level=None, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
@@ -214,7 +214,8 @@ def open_problem(path: Path) -> str | None:
         if failure is None:
             raise
         reason = str(exc) if isinstance(exc, sqlite3.Error) else "database or disk is full"
-        return (f"The library file {path} could not be opened ({reason}), so DEIXIS did not start and changed nothing; "
+        return (f"The library file {path} could not be opened ({reason}), so DEIXIS did not start. "
+                "A schema migration that had already finished stays applied; "
                 f"{_STARTUP_ADVICE[failure[0]]}.")
     finally:
         if conn is not None:

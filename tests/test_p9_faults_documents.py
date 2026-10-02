@@ -468,7 +468,8 @@ def test_o8_open_problem_names_a_garbage_library_and_changes_nothing(tmp_path):
     before = library.read_bytes()
     problem = db.open_problem(library)
     assert problem is not None and "\n" not in problem and "Traceback" not in problem
-    assert str(library) in problem and "file is not a database" in problem and "did not start and changed nothing" in problem
+    assert str(library) in problem and "file is not a database" in problem and "did not start" in problem
+    assert "stays applied" in problem
     assert library.read_bytes() == before
     assert db.open_problem(tmp_path / "fresh" / "library.sqlite") is None
 

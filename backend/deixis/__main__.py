@@ -37,9 +37,13 @@ def watch_shutdown(server, seconds: float, exit_function, cancel: threading.Even
             return
     if cancel.wait(seconds):
         return
-    sys.stderr.write(f"DEIXIS did not finish shutting down in {seconds:g} s; exiting\n")
-    sys.stderr.flush()
-    exit_function(FORCED_EXIT_CODE)
+    try:
+        sys.stderr.write(f"DEIXIS did not finish shutting down in {seconds:g} s; exiting\n")
+        sys.stderr.flush()
+    except Exception:
+        pass  # A full disk or a closed diagnostic stream must not disable the shutdown bound.
+    finally:
+        exit_function(FORCED_EXIT_CODE)
 
 
 def port_available(host: str, port: int) -> bool:

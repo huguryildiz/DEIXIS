@@ -16,7 +16,7 @@ tore it. `restore-copy` runs the product's own `create_backup` and `restore_back
 restored folder with `create_app(start_worker=False)`, no model adapters and a transport that refuses every request, and
 compares plain SQL counts before and after.
 
-Every refusal is decided from path strings before anything is read or written. Output is counts and schema versions only:
+Path rules inspect names and file metadata before SQLite or backup writes. Output is counts and schema versions only:
 no titles, no text, no ids. The owner's consent for a run on real data is the `--i-have-owner-consent` flag of `copy-live`;
 nothing else accepts it as a relaxation. This script is never run on real data by the batch that wrote it.
 
@@ -32,6 +32,7 @@ import os
 import shutil
 import socket
 import sqlite3
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -55,14 +56,14 @@ MODEL_KEYS = ("DEIXIS_CODEX_HOME", "GEMINI_API_KEY", "OPENAI_API_KEY", "DEEPSEEK
 
 
 class Refused(Exception):
-    """A path rule forbids the call; nothing was read or written."""
+    """A path rule forbids the call before SQLite or backup writes."""
 
 
 class NotMeasured(Exception):
     """The copy could not be made consistent; no number is claimed."""
 
 
-# ---- path rules (strings only) --------------------------------------------------------------------------------------
+# ---- path rules ----------------------------------------------------------------------------------------------------
 
 
 def _resolved(path: str | os.PathLike) -> Path:
@@ -111,9 +112,62 @@ def check_copy_live_paths(live: str, work: str, consent: bool) -> tuple[Path, Pa
 
 def read_marker(work_dir: Path) -> Path:
     marker = work_dir / MARKER
-    if not marker.is_file():
+    try:
+        info = marker.lstat()
+    except FileNotFoundError:
+        info = None
+    except OSError as exc:
+        raise Refused(f"could not inspect {MARKER}; refused") from exc
+    if info is not None and stat.S_ISLNK(info.st_mode):
+        raise Refused(f"symlink at {MARKER}; refused")
+    if info is not None and stat.S_ISREG(info.st_mode) and info.st_nlink > 1:
+        raise Refused(f"hard link at {MARKER}; refused")
+    if info is None or not stat.S_ISREG(info.st_mode):
         raise Refused(f"{work_dir.name} is not a copy made by copy-live (no {MARKER})")
     return _resolved(marker.read_text(encoding="utf-8").strip())
+
+
+def check_work_tree(work_dir: Path, live_dir: Path) -> None:
+    """Refuse existing links and unreadable entries; this is not protection against a concurrent path swap."""
+    work_dir, live_dir = work_dir.resolve(), live_dir.resolve()
+
+    def walk(folder: Path, working: bool):
+        try:
+            with os.scandir(folder) as entries:
+                for entry in entries:
+                    path = Path(entry.path)
+                    info = path.lstat()
+                    if stat.S_ISLNK(info.st_mode):
+                        if working:
+                            raise Refused(f"symlink at {path.relative_to(work_dir).as_posix()}; refused")
+                    elif stat.S_ISDIR(info.st_mode):
+                        yield from walk(path, working)
+                    elif stat.S_ISREG(info.st_mode):
+                        yield path, info
+        except OSError as exc:
+            name = folder.relative_to(work_dir).as_posix() if working else "LIVE_DIR"
+            raise Refused(f"could not scan {name}; refused") from exc
+
+    live_files = {(info.st_dev, info.st_ino) for _, info in walk(live_dir, False)}
+    for path, info in walk(work_dir, True):
+        relative = path.relative_to(work_dir)
+        if path.name.startswith("library.sqlite") or relative.parts[0] in (COPY, BACKUP, RESTORED):
+            if (info.st_dev, info.st_ino) in live_files:
+                raise Refused(f"live file identity at {relative.as_posix()}; refused")
+        if info.st_nlink > 1:
+            raise Refused(f"hard link at {relative.as_posix()}; refused")
+    for name in (COPY, BACKUP, RESTORED):
+        path = work_dir / name
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            continue  # A not-yet-created output has no links to inspect.
+        except OSError as exc:
+            raise Refused(f"could not inspect {name}; refused") from exc
+        resolved = path.resolve()
+        if not inside(resolved, work_dir):
+            raise Refused(f"{name} is outside WORK_DIR; refused")
+        forbid_protected(resolved, (live_dir,), name)
 
 
 # ---- reading ---------------------------------------------------------------------------------------------------------
@@ -267,7 +321,9 @@ def restore_copy(work: str) -> dict[str, int]:
     work_dir = _resolved(work)
     live_dir = read_marker(work_dir)
     forbid_protected(work_dir, (live_dir,), "WORK_DIR")
+    check_work_tree(work_dir, live_dir)
     backup = create_backup(Settings(data_dir=work_dir / COPY), work_dir / BACKUP)
+    check_work_tree(work_dir, live_dir)
     result = restore_backup(backup, Settings(data_dir=work_dir / RESTORED))
     return {"files": result["files"], "researches": result["researches"]}
 
@@ -297,6 +353,8 @@ def _walk(value, name: str, found: set | None = None) -> set:
 def check_open_paths(work: str) -> tuple[Path, Path]:
     work_dir = _resolved(work)
     live_dir = read_marker(work_dir)
+    forbid_protected(work_dir, (live_dir,), "the folder to open")
+    check_work_tree(work_dir, live_dir)
     restored = work_dir / RESTORED
     if not restored.is_dir():
         raise Refused(f"{work_dir.name} has no {RESTORED} folder; run restore-copy first")

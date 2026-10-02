@@ -17,10 +17,12 @@ from typing import Annotated, Any, Awaitable, Callable, Iterator, Literal
 
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from keyring.errors import KeyringError
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from deixis import credentials, local_tools
 from deixis.config import Settings, load_settings
@@ -706,6 +708,16 @@ def create_app(
             raise exc
         code, status, detail = failure
         return JSONResponse({"detail": detail, "code": code}, status_code=status)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def body_parse_failed(request: Request, exc: StarletteHTTPException):
+        # FastAPI wraps multipart spool failures before an upload endpoint can handle them.
+        # Only FastAPI's own 400 for a body that could not be read; any other HTTPException keeps its status, detail and headers.
+        if exc.status_code == 400 and exc.detail == "There was an error parsing the body" \
+                and (failure := db.describe_failure(exc.__cause__)) is not None:
+            code, status, detail = failure
+            return JSONResponse({"detail": detail, "code": code}, status_code=status)
+        return await http_exception_handler(request, exc)
 
     @app.exception_handler(NotFound)
     async def not_found(_: Request, exc: NotFound):
@@ -1490,8 +1502,9 @@ def create_app(
         store = store_of(request)
         if store.scope(research_id)["source_scope"] == "academic":
             raise HTTPException(422, "Attached files are not part of this research's source scope")
-        settings.papers_dir.mkdir(parents=True, exist_ok=True)
-        sha, size, path = await store_upload(file, settings.papers_dir)
+        with disk_full_refused():
+            settings.papers_dir.mkdir(parents=True, exist_ok=True)
+            sha, size, path = await store_upload(file, settings.papers_dir)
         existing = store.conn.execute(
             "SELECT a.source_version_id FROM source_assets a JOIN source_versions s ON s.id = a.source_version_id"
             " WHERE a.sha256 = ? AND a.removed_at IS NULL AND s.origin = 'user_upload' LIMIT 1", (sha,)
@@ -1518,8 +1531,9 @@ def create_app(
         store.research(research_id)
         if not store.is_active_member(research_id, source_version_id):
             raise HTTPException(404, "Source is not part of this research")
-        settings.papers_dir.mkdir(parents=True, exist_ok=True)
-        sha, size, path = await store_upload(file, settings.papers_dir)
+        with disk_full_refused():
+            settings.papers_dir.mkdir(parents=True, exist_ok=True)
+            sha, size, path = await store_upload(file, settings.papers_dir)
         if not store.conn.execute(
             "SELECT 1 FROM source_assets WHERE source_version_id = ? AND sha256 = ? AND removed_at IS NULL",
             (source_version_id, sha)
@@ -1552,7 +1566,8 @@ def create_app(
             return await match_waiting(store, research_id, files, request.app.state.worker.flow)
         candidates = [store.source(svid) for head in store.included_works(research_id)
                       for svid in [head, *store.work_versions(research_id, head)]]
-        settings.papers_dir.mkdir(parents=True, exist_ok=True)
+        with disk_full_refused():
+            settings.papers_dir.mkdir(parents=True, exist_ok=True)
         matches = []
         for file in files[:50]:
             _, _, path = await store_upload(file, settings.papers_dir)
@@ -1563,7 +1578,8 @@ def create_app(
 
     async def match_waiting(store: Store, research_id: str, files: list[UploadFile], request_flow: Any) -> dict[str, Any]:
         revision = store.research(research_id)["current_scope_revision"]
-        settings.papers_dir.mkdir(parents=True, exist_ok=True)
+        with disk_full_refused():
+            settings.papers_dir.mkdir(parents=True, exist_ok=True)
         matches = []
         for file in files[:50]:
             sha, _, path = await store_upload(file, settings.papers_dir)
@@ -1604,8 +1620,9 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         pdf_waiting.require_sw(store, research_id)
-        settings.papers_dir.mkdir(parents=True, exist_ok=True)
-        sha, size, path = await store_upload(file, settings.papers_dir)
+        with disk_full_refused():
+            settings.papers_dir.mkdir(parents=True, exist_ok=True)
+            sha, size, path = await store_upload(file, settings.papers_dir)
         bound = dict(work_id=work_id, source_version_id=source_version_id, scope_revision=scope_revision,
                      versions_digest=versions_digest, sha256=sha256, uploaded_sha256=sha)
         pdf_waiting.check_attach(store, research_id, **bound)
@@ -1697,9 +1714,9 @@ def create_app(
             raise HTTPException(422, "Attached files are not part of this research's source scope")
         library, http = zotero.library(body.source), request.app.state.http
         items, rows = await zotero.collection_items(http, library, body.collection_key)
-        settings.payloads_dir.mkdir(parents=True, exist_ok=True)
         payload_path = f"{db.new_id('zot')}.json"
         with disk_full_refused():
+            settings.payloads_dir.mkdir(parents=True, exist_ok=True)
             (settings.payloads_dir / payload_path).write_text(json.dumps(rows), encoding="utf-8")
         pdfs_added, notes = 0, []
         for item in items:
@@ -1721,8 +1738,8 @@ def create_app(
                 notes.append({"title": item.record.title, "note": f"PDF not added: {exc}"})
                 continue
             sha = hashlib.sha256(data).hexdigest()
-            settings.papers_dir.mkdir(parents=True, exist_ok=True)
             with disk_full_refused():
+                settings.papers_dir.mkdir(parents=True, exist_ok=True)
                 path = pdf_files.store_pdf_file(settings.papers_dir, sha, data)
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             # The file is the user's own copy from their library, like an upload; retrieved_from names the attachment.
@@ -1757,8 +1774,8 @@ def create_app(
                 notes.append({"title": source["title"], "note": f"PDF not added: {exc}"})
                 continue
             sha = hashlib.sha256(data).hexdigest()
-            settings.papers_dir.mkdir(parents=True, exist_ok=True)
             with disk_full_refused():
+                settings.papers_dir.mkdir(parents=True, exist_ok=True)
                 path = pdf_files.store_pdf_file(settings.papers_dir, sha, data)
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
@@ -1938,8 +1955,9 @@ def create_app(
         """Replace the PDF in use with another file; evidence citing the old file keeps its passages (D45)."""
         store = store_of(request)
         asset_in_use(store, research_id, source_version_id, asset_id)
-        settings.papers_dir.mkdir(parents=True, exist_ok=True)
-        sha, size, path = await store_upload(file, settings.papers_dir)
+        with disk_full_refused():
+            settings.papers_dir.mkdir(parents=True, exist_ok=True)
+            sha, size, path = await store_upload(file, settings.papers_dir)
         if sha == store.asset(asset_id)["sha256"]:
             raise SameFile(asset_id)
         extraction = await asyncio.to_thread(pdf.extract_pdf, path)

@@ -142,7 +142,10 @@ def staged(dirs, base: Path | None = None, restored: bool = True, live: Path | N
     """A work folder holding the marker and, when asked, a restored library."""
     work = base or dirs["scratch"] / "work"
     work.mkdir(parents=True, exist_ok=True)
-    (work / uc.MARKER).write_text(str(live or dirs["ordinary"]), encoding="utf-8")
+    live = live or dirs["ordinary"]
+    if not live.exists():
+        make_source_library(live)  # The marker's source must be listable for the identity guard.
+    (work / uc.MARKER).write_text(str(live), encoding="utf-8")
     if restored:
         make_source_library(work / uc.RESTORED)
     return work

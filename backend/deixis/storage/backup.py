@@ -191,13 +191,20 @@ def restore_backup(backup: Path, settings: Settings) -> dict[str, Any]:
         _place_file(backup / entry["path"], dest, entry["sha256"])
 
     staging = db_path.with_name(f"{DB_NAME}.restoring")
-    shutil.copyfile(backup / DB_NAME, staging)
-    conn = sqlite3.connect(staging)
     try:
-        if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-            raise BackupError("restored database failed the SQLite integrity check")
-        researches = conn.execute("SELECT COUNT(*) FROM researches").fetchone()[0]
-    finally:
-        conn.close()
+        shutil.copyfile(backup / DB_NAME, staging)
+        database_entry = next(entry for entry in entries if entry["path"] == DB_NAME)
+        if _sha256(staging) != database_entry["sha256"]:
+            raise BackupError("restored database does not match the manifest")
+        conn = sqlite3.connect(staging)
+        try:
+            if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise BackupError("restored database failed the SQLite integrity check")
+            researches = conn.execute("SELECT COUNT(*) FROM researches").fetchone()[0]
+        finally:
+            conn.close()
+    except BaseException:
+        staging.unlink(missing_ok=True)
+        raise
     os.replace(staging, db_path)
     return {"files": len(entries), "researches": researches, "schema_versions": manifest.get("schema_versions", [])}

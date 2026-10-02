@@ -462,6 +462,8 @@ dondurulan değere eşit olduğu, kit hash'lerinin eşit olduğu, izole veri diz
 
 P6 dilim 2'den devreden (D142): bağımsız gelişim çizgisi (lineage) ölçümü, P9 başında ayrı bir L9 işi olarak planlanır (H9 yalnız raporu kapsar); ve D141'in keşif bulgusu (varsayılan akış NLP sorusunda 99 işten 1'ini dahil etti, 69'u beklemede) ayrı bir ürün bulgusu olarak P9'da incelenir, bulundu / beklemede / bulunamadı ayrı sayılarak.
 
+P6 dilim 3'ten devreden (D154): kill-search'ün bağımsız gerçek-model ölçümü (K6, slice note §13: S1–S5, altı taze iddia, tek koşu, `p6-slice3-expectations.md` koşudan önce dondurulur ve Sol incelemesinden geçer) sahibin 2 Ekim 2026 kararıyla P9'a kaldı. K5'in geliştirme koşusunda sorgu (blok içi OR) alakasız geniş sonuç getirdi ve 3/8 tutulan iş özetsizdi (D154); bu K6 öncesi bir ürün bulgusudur.
+
 ## 6. Sıra, bağımlılık, boyut
 
 | Batch | Bağlı olduğu | Boyut | Model |

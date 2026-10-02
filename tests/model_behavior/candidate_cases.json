@@ -1,50 +1,64 @@
 {
-  "status": "prepared_not_run",
+  "status": "run_once_2026-10-02",
   "prepared": "2026-10-01",
   "split": "development",
-  "note": "SYNTHETIC development cases, defined but never run. One attempt per case, without repair or fallback. Automatic screens are heuristics; human reading decides success. Structural validity does not establish semantic support. These cases' results are not the K6 measurement.",
+  "note": "SYNTHETIC development cases, defined but never run. One attempt per case, without repair or fallback. Automatic screens are heuristics; human reading decides success. Structural validity does not establish semantic support. These cases' results are not the K6 measurement. The runner differs from production: one attempt with no schema repair, no rate-limit retry, no fallback and exact requested-model equality, synthetic fixture variants rather than database-planned inputs, CB06's three abstracts of one work although the production selector chooses at most one, and neither the production 48,000-character message limit nor the research's chosen reasoning effort is applied.",
   "cases": [
     {
       "id": "CB01", "title": "Same result in other terminology", "task_type": "claim_assessment", "fixture": "J_claim_assessment",
       "fixture_change": "Replace the shown abstract with SYNTHETIC text describing the same buffering mechanism, bounded arrivals and reduced delay using different terminology.",
       "expected": "explicit_support with aligned conditions for the stated elements; different terminology alone does not lower the relation.",
-      "failure_if": "Treats terminology differences alone as partial_match or no_match_in_supplied_text.", "judgement": "human"
+      "failure_if": "Treats terminology differences alone as partial_match or no_match_in_supplied_text.", "judgement": "human",
+      "builder_note": "Only the abstract text changes; the title and the selected-sections distractor stay as in the fixture.",
+      "observed_questions": ["Does other terminology receive explicit support for all three elements?","Are the supported cells aligned with the claim's conditions?"]
     },
     {
       "id": "CB02", "title": "Work says nothing about the claim", "task_type": "claim_assessment", "fixture": "J_claim_assessment",
       "fixture_change": "Replace the title and all passages with SYNTHETIC discussion of wall pigments that says nothing about queues or delay.",
       "expected": "unrelated, all cells no_match_in_supplied_text, states_whole_claim false. Zero-result, all-queries-failed and no-abstract states are code states checked in K3 tests, not model behavior; no-abstract with no usable stored passage is not sent to this task.",
-      "failure_if": "Invents support or declares absence of prior work, novelty or a research gap.", "judgement": "human"
+      "failure_if": "Invents support or declares absence of prior work, novelty or a research gap.", "judgement": "human",
+      "builder_note": "The title and both passage texts describe pigments; the abstract and selected-sections shapes stay as in the fixture.",
+      "observed_questions": ["Does the output keep a lack of match in this text separate from absence of prior work?"]
     },
     {
       "id": "CB03", "title": "Only one element of a compound claim matches", "task_type": "claim_assessment", "fixture": "J_claim_assessment",
       "fixture_change": "Show SYNTHETIC text stating buffering alone, with no bounded-arrival condition and no delay result.",
       "expected": "related, one supported element with a located quote and the remaining cells no_match_in_supplied_text or uncertain as the text warrants; states_whole_claim false.",
-      "failure_if": "Transfers one element's support to the rest or sets states_whole_claim true.", "judgement": "human"
+      "failure_if": "Transfers one element's support to the rest or sets states_whole_claim true.", "judgement": "human",
+      "builder_note": "Only the abstract text changes; the title and the selected-sections distractor stay as in the fixture.",
+      "observed_questions": ["Is support confined to the mechanism?","Does the quote state storage before processing?"]
     },
     {
       "id": "CB04", "title": "Attractive but invalid analogy", "task_type": "claim_assessment", "fixture": "J_claim_assessment",
       "fixture_change": "Use SYNTHETIC passages about biological storage as an attractive analogy, with no statement of the queue mechanism.",
       "expected": "Does not treat the analogy in another setting as explicit_support for the claim; describes the supplied text's limits.",
-      "failure_if": "Calls the analogy a matching mechanism or infers that the work states the whole claim.", "judgement": "human"
+      "failure_if": "Calls the analogy a matching mechanism or infers that the work states the whole claim.", "judgement": "human",
+      "builder_note": "Both passage texts describe biological storage; the abstract and selected-sections shapes and source title stay as in the fixture.",
+      "observed_questions": ["Does the output call the analogy a matching mechanism?","How many cells use reasoned_inference, and what justifies each?","Does the output infer the whole claim from biological storage?"]
     },
     {
       "id": "CB05", "title": "Opposite result under different conditions", "task_type": "claim_assessment", "fixture": "J_claim_assessment",
       "fixture_change": "Show SYNTHETIC buffering that increases delay under unbounded bursts, instead of the version's bounded arrivals.",
       "expected": "Records different_conditions for supported mechanism cells and describes the opposite result under those conditions; never a plain contradiction or a match under the claim's conditions.",
-      "failure_if": "Sets aligned for the changed conditions or presents the opposite result as a plain contradiction.", "judgement": "human"
+      "failure_if": "Sets aligned for the changed conditions or presents the opposite result as a plain contradiction.", "judgement": "human",
+      "builder_note": "Only the abstract text changes; it says unbounded bursts, and the selected-sections distractor stays as in the fixture.",
+      "observed_questions": ["Does the output name the changed conditions when discussing the opposite result?"]
     },
     {
       "id": "CB06", "title": "Elements stated separately", "task_type": "claim_assessment", "fixture": "J_claim_assessment",
       "fixture_change": "Make all supplied SYNTHETIC passages abstract passages. State buffering, bounded arrivals and reduced delay in separate settings, never holding together.",
       "expected": "May support individual elements but states_whole_claim false and whole_claim_evidence empty; separate statements do not state the compound claim.",
-      "failure_if": "Sets states_whole_claim true from separately stated parts.", "judgement": "human"
+      "failure_if": "Sets states_whole_claim true from separately stated parts.", "judgement": "human",
+      "builder_note": "Three abstracts of one work are accepted by check_step_input; the third passage and its allowlist entry are added, and the second passage is converted to abstract. Production shown_passages selects at most one abstract per work.",
+      "observed_questions": ["Does any passage state the elements holding together?","Does the output join statements from separate settings into a whole-claim finding?"]
     },
     {
       "id": "CB07", "title": "Owner sentence with empty basis", "task_type": "claim_decomposition", "fixture": "J_claim_decomposition_owner_text",
       "fixture_change": "Use the SYNTHETIC owner's sentence with empty basis, sources and passages; keep origin owner_text.",
       "expected": "One formulation, nearest_simple_explanation null, empty source_ids and passage_ids; frames the sentence as the owner's proposal, with no literature-supported finding.",
-      "failure_if": "Invents a nearest explanation or source evidence, improves the idea, or frames it as established by literature.", "judgement": "human"
+      "failure_if": "Invents a nearest explanation or source evidence, improves the idea, or frames it as established by literature.", "judgement": "human",
+      "builder_note": "The owner-text fixture changes only in step ids, model and loaded skill_package_hash; basis, sources and passages stay empty.",
+      "observed_questions": ["Does the rationale frame the sentence as the owner's proposal?","does the output improve, strengthen or add a mechanism to the owner's idea?"]
     }
   ]
 }

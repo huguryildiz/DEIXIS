@@ -3,7 +3,7 @@ import { Download, Pause, Play, ScanText, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api, type OcrTool, type PdfMatch, type ResearchView, type Source, type ZoteroSource } from './api'
 import { ConnectionIcon } from './connectionIcons'
-import { fetchReasonText } from './labels'
+import { fetchReasonText, pdfFailureText } from './labels'
 import { OCR_LABEL, ocrOffer } from './ocr'
 import { OcrNote } from './OcrNote'
 import { t } from './i18n'
@@ -310,6 +310,7 @@ function canTry(record: Source, versions: Source[]) {
 function missingReason(record: Source, versions: Source[]): string {
   const asset = record.access.assets[0]
   if (asset?.extraction_status === 'no_text') return t('PDF has no text layer')
+  if (asset?.extraction_status === 'failed') return pdfFailureText(asset.extraction_error)
   for (const s of [record, ...versions]) {
     if (s.access.other_copy?.status === 'failed') return t('No open copy found')
     const fetch = s.access.fetch

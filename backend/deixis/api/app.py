@@ -8,6 +8,7 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import tempfile
 import time
 from contextlib import asynccontextmanager, nullcontext
@@ -505,27 +506,49 @@ class TemplateCreate(BaseModel):
     table_id: str = Field(max_length=40)
 
 
+class DiskFull(Exception):
+    """The upload could not be written because the disk is full (`store_upload`)."""
+
+
+class UploadRefused(Exception):
+    """An upload `store_upload` refuses; `code` lets the page translate the sentence."""
+
+    def __init__(self, status: int, code: str, detail: str):
+        super().__init__(detail)
+        self.status, self.code, self.detail = status, code, detail
+
+
 async def store_upload(file: UploadFile, papers_dir: Path) -> tuple[str, int, Path]:
     """Copy an upload into the papers folder in chunks while hashing, without holding the whole file in memory."""
     digest, size, head = hashlib.sha256(), 0, b""
-    fd, partial = tempfile.mkstemp(dir=papers_dir, suffix=".partial")
+    try:
+        fd, partial = tempfile.mkstemp(dir=papers_dir, suffix=".partial")
+    except OSError as exc:  # creating the file already fails on a full disk
+        if db.describe_failure(exc):
+            raise DiskFull from exc
+        raise
     try:
         with os.fdopen(fd, "wb") as out:
             while chunk := await file.read(UPLOAD_CHUNK_BYTES):
                 head = head or chunk[:5]
                 size += len(chunk)
                 if size > MAX_UPLOAD_BYTES:
-                    raise HTTPException(413, "PDF larger than 50 MB")
+                    raise UploadRefused(413, "upload_too_large", "PDF larger than 50 MB")
                 digest.update(chunk)
                 out.write(chunk)
         if head != b"%PDF-":
-            raise HTTPException(422, "Only PDF files are supported")
+            raise UploadRefused(422, "upload_not_pdf", "Only PDF files are supported")
         path = papers_dir / f"{digest.hexdigest()}.pdf"
         if path.exists():
             os.unlink(partial)
         else:
             os.replace(partial, path)
         return digest.hexdigest(), size, path
+    except OSError as exc:
+        Path(partial).unlink(missing_ok=True)
+        if db.describe_failure(exc):
+            raise DiskFull from exc
+        raise
     except BaseException:
         Path(partial).unlink(missing_ok=True)
         raise
@@ -646,9 +669,10 @@ def create_app(
                 # Checked before the multipart body is read and spooled to disk.
                 length = request.headers.get("content-length", "")
                 if not length.isdigit():
-                    return JSONResponse({"detail": "Upload size must be declared"}, status_code=411)
+                    return JSONResponse({"detail": "Upload size must be declared", "code": "upload_size_undeclared"},
+                                        status_code=411)
                 if int(length) > MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_BYTES:
-                    return JSONResponse({"detail": "PDF larger than 50 MB"}, status_code=413)
+                    return JSONResponse({"detail": "PDF larger than 50 MB", "code": "upload_too_large"}, status_code=413)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -656,6 +680,21 @@ def create_app(
 
     def store_of(request: Request) -> Store:
         return request.app.state.store
+
+    @app.exception_handler(UploadRefused)
+    async def upload_refused(_: Request, exc: UploadRefused):
+        return JSONResponse({"detail": exc.detail, "code": exc.code}, status_code=exc.status)
+
+    # A full disk and a busy, read-only or damaged library get one sentence and a code (P9 H3). Any other database
+    # error is a code bug and stays the 500 it was.
+    @app.exception_handler(DiskFull)
+    @app.exception_handler(sqlite3.DatabaseError)
+    async def storage_failed(request: Request, exc: Exception):
+        failure = db.describe_failure(exc if isinstance(exc, sqlite3.DatabaseError) else exc.__cause__ or exc)
+        if failure is None:
+            raise exc
+        code, status, detail = failure
+        return JSONResponse({"detail": detail, "code": code}, status_code=status)
 
     @app.exception_handler(NotFound)
     async def not_found(_: Request, exc: NotFound):

@@ -11,11 +11,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from deixis.storage.db import now, transaction
+from deixis.storage.db import describe_failure, now, transaction
 from deixis.workflow.flow import ResearchFlow
 from deixis.workflow.store import Store
 
@@ -27,6 +28,7 @@ except ImportError:  # Windows
 
 log = logging.getLogger("deixis.worker")
 PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat()
+RETRY_SECONDS = 1.0  # wait after a database or disk error before the next turn
 
 
 class Worker:
@@ -39,6 +41,7 @@ class Worker:
         self._fd: int | None = None
         self._wake = asyncio.Event()
         self._stop = asyncio.Event()
+        self._failed: tuple[str, str, dict] | None = None  # (run id, pause reason, error) not yet written
 
     def acquire(self) -> bool:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -107,32 +110,68 @@ class Worker:
             self.flow.queue_person_readings()
         except Exception:  # noqa: BLE001 - the worker must still start
             log.exception("queueing waiting person readings at start failed")
+        last_error: type[BaseException] | None = None
         while not self._stop.is_set():
-            self.store.conn.execute("UPDATE worker_owner SET heartbeat_at = ? WHERE instance_id = ?", (now(), self.instance_id))
-            run = self.store.next_queued_run()
-            if run is None:
-                self._wake.clear()
+            try:
+                await self._turn()
+                last_error = None
+            except (sqlite3.DatabaseError, OSError) as exc:
+                # A full disk or a locked library must not end the worker: no run would start again until a restart (P9 H3).
+                if type(exc) is not last_error:
+                    log.exception("worker turn failed; trying again")
+                last_error = type(exc)
                 try:
-                    await asyncio.wait_for(self._wake.wait(), timeout=1.0)
+                    await asyncio.wait_for(self._stop.wait(), timeout=RETRY_SECONDS)
                 except TimeoutError:
                     pass
-                continue
-            self.current_run_id = run["id"]
-            self.store.update_run(run["id"], event="run_started", status="running", pause_reason=None, error_json=None)
+
+    async def _turn(self) -> None:
+        if self._failed is not None:
+            self._write_failure()
+        self.store.conn.execute("UPDATE worker_owner SET heartbeat_at = ? WHERE instance_id = ?", (now(), self.instance_id))
+        run = self.store.next_queued_run()
+        if run is None:
+            self._wake.clear()
             try:
-                await self.flow.execute(run["id"])
-            except Exception as exc:  # noqa: BLE001 - record any unexpected failure on the run
-                log.exception("run %s failed", run["id"])
-                # A person's files the run held are closed by this same write (`Store.update_run`, slice 18b).
-                self.store.update_run(run["id"], event="run_failed", status="failed", pause_reason="internal_error",
-                                      error_json={"error": f"{type(exc).__name__}: {str(exc)[:300]}"})
-            finally:
-                self.current_run_id = None
-            # Whichever way the run returned, a person's waiting files get their reading run now (slice 18b).
-            try:
-                self.flow.person_run_ended(run["id"])
-            except Exception:  # noqa: BLE001 - the next run must not be held up by it
-                log.exception("queueing a person's reading after run %s failed", run["id"])
+                await asyncio.wait_for(self._wake.wait(), timeout=1.0)
+            except TimeoutError:
+                pass
+            return
+        self.store.update_run(run["id"], event="run_started", status="running", pause_reason=None, error_json=None)
+        self.current_run_id = run["id"]
+        try:
+            await self.flow.execute(run["id"])
+        except Exception as exc:  # noqa: BLE001 - record any unexpected failure on the run
+            log.exception("run %s failed", run["id"])
+            failure = describe_failure(exc)
+            self._failed = (run["id"], "disk_full" if failure and failure[0] == "disk_full" else "internal_error",
+                            {"error": f"{type(exc).__name__}: {str(exc)[:300]}"})
+        finally:
+            self.current_run_id = None
+        if self._failed is not None:
+            self._write_failure()
+        else:
+            self._run_ended(run["id"])
+
+    def _write_failure(self) -> None:
+        """Record the failure of a run. When the write itself fails (the disk is still full) the failure stays in
+        memory and the next turn writes it again, so the run does not stay `running` once there is room."""
+        run_id, reason, error = self._failed
+        if self.store.run(run_id)["status"] not in ("running", "pause_requested"):
+            self._failed = None  # a cancel or pause that arrived meanwhile stands
+            self._run_ended(run_id)
+            return
+        # A person's files the run held are closed by this same write (`Store.update_run`, slice 18b).
+        self.store.update_run(run_id, event="run_failed", status="failed", pause_reason=reason, error_json=error)
+        self._failed = None
+        self._run_ended(run_id)
+
+    def _run_ended(self, run_id: str) -> None:
+        # Whichever way the run returned, a person's waiting files get their reading run now (slice 18b).
+        try:
+            self.flow.person_run_ended(run_id)
+        except Exception:  # noqa: BLE001 - the next run must not be held up by it
+            log.exception("queueing a person's reading after run %s failed", run_id)
 
     async def stop(self) -> None:
         self._stop.set()

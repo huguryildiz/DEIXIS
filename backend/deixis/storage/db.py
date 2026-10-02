@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import secrets
 import shutil
@@ -148,10 +149,66 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     try:
         yield conn
     except BaseException:
-        conn.execute("ROLLBACK")
+        # After a statement-level SQLITE_FULL SQLite has already rolled back; an unconditional ROLLBACK would raise
+        # "no transaction is active" and hide the real error.
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
         raise
     else:
         conn.execute("COMMIT")
+
+
+# SQLite primary result codes (the low byte of `sqlite_errorcode`) that DEIXIS names for the person.
+_FAILURES = {
+    13: ("disk_full", 507, "DEIXIS could not save because the disk is full. Free some space and try again."),
+    5: ("database_busy", 503, "DEIXIS could not save because another process is using the library. Try again in a moment."),
+    6: ("database_busy", 503, "DEIXIS could not save because another process is using the library. Try again in a moment."),
+    8: ("database_readonly", 503,
+        "DEIXIS could not save because the library file is read-only. Make it writable, or restore a copy, and try again."),
+    11: ("database_damaged", 503, "DEIXIS cannot read its library because the file is damaged. Restore it from a backup."),
+    26: ("database_damaged", 503, "DEIXIS cannot read its library because the file is damaged. Restore it from a backup."),
+}
+
+
+def describe_failure(exc: BaseException) -> tuple[str, int, str] | None:
+    """(code, HTTP status, sentence) for a full disk, a busy, read-only or damaged library; None for anything else."""
+    if isinstance(exc, OSError) and exc.errno in (errno.ENOSPC, errno.EDQUOT):
+        return _FAILURES[13]
+    if isinstance(exc, sqlite3.DatabaseError):
+        code = getattr(exc, "sqlite_errorcode", None)
+        if isinstance(code, int):
+            return _FAILURES.get(code & 0xFF)
+    return None
+
+
+# What the launcher says before it starts when the library cannot be opened: what to do next, per code.
+_STARTUP_ADVICE = {
+    "disk_full": "free some space and start it again",
+    "database_busy": "close the other DEIXIS or tool using it and start it again",
+    "database_readonly": "make the file writable, or restore a copy, and start it again",
+    "database_damaged": "restore it from a backup or move it aside",
+}
+
+
+def open_problem(path: Path) -> str | None:
+    """Open the library as the app will (connect, migrate, close). One sentence if that fails in a way
+    `describe_failure` names, None if it opens. A missing file is a first run, not a problem. Any other exception
+    (a failing migration, an unwritable folder) is not caught."""
+    conn = None
+    try:
+        conn = connect(path)
+        migrate(conn)
+    except (sqlite3.DatabaseError, OSError) as exc:
+        failure = describe_failure(exc)
+        if failure is None:
+            raise
+        reason = str(exc) if isinstance(exc, sqlite3.Error) else "database or disk is full"
+        return (f"The library file {path} could not be opened ({reason}), so DEIXIS did not start and changed nothing; "
+                f"{_STARTUP_ADVICE[failure[0]]}.")
+    finally:
+        if conn is not None:
+            conn.close()
+    return None
 
 
 def migrate(conn: sqlite3.Connection) -> list[int]:

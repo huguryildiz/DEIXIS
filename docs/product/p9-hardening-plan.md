@@ -333,6 +333,8 @@ satırlarını kapatır (§4 kural 2).
 
 **Göstermez.** Gerçek sağlayıcı/ağ davranışı; kullanıcıların karşılaşacağı, bizim düşünmediğimiz hata sınıfları.
 
+**Durum.** H3 uygulandı (D164): envanter D164'te, F05 yarım (indirme yarısı kısmi), F06'nın bozuk/kesik yarısı geçti, bilinmeyen migration yarısı H4'te.
+
 ### H4 — Yedek, geri yükleme ve yükseltme matrisi (M)
 
 **Kapsam.** (1) Zengin sentetik kütüphane (fixture sunucusunun A–G, tablo, çöp, sw kuyruğu, rapor akışlarını koşarak

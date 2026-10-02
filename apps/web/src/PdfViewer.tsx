@@ -27,7 +27,7 @@ export function PdfViewer({ url, initialPage = 1, title, rendition = false }: { 
       setPage(Math.min(Math.max(initialPage, 1), pdf.numPages))
       setError('')
     }).catch((reason: unknown) => {
-      if (!disposed) setError(reason instanceof Error ? reason.message : String(reason))
+      if (!disposed) setError((reason as { status?: number } | null)?.status === 404 ? t('The PDF file is missing from the data folder. Add the PDF again.') : reason instanceof Error ? reason.message : String(reason))
     })
     return () => {
       disposed = true

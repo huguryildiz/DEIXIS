@@ -1,4 +1,5 @@
 // Client for the local DEIXIS API. Types mirror backend/deixis/workflow/views.py.
+import { t } from './i18n'
 
 export type RunStatus = 'queued' | 'running' | 'pause_requested' | 'paused' | 'completed' | 'failed' | 'cancelled'
 export type SourceScope = 'academic' | 'attached' | 'attached_and_academic'
@@ -358,7 +359,7 @@ export type SearchRun = {
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null } | null
 }
 export type Asset = {
-  id: string; extraction_status: string; extraction_version?: string | null; page_count: number | null; origin: string; byte_size: number; original_filename: string | null
+  id: string; extraction_status: string; extraction_error?: string | null; extraction_version?: string | null; page_count: number | null; origin: string; byte_size: number; original_filename: string | null
   // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
   rendition?: boolean
   // Sources only (D45): whether the text comes from the current extractor, and a later extraction that was not taken.
@@ -915,7 +916,8 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
     let reason: string | null = null
     try {
       const body = await response.json()
-      if (typeof body.detail === 'string') detail = body.detail
+      // A refusal that names its cause with a `code` carries an English sentence that is also its i18n key (P9 H3).
+      if (typeof body.detail === 'string') detail = typeof body.code === 'string' ? t(body.detail) : body.detail
       // A validation refusal answers with a list of faults rather than one sentence (slice 08a).
       else if (Array.isArray(body.detail?.errors)) { errors = body.detail.errors.map(String); detail = errors.join(' · ') }
       else if (typeof body.detail?.message === 'string') { detail = body.detail.message; reason = typeof body.detail.reason === 'string' ? body.detail.reason : null }

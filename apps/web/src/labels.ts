@@ -31,6 +31,7 @@ export const reportChangeViaLabels: Record<string, string> = { body_ref: '(throu
 
 const pauseReasons: Record<string, string> = {
   user_requested: 'You paused this run.',
+  disk_full: 'The disk is full, so DEIXIS could not save this run. Free some space and start the run again.',
   backend_restarted: 'DEIXIS was closed while this run was working. Completed steps are kept; resuming may repeat an unfinished search or model call.',
   model_connection_not_ready: 'The selected model connection is not ready. Nothing was sent to another model.',
   model_connection_unavailable: 'The selected model connection is not available. Nothing was sent to another model.',
@@ -314,11 +315,18 @@ function arxivSourcePart(equations: NonNullable<Source['access']['assets'][numbe
   return { tone: 'unstated', text: t('Equations not read yet') }
 }
 
+// Why a PDF could not be read, from the asset's stored extraction_error; anything else reads as unreadable.
+export function pdfFailureText(error: string | null | undefined): string {
+  if (error === 'password-protected PDF') return t('PDF is password-protected')
+  if (error === 'PDF has no pages') return t('PDF has no pages')
+  return t('PDF could not be read')
+}
+
 // Each part carries a tone so the source list can colour usable text apart from gaps.
 export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unstated' | 'ocr'; text: string }[] {
   const parts: { tone: 'text' | 'abstract' | 'unstated' | 'ocr'; text: string }[] = []
   const asset = source.access.assets[0]
-  if (asset) parts.push(asset.extraction_status === 'no_text' ? { tone: 'unstated', text: t('PDF without a text layer') } : { tone: 'text', text: t('PDF · {pages} pages · text {status}', { pages: asset.page_count ?? '?', status: t(asset.extraction_status) }) })
+  if (asset) parts.push(asset.extraction_status === 'no_text' ? { tone: 'unstated', text: t('PDF without a text layer') } : asset.extraction_status === 'failed' ? { tone: 'unstated', text: pdfFailureText(asset.extraction_error) } : { tone: 'text', text: t('PDF · {pages} pages · text {status}', { pages: asset.page_count ?? '?', status: t(asset.extraction_status) }) })
   else if (source.access.fetch?.status === 'failed') {
     const reason = fetchReasonText(source.access.fetch.error_code, source.access.fetch.http_status)
     parts.push({ tone: 'unstated', text: source.access.other_copy?.status === 'failed' ? t('PDF not retrieved ({reason}) · no other open copy found · attach the PDF yourself', { reason }) : t('PDF not retrieved ({reason})', { reason }) })

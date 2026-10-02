@@ -36,6 +36,7 @@ import ctypes
 import ctypes.util
 import functools
 import json
+import logging
 import os
 import re
 import signal
@@ -51,6 +52,7 @@ import pymupdf
 
 from deixis.documents import inline_math
 
+log = logging.getLogger("deixis.pdf")
 EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-layout-v2"
 # MuPDF's default text flags without TEXT_PRESERVE_LIGATURES, so "ﬁ" is extracted as "fi".
 TEXT_FLAGS = pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_MEDIABOX_CLIP
@@ -58,6 +60,11 @@ MAX_PAGES = 400
 MAX_TEXT_CHARS = 3_000_000
 MAX_MEMORY_BYTES = 1024 * 1024 * 1024
 MEMORY_EXIT_CODE = 3
+# The child names the reasons it can state; the parent stores one of these or nothing else from a child (P9 H3).
+ERROR_PASSWORD = "password-protected PDF"
+ERROR_NO_PAGES = "PDF has no pages"
+ERROR_UNREADABLE = "PDF could not be read"
+CHILD_ERRORS = frozenset({ERROR_PASSWORD, ERROR_NO_PAGES, ERROR_UNREADABLE})
 TIMEOUT_SECONDS = 90
 CHILD_LIFETIME_SECONDS = 100  # above the longest parent clock (this module's 90 s); every child that calls `_watch_memory` gets it
 CHUNK_CHARS = 1400
@@ -222,10 +229,18 @@ def _place(blocks: list[dict], height: float, body_size: float, placements: list
     return {b: [line for line in lines if line is not None] for b, lines in replaced.items()}, placed, refused
 
 
+class Unreadable(Exception):
+    """A PDF the extractor refuses for a stated reason (one of `CHILD_ERRORS`)."""
+
+
 def _extract_in_process(path: str, max_chars: int, placements: list[dict] | None = None) -> dict:
     with pymupdf.open(path, filetype="pdf") as doc:
         if not doc.is_pdf:  # MuPDF opens other bytes as a one-page document instead of raising
-            raise ValueError("not a PDF")
+            raise Unreadable(ERROR_UNREADABLE)  # not a PDF
+        if doc.needs_pass:  # a PDF with only an owner password opens without one and reports 0
+            raise Unreadable(ERROR_PASSWORD)
+        if doc.page_count == 0:
+            raise Unreadable(ERROR_NO_PAGES)
         failed, layouts, seen = 0, [], 0
         total = doc.page_count
         truncated = total > MAX_PAGES
@@ -401,8 +416,12 @@ def extract_pdf(path: Path, max_chars: int = MAX_TEXT_CHARS, max_memory: int = M
     if completed.returncode == MEMORY_EXIT_CODE:
         return Extraction("failed", error="extraction exceeded the memory limit")
     if completed.returncode != 0:
-        return Extraction("failed", error=completed.stderr.decode(errors="replace")[-400:])
+        # A crash or a signal: the stderr tail is for the log, not for the person.
+        log.warning("PDF extraction child exited %s: %s", completed.returncode, completed.stderr.decode(errors="replace")[-400:])
+        return Extraction("failed", error=ERROR_UNREADABLE)
     raw = json.loads(completed.stdout)
+    if "error" in raw:
+        return Extraction("failed", error=raw["error"] if raw["error"] in CHILD_ERRORS else ERROR_UNREADABLE)
     pages, image_pages, blank_pages = [], [], []
     placement = {"placed": [], "refused": []} if placements is not None else None
     for p in raw["pages"]:
@@ -497,4 +516,8 @@ if __name__ == "__main__":
         result = _extract_in_process(sys.argv[1], int(sys.argv[2]), placements)
     except MemoryError:
         sys.exit(MEMORY_EXIT_CODE)
+    except Unreadable as exc:
+        result = {"error": str(exc)}
+    except pymupdf.FileDataError:  # MuPDF cannot open the file
+        result = {"error": ERROR_UNREADABLE}
     json.dump(result, sys.stdout)

@@ -6,6 +6,7 @@ import argparse
 import dataclasses
 import os
 import socket
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -17,7 +18,7 @@ import uvicorn
 
 from deixis.api.app import create_app
 from deixis.config import Settings, load_settings
-from deixis.storage import backup
+from deixis.storage import backup, db
 from deixis.storage.db import SchemaCheckUnreadable, UnknownSchemaError, check_schema_known
 
 
@@ -73,6 +74,8 @@ def schema_problem(db_path: Path) -> str | None:
         check_schema_known(db_path)
     except (UnknownSchemaError, SchemaCheckUnreadable) as exc:
         return str(exc)
+    except sqlite3.DatabaseError:  # a damaged file: db.open_problem below names it in one sentence
+        return None
     return None
 
 
@@ -91,6 +94,12 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...]) ->
         return 2
     if (message := schema_problem(settings.db_path)) is not None:
         print(message, file=sys.stderr)
+        return 2
+    # P9 H3: a library that cannot be opened is one sentence and exit 2, not a traceback. H4's read-only precheck above
+    # runs first because this block's db.connect creates -wal/-shm files and switches the journal mode. A failing
+    # migration is not caught.
+    if (problem := db.open_problem(settings.db_path)) is not None:
+        print(problem, file=sys.stderr)
         return 2
     if not settings.web_dist.exists():
         print("UI build not found (apps/web/dist). The API will run; build the UI with `npm run build` in apps/web.")

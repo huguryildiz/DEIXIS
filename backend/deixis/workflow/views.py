@@ -601,8 +601,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "SELECT extraction_version, rejection_reason, created_at FROM asset_extractions WHERE asset_id = ? AND outcome = 'rejected'"
             " AND extraction_version NOT LIKE '%+marker-%' AND extraction_version NOT LIKE '%+arxiv-latex-%'"
             " ORDER BY created_at DESC, rowid DESC LIMIT 1", (r["id"],)).fetchone()) else None} for r in conn.execute(
-            "SELECT id, extraction_status, extraction_version, page_count, origin, byte_size, original_filename FROM source_assets"
-            " WHERE source_version_id = ? AND removed_at IS NULL", (svid,)
+            "SELECT id, extraction_status, extraction_error, extraction_version, page_count, origin, byte_size, original_filename"
+            " FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,)
         )]
         replaced_assets = [dict(r) for r in conn.execute(
             "SELECT id, original_filename, removed_at, replaced_by_asset_id FROM source_assets"

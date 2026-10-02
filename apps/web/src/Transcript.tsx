@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert } from 'lucide-react'
 import type { ResearchView, Run, Verdict } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
-import { connectionName, failedSectionReasonText, fetchReasonText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
+import { connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { ProtocolApproval } from './ProtocolApproval'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
@@ -585,6 +585,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
 
     {run.status === 'paused' && <div className="chat-note is-warning">
       <p>{pauseReasonText(run.pause_reason)}</p>
+      {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
       {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
       {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
       {/* Code does not translate a question, so this stop is answered in the revision form and nowhere else (SW2.1). */}
@@ -597,7 +598,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
     </div>}
     {/* What this run would search with, before it searches: the user corrects it here and approves it (D80). */}
     {run.approval && <ProtocolApproval run={run} approval={run.approval} onApproved={() => onProtocolApproved?.()} />}
-    {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note ${run.status === 'failed' ? 'is-error' : 'is-neutral'}`}><p>{pauseReasonText(run.pause_reason)}</p></div>}
+    {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note ${run.status === 'failed' ? 'is-error' : 'is-neutral'}`}><p>{pauseReasonText(run.pause_reason)}</p>{pauseDetailText(run).map(line => <p key={line}>{line}</p>)}</div>}
     {queueLine && <p className="chat-queue-line"><Hand size={14} aria-hidden /><span>{t(queueLine.count === 1 ? '{n} work awaits your decision' : '{n} works await your decision', { n: queueLine.count })}</span>
       <span aria-hidden>·</span><button type="button" onClick={queueLine.open}>{t('Open')}</button></p>}
     {children}

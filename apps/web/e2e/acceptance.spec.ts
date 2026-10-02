@@ -524,6 +524,8 @@ test.describe.serial('Failures: E and B (code check)', () => {
     await startResearch(page, server, 'SYNTHETIC [model-down] How is molecule release scheduling optimized?')
     await expect(page.getByText('Search & screening · Paused')).toBeVisible()
     await expect(page.getByText('The model call did not complete. Completed work is saved.', { exact: true })).toBeVisible()
+    // The connection's own words sit under the reason, so a usage limit and a rate limit read differently there.
+    await expect(page.getByText('The connection reported: SYNTHETIC connection dropped', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Resume' })).toHaveCSS('background-color', 'rgb(59, 91, 154)')
     await expect(page.getByRole('button', { name: 'Cancel' })).toHaveCSS('color', 'rgb(180, 35, 24)')
     await openTab(page, /Sources/)

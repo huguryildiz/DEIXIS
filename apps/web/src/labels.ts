@@ -71,6 +71,24 @@ const pauseReasons: Record<string, string> = {
   search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.',
 }
 export const pauseReasonText = (reason: string | null) => (reason ? t(pauseReasons[reason] ?? reason) : '')
+// What the run stored about a model stop, in the connection's own words: a usage limit and a rate limit read differently
+// there, and DEIXIS does not guess which one it was. A second line under the reason, never a replacement for it.
+const oneLine = (text: unknown, max = 240) => {
+  const flat = typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : ''
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
+}
+export const pauseDetailText = (run: { pause_reason: string | null; error: unknown }): string[] => {
+  const error = run.error && typeof run.error === 'object' ? run.error as Record<string, unknown> : {}
+  if (run.pause_reason === 'model_connection_not_ready') {
+    const reason = oneLine(error.reason)
+    return [t('Open Settings, connect it again, then resume this run.'), ...(reason ? [t('The connection says: {text}', { text: reason })] : [])]
+  }
+  if (run.pause_reason === 'model_call_failed') {
+    const text = oneLine(error.error)
+    return text ? [t('The connection reported: {text}', { text })] : []
+  }
+  return []
+}
 export const failedRowReasonText = (reason: string) => reason === 'no_stored_text' ? t('no stored text') : reason.replaceAll('_', ' ')
 const sectionFailureReasons: Record<string, string> = {
   anchor_not_in_cell_evidence: 'a cited quote was not found in that table cell’s stored evidence',

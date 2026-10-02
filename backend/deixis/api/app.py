@@ -11,9 +11,9 @@ import secrets
 import sqlite3
 import tempfile
 import time
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from pathlib import Path
-from typing import Annotated, Any, Awaitable, Callable, Literal
+from typing import Annotated, Any, Awaitable, Callable, Iterator, Literal
 
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
@@ -508,6 +508,17 @@ class TemplateCreate(BaseModel):
 
 class DiskFull(Exception):
     """The upload could not be written because the disk is full (`store_upload`)."""
+
+
+@contextmanager
+def disk_full_refused() -> Iterator[None]:
+    """A write that fails because the disk is full is the same refusal an upload gets (507 `disk_full`), not a bare 500."""
+    try:
+        yield
+    except OSError as exc:
+        if db.describe_failure(exc):
+            raise DiskFull from exc
+        raise
 
 
 class UploadRefused(Exception):
@@ -1688,7 +1699,8 @@ def create_app(
         items, rows = await zotero.collection_items(http, library, body.collection_key)
         settings.payloads_dir.mkdir(parents=True, exist_ok=True)
         payload_path = f"{db.new_id('zot')}.json"
-        (settings.payloads_dir / payload_path).write_text(json.dumps(rows), encoding="utf-8")
+        with disk_full_refused():
+            (settings.payloads_dir / payload_path).write_text(json.dumps(rows), encoding="utf-8")
         pdfs_added, notes = 0, []
         for item in items:
             with db.transaction(store.conn):
@@ -1710,7 +1722,8 @@ def create_app(
                 continue
             sha = hashlib.sha256(data).hexdigest()
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
-            path = pdf_files.store_pdf_file(settings.papers_dir, sha, data)
+            with disk_full_refused():
+                path = pdf_files.store_pdf_file(settings.papers_dir, sha, data)
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             # The file is the user's own copy from their library, like an upload; retrieved_from names the attachment.
             store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
@@ -1745,7 +1758,8 @@ def create_app(
                 continue
             sha = hashlib.sha256(data).hexdigest()
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
-            path = pdf_files.store_pdf_file(settings.papers_dir, sha, data)
+            with disk_full_refused():
+                path = pdf_files.store_pdf_file(settings.papers_dir, sha, data)
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
                                        item.pdf_filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)

@@ -215,7 +215,7 @@ Etiketleyen Claude'dur, sahip etiketlemedikçe; Claude'un okuması insan denetim
 
 - Çizgi kökenli aday (`chain_end_uncertainty`), ileri atıf denetimi, atıf genişletmesi, alan tabanı kolu: dilim 2b/2c yapılmadı (F1).
 - `report_gaps.kill_search_status` geri yazımı, rapor VI/VII durum rozeti, VII'nin adaydan durum devralması, yasak sözcük gevşemesinin (T12) `open` için açılması: `report_gaps` yeniden kurma ve `workflow/report/*` değişikliği ister (F4); rapor entegrasyonuna ya da dilim 4'e kalır.
-- `report_stable_gaps` ve rapor sürümleri arası aday eşleştirmesi: dilim 4.
+- `report_stable_gaps` ve rapor sürümleri arası aday eşleştirmesi: dilim 4. **Düzeltme (2 Ekim 2026, D147):** dilim 4 bunu üstlenmedi; yeniden yazma olmadan eşleştirilecek bir şey olmadığından kararlı kimlik katmanı dilim 4'ten çıkarıldı ve bir bölüm yeniden yazma işi kurulursa o zaman ele alınır (D147, D157). Bu satır, kabul edilmiş D143 girdisi gibi, o günkü planın kaydıdır ve değiştirilmedi.
 - PDF edinme, tam metin değerlendirmesi, bulunan işlerin araştırma korpusuna eklenmesi: ayrı dilim; en büyük iç sınır budur.
 - Alternatif iddia formülasyonları, aday dosyası dışa aktarımı, adayların karşılaştırmalı sıralaması, eşzamanlı değerlendirme çağrıları, deney tasarımı ve yürütmesi.
 

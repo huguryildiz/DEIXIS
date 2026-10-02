@@ -464,6 +464,8 @@ P6 dilim 2'den devreden (D142): bağımsız gelişim çizgisi (lineage) ölçüm
 
 P6 dilim 3'ten devreden (D154): kill-search'ün bağımsız gerçek-model ölçümü (K6, slice note §13: S1–S5, altı taze iddia, tek koşu, `p6-slice3-expectations.md` koşudan önce dondurulur ve Sol incelemesinden geçer) sahibin 2 Ekim 2026 kararıyla P9'a kaldı. K5'in geliştirme koşusunda sorgu (blok içi OR) alakasız geniş sonuç getirdi ve 3/8 tutulan iş özetsizdi (D154); bu K6 öncesi bir ürün bulgusudur.
 
+P6 dilim 4'ten devreden (D157): düzenle-denetle-atıf kaldır-bayatlama dizisinin gerçek-rapor sürümü (slice note §9 ve §10: R18 düzenleme bütünlüğü, R19 bayatlama doğruluğu, R21 süre ve maliyet) ön koşulu olan, bugünkü kodla tamamlanmış bir gerçek-model rapor olmadığı için ölçülmedi (D124, D126, D128). Rapor tamamlanırsa: bir kopya kütüphanede dizi koşulur, beklentiler koşudan önce ayrı dosyada dondurulur, sonuç anlam desteği iddiası değildir. Kimlik kararlılığı (R20) ve bölüm yeniden yazma ancak yeniden yazma kurulursa ölçülür. Dilim 4'ün sentetik dizisi (`tests/test_report_edit_sequence.py`) kod davranışını sınar, bu borcu kapatmaz.
+
 ## 6. Sıra, bağımlılık, boyut
 
 | Batch | Bağlı olduğu | Boyut | Model |

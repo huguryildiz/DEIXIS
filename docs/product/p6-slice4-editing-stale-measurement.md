@@ -1,7 +1,7 @@
 <!-- Tasarım kararları ve denetimi (gpt-6.1-sol · high, salt okunur): karar turu (§13, Q1–Q9 + dört ek) Claude ile ortak; tasarım denetimi: tur 1 hazır değil (4 yüksek, 3 orta; hepsi işlendi), tur 2 hazır değil (1 yüksek, 1 orta; işlendi), tur 3 hazır (0 yüksek, 1 orta; işlendi) Ham cevaplar /tmp/s4d-a1.md (karar turu), s4d-a2.md, s4d-a3.md, s4d-a4.md (denetim). -->
 # P6 dilim 4 — düzenlenmiş raporun denetimi ve kaynak çıkarma: tasarım notu
 
-**Tarih:** 17 Eylül 2026 (taslak), 29 Eylül 2026 (küçük sürüm, D112), 2 Ekim 2026 (yeniden yazım, `58676f1` üzerinde). **Durum:** uygulamaya kabul için hazırlandı; kararlar §13'te, batch'ler §14'te, kalıcı kayıt `docs/decisions.md` D147. Bu not bir tasarımdır: kod, migration, model çağrısı ve ölçüm yoktur; kabul, uygulamanın doğrulandığı anlamına gelmez. 17 Eylül taslağı (§1–§13) ve 29 Eylül'ün §0 güncellemesi git geçmişindedir; bu not onların yerine geçer. D112'nin istemi (`p6-slice4-prompt.md`) tarihi bir kayıttır, bu notun eski §0'ına atıf yapar ve değiştirilmedi. Sahibin 2 Ekim isteği gereği dilim **dar** tutuldu: **dört batch**, hiçbirinde model çağrısı yok; kapanış ölçümü P9'a borç olarak taşındı (§10).
+**Tarih:** 17 Eylül 2026 (taslak), 29 Eylül 2026 (küçük sürüm, D112), 2 Ekim 2026 (yeniden yazım, `58676f1` üzerinde). **Durum (2 Ekim 2026, D157): dilim kapandı, dar sürümüyle uygulandı; gerçek-rapor ölçümü yapılmadı (P9 borcu).** Önceki durum: uygulamaya kabul için hazırlandı; kararlar §13'te, batch'ler §14'te, kalıcı kayıt `docs/decisions.md` D147. Bu not bir tasarımdır: kod, migration, model çağrısı ve ölçüm yoktur; kabul, uygulamanın doğrulandığı anlamına gelmez. 17 Eylül taslağı (§1–§13) ve 29 Eylül'ün §0 güncellemesi git geçmişindedir; bu not onların yerine geçer. D112'nin istemi (`p6-slice4-prompt.md`) tarihi bir kayıttır, bu notun eski §0'ına atıf yapar ve değiştirilmedi. Sahibin 2 Ekim isteği gereği dilim **dar** tutuldu: **dört batch**, hiçbirinde model çağrısı yok; kapanış ölçümü P9'a borç olarak taşındı (§10).
 
 ## Kısaca
 
@@ -192,7 +192,7 @@ Her batch ayrı bir commit olur; commit ve push yalnız sahibin istediği zaman,
 | E1 Düzenlenmiş raporun denetimi — yapıldı (D148); commit: bu satırı ekleyen commit | — | M | hayır |
 | E2 Atıf kaldırma ve kayıtlı etkin atıf kümesi — yapıldı (D150); commit: bu satırı ekleyen commit | E1 | M–L | hayır |
 | E3 Arayüz — yapıldı (D156); commit: bu satırı ekleyen commit | E1, E2 | M | hayır (senaryolu) |
-| E4 Senaryo dizisi, kapanış ve P9 borcu | E1–E3 | S–M | hayır |
+| E4 Senaryo dizisi, kapanış ve P9 borcu — yapıldı (D157); commit: bu satırı ekleyen commit | E1–E3 | S–M | hayır |
 
 ### E1 — Düzenlenmiş raporun denetimi (M)
 
@@ -225,6 +225,8 @@ Her batch ayrı bir commit olur; commit ve push yalnız sahibin istediği zaman,
 **Göstermez.** Gerçek rapor kalitesini.
 
 ### E4 — Senaryo dizisi, kapanış ve P9 borcu (S–M)
+
+**Durum:** yapıldı (D157); commit: bu satırı ekleyen commit. **Dilim 4 bununla kapandı:** uygulandı (D148, D150, D156, D157); gerçek-rapor ölçümü ve ertelenenler (§10, §12) P9'a ve sonraki karara kalır.
 
 **Kapsam.** §9'daki belirleyici dizi (sahte model); kayıt: `decisions.md` kapanış girdisi (Evidence, Limits), `p6-report-design.md` "Durum" satırı, P9 planına borç satırı (§10), D143 §15'in "dilim 4" cümlesinin düzeltilmesi.
 **Dosyalar.** `tests/test_report_edit_sequence.py`, `docs/decisions.md`, `docs/product/p6-report-design.md`, `docs/product/p9-hardening-plan.md`, `docs/product/p6-slice3-kill-search.md` (yalnız §15'in "dilim 4" cümlesine D147'ya işaret eden bir not; kabul edilmiş D143 girdisi geçmiş olarak değiştirilmez).

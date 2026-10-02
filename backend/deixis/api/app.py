@@ -60,6 +60,7 @@ from deixis.workflow.local_embedding_service import EmbeddingService, ServiceErr
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.report import export as report_export
+from deixis.workflow.report import latex_export
 from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
                                    SeedUnavailable, Store, LegacyResearchReadOnly, DISCOVERY_RUN_KINDS,
                                    legacy_research_read_only)
@@ -2277,7 +2278,12 @@ def create_app(
 
     @app.get("/api/researches/{research_id}/reports/{report_id}/export")
     async def export_report(research_id: str, report_id: str, request: Request,
-                            fmt: Literal["markdown"] = Query("markdown", alias="format")) -> Response:
+                            fmt: Literal["markdown", "latex"] = Query("markdown", alias="format")) -> Response:
+        if fmt == "latex":
+            data, name, notes = latex_export.export_latex(store_of(request), research_id, report_id)
+            return Response(data, media_type=latex_export.MEDIA_TYPE,
+                            headers={"Content-Disposition": f'attachment; filename="{name}"',
+                                     "X-Deixis-Export-Notes": str(notes)})
         text, name = report_export.export_markdown(store_of(request), research_id, report_id)
         return Response(text, media_type=report_export.MEDIA_TYPES[fmt],
                         headers={"Content-Disposition": f'attachment; filename="{name}"'})

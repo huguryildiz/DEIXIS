@@ -282,6 +282,8 @@ I08 yapıldıysa sonucu, yapılmadıysa "ikinci kullanıcı iddiası kurulmadı"
 **Göstermez.** macOS'un başka sürümünde, hiç `uv`/Node bulunmayan makinede, kurumsal ağ/proxy arkasında kurulumu; model
 hesabı bağlamayı.
 
+**H1 (devam, D161).** `scripts/p9/install_check.py` (+ `shell_check.mjs`, `run_matrix.sh`): I01–I04 ve I07 gerçek süreçle, commit'in dışa aktarımında, soğuk önbellekte 33 s'de (uv sync 13,7, npm ci 11,3, build 8,0) geçti; keyring yalıtımı keyring 25.7.0'da işliyor; I05 commit kodunda başarısızdı (traceback, çıkış 3) ve `__main__.py` düzeltmesiyle geçiyor (tek satır, çıkış 2). I08 yapılmadı: ikinci kullanıcı iddiası kurulmadı. Bayraksız (overlay'siz) koşu commit'ten sonra tekrarlanır.
+
 ### H2 — Süreç düzeyinde çökme ve kapanış (M)
 
 **Kapsam.** Sahte yavaş adapter'lı fixture sunucusu (`tests/acceptance/fixture_server.py` genişletilir ya da yanına küçük

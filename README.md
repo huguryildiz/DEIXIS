@@ -40,7 +40,7 @@ The current checkout includes OpenAlex, Semantic Scholar, Crossref, arXiv, bioRx
 
 ## Quickstart
 
-For development, install Python 3.12, [uv](https://docs.astral.sh/uv/), Node.js/npm, and a model connection you can authenticate. **Supported environment:** macOS on Apple Silicon (arm64; observed on macOS 27.0.1, older versions untested) with a native arm64 Python 3.12 from `uv`, Node 22 (pinned in `.node-version` and `apps/web/package.json`) with npm 10, and system Google Chrome for the browser tests; Intel, Linux, Windows and other Node versions are not supported or tested. The commands below build and run the local web app; they do not configure a scholarly provider or model account for you.
+For development, install Python 3.12, [uv](https://docs.astral.sh/uv/), Node.js/npm, and a model connection you can authenticate; the app installs and starts without one, and a model connection is needed only to run researches. **Supported environment:** macOS on Apple Silicon (arm64; observed on macOS 27.0.1, older versions untested) with a native arm64 Python 3.12 from `uv`, Node 22 (pinned in `.node-version` and `apps/web/package.json`) with npm 10, and system Google Chrome for the browser tests; Intel, Linux, Windows and other Node versions are not supported or tested. The commands below build and run the local web app; they do not configure a scholarly provider or model account for you.
 
 ```sh
 uv sync
@@ -54,6 +54,8 @@ PYTHONPATH=backend uv run python -m deixis serve
 Open <http://127.0.0.1:8765/>. DEIXIS listens on loopback by default; if port 8765 already serves a library, open that instance instead of starting another. On macOS the default data directory is `~/Library/Application Support/DEIXIS`; set `DEIXIS_DATA_DIR` to an explicit separate directory for isolated work. The database, PDFs, provider payloads, and model home do not belong in Git. External provider searches and remote model calls are **not** offline operations.
 
 Configure keys through the app's Connections settings or an untracked `.env` using [the variable names in the example](docs/product/providers.env.example). Codex requires sign-in to DEIXIS's separate Codex home (by default `<data directory>/codex-home`); the app shows connection availability. An optional equation reader downloads its own models and is not required to start DEIXIS.
+
+To check that a clean install works, run `python3 scripts/p9/install_check.py --port 8871`. It exports `HEAD` (not your working tree) to a temporary folder, installs and builds there with the commands above, starts the app on its own port with its own data directory, an isolated keychain and no model connection, opens the home screen in Chrome, tries a busy port, a missing UI build and an unwritable data directory, and stops everything it started. It uses its own port and data directory and refuses the ports of a running instance, so a running instance and your library are left alone. It needs an arm64 `python3` 3.9 or newer (with an x86_64 `python3`, use `/opt/homebrew/bin/python3.12` or another arm64 interpreter), `git`, `uv`, Node 22 with npm 10 and Chrome. Unless you pass `--uv-cache` and `--npm-cache` from an earlier run it starts with empty caches, downloads every dependency and can take many minutes.
 
 ## Architecture
 
@@ -69,7 +71,7 @@ The application checks source identities, reading depth, passage IDs, and exact 
 
 ## Commands
 
-From the repository root, unless a command changes directory:
+Back up the library with the `backup` command below before you update the checkout. From the repository root, unless a command changes directory:
 
 ```sh
 PYTHONPATH=backend uv run python -m pytest -q
@@ -237,7 +239,7 @@ the reviewer does not automatically edit it. Existing evidence is the default,
 with extra retrieval explicitly selected. See the [review design](docs/methods/research-methods.md#isteğe-bağlı-başka-modelle-inceleme)
 for scope, provenance and budget boundaries. A browser-only UI prototype once demonstrated model/focus selection, a separate
 sample report and staged feedback; it was removed ([D10](docs/decisions.md)).
-Real model execution, evidence review and production persistence are not implemented.
+Real model steps and the local SQLite library (see "How it works") are implemented. A narrower form of this review runs too: a research can name a reviewer model (or turn review off), which checks an answer's claims against the passages they cite and records its finding without changing the answer, and a report has its own review step. The review runs after an answer or report; no route lets a user pick a candidate, a snapshot or extra retrieval for it, so that part of the design is not implemented.
 
 The identifiers below match the detailed document. Existing references above
 and the [E1–E12 skill evidence register](../quaestio/references/evidence-base.md) are retained;

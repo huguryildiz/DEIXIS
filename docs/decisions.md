@@ -2,6 +2,20 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D174 — P7 G1: the connector contract is an internal, versioned interface for reviewed adapters with a registry-driven conformance suite; external plugins are not offered
+
+**Status:** accepted (design only; nothing implemented). Written by gpt-6.1-sol high; reviewed cross-vendor by Claude Opus 5.5 in three rounds (round 1 "düzeltmeyle hazır", 1 high + 4 medium + 4 low; round 2 "düzeltmeyle hazır", 1 medium on a red test kept across batches; fixed by moving the missing-key guard into B2). Owner questions Q1 to Q5 decided jointly by the coordinator (Claude) and gpt-6.1-sol medium on the owner's standing instruction: all five defaults taken.
+**Date:** 2026-10-03, P7 G1 design batch.
+
+**Context:** P7's exit condition and `docs/product/README.md:13` ask for a connector contract; the code has a fixed `CONNECTORS` registry (`providers/registry.py`) and per-module conventions, and the P7 coverage record lists the contract as gap G1. The review found a real defect on the dispatched path: when a key disappears after the protocol freezes, `_send_search` counts a request and `_record_search` writes `not_configured`, which the `search_runs` status CHECK does not allow (static reading, not run).
+
+**Decision:** The design is [p7-connector-contract-design.md](product/p7-connector-contract-design.md).
+- Q1: the contract is internal: sources are added as reviewed adapters in the codebase; packaged builds cannot add sources; B5 updates README:13 and api-and-data:52-57 to say so.
+- Six batches: B1 freezes the boundary (`providers/contract.py`, descriptors); B2 adds the registry-driven conformance suite with mocked, fail-closed transports and ships the dispatched missing-key guard with its regression as a named behavior change; B3a wraps all ten connectors without changing dispatch; B3b delegates query rendering with byte-equal compiler output; B4 moves dispatch to the facades, persists `error_kind` and binds S2 batch answers by identifier; B5 records acceptance. Each batch exits with the full backend pytest passing, no `xfail`.
+- Batches touching `common.py`, provider modules or `flow.py` integrate after the G6/G8 batch (D173) and keep its classification.
+
+**Limits:** Design only; no test, build or live probe ran for it. G1 closes only on section 13's conditions; P7 stays open until then. The 3 October 2026 live check (IEEE Xplore, Scopus, CORE, SerpApi: one search each, HTTP 200) shows access, not live error or quota formats.
+
 ## D169 — P9 Sol re-review fixes A: B02 can no longer reach the live folder through a link, a staged restore is checked against its manifest hash, and five disk-full or startup paths end in a sentence instead of a traceback or a 400
 
 **Status:** accepted (implemented, uncommitted). Implemented by gpt-6.1-sol high through Codex, reviewed by gpt-6.1-sol high: plan 1 round (0 high, 4 medium, 1 low, all folded in), code 2 rounds (round 1: 0 high, 1 medium, fixed; round 2: hazır, no findings). This clears the Sol re-review debt of D162 to D165 for the storage, backup, startup and API findings listed below; RR-B (PDF children, run_matrix, capacity, the flaky spec) is a separate batch.

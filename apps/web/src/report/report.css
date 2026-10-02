@@ -5,7 +5,6 @@
 .report-ready-bar{height:4px;margin:14px 0;background:var(--line)}
 .report-ready-bar span{display:block;height:100%;background:var(--accent)}
 .report-ready .text-link{border:0;background:none;color:var(--accent);font-size:13px;text-decoration:underline;cursor:pointer}
-.evidence-report-document .report-document-head small{display:block;margin-top:12px;color:var(--muted);font-size:12px}
 .evidence-report-content .evidence-report-section{margin:0 0 34px}
 .evidence-report-section h2{margin:0 0 13px;color:var(--ink);font-family:'DM Sans Variable',sans-serif;font-size:18px;font-weight:650;line-height:1.35;text-wrap:balance}
 .evidence-report-paragraph{margin:0 0 15px;color:var(--ink);font-family:'Newsreader Variable',serif;font-size:18px;line-height:1.72}
@@ -26,7 +25,7 @@
 .evidence-report-history p{margin:4px 0;color:var(--ink)}
 .evidence-report-edit{display:grid;gap:10px;margin:12px 0;padding:12px 0;border-top:1px solid var(--line)}
 .evidence-report-edit label{display:grid;gap:5px;color:var(--ink)}
-.evidence-report-edit textarea,.evidence-report-edit input{width:100%;padding:9px 10px;border:1px solid var(--strong-line);border-radius:6px;background:var(--field-surface);color:var(--ink);font-size:14px}
+.evidence-report-edit textarea,.evidence-report-edit input:not([type=checkbox]){width:100%;padding:9px 10px;border:1px solid var(--strong-line);border-radius:6px;background:var(--field-surface);color:var(--ink);font-size:14px}
 .evidence-report-edit textarea{min-height:100px;resize:vertical}
 .evidence-report-edit>div{display:flex;flex-wrap:wrap;gap:8px}
 .evidence-report-edit [role=alert]{color:var(--tone-exclude)}
@@ -53,3 +52,35 @@
 .candidate-aspects [data-stored-text] { white-space: pre-wrap; }
 .candidate-aspects button { height: auto; min-height: 36px; white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
 .candidate-aspects button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.evidence-report-edit-check { margin-top: 18px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--ink); font-family: 'DM Sans Variable', sans-serif; font-size: 13px; line-height: 1.6; }
+.report-document-head .evidence-report-edit-check p { margin: 6px 0; color: inherit; font-size: inherit; font-weight: 400; }
+.evidence-report-check-sentence, .evidence-report-check-action { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; }
+.evidence-report-check-sentence > p { flex: 1 1 360px; }
+.evidence-report-check-sentence > span { font-size: 12px; color: var(--muted); }
+.report-document-head .evidence-report-check-action > p { color: var(--muted); font-size: 12px; }
+.report-document-head .evidence-report-edit-check p.evidence-report-fine { color: var(--muted); font-size: 11px; }
+.evidence-report-check-items { padding-left: 22px; }
+.evidence-report-check-items li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.evidence-report-check-severity { display: inline-flex; align-items: center; gap: 5px; }
+.evidence-report-check-severity.is-error svg { color: var(--tone-exclude); }
+.evidence-report-check-severity.is-warning svg { color: var(--tone-uncertain); }
+.evidence-report-edit-check details { margin-top: 8px; }
+.evidence-report-edit-check summary, .evidence-report-removed summary { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.evidence-report-edit-check details .opened, .evidence-report-edit-check details[open] .closed,
+.evidence-report-removed .opened, .evidence-report-removed[open] .closed { display: none; }
+.evidence-report-edit-check details[open] .opened, .evidence-report-removed[open] .opened { display: block; }
+.evidence-report-edit-check ul, .evidence-report-removed ul { padding-left: 22px; }
+.evidence-report-no-citation { color: var(--muted); font-family: 'DM Sans Variable', sans-serif; font-size: 12px; }
+.evidence-report-removed { margin: 8px 0; }
+.evidence-report-edit fieldset { min-width: 0; margin: 0; padding: 10px 0; border: 0; border-top: 1px solid var(--line); }
+.evidence-report-edit legend { color: var(--ink); font-weight: 550; }
+.evidence-report-citation-choices { padding: 0; margin: 0; list-style: none; }
+.evidence-report-citation-choices li { padding: 8px 0; }
+.evidence-report-edit .evidence-report-citation-choice { display: flex; align-items: baseline; gap: 8px; }
+.evidence-report-citation-choice input { flex: 0 0 auto; accent-color: var(--accent); }
+.evidence-report-citation-anchor { margin: 5px 0; color: var(--muted); font-size: 11.5px; }
+.evidence-report-edit-check, .evidence-report-edit, .evidence-report-history, .evidence-report-removed,
+.evidence-report-edit-check *, .evidence-report-edit *, .evidence-report-history *, .evidence-report-removed * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.evidence-report-edit-check button, .evidence-report-edit button, .evidence-report-history button { height: auto; min-height: 32px; white-space: normal; }
+.evidence-report-edit-check :focus-visible, .evidence-report-edit :focus-visible, .evidence-report-history :focus-visible, .evidence-report-removed summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+@media(max-width:760px) { .evidence-report-check-action { align-items: flex-start; flex-direction: column; gap: 4px; } }

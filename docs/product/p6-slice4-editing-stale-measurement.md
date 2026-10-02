@@ -191,7 +191,7 @@ Her batch ayrı bir commit olur; commit ve push yalnız sahibin istediği zaman,
 |---|---|---|---|
 | E1 Düzenlenmiş raporun denetimi — yapıldı (D148); commit: bu satırı ekleyen commit | — | M | hayır |
 | E2 Atıf kaldırma ve kayıtlı etkin atıf kümesi — yapıldı (D150); commit: bu satırı ekleyen commit | E1 | M–L | hayır |
-| E3 Arayüz | E1, E2 | M | hayır (senaryolu) |
+| E3 Arayüz — yapıldı (D156); commit: bu satırı ekleyen commit | E1, E2 | M | hayır (senaryolu) |
 | E4 Senaryo dizisi, kapanış ve P9 borcu | E1–E3 | S–M | hayır |
 
 ### E1 — Düzenlenmiş raporun denetimi (M)
@@ -215,6 +215,8 @@ Her batch ayrı bir commit olur; commit ve push yalnız sahibin istediği zaman,
 **Göstermez.** Atıf eklemeyi, atıf-iddia uyumunu, gerçek raporda davranışı.
 
 ### E3 — Arayüz (M)
+
+**Durum:** yapıldı (D156); commit: bu satırı ekleyen commit.
 
 **Kapsam.** §8: atıf kaldırma, geçmişte atıf kümesi, "Doğrudan atıf yok" durumu, "Düzenlemeleri denetle" ve sonuç listesi, düzenlenmiş temele dayanma notu; `api.ts`, `i18n.ts`.
 **Dosyalar.** `apps/web/src/report/ReportView.tsx`, `apps/web/src/api.ts`, `apps/web/src/i18n.ts`, `apps/web/e2e/report.spec.ts`.

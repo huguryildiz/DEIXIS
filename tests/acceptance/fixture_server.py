@@ -47,6 +47,7 @@ the report UI acceptance case a cell citation whose later edit can be observed; 
 "[report-banned-word]" puts "research gap" in section IV's cell claim so assembly refuses a draft.
 "[report-empty-section]" returns section IV with no claim or insufficiency entry so the report run pauses.
 "[report-bad-anchor]" gives section IV a cell quote absent from all stored quotes, including on repair.
+"[report-two-citations]" adds a same-source passage citation to each scripted cell claim.
 "[lineage]" serves six development-line works; "[lineage-reject]" adds a reverse mention and proposes it only
 in a second lineage run, after a selection change makes the target eligible again (synthetic directed-cycle refusal).
 "[candidate]" drives claim breakdown and a bounded claim search; "[candidate-access]" also returns a work
@@ -558,6 +559,13 @@ class ScriptedCodex:
                     quote = "SYNTHETIC missing anchor P19 nowhere in stored evidence."
                 output["citation_anchors"].append({"claim_key": claim_key, "passage_id": None,
                                                     "cell_id": cell["cell_id"], "quote": quote})
+                if "[report-two-citations]" in question:
+                    passage = next((p for p in si["passages"] if p["source_id"] == cell["source_version_id"]), None)
+                    if passage is None:
+                        raise RuntimeError(f"[report-two-citations]: {section} cell has no same-source passage in the step input")
+                    output["claims"][-1]["passage_ids"] = [passage["passage_id"]]
+                    output["citation_anchors"].append({"claim_key": claim_key, "passage_id": passage["passage_id"],
+                                                        "cell_id": None, "quote": " ".join(passage["text"].split())[:600]})
         if si["task_type"] == "term_suggestions":
             # One name a record holds, one no record holds, and a repeat of the phrase it was asked about: the last
             # two are what code drops, so the card can be seen refusing them.

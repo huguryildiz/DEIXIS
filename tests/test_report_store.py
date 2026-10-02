@@ -8,7 +8,7 @@ from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
 from deixis.storage.db import new_id
 from deixis.workflow.report.store import ReportStore
-from deixis.workflow.store import Store
+from deixis.workflow.store import NotFound, Store
 from deixis.workflow.tables import InvalidTableInput, TableStore
 from deixis.workflow.views import report_view
 from test_report_flow import report_flow
@@ -286,6 +286,23 @@ def test_changed_snapshot_cell_reaches_only_direct_and_one_level_refs(tmp_path, 
     assert [(c["kind"], c["via"]) for c in changes["sections"]["abstract"]["open"]] == [("cell_changed", "body_ref")]
     assert [(c["kind"], c["via"]) for c in changes["sections"]["VI"]["open"]] == [("cell_changed", "gap_ref")]
     assert changes["sections"]["V"]["open"] == []
+
+
+def test_trashed_research_acknowledges_nothing_then_restored_research_acknowledges(tmp_path):
+    store, reports, research_id, report_id, table_id, cell = _snapshot_report(tmp_path)
+    TableStore(store).edit_cell(research_id, table_id, cell["column_id"], cell["source_version_id"],
+                                "not_verified", {"text": "SYNTHETIC changed"}, None, None, cell["version"], None)
+    key = reports.evidence_changes(report_id)["sections"]["IV"]["open"][0]["key"]
+    store.trash_research(research_id)
+    before = [tuple(row) for row in store.conn.execute("SELECT * FROM events ORDER BY id")]
+    with pytest.raises(NotFound):
+        reports.acknowledge_changes(research_id, report_id, "IV", [key])
+    assert store.conn.execute("SELECT COUNT(*) FROM report_stale_acknowledgements").fetchone()[0] == 0
+    assert [tuple(row) for row in store.conn.execute("SELECT * FROM events ORDER BY id")] == before
+    store.restore_research(research_id)
+    assert reports.acknowledge_changes(research_id, report_id, "IV", [key]) == 1
+    assert reports.evidence_changes(report_id)["sections"]["IV"]["acknowledged_count"] == 1
+    assert store.conn.execute("SELECT COUNT(*) FROM events WHERE type = 'report_changes_acknowledged'").fetchone()[0] == 1
 
 
 def test_acknowledged_cell_change_reopens_on_a_new_revision(tmp_path):

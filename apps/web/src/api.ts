@@ -781,11 +781,16 @@ export type TableView = {
 export type TableSummary = { id: string; title: string; version: number; created_at: string; updated_at: string; rows: number; columns: number
   report_ready: { ready: boolean; cells_left: number; cells_total: number; failed_rows: number; can_continue_with_failed: boolean; failed_cells: number; included_rows: number } }
 export type ReportSummary = { id: string; status: 'in_progress' | 'valid' | 'draft'; report_version: number | null; created_at: string }
-export type ReportLink = { passage_id: string | null; cell_id: string | null; source_version_id: string; ref_number: number; open_passage_id: string | null
+export type ReportLink = { link_id: string; passage_id: string | null; cell_id: string | null; source_version_id: string; ref_number: number; open_passage_id: string | null
   anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null }
 export type ReportClaim = { id: string; claim_key: string; version: number; text: string; model_text: string; edited: boolean
-  warnings: { kind: string; detail?: string }[]; revisions: { id: string; kind: string; text: string; note: string | null; created_at: string; warnings: { kind: string; detail?: string }[] }[]
-  support_type: 'source_stated' | 'analyst_inference'; paragraph: number; table_ref: string | null; equation_ref: string | null; evidence: ReportLink[] }
+  warnings: { kind: string; detail?: string }[]; revisions: { id: string; kind: 'human_edit' | 'human_restore'; restored_from: string | null; text: string; note: string | null; created_at: string; warnings: { kind: string; detail?: string }[]; link_count: number | null; link_ids: string[] | null; changes_current: boolean }[]
+  support_type: 'source_stated' | 'analyst_inference'; paragraph: number; table_ref: string | null; equation_ref: string | null; evidence: ReportLink[]
+  original_evidence_count: number; removed_links: (Pick<ReportLink, 'link_id' | 'passage_id' | 'cell_id' | 'source_version_id' | 'anchor_text' | 'anchor_match'> & { title?: string; source_key?: string | null })[]
+  evidence_basis: 'direct' | 'none'; support_type_note: 'model_written_type' | null; edited_basis: string[] }
+export type EditCheck = { id: string; created_at: string; checker_version: string; current: boolean; errors: number; warnings: number; skipped: number; edited_claims: number
+  items: { rule: string; section_id: string | null; detail: string; severity: 'error' | 'warning' }[]
+  skipped_rules: { rule: string; section_id: string | null; claim_key: string | null; reason: string }[]; rules_run: string[]; not_checked: string[] }
 export type ReportSection = { section_id: string; status: string; word_count: number | null; draft: { text?: string; insufficient_evidence?: { reason: string }[] } | null
   validation: { issues?: { code?: string }[] } | null; claims: ReportClaim[]; evidence_changes: { open: { key: string; kind: string; via: string; source_version_id?: string; column_id?: string }[]; acknowledged_count: number; unresolved_refs: number } }
 export type ReportReview = { status: 'reviewed'; step_input_id: string; sections_reviewed: string[]; sections_not_reviewed: { section_id: string; reason: string }[]
@@ -793,7 +798,7 @@ export type ReportReview = { status: 'reviewed'; step_input_id: string; sections
   reverted: { sentence_id: string; section_id: string }[]; not_reverted: { sentence_id: string; section_id: string; reason: string }[] }
   | { status: 'not_reviewed'; reason: string; detail: unknown; sections_reviewed: string[]; sections_not_reviewed: { section_id: string; reason: string }[]
     findings: []; notes: string; reverted: []; not_reverted: [] }
-export type ReportDetail = ReportSummary & { language: string; updated_at: string; sections: ReportSection[]; edited_after_version: number | null; review: ReportReview | null
+export type ReportDetail = ReportSummary & { language: string; updated_at: string; sections: ReportSection[]; edited_after_version: number | null; has_human_edits: boolean; edit_check: EditCheck | null; review: ReportReview | null
   missing_rows: { counts: { included: number; completed: number; failed: number; cells_missing: number; cells_total: number }
     failed_rows: { source_version_id: string; source_key: string | null; title: string; reason: string; missing_columns: { column_id: string; name: string; reason: string }[] }[] } | null
   evidence_changes: { any: boolean; changed_cells: number; removed_sources: number; added_sources: number; revised_columns: number; not_checked: string[] }
@@ -1106,10 +1111,12 @@ export const api = {
   candidateHit: (id: string, cid: string, kid: string, svid: string) => request<CandidateEvidence>(`/api/researches/${id}/candidates/${cid}/kill-searches/${kid}/hits/${svid}`),
   candidateOwnerDecision: (id: string, cid: string, vid: string, body: { status: CandidateStatus; reason: string }) => request<CandidateCard>(`/api/researches/${id}/candidates/${cid}/versions/${vid}/owner-decision`, json('POST', body)),
   reportMarkdown,
-  editReportClaim: (id: string, reportId: string, claimId: string, body: { expected_version: number; text?: string; note?: string | null; restore_from?: string }) =>
+  editReportClaim: (id: string, reportId: string, claimId: string, body: { expected_version: number; text?: string; note?: string | null; restore_from?: string; link_ids?: string[] }) =>
     request<ReportDetail>(`/api/researches/${id}/reports/${reportId}/claims/${claimId}`, json('PUT', body, { 'Idempotency-Key': crypto.randomUUID() })),
   acknowledgeReportChanges: (id: string, reportId: string, sectionId: string, changeKeys: string[]) =>
     request<ReportDetail>(`/api/researches/${id}/reports/${reportId}/sections/${sectionId}/acknowledge-changes`, json('POST', { change_keys: changeKeys })),
+  checkReportEdits: (id: string, reportId: string) =>
+    request<ReportDetail>(`/api/researches/${id}/reports/${reportId}/check-edits`, { method: 'POST' }),
   table: (id: string, tableId: string) => request<TableView>(`/api/researches/${id}/tables/${tableId}`),
   // rows omitted: the table starts with the research's included sources; given, those sources in that order, included or not.
   createTable: (id: string, body: { title: string; template_id?: string; rows?: string[] }, idempotencyKey: string) =>

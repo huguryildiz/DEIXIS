@@ -526,6 +526,7 @@ class ReportStore:
     def acknowledge_changes(self, research_id: str, report_id: str, section_id: str,
                             change_keys: list[str]) -> int:
         with transaction(self.conn):
+            self.store.research(research_id)
             report = self.report(report_id)
             if report["research_id"] != research_id:
                 raise NotFound(report_id)

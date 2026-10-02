@@ -928,16 +928,28 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
 const json = (method: string, body: unknown, extra: Record<string, string> = {}): RequestInit =>
   ({ method, headers: { 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) })
 
+async function exportError(response: Response): Promise<ApiError> {
+  let detail = response.statusText
+  try { const body = await response.json(); if (typeof body.detail === 'string') detail = body.detail } catch { /* keep status text */ }
+  return new ApiError(response.status, detail)
+}
+
 async function reportMarkdown(id: string, reportId: string): Promise<{ text: string; filename: string }> {
   const response = await fetch(`/api/researches/${id}/reports/${reportId}/export?format=markdown`, { credentials: 'same-origin' })
-  if (!response.ok) {
-    let detail = response.statusText
-    try { const body = await response.json(); if (typeof body.detail === 'string') detail = body.detail } catch { /* keep status text */ }
-    throw new ApiError(response.status, detail)
-  }
+  if (!response.ok) throw await exportError(response)
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const filename = /^attachment;\s*filename="([a-zA-Z0-9._-]+)"$/.exec(disposition)?.[1] ?? 'report.md'
   return { text: await response.text(), filename }
+}
+
+// The zip holds the .tex and the .bib. X-Deixis-Export-Notes is the total count of export notes, ASCII digits; the .tex lists at most 20.
+async function reportLatex(id: string, reportId: string): Promise<{ blob: Blob; filename: string; notes: number }> {
+  const response = await fetch(`/api/researches/${id}/reports/${reportId}/export?format=latex`, { credentials: 'same-origin' })
+  if (!response.ok) throw await exportError(response)
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const filename = /^attachment;\s*filename="([a-zA-Z0-9._-]+)"$/.exec(disposition)?.[1] ?? 'report-latex.zip'
+  const header = response.headers.get('X-Deixis-Export-Notes') ?? ''
+  return { blob: await response.blob(), filename, notes: /^\d+$/.test(header) && Number.isSafeInteger(Number(header)) ? Number(header) : 0 }
 }
 
 export const api = {
@@ -1111,6 +1123,7 @@ export const api = {
   candidateHit: (id: string, cid: string, kid: string, svid: string) => request<CandidateEvidence>(`/api/researches/${id}/candidates/${cid}/kill-searches/${kid}/hits/${svid}`),
   candidateOwnerDecision: (id: string, cid: string, vid: string, body: { status: CandidateStatus; reason: string }) => request<CandidateCard>(`/api/researches/${id}/candidates/${cid}/versions/${vid}/owner-decision`, json('POST', body)),
   reportMarkdown,
+  reportLatex,
   editReportClaim: (id: string, reportId: string, claimId: string, body: { expected_version: number; text?: string; note?: string | null; restore_from?: string; link_ids?: string[] }) =>
     request<ReportDetail>(`/api/researches/${id}/reports/${reportId}/claims/${claimId}`, json('PUT', body, { 'Idempotency-Key': crypto.randomUUID() })),
   acknowledgeReportChanges: (id: string, reportId: string, sectionId: string, changeKeys: string[]) =>

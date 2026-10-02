@@ -128,6 +128,43 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await expect(page.getByText('The report is still being written')).toBeVisible()
     expect(unexpectedDownloads).toBe(0)
     await page.unroute(exportPath)
+    await toastsOff(page)
+
+    // LaTeX export (D160): a zip download, one toast that carries the note count, no download on an error.
+    const latexPath = `**/api/researches/${researchId}/reports/${reportId}/export?format=latex`
+    const latexResponse = page.waitForResponse(response => response.url().includes('format=latex'))
+    const latexDownload = page.waitForEvent('download')
+    await sheet.getByRole('button', { name: 'Download LaTeX' }).click()
+    const latexFile = await latexDownload
+    expect(latexFile.suggestedFilename()).toMatch(/^report-.*-v1-latex\.zip$/)
+    expect(readFileSync(await latexFile.path()).subarray(0, 2).toString('latin1')).toBe('PK')
+    const realNotes = (await latexResponse).headers()['x-deixis-export-notes']
+    expect(realNotes).toMatch(/^\d+$/)
+    if (Number(realNotes) === 0) await expect(page.locator('.toast.is-success')).toContainText('LaTeX downloaded: a zip with the .tex and .bib files.')
+    else await expect(page.locator('.toast.is-warning')).toContainText('export note')
+    await toastsOff(page)
+    for (const [notes, text] of [['3', 'LaTeX downloaded with 3 export notes. They are listed in a comment block at the top of the .tex file.'],
+      ['1', 'LaTeX downloaded with 1 export note. It is listed in a comment block at the top of the .tex file.'],
+      ['25', 'LaTeX downloaded with 25 export notes. The first 20 are listed in a comment block at the top of the .tex file.']]) {
+      await page.route(latexPath, async route => {
+        const response = await route.fetch()
+        await route.fulfill({ response, headers: { ...response.headers(), 'x-deixis-export-notes': notes } })
+      })
+      const counted = page.waitForEvent('download')
+      await sheet.getByRole('button', { name: 'Download LaTeX' }).click()
+      expect((await counted).suggestedFilename()).toMatch(/^report-.*-v1-latex\.zip$/)
+      await expect(page.locator('.toast')).toHaveCount(1)
+      await expect(page.locator('.toast.is-warning')).toHaveText(text)
+      await page.unroute(latexPath)
+      await toastsOff(page)
+    }
+    const downloadsBefore409 = unexpectedDownloads
+    await page.route(latexPath, route => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'The report is still being written' }) }))
+    await sheet.getByRole('button', { name: 'Download LaTeX' }).click()
+    await expect(page.locator('.toast.is-error')).toHaveText('The report is still being written')
+    expect(unexpectedDownloads).toBe(downloadsBefore409)
+    await page.unroute(latexPath)
+    await toastsOff(page)
     const report = await (await api.get(`/api/researches/${researchId}/reports/${reportId}`)).json()
     expect(report.review.status).toBe('reviewed')
     const reviewed = report.review.sections_reviewed.length
@@ -340,6 +377,9 @@ test('a banned word leaves the assembled report as an exportable draft', async (
     const file = await downloaded
     expect(file.suggestedFilename()).toMatch(/^report-.*-draft\.md$/)
     expect(file.suggestedFilename()).not.toContain('-v1')
+    const downloadedLatex = page.waitForEvent('download')
+    await sheet.getByRole('button', { name: 'Download LaTeX' }).click()
+    expect((await downloadedLatex).suggestedFilename()).toMatch(/^report-.*-draft-latex\.zip$/)
     await toastsOff(page)
     await header.scrollIntoViewIfNeeded()
     await shot(page, 'report-draft-desktop')
@@ -398,6 +438,7 @@ test('an empty section pauses the report and can be cancelled', async ({ browser
     await expect(section(page, 'IV')).toContainText('This section was not validated and must be written again: the section had no claims or explanation of missing evidence.')
     await expect(sheet.getByRole('button', { name: 'Copy Markdown' })).toBeDisabled()
     await expect(sheet.getByRole('button', { name: 'Download .md' })).toBeDisabled()
+    await expect(sheet.getByRole('button', { name: 'Download LaTeX' })).toBeDisabled()
     const exportResponse = await api.get(`/api/researches/${researchId}/reports/${reportId}/export?format=markdown`)
     expect(exportResponse.status()).toBe(409)
     await section(page, 'IV').scrollIntoViewIfNeeded()

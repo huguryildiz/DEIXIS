@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Copy, Download, FileText, Quote } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, Download, FileCode, FileText, Quote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, ApiError, type ReportClaim, type ReportDetail, type ReportLink, type ReportSection, type ResearchView } from '../api'
@@ -30,6 +30,21 @@ const HEADINGS: Record<string, [string, string]> = {
   IX: ['IX. Conclusion', 'IX. Sonuç'], references: ['References', 'Kaynaklar'],
 }
 const finished = new Set(['completed', 'failed', 'cancelled'])
+
+const saveBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob)
+  try {
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  } finally { window.setTimeout(() => URL.revokeObjectURL(url), 0) }
+}
+
+// The zip's .tex lists at most 20 export notes (D149); the header carries the total.
+const LATEX_NOTES_LISTED = 20
 const support = reportSupportLabels
 const reviewCodes: Record<string, string> = {
   support_broken: 'Support no longer matches', count_error: 'Count', terminology_inconsistent: 'Terminology',
@@ -110,17 +125,21 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
         await navigator.clipboard.writeText(text)
         toast('success', t('Markdown copied.'))
       } else {
-        const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown' }))
-        try {
-          const link = document.createElement('a')
-          link.href = url
-          link.download = filename
-          document.body.appendChild(link)
-          link.click()
-          link.remove()
-        } finally { window.setTimeout(() => URL.revokeObjectURL(url), 0) }
+        saveBlob(new Blob([text], { type: 'text/markdown' }), filename)
         toast('success', t('Markdown downloaded.'))
       }
+    } catch (e) { toast('error', e instanceof Error ? e.message : String(e)) }
+    finally { setExportBusy(false) }
+  }
+  const latex = async () => {
+    setExportBusy(true)
+    try {
+      const { blob, filename, notes } = await api.reportLatex(researchId, reportId)
+      saveBlob(blob, filename)
+      if (notes === 0) toast('success', t('LaTeX downloaded: a zip with the .tex and .bib files.'))
+      else toast('warning', notes === 1 ? t('LaTeX downloaded with 1 export note. It is listed in a comment block at the top of the .tex file.')
+        : notes > LATEX_NOTES_LISTED ? t('LaTeX downloaded with {n} export notes. The first 20 are listed in a comment block at the top of the .tex file.', { n: notes })
+        : t('LaTeX downloaded with {n} export notes. They are listed in a comment block at the top of the .tex file.', { n: notes }))
     } catch (e) { toast('error', e instanceof Error ? e.message : String(e)) }
     finally { setExportBusy(false) }
   }
@@ -230,6 +249,7 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
           ? 'The model flagged {r} rewritten sentence as possibly no longer matching its sources; it was returned to its original wording.'
           : 'The model flagged {r} rewritten sentences as possibly no longer matching their sources; they were returned to their original wording.', { r: review.reverted.length }) : '',
         review.sections_not_reviewed.length ? t('Not read: {sections}.', { sections: review.sections_not_reviewed.map(item => labels(item.section_id)).join(', ') }) : '', t("The review covers the model's base version; human edits were not reviewed.")].filter(Boolean).join(' ')
+  const exportBlocked = !report || !finished.has(report.run?.status ?? '') || report.status === 'in_progress'
   const equationNumbers = new Map<string, number>()
   for (const id of DISPLAY) for (const claim of report?.sections.find(section => section.section_id === id)?.claims ?? [])
     if (claim.equation_ref && !equationNumbers.has(claim.equation_ref)) equationNumbers.set(claim.equation_ref, equationNumbers.size + 1)
@@ -239,7 +259,7 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
     return <td key={column.column_id}>{cell ? cell.state === 'value' ? valueText(cell.value, column.options) : cell.state === 'not_verified' ? t('{value} (not verified: no quote linked)', { value: valueText(cell.value, column.options) }) : t(cell.state.replaceAll('_', ' ')) : '—'}</td>
   })}</tr>)}</tbody></table></div>
   return <Sheet open onOpenChange={open => { if (!open) onClose() }}><SheetContent className={`detail-sheet report-sheet ${dark ? 'dark' : ''}`}>
-    <SheetHeader className="report-toolbar"><div className="report-toolbar-title"><FileText size={17} aria-hidden /><SheetTitle>{title}</SheetTitle></div><SheetDescription className="sr-only">{t('Evidence report')}</SheetDescription><div className="report-toolbar-actions"><Button variant="ghost" size="sm" aria-pressed={evidenceView} onClick={() => setEvidenceView(on => !on)}><Quote size={14} aria-hidden />{t('Evidence view')}</Button><Button variant="ghost" size="sm" disabled={!report || !finished.has(report.run?.status ?? '') || report.status === 'in_progress' || exportBusy} title={!report || !finished.has(report.run?.status ?? '') || report.status === 'in_progress' ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Copy Markdown')} onClick={() => void markdown('copy')}><Copy size={14} aria-hidden /><span className="report-export-label">{t('Copy Markdown')}</span></Button><Button variant="ghost" size="sm" disabled={!report || !finished.has(report.run?.status ?? '') || report.status === 'in_progress' || exportBusy} title={!report || !finished.has(report.run?.status ?? '') || report.status === 'in_progress' ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download .md')} onClick={() => void markdown('download')}><Download size={14} aria-hidden /><span className="report-export-label">{t('Download .md')}</span></Button></div></SheetHeader>
+    <SheetHeader className="report-toolbar"><div className="report-toolbar-title"><FileText size={17} aria-hidden /><SheetTitle>{title}</SheetTitle></div><SheetDescription className="sr-only">{t('Evidence report')}</SheetDescription><div className="report-toolbar-actions"><Button variant="ghost" size="sm" aria-pressed={evidenceView} onClick={() => setEvidenceView(on => !on)}><Quote size={14} aria-hidden />{t('Evidence view')}</Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Copy Markdown')} onClick={() => void markdown('copy')}><Copy size={14} aria-hidden /><span className="report-export-label">{t('Copy Markdown')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download .md')} onClick={() => void markdown('download')}><Download size={14} aria-hidden /><span className="report-export-label">{t('Download .md')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download LaTeX')} onClick={() => void latex()}><FileCode size={14} aria-hidden /><span className="report-export-label">{t('Download LaTeX')}</span></Button></div></SheetHeader>
     <div className="report-scroll"><article ref={documentRoot} className="report-document evidence-report-document">
       {error && <Notice tone="error">{error}</Notice>}
       {!report ? <p>{t('Loading report…')}</p> : <>

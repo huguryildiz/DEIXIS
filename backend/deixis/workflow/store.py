@@ -325,6 +325,12 @@ class Store:
                 " (SELECT s.id FROM report_sections s JOIN reports r ON r.id = s.report_id WHERE r.research_id = ?)",
                 (research_id,),
             )
+            self.conn.execute(
+                "DELETE FROM report_claim_revision_links WHERE revision_id IN"
+                " (SELECT v.id FROM report_claim_revisions v JOIN report_claims c ON c.id = v.claim_id"
+                " JOIN report_sections s ON s.id = c.report_section_id JOIN reports r ON r.id = s.report_id"
+                " WHERE r.research_id = ?)", (research_id,),
+            )
             for table in ("report_claim_revisions", "report_citation_links", "report_claim_refs"):
                 self.conn.execute(
                     f"DELETE FROM {table} WHERE claim_id IN (SELECT c.id FROM report_claims c"
@@ -1624,7 +1630,7 @@ class Store:
         return found
 
     def research_cites_asset(self, research_id: str, asset_id: str) -> bool:
-        """Whether an answer or an evidence table cell of this research links a passage of the file."""
+        """Whether recorded evidence of this research cites a passage of the file, including restorable report links."""
         return self.conn.execute(
             "SELECT 1 FROM evidence_links l JOIN claims c ON c.id = l.claim_id JOIN answers an ON an.id = c.answer_id"
             " JOIN passages p ON p.id = l.passage_id WHERE an.research_id = ? AND p.asset_id = ?"
@@ -1637,8 +1643,12 @@ class Store:
             " UNION ALL SELECT 1 FROM claim_matrix_evidence e JOIN kill_searches s ON s.id = e.kill_search_id"
             " JOIN candidate_versions v ON v.id = s.candidate_version_id"
             " JOIN research_candidates c ON c.id = v.candidate_id JOIN passages p ON p.id = e.passage_id"
-            " WHERE c.research_id = ? AND p.asset_id = ? AND e.evidence_kind = 'passage' LIMIT 1",
-            (research_id, asset_id, research_id, asset_id, research_id, asset_id, research_id, asset_id),
+            " WHERE c.research_id = ? AND p.asset_id = ? AND e.evidence_kind = 'passage'"
+            " UNION ALL SELECT 1 FROM report_citation_links l JOIN report_claims c ON c.id = l.claim_id"
+            " JOIN report_sections s ON s.id = c.report_section_id JOIN reports r ON r.id = s.report_id"
+            " JOIN passages p ON p.id = l.passage_id WHERE r.research_id = ? AND p.asset_id = ? LIMIT 1",
+            (research_id, asset_id, research_id, asset_id, research_id, asset_id, research_id, asset_id,
+             research_id, asset_id),
         ).fetchone() is not None
 
     def asset_impact(self, asset_id: str) -> dict[str, Any]:
@@ -1664,8 +1674,12 @@ class Store:
             "SELECT COUNT(*) FROM claim_matrix_evidence e JOIN passages p ON p.id = e.passage_id"
             " WHERE p.asset_id = ?", (asset_id,),
         ).fetchone()[0]
+        report_citations = self.conn.execute(
+            "SELECT COUNT(*) FROM report_citation_links l JOIN passages p ON p.id = l.passage_id"
+            " WHERE p.asset_id = ?", (asset_id,),
+        ).fetchone()[0]
         return {"asset_id": asset_id, "researches": researches, "cells": cells, "quotes": quotes,
-                "lineage_links": lineage_links, "candidate_quotes": candidate_quotes}
+                "lineage_links": lineage_links, "candidate_quotes": candidate_quotes, "report_citations": report_citations}
 
     def remove_asset(self, research_id: str, svid: str, asset_id: str) -> None:
         """Withdraw an attachment from future use while retaining its immutable audit evidence."""

@@ -178,8 +178,11 @@ def test_edit_history_restore_warnings_and_replay(lib):
     report_id, section_id, (first, second) = _finished_claim(lib, count={"value": 2}, second=True)
     revision = reports.edit_claim(research_id, report_id, first, text="Human $\\frac{a$ text", restore_from=None,
                                   note="reason", expected_version=1, idempotency_key="once")
-    assert reports.edit_claim(research_id, report_id, first, text="ignored", restore_from=None,
-                              note=None, expected_version=1, idempotency_key="once") == revision
+    assert reports.edit_claim(research_id, report_id, first, text="Human $\\frac{a$ text", restore_from=None,
+                              note="reason", expected_version=1, idempotency_key="once") == revision
+    with pytest.raises(RevisionConflict, match="different edit"):
+        reports.edit_claim(research_id, report_id, first, text="ignored", restore_from=None,
+                           note=None, expected_version=1, idempotency_key="once")
     with pytest.raises(RevisionConflict):
         reports.edit_claim(research_id, report_id, second, text="other", restore_from=None,
                            note=None, expected_version=1, idempotency_key="once")

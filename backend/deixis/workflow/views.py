@@ -265,6 +265,28 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
     except NotFound:
         frozen = None
     frozen_cells = {cell["cell_id"]: cell for cell in frozen["cells"]} if frozen else {}
+    effective_by_claim: dict[str, list[dict]] = {}
+    removed_by_claim: dict[str, list[dict]] = {}
+    for link in reports.effective_links(report_id):
+        effective_by_claim.setdefault(link["claim_id"], []).append(link)
+    for link in reports.removed_links(report_id):
+        source = store.conn.execute(
+            "SELECT v.title, w.source_key FROM source_versions v JOIN works w ON w.id = v.work_id WHERE v.id = ?",
+            (link["source_version_id"],),
+        ).fetchone()
+        removed_by_claim.setdefault(link["claim_id"], []).append(
+            {"link_id": link["id"], **{key: link[key] for key in (
+                "passage_id", "cell_id", "source_version_id", "anchor_text", "anchor_match")},
+             **(dict(source) if source else {})})
+    basis_claims: dict[str, list[dict]] = {}
+    for row in store.conn.execute(
+        "SELECT c.claim_key, c.current_revision_id, s.section_id FROM report_claims c"
+        " JOIN report_sections s ON s.id = c.report_section_id WHERE s.report_id = ?", (report_id,),
+    ):
+        basis_claims.setdefault(row["claim_key"], []).append(dict(row))
+    gap_bases = {row["gap_id"]: json.loads(row["basis_json"]) for row in store.conn.execute(
+        "SELECT gap_id, basis_json FROM report_gaps WHERE report_id = ?", (report_id,),
+    )}
     numbers: dict[str, int] = {}
     first_passage: dict[str, str] = {}
     cited_cells: dict[str, list[str]] = {}
@@ -280,14 +302,11 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
             claim["paragraph"] for claim in stored_claims))}
         for claim in sorted(stored_claims, key=lambda item: first_paragraph[item["paragraph"]]):
             evidence = [
-                {"passage_id": link["passage_id"], "cell_id": link["cell_id"],
+                {"link_id": link["id"], "passage_id": link["passage_id"], "cell_id": link["cell_id"],
                  "source_version_id": link["source_version_id"], "ref_number": numbers.setdefault(
                      link["source_version_id"], len(numbers) + 1),
                  "anchor_text": link["anchor_text"], "anchor_match": link["anchor_match"]}
-                for link in store.conn.execute(
-                    "SELECT passage_id, cell_id, source_version_id, anchor_text, anchor_match FROM report_citation_links"
-                    " WHERE claim_id = ? ORDER BY rowid", (claim["id"],),
-                )
+                for link in effective_by_claim.get(claim["id"], [])
             ]
             for link in evidence:
                 # The passage to open: a passage link's own; for a cell link, the frozen evidence passage whose
@@ -302,13 +321,34 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                     cited_cells.setdefault(link["source_version_id"], []).append(link["cell_id"])
             revisions = reports.claim_revisions(claim["id"])
             current = next((revision for revision in revisions if revision["id"] == claim["current_revision_id"]), None)
+            current_text = current["text"] if current else claim["text"]
+            current_ids = {link["link_id"] for link in evidence}
+            removed = removed_by_claim.get(claim["id"], [])
+            original_ids = current_ids | {link["link_id"] for link in removed}
+            for revision in revisions:
+                target_ids = original_ids if revision["link_count"] is None else set(revision["link_ids"])
+                revision["changes_current"] = revision["text"] != current_text or target_ids != current_ids
+            edited_basis = set()
+            for ref in store.conn.execute(
+                "SELECT ref_kind, ref_value FROM report_claim_refs WHERE claim_id = ?", (claim["id"],),
+            ):
+                keys = [ref["ref_value"]] if ref["ref_kind"] == "body_ref" else gap_bases.get(
+                    ref["ref_value"], {}).get("basis_claim_keys", [])
+                for key in keys:
+                    matches = [item for item in basis_claims.get(key, [])
+                               if ref["ref_kind"] != "body_ref" or item["section_id"] != section["section_id"]]
+                    if len(matches) == 1 and matches[0]["current_revision_id"]:
+                        edited_basis.add(key)
             claims.append({"id": claim["id"], "claim_key": claim["claim_key"],
-                           "version": claim["version"], "text": current["text"] if current else claim["text"],
+                           "version": claim["version"], "text": current_text,
                            "model_text": claim["text"], "edited": current is not None,
                            "warnings": current["warnings"] if current else [], "revisions": revisions,
                            "support_type": claim["support_type"], "paragraph": claim["paragraph"],
                            "table_ref": claim["table_ref"], "equation_ref": claim["equation_ref"],
-                           "evidence": evidence})
+                           "evidence": evidence, "original_evidence_count": len(original_ids),
+                           "removed_links": removed, "evidence_basis": "direct" if evidence else "none",
+                           "support_type_note": "model_written_type" if not evidence and original_ids else None,
+                           "edited_basis": sorted(edited_basis)})
         sections.append({key: section[key] for key in (
             "section_id", "status", "word_count", "draft", "validation",
         )} | {"claims": claims, "evidence_changes": changes["sections"][section["section_id"]]})

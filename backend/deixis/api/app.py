@@ -259,9 +259,17 @@ class StartReport(BaseModel):
 
 class ReportClaimEdit(BaseModel):
     text: str | None = Field(default=None, max_length=4000)
+    link_ids: list[str] | None = Field(default=None, max_length=200)
     restore_from: str | None = Field(default=None, max_length=40)
     note: str | None = Field(default=None, max_length=1000)
     expected_version: int
+
+    @field_validator("link_ids")
+    @classmethod
+    def link_ids_fit(cls, ids: list[str] | None) -> list[str] | None:
+        if ids is not None and any(len(link_id) > 40 for link_id in ids):
+            raise ValueError("Each link id has at most 40 characters")
+        return ids
 
 
 class ReportChangesAcknowledgement(BaseModel):
@@ -2281,7 +2289,7 @@ def create_app(
         store = store_of(request)
         ReportStore(store).edit_claim(research_id, report_id, claim_id, text=body.text, restore_from=body.restore_from,
                                       note=body.note, expected_version=body.expected_version,
-                                      idempotency_key=idempotency_key)
+                                      idempotency_key=idempotency_key, link_ids=body.link_ids)
         return report_view(store, research_id, report_id)
 
     @app.post("/api/researches/{research_id}/reports/{report_id}/sections/{section_id}/acknowledge-changes")

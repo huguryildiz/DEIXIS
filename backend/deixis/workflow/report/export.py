@@ -342,10 +342,18 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
         lines.extend([footer, ""])
     links = [link for section in view["sections"] for claim in section["claims"] for link in claim["evidence"]]
     located = sum(link.get("anchor_match") is not None for link in links)
+    removed_claims = sum(claim.get("evidence_basis") == "none" and claim.get("support_type_note") is not None
+                         for section in view["sections"] for claim in section["claims"])
     anchor = _label("Anchors were located in the cited passages or cells.", tr,
                     "Atıf çapaları ilgili pasajlarda veya hücrelerde bulundu.") if located == len(links) else _label(
                         f"{located} of {len(links)} citation anchors were located in their passages or cells; the others open without a mark.",
                         tr, f"{len(links)} atıf çapasının {located} tanesi ilgili pasajlarda veya hücrelerde bulundu; diğerleri işaretsiz açılır.")
+    if not links and removed_claims:
+        anchor = _label("No citation anchors remain after citations were removed by hand.", tr,
+                        "Atıflar elle kaldırıldıktan sonra hiçbir atıf çapası kalmadı.")
+    if removed_claims:
+        anchor += _label(f" {removed_claims} claims have no direct citations after citations were removed by hand.", tr,
+                         f" Atıflar elle kaldırıldıktan sonra {removed_claims} iddianın doğrudan atfı kalmadı.")
     review_note = _review_note(view, tr)
     if (view.get("review") or {}).get("status") == "reviewed":
         review_note += _label(" The review covers the model's base version; human edits were not reviewed.", tr,

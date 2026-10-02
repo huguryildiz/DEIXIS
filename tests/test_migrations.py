@@ -23,6 +23,57 @@ PRE_FULLTEXT_KINDS = (*PRE_REPORT_KINDS, "report")
 
 
 @pytest.mark.parametrize("populated", [False, True])
+def test_claim_links_migration_preserves_pre_0062_rows_and_legacy_citations(tmp_path, monkeypatch, populated):
+    real = db.MIGRATIONS_DIR
+    migrations = tmp_path / "claim-link-migrations"
+    migrations.mkdir()
+    for path in real.glob("*.sql"):
+        if int(path.name.split("_", 1)[0]) <= 61:
+            shutil.copy(path, migrations / path.name)
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
+    fixture = None
+    if populated:
+        from tests.test_report_assembly import report_with_sections
+        fixture = report_with_sections.__wrapped__(tmp_path)
+        lib = next(fixture)
+        conn = lib["store"].conn
+        cid = conn.execute("SELECT id FROM report_claims WHERE claim_key = 'III.1'").fetchone()[0]
+        conn.execute("INSERT INTO report_claim_revisions (id, claim_id, kind, text, created_at, idempotency_key)"
+                     " VALUES ('rcv_legacy', ?, 'human_edit', 'SYNTHETIC legacy', '2026-10-01', 'legacy-key')", (cid,))
+        conn.execute("UPDATE report_claims SET current_revision_id = 'rcv_legacy', version = 2 WHERE id = ?", (cid,))
+    else:
+        conn = db.connect(tmp_path / "library.sqlite")
+        db.migrate(conn)
+    try:
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name != 'schema_migrations'")]
+        columns = {table: [r[1] for r in conn.execute(f'PRAGMA table_info("{table}")')] for table in tables}
+        def existing_rows():
+            return {table: sorted((tuple(row) for row in conn.execute(
+                f'SELECT {", ".join(columns[table])} FROM "{table}"')), key=repr) for table in tables}
+        before = existing_rows()
+        shutil.copy(real / "0062_report_claim_links.sql", migrations / "0062_report_claim_links.sql")
+        assert db.migrate(conn) == [62]
+        assert existing_rows() == before
+        assert conn.execute("SELECT * FROM report_claim_revision_links").fetchall() == []
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert conn.execute("SELECT sql FROM sqlite_master WHERE name = 'report_claim_revision_links'").fetchone()[0].endswith("WITHOUT ROWID")
+        if populated:
+            assert conn.execute("SELECT link_count, request_hash FROM report_claim_revisions").fetchone()[:] == (None, None)
+            expected = [row[0] for row in conn.execute("SELECT id FROM report_citation_links ORDER BY rowid")]
+            assert [row["id"] for row in lib["reports"].effective_links(lib["report_id"])] == expected
+            with pytest.raises(sqlite3.IntegrityError):
+                conn.execute("INSERT INTO report_claim_revisions (id, claim_id, kind, text, created_at, link_count)"
+                             " VALUES ('rcv_negative', ?, 'human_edit', 'bad', 'today', -1)", (cid,))
+    finally:
+        if fixture:
+            with pytest.raises(StopIteration):
+                next(fixture)
+        else:
+            conn.close()
+
+
+@pytest.mark.parametrize("populated", [False, True])
 def test_edit_check_migration_preserves_pre_0061_library_and_foreign_keys(tmp_path, monkeypatch, populated):
     real = db.MIGRATIONS_DIR
     migrations = tmp_path / "edit-check-migrations"
@@ -51,6 +102,8 @@ def test_edit_check_migration_preserves_pre_0061_library_and_foreign_keys(tmp_pa
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
         if populated:
+            shutil.copy(real / "0062_report_claim_links.sql", migrations / "0062_report_claim_links.sql")
+            assert db.migrate(conn) == [62]
             from tests.test_report_edit_check import finish, check
             finish(lib)
             check(lib)
@@ -614,7 +667,7 @@ def test_the_europepmc_migration_keeps_every_pdf_lookup_row_and_accepts_the_new_
         store.record_pdf_discovery(rid, svid, "europepmc", "10.1/x", Lookup("zero_results", [], 200))
 
     monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
-    assert db.migrate(conn) == [55, 56, 57, 58, 59, 60, 61]
+    assert db.migrate(conn) == [55, 56, 57, 58, 59, 60, 61, 62]
     after = {table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")]
              for table in ("pdf_discovery_runs", "pdf_candidates")}
     assert after == before  # every row and column value kept, other_title_count included

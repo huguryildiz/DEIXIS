@@ -16,6 +16,73 @@ from test_api_flow import app_for, create, session, wait_run
 from test_report_flow import COLUMN, FUTURE_WORK_COLUMN, LIMITATIONS_COLUMN, ReportAdapter, report_flow
 
 
+@pytest.mark.parametrize("case,expected", [("success", 200), ("unknown_link", 422), ("other_link", 422),
+    ("other_research", 404), ("running", 409), ("two_tabs", 409), ("long_id", 422), ("too_many", 422),
+    ("different_replay", 409), ("equal_replay", 200)])
+def test_citation_edit_route_without_models_or_worker(tmp_path, case, expected):
+    import httpx
+    from deixis.api.app import create_app
+    from deixis.config import Settings
+    from tests.test_report_assembly import report_with_sections
+    from tests.test_report_edit_check import finish
+    fixture = report_with_sections.__wrapped__(tmp_path)
+    lib = next(fixture)
+    try:
+        rid = finish(lib)
+        cid = lib["store"].conn.execute("SELECT id FROM report_claims WHERE claim_key = 'III.1'").fetchone()[0]
+        other_link = lib["store"].conn.execute("SELECT id FROM report_citation_links WHERE claim_id <> ?", (cid,)).fetchone()[0]
+        if case == "other_research":
+            rid = lib["store"].create_research("SYNTHETIC other", "attached", "quick", [], "fake", "fake", "en")
+        elif case == "running":
+            lib["store"].update_run(lib["reports"].report(lib["report_id"])["run_id"], status="running")
+        def refuse_http(request):
+            raise AssertionError("No network or provider call is allowed")
+        http = httpx.AsyncClient(transport=httpx.MockTransport(refuse_http))
+        app = create_app(Settings(data_dir=tmp_path), adapters={}, http_client=http, start_worker=False,
+                         extra_hosts=("testserver",), trusted_clients=("testclient",))
+        with TestClient(app) as client:
+            session(client)
+            url = f"/api/researches/{rid}/reports/{lib['report_id']}/claims/{cid}"
+            body = {"link_ids": [], "expected_version": 1}
+            headers = {"Idempotency-Key": "citation-edit"}
+            if case in {"two_tabs", "equal_replay", "different_replay"}:
+                first = client.put(url, json=body, headers=headers)
+                assert first.status_code == 200
+            if case == "two_tabs":
+                body = {"text": "SYNTHETIC second tab", "expected_version": 1}
+                headers = {}
+            elif case == "different_replay":
+                body["text"] = "different request"
+            elif case == "unknown_link":
+                body["link_ids"] = ["rln_unknown"]
+            elif case == "other_link":
+                body["link_ids"] = [other_link]
+            elif case == "long_id":
+                body["link_ids"] = ["x" * 41]
+            elif case == "too_many":
+                body["link_ids"] = ["x"] * 201
+            def counts():
+                return tuple(app.state.store.conn.execute("SELECT (SELECT COUNT(*) FROM report_claim_revisions),"
+                                                        " (SELECT COUNT(*) FROM events)").fetchone())
+            before = counts()
+            response = client.put(url, json=body, headers=headers)
+            assert response.status_code == expected, response.text
+            if case != "success":
+                assert counts() == before
+            if expected == 200:
+                view = response.json()
+                edited = next(c for s in view["sections"] for c in s["claims"] if c["id"] == cid)
+                assert edited["evidence"] == [] and len(edited["removed_links"]) == 1
+                assert edited["evidence_basis"] == "none" and edited["support_type_note"] == "model_written_type"
+                assert edited["version"] == 2 and view["has_human_edits"] is True
+                if case == "equal_replay":
+                    assert response.json() == first.json()
+        asyncio.run(http.aclose())
+    finally:
+        with pytest.raises(StopIteration):
+            next(fixture)
+
+
 @pytest.mark.parametrize("case,expected", [("running", 409), ("other", 404), ("unknown", 404),
                                           ("csrf", 403), ("success", 200)])
 def test_check_edits_route_without_model_or_worker(tmp_path, case, expected):
@@ -244,8 +311,9 @@ def test_report_view_returns_ordered_sections_claims_and_citation_anchors(tmp_pa
     cited_claims = [claim for section in view["sections"] for claim in section["claims"] if claim["evidence"]]
     assert cited_claims
     assert all({"id", "version", "claim_key", "text", "model_text", "edited", "warnings", "revisions",
-                "support_type", "evidence", "paragraph", "table_ref", "equation_ref"} == set(claim) for claim in cited_claims)
-    assert all(set(link) == {"passage_id", "cell_id", "source_version_id", "ref_number", "anchor_text", "anchor_match", "open_passage_id"}
+                "support_type", "evidence", "paragraph", "table_ref", "equation_ref", "original_evidence_count",
+                "removed_links", "evidence_basis", "support_type_note", "edited_basis"} == set(claim) for claim in cited_claims)
+    assert all(set(link) == {"link_id", "passage_id", "cell_id", "source_version_id", "ref_number", "anchor_text", "anchor_match", "open_passage_id"}
                for claim in cited_claims for link in claim["evidence"])
     assert all(link["anchor_text"] for claim in cited_claims for link in claim["evidence"])
     assert all(bool(link["passage_id"]) != bool(link["cell_id"])

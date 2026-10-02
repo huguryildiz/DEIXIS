@@ -190,7 +190,7 @@ Her batch ayrı bir commit olur; commit ve push yalnız sahibin istediği zaman,
 | Batch | Bağlı olduğu | Boyut | Model |
 |---|---|---|---|
 | E1 Düzenlenmiş raporun denetimi — yapıldı (D148); commit: bu satırı ekleyen commit | — | M | hayır |
-| E2 Atıf kaldırma ve kayıtlı etkin atıf kümesi | E1 | M–L | hayır |
+| E2 Atıf kaldırma ve kayıtlı etkin atıf kümesi — yapıldı (D150); commit: bu satırı ekleyen commit | E1 | M–L | hayır |
 | E3 Arayüz | E1, E2 | M | hayır (senaryolu) |
 | E4 Senaryo dizisi, kapanış ve P9 borcu | E1–E3 | S–M | hayır |
 
@@ -205,6 +205,8 @@ Her batch ayrı bir commit olur; commit ve push yalnız sahibin istediği zaman,
 **Göstermez.** Anlam desteğini, sayıların sözcükle yazıldığı ya da hiç tamsayı bulunmayan durumların denetlendiğini (bunlar atlandı olarak yazılır), gerçek-model raporda isabeti, ekranı; atıf kaldırmayı.
 
 ### E2 — Atıf kaldırma ve kayıtlı etkin atıf kümesi (M–L)
+
+**Durum:** yapıldı (D150); commit: bu satırı ekleyen commit.
 
 **Kapsam.** Migration (`link_count`, `request_hash`, `report_claim_revision_links` ve mühürleme tetikleyicisi); `edit_claim`'in `link_ids`'i, yalnız-atıf düzenleme, geri yükleme ile atıf kümesi, içerik bağlı idempotency; etkin atıf tanımının tek yere bağlanması (denetim, bayatlama, numaralandırma, görünüm, dışa aktarım); `evidence_changes`'in bölüm düzeyini etkin atıflardan türetmesi; düzenlenmiş temele dayanan iddia notu; `evidence_basis`/`support_type_note`; yaşam döngüsü (§7, revizyon-bağ tablosu için): purge, `research_cites_asset`/`asset_impact` açığı, kaynak koruması, yedek.
 **Dosyalar.** `storage/migrations/00NN+1_report_claim_links.sql`, `workflow/report/store.py`, `workflow/report/assembly.py`, `workflow/views.py`, `workflow/report/export.py`, `workflow/store.py`, `backup.py`, `api/app.py`, `tests/test_report_claim_links.py`, `tests/test_report_store.py`, `tests/test_asset_replacement.py`, `tests/test_backup.py`, `tests/test_migrations.py`.

@@ -22,6 +22,46 @@ from test_table_extraction import cell, execute, fill, library, recheck, stored_
 PAGES = ["SYNTHETIC page one: packets of 128 bytes minimize energy per bit.", "SYNTHETIC page two: a relay forwards each packet once."]
 
 
+def test_removed_source_pdf_opens_when_only_a_restorable_report_citation_protects_it(tmp_path):
+    import asyncio
+    import httpx
+    from deixis.api.app import create_app
+    from tests.test_report_assembly import report_with_sections
+    from tests.test_report_claim_links import dedicated_report_source, edit, assert_only_report_cites
+    from tests.test_report_edit_check import finish
+    fixture = report_with_sections.__wrapped__(tmp_path)
+    lib = next(fixture)
+    try:
+        source, asset = dedicated_report_source(lib)
+        rid = finish(lib)
+        other = lib["store"].create_research("SYNTHETIC unrelated", "attached", "quick", [], "fake", "fake", "en")
+        lib["store"].remove_sources(rid, [source], "SYNTHETIC membership removed")
+        settings = Settings(data_dir=tmp_path)
+        settings.papers_dir.mkdir(exist_ok=True)
+        (settings.papers_dir / "synthetic-report.pdf").write_bytes(make_pdf(["SYNTHETIC report-only quote"]))
+        def refuse_http(request):
+            raise AssertionError("No provider or network call is allowed")
+        http = httpx.AsyncClient(transport=httpx.MockTransport(refuse_http))
+        app = create_app(settings, adapters={}, http_client=http, start_worker=False,
+                         extra_hosts=("testserver",), trusted_clients=("testclient",))
+        with TestClient(app) as client:
+            session(client)
+            for stage in ("original", "removed", "restored"):
+                if stage == "removed":
+                    edit(lib, "IV.1", link_ids=[])
+                elif stage == "restored":
+                    edit(lib, "IV.1", restore_from="model")
+                assert_only_report_cites(lib["store"], source)
+                for suffix in ("", "/text", "/figures"):
+                    response = client.get(f"/api/researches/{rid}/assets/{asset}{suffix}")
+                    assert response.status_code == 200, response.text
+                    assert client.get(f"/api/researches/{other}/assets/{asset}{suffix}").status_code == 404
+        asyncio.run(http.aclose())
+    finally:
+        with pytest.raises(StopIteration):
+            next(fixture)
+
+
 def extraction(pages):
     return SimpleNamespace(status="succeeded", error=None, page_count=len(pages),
                            pages=[SimpleNamespace(physical_page=n, printed_label=None, text=text) for n, text in enumerate(pages, 1)])
@@ -96,7 +136,7 @@ def test_replace_reextract_and_impact_api(tmp_path):
 
         impact = client.get(f"{base}/{aid}/impact").json()
         assert impact == {"asset_id": aid, "researches": [{"id": rid, "title": impact["researches"][0]["title"]}],
-                          "cells": 0, "quotes": 0, "lineage_links": 0, "candidate_quotes": 0}
+                          "cells": 0, "quotes": 0, "lineage_links": 0, "candidate_quotes": 0, "report_citations": 0}
 
         same = client.put(f"{base}/{aid}", files={"file": ("a.pdf", make_pdf(["SYNTHETIC molecule notes"]), "application/pdf")})
         assert same.status_code == 422

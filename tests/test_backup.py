@@ -15,6 +15,48 @@ from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
 
 
+def test_backup_restore_preserves_removed_restored_citation_sets_and_all_report_rows(tmp_path):
+    from deixis.storage import db
+    from deixis.workflow.store import Store
+    from deixis.workflow.report.store import ReportStore
+    from tests.test_report_assembly import report_with_sections
+    from tests.test_report_claim_links import edit, three_links
+    from tests.test_report_edit_check import finish
+    settings = Settings(data_dir=tmp_path / "claim-links-data")
+    settings.data_dir.mkdir()
+    fixture = report_with_sections.__wrapped__(settings.data_dir)
+    lib = next(fixture)
+    try:
+        ids = three_links(lib)
+        rid = finish(lib)
+        edit(lib, link_ids=ids[:2])
+        edit(lib, restore_from="model")
+        edit(lib, "abstract.1", link_ids=[])
+        lib["reports"].check_edits(rid, lib["report_id"])
+        db.migrate(lib["store"].conn)
+        tables = ("report_claim_revisions", "report_claim_revision_links", "report_citation_links", "report_claims",
+                  "reports", "report_sections", "report_claim_refs", "report_gaps", "report_snapshot", "report_edit_checks", "events")
+        def rows(conn):
+            return {t: sorted((tuple(r) for r in conn.execute(f"SELECT * FROM {t}")), key=repr) for t in tables}
+        before = rows(lib["store"].conn)
+        effective = lib["reports"].effective_links(lib["report_id"])
+        backup = create_backup(settings, tmp_path / "claim-links-backups")
+        restored = Settings(data_dir=tmp_path / "claim-links-restored")
+        restore_backup(backup, restored)
+        conn = db.connect(restored.db_path)
+        try:
+            db.migrate(conn)
+            assert rows(conn) == before
+            assert ReportStore(Store(conn)).effective_links(lib["report_id"]) == effective
+            assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+            assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        finally:
+            conn.close()
+    finally:
+        with pytest.raises(StopIteration):
+            next(fixture)
+
+
 def test_backup_restore_preserves_report_edit_checks_identically_without_models(tmp_path):
     from deixis.storage import db
     from tests.test_report_assembly import report_with_sections

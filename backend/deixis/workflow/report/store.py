@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -238,10 +239,16 @@ class ReportStore:
 
     def edit_claim(self, research_id: str, report_id: str, claim_id: str, *, text: str | None,
                    restore_from: str | None, note: str | None, expected_version: int,
-                   idempotency_key: str | None) -> str:
-        """Keep model text and citation links fixed while recording one human revision."""
+                   idempotency_key: str | None, link_ids: list[str] | None = None) -> str:
+        """Record current text and its complete citation set without rewriting original evidence."""
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
+        request_hash = hashlib.sha256(json.dumps({
+            "text": text.strip() if text is not None else None, "restore_from": restore_from,
+            "link_ids": sorted(set(link_ids)) if link_ids is not None else None,
+            "note": (note or "").strip() or None,
+        }, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
         with transaction(self.conn):
+            self.store.research(research_id)
             row = self.conn.execute(
                 "SELECT c.*, r.status AS report_status, r.run_id, s.section_id FROM report_claims c"
                 " JOIN report_sections s ON s.id = c.report_section_id JOIN reports r ON r.id = s.report_id"
@@ -252,37 +259,53 @@ class ReportStore:
                 raise NotFound(claim_id)
             if key:
                 replay = self.conn.execute(
-                    "SELECT id, claim_id FROM report_claim_revisions WHERE idempotency_key = ?", (key,),
+                    "SELECT id, claim_id, request_hash FROM report_claim_revisions WHERE idempotency_key = ?", (key,),
                 ).fetchone()
                 if replay:
                     if replay["claim_id"] != claim_id:
                         raise RevisionConflict("This idempotency key was used for another claim")
+                    if replay["request_hash"] is not None and replay["request_hash"] != request_hash:
+                        raise RevisionConflict("This idempotency key was used for a different edit")
                     return replay["id"]
             run = self.store.run(row["run_id"])
             if row["report_status"] not in ("valid", "draft") or run["status"] not in ("completed", "failed", "cancelled"):
                 raise RevisionConflict("A report can be edited once its run has finished")
             check_expected_version(expected_version, row["version"])
-            if (text is None) == (restore_from is None):
-                raise InvalidTableInput("Give either text or a revision to restore")
+            if (restore_from is not None and (text is not None or link_ids is not None)
+                    or restore_from is None and text is None and link_ids is None):
+                raise InvalidTableInput("Give text and/or citations, or only a revision to restore")
+            original = [link["id"] for link in self.original_links(claim_id)]
+            if link_ids is not None and not set(link_ids) <= set(original):
+                raise InvalidTableInput("Keep only original citations of this claim")
+            current = self.conn.execute(
+                "SELECT text FROM report_claim_revisions WHERE id = ?", (row["current_revision_id"],),
+            ).fetchone() if row["current_revision_id"] else None
+            current_text = current["text"] if current else row["text"]
+            current_ids = [link["id"] for link in self.effective_links(report_id) if link["claim_id"] == claim_id]
+            selected = set(link_ids) if link_ids is not None else set(current_ids)
             if restore_from is not None:
                 if restore_from == "model":
                     new_text = row["text"]
+                    selected = set(original)
                 else:
                     previous = self.conn.execute(
-                        "SELECT text FROM report_claim_revisions WHERE id = ? AND claim_id = ?",
+                        "SELECT text, link_count FROM report_claim_revisions WHERE id = ? AND claim_id = ?",
                         (restore_from, claim_id),
                     ).fetchone()
                     if previous is None:
                         raise InvalidTableInput("Restore only a revision of this claim")
                     new_text = previous["text"]
+                    selected = set(original) if previous["link_count"] is None else {
+                        link[0] for link in self.conn.execute(
+                            "SELECT link_id FROM report_claim_revision_links WHERE revision_id = ?", (restore_from,),
+                        )}
             else:
-                new_text = text
-            new_text = new_text.strip()
-            current = self.conn.execute(
-                "SELECT text FROM report_claim_revisions WHERE id = ?", (row["current_revision_id"],),
-            ).fetchone() if row["current_revision_id"] else None
-            if not new_text or new_text == (current["text"] if current else row["text"]):
-                raise InvalidTableInput("The edited text must be non-empty and different from the current text")
+                new_text = text if text is not None else current_text
+            if restore_from is not None or text is not None:
+                new_text = new_text.strip()
+            new_ids = [link_id for link_id in original if link_id in selected]
+            if not new_text or new_text == current_text and new_ids == current_ids:
+                raise InvalidTableInput("The edited text must be non-empty and text or citations must differ from the current revision")
             warnings = [{"kind": "math_not_well_formed", "detail": span}
                         for span in _math_spans(new_text) if not _math_span_is_well_formed(span)]
             if row["count_json"] is not None:
@@ -290,35 +313,61 @@ class ReportStore:
             revision_id = new_id("rcv")
             self.conn.execute(
                 "INSERT INTO report_claim_revisions (id, claim_id, kind, restored_from, text, warnings_json, note,"
-                " idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " idempotency_key, created_at, link_count, request_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (revision_id, claim_id, "human_restore" if restore_from else "human_edit", restore_from,
-                 new_text, dumps(warnings), (note or "").strip() or None, key, now()),
+                 new_text, dumps(warnings), (note or "").strip() or None, key, now(), len(new_ids), request_hash),
             )
+            self.conn.executemany(
+                "INSERT INTO report_claim_revision_links (revision_id, link_id) VALUES (?, ?)",
+                [(revision_id, link_id) for link_id in new_ids],
+            )
+            if self.conn.execute("SELECT COUNT(*) FROM report_claim_revision_links WHERE revision_id = ?",
+                                 (revision_id,)).fetchone()[0] != len(new_ids):
+                raise RuntimeError("The report revision citation set is incomplete")
             self.conn.execute("UPDATE report_claims SET current_revision_id = ?, version = version + 1 WHERE id = ?",
                               (revision_id, claim_id))
             self.conn.execute("UPDATE reports SET updated_at = ? WHERE id = ?", (now(), report_id))
             self._event(report_id, "report_claim_edited", claim_id=claim_id, revision_id=revision_id,
-                        section_id=row["section_id"])
+                        section_id=row["section_id"], link_count=len(new_ids))
         return revision_id
 
     def claim_revisions(self, claim_id: str) -> list[dict[str, Any]]:
         revisions = []
         for row in self.conn.execute(
-            "SELECT id, claim_id, kind, restored_from, text, warnings_json, note, created_at"
+            "SELECT id, claim_id, kind, restored_from, text, warnings_json, note, created_at, link_count"
             " FROM report_claim_revisions WHERE claim_id = ? ORDER BY created_at, rowid", (claim_id,),
         ):
             revision = dict(row)
             revision["warnings"] = json.loads(revision.pop("warnings_json"))
+            revision["link_ids"] = None if row["link_count"] is None else [link[0] for link in self.conn.execute(
+                "SELECT link_id FROM report_claim_revision_links WHERE revision_id = ? ORDER BY link_id", (row["id"],),
+            )]
             revisions.append(revision)
         return revisions
 
     def effective_links(self, report_id: str) -> list[dict]:
-        """E1 uses all original links; citation selection belongs to E2."""
+        """The single definition of a claim's current effective citations; legacy revisions retain all."""
         return [dict(row) for row in self.conn.execute(
             "SELECT l.*, c.claim_key, s.section_id FROM report_citation_links l"
             " JOIN report_claims c ON c.id = l.claim_id"
             " JOIN report_sections s ON s.id = c.report_section_id"
+            " LEFT JOIN report_claim_revisions v ON v.id = c.current_revision_id"
+            " WHERE s.report_id = ? AND (c.current_revision_id IS NULL OR v.link_count IS NULL"
+            " OR EXISTS (SELECT 1 FROM report_claim_revision_links x WHERE x.revision_id = v.id AND x.link_id = l.id))"
+            " ORDER BY l.rowid", (report_id,),
+        )]
+
+    def removed_links(self, report_id: str) -> list[dict]:
+        effective = {link["id"] for link in self.effective_links(report_id)}
+        return [dict(row) for row in self.conn.execute(
+            "SELECT l.*, c.claim_key, s.section_id FROM report_citation_links l"
+            " JOIN report_claims c ON c.id = l.claim_id JOIN report_sections s ON s.id = c.report_section_id"
             " WHERE s.report_id = ? ORDER BY l.rowid", (report_id,),
+        ) if row["id"] not in effective]
+
+    def original_links(self, claim_id: str) -> list[dict]:
+        return [dict(row) for row in self.conn.execute(
+            "SELECT * FROM report_citation_links WHERE claim_id = ? ORDER BY rowid", (claim_id,),
         )]
 
     def check_edits(self, research_id: str, report_id: str) -> dict:
@@ -420,11 +469,7 @@ class ReportStore:
         for claim in claims:
             by_key.setdefault(claim["claim_key"], []).append(claim)
         direct: dict[str, dict[str, dict[str, Any]]] = {claim["id"]: {} for claim in claims}
-        for link in self.conn.execute(
-            "SELECT l.claim_id, l.cell_id, l.source_version_id FROM report_citation_links l"
-            " JOIN report_claims c ON c.id = l.claim_id JOIN report_sections s ON s.id = c.report_section_id"
-            " WHERE s.report_id = ?", (report_id,),
-        ):
+        for link in self.effective_links(report_id):
             if change := changed_cells.get(link["cell_id"]):
                 direct[link["claim_id"]][change["key"]] = change | {"via": "citation"}
             if change := removed_changes.get(link["source_version_id"]):

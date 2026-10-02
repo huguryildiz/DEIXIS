@@ -492,3 +492,429 @@ def test_reviewed_note_keeps_the_screen_limits_and_lists_model_flags():
     assert "The model flagged 1 rewritten sentence as possibly no longer matching its sources" in text
     assert "Not read: II. Review Methodology." in text
     assert "Model findings\n\n- Abstract · Support no longer matches · \\- x" in text
+
+
+# X1 text contracts: these assertions describe escape boundaries, not scientific support.
+TEXT_CLASSES = {
+    "helper": ("is_turkish", "pick", "ensure_report_finished", "report_stem"),
+    "WHOLE": ("heading", "draft_line", "source_heading", "value_text"),
+    "PLAIN": ("references_heading", "report_identity", "section_unvalidated_note", "vi_preface",
+              "missing_rows_sentence", "evidence_changed_sentence", "no_text_sentence", "not_enough_evidence_label",
+              "table_caption", "corpus_footer", "anchor_note", "findings_heading"),
+    "PIECEWISE": ("missing_row_fields", "edit_note", "source_cell", "cell_text", "review_note", "finding_fields"),
+}
+
+
+def test_export_text_imports_names_and_classes():
+    import ast
+    import inspect
+    from pathlib import Path
+    from deixis.workflow.report import export, export_text as text
+
+    tree = ast.parse(Path(text.__file__).read_text())
+    allowed = {"__future__": {"annotations"}, "dataclasses": {"dataclass"}, "re": None,
+               "unicodedata": None, "typing": {"Any", "Callable"}, "collections.abc": {"Callable"},
+               "deixis.domain.rules": {"RevisionConflict"},
+               "deixis.workflow.report.review_methodology": {"failed_reason_text"}}
+    banned = {"_md", "escape_prose", "escape_text"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert alias.name in allowed
+                assert alias.name not in banned and alias.asname not in banned
+        elif isinstance(node, ast.ImportFrom):
+            assert node.level == 0 and node.module in allowed
+            for alias in node.names:
+                assert allowed[node.module] is None or alias.name in allowed[node.module]
+                assert alias.name not in banned and alias.asname not in banned
+        elif isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Name, ast.arg, ast.Attribute)):
+            name = (node.name if isinstance(node, (ast.FunctionDef, ast.ClassDef)) else
+                    node.id if isinstance(node, ast.Name) else node.arg if isinstance(node, ast.arg) else node.attr)
+            assert name not in banned
+    functions = {node.name for node in tree.body if isinstance(node, ast.FunctionDef) and not node.name.startswith("_")}
+    assert functions == {name for names in TEXT_CLASSES.values() for name in names}
+    for kind, names in TEXT_CLASSES.items():
+        for name in names:
+            function = getattr(text, name)
+            assert inspect.getdoc(function).split(":", 1)[0] == kind
+            signature = inspect.signature(function)
+            if kind == "PIECEWISE":
+                assert signature.parameters["esc"].default is inspect.Parameter.empty
+            else:
+                assert "esc" not in signature.parameters
+    for name in ("HEADINGS", "REVIEW_CODES", "REVIEW_REASONS"):
+        assert getattr(export, name) is getattr(text, name)
+
+
+def _x1_tracer():
+    calls = []
+
+    def esc(value):
+        calls.append(value)
+        return f"<<{value}>>"
+
+    return calls, esc
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("source,reason,expected_reason", [
+    ("SYNTHETIC[key]", "no_stored_text", ("no stored text", "saklı metin yok")),
+    (None, "SYNTHETIC_reason[2]", ("SYNTHETIC reason[2]", "SYNTHETIC reason[2]")),
+], ids=["key-known-reason", "title-unknown-reason"])
+def test_text_missing_row_escape_calls(tr, source, reason, expected_reason):
+    from deixis.workflow.report import export_text as text
+    calls, esc = _x1_tracer()
+    fields = text.missing_row_fields({"source_key": source, "title": "SYNTHETIC[title]", "reason": reason}, tr, esc)
+    expected_source = source or "SYNTHETIC[title]"
+    assert calls == [expected_source, expected_reason[int(tr)]]
+    assert fields == (f"<<{expected_source}>>", f"<<{expected_reason[int(tr)]}>>")
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("row,label", [
+    ({"source_key": "SYNTHETIC[key]", "title": "SYNTHETIC ignored", "ref_number": 7}, ("SYNTHETIC[key]",) * 2),
+    ({"source_key": None, "title": "SYNTHETIC[title]"}, ("SYNTHETIC[title]",) * 2),
+    ({"source_key": "", "title": "", "ref_number": 0}, ("Source record unavailable", "Kaynak kaydı bulunamadı")),
+    ({}, ("Source record unavailable", "Kaynak kaydı bulunamadı")),
+], ids=["key-ref", "title-no-ref", "unavailable-zero-ref", "unavailable-no-ref"])
+def test_text_source_cell_escape_calls(tr, row, label):
+    from deixis.workflow.report import export_text as text
+    calls, esc = _x1_tracer()
+    result = text.source_cell(row, tr, esc)
+    assert calls == [label[int(tr)]]
+    prefix = f'[{row["ref_number"]}] ' if row.get("ref_number") is not None else ""
+    assert result == prefix + f"<<{label[int(tr)]}>>"
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("cell,arguments,expected", [
+    (None, ([], []), ("—", "—")),
+    ({"state": "value", "value": {"text": "SYNTHETIC[value]"}}, (["SYNTHETIC[value]"],) * 2,
+     ("<<SYNTHETIC[value]>>",) * 2),
+    ({"state": "value", "value": {"number": 2.5, "unit": "SYNTHETIC[unit]"}}, (["2.5 SYNTHETIC[unit]"],) * 2,
+     ("<<2.5 SYNTHETIC[unit]>>",) * 2),
+    ({"state": "value", "value": {"number": 0}}, (["0"],) * 2, ("<<0>>",) * 2),
+    ({"state": "value", "value": {"answer": "yes"}}, (["Yes"], ["Evet"]), ("<<Yes>>", "<<Evet>>")),
+    ({"state": "value", "value": {"answer": "no"}}, (["No"], ["Hayır"]), ("<<No>>", "<<Hayır>>")),
+    ({"state": "value", "value": {"option_ids": ["known", "SYNTHETIC[unknown]"]}},
+     (["SYNTHETIC[label], SYNTHETIC[unknown]"],) * 2, ("<<SYNTHETIC[label], SYNTHETIC[unknown]>>",) * 2),
+    ({"state": "value", "value": {}}, ([""],) * 2, ("<<>>",) * 2),
+    ({"state": "not_verified", "value": {"text": "SYNTHETIC[unchecked]"}}, (["SYNTHETIC[unchecked]"],) * 2,
+     ("<<SYNTHETIC[unchecked]>> (not verified: no quote linked)",
+      "<<SYNTHETIC[unchecked]>> (doğrulanmadı: bağlı alıntı yok)")),
+    ({"state": "not_verified"}, ([""],) * 2,
+     ("<<>> (not verified: no quote linked)", "<<>> (doğrulanmadı: bağlı alıntı yok)")),
+    ({"state": "SYNTHETIC_not_found"}, (["SYNTHETIC not found"],) * 2, ("<<SYNTHETIC not found>>",) * 2),
+], ids=["missing", "text", "unit", "number", "yes", "no", "options", "empty", "not-verified-value", "not-verified-empty", "state"])
+def test_text_cell_escape_calls(tr, cell, arguments, expected):
+    from deixis.workflow.report import export_text as text
+    calls, esc = _x1_tracer()
+    column = {"options": [{"id": "known", "label": "SYNTHETIC[label]"}]}
+    assert text.cell_text(cell, column, tr, esc) == expected[int(tr)]
+    assert calls == arguments[int(tr)]
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("sid,code,labels", [
+    ("II", "count_error", (("II. Review Methodology", "Count"), ("II. İnceleme Yöntemi", "Sayı"))),
+    (None, "SYNTHETIC_unknown", (("Report", "Other"), ("Rapor", "Diğer"))),
+    ("1. SYNTHETIC[section]", "other", (("1. SYNTHETIC[section]", "Other"), ("1. SYNTHETIC[section]", "Diğer"))),
+], ids=["known", "report-unknown-code", "unknown-section"])
+def test_text_finding_escape_calls(tr, sid, code, labels):
+    from deixis.workflow.report import export_text as text
+    calls, esc = _x1_tracer()
+    result = text.finding_fields({"section_id": sid, "code": code, "text": "- SYNTHETIC[finding]"}, tr, esc)
+    section, label = labels[int(tr)]
+    assert calls == [section, label, "- SYNTHETIC[finding]"]
+    assert result == (f"<<{section}>>", f"<<{label}>>", "<<- SYNTHETIC[finding]>>")
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("review", [None, {}], ids=["none", "empty"])
+def test_text_no_review_has_no_escape_calls(tr, review):
+    from deixis.workflow.report import export_text as text
+    calls, esc = _x1_tracer()
+    expected = ("No model or person review is recorded for this report; whether each passage supports its claim was not checked by code.",
+                "Bu rapor için model veya kişi incelemesi kaydedilmedi; kod, her pasajın ilgili iddiayı destekleyip desteklemediğini denetlemedi.")
+    assert text.review_note({"review": review}, tr, esc) == expected[int(tr)]
+    assert calls == []
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("reason,words", [
+    ("input_too_large", ("the input was too large", "girdi çok büyüktü")),
+    ("budget_exhausted", ("the model-call budget was exhausted", "model çağrısı bütçesi tükendi")),
+    ("nothing_to_review", ("there was nothing it could read", "okuyabileceği bir şey yoktu")),
+    ("model_mismatch", ("the model did not match the selected model", "yanıt veren model seçilen modelle eşleşmedi")),
+    ("model_call_failed", ("the model call failed", "model çağrısı başarısız oldu")),
+    ("invalid_model_output", ("the model output was invalid", "model çıktısı geçersizdi")),
+    ("SYNTHETIC[unknown]", ("the review step failed", "inceleme adımı başarısız oldu")),
+    (None, ("the review step failed", "inceleme adımı başarısız oldu")),
+])
+def test_text_not_reviewed_reason_is_raw(tr, reason, words):
+    from deixis.workflow.report import export_text as text
+    calls, esc = _x1_tracer()
+    review = {"status": "not_reviewed"}
+    if reason is not None:
+        review["reason"] = reason
+    expected = (f"No accepted review result exists for this report ({words[0]}); whether the model read it in part is not established by this record.",
+                f"Bu rapor için kabul edilmiş bir inceleme sonucu yok ({words[1]}); modelin raporun bir kısmını okuyup okumadığı bu kayıttan anlaşılamıyor.")
+    assert text.review_note({"review": review}, tr, esc) == expected[int(tr)]
+    assert calls == []
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("count", [0, 1, 2])
+@pytest.mark.parametrize("missed", [False, True])
+def test_text_reviewed_exact_escape_calls_and_words(tr, count, missed):
+    from deixis.workflow.report import export_text as text
+    calls, esc = _x1_tracer()
+    review = {"status": "reviewed", "sections_reviewed": ["abstract"], "findings": [{}] * count,
+              "reverted": [{}] * count,
+              "sections_not_reviewed": [{"section_id": "II"}, {"section_id": "1. SYNTHETIC[missed]"}] if missed else []}
+    # Literals for each number branch; the pin file owns whole Markdown outputs.
+    starts = (
+        ("A model read the claims of 1 of {total} sections against their cited passages and cells in an extra review call using the same model that wrote the report, and flagged 0 possible problems. That is a model’s reading, not peer review, and it can miss errors; whether each passage supports its claim was not checked by code.",
+         "Raporu yazan model, ek bir inceleme çağrısında {total} bölümün 1 tanesindeki iddiaları atıf yapılan pasaj ve hücrelerle karşılaştırıp 0 olası sorun işaretledi. Bu, modelin okumasıdır; hakem incelemesi değildir ve hataları kaçırabilir. Kod, her pasajın ilgili iddiayı destekleyip desteklemediğini denetlemedi."),
+        ("A model read the claims of 1 of {total} sections against their cited passages and cells in an extra review call using the same model that wrote the report, and flagged 1 possible problem. That is a model’s reading, not peer review, and it can miss errors; whether each passage supports its claim was not checked by code.",
+         "Raporu yazan model, ek bir inceleme çağrısında {total} bölümün 1 tanesindeki iddiaları atıf yapılan pasaj ve hücrelerle karşılaştırıp 1 olası sorun işaretledi. Bu, modelin okumasıdır; hakem incelemesi değildir ve hataları kaçırabilir. Kod, her pasajın ilgili iddiayı destekleyip desteklemediğini denetlemedi."),
+        ("A model read the claims of 1 of {total} sections against their cited passages and cells in an extra review call using the same model that wrote the report, and flagged 2 possible problems. That is a model’s reading, not peer review, and it can miss errors; whether each passage supports its claim was not checked by code.",
+         "Raporu yazan model, ek bir inceleme çağrısında {total} bölümün 1 tanesindeki iddiaları atıf yapılan pasaj ve hücrelerle karşılaştırıp 2 olası sorun işaretledi. Bu, modelin okumasıdır; hakem incelemesi değildir ve hataları kaçırabilir. Kod, her pasajın ilgili iddiayı destekleyip desteklemediğini denetlemedi."),
+    )
+    reverted = (("", ""),
+                (" The model flagged 1 rewritten sentence as possibly no longer matching its sources; it was returned to its original wording.",
+                 " Model, yeniden yazılan 1 cümlenin kaynaklarıyla artık uyuşmayabileceğini işaretledi; cümle özgün hâline döndürüldü."),
+                (" The model flagged 2 rewritten sentences as possibly no longer matching their sources; they were returned to their original wording.",
+                 " Model, yeniden yazılan 2 cümlenin kaynaklarıyla artık uyuşmayabileceğini işaretledi; cümleler özgün hâline döndürüldü."))
+    unread = (" Not read: <<II. Review Methodology>>, <<1. SYNTHETIC[missed]>>.",
+              " Okunmayan bölümler: <<II. İnceleme Yöntemi>>, <<1. SYNTHETIC[missed]>>.")
+    suffix = (" The review covers the model's base version; human edits were not reviewed.",
+              " İnceleme modelin temel sürümünü kapsar; insan düzenlemeleri incelenmedi.")
+    expected = starts[count][int(tr)].format(total=3 if missed else 1) + reverted[count][int(tr)]
+    expected += (unread[int(tr)] if missed else "") + suffix[int(tr)]
+    assert text.review_note({"review": review}, tr, esc) == expected
+    assert calls == (["II. İnceleme Yöntemi" if tr else "II. Review Methodology", "1. SYNTHETIC[missed]"] if missed else [])
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("view,expected", [
+    ({}, None), ({"edited_after_version": None}, None),
+    ({"has_human_edits": False, "edited_after_version": 1}, None),
+    ({"has_human_edits": True, "edited_after_version": None},
+     ("Edited by hand; edited text was not checked again.", "Elle düzenlendi; düzenlenen metin yeniden denetlenmedi.")),
+    ({"has_human_edits": True, "edited_after_version": 1, "edit_check": None},
+     ("Edited by hand after version 1; edited text was not checked again.", "1. sürümden sonra elle düzenlendi; düzenlenen metin yeniden denetlenmedi.")),
+    ({"edited_after_version": 1},
+     ("Edited by hand after version 1; edited text was not checked again.", "1. sürümden sonra elle düzenlendi; düzenlenen metin yeniden denetlenmedi.")),
+], ids=["absent", "unedited", "explicit-false", "unversioned", "versioned", "fallback"])
+def test_text_edit_absent_check_escape_calls(tr, view, expected):
+    from deixis.workflow.report import export_text as text
+    from dataclasses import FrozenInstanceError
+    calls, esc = _x1_tracer()
+    result = text.edit_note(view, tr, esc)
+    assert calls == []
+    if expected is None:
+        assert result is None
+    else:
+        assert result == text.EditNote(expected[int(tr)])
+        with pytest.raises(FrozenInstanceError):
+            result.paragraph = "SYNTHETIC changed"
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("version", [None, 1])
+@pytest.mark.parametrize("current", [False, True])
+@pytest.mark.parametrize("empty", [False, True])
+def test_text_edit_check_exact_escape_calls(tr, version, current, empty):
+    from deixis.workflow.report import export_text as text
+    calls, esc = _x1_tracer()
+    check = {"created_at": "SYNTHETIC[date]", "current": current, "errors": 2, "warnings": 1,
+             "items": [] if empty else [{"section_id": "SYNTHETIC[section]", "rule": "SYNTHETIC[rule]",
+                                        "severity": "SYNTHETIC[severity]", "detail": "- SYNTHETIC[detail]"}],
+             "skipped_rules": [] if empty else [{"section_id": "SYNTHETIC[skipped-section]", "claim_key": "SYNTHETIC[claim]",
+                                                "rule": "SYNTHETIC[skipped-rule]", "reason": "SYNTHETIC[reason]"}],
+             "not_checked": [] if empty else ["semantic_support", "numbers_written_as_words", "passages", "1. SYNTHETIC[limit]"]}
+    prefix = (("Elle düzenlendi" if version is None else "1. sürümden sonra elle düzenlendi") if tr else
+              ("Edited by hand" if version is None else "Edited by hand after version 1"))
+    current_words = ("; the edited text was checked by code rules (<<SYNTHETIC[date]>>): 2 errors, 1 warnings; whether the cited evidence supports each sentence was not checked.",
+                     "; düzenlenen metin kod kurallarıyla denetlendi (<<SYNTHETIC[date]>>): 2 hata, 1 uyarı; atıf yapılan kanıtın her cümleyi destekleyip desteklemediği denetlenmedi.")
+    historical_words = ("; the last check (<<SYNTHETIC[date]>>) does not cover the current inputs; whether the cited evidence supports each sentence was not checked.",
+                        "; son denetim (<<SYNTHETIC[date]>>) güncel girdileri kapsamıyor; atıf yapılan kanıtın her cümleyi destekleyip desteklemediği denetlenmedi.")
+    limits = (("whether the cited evidence supports each sentence", "numbers written as words", "passages", "1. SYNTHETIC[limit]"),
+              ("atıf yapılan kanıtın her cümleyi destekleyip desteklemediği", "sözcükle yazılmış sayılar", "pasajlar", "1. SYNTHETIC[limit]"))[int(tr)]
+    expected_items = () if empty else (("<<SYNTHETIC[section]>>", "<<SYNTHETIC[rule]>>", "<<SYNTHETIC[severity]>>", "<<- SYNTHETIC[detail]>>"),)
+    expected_skipped = () if empty else (("<<SYNTHETIC[skipped-section]>>", "<<SYNTHETIC[claim]>>", "<<SYNTHETIC[skipped-rule]>>", "<<SYNTHETIC[reason]>>"),)
+    expected_limits = () if empty else tuple(f"<<{limit}>>" for limit in limits)
+    view = {"has_human_edits": True, "edited_after_version": version, "edit_check": check}
+    expected = text.EditNote(prefix + (current_words if current else historical_words)[int(tr)], expected_items,
+                             "Denetlenmedi:" if tr else "Not checked:", expected_skipped, expected_limits)
+    assert text.edit_note(view, tr, esc) == expected
+    assert calls == (["SYNTHETIC[date]"] if empty else ["SYNTHETIC[date]", "SYNTHETIC[section]", "SYNTHETIC[rule]",
+        "SYNTHETIC[severity]", "- SYNTHETIC[detail]", "SYNTHETIC[skipped-section]", "SYNTHETIC[claim]",
+        "SYNTHETIC[skipped-rule]", "SYNTHETIC[reason]", *limits])
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+def test_text_whole_functions_return_raw_complete_values(tr):
+    from deixis.workflow.report import export_text as text
+    raw = r"1. SYNTHETIC_\ [ ] < > ` | $ # _ %"
+    assert text.heading(raw, tr) == r"1. SYNTHETIC_\ [ ] < > ` | $ # _ %"
+    assert text.heading("II", tr) == ("II. İnceleme Yöntemi" if tr else "II. Review Methodology")
+    assert text.source_heading(tr) == ("Kaynak" if tr else "Source")
+    assert text.value_text({"text": raw}, None, tr) == r"1. SYNTHETIC_\ [ ] < > ` | $ # _ %"
+    assert text.value_text({"number": 1, "unit": raw}, None, tr) == r"1 1. SYNTHETIC_\ [ ] < > ` | $ # _ %"
+    assert text.value_text({"option_ids": ["known", raw]}, [{"id": "known", "label": raw}], tr) == (
+        r"1. SYNTHETIC_\ [ ] < > ` | $ # _ %, 1. SYNTHETIC_\ [ ] < > ` | $ # _ %")
+    view = {"status": "draft", "sections": [], "run": {"error": [{"rule": raw}]}}
+    expected = (r"DRAFT: the assembly check refused the report (1. SYNTHETIC \ [ ] < > ` | $ #   %).",
+                r"TASLAK: birleştirme kontrolü raporu reddetti (1. SYNTHETIC \ [ ] < > ` | $ #   %).")
+    assert text.draft_line(view, tr) == expected[int(tr)]
+    view["run"]["error"] = [{"rule": "SYNTHETIC_1.[x]"}]
+    assert text.draft_line(view, tr) == ("TASLAK: birleştirme kontrolü raporu reddetti (SYNTHETIC 1.[x])." if tr else
+                                        "DRAFT: the assembly check refused the report (SYNTHETIC 1.[x]).")
+    assert text.draft_line({"status": "valid"}, tr) is None
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("value,expected", [
+    (None, ("", "")), ({}, ("", "")), ({"number": 0}, ("0", "0")),
+    ({"number": 2.5, "unit": "ms"}, ("2.5 ms", "2.5 ms")),
+    ({"number": 1, "unit": ""}, ("1", "1")),
+    ({"answer": "yes"}, ("Yes", "Evet")), ({"answer": "no"}, ("No", "Hayır")),
+    ({"option_ids": []}, ("", "")), ({"SYNTHETIC_unknown": "ignored"}, ("", "")),
+])
+def test_text_raw_value_format_branches(tr, value, expected):
+    from deixis.workflow.report import export_text as text
+    assert text.value_text(value, None, tr) == expected[int(tr)]
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("function,expected", [
+    ("references_heading", ("References", "Kaynaklar")),
+    ("section_unvalidated_note", ("This section was not validated and must be written again.", "Bu bölüm doğrulanmadı ve yeniden yazılmalı.")),
+    ("vi_preface", ("Candidate aspects the model inferred from the evidence table; none was checked by a kill-search.",
+                    "Modelin kanıt tablosundan çıkardığı aday yönler; hiçbiri kapsamlı bir yoklama aramasıyla denetlenmedi.")),
+    ("evidence_changed_sentence", ("Evidence changed after this report was written; the report text was not changed. Passage text was not checked.",
+                                  "Bu rapor yazıldıktan sonra kanıt değişti; rapor metni değişmedi. Pasaj metni denetlenmedi.")),
+    ("no_text_sentence", ("No text was written for this section.", "Bu bölüm için metin yazılmadı.")),
+    ("not_enough_evidence_label", ("Not enough evidence", "Yeterli kanıt yok")),
+    ("findings_heading", ("Model findings", "Model bulguları")),
+])
+def test_text_plain_fixed_literals(tr, function, expected):
+    from deixis.workflow.report import export_text as text
+    assert getattr(text, function)(tr) == expected[int(tr)]
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("status,version,expected", [
+    ("draft", None, ("Evidence report · draft", "Kanıt raporu · taslak")),
+    ("valid", 0, ("Evidence report · V0", "Kanıt raporu · V0")),
+    ("valid", 1, ("Evidence report · V1", "Kanıt raporu · V1")),
+    ("valid", 12, ("Evidence report · V12", "Kanıt raporu · V12")),
+])
+def test_text_plain_identity_literals(tr, status, version, expected):
+    from deixis.workflow.report import export_text as text
+    assert text.report_identity({"status": status, "report_version": version}, tr) == expected[int(tr)]
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("count,expected", [
+    (0, ("0 of 0 sources did not complete the table (missing cells: 0). These rows were excluded from the report's evidence assessment and aggregation denominators.",
+         "0 kaynağın 0 tanesinde tablo doldurma tamamlanmadı; 0 hücre eksik. Bu satırlar raporun kanıt değerlendirmesine ve toplulaştırma paydalarına alınmadı.")),
+    (1, ("1 of 1 sources did not complete the table (missing cells: 1). These rows were excluded from the report's evidence assessment and aggregation denominators.",
+         "1 kaynağın 1 tanesinde tablo doldurma tamamlanmadı; 1 hücre eksik. Bu satırlar raporun kanıt değerlendirmesine ve toplulaştırma paydalarına alınmadı.")),
+    (2, ("2 of 2 sources did not complete the table (missing cells: 2). These rows were excluded from the report's evidence assessment and aggregation denominators.",
+         "2 kaynağın 2 tanesinde tablo doldurma tamamlanmadı; 2 hücre eksik. Bu satırlar raporun kanıt değerlendirmesine ve toplulaştırma paydalarına alınmadı.")),
+])
+def test_text_plain_missing_rows_literals(tr, count, expected):
+    from deixis.workflow.report import export_text as text
+    assert text.missing_rows_sentence({"counts": {"failed": count, "included": count, "cells_missing": count}}, tr) == expected[int(tr)]
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("count,expected", [
+    (0, ("TABLE I. Evidence table as frozen for this report (0 sources, 0 columns).",
+         "TABLO I. Bu rapor için dondurulan kanıt tablosu (0 kaynak, 0 sütun).")),
+    (1, ("TABLE I. Evidence table as frozen for this report (1 sources, 1 column).",
+         "TABLO I. Bu rapor için dondurulan kanıt tablosu (1 kaynak, 1 sütun).")),
+    (2, ("TABLE I. Evidence table as frozen for this report (2 sources, 2 columns).",
+         "TABLO I. Bu rapor için dondurulan kanıt tablosu (2 kaynak, 2 sütun).")),
+])
+def test_text_plain_table_caption_literals(tr, count, expected):
+    from deixis.workflow.report import export_text as text
+    assert text.table_caption({"rows": [None] * count, "columns": [None] * count}, tr) == expected[int(tr)]
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("corpus,expected", [
+    (None, ("Generated by DEIXIS.", "DEIXIS ile üretildi.")),
+    ({"found": 0, "unique": 0, "screened": 0, "included": 0, "full_text": 0},
+     ("Generated by DEIXIS; corpus: 0 found, 0 unique, 0 screened, 0 included, 0 with full text.",
+      "DEIXIS ile üretildi; korpus: bulunan 0, tekil 0, taranan 0, dahil 0, tam metinli 0.")),
+    ({"found": 17, "unique": 13, "screened": 11, "included": 5, "full_text": 3},
+     ("Generated by DEIXIS; corpus: 17 found, 13 unique, 11 screened, 5 included, 3 with full text.",
+      "DEIXIS ile üretildi; korpus: bulunan 17, tekil 13, taranan 11, dahil 5, tam metinli 3.")),
+])
+def test_text_plain_corpus_literals(tr, corpus, expected):
+    from deixis.workflow.report import export_text as text
+    assert text.corpus_footer(corpus, tr) == expected[int(tr)]
+
+
+@pytest.mark.parametrize("tr", [False, True], ids=["en", "tr"])
+@pytest.mark.parametrize("matches,removed,expected", [
+    ([], 0, ("Anchors were located in the cited passages or cells.", "Atıf çapaları ilgili pasajlarda veya hücrelerde bulundu.")),
+    (["exact"], 0, ("Anchors were located in the cited passages or cells.", "Atıf çapaları ilgili pasajlarda veya hücrelerde bulundu.")),
+    ([None], 0, ("0 of 1 citation anchors were located in their passages or cells; the others open without a mark.",
+                 "1 atıf çapasının 0 tanesi ilgili pasajlarda veya hücrelerde bulundu; diğerleri işaretsiz açılır.")),
+    (["exact", None], 0, ("1 of 2 citation anchors were located in their passages or cells; the others open without a mark.",
+                          "2 atıf çapasının 1 tanesi ilgili pasajlarda veya hücrelerde bulundu; diğerleri işaretsiz açılır.")),
+    (["exact"], 1, ("Anchors were located in the cited passages or cells. 1 claims have no direct citations after citations were removed by hand.",
+                    "Atıf çapaları ilgili pasajlarda veya hücrelerde bulundu. Atıflar elle kaldırıldıktan sonra 1 iddianın doğrudan atfı kalmadı.")),
+    ([], 1, ("No citation anchors remain after citations were removed by hand. 1 claims have no direct citations after citations were removed by hand.",
+             "Atıflar elle kaldırıldıktan sonra hiçbir atıf çapası kalmadı. Atıflar elle kaldırıldıktan sonra 1 iddianın doğrudan atfı kalmadı.")),
+    ([], 2, ("No citation anchors remain after citations were removed by hand. 2 claims have no direct citations after citations were removed by hand.",
+             "Atıflar elle kaldırıldıktan sonra hiçbir atıf çapası kalmadı. Atıflar elle kaldırıldıktan sonra 2 iddianın doğrudan atfı kalmadı.")),
+    (["exact", "exact"], 2, ("Anchors were located in the cited passages or cells. 2 claims have no direct citations after citations were removed by hand.",
+                             "Atıf çapaları ilgili pasajlarda veya hücrelerde bulundu. Atıflar elle kaldırıldıktan sonra 2 iddianın doğrudan atfı kalmadı.")),
+])
+def test_text_plain_anchor_literals(tr, matches, removed, expected):
+    from deixis.workflow.report import export_text as text
+    claims = [{"evidence": [{"anchor_match": match} for match in matches]}]
+    claims += [{"evidence": [], "evidence_basis": "none", "support_type_note": "model_written_type"} for _ in range(removed)]
+    claims += [{"evidence": [], "evidence_basis": "none", "support_type_note": None},
+               {"evidence": [], "evidence_basis": "direct", "support_type_note": "model_written_type"}]
+    assert text.anchor_note({"sections": [{"claims": claims}]}, tr) == expected[int(tr)]
+
+
+@pytest.mark.parametrize("language,expected", [("en", False), ("tr", True), ("tr-TR", True), ("TR", False), (None, False), ("", False)])
+def test_text_language_helper(language, expected):
+    from deixis.workflow.report import export_text as text
+    assert text.is_turkish({"language": language}) is expected
+    assert text.is_turkish({}) is False
+    assert text.pick("SYNTHETIC english", expected, "SYNTHETIC turkish") == ("SYNTHETIC turkish" if expected else "SYNTHETIC english")
+
+
+@pytest.mark.parametrize("title,status,version,expected", [
+    ("SYNTHETIC valid", "valid", 1, "report-synthetic-valid-v1"),
+    ("SYNTHETIC draft", "draft", None, "report-synthetic-draft-draft"),
+    ("SYNTHETIC café İığşçöü", "valid", 1, "report-synthetic-cafe-igscou-v1"),
+    ("!@#$%^&*()", "valid", 1, "report-report-v1"),
+    ("SYNTHETIC " + "a" * 49 + " tail", "valid", 1, "report-synthetic-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-v1"),
+    ("SYNTHETIC version", "valid", 12, "report-synthetic-version-v12"),
+])
+def test_text_report_stem(title, status, version, expected):
+    from deixis.workflow.report import export_text as text
+    assert text.report_stem({"status": status, "report_version": version}, title) == expected
+
+
+@pytest.mark.parametrize("status", ["valid", "draft", "in_progress"])
+@pytest.mark.parametrize("run_status", [None, "completed", "failed", "cancelled", "paused", "running", "queued", "pause_requested"])
+def test_text_finished_gate(status, run_status):
+    from deixis.domain.rules import RevisionConflict
+    from deixis.workflow.report import export_text as text
+    view = {"status": status, "run": None if run_status is None else {"status": run_status}}
+    if status == "in_progress" or run_status in ("paused", "running", "queued", "pause_requested"):
+        with pytest.raises(RevisionConflict, match="^The report is still being written$"):
+            text.ensure_report_finished(view)
+    else:
+        assert text.ensure_report_finished(view) is None

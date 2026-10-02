@@ -112,12 +112,17 @@ class DeepSeekAdapter:
             return ModelStepResult("failed", error=f"{type(exc).__name__}: {str(exc)[:250]}",
                                    delivery_class="after_send_unknown")
         if response.status_code != 200:
-            return ModelStepResult("failed", error=f"HTTP {response.status_code}: {error_message(response)}")
-        data = response.json()
+            # DeepSeek's exhausted balance is a quota failure for the shared text classifier.
+            quota = " (quota)" if response.status_code == 402 else ""
+            return ModelStepResult("failed", error=f"HTTP {response.status_code}: {error_message(response)}{quota}")
+        try:
+            data = response.json()
+        except ValueError:
+            return ModelStepResult("failed", error="Invalid JSON response", delivery_class="after_send_unknown")
         choice = (data.get("choices") or [{}])[0]
         content = (choice.get("message") or {}).get("content")
         common = {
-            "resolved_model": data.get("model") or requested_model,
+            "resolved_model": data.get("model") or None,
             "external_thread_id": data.get("id"),
             "token_usage": data.get("usage"),
         }

@@ -69,6 +69,8 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
                  contact_email: str | None = None, cursor: str | None = None,
                  max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
+    if not api_key:
+        return SearchOutcome("not_configured", "before_send", f"GET {SEARCH_URL} access=not_configured", "not_configured")
     count = min(limit, MAX_RESULTS)
     offset = page_offset(cursor)
     params: dict[str, Any] = {"q": query, "limit": count}

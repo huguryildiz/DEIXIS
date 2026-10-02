@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -27,6 +28,12 @@ from claude_agent_sdk import (
 )
 
 from deixis.models.adapter import ModelStepResult
+
+
+def _model_matches(actual: str | None, expected: str) -> bool:
+    # Context suffixes describe the window, not the model identity; preserve
+    # the original reported string in provenance.
+    return actual is not None and re.sub(r"\[[^\[\]]+\]$", "", actual) == re.sub(r"\[[^\[\]]+\]$", "", expected)
 
 
 class ClaudeCodeAdapter:
@@ -137,17 +144,27 @@ class ClaudeCodeAdapter:
             return [name for name in tool_types if not (structured_output_received and name == "StructuredOutput")]
 
         actual_model: str | None = None
+        expected_model = requested_model
         session_id: str | None = None
         usage: dict[str, Any] | None = None
         client: ClaudeSDKClient | None = None
         try:
             async with ClaudeSDKClient(options) as client:
                 self._active.add(client)
+                # Resolve selectors from this session's catalogue, not cached health
+                # or a guessed model-name prefix. AssistantMessage.model comes from
+                # the CLI's response and must match that concrete identity.
+                info = await client.get_server_info() or {}
+                expected_model = next((model.get("resolvedModel") or requested_model
+                                       for model in info.get("models", [])
+                                       if model.get("value") == requested_model), requested_model)
                 await client.query(message)
                 async with asyncio.timeout(self.turn_timeout):
                     async for item in client.receive_response():
                         if isinstance(item, AssistantMessage):
-                            actual_model = item.model or actual_model
+                            # Keep a mismatch even if a later message uses the expected model.
+                            if actual_model is None or _model_matches(actual_model, expected_model):
+                                actual_model = item.model or actual_model
                             usage = item.usage or usage
                             for block in item.content:
                                 if isinstance(block, TextBlock):
@@ -167,23 +184,26 @@ class ClaudeCodeAdapter:
                                     "failed", raw_text="".join(text_parts) or None, resolved_model=actual_model,
                                     external_thread_id=session_id, token_usage=usage, tool_item_types=external_tools(),
                                     error="; ".join(item.errors or []) or item.result or item.subtype,
-                                    delivery_class="after_send_unknown", requested_model_verified=True,
+                                    delivery_class="after_send_unknown",
+                                    requested_model_verified=_model_matches(actual_model, expected_model),
                                 )
         except TimeoutError:
             return ModelStepResult("failed", resolved_model=actual_model, external_thread_id=session_id,
                                    token_usage=usage, tool_item_types=tool_types, error="Claude Code turn timed out",
-                                   delivery_class="after_send_unknown", requested_model_verified=True)
+                                   delivery_class="after_send_unknown",
+                                   requested_model_verified=_model_matches(actual_model, expected_model))
         except (ClaudeSDKError, OSError) as exc:
             return ModelStepResult("failed", resolved_model=actual_model, external_thread_id=session_id,
                                    token_usage=usage, tool_item_types=tool_types, error=str(exc)[:300],
-                                   delivery_class="after_send_unknown", requested_model_verified=True)
+                                   delivery_class="after_send_unknown",
+                                   requested_model_verified=_model_matches(actual_model, expected_model))
         finally:
             if client is not None:
                 self._active.discard(client)
         return ModelStepResult(
-            "completed", raw_text="".join(text_parts), resolved_model=actual_model or requested_model,
+            "completed", raw_text="".join(text_parts), resolved_model=actual_model,
             external_thread_id=session_id, token_usage=usage, tool_item_types=external_tools(),
-            requested_model_verified=True,
+            requested_model_verified=_model_matches(actual_model, expected_model),
         )
 
     async def cancel(self) -> bool:

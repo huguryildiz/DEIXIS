@@ -420,6 +420,23 @@ def test_available_providers_follow_configured_keys(monkeypatch):
     assert available_providers()[-1] == "ieee_xplore" and CONNECTORS["ieee_xplore"].access_mode() == "api_key"
 
 
+@pytest.mark.parametrize("provider", [pid for pid, connector in CONNECTORS.items() if connector.key_required])
+@pytest.mark.parametrize("key", [None, ""])
+def test_key_required_search_without_a_key_sends_no_request(provider, key, monkeypatch):
+    monkeypatch.delenv(CONNECTORS[provider].key_env, raising=False)
+
+    def unexpected_request(request):
+        pytest.fail("a key-required search sent a request without a key")
+
+    outcome, seen = run(provider, unexpected_request, key=key)
+    assert seen == []
+    assert (outcome.status, outcome.delivery_class, outcome.access_mode) == (
+        "not_configured", "before_send", CONNECTORS[provider].access_mode())
+    assert "access=not_configured" in outcome.request_description
+    assert outcome.records == [] and outcome.raw_payload is None and outcome.http_status is None
+    assert outcome.retries == 0
+
+
 # ---- paging (slice 04c) -------------------------------------------------------------
 # Per provider: the paging mode, the request parameter a page carries, and the value that parameter holds when the
 # read continues at record 200. Verified against each provider's own documentation; see the module docstrings.

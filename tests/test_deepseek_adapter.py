@@ -2,8 +2,10 @@ import asyncio
 import json
 
 import httpx
+import pytest
 
 from deixis.models import deepseek
+from deixis.models.adapter import is_rate_limited
 
 
 def adapter(handler):
@@ -97,3 +99,113 @@ def test_run_step_sends_the_developer_text_as_given_and_no_schema_copy(monkeypat
 
 def test_enforces_schema_is_false():
     assert deepseek.DeepSeekAdapter().enforces_schema is False
+
+
+def test_run_step_requires_key_without_sending_a_request(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    def handler(request):
+        raise AssertionError("no request without a key")
+
+    result = asyncio.run(adapter(handler).run_step("b", "d", "m", {}, "deepseek-v4-pro"))
+    assert (result.status, result.error, result.delivery_class) == (
+        "unavailable", "DEEPSEEK_API_KEY is not set", "before_send",
+    )
+
+
+def test_run_step_requires_model_without_sending_a_request(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    def handler(request):
+        raise AssertionError("no request without a model")
+
+    result = asyncio.run(adapter(handler).run_step("b", "d", "m", {}, None))
+    assert (result.status, result.error, result.delivery_class) == ("unavailable", "no model requested", "before_send")
+
+
+@pytest.mark.parametrize("status,message,limited", [
+    (401, "Authentication Fails", False),
+    (402, "Insufficient Balance", True),
+    (429, "Too Many Requests", True),
+    (500, "Internal Server Error", False),
+    (503, "Service Unavailable", False),
+])
+def test_run_step_reports_http_errors_without_retrying(monkeypatch, status, message, limited):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(status, json={"error": {"message": message}})
+
+    result = asyncio.run(adapter(handler).run_step("b", "d", "m", {}, "deepseek-v4-pro"))
+    assert (result.status, result.raw_text, result.resolved_model, result.delivery_class) == ("failed", None, None, None)
+    assert result.error.startswith(f"HTTP {status}: {message}")
+    assert is_rate_limited(result) is limited
+    assert calls == ["/chat/completions"]
+
+
+@pytest.mark.parametrize("exception,status,delivery", [
+    (httpx.ConnectError, "unavailable", "before_send"),
+    (httpx.ConnectTimeout, "failed", "after_send_unknown"),
+    (httpx.ReadTimeout, "failed", "after_send_unknown"),
+])
+def test_run_step_reports_transport_errors_without_retrying(monkeypatch, exception, status, delivery):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        raise exception("unreachable", request=request)
+
+    result = asyncio.run(adapter(handler).run_step("b", "d", "m", {}, "deepseek-v4-pro"))
+    assert (result.status, result.error, result.delivery_class) == (status, f"{exception.__name__}: unreachable", delivery)
+    assert not is_rate_limited(result)
+    assert calls == ["/chat/completions"]
+
+
+def test_run_step_reports_malformed_response_json(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(200, text="not JSON")
+
+    result = asyncio.run(adapter(handler).run_step("b", "d", "m", {}, "deepseek-v4-pro"))
+    assert (result.status, result.error, result.delivery_class) == ("failed", "Invalid JSON response", "after_send_unknown")
+    assert result.raw_text is None and result.resolved_model is None
+    assert not is_rate_limited(result)
+    assert calls == ["/chat/completions"]
+
+
+@pytest.mark.parametrize("model_fields", [{}, {"model": None}, {"model": ""}])
+def test_run_step_does_not_infer_missing_model_identity(monkeypatch, model_fields):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    def handler(request):
+        return httpx.Response(200, json={
+            "id": "chat-1", "usage": {"total_tokens": 8}, **model_fields,
+            "choices": [{"finish_reason": "stop", "message": {"content": '{"claims": []}'}}],
+        })
+
+    result = asyncio.run(adapter(handler).run_step("b", "d", "m", {}, "deepseek-v4-pro"))
+    assert (result.status, result.raw_text, result.resolved_model) == ("completed", '{"claims": []}', None)
+    assert result.requested_model_verified is False
+    assert result.external_thread_id == "chat-1" and result.token_usage == {"total_tokens": 8}
+
+
+@pytest.mark.parametrize("finish,content", [("length", '{"cla'), ("stop", "")])
+def test_run_step_does_not_complete_truncated_or_empty_answers(monkeypatch, finish, content):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    def handler(request):
+        return httpx.Response(200, json={
+            "model": "deepseek-v4-pro",
+            "choices": [{"finish_reason": finish, "message": {"content": content}}],
+        })
+
+    result = asyncio.run(adapter(handler).run_step("b", "d", "m", {}, "deepseek-v4-pro"))
+    assert (result.status, result.raw_text, result.error, result.resolved_model) == (
+        "failed", content or None, f"finish reason {finish}", "deepseek-v4-pro",
+    )

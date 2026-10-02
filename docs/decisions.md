@@ -17,6 +17,23 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 **Limits:** No real model has read a snapshot, so how many real faults a reviewer finds, how often it invents one and how often it misses one is unknown until B4. A located anchor shows the quote is in the passage, not that the finding is right. The stale rule covers the listed markers only. The write guards are tests and an interface, not a runtime guarantee for code written later. A watch is a bounded re-read: a page cap, late-indexed records and records without a stable identifier can be missed or announced twice, and nothing runs while DEIXIS is closed. OpenAlex's date sort and filters were read in its documentation by the reviewer; the adapter does not send them yet and B5 re-reads the documents before use. Review and check calls queue behind any other active run of the same research. The design was reviewed by a model, not by a person, and rests on a read of the code, not on a run.
 
+## D172 — P7: model adapters check the answering model, DeepSeek's empty balance counts as quota, and key-required providers send nothing without a key
+
+**Status:** accepted (implemented). Written by gpt-6.1-sol high in separate worktrees; reviewed by Claude Opus 5.5 high (one round on the Claude adapter: 1 high, fixed and re-checked against the live CLI).
+**Date:** 2026-10-03, P7 gaps G2–G5 from `docs/product/p7-coverage-verification.md`.
+
+**Context:** The P7 matrix found that the Claude adapter always reported `requested_model_verified=True`, so the D-rule "output from a model other than the requested one is never used" did not apply to Claude; DeepSeek's HTTP 402 (no balance) was not classified as quota and a response without `model` was recorded as the requested model; IEEE Xplore, Scopus, CORE and SerpApi relied on the registry alone and would send a request with an empty key if called directly; the Codex adapter's auth, model and error paths had no unit tests.
+
+**Decision:**
+- Claude: the adapter reads the session's model catalogue (`get_server_info`), resolves the selector to its `resolvedModel`, and sets `requested_model_verified` only when `AssistantMessage.model` matches it, ignoring a trailing context suffix such as `[1m]`. A missing identity stays unverified; a mismatch is kept even if a later message reports the expected model.
+- DeepSeek: HTTP 402 errors carry "(quota)" so the shared `is_rate_limited` classifier sees them; a missing `model` is recorded as `None`, not the requested model; invalid JSON is a failed step.
+- IEEE Xplore, Scopus, CORE, SerpApi: `search()` returns `not_configured` / `before_send` with no HTTP request when the key is `None` or empty.
+- New tests: `tests/test_codex_adapter_paths.py` (30), Claude adapter (21 + round-2 cases), DeepSeek (16), providers (8 parametrized).
+
+**Evidence:** full pytest 8,525 passed, 0 failed, 2 skipped (fakes and mocked transports). Live check once, 3 Oct 2026: `run_step` with selectors `default` and `sonnet` against the real Claude CLI both completed with `requested_model_verified=True`.
+
+**Limits:** No live DeepSeek, IEEE, Scopus, CORE or SerpApi call was made. The Claude check trusts the CLI's own catalogue; if the CLI maps a selector to a different model than it then answers with, the step now fails with `model_mismatch` instead of running. P7's other gaps (connector contract, model quota beyond text matching, Gemini `modelVersion`) remain open.
+
 ## D168 — P9 model-free hardening closes: one command runs every automatic matrix row, it passed in two of three complete runs, one browser spec failed once, and what was not measured is written down
 
 **Status:** accepted (implemented; reviewer: Opus 5.5 high (Sol quota out), Sol re-review pending). Implemented by Sonnet, reviewed by Opus 5.5 high: plan 2 rounds (3 high, then 0 high; all folded in), code 2 rounds (round 1: 1 high, a README line that claimed a pass before any run, folded in; round 2: 0 high, 3 medium and 6 low, the medium ones folded in). The strict closing condition (two runs with the same result) is **met by runs 2 and 3 and not met by run 1**, so "closes" here means the matrix passed in two complete runs and failed in one row of one run; the owner can decide whether that blocks.

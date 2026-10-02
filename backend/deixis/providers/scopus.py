@@ -81,6 +81,8 @@ async def complete_view_entitled(client: httpx.AsyncClient, api_key: str) -> boo
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
                  contact_email: str | None = None, cursor: str | None = None,
                  max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
+    if not api_key:
+        return SearchOutcome("not_configured", "before_send", f"GET {SEARCH_URL} access=not_configured", "not_configured")
     count = min(limit, MAX_RESULTS)
     offset = page_offset(cursor)
     params: dict[str, Any] = {"query": query, "count": count, "view": "STANDARD", "sort": "relevancy"}

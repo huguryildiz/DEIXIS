@@ -56,6 +56,8 @@ def _record(result: dict[str, Any]) -> ProviderRecord:
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
                  contact_email: str | None = None, cursor: str | None = None,
                  max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
+    if not api_key:
+        return SearchOutcome("not_configured", "before_send", f"GET {SEARCH_URL} access=not_configured", "not_configured")
     # `cursor` is accepted and ignored: SerpApi pages, but every page is a paid search and this is a supplementary
     # source (D13), so one page is read and `next_cursor` stays None.
     del cursor

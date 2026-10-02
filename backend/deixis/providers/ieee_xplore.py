@@ -63,6 +63,8 @@ def _record(article: dict[str, Any]) -> ProviderRecord:
 async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str | None = None,
                  contact_email: str | None = None, cursor: str | None = None,
                  max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
+    if not api_key:
+        return SearchOutcome("not_configured", "before_send", f"GET {SEARCH_URL} access=not_configured", "not_configured")
     count = min(limit, MAX_RESULTS)
     offset = page_offset(cursor)
     # `start_record` is 1-based, so the unpaged request and the first page are the same request.

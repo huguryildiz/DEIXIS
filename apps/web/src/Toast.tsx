@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { CircleCheck, CircleX, TriangleAlert, X } from 'lucide-react'
 import { t } from './i18n'
@@ -18,8 +18,19 @@ export const useToast = () => useContext(ToastContext)
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast | null>(null)
   const [held, setHeld] = useState(false)
+  const returnFocus = useRef<HTMLElement | null>(null)
   const show = useCallback((tone: ToastTone, text: string, action?: ToastAction) => { setHeld(false); setToast({ tone, text, action, id: Date.now() }) }, [])
-  const close = () => { setHeld(false); setToast(null) }
+  const close = () => {
+    // Removing a focused toast returns focus to its entry control, or an available page control if that entry is gone.
+    if (document.activeElement?.closest('.toast')) {
+      const available = (el: HTMLElement | null): el is HTMLElement => Boolean(el?.isConnected && !el.matches(':disabled') && !el.closest('[inert], [hidden], [aria-hidden="true"]') && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
+      const target = available(returnFocus.current) ? returnFocus.current
+        : Array.from(document.querySelectorAll<HTMLElement>('.app [role="tab"][aria-selected="true"]')).find(available)
+          ?? Array.from(document.querySelectorAll<HTMLElement>('.app main button, .app button, .app a[href]')).find(available)
+      target?.focus()
+    }
+    setHeld(false); setToast(null)
+  }
   useEffect(() => {
     if (!toast || toast.tone === 'error' || held) return
     const timer = setTimeout(() => setToast(null), toast.action ? 12000 : 5000)
@@ -30,7 +41,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     {children}
     {toast && Icon && createPortal(<div key={toast.id} role={toast.tone === 'error' ? 'alert' : 'status'} className={`toast is-${toast.tone}`}
       onMouseEnter={() => setHeld(true)} onMouseLeave={() => setHeld(false)}
-      onFocus={() => setHeld(true)} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHeld(false) }}>
+      onFocus={e => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) returnFocus.current = e.relatedTarget instanceof HTMLElement ? e.relatedTarget : null
+        setHeld(true)
+      }} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHeld(false) }}>
       <Icon size={16} aria-hidden /><span>{toast.text}</span>
       {toast.action && <button type="button" className="toast-action" onClick={() => { const { run } = toast.action!; close(); run() }}>{toast.action.label}</button>}
       <button type="button" aria-label={t('Dismiss notification')} onClick={close}><X size={16} /></button>

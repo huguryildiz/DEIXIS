@@ -133,6 +133,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const keyTerms = useRef<HTMLInputElement>(null)
   const jumped = useRef(false)
   const lastRun = useRef<{ id: string; status: RunStatus } | null>(null)
+  const focusRuns = useRef<Run[]>([])
+  useEffect(() => { focusRuns.current = view?.runs ?? [] }, [view])
   // Runs another toast already announced when they were opened (a person's file whose attach opened its reading, 18b).
   const announcedRuns = useRef(new Set<string>())
   const titleInput = useRef<HTMLTextAreaElement>(null)
@@ -231,12 +233,16 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   }, [view, toast])
 
   async function act(action: () => Promise<unknown>, success?: string, undo?: ToastAction) {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setBusy(true)
-    try { await action(); if (success) toast('success', success, undo); await load(); onChanged() }
+    try { await action(); if (success) toast('success', success, undo); await load(); onChanged(); return true }
     catch (e) {
       // 409: the research or run changed after this page loaded (another tab, or a run that moved on).
       if (e instanceof ApiError && e.status === 409) { toast('warning', t('Not applied: {message}. The page now shows the latest state.', { message: e.message })); await load() }
       else toast('error', errorText(e))
+      // On failure, restore the initiating control only after it is enabled again and focus is still lost.
+      focusWhenLost(() => opener?.isConnected && !opener.matches(':disabled') ? opener : null, 2500, false, opener)
+      return false
     } finally { setBusy(false) }
   }
 
@@ -255,9 +261,18 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     && source.has_pdf_text && source.access.assets.length > 0)
   const included = view.counts.included
 
-  // The button that starts or resumes a run is gone once the run exists; focus goes to the newest run's status line (its heading in the transcript, else the run strip).
-  const toRunStatus = () => { focusWhenLost(() => Array.from(document.querySelectorAll<HTMLElement>('.chat-turn .chat-toggle')).at(-1) ?? document.querySelector<HTMLElement>('.run-strip-status')) }
-  const startAnswer = () => act(() => api.startRun(id, 'answer', crypto.randomUUID())).then(toRunStatus)
+  // Only the run returned by this successful request can receive its focus handoff.
+  const toRunStatus = (runId: string, origin: Element | null) => { focusWhenLost(() => {
+    const runs = focusRuns.current.filter(r => ['discovery', 'pdf_collection', 'fulltext_fetch', 'fulltext_adjudication', 'pdf_ocr', 'answer', 'report'].includes(r.kind)).reverse()
+    const index = runs.findIndex(r => r.id === runId)
+    return (index >= 0 ? document.querySelectorAll<HTMLElement>('.chat-turn .chat-toggle')[index] : null)
+      ?? document.querySelector<HTMLElement>(`.run-strip-status[data-run-id="${runId}"]`)
+  }, 2500, false, origin) }
+  const startAnswer = async () => {
+    const origin = document.activeElement
+    let started: Run | undefined
+    if (await act(async () => { started = await api.startRun(id, 'answer', crypto.randomUUID()) }) && started) toRunStatus(started.id, origin)
+  }
   const startDiscovery = () => {
     if (!seedSearchReady) { toast('error', t('Choose a readable PDF to guide the search.')); return }
     return act(() => api.startRun(id, 'discovery', crypto.randomUUID()))
@@ -461,12 +476,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
         </button>
         : run && !CANDIDATE_KINDS.has(run.kind) && (active || run.status === 'paused') && <div className="run-strip">
-          <span className="run-strip-status" tabIndex={-1}>{active && <LoaderCircle size={13} className="chat-spin" aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
+          <span className="run-strip-status" data-run-id={run.id} tabIndex={-1}>{active && <LoaderCircle size={13} className="chat-spin" aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
           {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />{t('Pause')}</Button>}
           {/* A run stopped for the approval has no plain Resume: it would freeze a protocol nobody saw, and the
               backend refuses it. The approval card in the timeline carries the only way on (D80). */}
           {run.status === 'paused' && run.pause_reason !== 'protocol_approval_needed'
-            && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0) && <Button variant="default" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'resume')).then(toRunStatus)}><Play size={14} />{t('Resume')}</Button>}
+            && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0) && <Button variant="default" size="sm" disabled={busy} onClick={() => { const origin = document.activeElement; void act(() => api.controlRun(run.id, 'resume')).then(ok => { if (ok) toRunStatus(run.id, origin) }) }}><Play size={14} />{t('Resume')}</Button>}
           <Button variant="destructive" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'cancel'))}><X size={14} />{t('Cancel')}</Button>
         </div>}
       </div>
@@ -474,9 +489,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <TabsContent value="answer">
         {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
         <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'pdf_collection' || r.kind === 'fulltext_fetch' || r.kind === 'fulltext_adjudication' || r.kind === 'pdf_ocr' || r.kind === 'answer' || r.kind === 'report') }} modelText={modelText}
-          onRetryFailedSearches={discoveryReadOnly ? undefined : target => act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.'))}
+          onRetryFailedSearches={discoveryReadOnly ? undefined : async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
           onProtocolApproved={async () => { toast('success', t('Correction recorded. The run is queued again.')); await load(); onChanged() }}
-          onChooseCodeQuery={target => act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.'))}
+          onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
           onGiveKeyTerms={() => { keyTerms.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }); keyTerms.current?.focus({ preventScroll: true }) }}
           queueCount={hasQueue ? queueCount : 0} onOpenQueue={showQueue}
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
@@ -510,7 +525,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
         </div>}
         {/* Before the first answer, the next step is getting the included sources' PDFs (D49); the panel carries the answer button. */}
-        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady && !discoveryReadOnly} act={act} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} onDropFiles={hasQueue ? dropForWaiting : undefined} /> :
+        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady && !discoveryReadOnly} act={async (action, success) => { await act(action, success) }} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} onDropFiles={hasQueue ? dropForWaiting : undefined} /> :
         /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
            While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */
         active ? null : <><div className="answer-actions">
@@ -901,11 +916,13 @@ function ExportLinks({ researchId, sources }: { researchId: string; sources: 'in
   </span>
 }
 
-// focusOnOpen: the form opened because the person pressed Exclude, whose button is disabled by then, so the field takes the focus.
-function ReasonForm({ busy, onSave, focusOnOpen }: { busy: boolean; onSave: (reason: string) => void; focusOnOpen: boolean }) {
+// The reason field takes focus only if focus is still on the Exclude control or has fallen to the page body; it is not taken from another control.
+function ReasonForm({ busy, onSave, focusOnOpen }: { busy: boolean; onSave: (reason: string) => void; focusOnOpen: HTMLElement | null }) {
   const [text, setText] = useState('')
   const field = useRef<HTMLInputElement>(null)
-  useEffect(() => { if (focusOnOpen) field.current?.focus() }, [focusOnOpen])
+  useEffect(() => {
+    if (focusOnOpen && (document.activeElement === focusOnOpen || document.activeElement === document.body)) field.current?.focus()
+  }, [focusOnOpen])
   return <form className="reason-form" onSubmit={e => { e.preventDefault(); if (text.trim()) onSave(text.trim()) }}>
     <input ref={field} aria-label={t('Reason for excluding this source')} placeholder={t('Why exclude it? Optional; kept with your choice.')} maxLength={1000} value={text} onChange={e => setText(e.target.value)} />
     <Button type="submit" variant="outline" size="sm" disabled={busy || !text.trim()}>{t('Save reason')}</Button>
@@ -1043,7 +1060,7 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
   const lookupSummary = [t('{p} services · {n} checks', { p: new Set(discoveries.map(d => d.provider)).size, n: discoveries.length }), unusable && t(unusable === 1 ? '{n} file not usable' : '{n} files not usable', { n: unusable })].filter(Boolean).join(' · ')
   const primaryAction = source.access.assets.length ? 'pdf' : 'abstract'
   // Exclude and Save reason each end by removing the control they were pressed with; focus goes on to the field and then to the saved reason.
-  const [askedReason, setAskedReason] = useState(false)
+  const [askedReason, setAskedReason] = useState<HTMLElement | null>(null)
   const reasonNote = useRef<HTMLParagraphElement>(null)
   const ocrOffers = new Map(source.access.assets.map(asset => [asset.id, ocrOffer(asset, ocr.tool, ocr.runs)]))
   return <div className={`source-row has-pick is-${s.state}${other ? ' is-other-version' : ''}${picked ? ' is-picked' : ''}`}>
@@ -1070,7 +1087,7 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
       {s.origin === 'user' && (s.queue_answer || s.user_reason) && <p className="proposal" ref={reasonNote} tabIndex={-1}><UserPen size={13} aria-hidden />{s.queue_answer
         ? t('Your answer in the queue: {answer}', { answer: t(queueAnsweredText[s.queue_answer]) })
         : t('Your reason: {reason}', { reason: s.user_reason ?? '' })}</p>}
-      {s.origin === 'user' && s.state === 'excluded' && !s.user_reason && <ReasonForm busy={busy} focusOnOpen={askedReason} onSave={reason => { setAskedReason(false); onReason(reason); focusWhenLost(() => reasonNote.current) }} />}
+      {s.origin === 'user' && s.state === 'excluded' && !s.user_reason && <ReasonForm busy={busy} focusOnOpen={askedReason} onSave={reason => { setAskedReason(null); onReason(reason); focusWhenLost(() => reasonNote.current) }} />}
       {finding && <PdfSearchStatus />}
       {source.access.assets.map(asset => asset.rejected_extraction && <p key={asset.id} className="proposal"><ScanText size={13} aria-hidden />{t('A later text extraction ({version}) was not used: {reason}. The earlier text stays in use.', { version: asset.rejected_extraction.extraction_version, reason: asset.rejected_extraction.rejection_reason })}</p>)}
       {[...ocrOffers.entries()].map(([assetId, offer]) => offer && <OcrNote key={assetId} offer={offer} />)}
@@ -1098,7 +1115,7 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
       </div>
     </div>
     {!other && <div className="selection-toggle" role="group" aria-label={t('Selection for {title}', { title: source.title })}>
-      {(['included', 'pending', 'excluded'] as const).map(state => <button key={state} className={`is-${state}`} aria-pressed={s.state === state} disabled={busy || s.state === state} onClick={() => { setAskedReason(state === 'excluded'); onSelect(state) }}>{t(state === 'included' ? 'Include' : state === 'excluded' ? 'Exclude' : 'Undecided')}</button>)}
+      {(['included', 'pending', 'excluded'] as const).map(state => <button key={state} className={`is-${state}`} aria-pressed={s.state === state} disabled={busy || s.state === state} onClick={e => { setAskedReason(state === 'excluded' ? e.currentTarget : null); onSelect(state) }}>{t(state === 'included' ? 'Include' : state === 'excluded' ? 'Exclude' : 'Undecided')}</button>)}
     </div>}
   </div>
 }

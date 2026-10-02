@@ -809,7 +809,7 @@ test.describe('X01-X04: the default button at rest and on hover', () => {
 // ---------------------------------------------------------------------------------------------------------------
 // Part 2: X05, the A to G cases by keyboard only. After the first goto, every activation is a key press (Tab, Shift+Tab,
 // Enter, Space, Escape, arrows, Home, End); typing text is keyboard input too. Named setup that is not a key press:
-// the PDF file input (setInputFiles) and the source selections made through the API (as acceptance.spec.ts does).
+// the PDF file input (setInputFiles), the source selections made through the API, and the evidence-report setup listed below.
 // At every Tab stop and every key the focused element must be visible, inside the viewport and carry a focus indicator:
 // the app's own 2 px accent outline, Chrome's native ring on portaled controls, or an indicator on the nearest
 // :focus-within container for the four controls that deliberately move it there (composer textarea, quick find input,
@@ -971,6 +971,23 @@ async function tabTo(page: Page, target: Locator, step: string, opts: { max?: nu
   }
   const where = await target.first().evaluate(el => `${el.tagName} "${(el.textContent ?? '').trim().slice(0, 30)}" tabindex=${el.getAttribute('tabindex')} selected=${el.getAttribute('aria-selected')} inert=${!!el.closest('[inert]')} hidden=${!!el.closest('[hidden],[aria-hidden=true]')}`).catch(() => 'target gone')
   throw new Error(`could not reach "${step}" with ${max} Tab presses; target is ${where}`)
+}
+
+// Clicks in X05 are setup only: the evidence-report test selects Evidence, opens and saves the column editor, starts the fill,
+// selects Answer and requests Write report. The separate regression tests use startResearch/openTab/addColumn for setup.
+// File input, API selections, route interception and reload/goto are also setup; toast dismissal uses Tab and Enter.
+async function dismissToastsByKeyboard(page: Page) {
+  const button = page.getByRole('button', { name: 'Dismiss notification' })
+  if (!await button.count()) return
+  await tabTo(page, button, 'Dismiss notification', { shift: false })
+  await page.keyboard.press('Enter')
+  await expect(button).toHaveCount(0)
+  await quiet(page)
+  const info = await audit(page, 'toast dismissed by Enter')
+  expect(info.tag, 'keyboard toast dismissal preserves focus').not.toBe('body')
+  expect(info.guard).toBe(false)
+  expect(info.visible && info.inViewport, 'returned toast focus is visible inside the viewport').toBe(true)
+  expect(info.kind, 'returned toast focus has an indicator').not.toBe('none')
 }
 
 // Focus handed back to the control that opened a dialog: recorded as a failure of the walk, which then continues (a lost return must not hide later steps).
@@ -1156,7 +1173,8 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await keyTab(page, /Answer/, 'Answer')
     await tabTo(page, page.getByRole('button', { name: 'Generate answer now' }), 'Generate answer now')
     await press(page, 'Enter', 'Generate answer now', () => expect(page.getByText('Ran answer generation')).toBeVisible({ timeout: 60_000 }))
-    await dismissToasts(page)
+    await expect(page.locator('.chat-turn .chat-toggle', { hasText: 'Ran answer generation' }).last()).toBeFocused()
+    await dismissToastsByKeyboard(page)
     const artifact = page.getByRole('button', { name: /Open report:/ })
     await tabTo(page, artifact, 'Open report')
     const report = page.locator('.report-sheet')
@@ -1303,7 +1321,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await press(page, 'Enter', 'Add column button', () => expect(editor).toHaveCount(0))
     await tabTo(page, page.getByRole('button', { name: /^Fill empty cells/ }), 'Fill empty cells')
     await press(page, 'Enter', 'Fill empty cells', () => expect(page.locator('[data-cell="0:0"]')).toContainText('SYNTHETIC fake value', { timeout: 60_000 }))  // a text column here
-    await dismissToasts(page)
+    await dismissToastsByKeyboard(page)
     const cell = page.locator('[data-cell="0:0"]')
     await tabTo(page, cell, 'evidence cell')
     await press(page, 'ArrowDown', 'evidence grid')  // one column here, so rows only
@@ -1340,7 +1358,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
     const open = page.getByRole('button', { name: 'Open evidence report' })
     await expect(open).toBeVisible({ timeout: 90_000 })
-    await dismissToasts(page)
+    await dismissToastsByKeyboard(page)
     await tabTo(page, open, 'Open evidence report')
     const sheet = page.locator('.report-sheet').last()
     await press(page, 'Enter', 'Open evidence report', () => expect(sheet.getByRole('heading', { name: 'III. Background and Taxonomy' })).toBeVisible())
@@ -1390,6 +1408,150 @@ test.describe.serial('X05: A to G by keyboard', () => {
 })
 
 // ---------------------------------------------------------------------------------------------------------------
+test.describe('X05 regressions: asynchronous focus ownership', () => {
+  test.beforeAll(async () => { await keys.ensure() })
+  test.afterAll(() => { writeFocusLog() })
+
+  for (const key of ['Shift', 'ArrowLeft', 'Tab']) test(`fill status: ${key} ${key === 'Tab' ? 'moves focus and cancels follow' : 'keeps follow until the current cell'}`, async ({ page }) => {
+    test.setTimeout(240_000)
+    await startResearch(page, keys, `SYNTHETIC [slow-cells] ${key}: What sample sizes do molecule release schedules use?`)
+    await openTab(page, /Evidence/)
+    await addColumn(page)
+    await dismissToastsByKeyboard(page)
+    const fill = page.getByRole('button', { name: /^Fill empty cells/ })
+    await tabTo(page, fill, 'regression fill')
+    await page.keyboard.press('Enter')
+    const line = page.locator('.evidence-run')
+    await expect(line).toBeFocused()
+    await page.keyboard.press(key)
+    if (key === 'Tab') {
+      await expect(line.getByRole('button', { name: 'Pause' })).toBeFocused()
+      await tabTo(page, page.getByRole('button', { name: 'Export CSV' }), 'user moved on to Export CSV')
+      // Lose that later focus deliberately: the earlier fill waiter must already be cancelled, even if focus is lost again.
+      await page.getByRole('button', { name: 'Export CSV' }).evaluate(el => (el as HTMLElement).blur())
+    } else await expect(line).toBeFocused()
+    await expect(line).toHaveCount(0, { timeout: 60_000 })
+    await expect(page.locator('[data-cell="0:0"]')).toContainText('Model')
+    if (key === 'Tab') expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true)
+    else await expect(page.locator('[data-cell][tabindex="0"]')).toBeFocused()
+  })
+
+  test('fill response arriving after the person moved to Export CSV does not take the focus or follow it later', async ({ page }) => {
+    test.setTimeout(240_000)
+    await startResearch(page, keys, 'SYNTHETIC [slow-cells] delayed fill: What sample sizes do molecule release schedules use?')
+    await openTab(page, /Evidence/)
+    await addColumn(page)
+    await dismissToastsByKeyboard(page)
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let requested!: () => void
+    const pending = new Promise<void>(resolve => { requested = resolve })
+    await page.route('**/api/researches/*/tables/*/fill', async route => { requested(); await gate; await route.continue() })
+    try {
+      await tabTo(page, page.getByRole('button', { name: /^Fill empty cells/ }), 'delayed fill')
+      await page.keyboard.press('Enter')
+      await pending
+      const exportCsv = page.getByRole('button', { name: 'Export CSV' })
+      await tabTo(page, exportCsv, 'user moved on to Export CSV while the fill request is pending')
+      release()
+      const line = page.locator('.evidence-run')
+      await expect(line).toBeVisible()
+      await quiet(page)
+      await expect(exportCsv).toBeFocused()
+      // Lose that later focus deliberately: the waiter of the earlier fill must already be gone.
+      await exportCsv.evaluate(el => (el as HTMLElement).blur())
+      await page.waitForTimeout(300)
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true)
+      await expect(line).toHaveCount(0, { timeout: 60_000 })
+      await expect(page.locator('[data-cell="0:0"]')).toContainText('Model')
+      await page.waitForTimeout(300)
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true)
+    } finally { release(); await page.unrouteAll({ behavior: 'wait' }) }
+  })
+
+  test('Exclude response preserves the Filter sources field and subsequent typing', async ({ page }) => {
+    await startResearch(page, keys, 'SYNTHETIC delayed selection: How is molecule release scheduling optimized?')
+    await openTab(page, /Sources/)
+    const target = row(page, SOURCES[0])
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let requested!: () => void
+    const pending = new Promise<void>(resolve => { requested = resolve })
+    await page.route('**/api/researches/*/selections/*', async route => {
+      if (route.request().method() !== 'PATCH') return route.continue()
+      requested()
+      await gate
+      await route.continue()
+    })
+    try {
+      await tabTo(page, target.getByRole('button', { name: 'Exclude' }), 'delayed Exclude')
+      await page.keyboard.press('Enter')
+      await pending
+      const filter = page.getByRole('searchbox', { name: 'Filter sources' })
+      await tabTo(page, filter, 'Filter sources while Exclude is pending')
+      await page.keyboard.type('molecule')
+      release()
+      await expect(target.getByLabel('Reason for excluding this source')).toBeVisible()
+      await expect(target.getByRole('button', { name: 'Include', exact: true })).toBeEnabled()
+      await quiet(page)
+      await page.keyboard.type(' release')
+      await expect(filter).toHaveValue('molecule release')
+      await expect(filter).toBeFocused()
+      await expect(target.getByLabel('Reason for excluding this source')).toHaveValue('')
+    } finally { release(); await page.unrouteAll({ behavior: 'wait' }) }
+  })
+
+  test('failed fill returns focus to Fill empty cells without a success handoff', async ({ page }) => {
+    await startResearch(page, keys, 'SYNTHETIC failed fill: What sample sizes do molecule release schedules use?')
+    await openTab(page, /Evidence/)
+    await addColumn(page)
+    await page.route('**/api/researches/*/tables/*/fill', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'SYNTHETIC fill rejected' }) }))
+    const fill = page.getByRole('button', { name: /^Fill empty cells/ })
+    await tabTo(page, fill, 'failed fill retry')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.toast')).toContainText('SYNTHETIC fill rejected')
+    await expect(fill).toBeEnabled()
+    await expect(fill).toBeFocused()
+    await quiet(page)
+    await expect(fill).toBeFocused()
+    await expect(page.locator('.evidence-run')).toHaveCount(0)
+    await expect(page.locator('[data-cell="0:0"]')).not.toBeFocused()
+  })
+
+  for (const status of [409, 503]) test(`failed answer start (${status}) returns focus to Generate answer now, leaving the previous run alone`, async ({ page }) => {
+    await startResearch(page, keys, `SYNTHETIC failed start ${status}: How is molecule release scheduling optimized?`)
+    await openTab(page, /Answer/)
+    const previous = await page.locator('.chat-turn .chat-toggle').count()
+    await page.route('**/api/researches/*/runs', route => route.request().method() === 'POST'
+      ? route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ detail: 'SYNTHETIC answer start rejected' }) }) : route.continue())
+    const retry = page.getByRole('button', { name: 'Generate answer now' })
+    await tabTo(page, retry, 'answer retry control')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.toast')).toContainText('SYNTHETIC answer start rejected')
+    await expect(retry).toBeEnabled()
+    await expect(retry).toBeFocused()
+    await quiet(page)
+    await expect(retry).toBeFocused()
+    await expect(page.locator('.chat-turn .chat-toggle')).toHaveCount(previous)
+    await dismissToastsByKeyboard(page)
+  })
+
+  test('keyboard toast dismissal returns focus to the control before the toast', async ({ page }) => {
+    await startResearch(page, keys, 'SYNTHETIC toast focus: How is molecule release scheduling optimized?')
+    await openTab(page, /Sources/)
+    await page.route('**/api/researches/*/selections/*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'SYNTHETIC selection rejected' }) }))
+    await tabTo(page, row(page, SOURCES[0]).getByRole('button', { name: 'Exclude' }), 'toast-triggering Exclude')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.toast')).toContainText('SYNTHETIC selection rejected')
+    await page.evaluate(() => document.querySelector('.toast')?.addEventListener('focusin', event => {
+      const from = (event as FocusEvent).relatedTarget
+      if (from instanceof HTMLElement && !from.closest('.toast')) from.dataset.toastReturnTest = 'true'
+    }))
+    await dismissToastsByKeyboard(page)
+    await expect(page.locator('[data-toast-return-test]')).toBeFocused()
+  })
+})
+
 // Part 3: X06. Reduced motion is measured as computed styles and live animations at one point in time per screen,
 // not frame by frame. A positive control runs the same audit without the preference and must see motion.
 type MotionResult = { offenders: string[]; offenderCount: number; infinite: string[]; running: number; scrollBehavior: string }

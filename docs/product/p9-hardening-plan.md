@@ -195,13 +195,13 @@ veri: sentetik kayıt, scripted model):
 | B01n | Restore'un negatif vakaları: dolu hedef, artık dosyalı hedef (farklı hash), belirsiz hedef, eksik/değişmiş dosya, manifestsiz klasör | S | H4 | Her birinde `BackupError` ve hedefte değişiklik yok | — |
 | B02 | Bugünkü kod, sahibin kendi kütüphane yedeğinin geri yüklenmiş kopyasını açar. Önce kopyanın şema sürümleri ve beklenen migration listesi kaydedilir; uygulanacak migration varsa uygulanır, yoksa sonuç **yalnız yeniden açılış**tır | G | H4 | Açılış hatasız; görünüm sayıları (araştırma, kaynak, pasaj) yedek anındakiyle eşit; yalnız sayılar kayda girer. Kopya **yalnız** `create_app(start_worker=False)` ve boş adapter'larla açılır: worker, arka plan model/OCR işi ve dış çağrı yok; saklı `queued` koşular çalıştırılmaz | Canlı dizin (dokunulmaz). Yalnız **sahibin açık onayıyla** (S4); onay yoksa satır "ölçülmedi" |
 | B03 | Kodun bilmediği migration kimliği taşıyan kitaplığı kod açmaz | G | H4 | Ön kontrol **salt okunur** yapılır (WAL/yazma bağlantısından önce); reddetme hatası açıklayıcı; `library.sqlite` ve varsa `-wal`/`-shm` dosyalarının hash'i/boyutu önce ve sonra aynı | — |
-| K01 | Araştırma görünümü süresi, N = 100 / 1.000 / 5.000 / 10.000 eser | G | H5 | S7'deki donmuş eşik | Gerçek model ve sağlayıcı gecikmesi |
-| K02 | Görünüm kurulurken `/api/health` gecikmesi (olay döngüsü bloke süresi) | G | H5 | S7 eşiği | — |
-| K03 | Sunucu tepe RSS, veritabanı ve veri dizini boyutu | G | H5 | S7 eşiği (RSS); boyut yalnız ölçüm | — |
-| K04 | Hızlı arama (Cmd/Ctrl+K), kaynak listesi ve pasaj paneli ilk boyama süresi | G | H5 | **Yalnız ölçüm** (eşik önerisi S7'de yok; H5 dondurma kaydında eklenir ya da yalnız ölçüm kalır) | — |
-| K05 | Büyük PDF: ilk sayfa ve sayfa atlama süresi | G | H5 | **Yalnız ölçüm** | Bütün PDF türleri |
-| K06 | Yedek alma süresi ve boyutu, 5.000 eserde | G | H5 | S7 eşiği | — |
-| K07 | Üst sınırlar ayrı yazılır: **sert sınır** (yükleme 50 MiB, indirme 30 MiB, çıkarım 400 sayfa / 3.000.000 karakter / 90 s), **izleyici eşiği** (1 GiB, aşım sonrası durdurur), **yapılandırılabilir varsayılan** (`model_concurrency` = 6) ve **ölçülen tepe** | S+G | H5 | Kaydın dört sütunu dolu | — |
+| K01 | Araştırma görünümü süresi, N = 100 / 1.000 / 5.000 / 10.000 eser | G | H5 | S7'deki donmuş eşik — K01a ≤ 2 s (1.000), K01b ≤ 10 s (5.000), K01c/K01d yalnız ölçüm; durum (2 Ekim 2026, D166, paralel yük altında; yük 3,3 ile 13 arası): K01a geçti (arayüz 0,24 s, ilk API 0,08 s), K01b geçti (0,62 s ve 0,43 s); ilk tam ölçüm bu iki eşiği aşmıştı (en kötü 12,0 s), düzeltme 0063 indeksleri. K01c: N=100 için 0,18 s, N=7.769 için 0,89 s; K01d: 10.000 eser 1,1 s'de hazır (3/3) |  Gerçek model ve sağlayıcı gecikmesi |
+| K02 | Görünüm kurulurken `/api/health` gecikmesi (olay döngüsü bloke süresi) | G | H5 | S7 eşiği — K02a ≤ 0,5 s (1.000), K02b ≤ 1 s (5.000), K02c yalnız ölçüm; durum (D166, paralel yük altında): K02a geçti (en kötü 0,055 s, eşik 0,5), K02b geçti (0,40 s, eşik 1,0); ilk ölçümde 0,69 s ve 7,97 s ile kırmızıydı, düzeltme 0063. K02c: 7.769'da 0,62 s, 10.000'de 0,83 s |  — |
+| K03 | Sunucu tepe RSS, veritabanı ve veri dizini boyutu | G | H5 | S7 eşiği (RSS); boyut yalnız ölçüm — K03a < 2.000.000.000 bayt, K03b/K03c yalnız ölçüm; durum (D166): K03a geçti (en kötü 208 MB, eşik 2 GB altı), K03c 10.000'de 232 MB; K03b veritabanı 40 MB ve veri dizini 41 MB (10.000 eser) |  — |
+| K04 | Hızlı arama (Cmd/Ctrl+K), kaynak listesi ve pasaj paneli ilk boyama süresi | G | H5 | **Yalnız ölçüm** (eşik önerisi S7'de yok; H5 dondurma kaydında eklenir ya da yalnız ölçüm kalır) — dondurmada yalnız ölçüm kaldı (D166); durum (D166, N = 1.000 / 5.000 / 10.000): hızlı arama 0,14 / 0,16 / 0,93 s; kaynak listesi ilk satır 0,6 / 2,7 / 5,9 s; pasaj paneli 0,4 ile 0,7 / 2,7 ile 3,6 / 7,1 ile 7,9 s |  — |
+| K05 | Büyük PDF: ilk sayfa ve sayfa atlama süresi | G | H5 | **Yalnız ölçüm** — 45 MiB, 500 sayfa; durum (D166): ilk sayfa 1,07 s en kötü, 400. sayfaya atlama 0,43 s (45 MiB, 500 sayfa) |  Bütün PDF türleri |
+| K06 | Yedek alma süresi ve boyutu, 5.000 eserde | G | H5 | S7 eşiği — K06a ≤ 120 s, çıkış 0, manifest var; K06b yalnız ölçüm; durum (D166): K06a geçti (5.000 eserde 1,4 s, eşik 120 s); K06b yedek 21 MB, büyük PDF kütüphanesi 48 MB, sunucu açıkken en kötü sağlık isteği 0,035 s |  — |
+| K07 | Üst sınırlar ayrı yazılır: **sert sınır** (yükleme 50 MiB, indirme 30 MiB, çıkarım 400 sayfa / 3.000.000 karakter / 90 s), **izleyici eşiği** (1 GiB, aşım sonrası durdurur), **yapılandırılabilir varsayılan** (`model_concurrency` = 6) ve **ölçülen tepe** | S+G | H5 | Kaydın dört sütunu dolu — `capacity.py limits` tabloyu koddaki sabitlerden basar; ölçülmeyen hücreler gerekçesiyle "ölçülmedi" yazar; durum (D166): geçti; ölçülen tepe sütunu dolu (sunucu RSS 232 MB, 10.000 eser yüklendi, 45 MiB ve 500 sayfalık PDF görüntülendi), gerisi gerekçesiyle "ölçülmedi" |  — |
 | X01–X04 | axe taraması, dondurulmuş ekran listesi üzerinde: X01 açık/1280 px, X02 koyu/1280 px, X03 açık/390 px, X04 koyu/390 px; ciddi ve kritik bulgu sayısı | G (tarayıcı) | H6 | Ciddi + kritik bulgu sayısı **0** (yalnız kaydedilmiş bulgu yeterli değil; zorunlu) | Axe'in yakalamadığı (odak sırası anlamı, metin kalitesi) |
 | X05 | Klavye yürüyüşü: A–G akışı yalnız klavyeyle; odak görünür, Esc ile kapanan panel odağı geri verir | S (Playwright) | H6 | Senaryo geçer | Gerçek kullanıcı alışkanlığı |
 | X06 | Azaltılmış hareket ve %200 yakınlaştırma | S | H6 | Animasyon kalmaz; %200'de temel görevler tamamlanır, temel kontroller ve kanıt erişimi kesilmez ya da örtülmez | — |
@@ -380,6 +380,14 @@ düzenlenmez).
 **belgelenmiş sınır** ("N eserin üstünde X yavaşlar") ya da düzeltme; desteklenen üst boyut yazılı.
 
 **Göstermez.** Gerçek sağlayıcı/model gecikmesi; sentetik kayıtların gerçek metin dağılımını; başka donanım.
+
+**Durum (2 Ekim 2026, D166).** `scripts/p9/capacity.py` (üreteç, ölçüm, özet, tablo, sınırlar) ve `scripts/p9/capacity_browser.mjs`
+yazıldı; S7 eşikleri ve sınıflar ölçümden önce D166'te donduruldu (`capacity.FROZEN`, testte bağımsız kopya). Varsayılan paketteki
+testler (`tests/test_capacity_script.py`) donmuş tabloyu, `judge` karar kümesini, korumaları, N = 100 üretecini ve K07 tablosunu
+doğrular. Kapasite tablosu D166'te (paralel yük altında: ölçüm 3,86 yükte başladı, sonra 4 ile 13 arası). Desteklenen üst boyut: 10.000 eser (11.000 kaynak sürümü)
+bir araştırmada denendi, ekran 1,1 s'de hazır. Eşik satırlarının hepsi geçti; belgelenmiş sınırlar eşiksiz: görünüm çağrısı eserle doğrusal büyür ve süresince
+olay döngüsünü bloke eder (10.000'de 0,83 s), kaynak listesi sanallaştırılmamış (10.000'de ilk satır 5,9 s), listeden pasaj açmak 10.000'de 7 ile 8 s. İlk tam ölçüm (paralel yük altında) K01b, K02a ve K02b donmuş eşiklerini aştı; düzeltme 0063 numaralı
+migration oldu (yalnız indeksler, D166); son tablo geçti (D166).
 
 ### H6 — Erişilebilirlik denetimi (M)
 

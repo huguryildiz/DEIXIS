@@ -2,12 +2,13 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 · G1-F1 (D201): lookup ve atıf zinciri bağlayıcı sözleşmesine bağlandı, P7 çıkışı karşılandı (deterministik kanıtla; canlı hata/kota biçimleri ölçülmedi); yeniden işleme R3 (D197) ve P9 RF (D198) main'de; H9b hazırlanıyor
+**Son güncelleme:** 3 Ekim 2026 · P10 öncesi ölçülmemiş beş borcun ölçüm planı donduruldu (D205; koşu yok, H9b bittikten sonra en çok 370 Luna oturumu); G1-F1 (D201): P7 çıkışı karşılandı (deterministik kanıtla); H9b RF2 sonrası sürecek
 
 ## Şu an çalışanlar
 
 Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. Sol (gpt-6.1-sol) yazarsa Claude inceler, Claude yazarsa Sol inceler. Sahip onayı gereken kararlar Sol medium ile ortak verilir.
 
+- 🟡 **P10 öncesi ölçüm borçları planı** (D205, `docs/product/p9-owed-measurements-freeze.md`): beş borcun kuralları dondu, Sol high 2. turda “hazır”; koşu yok. H9b sonrası sıra D129 → D141 hunisi → dilim 4 → K6 → L9; en çok 370 Luna oturumu. D129 için ayrı koşu yok (H9b sayımları), D141 modelsiz sayılır, dilim 4 yalnız H9b rapor tamamlarsa. L9 H9b B'nin korpusunu paylaşmaz; yeni korpustaki bağımsızlık denetimi kayıtlı envanterlerle sınırlı. Kararlar Claude + Sol medium ortak.
 - ✅ **P7 G1-F1** (D201): Crossref, Semantic Scholar ve Scopus DOI sorgusu, OpenAlex kimlik sorgusu ve atıf eden işler artık bağlayıcıların kendi bildirdiği yetenekler üzerinden gidiyor (araştırmadaki özet sorguları, atıf zinciri ve yayın takibinin atıf okuması). İstekler önce ayrılıyor, yanıtla gerçek sayıya iniyor; gerçekten gönderilenler `lookup_sends` ve `chain_sends` olarak ayrı sayılıyor. Zincirde kimliksiz kayıt atılıp sayılıyor, sürümü değişmiş sayfadan devam reddediliyor, S2 özetine yansıyan anahtar artık saklanmıyor. Arama davranışı değişmedi. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 13.006 test geçti. **P7 çıkışı karşılandı**
 - ✅ **P9 RF, rapor yolu onarımı** (D198): H9'un saklı çıktıları okundu. Paket hash'ini artık model kopyalamıyor, kod yazıyor (H9'da 52 çağrıda 3 yanlış kopya vardı). Bir atıf çapası tutmazsa onarımda model bütün bölümü yeniden yazmıyor; yalnız o çapa için hücrenin saklı alıntılarından birini numarasıyla seçiyor ya da iddiayı kaldırıp gerekçesini yazıyor, kod bunu uyguluyor ve hiçbir alıntıyı kendisi seçmiyor. Tam onarım iddia düşürürse bölüm sessizce geçmiyor, hata veriyor. Göç yok. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 12.550 test geçti. Gerçek modelde ölçülmedi: H9b ayrı adım.
 - ✅ **P8 B5** (D186): yayın takibinin veri modeli ve elle kontrol; bir araştırmanın dondurulmuş sorguları ya da dahil edilen kaynaklarını atıf yapan işler yeniden okunuyor, ilk kontrol sessiz taban çiziyor, sonraki kontrollerde yeni bir kayıt araştırma başına bir kez listeleniyor; kütüphaneye, korpusa ve sayımlara hiçbir şey girmiyor (göç 0068). Tarihe göre sıralı okuma yalnız OpenAlex'te (bağdaştırıcı sürümü 2→3); diğer kaynaklarda kapsama "bilinmiyor". Ekleme yolu yok (R6), zamanlayıcı B6'da, ekranlar B7'de. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 12.521 test geçti. Gerçek sağlayıcı çağrılmadı.
@@ -45,6 +46,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 2. RF (D198): IV. bölüm onarım ve hash kopyalama hataları kodda düzeltilir; sonra H9b kısa yeniden ölçüm (Luna)
 3. P8 B5–B8, sırayla
 4. Yeniden işleme R4–R5; H10
+5. H9b bittikten sonra D205 ölçümleri sırayla (D129 okuma → D141 hunisi → dilim 4 → K6 → L9); her biri önce kendi kitini ve ekini ister
 
 Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizlik H9.
 
@@ -64,9 +66,9 @@ Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizl
 ## Ölçülmemiş borçlar
 
 - ❌ Gerçek modelle hiç rapor tamamlanmadı (P16, üç deneme: D124, D126, D128)
-- ❌ Fikir zinciri gerçek korpusta ölçülmedi; keşif 99 işten 1'ini dahil etti (D141)
-- ❌ Özgünlük araması K6 ölçümü (D154)
-- ❌ Dilim 4 gerçek model raporla ölçüm (D157)
-- 🟡 Bölüm IV alıntı çapası: hedefli onarım var, gerçek modelde ölçülmedi (D129)
+- ❌ Fikir zinciri gerçek korpusta ölçülmedi; keşif 99 işten 1'ini dahil etti (D141). Plan D205: huni modelsiz sayılacak, L9 yeni korpusta
+- ❌ Özgünlük araması K6 ölçümü (D154). Plan D205: bugünkü sorgu biçimiyle, S6 sorgu tanılamasıyla
+- ❌ Dilim 4 gerçek model raporla ölçüm (D157). Plan D205: yalnız H9b rapor tamamlarsa
+- 🟡 Bölüm IV alıntı çapası: hedefli onarım var, gerçek modelde ölçülmedi (D129). Plan D205: H9b sayımları kapsıyor, ayrı koşu yok
 - 🟡 Paralel yükte ara sıra düşen iki test; tek başına geçiyor
 - ❌ `TODO.md`'de slice 13 ve 31'den devreden maddeler

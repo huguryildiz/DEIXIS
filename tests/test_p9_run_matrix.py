@@ -3,7 +3,6 @@ and nothing is started except one `pytest --collect-only` listing, used to prove
 
 from __future__ import annotations
 
-import fnmatch
 import json
 import re
 import subprocess
@@ -228,30 +227,97 @@ def test_a_nonzero_exit_of_the_install_or_f09_stage_turns_a_pass_into_a_fail():
 
 def test_row_ids_are_unique_and_every_row_has_a_class_and_a_kind():
     ids = [r["id"] for r in rm.rows_ordered()]
+    assert len(ids) == 63
     assert len(ids) == len(set(ids))
+    assert ids[ids.index("D01-D06"):ids.index("suite-pytest") + 1] == ["D01-D06", "T14", "T16", "suite-pytest"]
+    assert len(rm.table({})) == 64  # the cleanup row follows the ordered rows
     assert all(r["cls"] in rm.CLASSES and r["kind"] and r["execution"] and r["data"] for r in rm.rows_ordered())
 
 
-def test_every_junit_pattern_matches_a_real_collected_test():
-    """A renamed test must show up here, not as a silent hole in the matrix."""
+def leaf_rules(rule):
+    if rule[0] == "all":
+        for child in rule[1:]:
+            yield from leaf_rules(child)
+    else:
+        yield rule
+
+
+@pytest.fixture(scope="module")
+def collected_cases():
     listing = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", "-n", "0", "-m", "process or not process"],
                              cwd=str(REPO), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, env=dict(__import__("os").environ, PYTHONPATH="backend:."))
+    assert listing.returncode == 0, listing.stdout[-2000:]
     collected = []
     for line in listing.stdout.splitlines():
         if "::" in line and line.startswith("tests/"):
             path, _, name = line.partition("::")
             full = name.split("::")[-1]
-            collected.append((path[:-3].replace("/", "."), full))
-            collected.append((path[:-3].replace("/", "."), re.sub(r"\[.*\]$", "", full)))
+            collected.append({"module": path[:-3].replace("/", "."), "name": full, "status": "passed"})
     assert len(collected) > 8000, listing.stdout[-500:]
+    return collected
+
+
+def test_every_junit_pattern_matches_a_real_collected_test(collected_cases):
+    """A renamed test must show up here, not as a silent hole in the matrix."""
     unmatched = []
     for row in rm.rows_ordered():
-        if row["rule"][0] != "junit":
-            continue
-        for module, glob in row["rule"][1]:
-            if not any(m == module and (n == glob if "[" in glob and "*" not in glob else fnmatch.fnmatchcase(n, glob)) for m, n in collected):
-                unmatched.append("%s: %s::%s" % (row["id"], module, glob))
+        for rule in leaf_rules(row["rule"]):
+            if rule[0] != "junit":
+                continue
+            for module, glob in rule[1]:
+                if rm.rule_junit(collected_cases, [(module, glob)], "")["result"] != PASS:
+                    unmatched.append("%s: %s::%s" % (row["id"], module, glob))
     assert unmatched == []
+
+
+@pytest.fixture(params=["T14", "T16"])
+def p8_evidence(request, collected_cases):
+    row = next(r for r in rm.ROWS if r["id"] == request.param)
+    specs = [{"file": rule[1], "title": "synthetic execution", "status": "passed"}
+             for rule in leaf_rules(row["rule"]) if rule[0] == "pw"]
+    data = {"pytest": [c.copy() for c in collected_cases if not c["module"].startswith(rm.PROC)],
+            "process": [c.copy() for c in collected_cases if c["module"].startswith(rm.PROC)],
+            "playwright": specs, "web_ok": True}
+    return row, data
+
+
+def test_p8_rows_require_backend_and_every_browser_file(p8_evidence):
+    row, data = p8_evidence
+    assert row["cls"] == "zorunlu" and row["kind"] == {"T14": "S", "T16": "S+G"}[row["id"]]
+    assert rm.evaluate(row, data)["result"] == PASS
+    assert rm.evaluate(row, {**data, "pytest": None})["result"] == NOT
+    for spec in data["playwright"]:
+        remaining = [s for s in data["playwright"] if s is not spec]
+        assert rm.evaluate(row, {**data, "playwright": remaining})["result"] == NOT
+        for status, want in (("skipped", NOT), ("failed", FAIL)):
+            assert rm.evaluate(row, {**data, "playwright": remaining + [{**spec, "status": status}]})["result"] == want
+    for gates in ({"web_ok": False}, {"playwright_port_clash": True}):
+        assert rm.evaluate(row, {**data, **gates})["result"] == NOT
+
+
+def test_p8_rows_require_each_junit_pair_and_retain_failures_when_browser_is_missing(p8_evidence):
+    row, data = p8_evidence
+    for module, pattern in row["rule"][1][1]:
+        source = "process" if module.startswith(rm.PROC) else "pytest"
+        cases = data[source]
+        hit = [c for c in cases if rm.rule_junit([c], [(module, pattern)], "")["result"] == PASS]
+        assert hit
+        remaining = [c for c in cases if c not in hit]
+        assert rm.evaluate(row, {**data, source: remaining})["result"] == NOT
+        for status, want in (("skipped", NOT), ("failed", FAIL)):
+            changed = remaining + [{**c, "status": status} for c in hit]
+            assert rm.evaluate(row, {**data, source: changed, "playwright": None})["result"] == want
+
+
+def test_p8_process_source_is_required_only_by_t16(p8_evidence):
+    row, data = p8_evidence
+    want = NOT if row["id"] == "T16" else PASS
+    assert rm.evaluate(row, {**data, "process": None})["result"] == want
+    assert rm.evaluate(row, {**data, "process": []})["result"] == want
+
+
+def test_empty_all_rule_is_not_a_pass():
+    assert rm.evaluate({"id": "empty", "rule": ("all",)}, {})["result"] == NOT
 
 
 def test_the_capacity_port_variable_moves_the_range_and_refuses_a_live_port():

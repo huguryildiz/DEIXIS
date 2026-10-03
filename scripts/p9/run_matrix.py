@@ -61,6 +61,7 @@ PASS, FAIL, NOT, UNSUPPORTED = RESULTS
 #   ("pw", file, title_regex[, exclude_regex])  Playwright specs in that file whose full title matches (and not the exclusion)
 #   ("cap", id)                          a row of capacity.py's summary.json (the class comes from capacity.FROZEN)
 #   ("static", reason)                   not run by this script; the record links the earlier measurement
+#   ("all", rule, ...)                  every child rule must pass; failures outrank missing or skipped evidence
 # `execution` and `data` are the two separate fields of plan section 4 rule 4.
 
 PROC = "tests.process."
@@ -120,6 +121,55 @@ ROWS: list[dict[str, Any]] = [
     {"id": "B02", "claim": "today's code opens a restored copy of the owner's own library", "cls": "isteğe bağlı", "kind": "G", "execution": "real process on a copy", "data": "real library", "rule": ("static", "needs the owner's library and consent; not opened by this script (tooling tests run in the pytest stage)")},
     {"id": "B03", "claim": "a library with an unknown migration id is refused before any write", "cls": "zorunlu", "kind": "G", "execution": "automatic test, real process", "data": "synthetic records", "rule": ("junit", [("tests.test_p9_restore_matrix", "test_b03_*"), (PROC + "test_p9_restore_process", "test_b03*")])},
     {"id": "D01-D06", "claim": "the six daily-use defects of H7 stay closed", "cls": "isteğe bağlı", "kind": "S", "execution": "automatic test", "data": "synthetic records", "rule": ("junit", [("tests.test_p9_h7_run_line", "test_*"), ("tests.test_p9_h7_savepoint", "test_*"), ("tests.test_p9_h7_test_names", "test_*"), ("tests.test_p9_h7_torn_upload", "test_*"), ("tests.test_p9_h7_zotero_disk", "test_*")])},
+    {"id": "T14", "claim": "review results stay separate, inputs are immutable, stale reasons are shown, and only the user's checked apply save changes main text; candidates included", "cls": "zorunlu", "kind": "S", "execution": "automatic test, automatic browser test", "data": "synthetic records, scripted model", "rule": ("all",
+        ("junit", [
+            ("tests.test_review_snapshot", "test_*"),
+            ("tests.test_review_stale", "test_*"),
+            ("tests.test_review_store", "test_*"),
+            ("tests.test_review_migration", "test_*"),
+            ("tests.test_review_separation", "test_*"),
+            ("tests.test_review_run", "test_*"),
+            ("tests.test_review_flow", "test_*"),
+            ("tests.test_review_api", "test_*"),
+            ("tests.test_review_lifecycle_guards", "test_real_worker_api_lifecycle_denies_every_other_write_and_keeps_all_row_hashes[normal]"),
+            ("tests.test_review_lifecycle_guards", "test_real_worker_api_lifecycle_denies_every_other_write_and_keeps_all_row_hashes[internal_error]"),
+            ("tests.test_review_lifecycle_guards", "test_real_worker_api_lifecycle_denies_every_other_write_and_keeps_all_row_hashes[invalid_output]"),
+            ("tests.test_review_lifecycle_guards", "test_real_worker_api_lifecycle_denies_every_other_write_and_keeps_all_row_hashes[cancelled]"),
+            ("tests.test_review_lifecycle_guards", "test_cancel_with_waiting_person_file_matches_nonreview_run_end_followup"),
+            ("tests.test_review_decision_requests", "test_*"),
+            ("tests.test_review_read_model_b3", "test_*"),
+            ("tests.test_review_candidate_contract", "test_*"),
+            ("tests.test_review_candidate_snapshot", "test_*"),
+            ("tests.test_review_candidate_stale", "test_*"),
+            ("tests.test_review_candidate_planner", "test_*"),
+            ("tests.test_review_candidate_api", "test_*"),
+            ("tests.test_review_candidate_guards", "test_candidate_real_worker_api_denies_other_writes_and_preserves_nonempty_candidate_tables[normal]"),
+            ("tests.test_review_candidate_guards", "test_candidate_real_worker_api_denies_other_writes_and_preserves_nonempty_candidate_tables[internal_error]"),
+            ("tests.test_review_candidate_guards", "test_candidate_real_worker_api_denies_other_writes_and_preserves_nonempty_candidate_tables[invalid_output]"),
+            ("tests.test_review_candidate_guards", "test_candidate_real_worker_api_denies_other_writes_and_preserves_nonempty_candidate_tables[cancelled]"),
+            ("tests.test_review_candidate_preservation", "test_*"),
+            ("tests.test_review_candidate_backup", "test_*")]),
+        ("pw", "review.spec.ts", r"."),
+        ("pw", "candidate-review.spec.ts", r"."))},
+    {"id": "T16", "claim": "follow-up shows missed time, catch-up is bounded, and records are announced once per research within the stored identity limits, including kill and restart", "cls": "zorunlu", "kind": "S+G", "execution": "automatic test, real process, automatic browser test", "data": "synthetic records, scripted model, mocked providers", "rule": ("all",
+        ("junit", [
+            ("tests.test_watch_migration", "test_*"),
+            ("tests.test_watch_api", "test_*"),
+            ("tests.test_watch_check", "test_*"),
+            ("tests.test_watch_identity", "test_*"),
+            ("tests.test_watch_recovery", "test_*"),
+            ("tests.test_watch_separation", "test_*"),
+            ("tests.test_watch_schedule_migration", "test_*"),
+            ("tests.test_watch_schedule_old_entrypoints", "test_*"),
+            ("tests.test_watch_scheduler", "test_*"),
+            ("tests.test_watch_scheduler_lifespan", "test_*"),
+            ("tests.test_watch_process_driver", "test_*"),
+            (PROC + "test_watch_restart", "test_closed_across_due_period_one_catchup_one_item"),
+            (PROC + "test_watch_restart", "test_kill_during_catchup_request_recovery_unknown_not_resent_on_resume"),
+            (PROC + "test_watch_restart", "test_kill_after_read_before_completion_resume_publishes_once_without_request"),
+            (PROC + "test_watch_restart", "test_further_restart_same_answers_before_next_due_no_duplicate"),
+            ("tests.test_followup_count", "test_*")]),
+        ("pw", "followup.spec.ts", r"."))},
     {"id": "suite-pytest", "claim": "the default pytest suite: exit 0 and no failed or errored test, mapped to a row or not", "cls": "zorunlu", "kind": "S", "execution": "automatic test", "data": "synthetic records, scripted model", "rule": ("suite", "pytest")},
     {"id": "suite-process", "claim": "every process test (-m process): exit 0 and no failed or errored test", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("suite", "process")},
     {"id": "suite-web", "claim": "npm run build exits 0 and npm run lint has no error and no warning above the baseline", "cls": "zorunlu", "kind": "S", "execution": "build and lint", "data": "no data", "rule": ("suite", "web")},
@@ -325,6 +375,13 @@ def evaluate(row: dict[str, Any], data: dict[str, Any]) -> dict[str, str]:
     """`data` holds what the stages produced; a stage that did not run leaves its key out (None)."""
     kind = row["rule"][0]
     missing = lambda stage: data.get("missing", {}).get(stage, "stage %s did not run" % stage)  # noqa: E731
+    if kind == "all":
+        results = [evaluate({**row, "rule": rule}, data) for rule in row["rule"][1:]]
+        if not results:
+            return row_result(NOT, "", "no evidence rules")
+        result = next((status for status in (FAIL, NOT, UNSUPPORTED) if any(r["result"] == status for r in results)), PASS)
+        return row_result(result, "; ".join(r["evidence"] for r in results if r["evidence"]),
+                          "; ".join(r["note"] for r in results if r["note"]))
     if kind == "static":
         return row_result(NOT, "", row["rule"][1])
     if kind == "install":

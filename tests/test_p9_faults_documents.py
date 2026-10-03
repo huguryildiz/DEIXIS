@@ -404,7 +404,7 @@ def test_o12_enospc_while_storing_an_upload_answers_507_and_leaves_no_partial_fi
         def replace(self, *_):
             raise OSError(errno.ENOSPC, "No space left on device")
 
-    monkeypatch.setattr(app_module, "os", FullOs())  # only this module's view of `os`
+    monkeypatch.setattr("deixis.workflow.file_restore.os", FullOs())  # only this module's view of `os`
     with TestClient(app_for(tmp_path), raise_server_exceptions=False) as client:
         session(client)
         rid = create(client, source_scope="attached")

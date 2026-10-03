@@ -20,10 +20,10 @@ def zotero_import_with(tmp_path, monkeypatch, patch):
 def test_zotero_import_on_a_full_disk_refuses_with_the_disk_full_sentence_when_the_pdf_cannot_be_stored(tmp_path, monkeypatch):
     from deixis.documents import pdf_files
 
-    def full(papers_dir, sha, data):
+    def full(path, data):
         raise OSError(28, "No space left on device")
 
-    response = zotero_import_with(tmp_path, monkeypatch, lambda mp, errno: mp.setattr(pdf_files, "store_pdf_file", full))
+    response = zotero_import_with(tmp_path, monkeypatch, lambda mp, errno: mp.setattr(pdf_files, "stage_bytes", full))
     assert response.status_code == 507, response.text
     assert response.json()["code"] == "disk_full" and "disk is full" in response.json()["detail"]
 
@@ -45,10 +45,10 @@ def test_zotero_import_on_a_full_disk_refuses_with_the_disk_full_sentence_when_t
 def test_an_unrelated_oserror_in_that_route_is_not_taken_for_a_full_disk(tmp_path, monkeypatch):
     from deixis.documents import pdf_files
 
-    def broken(papers_dir, sha, data):
+    def broken(path, data):
         raise OSError(13, "Permission denied")
 
-    response = zotero_import_with(tmp_path, monkeypatch, lambda mp, errno: mp.setattr(pdf_files, "store_pdf_file", broken))
+    response = zotero_import_with(tmp_path, monkeypatch, lambda mp, errno: mp.setattr(pdf_files, "stage_bytes", broken))
     assert response.status_code == 500
 
 

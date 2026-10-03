@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import sqlite3
+from uuid import uuid4
 from pathlib import Path
 from typing import Any
 
@@ -148,6 +149,7 @@ class Store:
         self.conn = conn
         self.recovery_dir: Path | None = None
         self.pending_text_retry_interruptions: dict[str, str] = {}
+        self.pending_file_restore_interruptions: dict[str, str] = {}
         self._text_retry_probe_errors: set[tuple[str, int | None]] = set()
         self._columns: dict[str, set[str]] = {}
         # Migrations precede Store construction; historical fixtures retain their schema.
@@ -807,10 +809,11 @@ class Store:
 
         for row in self.conn.execute("SELECT id, research_id FROM runs WHERE status = 'queued' ORDER BY created_at"):
             operations = self.conn.execute(
-                "SELECT o.id, o.expected_sha256 FROM asset_recovery_operations o"
-                " JOIN source_assets a ON a.id = o.asset_id"
+                "SELECT DISTINCT o.id, o.expected_sha256 FROM asset_recovery_operations o"
+                " JOIN source_assets a ON (o.kind = 'text_retry' AND a.id = o.asset_id)"
+                " OR (o.kind = 'file_restore' AND a.sha256 = o.expected_sha256)"
                 " JOIN corpus_memberships m ON m.source_version_id = a.source_version_id"
-                " WHERE m.research_id = ? AND o.kind = 'text_retry' AND o.lifecycle = 'running'",
+                " WHERE m.research_id = ? AND o.lifecycle = 'running'",
                 (row["research_id"],)).fetchall() if self._extraction_has_recovery_metadata else []
             live = False
             for operation in operations:
@@ -1820,6 +1823,120 @@ class Store:
                 logging.getLogger(__name__).exception("Could not persist pending text retry interruption %s", oid)
             else:
                 self.pending_text_retry_interruptions.pop(oid, None)
+        from deixis.workflow.file_restore import transaction as restore_transaction
+
+        for oid, reason in list(self.pending_file_restore_interruptions.items()):
+            try:
+                with restore_transaction(self.conn):
+                    self.interrupt_file_restore(oid, reason)
+            except Exception:
+                logging.getLogger(__name__).exception("Could not persist pending file restore interruption %s", oid)
+            else:
+                self.pending_file_restore_interruptions.pop(oid, None)
+
+    def file_restore_assets(self, sha256: str) -> list[dict[str, Any]]:
+        """Every physical-file owner, including removed and replaced assets."""
+        return [dict(row) for row in self.conn.execute(
+            "SELECT id, source_version_id FROM source_assets WHERE sha256 = ? ORDER BY id", (sha256,))]
+
+    def reserve_file_restore(self, sha256: str, byte_size: int, *, caller: str,
+                             research_id: str | None) -> dict[str, Any]:
+        from deixis.workflow.file_restore import FILE_WRITERS, FileRestoreRefused, transaction as restore_transaction
+
+        if caller not in FILE_WRITERS:
+            raise ValueError("Unknown PDF writer")
+        with restore_transaction(self.conn):
+            if any(self._asset_run_active(a["source_version_id"]) for a in self.file_restore_assets(sha256)):
+                raise FileRestoreRefused("run_active")
+            oid = new_id("rop")
+            fingerprint = hashlib.sha256(json.dumps({"kind": "file_restore", "sha256": sha256,
+                "caller": caller, "research_id": research_id}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            self.conn.execute(
+                "INSERT INTO asset_recovery_operations (id, kind, asset_id, research_id, expected_sha256,"
+                " expected_byte_size, mode, idempotency_key, request_fingerprint, lifecycle, created_at)"
+                " VALUES (?, 'file_restore', NULL, ?, ?, ?, NULL, ?, ?, 'running', ?)",
+                (oid, research_id, sha256, byte_size, "restore-" + uuid4().hex, fingerprint, now()))
+            return self._text_retry_operation(oid)
+
+    def record_file_restore_observation(self, operation_id: str, kind: str, **fields: Any) -> str:
+        from deixis.workflow.file_restore import transaction as restore_transaction
+
+        if kind not in ("before_restore", "after_restore"):
+            raise ValueError("Unknown file restore observation")
+        with restore_transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["kind"] != "file_restore" or operation["lifecycle"] != "running":
+                raise RecoveryConflict("operation_not_running")
+            oid = self.add_file_observation(kind=kind, operation_id=operation_id, **fields)
+            column = "before_observation_id" if kind == "before_restore" else "after_observation_id"
+            self.conn.execute(f"UPDATE asset_recovery_operations SET {column} = ? WHERE id = ?", (oid, operation_id))
+            return oid
+
+    def file_restore_view(self, operation_id: str) -> dict[str, Any]:
+        operation = self._text_retry_operation(operation_id)
+        if operation["kind"] != "file_restore":
+            raise RecoveryConflict("operation_not_running")
+        observations = {row["id"]: dict(row) for row in self.conn.execute(
+            "SELECT id, integrity, retained_filename FROM asset_file_observations WHERE operation_id = ?", (operation_id,))}
+        before = observations.get(operation["before_observation_id"], {})
+        after = observations.get(operation["after_observation_id"], {})
+        return {k: operation[k] for k in ("lifecycle", "outcome", "reason", "created_at", "finished_at")} | {
+            "operation_id": operation_id, "sha256": operation["expected_sha256"],
+            "before_integrity": before.get("integrity"), "after_integrity": after.get("integrity"),
+            "retained": before.get("retained_filename") is not None}
+
+    def latest_file_restore(self, sha256: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT id FROM asset_recovery_operations WHERE kind = 'file_restore'"
+            " AND expected_sha256 = ? ORDER BY created_at DESC, id DESC LIMIT 1", (sha256,)).fetchone()
+        return self.file_restore_view(row["id"]) if row else None
+
+    def _file_restore_event(self, operation_id: str) -> None:
+        view = self.file_restore_view(operation_id)
+        assets = self.file_restore_assets(view["sha256"])
+        operation = self._text_retry_operation(operation_id)
+        researches = {rid for a in assets for rid in self._asset_researches(a["source_version_id"])}
+        rid = operation["research_id"]
+        if rid is not None and self.conn.execute("SELECT 1 FROM researches WHERE id = ?", (rid,)).fetchone():
+            researches.add(rid)
+        payload = {k: view[k] for k in ("operation_id", "sha256", "lifecycle", "outcome", "reason",
+                                      "before_integrity", "after_integrity", "retained")}
+        payload["affected_asset_ids"] = [a["id"] for a in assets]
+        for rid in sorted(researches):
+            self._event(rid, "asset_file_restore_finished", payload)
+
+    def complete_file_restore(self, operation_id: str, outcome: str, reason: str | None = None) -> dict[str, Any]:
+        from deixis.workflow.file_restore import FILE_RESTORE_REFUSALS, transaction as restore_transaction
+
+        if (outcome not in ("file_restored", "file_reused", "file_refused") or
+                (outcome == "file_refused" and reason not in FILE_RESTORE_REFUSALS) or
+                (outcome != "file_refused" and reason is not None)):
+            raise ValueError("Invalid file restore ending")
+        with restore_transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["kind"] != "file_restore":
+                raise RecoveryConflict("operation_not_running")
+            if operation["lifecycle"] != "running":
+                return self.file_restore_view(operation_id)
+            self.conn.execute("UPDATE asset_recovery_operations SET lifecycle = 'completed', outcome = ?, reason = ?,"
+                " finished_at = ? WHERE id = ?", (outcome, reason, now(), operation_id))
+            self._file_restore_event(operation_id)
+            return self.file_restore_view(operation_id)
+
+    def interrupt_file_restore(self, operation_id: str, reason: str) -> dict[str, Any]:
+        from deixis.workflow.file_restore import transaction as restore_transaction
+
+        if reason not in TEXT_RETRY_INTERRUPTIONS:
+            raise ValueError("Unknown file restore interruption")
+        with restore_transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["kind"] != "file_restore":
+                raise RecoveryConflict("operation_not_running")
+            if operation["lifecycle"] != "running":
+                return self.file_restore_view(operation_id)
+            self.conn.execute("UPDATE asset_recovery_operations SET lifecycle = 'interrupted', reason = ?,"
+                " finished_at = ? WHERE id = ?", (reason, now(), operation_id))
+            self._file_restore_event(operation_id)
+            return self.file_restore_view(operation_id)
 
     def _retry_baseline(self, asset_id: str) -> dict[str, Any] | None:
         row = row_dict(self.conn.execute(

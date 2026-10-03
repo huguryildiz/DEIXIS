@@ -34,10 +34,9 @@ from deixis.documents.identity import MATCH_TEXT_CHARS, match_pdf_to_source
 from deixis.documents import local_embedding, math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
-from deixis.documents import pdf_files
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
-from deixis.workflow import text_retry
+from deixis.workflow import file_restore, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ, CHAIN_PLAN_ROOM,
                                  CHAIN_REQUEST_LIMIT, CRITERION_CALLS, SEARCH_QUERY_CALLS,
                                  SUGGESTION_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict, effort_limits)
@@ -593,8 +592,8 @@ class UploadRefused(Exception):
         self.status, self.code, self.detail = status, code, detail
 
 
-async def store_upload(file: UploadFile, papers_dir: Path) -> tuple[str, int, Path]:
-    """Copy an upload into the papers folder in chunks while hashing, without holding the whole file in memory."""
+async def store_upload(file: UploadFile, papers_dir: Path) -> file_restore.Staged:
+    """Stage and fsync an upload while hashing; the caller owns the returned partial file."""
     digest, size, head = hashlib.sha256(), 0, b""
     try:
         fd, partial = tempfile.mkstemp(dir=papers_dir, suffix=".partial")
@@ -610,22 +609,20 @@ async def store_upload(file: UploadFile, papers_dir: Path) -> tuple[str, int, Pa
                 if size > MAX_UPLOAD_BYTES:
                     raise UploadRefused(413, "upload_too_large", "PDF larger than 50 MB")
                 digest.update(chunk)
-                out.write(chunk)
+                if out.write(chunk) != len(chunk):
+                    raise OSError(5, "Incomplete staged upload write")
+            out.flush()
+            os.fsync(out.fileno())
         if head != b"%PDF-":
             raise UploadRefused(422, "upload_not_pdf", "Only PDF files are supported")
-        path = papers_dir / f"{digest.hexdigest()}.pdf"
-        if pdf_files.file_is_whole(path, digest.hexdigest(), size):
-            os.unlink(partial)
-        else:
-            os.replace(partial, path)  # also replaces a torn file an older version left under this name
-        return digest.hexdigest(), size, path
+        return file_restore.Staged(Path(partial), digest.hexdigest(), size)
     except OSError as exc:
-        Path(partial).unlink(missing_ok=True)
+        file_restore.cleanup(Path(partial))
         if db.describe_failure(exc):
             raise DiskFull from exc
         raise
     except BaseException:
-        Path(partial).unlink(missing_ok=True)
+        file_restore.cleanup(Path(partial))
         raise
 
 
@@ -814,6 +811,10 @@ def create_app(
     @app.exception_handler(text_retry.FileBusy)
     async def retry_file_busy(_: Request, exc: text_retry.FileBusy):
         return JSONResponse({"detail": str(exc), "code": "file_busy"}, status_code=409)
+
+    @app.exception_handler(file_restore.FileRestoreRefused)
+    async def file_restore_refused(_: Request, exc: file_restore.FileRestoreRefused):
+        return JSONResponse({"detail": str(exc), "code": exc.code}, status_code=409)
 
     @app.exception_handler(text_retry.FileMissing)
     async def retry_file_missing(_: Request, exc: text_retry.FileMissing):
@@ -1596,7 +1597,10 @@ def create_app(
             raise HTTPException(422, "Attached files are not part of this research's source scope")
         with disk_full_refused():
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
-            sha, size, path = await store_upload(file, settings.papers_dir)
+            staged = await store_upload(file, settings.papers_dir)
+            placement = await file_restore.restore_file(store, settings.papers_dir, settings.recovery_dir, staged,
+                                                        caller="upload", research_id=research_id)
+            sha, size, path = placement.sha256, placement.size, placement.path
         existing = store.conn.execute(
             "SELECT a.source_version_id FROM source_assets a JOIN source_versions s ON s.id = a.source_version_id"
             " WHERE a.sha256 = ? AND a.removed_at IS NULL AND s.origin = 'user_upload' LIMIT 1", (sha,)
@@ -1613,7 +1617,8 @@ def create_app(
             store.add_asset_with_pages(svid, sha, size, path.name, "user_upload", None, filename,
                                        extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
         store.add_to_corpus(research_id, svid, "user_upload", selection_state="included", selection_origin="user")
-        return research_view(store, research_id) | {"uploaded_source_version_id": svid}
+        return research_view(store, research_id) | {"uploaded_source_version_id": svid,
+            "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/uploads", status_code=201)
     async def upload_to_source(research_id: str, source_version_id: str, request: Request,
@@ -1625,7 +1630,10 @@ def create_app(
             raise HTTPException(404, "Source is not part of this research")
         with disk_full_refused():
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
-            sha, size, path = await store_upload(file, settings.papers_dir)
+            staged = await store_upload(file, settings.papers_dir)
+            placement = await file_restore.restore_file(store, settings.papers_dir, settings.recovery_dir, staged,
+                                                        caller="source_upload", research_id=research_id)
+            sha, size, path = placement.sha256, placement.size, placement.path
         if not store.conn.execute(
             "SELECT 1 FROM source_assets WHERE source_version_id = ? AND sha256 = ? AND removed_at IS NULL",
             (source_version_id, sha)
@@ -1644,7 +1652,8 @@ def create_app(
                     flow.attach_person_file(research_id, source_version_id, asset_id)
                     flow.queue_person_reading(research_id)
             request.app.state.worker.wake()
-        return research_view(store, research_id)
+        return research_view(store, research_id) | {
+            "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
 
     @app.post("/api/researches/{research_id}/uploads/match")
     async def match_uploads(research_id: str, request: Request, files: list[UploadFile] = File(...)) -> dict[str, Any]:
@@ -1662,8 +1671,11 @@ def create_app(
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
         matches = []
         for file in files[:50]:
-            _, _, path = await store_upload(file, settings.papers_dir)
-            extraction = await asyncio.to_thread(pdf.extract_pdf, path, MATCH_TEXT_CHARS)
+            staged = await store_upload(file, settings.papers_dir)
+            try:
+                extraction = await text_retry.drained_thread(pdf.extract_pdf, staged.path, MATCH_TEXT_CHARS)
+            finally:
+                file_restore.cleanup(staged.path)
             svid, basis = match_pdf_to_source("\n".join(page.text for page in extraction.pages), candidates)
             matches.append({"filename": Path(file.filename or "document.pdf").name, "source_version_id": svid, "basis": basis})
         return {"matches": matches}
@@ -1674,8 +1686,12 @@ def create_app(
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
         matches = []
         for file in files[:50]:
-            sha, _, path = await store_upload(file, settings.papers_dir)
-            extraction = await asyncio.to_thread(pdf.extract_pdf, path, MATCH_TEXT_CHARS)
+            staged = await store_upload(file, settings.papers_dir)
+            sha = staged.sha256
+            try:
+                extraction = await text_retry.drained_thread(pdf.extract_pdf, staged.path, MATCH_TEXT_CHARS)
+            finally:
+                file_restore.cleanup(staged.path)
             # What the confirmation sends back and is checked against (decision 5): the file, the revision, the work.
             matches.append({"filename": Path(file.filename or "document.pdf").name, "sha256": sha, "scope_revision": revision,
                             "page_count": extraction.page_count or None,
@@ -1714,10 +1730,16 @@ def create_app(
         pdf_waiting.require_sw(store, research_id)
         with disk_full_refused():
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
-            sha, size, path = await store_upload(file, settings.papers_dir)
-        bound = dict(work_id=work_id, source_version_id=source_version_id, scope_revision=scope_revision,
-                     versions_digest=versions_digest, sha256=sha256, uploaded_sha256=sha)
-        pdf_waiting.check_attach(store, research_id, **bound)
+            staged = await store_upload(file, settings.papers_dir)
+            try:
+                bound = dict(work_id=work_id, source_version_id=source_version_id, scope_revision=scope_revision,
+                             versions_digest=versions_digest, sha256=sha256, uploaded_sha256=staged.sha256)
+                pdf_waiting.check_attach(store, research_id, **bound)
+                placement = await file_restore.restore_file(store, settings.papers_dir, settings.recovery_dir, staged,
+                                                            caller="waiting_upload", research_id=research_id)
+            finally:
+                file_restore.cleanup(staged.path)
+            sha, size, path = placement.sha256, placement.size, placement.path
         extraction = await asyncio.to_thread(pdf.extract_pdf, path)
         filename = Path(file.filename or "document.pdf").name
         flow = request.app.state.worker.flow
@@ -1734,7 +1756,8 @@ def create_app(
             flow.queue_person_reading(research_id)
         request.app.state.worker.wake()
         return research_view(store, research_id) | {"attached": {"source_version_id": source_version_id,
-                                                                  "asset_id": asset_id, "reading": reading}}
+                                                                  "asset_id": asset_id, "reading": reading},
+            "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
 
     @app.post("/api/researches/{research_id}/waiting/requests/{request_id}/retry")
     async def retry_person_reading(research_id: str, request_id: str, request: Request) -> dict[str, Any]:
@@ -1765,6 +1788,7 @@ def create_app(
                 store, research_id, source_version_id, request.app.state.http, settings.papers_dir,
                 settings.contact_email, os.environ.get("SERPAPI_API_KEY"), request.app.state.fetch_pdf,
                 core_key=os.environ.get("CORE_API_KEY"), xml_fetcher=request.app.state.fetch_xml,
+                recovery_dir=settings.recovery_dir,
             )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
@@ -1788,7 +1812,8 @@ def create_app(
         if store.has_asset(source_version_id):
             raise HTTPException(409, "This source already has a PDF")
         result = await acquisition.attach_confirmed_candidate(store, source_version_id, candidate, settings.papers_dir,
-                                                              request.app.state.fetch_pdf)
+                                                              request.app.state.fetch_pdf, research_id=research_id,
+                                                              recovery_dir=settings.recovery_dir)
         if result.status != "ok":
             reason = f"HTTP {result.http_status}" if result.status == "http_error" else result.status.replace("_", " ")
             raise HTTPException(502, f"No PDF was retrieved from this link ({reason})")
@@ -1830,9 +1855,15 @@ def create_app(
                 notes.append({"title": item.record.title, "note": f"PDF not added: {exc}"})
                 continue
             sha = hashlib.sha256(data).hexdigest()
-            with disk_full_refused():
-                settings.papers_dir.mkdir(parents=True, exist_ok=True)
-                path = pdf_files.store_pdf_file(settings.papers_dir, sha, data)
+            try:
+                with disk_full_refused():
+                    settings.papers_dir.mkdir(parents=True, exist_ok=True)
+                    placement = await file_restore.store_pdf_file(store, settings.papers_dir, settings.recovery_dir, data,
+                                                                  caller="zotero_import", research_id=research_id)
+            except (text_retry.FileBusy, file_restore.FileRestoreRefused) as exc:
+                notes.append({"title": item.record.title, "note": f"PDF not added: {exc}"})
+                continue
+            path = placement.path
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             # The file is the user's own copy from their library, like an upload; retrieved_from names the attachment.
             store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
@@ -1866,9 +1897,15 @@ def create_app(
                 notes.append({"title": source["title"], "note": f"PDF not added: {exc}"})
                 continue
             sha = hashlib.sha256(data).hexdigest()
-            with disk_full_refused():
-                settings.papers_dir.mkdir(parents=True, exist_ok=True)
-                path = pdf_files.store_pdf_file(settings.papers_dir, sha, data)
+            try:
+                with disk_full_refused():
+                    settings.papers_dir.mkdir(parents=True, exist_ok=True)
+                    placement = await file_restore.store_pdf_file(store, settings.papers_dir, settings.recovery_dir, data,
+                                                                  caller="zotero_pdfs", research_id=research_id)
+            except (text_retry.FileBusy, file_restore.FileRestoreRefused) as exc:
+                notes.append({"title": source["title"], "note": f"PDF not added: {exc}"})
+                continue
+            path = placement.path
             extraction = await asyncio.to_thread(pdf.extract_pdf, path)
             store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
                                        item.pdf_filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
@@ -2053,16 +2090,22 @@ def create_app(
                             file: UploadFile = File(...)) -> dict[str, Any]:
         """Replace the PDF in use with another file; evidence citing the old file keeps its passages (D45)."""
         store = store_of(request)
-        asset_in_use(store, research_id, source_version_id, asset_id)
+        asset = asset_in_use(store, research_id, source_version_id, asset_id)
         with disk_full_refused():
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
-            sha, size, path = await store_upload(file, settings.papers_dir)
-        if sha == store.asset(asset_id)["sha256"]:
-            raise SameFile(asset_id)
+            staged = await store_upload(file, settings.papers_dir)
+            placement = await file_restore.restore_file(store, settings.papers_dir, settings.recovery_dir, staged,
+                                                        caller="replace_pdf", research_id=research_id)
+            sha, size, path = placement.sha256, placement.size, placement.path
+        if sha == asset["sha256"]:
+            if placement.outcome == "reused":
+                raise SameFile(asset_id)
+            return research_view(store, research_id) | {"file_restore": store.file_restore_view(placement.operation_id)}
         extraction = await asyncio.to_thread(pdf.extract_pdf, path)
         store.replace_asset(asset_id, sha, size, path.name, "user_upload", None, Path(file.filename or "document.pdf").name,
                             extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
-        return research_view(store, research_id)
+        return research_view(store, research_id) | {
+            "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/extractions")
     async def reextract_asset(research_id: str, source_version_id: str, asset_id: str, request: Request,
@@ -2127,7 +2170,8 @@ def create_app(
                 "extraction_version": current["extraction_version"] if current else asset["extraction_version"],
                 "diagnostic_only": bool(current["diagnostic_only"]) if current else False,
                 "can_retry_text": reason is None, "reason": reason,
-                "latest_operation": store.text_retry_view(latest["id"]) if latest else None}
+                "latest_operation": store.text_retry_view(latest["id"]) if latest else None,
+                "latest_file_restore": store.latest_file_restore(asset["sha256"])}
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/equations", status_code=202)
     async def reread_equations(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:

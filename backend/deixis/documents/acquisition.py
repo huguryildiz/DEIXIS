@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 from urllib.parse import quote, urlsplit
 
 import httpx
 
-from deixis.documents import fetch, jats, pdf, pdf_files
+from deixis.documents import fetch, jats, pdf
 from deixis.providers import core, crossref
 from deixis.providers.common import ProviderRecord, normalize_doi
 from deixis.storage import db
 from deixis.workflow.store import Store
+from deixis.workflow import file_restore
 
 OPENALEX_URL = "https://api.openalex.org/works"
 CROSSREF_URL = "https://api.crossref.org/works"
@@ -271,12 +272,14 @@ async def _render_candidate(store: Store, candidate: dict[str, Any],
 
 
 async def _attach_rendition(store: Store, source_version_id: str, candidate: dict[str, Any], data: bytes,
-                            papers_dir: Any) -> str:
+                            papers_dir: Any, *, research_id: str | None = None,
+                            recovery_dir: Path | None = None) -> str:
     # The asset names the fullTextXML address it was drawn from, not the address the XML finally came from, and the
     # file name code gives it, so the rendition is recognised on every surface (`jats.RENDITION_SQL`).
     url = candidate["candidate_url"]
     return await _attach_pdf(store, source_version_id, data, papers_dir, "download", url,
-                             filename=jats.filename(url.rsplit("/", 2)[-2]))
+                             filename=jats.filename(url.rsplit("/", 2)[-2]), research_id=research_id,
+                             recovery_dir=recovery_dir)
 
 
 def _title_key(text: str | None) -> str:
@@ -332,7 +335,8 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                              fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch.fetch_pdf,
                              core_key: str | None = None, web_search: bool = True,
                              other_versions: bool = False,
-                             xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch_xml) -> dict[str, Any]:
+                             xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch_xml, *,
+                             recovery_dir: Path | None = None) -> dict[str, Any]:
     """Look this record's DOI up in Unpaywall, OpenAlex, Crossref and CORE and retrieve a copy of its own version.
 
     When none of their verified copies gave a file, Europe PMC is asked once (SW21, D106): its open-access full text
@@ -343,6 +347,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     there, never onto the published record (D4). Without it the function is what it has always been, and a copy of
     uncertain version still waits for the user in both.
     """
+    recovery_dir = file_restore.resolve_recovery_dir(store, papers_dir, recovery_dir)
     source = store.source(source_version_id)
     doi = normalize_doi(source.get("doi"))
     if not doi:
@@ -377,7 +382,8 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
             if result.status != "ok":
                 continue
             asset_id = await _attach_pdf(store, source_version_id, result.data, papers_dir, "download",
-                                         result.final_url or candidate["candidate_url"])
+                                         result.final_url or candidate["candidate_url"], research_id=research_id,
+                                         recovery_dir=recovery_dir)
             break
 
     # Europe PMC only for a record still without a file, after the four lookups and their verified copies (SW21).
@@ -393,13 +399,14 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                 continue
             tried.add(candidate["candidate_url"])
             if (data := await _render_candidate(store, candidate, xml_fetcher)) is not None:
-                asset_id = await _attach_rendition(store, source_version_id, candidate, data, papers_dir)
+                asset_id = await _attach_rendition(store, source_version_id, candidate, data, papers_dir,
+                                                  research_id=research_id, recovery_dir=recovery_dir)
                 break
 
     lookup_version_id = None
     if other_versions and not store.has_asset(source_version_id):
         asset_id, lookup_version_id = await _attach_other_version(
-            store, research_id, source_version_id, papers_dir, fetcher, xml_fetcher)
+            store, research_id, source_version_id, papers_dir, fetcher, xml_fetcher, recovery_dir=recovery_dir)
 
     # A listed URL is not a found PDF: it may be gated, dead, HTML, or a different version. Make the fallback explicit
     # and retain its uncertain-version candidates for manual review/upload; never silently attach them.
@@ -425,7 +432,8 @@ VERSION_ORDER = ("publishedVersion", "acceptedVersion", "submittedVersion")
 
 async def _attach_other_version(store: Store, research_id: str, source_version_id: str, papers_dir: Any,
                                 fetcher: Callable[[str], Awaitable[fetch.FetchResult]],
-                                xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch_xml
+                                xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch_xml, *,
+                                recovery_dir: Path | None = None
                                 ) -> tuple[str | None, str | None]:
     """Attach a verified copy of another declared version to its own row under the same work; (asset, row) or (None, None).
 
@@ -450,7 +458,8 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
                 continue
             version_id = store.open_lookup_version(research_id, source_version_id, candidate["version_label"],
                                                    candidate["landing_url"])
-            return await _attach_rendition(store, version_id, candidate, data, papers_dir), version_id
+            return await _attach_rendition(store, version_id, candidate, data, papers_dir,
+                                           research_id=research_id, recovery_dir=recovery_dir), version_id
         result = await fetcher(candidate["candidate_url"])
         store.record_pdf_attempt(candidate["id"], result)
         if result.status != "ok":
@@ -458,27 +467,32 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
         version_id = store.open_lookup_version(research_id, source_version_id, candidate["version_label"],
                                                candidate["landing_url"])
         asset_id = await _attach_pdf(store, version_id, result.data, papers_dir, "download",
-                                     result.final_url or candidate["candidate_url"])
+                                     result.final_url or candidate["candidate_url"], research_id=research_id,
+                                     recovery_dir=recovery_dir)
         return asset_id, version_id
     return None, None
 
 
 async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_dir: Any, origin: str,
-                      retrieved_from: str | None, filename: str | None = None) -> str:
-    sha = hashlib.sha256(data).hexdigest()
-    papers_dir.mkdir(parents=True, exist_ok=True)
-    path = pdf_files.store_pdf_file(papers_dir, sha, data)
+                      retrieved_from: str | None, filename: str | None = None, *, research_id: str | None = None,
+                      recovery_dir: Path | None = None) -> str:
+    placement = await file_restore.store_pdf_file(store, papers_dir, recovery_dir, data,
+                                                 caller="acquisition", research_id=research_id)
+    sha, path = placement.sha256, placement.path
     extraction = await asyncio.to_thread(pdf.extract_pdf, path)
     return store.add_asset_with_pages(source_version_id, sha, len(data), path.name, origin, retrieved_from, filename,
                                       extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
 
 
 async def attach_confirmed_candidate(store: Store, source_version_id: str, candidate: dict[str, Any], papers_dir: Any,
-                                     fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch.fetch_pdf) -> fetch.FetchResult:
+                                     fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch.fetch_pdf, *,
+                                     research_id: str | None = None, recovery_dir: Path | None = None) -> fetch.FetchResult:
+    recovery_dir = file_restore.resolve_recovery_dir(store, papers_dir, recovery_dir)
     result = await fetcher(candidate["candidate_url"])
     store.record_pdf_attempt(candidate["id"], result)
     if result.status == "ok":
         # The version claim is the user's, not the provider's, so the file is recorded as their confirmed copy.
         await _attach_pdf(store, source_version_id, result.data, papers_dir, "user_upload",
-                          result.final_url or candidate["candidate_url"])
+                          result.final_url or candidate["candidate_url"], research_id=research_id,
+                          recovery_dir=recovery_dir)
     return result

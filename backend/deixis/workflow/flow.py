@@ -25,7 +25,7 @@ import httpx
 
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
-from deixis.documents import acquisition, embeddings, identity, math_reader, ocr, pdf, pdf_files
+from deixis.documents import acquisition, embeddings, identity, math_reader, ocr, pdf
 from deixis.domain import canonical, contracts, expansion as phrase_candidates, phrasebank, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  CHAIN_ABSTRACT_READ, CHAIN_CITING_CAP, CHAIN_CITING_PAGE, FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
@@ -2705,6 +2705,8 @@ class ResearchFlow:
                                       output["result"])
 
     async def _fetch_pdf(self, run: dict[str, Any], source: dict[str, Any]) -> None:
+        from deixis.workflow import file_restore, text_retry
+
         step = self.store.step(run["id"], f"fetch:{source['id']}", "fetch_pdf")
         if step["status"] in ("succeeded", "failed"):
             return
@@ -2718,7 +2720,16 @@ class ResearchFlow:
         sha = hashlib.sha256(result.data).hexdigest()
         papers = self.deps.settings.papers_dir
         papers.mkdir(parents=True, exist_ok=True)
-        path = pdf_files.store_pdf_file(papers, sha, result.data)
+        try:
+            placement = await file_restore.store_pdf_file(self.store, papers, self.deps.settings.recovery_dir, result.data,
+                                                          caller="run_fetch", research_id=run["research_id"])
+        except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
+            refused = isinstance(exc, file_restore.FileRestoreRefused)
+            self.store.finish_step(step["id"], "failed",
+                error_code="fetch_file_repair_refused" if refused else "fetch_file_busy",
+                error={"url": source["oa_pdf_url"], **({"code": exc.code} if refused else {})})
+            return
+        path = placement.path
         extraction = await asyncio.to_thread(pdf.extract_pdf, path)
         asset_id = self.store.add_asset_with_pages(
             source["id"], sha, len(result.data), path.name, "download", result.final_url, None,
@@ -2743,14 +2754,25 @@ class ResearchFlow:
         `other_versions` is the full-text retrieval run's addition (D83): a verified copy of a different declared
         version is attached to its own row under the work. An answer run and a PDF collection run never pass it.
         """
+        from deixis.workflow import file_restore, text_retry
+
         step = self.store.step(run["id"], f"other_copy:{source['id']}", "pdf_other_copy")
         self.store.start_step(step["id"])
         settings = self.deps.settings
-        found = await acquisition.acquire_for_source(
-            self.store, run["research_id"], source["id"], self.deps.http, settings.papers_dir, settings.contact_email, None,
-            self.deps.fetch_pdf, core_key=CONNECTORS["core"].api_key(), web_search=False, other_versions=other_versions,
-            xml_fetcher=self.deps.fetch_xml,
-        )
+        try:
+            found = await acquisition.acquire_for_source(
+                self.store, run["research_id"], source["id"], self.deps.http, settings.papers_dir, settings.contact_email, None,
+                self.deps.fetch_pdf, core_key=CONNECTORS["core"].api_key(), web_search=False, other_versions=other_versions,
+                xml_fetcher=self.deps.fetch_xml, recovery_dir=settings.recovery_dir,
+            )
+        except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
+            refused = isinstance(exc, file_restore.FileRestoreRefused)
+            self.store.finish_step(step["id"], "failed",
+                error_code="fetch_file_repair_refused" if refused else "fetch_file_busy",
+                error={"code": exc.code} if refused else None)
+            return {"source_version_id": source["id"], "lookups": len(self.store.pdf_discoveries(run["research_id"], source["id"])),
+                    "asset_id": None, "candidates": len(self.store.pdf_candidates(source["id"])),
+                    "pdf_found": self.store.has_asset(source["id"])}
         if found["asset_id"] is None:
             self.store.finish_step(step["id"], "failed", error_code="no_other_copy", error={"candidates": found["candidates"]})
             return found

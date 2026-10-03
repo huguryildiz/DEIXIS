@@ -138,3 +138,38 @@ Bütçe: 107 + 24 = 131 / 293 oturum; okur isteği yeni yok (ortak defterde 6 is
 - **Satırlar:** R1a 0/3 (yazılan bölümler), R1b 2/3, R1c 0/1; R7 184,4 s (oluşturmadan iptale; duraklamaya kadar 169,3 s) ve 9 çağrı. Rapor tamamlanmadığı için R2-R6, R8, R9, R11 ölçülemedi (`run_incomplete`); R10 ölçülmedi.
 
 Bütçe: 131 + 9 = 140 / 293 oturum; okur isteği yeni yok (ortak defterde 6 istek kalır). Sunucu durduruldu, 8765'e dokunulmadı; kanıt `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/d/`.
+
+## H9e (3-4 Ekim 2026): B raporu RF6 üzerinde, zincirin son koşusu
+
+**Dondurma:** Ek G (`b3fde0e`). **Karar:** [D202](../decisions.md). Ürün `7188ec8` (RF6), B'nin hazırlanmış verisinin yeni doğrulanmış kopyası `e/data`; korpus B, H9c ve H9d ile aynıdır. Tek koşu; önceki koşularla karşılaştırma bir koşuya karşı bir koşudur, RF4-RF6'nın nedensel etkisi değildir. Okumalar kayıtlı model okumasıdır, insan doğrulaması değildir.
+
+**Koşu:** başlangıç kapısı ve POST öncesi denetim geçti (migration 70, kurtarılan iş 0). POST 22:04:05Z, `run_lkhniruMdgaHTjygyJKu`, rapor `rpt_Rmd2soa3YuCZBBSyQJCF`. Koşu 22:09:58Z'de `completed` bitti (terminal olay 1614); hiçbir durdurma kuralı tetiklenmedi, iptal gönderilmedi. On model bölümünün onu da `valid`; birleştirme kontrolü raporu kabul etti, rapor `valid`, ürünün kendi incelemesi `reviewed`. H9 serisinde birleştirmeden geçen ilk rapor budur, R1c 1/1. Bu, raporun bilimsel olarak doğru olduğu anlamına gelmez; aşağıdaki satırların çoğu aralık dışında.
+
+- **Sayımlar:** POST öncesi 0 oturum; rapor 23 oturum, `envelope_mismatch` 0; yama dışı 22 oturumun 22'si kodla damgalı. V'nin çıktısı yama yoluna girdi; şema donmuş değerle aynıydı (`f30984c2…`), yama uygulandı, V `valid`. Çıkarılan veya düşürülen iddia 0. P19: a=[V], b=[V] (yama), c=[V], d boş. Adım hatası yok. III, IV, V ve VIII birer şema onarımıyla geçerli oldu (kitin 4 başarısız çağrısı bunlar). Ürünün inceleme adımı 8 kısmi çapa bulgusu yazdı, geri alınan cümle 0; VI, VII ve dizin terimlerinin iddiası olmadığı için incelenmedi.
+- **Okurlar:** ilk okur `claude-opus-5-5` medium (yürütücü, kör değil), 22:11:24Z-22:16:55Z; ikinci okur `claude-sonnet-5-5` medium, boş dizinde donmuş komutla tek istek, 22:17:12Z-22:17:51Z, dönen model aynı, stderr boş. Eşitlik denetimi geçti (54 birim), aktarım 54/54. H9e okur defteri 2 istek, 6 dk 10 s (H9e sınırı 4 istek / 60 dk); ortak H9b defteri 8 isteğin 4'ü, 120 dakikanın 12 dk 21 s'si.
+
+| Satır | Beklenti | H9e sonucu | Aralıkta mı |
+|---|---|---|---|
+| R1a | ilk denemede geçerli 7-10/10 | 2/10 (VI, dizin terimleri) | hayır |
+| R1b | onarımla geçerli ≥9/10 | 10/10 | evet |
+| R1c | 1/1 | 1/1 | evet |
+| R2 | yanlış bağlı iddia 0-3; kısmen bağlı iddia ≤8 | 30 iddia, 44 bağ: yanlış bağlı iddia 4 (C15, C29 iki okur; C5, C11 yalnız ikinci okur); kısmen bağlı iddia 18; anlaşmazlık 7 | ikisi de hayır |
+| R3 | U ≤ max(1, ⌊0,10 N⌋) | N=3, U=0 | evet |
+| R4a | `body_refs`'siz iddia 0 | 0 | evet |
+| R4b | gövdeden güçlü ≤%10 | 7/15 (%47; D2, D3, D8, D12, D13 iki okur, D9, D10 yalnız ilk okur) | hayır |
+| R5 | terim başına başka ad ≤1 | 13/6 (0, 7, 6, 0, 0, 0) | hayır (Enerji maliyeti, Sağlam MPC) |
+| R6 | 0-6 denklem; ≥3 ise yarısı sayfayla örtüşür | denklem birimi yok | ölçülemedi |
+| R7 | 10-30 dk, 15-46 çağrı, 7-13 ardışık tur | 5,8 dk (346,0 s), 23 çağrı, 7 tur | süre hayır (kısa), diğerleri evet |
+| R8 | ilk uyumsuzluk %30-70; onarım sonrası kalıpsız ≤%25; geri alınan 0-2 | 33/42 (%79); 27/42 (%64); 0 | ilk iki koşul hayır |
+| R9 | girdideki denklemlerin yarısı raporda | 7 çiftin hepsi `no_input_equation`, payda 0 | ölçülemedi |
+| R10 | yok | `p15_behavior_is_not_r10` | ölçülmedi |
+| R11 | kesilen kayıt 0; `insufficient_evidence` 0-3; eksik pasaj ≤2 | 107 hücre kesildi (IV 54, V 53); 3; 87 pasaj (IV 74, V 13) | birinci ve üçüncü hayır |
+
+- **Girdi kesilmesi B'deki gibi:** IV 16, V 7 hücre gördü. Eksik pasaj sayısı B'deki okur kuralıyla sayıldı; aynı betik `b2/data` üzerinde B'nin 74 ve 13 değerini yeniden üretiyor, H9e bölüm girdileri aynı hücreleri seçtiği için sayılar eşit. VI yine hiç hücre almadı ve "kanıt yok" metni yazdı; VII de.
+- **R2 ve R4b:** kısmen işaretlerinin çoğu, çok parçalı bir iddiaya tek parçayı taşıyan çapa alıntısından geliyor (ürünün kendi incelemesi de 8 iddiada aynı şeyi buldu). C15'in alıntısı başka bir sonucu (en büyük hata 7), C29'unki bir kısıt listesini gösteriyor. R4b'de özet, giriş ve sonuç, gövdede olmayan karar değişkenleri (vana açıklığı, tank seviyesi), kısıtlar (enerji ve kütle dengesi, pompa işletim sınırları) ve "tipik talep" ekliyor.
+- **R3:** kitin sözlüğü Türkçe yokluk fiillerini yine bulmadı; IV'teki üç yokluk cümlesi ilk okurca eklendi (M2-M4), iki okur da hücreyle uyumlu saydı.
+- **R9:** kit bu kez 7 çiftin hepsini kaynak sürümüne eşledi. IV girdisinde Candelieri18b ve Rajabpour18'in donmuş Denklem hücreleri vardı, ama formül satır içi matematikle (`\(…\)`) yazılmıştı; kit, birleştirmeyle aynı ayrıştırıcıyla yalnız `$$` blok matematiğini girdi denklemi sayıyor. Uygun çift kalmadı, payda 0, satır ölçülemedi. Bu bir kit kuralıdır, girdide formül olmadığı anlamına gelmez.
+
+Bütçe: 140 + 23 = 163 / 293 oturum. Sunucu 22:10:47Z'de durduruldu, 8765'e dokunulmadı; kanıt `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/e/`.
+
+**Zincir kapanışı (Ek G):** H9e zincirin tek ve son koşusuydu; H9 rapor ölçüm zinciri burada Ek G gereği kapanır, P10 öncesi H9f yok. Raporu tamamlama borcu kapandı (R1c 1/1). D205 kararına devreden borçlar: aralık dışı kalite satırları R1a, R2, R4b, R5, R7 süresi, R8 ve R11 (girdi kesilmesi ve eksik pasaj); ölçülemeyen R6 ve R9; ölçülmeyen R10. D157'ye bağlı ölçümler H9e'de yapılmadı; tamamlanmış ve kabul edilmiş bir rapor (`rpt_Rmd2soa3YuCZBBSyQJCF`) artık bunlar için mevcut.

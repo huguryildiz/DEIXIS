@@ -802,3 +802,145 @@ e9e4416ef1afeba965811df3d64c98a3fc1af1c53784c1e24dc495f6a362c1ff  .local/p9r-h9b
 72552cd3e64eda1512388dd8de23ae89aa832f8662af38b26aeecebdb4e043ec  .local/p9r-h9b/evidence/decide4-out.md
 0337b271e0a42ced26dc1baf868a7a35f258334346197ced140a5352c6d33ecd  .local/p9r-h9b/evidence/decide5-out.md
 ```
+
+## Ek E — H9c: B raporunun RF4 üzerinde yeniden koşusu (3 Ekim 2026, H9c rapor POST'undan önce)
+
+**Dayanak.** Koordinatör görevi: RF4 ([D207](../decisions.md), `2b185a8`) üzerinde yalnız B'nin raporunu, B'nin durmuş hazırlık verisinin yeni ve doğrulanmış kopyasında yeniden koşmak; kalan 186 uygulama oturumundan tek rapor koşusu, aynı durdurma kuralları ve K09/K10 okurları. Açık noktalar Claude Opus 5.5 + `gpt-6.1-sol` medium tarafından, salt okunur ortak kararla, sahibin sürekli yetkisi kapsamında sahip adına kararlaştırıldı; sahipten ayrıca onay istenmedi. Karar D202'ye tarihli **Ek E amendment** olarak eklenir.
+
+**Öncelik:** Ek E, H9c için önceki eklerle çelişen ürün/kit pinleri, veri yolu, bütçe ve ikinci okur komutu hükümlerinin yerine geçer. Önceki metinler ve sonuçlar tarihsel kayıt olarak değişmez. §5'in sonraki ölçüm için yeni korpus hükmüne bu koşuya özgü açık istisna verilir: H9c aynı hazırlanmış B korpusunu kullanır. Yeni keşif, kuyruk geçişi, seçim değişikliği, doldurma veya hücre düzeltmesi yapılmaz.
+
+### E.1 B'nin önceki sonucu ve yeniden koşunun kapsamı
+
+B'nin rapor koşusu `run_UriYrNZpRYuwcMd3d4kI`, `b90583b` üzerinde `b2/data` ile tamamlandı; 20 uygulama oturumu kullandı. On model bölümü geçerliydi, fakat birleştirme kontrolü raporu reddetti ve rapor `draft` kaldı. R1c `0/1`; sonuç raporun kabul edildiğini veya bilimsel olarak doğrulandığını göstermez. İkinci okur için bir istek kullanıldı. R9 kit kusuru nedeniyle ölçülemedi.
+
+RF4, modelin oluşturabileceği engelleyici birleştirme sorunlarını bölüm doğrulamasına taşır; çapa yaması ve ifade onarımından sonra tam doğrulayıcıyı yeniden çalıştırır; sınırlı `validation_context` ve VII için kabul edilmiş VI boşluklarını taşır; R9 kaynak anahtarının boş değerle ezilmesini önler; Türkçe kaynakları anlatan çoğul “bu çalışmaların” gibi ifadeleri kendi çalışmasını anlatan tekil ifadeden ayırır. Gerçek modelde henüz ölçülmemiştir.
+
+H9c yalnız yeni bir rapor koşusudur. `b2/data` önceki raporu içerdiğinden kaynak veya yürütme dizini olarak kullanılmaz; eski koşu sürdürülmez. B'nin sonuçları yeni kitle yeniden puanlanmaz.
+
+### E.2 Ürün ve donmuş değerler
+
+| Kayıt | Değer |
+|---|---|
+| Ürün | `2b185a8c1c2b463aca01a34ae23eda098d25f4b4`; ayrık worktree `/Users/huguryildiz/Documents/GitHub/DEIXIS-h9b-run`, kendi arm64 `.venv`'i, `uv sync --frozen`. Main ilerlese de yeniden sabitlenmez. |
+| Runtime `skill_package_hash` | `sha256:7389a1c722e396321ac5d8bacee9bb87cf71ac87b7be07c77a2235775a6f0dcb`; salt okunur hesaplandı, `integrity_issues()` boş. |
+| Şema manifesti | 23 dosya, `df3acb7a3ec1199f0622f276212a1a72a1242db0bb1ff22ad569b058d5ec66a5`. Ek D'den farklıdır: RF4 `step-input.schema.json` dosyasını değiştirir. Hesap yöntemi Ek D ile aynıdır. |
+| Modele giden şemalar | 41 anahtar; sıralı anahtar listesinin `json.dumps` SHA-256'sı `1a76b85cc1be334dae09da00a8129dc3577e948ace098466205b57c620d182a0`; bütün `strict_compatibility_issues` sonuçları boş. |
+| Yama taşıma şeması | Değişmedi: `f30984c2f2680b294b47822ba3c01f0f8c16bf89d69f6e0c0f9b3134911a9739`; argümansız şemanın kanonik JSON SHA-256'sı. |
+| Kit `scripts/p6_eval/measure_report.py` | `80662aa18fb6e24ae507799754bf36fdc463c466d7201e857aa4537600fbcff9` |
+| Kit testi `tests/test_p6_measure_report.py` | `de523a167813ebb7bc592ebc9477c49e35d685c8bd0d492826446f9489f1659b` |
+| Yöntem manifesti | Yeni `evidence/method-manifest-2b185a8.json`: 17 dosya; `aggregate_sha256` `fc2eee27dedc81f753647c25eadaae002e22b405ee3a17cbb9c0ae9381a44b6f`. Ek D'nin `method-manifest-b90583b.json` biçimi ve `sha256(json.dumps(files, sort_keys=True))` kuralı kullanılır. Manifest dosyasının kendi SHA-256'sı aşağıdaki blokta ayrıca donar. |
+
+Paket hash'inin yeniden doğrulama komutu:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend .venv/bin/python -c \
+ 'from deixis.domain.skill import package_hash, integrity_issues; print(package_hash()); print(integrity_issues())'
+```
+
+`git diff --name-only b90583b 2b185a8 -- backend/deixis/storage/migrations` salt okunur denetimde boş çıktı verdi. Migration dosyaları değişmedi. RF4'ün `validation_context` sınırı 262144 serileştirilmiş karakterdir; aşımda ürünün kayıtlı ret yolu korunur, yürütücü girdiyi küçültmez veya kesmez.
+
+### E.3 Yeni veri kopyası ve hazırlık kayıtlarının korunması
+
+Yeni yürütme dizini `.local/p9r-h9b/c/data`, kaynak yalnız `.local/p9r-h9b/b/data` olur. Araştırma `res_khW4MevleljQIeXvHsyl`, tablo `tbl_ACVZv04QYr9024IW57mF`; D.2'nin on dahil kaynak kimliği, 11 saklı tablo satırı, yedi sütunu, altı mantıksal hash'i ve D.3'ün yedi R9 çifti değişmez. On dahil satır dokuz ayrı eserdir; aynı PDF'yi taşıyan iki satır ve başarısız doldurma nedeniyle dışlanan satırın seçim etkisi korunur.
+
+**Kaynak manifesti hakkında doğrulanan ayrıntı:** bu kararın salt okunur dosya denetiminde `b/data` 57 dosya içeriyor; sembolik bağ yok, en büyük `nlink` 1, manifest toplamı `be258e864da65f3c12d78219681dcad4938dedfae931d5b3f6a20f64c36e3236`. D.4'ün 55 dosyalık kaynak manifestindeki bütün dosyalar aynı; eklenenler yalnız sıfır baytlık `library.sqlite-wal` ve 32.768 baytlık `library.sqlite-shm` dizinidir; oluşma geçmişleri bilinmiyor. `library.sqlite` SHA-256'sı tarihsel kaynak manifestiyle aynı: `81840a445e8a653adbb7585846c9cc6bc6e846ec4f9a1a4329954bc32a2732f8`. Bu denetim yan dosyaların ne zaman veya hangi okuyucuyla oluştuğunu göstermez. Güncel kaynak manifesti açıkça kaydedilir; 55 dosyalık manifestle tam eşitlik iddia edilmez.
+
+Kopya, D.4'ün doğrulanmış kopya yöntemiyle hazırlanır:
+
+1. B/B2 sunucularının, kayıtlı `codex app-server` alt süreçlerinin ve gözlemcilerin kapalı olduğu doğrulanır. `lsof +D b/data` temiz boş sonuç vermeli; başarısız veya belirsiz süreç denetimi durdurur.
+2. `c/data` mevcut olmamalı; kaynak/hedef yollarında sembolik bağ olmamalı. SQLite yan dosyaları dahil `cp -Rp b/data c/data` kullanılır; kopya zamanı kaydedilir.
+3. `manifest.py` ile kaynak ve kopya manifestleri dış kanıt dizinine yazılır. İkisi dosya dosya eşit, kaynak yukarıdaki güncel manifestle eşit ve her ikisinde en büyük `nlink` 1 olmalıdır. Kaynaktaki tarihsel 55 dosyanın içerikleri ayrıca D.4 kaynak manifestiyle eşit kalmalıdır.
+4. SQLite denetimleri yalnız yeni kopyada yapılır. Altı mantıksal tablo hash'i `evidence/b/logical-table-after-exclusion.json` ile aynı; dahil küme aynı; aktif koşu, `started` oturum, izleme ve araştırmanın raporu sıfır olmalıdır. Kopya pre-0070 şemasını taşımalıdır. Okumalardan sonra yeni bir kopya manifesti alınır; WAL/SHM yan dosyalarına etkisi ayrıca kaydedilir.
+
+`b/data` ve `b2/data` üzerinde sunucu, SQLite okuyucusu, migration, onarım veya test çalıştırılmaz; dosyalar silinmez, değiştirilmez, yeniden adlandırılmaz. Kaynak doğrulaması dosya içeriklerini okuyarak yapılır.
+
+**Kopya kaydı (bu ek yazılırken yapıldı):** süreç denetimi 16:52:55Z (`evidence/c/precopy-check.txt`): `serve` süreci, 8873 dinleyicisi ve `lsof +D b/data` çıktısı yok, `c/data` yoktu, sembolik bağ 0. `pgrep -f` desenine uyan tek süreç PID 36025 Codex masaüstü bildirimcisiydi (`CodexNotify`); argümanında bu ekin taslak isteminin metni vardı, sunucu veya gözlemci değildir. Bu yüzden yürütücü, launcher'ın `pgrep` desenini taşıyan metni Codex istemlerine koymaz; böyle bir bildirimci kalırsa launcher başlamayı reddeder ve bu ret korunur. `cp -Rp` 16:53:05Z; kaynak ve kopya manifestleri eşit (57 dosya, `be258e86…3236`, en büyük `nlink` 1), tarihsel 55 dosya değişmedi, fazlası yalnız sıfır baytlık `-wal` ve 32.768 baytlık `-shm`. Kopyada altı mantıksal hash `logical-table-after-exclusion.json` ile aynı; en büyük migration 69, aktif koşu 0, `started` oturum 0, rapor 0, izleme 0, dahil küme `c_prepost.py` sorgusuyla donmuş on kaynağa eşit (`copy-prestart-check.json`); okumalardan sonra manifest aynı (`manifest-after-reads.json`). `b/data/library.sqlite` ve `c/data/library.sqlite` SHA-256 değeri aynı: `81840a44…32f8`.
+
+0070 yalnız `c/data` üzerinde ilk sunucu başlangıcında uygulanır. Başlangıçtan hemen sonra `c_prepost.py check` şu değerleri doğrular ve kaydeder: en büyük migration 70, kurtarılan koşu/adım/oturum sıfır, izleme sıfır, altı mantıksal hash aynı. Aynı canlı denetimler POST yardımcısının iki geçişinde yeniden yapılır.
+
+### E.4 Executor kapıları ve yürütme
+
+D.5'in bütün kontrolleri korunur. Yeni dosyalar: `gate_f.sh`, `launch_f.sh`, `c_prepost.py`, `c_prepost_cases.py`. Değişiklikler yalnız ürün/paket/şema/kit pinleri, yeni veri ve kanıt yolları, aşama adları ve Ek E/RF4 kontrolleridir. Port **8873** kalır; başka bir ölçüm sunucusu varken başlanmaz. `H9B_FREEZE_COMMIT` ve `H9B_ARM` değişken adları uyumluluk için korunur; kol `c`, aşamalar `c-start` ve `c-post` olur.
+
+`gate_f.sh` push edilmiş Ek E'yi, D202'de Ek E kaydını, D207'yi, ürün/dondurma atalığını ve `h9c-e-files` bloğunu zorunlu tutar. Ek C/D bloklarının dosya hash'i kontrolleri, A2 veto/sınıflandırma koruması ve A2'nin veritabanı/WAL içerik-zaman kontrolleri aynen kalır; `-shm` istisnası değişmez. Eski gate ve launcher dosyaları değiştirilmez.
+
+`c_prepost.py` tek rapor POST yoludur. D.5'in kesin süreç komutu, tam veri-dizini ortam öğesi, tek 8873 dinleyicisi, worker kira PID'i, sağlık/paket, migration, mantıksal hash, dahil küme, sıfır aktif iş/izleme/rapor, hazır tablo, Luna bağlantısı ve boş 8765 kontrollerinin hepsini korur. Donmuş POST gövdesi değişmez. Belirsiz yanıt yeniden gönderilmez; araştırmanın rapor koşuları okunup kaydedilir ve çıkış 3 korunur.
+
+`c_prepost_cases.py` **sunucu başlamadan ve 0070 yeni kopyaya uygulanmadan önce** çalıştırılır. Yalnız `c/data` dosyalarının geçici kopyasını değiştirir; 34 durum ve beklenen çıkışlar korunur. Testteki migration satırı ekleme yalnız geçici kopyadadır.
+
+Ek D'nin modelsiz ön koşul test listesine `tests/test_report_rf4.py`, `tests/test_report_step_input.py`, `tests/test_report_assembly.py` ve `tests/test_phrasebank.py` eklenir. Kuru denetimler (modelsiz, `2b185a8` üzerinde, sunucu başlamadan): `c_checks_cases.py` 10 durum geçti; `c_prepost_cases.py` 34 durum geçti (`evidence/c/prepost-cases.txt`); Ek D listesi ve bu dört dosya ile 1.743 test geçti, 6 uyarı (`evidence/c/preflight-tests-f.txt`). Kapı `gate_f.sh` Ek E push edilmeden çalışamaz; ilk çalışması `c-start` aşamasıdır. Ek E, mevcut K12 usulüyle Sol high incelemesinden geçip koordinatörce push edilmeden sunucu veya rapor başlatılmaz. Yeni pin başarısızsa eski ürüne otomatik dönüş yoktur.
+
+```sh
+cd /Users/huguryildiz/Documents/GitHub/DEIXIS-h9b-run
+H9B_STAGE=c-start H9B_FREEZE_COMMIT=<Ek E hash> zsh .local/p9r-h9b/gate_f.sh
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python .local/p9r-h9b/c_checks_cases.py
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python .local/p9r-h9b/c_prepost_cases.py
+H9B_ARM=c H9B_FREEZE_COMMIT=<Ek E hash> nohup zsh .local/p9r-h9b/launch_f.sh > .local/p9r-h9b/evidence/server-c.log 2>&1 &
+.venv/bin/python .local/p9r-h9b/c_prepost.py check <Ek E hash> <PID>
+.venv/bin/python .local/p9r-h9b/c_prepost.py post <Ek E hash> <PID>
+.venv/bin/python .local/p9r-h9b/poll_report_b.py c <PID> res_khW4MevleljQIeXvHsyl <rapor koşusu> <POST zamanı>
+```
+
+### E.5 Bütçe ve durdurma
+
+Koordinatörün bu görev için verdiği defter: A 7 + A2 10 + B hazırlık 70 + B rapor 20 = **107 / 293**, kalan **186 uygulama oturumu**. H9c'ye yalnız **bir rapor koşusu, 60 uygulama oturumu / POST'tan 90 dk** tahsis edilir. Kopyalanan 70 hazırlık oturumu tarihsel kayıttır; yeniden tüketim sayılmaz. Her yeni oturum, onarım ve izinli yeniden gönderim dahil sayılır. Kalan bütçe yeni hazırlık, ikinci rapor veya model değişikliği yetkisi vermez; 60 oturumluk rapor tavanı büyütülmez. Poll aralığında gözlenen aşım ayrıca kaydedilir; aşım payı yeni çağrı başlatma izni değildir.
+
+K09/K10 okurları rapor başına en çok **4 istek / toplam 60 dk** kullanabilir. Ek B'nin **H9b toplam 8 istek / 120 dk** tavanı H9c'yi de kapsayan ortak tavan olarak korunur; sıfırlanmaz. **B'nin defteri düzeltilerek yazılır:** K09 ilk okurun okumasını K10'a sayar; B'nin sonuç kaydı yalnız ikinci okurun isteğini saymıştı. B'de iki okuma vardı: ilk okur (yürütücü, ayrı model isteği değil, bir istek sayılır) `review.orig.md`'nin saklandığı 14:52:12Z'den kitin `second` adımının çalıştığı 14:57:50Z'ye kadar, 5 dk 38 s (`second-manifest.json` oluşma zamanı; okuma `review.orig.md` saklandıktan sonra başladı, notların sonraki düzeltme eki 15:06Z civarındadır ve puanlamayı değiştirmedi); ikinci okur 14:59:28Z–15:00:01Z, 33 s (`evidence/b2/req1-start.txt`, `req1-end.txt`). B toplamı 2 istek, 6 dk 11 s; ortak defterde **6 istek ve yaklaşık 113 dk** kalır. H9c yine rapor başına 4 istek / 60 dk ile sınırlıdır; ilk okur da bu sayıma girer ve başlangıç/bitiş zamanı aynı biçimde kaydedilir. Her yeni ilk/ikinci okur veya tamamlama isteği K10'a sayılır. Bütçe veya okur yoksa ilgili metrikler ölçülemedi kalır.
+
+§5 ve Ek B/C/D durdurma kuralları değişmez: 15 s gözlem, saklı terminal kök nedenler, yalnız bütün kök nedenler `client_timeout` ise bütçe içinde 10 dk sonra bir kez aynı koşuyu sürdürme; kota/yük, model uyuşmazlığı, araç ihlali, başka/karışık hata veya dolan tavanla durma. Bekleme saate dahildir. Duraklamış koşu iptal edilmez. Nihai snapshot için yürütücü dönüşü, sıfır `started` oturum ve 120 s kapanış penceresinde `snapshot_eligible` birlikte gerekir. Port 8765 kuralları ve geçersiz ölçüm yolu aynen sürer.
+
+### E.6 Snapshot, okurlar ve sayımlar
+
+D.5 ve istem §5'in sırası aynıdır; yalnız veri `c/data`, kanıt `evidence/c`, gözlemci dosyaları `report-polls-c.jsonl` / `report-poll-c.stop`, snapshot çıktısı `evidence/c/report` olur. R9 girdileri D.3'ün değişmeyen `r9/b-pairs.json` ve köken dosyasıdır. Yeni kit yalnız H9c için kullanılır; eski R9 sonucu değişmez.
+
+D202'nin B sonucu için kayıtlı yorum korunur: durdurulmadan `completed` olan rapor koşusunda, birleştirme raporu `draft` bıraksa bile K09 okurları ve bütün kit satırları çalışır; R1c gerçek kabul durumunu gösterir. Durmuş koşuda `snapshot --stopped` ve okursuz `score` yolu uygulanır.
+
+İlk okur `claude-opus-5-5`, `medium`, kör olmayan yürütücü analisttir. İkinci okur `claude-sonnet-5-5`, `medium`, yeni ve ayrı oturumdur. §4.3'ün izinli alanları, `review.orig.md`, ikinci paket eşitliği, R3 ek birim biçimi, okunamadı yolu, deterministik aktarım ve aktarım sonrası eşitlik kontrolü aynen uygulanır. Tohumlar `20261003` ve `20261004`; her ölçüt sayfasındaki destekleyen kontroller en çok beştir. İlk hükümler ve kontrol etiketleri ikinci okura verilmez.
+
+B'de sapma olarak kaydedilen **`--output-format json` H9c için önceden donmuş komutun parçasıdır**. Depo dışındaki yeni ve boş `/tmp/p9r-h9c-reader2/` dizininde:
+
+```sh
+claude -p --model claude-sonnet-5-5 --effort medium --tools "" \
+  --strict-mcp-config --setting-sources "" --no-session-persistence \
+  --output-format json < packet.md > reading2-raw.json 2> reading2-err.txt
+```
+
+Ham JSON korunur; içindeki metin yanıtı kayıpsız olarak `reading2-raw.md` dosyasına çıkarılır, sonra §4.3'ün satır JSON aktarımı uygulanır. İstenen ve dönen model kimliği kaydedilir; kimlik yoksa veya uyuşmazsa okuma başka model konmadan durur. Yalnız istem §5'in model isteği yapılmadan gerçekleşen `--setting-sources ""` ayrıştırma hatası istisnası korunur; `--output-format json` çıkarılmaz.
+
+`h9b_counts.py`, `p19_count.py`, `p19.sql` ve `c_checks.py` değişmez. H9c başlangıç–POST penceresi ve POST sonrası pencere ayrı sayılır; başlangıç–POST'ta beklenen yeni oturum sıfırdır. B hazırlığının 70 oturumu ayrı tarihsel kayıt olarak gösterilir. Yama basamakları, paket damgası, `envelope_mismatch`, çıkarılan iddialar ve P19 a–e aynı kuralla yazılır. RF4 doğrulama/context hataları saklı issue kodlarıyla ayrıca raporlanır; kit dışında puan üretilmez.
+
+### E.7 Sonuç kaydı ve donmuş dosyalar
+
+Sonuç `docs/product/p9r-report-results.md` içinde ayrı tarihli **H9c** bölümüne, karar ve sonuç D202'ye ayrı Ek E paragrafı olarak yazılır. Ürün/dondurma hash'leri, gerçek koşu/rapor kimlikleri, kopya ve migration kapıları, bütçe, durma/kapanış, bölüm ve birleştirme durumları, R1–R11/P19, okur kimlikleri, istekler, süreler ve sapmalar kaydedilir.
+
+B ile karşılaştırma aynı hazırlanmış korpusta **bir koşuya karşı bir koşudur**. RF4 B'nin çıktılarından geliştirilmiştir; H9c bağımsız doğrulama değildir. Arada başka ürün değişiklikleri de vardır ve R9 kit sürümü değişmiştir. Tamamlanma, birleştirme kabulü veya metrik farkları RF4'ün nedensel etkisi, hata oranı, genel kalite, hız/maliyet üstünlüğü ya da genelleme kanıtı olarak sunulmaz. B'nin R9'u ölçülemedi kalır.
+
+Aşağıdaki SHA-256 değerleri yürütücü dosyaları ve koşu öncesi kayıtlar oluşturulduktan sonra dolduruldu; `gate_f.sh` her birini denetler. Eski executor dosyaları Ek C/D bloklarıyla ayrıca denetlenir. Değişmeyen yardımcılar burada da açıkça listelenir. Bütçe defteri ve `protocol.md` gibi koşu sırasında ekleme yapılan kayıtlar dosya bloğuna alınmaz.
+
+```h9c-e-files
+f46f3b19ddd25eea80a3d4db6e4d14d1a7a766e5733ea6bc362eb1312e105651  .local/p9r-h9b/gate_f.sh
+93b7ccc00cc273c0ba3ebaf029061701e9ee9e47a6c08c837e93ff582b6acd98  .local/p9r-h9b/launch_f.sh
+3f3dcd4b2cc17a39c4b02bc5dbbeb11c7ddc1b23f429ffb1dd19158ad7c5b356  .local/p9r-h9b/c_prepost.py
+c3a6ee969037a784c8f5288b66e4cacb34346790b6dc4f458b687477ffb4b6c5  .local/p9r-h9b/c_prepost_cases.py
+c9d60768bbde2ef70ed3de52905b71f0cc79ec16e2efbfa05f3c418770181803  .local/p9r-h9b/poll_report_b.py
+7c9bc47913cf5ff4e6b8dc51c6aef2a37ea11e961b98f82a051ddc52cc56d28d  .local/p9r-h9b/api.py
+b44a93835b3b7bfd17bf4d5c10731304ab62a436e5729132ccf2bae80654a08e  .local/p9r-h9b/h9b_counts.py
+58219952459a2e2bedc25722b5d7e5e158e04cbbe02d9d6a205e401f63136993  .local/p9r-h9b/p19_count.py
+6d53789f7a1b898a4833bb993eaac222b29e5fa0cb209519fe020c3106e6acd1  .local/p9r-h9b/p19.sql
+e3307b794ff24f4a93fb2abca701dac2e34a7992491036b68df05a08cec4210f  .local/p9r-h9b/logical_table.py
+e1c375b4e8aecf61906472a0c60caa5932a3c0f2f5e201e2da0424a0cca97183  .local/p9r-h9b/manifest.py
+45b0b72f9a26bd0df2e187ba0ca517ebff4905149efc357a0052d36a2536dab7  .local/p9r-h9b/c_checks.py
+1f0011f7f4b286d42c31d5e488b6e994cc339c591cfd7daf41566344a96db4cf  .local/p9r-h9b/c_checks_cases.py
+80662aa18fb6e24ae507799754bf36fdc463c466d7201e857aa4537600fbcff9  scripts/p6_eval/measure_report.py
+de523a167813ebb7bc592ebc9477c49e35d685c8bd0d492826446f9489f1659b  tests/test_p6_measure_report.py
+018dd36fd8aa3293aeab951aa725436c2187a953a442aed1356bf662192ca490  .local/p9r-h9b/r9/b-pairs.json
+e9e4416ef1afeba965811df3d64c98a3fc1af1c53784c1e24dc495f6a362c1ff  .local/p9r-h9b/r9/b-pairs-provenance.json
+a193073f303a59045ba27558b6f603b36d05cd635941a4944751af2937759730  .local/p9r-h9b/evidence/method-manifest-2b185a8.json
+76d63f1a0f513e1209612429ba74a510d33ba35d94c0b8f8ddeb0891867acf8b  .local/p9r-h9b/evidence/c/precopy-check.txt
+60e2b0126652a005be5e1455a858381f3883fdef416ea2f88c963988cea954ed  .local/p9r-h9b/evidence/c/copy-time.txt
+d2e731b1c71fc1205fc903c3e66e7d0be61e9bc5c9f878b18cde0e1bf5fbe5cf  .local/p9r-h9b/evidence/c/source-manifest.json
+d2e731b1c71fc1205fc903c3e66e7d0be61e9bc5c9f878b18cde0e1bf5fbe5cf  .local/p9r-h9b/evidence/c/copy-manifest.json
+01d68412c9fab8cddb93cc58883638eaedcf4b57edbed0a3076fbbdbdad1c2c5  .local/p9r-h9b/evidence/c/logical-table-before.json
+9b19cebd382b41466566ffb875dd0ffdd4c06834b080073af11a9389ea487624  .local/p9r-h9b/evidence/c/copy-prestart-check.json
+d2e731b1c71fc1205fc903c3e66e7d0be61e9bc5c9f878b18cde0e1bf5fbe5cf  .local/p9r-h9b/evidence/c/manifest-after-reads.json
+```

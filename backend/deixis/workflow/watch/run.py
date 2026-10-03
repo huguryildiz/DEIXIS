@@ -2,7 +2,7 @@
 
 import asyncio
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 
@@ -183,17 +183,10 @@ async def run(watches, check, callbacks, settings):
                         gate = callbacks.host_gate(openalex.WORKS_URL) if unit["provider_id"] == "openalex" else no_gate()
                         async with gate:
                             if unit["kind"] == "citing_works":
-                                outcome = await openalex.citing_works(http, unit["openalex_id"], cursor,
+                                dispatched = await facade.dispatch_citing(unit["provider_id"], http, unit["openalex_id"], cursor,
                                     unit["page_size"], key, settings.contact_email, **{k: v for k, v in options.items() if k != "cursor"},
                                     sort="publication_date:desc", publication_date=True)
-                                returned_count = len(outcome.records)
-                                admitted = [replace(r, raw=facade.sanitize(r.raw, (key,))) for r in outcome.records
-                                            if facade.usable_identity(r.provider_record_id)]
-                                outcome = replace(outcome, records=admitted, raw_payload=facade.sanitize(outcome.raw_payload, (key,)))
-                                dispatched = facade.Dispatched(outcome, returned_count-len(admitted),
-                                    {"contract_id": unit["contract_id"], "adapter_revision": unit["adapter_revision"],
-                                     "query_rules_revision": facade.contract.QUERY_RULES_REVISION, "payload": "sanitized_json" if outcome.raw_payload is not None else None,
-                                     "dropped_records": returned_count-len(admitted)})
+                                outcome = dispatched.outcome
                             else:
                                 options.update(connector.sw_options, **registry.endpoint_options(unit))
                                 if unit["date_sorted"]:

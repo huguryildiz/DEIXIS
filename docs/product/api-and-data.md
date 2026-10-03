@@ -58,8 +58,11 @@ API key alone cannot describe every scholarly API; a new protocol needs an adapt
 A packaged build cannot add sources; no external plugin, runtime loading or
 declarative mapping is offered (D174). Citation lookup and full-text retrieval are
 optional capabilities, not assumptions shared by every source. Every current adapter
-declares only search; the existing lookup and citation-chaining paths call provider
-helpers directly until batch G1-F1 binds them to the contract (D196).
+declares search. G1-F1 also binds existing DOI lookups on Crossref, Semantic Scholar
+and Scopus, and OpenAlex ID lookup and citing works, through registry-declared
+capabilities. Undeclared single lookup returns `unsupported` without a request;
+undeclared batch/citing dispatch refuses before send. Full-text retrieval remains
+in `documents/` and is outside this capability batch.
 
 The owner supplied credentials in the conversation. Their VALUES ARE OMITTED from
 this handoff and all copied configuration. No live requests using those credentials

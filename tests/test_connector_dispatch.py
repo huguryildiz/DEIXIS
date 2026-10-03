@@ -709,5 +709,6 @@ def test_connections_projection(tmp_path):
         for p in providers:
             descriptor = facade.connectors()[p["id"]].descriptor
             assert p["contract_id"] == descriptor.contract_id and p["adapter_revision"] == descriptor.adapter_revision
-            assert p["capabilities"] == ["search"]
+            assert p["capabilities"] == sorted(descriptor.capabilities)
+            assert p["capabilities"] == sorted({"search"} | set(conformance.FIXTURES[p["id"]].get("capability_cases", {})))
             assert {"implemented", "access_mode", "supplementary", "key_env", "role", "note"} <= p.keys()

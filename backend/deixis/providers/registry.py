@@ -13,13 +13,14 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field, replace
-from typing import Any, Awaitable, Callable
+from types import MappingProxyType
+from typing import Any, Awaitable, Callable, Mapping
 from urllib.parse import urlsplit
 
 from deixis.providers import arxiv, biorxiv, core, crossref, ieee_xplore, openalex, pacing, pubmed, scopus, semantic_scholar, serpapi
-from deixis.providers import common
+from deixis.providers import common, lookup
 from deixis.providers.common import SearchOutcome
-from deixis.providers.contract import ContractViolation
+from deixis.providers.contract import ContractViolation, OptionDescriptor
 from deixis.providers.query_rules import QuerySyntax
 
 
@@ -34,6 +35,41 @@ class Endpoint:
     options: tuple[str, ...] = ()
     page_gap: float | None = None
     query_syntax: QuerySyntax | None = None
+
+
+@dataclass(frozen=True)
+class CapabilityBinding:
+    call: Callable[..., Awaitable[Any]]
+    max_batch: int
+    accepts_retry_allowance: bool = True
+    options: tuple[OptionDescriptor, ...] = ()
+
+
+def _retry_kwargs(allowance):
+    return {} if allowance is None else {"max_rate_limit_retries": allowance}
+
+
+async def _crossref_lookup(client, identifiers, api_key, contact_email, max_rate_limit_retries):
+    answer, outcome = await lookup.crossref_work(client, identifiers[0], contact_email)
+    return {identifiers[0]: answer}, outcome
+
+
+async def _s2_lookup(client, identifiers, api_key, contact_email, max_rate_limit_retries):
+    return await lookup.semantic_scholar_batch(client, identifiers, api_key, **_retry_kwargs(max_rate_limit_retries))
+
+
+async def _scopus_lookup(client, identifiers, api_key, contact_email, max_rate_limit_retries):
+    answer, outcome = await lookup.scopus_abstract(client, identifiers[0], api_key, **_retry_kwargs(max_rate_limit_retries))
+    return {identifiers[0]: answer}, outcome
+
+
+async def _openalex_lookup(client, identifiers, api_key, contact_email, max_rate_limit_retries):
+    return await openalex.works_by_ids(client, identifiers, api_key, contact_email, **_retry_kwargs(max_rate_limit_retries))
+
+
+async def _openalex_citing(client, work_id, cursor, limit, api_key, contact_email, max_rate_limit_retries, **options):
+    return await openalex.citing_works(client, work_id, cursor, limit, api_key, contact_email,
+                                     **_retry_kwargs(max_rate_limit_retries), **options)
 
 
 @dataclass(frozen=True)
@@ -76,6 +112,10 @@ class Connector:
     retry: dict[str, Any] = field(default_factory=dict)
     display_name: str | None = None
     query_syntax: QuerySyntax | None = None
+    capabilities: Mapping[str, CapabilityBinding] = field(default_factory=dict)
+
+    def __post_init__(self):
+        object.__setattr__(self, "capabilities", MappingProxyType(dict(self.capabilities)))
 
     def api_key(self) -> str | None:
         return (os.environ.get(self.key_env) or None) if self.key_env else None
@@ -94,11 +134,16 @@ CONNECTORS = {c.provider_id: c for c in (
     Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",
               sw_options={"reference_count": True, "references": True}, options=("sort", "publication_date"),
               host=_host(openalex.WORKS_URL), adapter_revision=3,
+              capabilities={"id_lookup": CapabilityBinding(_openalex_lookup, openalex.MAX_IDS_PER_REQUEST),
+                            "citing_works": CapabilityBinding(_openalex_citing, openalex.MAX_RESULTS,
+                                options=(OptionDescriptor("sort", "str", None),
+                                         OptionDescriptor("publication_date", "bool", None)))},
               display_name="OpenAlex", query_syntax=QuerySyntax(boolean_checks=True)),
     # Semantic Scholar's relevance search serves `offset + limit` up to 1,000 and refuses a deeper page. An sw query
     # goes to the bulk endpoint instead: up to 1,000 papers a call, continued by a token (D93).
     Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000,
               host=_host(semantic_scholar.SEARCH_URL), adapter_revision=2,
+              capabilities={"doi_lookup": CapabilityBinding(_s2_lookup, 500)},
               sw_query={"endpoint": semantic_scholar.BULK_ENDPOINT, "sort": semantic_scholar.BULK_SORT},
               endpoints={semantic_scholar.BULK_ENDPOINT: Endpoint("cursor", semantic_scholar.BULK_MAX_RESULTS,
                                                                total="estimated", options=("sort",),
@@ -109,6 +154,7 @@ CONNECTORS = {c.provider_id: c for c in (
               display_name="Semantic Scholar", query_syntax=QuerySyntax("plain")),
     Connector("crossref", crossref.search, crossref.MAX_RESULTS, searchable=False,  # verification only (D87)
               host=_host(crossref.WORKS_URL), adapter_revision=2,
+              capabilities={"doi_lookup": CapabilityBinding(_crossref_lookup, 1, False)},
               display_name="Crossref", query_syntax=QuerySyntax("plain")),
     # arXiv asks for three seconds between requests and refused consecutive ones on 2026-09-15 (D18).
     Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS, page_gap=3.0, host=_host(arxiv.QUERY_URL), adapter_revision=2,
@@ -128,6 +174,7 @@ CONNECTORS = {c.provider_id: c for c in (
               query_syntax=QuerySyntax(boolean_checks=True, unbalanced_suffix=" (it returns zero records instead of an error)")),
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,
               sw_searchable=False, host=_host(scopus.SEARCH_URL), adapter_revision=2, display_name="Scopus",
+              capabilities={"doi_lookup": CapabilityBinding(_scopus_lookup, 1)},
               query_syntax=QuerySyntax("field_group", wrapper="TITLE-ABS-KEY")),  # sw: last abstract source only (D91)
     # CORE and SerpApi are searched by a legacy research only: in the third D88 measurement neither brought a verified
     # work no other source brought, and SerpApi is paid (D93).
@@ -157,15 +204,6 @@ def resolve_query_syntax(provider_id: str, endpoint: str | None = None, *, stric
     if declaration.kind == "plain":
         return replace(declaration, display_name=connector.display_name or provider_id)
     return declaration
-
-
-# Dotted names only: B4 binds these helpers; they are not B1 capabilities.
-UNBOUND_HELPERS = {
-    "crossref": ("lookup.crossref_work",),
-    "semantic_scholar": ("lookup.semantic_scholar_batch",),
-    "scopus": ("lookup.scopus_abstract",),
-    "openalex": ("openalex.works_by_ids", "openalex.citing_works"),
-}
 
 
 def _configured(searchable: bool | None = None) -> list[str]:

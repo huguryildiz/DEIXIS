@@ -490,5 +490,6 @@
   "rate_header": "retry-after",
   "failure_stages": [
     "search"
-  ]
+  ],
+  "capability_cases": {}
 }

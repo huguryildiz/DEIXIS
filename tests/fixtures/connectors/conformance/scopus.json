@@ -19,7 +19,10 @@
       "positive": "positive",
       "failure": "http_400"
     },
-    "doi_lookup": "unsupported",
+    "doi_lookup": {
+      "positive": "positive",
+      "failure": "http_500"
+    },
     "id_lookup": "unsupported",
     "citing_works": "unsupported"
   },
@@ -814,5 +817,329 @@
   "rate_header": "x-ratelimit-limit",
   "failure_stages": [
     "search"
-  ]
+  ],
+  "capability_cases": {
+    "doi_lookup": [
+      {
+        "name": "positive",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "search-results": {
+                "entry": [
+                  {
+                    "prism:doi": "10.9999/synthetic.1",
+                    "dc:description": "SYNTHETIC lookup abstract"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "expected_status": "completed",
+        "answer_statuses": [
+          "found"
+        ]
+      },
+      {
+        "name": "not_found",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "search-results": {
+                "entry": [
+                  {
+                    "error": "SYNTHETIC not found"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "expected_status": "zero_results",
+        "answer_statuses": [
+          "not_found"
+        ]
+      },
+      {
+        "name": "http_401",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 401,
+            "body": {
+              "search-results": {
+                "entry": [
+                  {
+                    "prism:doi": "10.9999/synthetic.1",
+                    "dc:description": "SYNTHETIC lookup abstract"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "expected_status": "entitlement_missing"
+      },
+      {
+        "name": "http_500",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 500,
+            "body": {
+              "search-results": {
+                "entry": [
+                  {
+                    "prism:doi": "10.9999/synthetic.1",
+                    "dc:description": "SYNTHETIC lookup abstract"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "expected_status": "failed"
+      },
+      {
+        "name": "rate_unstated",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          },
+          {
+            "status": 200,
+            "body": {
+              "search-results": {
+                "entry": [
+                  {
+                    "prism:doi": "10.9999/synthetic.1",
+                    "dc:description": "SYNTHETIC lookup abstract"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "expected_status": "completed"
+      },
+      {
+        "name": "rate_exhausted",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          },
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          },
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          }
+        ],
+        "expected_status": "rate_limited"
+      },
+      {
+        "name": "quota",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 429,
+            "body": {
+              "error": {
+                "code": "insufficient_quota",
+                "message": "SYNTHETIC quota exhausted"
+              }
+            }
+          }
+        ],
+        "expected_status": "rate_limited"
+      },
+      {
+        "name": "connect",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "error": "connect"
+          }
+        ],
+        "expected_status": "failed"
+      },
+      {
+        "name": "read_timeout",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "error": "read_timeout"
+          }
+        ],
+        "expected_status": "timeout"
+      },
+      {
+        "name": "non_json_200",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "text": "<SYNTHETIC not JSON"
+          }
+        ],
+        "expected_status": "parse_error"
+      },
+      {
+        "name": "wrong_root",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": []
+          }
+        ],
+        "expected_status": "parse_error"
+      },
+      {
+        "name": "wrong_container",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "search-results": 7
+            }
+          }
+        ],
+        "expected_status": "parse_error"
+      },
+      {
+        "name": "key_echo",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "search-results": {
+                "entry": [
+                  {
+                    "prism:doi": "10.9999/synthetic.1",
+                    "dc:description": "SYNTHETIC lookup abstract SYNTHETIC-B1-SECRET-DO-NOT-STORE"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "expected_status": "completed"
+      },
+      {
+        "name": "other_doi",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "search-results": {
+                "entry": [
+                  {
+                    "prism:doi": "10.9999/synthetic.2SYNTHETIC-B1-SECRET-DO-NOT-STORE",
+                    "dc:description": "SYNTHETIC-B1-SECRET-DO-NOT-STORE"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "expected_status": "completed",
+        "answer_statuses": [
+          "not_found"
+        ]
+      }
+    ]
+  }
 }

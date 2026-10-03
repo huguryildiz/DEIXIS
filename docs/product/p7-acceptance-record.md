@@ -20,6 +20,8 @@ B5 meets those conditions as follows: the product documents are corrected (secti
 
 The third sentence of that wording is a new joint disposition, not a reading of earlier text: P7 will close on deterministic matrices, and live error and quota formats are carried as recorded, unmeasured limits rather than as a closing gate (section 8).
 
+**Later status (D201, 3 October 2026):** after G1-F1, P7-F2 and P7-F3 passed their gates, P7 exit is **met** on deterministic evidence; see the update at the end of section 10.
+
 ## 2. Section 13 conditions
 
 | # | Condition (design section 13) | Evidence on `30b070c` | Status |
@@ -90,15 +92,19 @@ The 566 SYNTHETIC conformance fixture cases in `test_connector_contract.py` spli
 
 ### 3.4 By capability
 
-The contract vocabulary has four capabilities (`contract.CAPABILITIES`: `search`, `doi_lookup`, `id_lookup`, `citing_works`). Every one of the ten descriptors declares only `search`.
+The contract vocabulary has four capabilities (`contract.CAPABILITIES`: `search`, `doi_lookup`, `id_lookup`, `citing_works`). All ten descriptors declare search. G1-F1 (D201) adds existing-helper bindings on four connectors with synthetic equivalence and workflow tests.
 
 | Capability | Declared by | Evidence |
 |---|---|---|
 | `search` | all ten connectors, eleven endpoint pairs | every row of section 3.3; positive and failure cases through each provider's real parser |
-| lookup (`CompatibilityConnector.lookup`) | none; returns `unsupported` | `test_lookup_unsupported_without_search_outcome`: 20 cases (ten connectors, two requests each), zero requests and no `SearchOutcome`; `test_lookup_validation_before_send`: 4 cases |
-| `doi_lookup`, `id_lookup`, `citing_works` | none | the workflow's existing lookups and chaining call provider helpers directly (`registry.UNBOUND_HELPERS`); two keyed-lookup payload tests in `test_connector_dispatch.py` check that those direct writers store no key |
+| `doi_lookup` | Crossref, Semantic Scholar, Scopus | Unchanged helpers, single/batch lookup and dispatch projection in `test_capability_binding.py`; Crossref 404 is not_found, S2 binds by identifier, Scopus accepts its asked DOI only |
+| `id_lookup` | OpenAlex | Existing batches of up to 100 identifiers; per-ID answers, admission and unresolved IDs tested separately from adapter equivalence |
+| `citing_works` | OpenAlex | Existing cursor-paged citing reads, including date-sorted watch reads; returned counts precede admission; recorded provenance is checked before chain continuation |
+| undeclared single lookup | every undeclared provider/operation pair | unsupported with no request, answer or outcome; undeclared batch/citing dispatch raises ContractViolation before transport |
 
-Frozen fixtures, unchanged since D179/D193 and checked here: `tests/fixtures/connectors/baseline.json` 408,249 bytes, SHA-256 `e9aa47950ea55a770b9d8dff1eebc89e39760d8e777361760d3e9f0d3a04b4b0`; `tests/fixtures/connectors/query_baseline.json` 3,227,353 bytes, SHA-256 `ecc658ad6b5964e513f90144de0220a552e170ba11afe1f85d989fe22ac5e586`. All ten connectors are at adapter revision 2.
+Historical B5 freeze measurement on `30b070c`: `baseline.json` had 111 cases, 408,249 bytes, SHA-256 `e9aa47950ea55a770b9d8dff1eebc89e39760d8e777361760d3e9f0d3a04b4b0`; all ten connectors were at adapter revision 2. P8 B5 moved OpenAlex to revision 3 and added a sorted search case; the `bbcf575` freeze has 112 cases and 412,913 bytes.
+
+G1-F1 regeneration of `tests/fixtures/connectors/baseline.json`: the same 112 search cases, **413,024 bytes**, SHA-256 `e429f7affea3ccab0a40032c7635918ad1d9e8daa03c93f0ccbd8557ffca7bad`. Comparing against `git show bbcf575:tests/fixtures/connectors/baseline.json`, deleting only `capabilities` from the OpenAlex, Semantic Scholar, Crossref and Scopus descriptors on both sides, finds JSON equality. Search requests, waits and outcomes remain unchanged. OpenAlex stays at revision 3, the other nine at revision 2. `query_baseline.json` remains byte-identical: 3,227,353 bytes, SHA-256 `ecc658ad6b5964e513f90144de0220a552e170ba11afe1f85d989fe22ac5e586`.
 
 ## 4. Batches accounted for
 
@@ -140,8 +146,12 @@ The refactor itself (B1, B3a's equivalence, B3b's rendering, B4's dispatch) is c
 | D199 2 | Discovery does not resend a transient connection failure once the query's share is spent (all connectors) |
 | D199 3 | PubMed's per-page share is sized for two subrequests |
 | D199 4 | OpenAI and Gemini embedding errors no longer carry the request key when a reply echoes it |
+| G1-F1 O4 (D201) | Required-key lookup without a key produces failed answers and not_configured/before_send without transport; settlement refunds its reservation |
+| G1-F1 O5 (D201) | Chain records pass shared identity admission and record.raw sanitization; returned counts retain the pre-admission page size |
+| G1-F1 O6 (D201) | Forward chain continuation refuses unreadable/incompatible recorded provenance without a send, usage or search row; other seeds continue |
+| G1-F1 O8 (D201) | Lookup answer string fields and outcome.error are sanitized with the operation's sent key before storage |
 
-Two bounded version-rule amendments replace revision bumps and are recorded in [connector-onboarding.md](connector-onboarding.md): B3a's pre-send input refusals (D179) and B3b's undeclared-input refusals (D193). Neither changes what an accepted request sends or returns.
+Three bounded version-rule amendments are recorded in [connector-onboarding.md](connector-onboarding.md): B3a's pre-send input refusals (D179), B3b's undeclared-input refusals (D193), and G1-F1's binding of unchanged existing helpers with capability equivalence and unchanged search replays (O2, D201). None changes what an accepted adapter request sends or returns; application admission, redaction, accounting and refusal changes are named separately.
 
 ## 6. Open items and their dispositions
 
@@ -151,10 +161,10 @@ Decided jointly by Claude Opus 5.5 and gpt-6.1-sol medium. "Limit" means the ite
 |---|---|---|---|
 | 1 | `RetryPolicy` describes but does not drive retries (ledger g) | `contract.py:52-53`; D179's agreement tests pin the descriptor to module behavior for every pair | Limit |
 | 2 | Local `ValueError` conversions unscheduled (ledger d) | An unknown stored paged endpoint raises `KeyError` before usage; S2 kill-search reserves, then raises `ContractViolation`. Removing a registered endpoint is one way to reach this; the code does not show it is the only way | Limit |
-| 3 | Lookup capability binding moved out of B4; D174 Q3 default not met | Every descriptor declares only `search`; existing Crossref, S2 batch and Scopus lookups use direct helpers (`registry.UNBOUND_HELPERS`). A new adapter can add search through the contract, not lookup | Blocks P7; G1-F1 |
+| 3 | Lookup capability binding (D174 Q3) | G1-F1 binds existing Crossref, S2 batch, Scopus and OpenAlex ID helpers through registry capabilities. Collector-based lookup_requests/lookup_sends settlement and step traces are atomic; S2's matched non-string abstract exception remains ledger d | Closed by G1-F1 (D201). Limit: S2 matched non-string abstract exception (ledger d) |
 | 4 | Numeric-text record IDs admitted | `"17"` from OpenAlex, bioRxiv or S2 is admitted because the adapter's string cannot show its JSON type; valid numeric identities such as CORE's must stay admitted | Limit |
 | 5 | Kill-search writes no `connector_json` | Kill-search writes to the candidate store, not `search_runs`. Kill-search runs can resume pending work, but that path has no paged continuation needing the B4 revision check | Limit |
-| 6 | Chaining calls OpenAlex directly | `workflow/flow.py:1704-1709` (`citing_works`, `works_by_ids`); count and distribution probes at `flow.py:581` and `:1093` also call OpenAlex directly | Chaining: blocks P7, G1-F1. Count/distribution probes: limit |
+| 6 | Chaining capability binding | G1-F1 routes forward/backward chaining and the watch citing read through dispatch. Chain requests/sends settle from collector entries with an atomic persisted trace; admission and provenance continuation are named changes. Count/distribution probes remain direct | Chaining: closed by G1-F1 (D201). Count/distribution probes: limit |
 | 7 | PubMed request accounting (Q4, ledger e) | P7-F2 collects every subrequest at dispatch, settles discovery run/query reservations atomically to attempts, records observed provider_sends and preserves both PubMed stages. Kill-search keeps reservations and charges excess. Discovery starts no page or transient retry after its share is spent; the settled bound is `share - 1 + R` unless an adapter exceeds its declared cost, which is charged and recorded. `tests/test_transport_accounting.py` and the 566-case registry replay cover these rules | Closed by P7-F2 (D199). Limits: an in-flight crash keeps the reservation; a stop during transient backoff writes no step, so that operation's trace is lost while its counts stay; an adapter that raises keeps the reservation and loses its collected entries (ledger d) |
 | 8 | OpenAI embedding path | `tests/test_openai_embedding.py` exercises authenticated POST URL, model, exactly one Bearer header, input truncation, batching, shuffled indexes, unit vectors, success, 401 without retry, missing-key zero sends, and local unauthenticated contrast. OpenAI/Gemini echoed-key errors are redacted on 401 and exhausted 429. Direct ResearchFlow cases store similarities under `openai:text-embedding-3-small` or a redacted embedding_failed step; stored rows, events and files are checked for the synthetic key | Closed by P7-F3 (D199). Mocked transport only; live OpenAI access and error formats unmeasured |
 | 9 | Other recorded limits | Ledger k (empty or null result containers, not checked against provider documentation); `scopus_count_unmapped`; only the operation's own key is redacted; live error and quota formats unmeasured; G12 not reproduced | Limit |
@@ -165,13 +175,13 @@ These are not implemented in B5. Each must land before P7 closes and before P10.
 
 | Batch | Scope | Closes |
 |---|---|---|
-| **G1-F1: lookup and chaining capability binding** | Bind the existing single and batched lookup helpers and OpenAlex chaining (`citing_works`, `works_by_ids`) through versioned capabilities, keeping identity, batching, accounting and unsupported behavior | Items 3 and 6 (chaining); D174 Q3 |
+| **G1-F1: lookup and chaining capability binding** | Done (D201): registry bindings, additive batch/citing requests, collector settlement with persisted traces, admitted chain records, recorded-page continuation and watch citing dispatch. `tests/test_capability_binding.py` and focused regressions provide synthetic evidence; helper modules and search replay outputs remain unchanged.Reviewer full pytest outside the sandbox: 13,006 passed, 0 failed, 2 skipped | Items 3 and 6 (chaining); D174 Q3 |
 | **P7-F2: transport accounting** | Done (D199): subrequests collected at the dispatch boundary, discovery reservations settled atomically to attempts, observed sends counted apart, kill-search reservations kept with excess charged, a transport record on each step. Evidence: `tests/test_transport_accounting.py` and the 566-case registry conformance replay | Item 7; ledger e, f, j; Q4 |
 | **P7-F3: OpenAI embedding auth and 401** | Done (D199): authenticated OpenAI route and workflow cases; the sent key is redacted from OpenAI and Gemini reply errors, including exhausted 429. Evidence: `tests/test_openai_embedding.py` | Item 8 |
 
 ## 8. Unsupported operations and live evidence
 
-Unsupported through the contract, for every connector: DOI lookup, ID lookup and citing works (declared in the vocabulary, bound by none) and full text (not in the vocabulary). The workflow's existing lookup and chaining paths still work through direct helpers; full-text retrieval stays in `documents/`. No external plugin, runtime loading or declarative mapping exists (D174 Q1, Q2).
+Supported declared capabilities are listed in section 3.4. Other provider/operation pairs remain unsupported: single lookup returns unsupported without a request, while batch/citing dispatch refuses before send. Full text is outside this vocabulary and remains in `documents/`. No external plugin, runtime loading or declarative mapping exists (D174 Q1, Q2). G1-F1 uses synthetic keys and mocked transport only. The OpenAlex count/distribution probes, Scopus entitlement probe (one lookup_requests, outside lookup_sends), acquisition's Crossref/CORE PDF-location calls and Zotero are outside this capability batch. RetryPolicy remains descriptive; an adapter exception keeps its reservation and loses collector entries (ledger d). Stored OpenAlex IDs have no added shape validation. lookup_sends and chain_sends have no UI labels.
 
 Observed live access (G10): an owner-approved check sent one search, "graph neural network power system", limit 3, no retries, to each of IEEE Xplore, Scopus, CORE and SerpApi with the owner's keys. It called the provider modules' `search()` directly, on code before B1, not through the facade. The result file `/tmp/g10-live/result.json` (1,308 bytes, SHA-256 `629ab415f3f9cea39a9670dfe73f41136c537634bb0dfb55e94b69282bdf1303`) was still present and was read for this record; it shows all four `completed`, HTTP 200, three records each, 1.04 to 1.61 s, totals 7,124 / 180,295 / 25,137,458 / 2,590,000, Scopus `x-ratelimit-limit` 20000 and CORE 150. The coordinator recorded the check at 02:48; the file's modification time is 02:42 local time. B5 repeated no live call.
 
@@ -192,7 +202,7 @@ Exit condition (implementation plan, P7 row): "Her etkin bağlantı auth/model/k
 |---|---|---|
 | Model connections (Codex, Claude, Gemini, DeepSeek) | D172 (G2–G5), D173 (G6, G7) | Live error and quota formats unmeasured |
 | Embeddings (built-in, Gemini, Ollama, LM Studio, OpenAI) | Coverage note section 2; D173 (G11); P7-F3 authenticated OpenAI and workflow tests, OpenAI/Gemini error redaction | Live error and quota formats unmeasured |
-| Scholarly connectors (ten) | Sections 3 to 5; D172 (G9), D173 (G8); P7-F2 registry-driven transport accounting and focused synthetic workflow tests | Lookup and chaining binding: G1-F1; live error and quota formats unmeasured |
+| Scholarly connectors (ten) | Sections 3 to 5; D172 (G9), D173 (G8); P7-F2 transport accounting; G1-F1 implemented lookup/chaining bindings and synthetic capability/workflow tests | Live error and quota formats unmeasured |
 | Live access | G10: four keyed connectors, one search each | Live formats unmeasured |
 | Unimplemented connections listed | Coverage note section 4: nine model connections shown as not implemented, no research adapter for OpenAI or LM Studio; Google Scholar is reached through SerpApi rather than a separate connector; Zotero is an implemented import path, not a search connector | none |
 | G12 | Not reproduced: 50 of 50 serial runs and 20 of 20 parallel runs of its file passed (D173) | Remains unreproduced |
@@ -200,6 +210,8 @@ Exit condition (implementation plan, P7 row): "Her etkin bağlantı auth/model/k
 Verdict: **not met** (section 1). P7 can close when G1-F1, P7-F2 and P7-F3 pass their gates, on deterministic evidence, with the live rows above carried as limits.
 
 Update after D199 (2026-10-03): P7-F2 and P7-F3 have passed their gates (items 7 and 8 closed, ledger e and Q4 closed). P7 exit is still **not met**; the only remaining closing batch is G1-F1.
+
+Update after D201 (2026-10-03): G1-F1 has passed its gate (items 3 and 6 closed, D174 Q3's default met). Crossref, Semantic Scholar and Scopus declare `doi_lookup`, OpenAlex declares `id_lookup` and `citing_works`; the workflow's lookups, citation chaining and the watch citing read go through the capability dispatch with collector-based reserve-then-settle accounting. Reviewer full pytest outside the sandbox: 13,006 passed, 0 failed, 2 skipped. With G1-F1, P7-F2 and P7-F3 done, **P7 exit is met** on deterministic evidence under the rule of section 10 and section 1 (agreed by Claude Opus 5.5 and gpt-6.1-sol medium in B5). Carried as recorded limits, not gates: live error and quota formats unmeasured, G12 unreproduced, and the limits in section 6 and D201.
 
 ## Limits
 

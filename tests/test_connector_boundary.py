@@ -103,7 +103,8 @@ def test_descriptors_registry_and_module_policy():
         assert d.order == order and d.display_name == facade.query_rules.NAMES[pid]
         assert d.contract_id in c.SUPPORTED_CONTRACTS and d.query_rules_revision == c.QUERY_RULES_REVISION
         assert d.adapter_revision == registry.CONNECTORS[pid].adapter_revision
-        assert d.capabilities == {"search"} and d.capabilities <= c.CAPABILITIES
+        assert d.capabilities == {"search"} | set(registry.CONNECTORS[pid].capabilities)
+        assert d.capabilities <= c.CAPABILITIES
         assert d.endpoints[0].endpoint_id is None
         assert len({e.endpoint_id for e in d.endpoints}) == len(d.endpoints)
         for endpoint in d.endpoints:
@@ -119,10 +120,9 @@ def test_descriptors_registry_and_module_policy():
             assert asdict(r) == expected | registry.CONNECTORS[pid].retry
     assert facades["biorxiv"].descriptor.lineage == "openalex"
     assert facades["biorxiv"].descriptor.host == facades["openalex"].descriptor.host
-    for names in facade.UNBOUND_HELPERS.values():
-        for name in names:
-            module, attr = name.split(".")
-            assert callable(getattr(importlib.import_module("deixis.providers." + module), attr))
+    for connector in registry.CONNECTORS.values():
+        for binding in connector.capabilities.values():
+            assert callable(binding.call) and binding.max_batch > 0
 
 
 def test_registry_retry_overrides_match_source_policy():
@@ -194,8 +194,9 @@ async def run():
         for f in facade.connectors().values():
             context = facade.context_for(registry.CONNECTORS[f.descriptor.provider_id], http, None)
             f.access(context)
-            outcome = await f.lookup(contract.LookupRequest(doi="10.9999/synthetic"), context)
-            assert outcome.status == "unsupported" and outcome.outcome is None
+            if "doi_lookup" not in f.descriptor.capabilities:
+                outcome = await f.lookup(contract.LookupRequest(doi="10.9999/synthetic"), context)
+                assert outcome.status == "unsupported" and outcome.outcome is None
         assert dict(os.environ) == before
 asyncio.run(run())
 '''
@@ -220,8 +221,9 @@ def test_local_purity_and_secrets(monkeypatch, memory_keychain):
                 state = f.access(ctx)
                 for value in (repr(f.descriptor), str(asdict(f.descriptor)), repr(state), str(asdict(state)), repr(ctx)):
                     assert baseline.SYNTHETIC_KEY not in value
-                result = await f.lookup(c.LookupRequest(provider_record_id="synthetic"), ctx)
-                assert result.status == "unsupported" and result.answer is None and result.outcome is None
+                if "id_lookup" not in f.descriptor.capabilities:
+                    result = await f.lookup(c.LookupRequest(provider_record_id="synthetic"), ctx)
+                    assert result.status == "unsupported" and result.answer is None and result.outcome is None
     asyncio.run(run())
     assert dict(os.environ) == before_env and memory_keychain.items == before_keyring
 
@@ -274,8 +276,11 @@ def test_lookup_validation_before_send(kwargs):
         c.LookupRequest(**kwargs)
 
 
-@pytest.mark.parametrize("pid", list(registry.CONNECTORS))
-@pytest.mark.parametrize("lookup_request", [c.LookupRequest(doi="10.9999/synthetic"), c.LookupRequest(provider_record_id="synthetic")])
+@pytest.mark.parametrize("pid,lookup_request", [
+    (pid, request) for pid, connector in registry.CONNECTORS.items()
+    for operation, request in (("doi_lookup", c.LookupRequest(doi="10.9999/synthetic")),
+                               ("id_lookup", c.LookupRequest(provider_record_id="synthetic")))
+    if operation not in connector.capabilities])
 def test_lookup_unsupported_without_search_outcome(pid, lookup_request):
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(baseline.deny_network)) as http:

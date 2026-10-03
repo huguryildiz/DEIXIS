@@ -1693,48 +1693,57 @@ class ResearchFlow:
         if step["status"] != "pending":
             return None  # failed, or unknown after a crash: recorded, and not sent a second time (D18)
         self._checkpoint(run_id, run["scope_revision"])
+        connector = CONNECTORS["openalex"]
+        if cites is not None and page is not None and page > 1:
+            previous = self.store.existing_step(run_id, f"chain:forward:{cites}:{page - 1}")
+            refusal = self._continuation_error(previous or {"id": ""}, connector)
+            if refusal:
+                self.store.finish_step(step["id"], "failed", error_code=refusal, delivery_class="before_send")
+                return None
         if not self._chain_requests_left(run):
             return None  # counted `not_reached` by the summary
         self.store.start_step(step["id"])
-        connector = CONNECTORS["openalex"]
         attempts = 0
         while True:
             operation_key = connector.api_key()
-            self.store.add_usage(run_id, "chain_requests")
             # The provider's own rate-limit retries are requests too: they get only what the chain's limit leaves.
             left = run["budget"]["max_chain_requests"] - self.store.run(run_id)["usage"].get("chain_requests", 0)
-            retries = max(0, min(PROVIDER_WAIT[scope["effort"]], left))
+            retries = max(0, min(PROVIDER_WAIT[scope["effort"]], left - 1))
+            reserved = 1 + retries
+            self.store.add_usage(run_id, "chain_requests", reserved)
             async with fetch_module.host_gate(openalex.WORKS_URL):
                 if cites is not None:
-                    outcome = await openalex.citing_works(self.deps.http, cites, cursor or FIRST_PAGE, per_page,
-                                                          operation_key, self.deps.settings.contact_email, retries)
+                    dispatched = await facade.dispatch_citing("openalex", self.deps.http, cites, cursor or FIRST_PAGE,
+                        per_page, operation_key, self.deps.settings.contact_email, retries)
                 else:
-                    outcome = await openalex.works_by_ids(self.deps.http, batch or [], operation_key,
-                                                          self.deps.settings.contact_email, retries)
-            if outcome.retries:
-                self.store.add_usage(run_id, "chain_requests", outcome.retries)
+                    dispatched = await facade.dispatch_lookup("openalex", "id_lookup", self.deps.http,
+                        tuple(batch or []), operation_key, self.deps.settings.contact_email, retries)
+            lookups.settle_dispatch(self.store, run_id, step, dispatched, reserved, "chain_requests", "chain_sends")
+            outcome = dispatched.outcome
             if (outcome.status == "failed" and outcome.delivery_class == "before_send"
                     and attempts < MAX_TRANSIENT_NETWORK_RETRIES and self._chain_requests_left(run)):
                 attempts += 1
                 await asyncio.sleep(1.5 * attempts)
                 continue
             break
-        self._record_chain(run, step, key, direction, outcome, forms, links, cites=cites, page=page, batch=batch,
-                           per_page=per_page, operation_key=operation_key)
+        self._record_chain(run, step, key, direction, dispatched, forms, links, cites=cites, page=page, batch=batch,
+                           per_page=per_page)
         return self.store.step(run_id, key, chaining.STEP_KIND)["output"] if outcome.status in ("completed", "zero_results") else None
 
-    def _record_chain(self, run: dict[str, Any], step: dict[str, Any], key: str, direction: str, outcome: SearchOutcome,
+    def _record_chain(self, run: dict[str, Any], step: dict[str, Any], key: str, direction: str,
+                      outcome: SearchOutcome | facade.Dispatched | facade.DispatchedLookup,
                       forms: dict[str, list[str]], links: list[Any], *, cites: str | None, page: int | None,
-                      batch: list[str] | None = None, per_page: int = CHAIN_CITING_PAGE,
-                      operation_key: str | None = None) -> None:
+                      batch: list[str] | None = None, per_page: int = CHAIN_CITING_PAGE) -> None:
         """Write one answered chain request: the filter runs first, and only the records that pass are written, as a
         search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is kept, passing
         or not, in `chain_links`."""
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        dispatched = outcome if isinstance(outcome, (facade.Dispatched, facade.DispatchedLookup)) else None
+        outcome = dispatched.outcome if dispatched is not None else outcome
+        returned_count = dispatched.returned_count if dispatched is not None else len(outcome.records)
         settings = self.deps.settings
         payload_path = payload_digest = None
         if outcome.raw_payload is not None:
-            outcome.raw_payload = facade.sanitize(outcome.raw_payload, (operation_key,))
             settings.payloads_dir.mkdir(parents=True, exist_ok=True)
             payload_path = f"{step['id']}.json"
             (settings.payloads_dir / payload_path).write_text(json.dumps(outcome.raw_payload), encoding="utf-8")
@@ -1748,14 +1757,18 @@ class ResearchFlow:
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
             result_count=len(passed), provider_total=outcome.provider_total, page_limit=per_page,
             error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit,
-                              "returned": len(outcome.records), "passed_filter": len(passed)}
+                              "returned": returned_count, "passed_filter": len(passed)}
                              | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {})),
             raw_payload_path=payload_path, payload_sha256=payload_digest,
+            **({"connector_json": dumps(dispatched.connector)} if dispatched is not None else {}),
             **({"page_number": page} if page is not None else {}),
         )
-        output = {"status": outcome.status, "direction": direction, "returned": len(outcome.records),
+        output = {"status": outcome.status, "direction": direction, "returned": returned_count,
                   "passed_filter": len(passed), "next_cursor": outcome.next_cursor if cites is not None else None,
                   "provider_total": outcome.provider_total}
+        output = lookups.transport_output(self.store, step, output)
+        if dispatched is not None and dispatched.dropped_records:
+            output["dropped_records"] = dispatched.dropped_records
         if cites is None:
             # A reference OpenAlex did not return has no record to link and no title to filter: it is named here, and
             # the summary counts it, rather than stored as a link that failed the filter.
@@ -1770,6 +1783,7 @@ class ResearchFlow:
             else:
                 final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
                 self.store.record_search(search_fields, "openalex", [], payload_path, step["id"], final,
+                                         step_output=output,
                                          error_code=outcome.status,
                                          error={"error": outcome.error, "http_status": outcome.http_status}
                                          | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {}),
@@ -1865,7 +1879,8 @@ class ResearchFlow:
         filtered = self.store.step(run_id, "chain_filter", "code:chain_filter")["output"] or {}
         stage = self.store.existing_step(run_id, "chain_abstract_stage")
         plan = (stage or {}).get("output") or {}
-        sent = [s for s in steps if s["status"] != "pending"]
+        refused = [s for s in steps if s["error_code"] in ("connector_provenance_invalid", "adapter_revision_changed")]
+        sent = [s for s in steps if s["status"] != "pending" and s not in refused]
         forward_seeds = {work_id for seed in seeds.get("seeds") or [] for work_id in seed["openalex_ids"]}
         reached = {s["operation_key"].split(":")[2] for s in sent if s["operation_key"].startswith("chain:forward:")}
         chained = filtered.get("chained") or []
@@ -1884,6 +1899,7 @@ class ResearchFlow:
                          "forward": sum(s["operation_key"].startswith("chain:forward:") for s in sent),
                          "failed": sum(s["status"] in ("failed", "outcome_unknown") for s in sent),
                          "sent": self.store.run(run_id)["usage"].get("chain_requests", 0),
+                         "continuation_refused": len(refused),
                          "limit": run["budget"].get("max_chain_requests"),
                          "not_reached_batches": len(seeds.get("backward_batches") or [])
                          - sum(s["operation_key"].startswith("chain:backward:") for s in sent),

@@ -9,8 +9,10 @@ before send (B3a, D179) and delegates query rendering/rules to registry declarat
 (B3b, D193), and application search dispatch now uses the facade (B4, D194). Admission and
 payload sanitization run after the equivalent adapter call; stored page revisions
 are checked before continuation. G1 is accepted with conditions for the search capability
-(B5, D196, [acceptance record](p7-acceptance-record.md)); lookup and chaining stay unbound
-until G1-F1. The equivalence evidence uses synthetic fixtures.
+(B5, D196, [acceptance record](p7-acceptance-record.md)). G1-F1 binds existing DOI
+lookups (Crossref, Semantic Scholar, Scopus), OpenAlex ID lookup and citing reads,
+including the watch citing read. The implementation and equivalence evidence use
+synthetic fixtures (D201).
 
 ## Five onboarding gates
 
@@ -20,11 +22,15 @@ until G1-F1. The equivalence evidence uses synthetic fixtures.
    used no network and establishes no current provider truth.
 2. Register the adapter in `backend/deixis/providers/registry.py:88` and supply
    default/endpoint metadata (`registry.py:25`, `registry.py:37`). Derive its
-   descriptor through `facade.descriptor_for`; declare actual capabilities,
-   retrieval lineage, host and request cost. Every HTTP request of a search adapter
+   descriptor through `facade.descriptor_for`; declare lookup and citing bindings
+   through `Connector.capabilities` with their batch ceiling, retry-allowance support
+   and typed options. Declare retrieval lineage, host and request cost. Every HTTP request of an adapter capability
    must go through `providers/common.py::send`; the registry-driven conformance
    replay compares collected attempts and sends with its mock transport and treats
-   bypassing `send` as a conformance failure. Declare non-default retry/wait
+   bypassing `send` as a conformance failure. Supply `capability_cases` and proofs
+   for every declared lookup or citing operation, including direct/adapter equivalence,
+   dispatch admission/redaction, errors, malformed replies, ceiling and zero-request
+   refusal cases (`tests/test_capability_binding.py`). Declare non-default retry/wait
    policy in `Connector.retry` (`registry.py:72`), using the provider's constants;
    `facade.descriptor_for` reads `common.send` defaults and merges those overrides
    without provider branches. Add managed keys if needed in
@@ -114,13 +120,27 @@ compiler rendering and the facade resolve strictly. gpt-6.1-sol medium agreed to
 this amendment in plan review round 1 (D193). The query freeze retains the old
 undeclared-input outputs separately from its unchanged replay domain.
 
-All B1 facades declare only `search`. Lookup returns `unsupported` without a
-request, answer or `SearchOutcome`. It is neither `failed` nor `zero_results`
-and is never persisted to `record_lookups`. Existing helper names are recorded
-in `facade.UNBOUND_HELPERS`; lookup capability binding is a named unscheduled
-owner (D194 decision 10), amending D174's B4 row. D174 Q3's default is not yet
-met; B5 did not record that binding as done and named it batch G1-F1 (D196), together
-with chaining dispatch, which remains unbound.
+G1-F1's bounded amendment exempts binding an existing, unchanged helper as a declared
+capability from an `adapter_revision` bump only when every capability case has
+identical HTTP requests, waits and adapter-level results directly and through the
+facade, and all 112 search replays remain unchanged. Only the four affected
+descriptors' capabilities change in the search freeze. OpenAlex stays at revision 3;
+Semantic Scholar, Crossref and Scopus stay at revision 2. Any later change to what
+a bound capability sends or returns requires the usual bump. The additive batch
+and citing types leave the v1 required protocol and vocabularies unchanged, so
+`CONTRACT_ID` stays `deixis.scholarly_connector.v1` (O1/O2, D201).
+Admission, redaction, accounting and continuation refusal are separately named
+application changes, not adapter-equivalence claims.
+
+Single lookup returns `unsupported` without a request, answer or `SearchOutcome`
+only for an undeclared operation. It is neither `failed` nor `zero_results` and is
+never persisted to `record_lookups`. Unsupported batch/citing dispatch raises
+`ContractViolation` before send. Bound DOI lookups are Crossref (one), Semantic
+Scholar (up to 500, with the workflow retaining batches of 200) and Scopus (one);
+OpenAlex binds ID batches (up to 100) and cursor-paged citing works (clamped to 200
+per page, `openalex.MAX_RESULTS`). Other connectors retain search alone. Chain
+continuation records and checks the same provenance as discovery; legacy SQL NULL
+continues.
 
 Explicit regeneration command from the repository root:
 
@@ -180,7 +200,12 @@ B2 tree. B2 synthetic conformance does not verify provider documentation.
 | pause_text. Missing configuration label | English pause labels and Turkish entries now cover provider_not_configured, provider_quota_exhausted and provider_adapter_revision_changed (including unreadable provenance). Completed searches remain; quota retries require resume/retry. Build and lint passed with existing warnings; the new pause texts were not inspected in a rendered browser (D194). | B4 fixed (D194) |
 | b4_merge_version | `test_connector_dispatch::test_merge_and_arxiv_versions`: two dispatched providers retain both mappings for one DOI source; arXiv versions remain separate. | B4 fixed (D194) |
 | b4_resume_paging | `test_connector_dispatch::test_resume_provenance`: legacy NULL/current continuation asks the next page once, and the subsequent resume asks no succeeded page twice. | B4 fixed (D194) |
-| b4_resume_lookup | Lookup capability binding is unscheduled (D194 decision 10). Workflow keeps batched direct helpers; single-record facade lookup remains unsupported with zero requests. D174 Q3 default is not met; B5 retains this limit and names the owner batch G1-F1 (D196), required before P7 closes and before P10. | Lookup capability binding; unscheduled (D194) |
+| b4_resume_lookup | Registry-owned existing-helper bindings, single/batch lookup, OpenAlex citing dispatch and watch citing dispatch; `tests/test_capability_binding.py` replays capability equivalence, unsupported/no-request operations, atomic reserve/settle traces, chunk resume and chain continuation. D174 Q3's default is met (D201). | G1-F1 fixed (D201) |
+| g1f1_o4 | A missing required lookup key returns failed answers with not_configured/before_send, zero requests and zero collector entries. Scopus chunks snapshot once; settlement refunds the whole reservation. `test_scopus_missing_key_chunk`, `test_scopus_key_snapshot_per_chunk`. | G1-F1 fixed (D201) |
+| g1f1_o5 | Chaining drops/counts unusable identities and sanitizes each admitted record.raw; paging uses returned counts and backward unresolved IDs use admitted records. `test_chain_admission_raw_redaction_and_provenance`, `test_chain_drop_does_not_extend_paging`. | G1-F1 fixed (D201) |
+| g1f1_o6 | Chain search rows record connector_json; incompatible or unreadable prior-page provenance refuses only that seed's next page, without usage or search row. SQL NULL continues. `test_chain_continuation_refuses_only_that_seed`. | G1-F1 fixed (D201) |
+| g1f1_o8 | Lookup dispatch sanitizes abstract, paper_id, linked_dois, has_preprint and outcome.error with the sent key, separately from payload/record redaction. `test_capability_equivalence`, `test_echoed_key_absent_from_stored_lookup`. Citing error text is left as send produced it to preserve watch bytes. | G1-F1 fixed (D201) |
+| g1f1_s2_malformed_answer | A matched S2 answer with a truthy non-string abstract raises AttributeError outside the helper's bounded catch. Direct and facade characterization preserves this exception; the workflow keeps its reservation and loses collected entries (ledger d). `abstract_not_string`, `test_malformed_answer_keeps_reservation`. | Recorded limit; helper change requires adapter revision |
 | b4_payload_write | `test_connector_dispatch::test_payload_write_failure_publishes_nothing`: OSError publishes no source, candidate, search row or succeeded step. Filesystem and database are still separate writes. | B4 fixed (D194) |
 | b4_limit_provenance | `test_connector_dispatch::test_limit_record_and_pause`, `test_limit_discovery_and_suppression`, `test_chain_limit_error`, `test_kill_limit_error` distinguish recorded limit kinds. | B4 fixed (D194) |
 | b4_s2_binding | `test_connector_dispatch::test_s2_binding` and `test_s2_arxiv_publication_relation` check identifier ownership, including preprint-to-publication links. | B4 fixed (D194) |

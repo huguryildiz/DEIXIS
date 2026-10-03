@@ -6,6 +6,8 @@
     {
       "adapter_revision": 3,
       "capabilities": [
+        "citing_works",
+        "id_lookup",
         "search"
       ],
       "contract_id": "deixis.scholarly_connector.v1",
@@ -68,6 +70,7 @@
     {
       "adapter_revision": 2,
       "capabilities": [
+        "doi_lookup",
         "search"
       ],
       "contract_id": "deixis.scholarly_connector.v1",
@@ -135,6 +138,7 @@
     {
       "adapter_revision": 2,
       "capabilities": [
+        "doi_lookup",
         "search"
       ],
       "contract_id": "deixis.scholarly_connector.v1",
@@ -341,6 +345,7 @@
     {
       "adapter_revision": 2,
       "capabilities": [
+        "doi_lookup",
         "search"
       ],
       "contract_id": "deixis.scholarly_connector.v1",

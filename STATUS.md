@@ -2,12 +2,13 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 · Yeniden işleme R3 (D197) ve P9 RF (D198) main'de; H9b hazırlanıyor
+**Son güncelleme:** 3 Ekim 2026 · G1-F1 (D201): lookup ve atıf zinciri bağlayıcı sözleşmesine bağlandı, P7 çıkışı karşılandı (deterministik kanıtla; canlı hata/kota biçimleri ölçülmedi); yeniden işleme R3 (D197) ve P9 RF (D198) main'de; H9b hazırlanıyor
 
 ## Şu an çalışanlar
 
 Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. Sol (gpt-6.1-sol) yazarsa Claude inceler, Claude yazarsa Sol inceler. Sahip onayı gereken kararlar Sol medium ile ortak verilir.
 
+- ✅ **P7 G1-F1** (D201): Crossref, Semantic Scholar ve Scopus DOI sorgusu, OpenAlex kimlik sorgusu ve atıf eden işler artık bağlayıcıların kendi bildirdiği yetenekler üzerinden gidiyor (araştırmadaki özet sorguları, atıf zinciri ve yayın takibinin atıf okuması). İstekler önce ayrılıyor, yanıtla gerçek sayıya iniyor; gerçekten gönderilenler `lookup_sends` ve `chain_sends` olarak ayrı sayılıyor. Zincirde kimliksiz kayıt atılıp sayılıyor, sürümü değişmiş sayfadan devam reddediliyor, S2 özetine yansıyan anahtar artık saklanmıyor. Arama davranışı değişmedi. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 13.006 test geçti. **P7 çıkışı karşılandı**
 - ✅ **P9 RF, rapor yolu onarımı** (D198): H9'un saklı çıktıları okundu. Paket hash'ini artık model kopyalamıyor, kod yazıyor (H9'da 52 çağrıda 3 yanlış kopya vardı). Bir atıf çapası tutmazsa onarımda model bütün bölümü yeniden yazmıyor; yalnız o çapa için hücrenin saklı alıntılarından birini numarasıyla seçiyor ya da iddiayı kaldırıp gerekçesini yazıyor, kod bunu uyguluyor ve hiçbir alıntıyı kendisi seçmiyor. Tam onarım iddia düşürürse bölüm sessizce geçmiyor, hata veriyor. Göç yok. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 12.550 test geçti. Gerçek modelde ölçülmedi: H9b ayrı adım.
 - ✅ **P8 B5** (D186): yayın takibinin veri modeli ve elle kontrol; bir araştırmanın dondurulmuş sorguları ya da dahil edilen kaynaklarını atıf yapan işler yeniden okunuyor, ilk kontrol sessiz taban çiziyor, sonraki kontrollerde yeni bir kayıt araştırma başına bir kez listeleniyor; kütüphaneye, korpusa ve sayımlara hiçbir şey girmiyor (göç 0068). Tarihe göre sıralı okuma yalnız OpenAlex'te (bağdaştırıcı sürümü 2→3); diğer kaynaklarda kapsama "bilinmiyor". Ekleme yolu yok (R6), zamanlayıcı B6'da, ekranlar B7'de. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 12.521 test geçti. Gerçek sağlayıcı çağrılmadı.
 - ✅ **P7-F2 ve P7-F3** (D199): bir aramanın gönderdiği her HTTP isteği artık sağlayıcı kodundan bağımsız toplanıyor. PubMed'in ikinci isteği (EFetch) önceden sayılmıyordu; şimdi keşif aramasında önce en kötü durum ayrılıyor, yanıt gelince gerçek deneme sayısına indiriliyor ve sorgunun payı bunu sınırlıyor. Gerçekten gönderilen istekler `provider_sends` adlı ayrı sayaçta; aday aramasında ayrılan pay geri verilmiyor, gönderilen ayrıca sayılıyor. OpenAI gömme yolu sahte taşımayla anahtarlı sınandı (adres, model, Bearer, başarı, 401); yanıt anahtarı geri yansıtırsa OpenAI ve Gemini hata metninden siliniyor. Göç yok. Sol yazdı, plan Sol medium 2 turda, kod Claude 2 turda hazır; 12.574 test geçti. Canlı hata biçimleri ölçülmedi.
@@ -41,10 +42,9 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 ## Sıradaki
 
 1. RR-B matris çifti boş makinede (iki temiz koşu üst üste) → P9'un modelsiz kısmı kapanır
-2. P7 kapanışı: G1-F1 (P8 B5'ten sonra); P7-F2 ve P7-F3 bitti (D199)
-3. RF (D198): IV. bölüm onarım ve hash kopyalama hataları kodda düzeltilir; sonra H9b kısa yeniden ölçüm (Luna)
-4. P8 B5–B8, sırayla
-5. Yeniden işleme R4–R5; H10
+2. RF (D198): IV. bölüm onarım ve hash kopyalama hataları kodda düzeltilir; sonra H9b kısa yeniden ölçüm (Luna)
+3. P8 B5–B8, sırayla
+4. Yeniden işleme R4–R5; H10
 
 Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizlik H9.
 
@@ -56,7 +56,7 @@ Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizl
 | P3 | Arama ve kaynak işleme | ✅ tek arama akışı (D119) |
 | P4–P5 | İlk web dilimi, kütüphane, kanıt tablosu | ✅ |
 | P6 | Sentez ve rapor | ✅ beş dilim kapandı; gerçek model ölçümleri P9'a borç |
-| P7 | Bağlantı kapsamı | 🟡 D172, D173 kapandı; G10 canlı erişim gösterildi; G1 koşullu kabul (D196, yalnız arama); P7-F2/F3 bitti (D199); çıkış karşılanmadı, G1-F1 kaldı; canlı hata/kota biçimleri ölçülmedi |
+| P7 | Bağlantı kapsamı | ✅ çıkış karşılandı (D201): D172, D173, G1 (D196, D201), P7-F2/F3 (D199); G10 canlı erişim gösterildi; canlı hata/kota biçimleri ölçülmedi, G12 yeniden üretilemedi |
 | P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181), B2 (D182), B3 (D183), B4 (D184, sentetik vakalar, tek koşu), B8a (D185, aday incelemesi), B5 (D186, modelsiz, sahte sağlayıcı); sırada B6, B7 ve B8b |
 | P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, H6 düzeltmeleri bitti; RR-B kodu main'de (D170), matris çifti boş makinede bekliyor; H9 ölçüldü (D171): rapor tamamlanmadı, yalnız R1/R7/P19; H10 yok |
 | P10 | macOS / Windows paketi | ❌ |

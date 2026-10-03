@@ -27,7 +27,7 @@ from deixis.config import Settings
 from deixis.domain import survey
 from deixis.domain.record_identity import record_kind
 from deixis.domain.rules import PROVIDER_WAIT
-from deixis.providers import lookup, scopus
+from deixis.providers import facade, lookup, scopus
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, now, transaction
@@ -317,22 +317,23 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
     store.start_step(step["id"])
     asking = [row for row in batch if not answered(store, row["source_version_id"], "semantic_scholar")]
     if not asking:
-        store.finish_step(step["id"], "succeeded", output=_counts([], asked=0))
+        store.finish_step(step["id"], "succeeded", output=transport_output(store, step, _counts([], asked=0)))
         return
     connector = CONNECTORS["semantic_scholar"]
-    store.add_usage(run["id"], "lookup_requests")
+    reserved = 1 + waits
+    store.add_usage(run["id"], "lookup_requests", reserved)
     api_key = connector.api_key()
-    answers, outcome = await lookup.semantic_scholar_batch(http, [row["doi"] for row in asking], api_key,
-                                                           max_rate_limit_retries=waits)
-    if outcome.retries:
-        store.add_usage(run["id"], "lookup_requests", outcome.retries)
-    from deixis.providers.facade import sanitize
-    payload_ref = _write_payload(settings, step["id"], sanitize(outcome.raw_payload, (api_key,)))
+    dispatched = await facade.dispatch_lookup("semantic_scholar", "doi_lookup", http,
+        tuple(row["doi"] for row in asking), api_key, settings.contact_email, waits)
+    settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
+    answers, outcome = dispatched.answers, dispatched.outcome
+    payload_ref = _write_payload(settings, step["id"], outcome.raw_payload)
     added = [store_answer(store, row["source_version_id"], "semantic_scholar", answers[row["doi"]], step["id"],
                           payload_ref) for row in asking]
     # The step succeeded whatever the source answered: a failure is an answer stored on the record, not a broken run.
     store.finish_step(step["id"], "succeeded",
-                      output=_counts(added, asked=len(asking), status=outcome.status) | {"rate_limit_retries": waits})
+                      output=transport_output(store, step, _counts(added, asked=len(asking), status=outcome.status)
+                                              | {"rate_limit_retries": waits}))
 
 
 async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
@@ -347,10 +348,12 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
         if answered(store, row["source_version_id"], "crossref"):
             continue
         asked += 1
-        store.add_usage(run["id"], "lookup_requests")
-        answer, outcome = await lookup.crossref_work(http, row["doi"], settings.contact_email)
-        if outcome.retries:
-            store.add_usage(run["id"], "lookup_requests", outcome.retries)
+        reserved = 1 + MAX_RATE_LIMIT_RETRIES
+        store.add_usage(run["id"], "lookup_requests", reserved)
+        dispatched = await facade.dispatch_lookup("crossref", "doi_lookup", http, (row["doi"],),
+                                                   None, settings.contact_email)
+        settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
+        answer, outcome = dispatched.answers[row["doi"]], dispatched.outcome
         payload_ref = None
         if outcome.raw_payload is not None:
             # The chunk's answers share one file, rewritten before the passage that points into it, so a stored
@@ -358,7 +361,7 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
             payloads[row["doi"]] = outcome.raw_payload
             payload_ref = _write_payload(settings, step["id"], payloads)
         added.append(store_answer(store, row["source_version_id"], "crossref", answer, step["id"], payload_ref))
-    store.finish_step(step["id"], "succeeded", output=_counts(added, asked=asked))
+    store.finish_step(step["id"], "succeeded", output=transport_output(store, step, _counts(added, asked=asked)))
 
 
 async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any], scope: dict[str, Any],
@@ -406,22 +409,53 @@ async def _scopus_step(store: Store, http: httpx.AsyncClient, settings: Settings
         return
     store.start_step(step["id"])
     added, asked, payloads = [], 0, {}
-    api_key = CONNECTORS["scopus"].api_key() or ""
+    api_key = CONNECTORS["scopus"].api_key()
     for row in chunk:
         if answered(store, row["source_version_id"], "scopus") or _has_abstract(store, row["source_version_id"]):
             continue
         asked += 1
-        store.add_usage(run["id"], "lookup_requests")
-        answer, outcome = await lookup.scopus_abstract(http, row["doi"], api_key, max_rate_limit_retries=waits)
-        if outcome.retries:
-            store.add_usage(run["id"], "lookup_requests", outcome.retries)
+        reserved = 1 + waits
+        store.add_usage(run["id"], "lookup_requests", reserved)
+        dispatched = await facade.dispatch_lookup("scopus", "doi_lookup", http, (row["doi"],),
+                                                   api_key, settings.contact_email, waits)
+        settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
+        answer, outcome = dispatched.answers[row["doi"]], dispatched.outcome
         payload_ref = None
         if outcome.raw_payload is not None:
             payloads[row["doi"]] = outcome.raw_payload
-            from deixis.providers.facade import sanitize
-            payload_ref = _write_payload(settings, step["id"], sanitize(payloads, (api_key,)))
+            # Values were sanitized by dispatch. Only the DOI keys remain raw;
+            # a second recursive pass would alter redaction markers.
+            clean_keys = [facade.sanitize(doi, (api_key,)) for doi in payloads]
+            envelope = ({"<omitted>": "secret_key_collision"} if len(set(clean_keys)) != len(clean_keys)
+                        else dict(zip(clean_keys, payloads.values())))
+            payload_ref = _write_payload(settings, step["id"], envelope)
         added.append(store_answer(store, row["source_version_id"], "scopus", answer, step["id"], payload_ref))
-    store.finish_step(step["id"], "succeeded", output=_counts(added, asked=asked) | {"rate_limit_retries": waits})
+    store.finish_step(step["id"], "succeeded", output=transport_output(store, step, _counts(added, asked=asked)
+                                                                     | {"rate_limit_retries": waits}))
+
+
+def settle_dispatch(store, run_id, step, dispatched, reserved, request_key, sends_key):
+    """Settle observed work and its recoverable trace in the same transaction."""
+    attempts = sum(entry["attempts"] for entry in dispatched.transport)
+    sends = sum(entry["sends"] for entry in dispatched.transport)
+    with transaction(store.conn):
+        store.settle_usage(run_id, None, attempts - reserved, sends,
+                           request_key=request_key, sends_key=sends_key)
+        if not dispatched.transport:
+            return
+        output = store.step_output(step["id"]) or {}
+        trace = output.setdefault("transport", {})
+        for name, amount in (("reserved", reserved), ("attempts", attempts), ("sends", sends)):
+            trace[name] = trace.get(name, 0) + amount
+        if attempts > reserved:
+            trace["over_reservation"] = trace.get("over_reservation", 0) + attempts - reserved
+        trace.setdefault("dispatches", []).append({"subrequests": list(dispatched.transport)})
+        store.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?", (dumps(output), step["id"]))
+
+
+def transport_output(store, step, output):
+    stored = store.step_output(step["id"]) or {}
+    return output | ({"transport": stored["transport"]} if "transport" in stored else {})
 
 
 def _counts(added: list[dict[str, int]], asked: int, status: str | None = None) -> dict[str, Any]:

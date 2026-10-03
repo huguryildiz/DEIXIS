@@ -835,5 +835,6 @@
   "rate_header": "x-mashery-error-code",
   "failure_stages": [
     "search"
-  ]
+  ],
+  "capability_cases": {}
 }

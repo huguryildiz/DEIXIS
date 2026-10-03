@@ -19,8 +19,14 @@
       "failure": "http_400"
     },
     "doi_lookup": "unsupported",
-    "id_lookup": "unsupported",
-    "citing_works": "unsupported"
+    "id_lookup": {
+      "positive": "positive",
+      "failure": "http_500"
+    },
+    "citing_works": {
+      "positive": "positive",
+      "failure": "http_500"
+    }
   },
   "endpoints": [
     {
@@ -1517,5 +1523,1028 @@
   "rate_header": "x-ratelimit-limit",
   "failure_stages": [
     "search"
-  ]
+  ],
+  "capability_cases": {
+    "id_lookup": [
+      {
+        "name": "positive",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "completed",
+        "answer_statuses": [
+          "found"
+        ]
+      },
+      {
+        "name": "not_found",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 0,
+                "next_cursor": null
+              },
+              "results": []
+            }
+          }
+        ],
+        "expected_status": "zero_results",
+        "answer_statuses": [
+          "not_found"
+        ]
+      },
+      {
+        "name": "http_401",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 401,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "entitlement_missing"
+      },
+      {
+        "name": "http_500",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 500,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "failed"
+      },
+      {
+        "name": "rate_unstated",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          },
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "completed"
+      },
+      {
+        "name": "rate_exhausted",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          },
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          },
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          }
+        ],
+        "expected_status": "rate_limited"
+      },
+      {
+        "name": "quota",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 429,
+            "body": {
+              "error": {
+                "code": "insufficient_quota",
+                "message": "SYNTHETIC quota exhausted"
+              }
+            }
+          }
+        ],
+        "expected_status": "rate_limited"
+      },
+      {
+        "name": "connect",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "error": "connect"
+          }
+        ],
+        "expected_status": "failed"
+      },
+      {
+        "name": "read_timeout",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "error": "read_timeout"
+          }
+        ],
+        "expected_status": "timeout"
+      },
+      {
+        "name": "non_json_200",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "text": "<SYNTHETIC not JSON"
+          }
+        ],
+        "expected_status": "parse_error"
+      },
+      {
+        "name": "wrong_root",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": []
+          }
+        ],
+        "expected_status": "parse_error"
+      },
+      {
+        "name": "wrong_container",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "results": 7
+            }
+          }
+        ],
+        "expected_status": "parse_error"
+      },
+      {
+        "name": "key_echo",
+        "identifiers": [
+          "W1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ],
+                  "SYNTHETIC_echo": {
+                    "SYNTHETIC-B1-SECRET-DO-NOT-STORE": "SYNTHETIC-B1-SECRET-DO-NOT-STORE"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "completed"
+      },
+      {
+        "name": "partial",
+        "identifiers": [
+          "W1",
+          "W2"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "completed",
+        "answer_statuses": [
+          "found",
+          "not_found"
+        ]
+      },
+      {
+        "name": "bad_identity",
+        "identifiers": [
+          "None"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": null,
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "completed",
+        "answer_statuses": [
+          "found"
+        ]
+      }
+    ],
+    "citing_works": [
+      {
+        "name": "positive",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "completed"
+      },
+      {
+        "name": "empty",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 0,
+                "next_cursor": null
+              },
+              "results": []
+            }
+          }
+        ],
+        "expected_status": "zero_results"
+      },
+      {
+        "name": "http_401",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 401,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "entitlement_missing"
+      },
+      {
+        "name": "http_500",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 500,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "failed"
+      },
+      {
+        "name": "rate_unstated",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          },
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "completed"
+      },
+      {
+        "name": "rate_exhausted",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          },
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          },
+          {
+            "status": 429,
+            "body": {
+              "error": "SYNTHETIC temporary limit"
+            }
+          }
+        ],
+        "expected_status": "rate_limited"
+      },
+      {
+        "name": "quota",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 429,
+            "body": {
+              "error": {
+                "code": "insufficient_quota",
+                "message": "SYNTHETIC quota exhausted"
+              }
+            }
+          }
+        ],
+        "expected_status": "rate_limited"
+      },
+      {
+        "name": "connect",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "error": "connect"
+          }
+        ],
+        "expected_status": "failed"
+      },
+      {
+        "name": "read_timeout",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "error": "read_timeout"
+          }
+        ],
+        "expected_status": "timeout"
+      },
+      {
+        "name": "non_json_200",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "text": "<SYNTHETIC not JSON"
+          }
+        ],
+        "expected_status": "parse_error"
+      },
+      {
+        "name": "wrong_root",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": []
+          }
+        ],
+        "expected_status": "parse_error"
+      },
+      {
+        "name": "wrong_container",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "results": 7
+            }
+          }
+        ],
+        "expected_status": "parse_error"
+      },
+      {
+        "name": "key_echo",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ],
+                  "SYNTHETIC_echo": {
+                    "SYNTHETIC-B1-SECRET-DO-NOT-STORE": "SYNTHETIC-B1-SECRET-DO-NOT-STORE"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "completed"
+      },
+      {
+        "name": "next_cursor",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": "SYNTHETIC-next"
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "completed"
+      },
+      {
+        "name": "last_page",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "completed"
+      },
+      {
+        "name": "sorted_page",
+        "identifiers": [
+          "10.9999/synthetic.1"
+        ],
+        "work_id": "W9",
+        "cursor": "*",
+        "limit": 2,
+        "responses": [
+          {
+            "status": 200,
+            "body": {
+              "meta": {
+                "count": 2,
+                "next_cursor": null
+              },
+              "results": [
+                {
+                  "id": "https://openalex.org/W1",
+                  "display_name": "SYNTHETIC boundary page 1",
+                  "doi": "https://doi.org/10.9999/synthetic.1",
+                  "publication_year": 2021,
+                  "primary_location": {
+                    "version": "publishedVersion",
+                    "landing_page_url": "https://example.org/1"
+                  },
+                  "abstract_inverted_index": {
+                    "SYNTHETIC": [
+                      0
+                    ],
+                    "evidence": [
+                      1
+                    ]
+                  },
+                  "referenced_works_count": 1,
+                  "referenced_works": [
+                    "https://openalex.org/W9"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "expected_status": "completed",
+        "options": {
+          "sort": "publication_date:desc",
+          "publication_date": true
+        }
+      }
+    ]
+  }
 }

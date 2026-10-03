@@ -1529,5 +1529,6 @@
   "rate_header": "x-ratelimit-limit",
   "failure_stages": [
     "search"
-  ]
+  ],
+  "capability_cases": {}
 }

@@ -6,6 +6,8 @@ and QUERY_RULES_REVISION for rendering/rule output changes. An omitted endpoint 
 means the historical default. Unsupported contracts and unavailable stored adapter
 revisions must raise ContractViolation, never restart at page one or change provider.
 B1 checks descriptor revisions only; B4 owns recorded-operation revision checks.
+Binding unchanged existing helpers is exempt from an adapter revision bump only
+with capability request/result equivalence and unchanged search replays (G1-F1).
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal, Mapping, Protocol, Sequence, run
 
 import httpx
 
-from deixis.providers.common import SearchOutcome
+from deixis.providers.common import FIRST_PAGE, SearchOutcome
 
 if TYPE_CHECKING:
     from deixis.providers.lookup import LookupAnswer
@@ -161,6 +163,62 @@ class LookupOutcome:
     operation: str
     answer: LookupAnswer | None = None
     outcome: SearchOutcome | None = None
+
+
+def _retry_allowance(value):
+    if value is not None and (type(value) is not int or value < 0):
+        raise ContractViolation("max_rate_limit_retries must be a nonnegative integer or None")
+
+
+@dataclass(frozen=True)
+class LookupBatchRequest:
+    operation: str
+    identifiers: tuple[str, ...]
+    max_rate_limit_retries: int | None = None
+
+    def __post_init__(self):
+        if self.operation not in ("doi_lookup", "id_lookup"):
+            raise ContractViolation("undeclared lookup operation")
+        if (type(self.identifiers) is not tuple or not self.identifiers
+                or any(not isinstance(value, str) or not value for value in self.identifiers)):
+            raise ContractViolation("identifiers must be a nonempty tuple of nonempty strings")
+        _retry_allowance(self.max_rate_limit_retries)
+
+
+@dataclass(frozen=True)
+class LookupBatchOutcome:
+    operation: str
+    answers: Mapping[str, LookupAnswer]
+    outcome: SearchOutcome
+
+
+@dataclass(frozen=True)
+class CitingWorksRequest:
+    work_id: str
+    limit: int
+    cursor: str = FIRST_PAGE
+    max_rate_limit_retries: int | None = None
+    options: Mapping[str, Any] = field(default_factory=dict, hash=False)
+
+    def __post_init__(self):
+        if not isinstance(self.work_id, str) or not self.work_id:
+            raise ContractViolation("work_id must be a nonempty string")
+        if type(self.limit) is not int or self.limit <= 0:
+            raise ContractViolation("limit must be a positive integer")
+        if not isinstance(self.cursor, str) or not self.cursor:
+            raise ContractViolation("cursor must be a nonempty string")
+        _retry_allowance(self.max_rate_limit_retries)
+        object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
+
+
+@runtime_checkable
+class BatchLookupCapable(Protocol):
+    async def lookup_batch(self, request: LookupBatchRequest, context: ConnectorContext) -> LookupBatchOutcome: ...
+
+
+@runtime_checkable
+class CitingWorksCapable(Protocol):
+    async def citing_works(self, request: CitingWorksRequest, context: ConnectorContext) -> SearchOutcome: ...
 
 
 @runtime_checkable

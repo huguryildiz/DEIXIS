@@ -905,15 +905,16 @@ class Store:
             self.conn.execute("UPDATE runs SET usage_json = ?, updated_at = ? WHERE id = ?", (dumps(usage), now(), run_id))
         return usage
 
-    def settle_usage(self, run_id: str, query: str | None, request_delta: int, sends: int) -> dict[str, Any]:
+    def settle_usage(self, run_id: str, query: str | None, request_delta: int, sends: int, *,
+                     request_key: str = "provider_requests", sends_key: str = "provider_sends") -> dict[str, Any]:
         """Atomically settle a reservation and record observed sends, which never spend a query's share."""
         with transaction(self.conn):
             usage = self.run(run_id)["usage"]
-            usage["provider_requests"] = usage.get("provider_requests", 0) + request_delta
+            usage[request_key] = usage.get(request_key, 0) + request_delta
             if query is not None:
                 counts = usage.setdefault("query_requests", {})
                 counts[query] = counts.get(query, 0) + request_delta
-            usage["provider_sends"] = usage.get("provider_sends", 0) + sends
+            usage[sends_key] = usage.get(sends_key, 0) + sends
             self.conn.execute("UPDATE runs SET usage_json = ?, updated_at = ? WHERE id = ?", (dumps(usage), now(), run_id))
         return usage
 

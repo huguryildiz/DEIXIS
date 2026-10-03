@@ -1453,5 +1453,6 @@
     "search",
     "fetch"
   ],
-  "fetch_url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+  "fetch_url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+  "capability_cases": {}
 }

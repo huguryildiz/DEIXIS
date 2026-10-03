@@ -184,6 +184,26 @@ def required_cases(provider_id, endpoint_id, fixture):
     return names
 
 
+def required_capability_cases(pid, capability):
+    names = {"positive", "empty" if capability == "citing_works" else "not_found", "http_401", "http_500",
+             "rate_unstated", "rate_exhausted", "quota", "connect", "read_timeout", "non_json_200",
+             "wrong_root", "wrong_container"}
+    if registry.CONNECTORS[pid].key_env:
+        names.add("key_echo")
+    if pid == "semantic_scholar":
+        names |= {"wrong_length", "abstract_not_string", "reordered", "repeated_doi",
+                  "repeated_conflicting", "repeated_null"}
+    if pid == "scopus":
+        names.add("other_doi")
+    if pid == "crossref":
+        names.add("http_404")
+    if capability == "citing_works":
+        names |= {"next_cursor", "last_page"}
+    if capability == "id_lookup":
+        names |= {"partial", "bad_identity"}
+    return names
+
+
 def check_coverage(fixtures):
     assert set(fixtures) == set(registry.CONNECTORS), f"missing fixtures: {set(registry.CONNECTORS) - set(fixtures)}; extra: {set(fixtures) - set(registry.CONNECTORS)}"
     for pid, f in facade.connectors().items():
@@ -196,11 +216,16 @@ def check_coverage(fixtures):
             proof = fixture["capabilities"][capability]
             if capability in f.descriptor.capabilities:
                 assert isinstance(proof, dict) and set(proof) == {"positive", "failure"}, (pid, capability)
-                for ep in fixture["endpoints"]:
+                groups = fixture["endpoints"] if capability == "search" else [{"cases": fixture["capability_cases"][capability]}]
+                for ep in groups:
                     names = {c["name"] for c in ep["cases"]}
                     assert {proof["positive"], proof["failure"]} <= names
+                if capability != "search":
+                    assert len(names) == len(fixture["capability_cases"][capability]), (pid, capability)
+                    assert required_capability_cases(pid, capability) <= names, (pid, capability)
             else:
                 assert proof == "unsupported", (pid, capability)
+        assert set(fixture.get("capability_cases", {})) == set(registry.CONNECTORS[pid].capabilities)
         for ep in fixture["endpoints"]:
             names = [c["name"] for c in ep["cases"]]
             assert len(names) == len(set(names)), pid
@@ -399,6 +424,9 @@ def test_registration_schema_and_purity(memory_keychain, tmp_path):
                 context = facade.context_for(registry.CONNECTORS[pid], client, baseline.CONTACT)
                 f.access(context)
                 for lookup in (contract.LookupRequest(doi="10.9999/synthetic"), contract.LookupRequest(provider_record_id="SYNTHETIC")):
+                    operation = "doi_lookup" if lookup.doi is not None else "id_lookup"
+                    if operation in f.descriptor.capabilities:
+                        continue
                     result = await f.lookup(lookup, context)
                     assert result.status == "unsupported" and result.outcome is None and result.answer is None
     asyncio.run(run())
@@ -446,7 +474,7 @@ def test_pending_and_existing_evidence():
         assert rows[name] == "B4 fixed (D194)", name
         module, function = target.split("::")
         assert callable(getattr(importlib.import_module(module), function)), target
-    assert rows["b4_resume_lookup"] == "Lookup capability binding; unscheduled (D194)"
+    assert rows["b4_resume_lookup"] == "G1-F1 fixed (D201)"
     for name, entry in IDENTITY_KNOWN_MISMATCHES.items():
         assert rows[entry["ledger"]] == entry["owner"] == "B4 admission (D194)", name
     for target in COVERED_ELSEWHERE.values():
@@ -740,11 +768,14 @@ def test_complete_synthetic_connector_needs_no_suite_branch(monkeypatch):
         if any(not isinstance(r.raw.get("id"), str) or not r.raw["id"] for r in outcome.records):
             outcome.status, outcome.records = "parse_error", []
         return outcome
-    source = replace(registry.CONNECTORS["openalex"], provider_id="synthetic", search=search)
+    source = replace(registry.CONNECTORS["openalex"], provider_id="synthetic", search=search, capabilities={})
     monkeypatch.setitem(registry.CONNECTORS, "synthetic", source)
     monkeypatch.setitem(facade.query_rules.NAMES, "synthetic", "SYNTHETIC")
     fixture = copy.deepcopy(FIXTURES["openalex"])
     fixture.update(provider_id="synthetic", url=registry.openalex.WORKS_URL)
+    fixture["capability_cases"] = {}
+    for operation in ("doi_lookup", "id_lookup", "citing_works"):
+        fixture["capabilities"][operation] = "unsupported"
     for ep in fixture["endpoints"]:
         for case in ep["cases"]:
             if case["name"].startswith("identity_"):

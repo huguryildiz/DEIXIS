@@ -20,7 +20,10 @@ query or issue-list changes still require the bump (D193).
 Dispatched pages record contract and adapter revisions. Resume accepts legacy
 NULL provenance, but refuses malformed or incompatible recorded revisions (D194).
 Admission and sanitization are application post-processing, separate from search
-adapter equivalence. Lookup and chaining helpers remain unbound capabilities.
+adapter equivalence. G1-F1 exempts binding unchanged existing helpers from an
+adapter revision bump only with capability request/result equivalence and unchanged
+search replays. Admission, redaction, accounting and continuation refusals are
+separate named application changes.
 """
 
 from dataclasses import dataclass, replace
@@ -28,8 +31,7 @@ from copy import deepcopy
 from inspect import signature
 
 from deixis.providers import registry, query_rules, query_compiler, contract
-
-UNBOUND_HELPERS = registry.UNBOUND_HELPERS
+from deixis.providers.lookup import LookupAnswer
 
 
 def descriptor_for(connector: registry.Connector, order: int) -> contract.ConnectorDescriptor:
@@ -55,7 +57,7 @@ def descriptor_for(connector: registry.Connector, order: int) -> contract.Connec
         order, contract.CONTRACT_ID, connector.adapter_revision,
         connector.key_env, connector.key_required, connector.searchable, connector.sw_searchable,
         connector.supplementary, connector.host, connector.lineage, connector.requests_per_search,
-        frozenset({"search"}), contract.QUERY_RULES_REVISION, endpoints,
+        frozenset({"search"} | set(connector.capabilities)), contract.QUERY_RULES_REVISION, endpoints,
     )
 
 
@@ -112,6 +114,38 @@ class Dispatched:
         return len(self.outcome.records) + self.dropped_records
 
 
+@dataclass(frozen=True)
+class DispatchedLookup:
+    operation: str
+    answers: dict[str, LookupAnswer]
+    outcome: registry.common.SearchOutcome
+    returned_count: int
+    dropped_records: int
+    connector: dict
+    transport: tuple[dict, ...] = ()
+
+
+def _provenance(descriptor, outcome, dropped):
+    return {"contract_id": descriptor.contract_id, "adapter_revision": descriptor.adapter_revision,
+            "query_rules_revision": descriptor.query_rules_revision,
+            "payload": "sanitized_json" if outcome.raw_payload is not None else None,
+            "dropped_records": dropped}
+
+
+def _admit(outcome, api_key):
+    records = [replace(record, raw=sanitize(record.raw, (api_key,))) for record in outcome.records
+               if usable_identity(record.provider_record_id)]
+    dropped = len(outcome.records) - len(records)
+    return replace(outcome, records=records, raw_payload=sanitize(outcome.raw_payload, (api_key,))), dropped
+
+
+def _id_answers(identifiers, outcome):
+    returned = {record.provider_record_id for record in outcome.records}
+    return {identifier: (LookupAnswer("found") if identifier in returned else
+                         LookupAnswer("not_found") if outcome.status in ("completed", "zero_results") else
+                         LookupAnswer("failed")) for identifier in identifiers}
+
+
 async def dispatch_search(provider_id, http, query_text, limit, api_key, contact_email, **registry_kwargs) -> Dispatched:
     connector = CompatibilityConnector(registry.CONNECTORS[provider_id])
     request = search_request(query_text, limit, **registry_kwargs)
@@ -121,12 +155,39 @@ async def dispatch_search(provider_id, http, query_text, limit, api_key, contact
                if usable_identity(record.provider_record_id)]
     dropped = len(outcome.records) - len(records)
     outcome = replace(outcome, records=records, raw_payload=sanitize(outcome.raw_payload, (api_key,)))
-    descriptor = connector.descriptor
-    provenance = {"contract_id": descriptor.contract_id, "adapter_revision": descriptor.adapter_revision,
-                  "query_rules_revision": descriptor.query_rules_revision,
-                  "payload": "sanitized_json" if outcome.raw_payload is not None else None,
-                  "dropped_records": dropped}
+    provenance = _provenance(connector.descriptor, outcome, dropped)
     return Dispatched(outcome, dropped, provenance, tuple(transport))
+
+
+async def dispatch_lookup(provider_id, operation, http, identifiers, api_key, contact_email,
+                          max_rate_limit_retries=None) -> DispatchedLookup:
+    connector = CompatibilityConnector(registry.CONNECTORS[provider_id])
+    request = contract.LookupBatchRequest(operation, identifiers, max_rate_limit_retries)
+    with registry.common.collect_transport() as transport:
+        result = await connector.lookup_batch(request, contract.ConnectorContext(http, api_key, contact_email))
+    returned = len(result.outcome.records)
+    outcome, dropped = _admit(result.outcome, api_key)
+    answers = _id_answers(identifiers, outcome) if operation == "id_lookup" else result.answers
+    answers = {identifier: replace(answer, abstract=sanitize(answer.abstract, (api_key,)),
+                                  paper_id=sanitize(answer.paper_id, (api_key,)),
+                                  linked_dois=sanitize(answer.linked_dois, (api_key,)),
+                                  has_preprint=sanitize(answer.has_preprint, (api_key,)))
+               for identifier, answer in answers.items()}
+    outcome = replace(outcome, error=sanitize(outcome.error, (api_key,)))
+    return DispatchedLookup(operation, answers, outcome, returned, dropped,
+                            _provenance(connector.descriptor, outcome, dropped), tuple(transport))
+
+
+async def dispatch_citing(provider_id, http, work_id, cursor, limit, api_key, contact_email,
+                          max_rate_limit_retries=None, **options) -> Dispatched:
+    connector = CompatibilityConnector(registry.CONNECTORS[provider_id])
+    request = contract.CitingWorksRequest(work_id, limit, cursor, max_rate_limit_retries, options)
+    with registry.common.collect_transport() as transport:
+        outcome = await connector.citing_works(request, contract.ConnectorContext(http, api_key, contact_email))
+    outcome, dropped = _admit(outcome, api_key)
+    # send already redacts error text. Repeating it would change watch rows for
+    # keys occurring in the redaction marker (O7).
+    return Dispatched(outcome, dropped, _provenance(connector.descriptor, outcome, dropped), tuple(transport))
 
 
 class CompatibilityConnector:
@@ -184,7 +245,61 @@ class CompatibilityConnector:
     async def lookup(self, request: contract.LookupRequest, context: contract.ConnectorContext):
         request.validate()
         operation = "doi_lookup" if request.doi is not None else "id_lookup"
-        return contract.LookupOutcome("unsupported", operation=operation)
+        if operation not in self.connector.capabilities:
+            return contract.LookupOutcome("unsupported", operation=operation)
+        identifier = request.doi if request.doi is not None else request.provider_record_id
+        result = await self.lookup_batch(contract.LookupBatchRequest(operation, (identifier,)), context)
+        answer = result.answers[identifier]
+        return contract.LookupOutcome(answer.status, operation, answer, result.outcome)
+
+    def _binding(self, operation, allowance, options):
+        binding = self.connector.capabilities.get(operation)
+        if binding is None:
+            raise contract.ContractViolation(f"undeclared capability: {operation}")
+        if allowance is not None and not binding.accepts_retry_allowance:
+            raise contract.ContractViolation("binding does not accept a retry allowance")
+        allowed = {option.name: option for option in binding.options}
+        for name, value in options.items():
+            if name not in allowed:
+                raise contract.ContractViolation("undeclared capability option")
+            option = allowed[name]
+            if not ((option.value_type == "bool" and type(value) is bool)
+                    or (option.value_type == "str" and type(value) is str)):
+                raise contract.ContractViolation(f"{name} must be an exact {option.value_type}")
+            if option.values is not None and value not in option.values:
+                raise contract.ContractViolation(f"{name} must be one of its declared values")
+        return binding
+
+    def _missing_key(self, context):
+        if self.descriptor.key_required and not context.api_key:
+            return registry.common.SearchOutcome("not_configured", "before_send",
+                f"{self.descriptor.provider_id} lookup not sent: access=not_configured", "not_configured")
+        return None
+
+    async def lookup_batch(self, request: contract.LookupBatchRequest, context: contract.ConnectorContext):
+        binding = self._binding(request.operation, request.max_rate_limit_retries, {})
+        if len(request.identifiers) > binding.max_batch:
+            raise contract.ContractViolation("lookup batch exceeds declared maximum")
+        outcome = self._missing_key(context)
+        if outcome is not None:
+            answers = {identifier: LookupAnswer("failed") for identifier in request.identifiers}
+        else:
+            result = await binding.call(context.http, request.identifiers, context.api_key, context.contact_email,
+                                        request.max_rate_limit_retries)
+            if request.operation == "id_lookup":
+                outcome = result
+                answers = _id_answers(request.identifiers, outcome)
+            else:
+                answers, outcome = result
+        return contract.LookupBatchOutcome(request.operation, answers, outcome)
+
+    async def citing_works(self, request: contract.CitingWorksRequest, context: contract.ConnectorContext):
+        binding = self._binding("citing_works", request.max_rate_limit_retries, request.options)
+        outcome = self._missing_key(context)
+        if outcome is not None:
+            return outcome
+        return await binding.call(context.http, request.work_id, request.cursor, min(request.limit, binding.max_batch),
+                                  context.api_key, context.contact_email, request.max_rate_limit_retries, **request.options)
 
     def query_issues(self, text: str, endpoint: str | None = None) -> list[str]:
         self._endpoint(endpoint)

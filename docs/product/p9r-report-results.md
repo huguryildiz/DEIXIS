@@ -113,3 +113,15 @@ A ve A2 birlikte şunu gösterir: RF'in yama şeması canlı API'de reddediliyor
 - **R2:** kısmen işaretlerinin çoğu, çok parçalı bir iddiaya tek parçayı taşıyan çapa alıntısından geliyor. Desteklemeyen bağ yok.
 
 Bütçe: A 7 + A2 10 + B hazırlık 70 + B rapor 20 = 107 / 293 oturum; okur isteği 2 / 4, 6 dk 11 s (ilk okurun 5 dk 38 s'lik okuması dahil; ilk kayıt yalnız ikinci okuru saymıştı, Ek E'de düzeltildi). D129'un çapa onarımı A2'de iki bölümde (V tam onarım, IV yama), B'de bir bölümde (IV yama) görüldü ve sayıldı. Onarılan iddiaların anlam desteği ayrıca okunmadı; B'nin R2 okuması tohumlu 30 iddialık örneklem üzerindedir. Sunucu durduruldu, 8765'e dokunulmadı; kanıt `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/b2/`.
+
+## H9c (3 Ekim 2026): B raporu RF4 üzerinde
+
+**Dondurma:** Ek E (`0e1600b`). **Karar:** [D202](../decisions.md). Ürün `2b185a8` (RF4), B'nin hazırlanmış verisinin yeni doğrulanmış kopyası `c/data`; korpus B'ninkiyle aynıdır. Tek koşu; B ile karşılaştırma bir koşuya karşı bir koşudur, RF4'ün nedensel etkisi değildir.
+
+**Koşu:** başlangıç kapısı ve POST öncesi denetim geçti (en büyük migration 70, kurtarılan iş 0; `evidence/c/prepost-check-*.json`, `prepost-post-*.json`). POST 17:06:53Z, `run_mWEug1ro09ZlJDBV5O5B`, rapor `rpt_85lvdp1HjlTnqUYXvjUG`. Koşu 17:12:02.571Z'de `section_failed` ile duraklatıldı (terminal olay 1614; 309,1 s, 24 çağrı); gözlemci bunu 17:12:12.986Z'de saptadı. Rapor `in_progress` kaldı, inceleme yok; birleştirmeye gelinmedi. On model bölümünden dokuzu `valid`, özet `failed`. Neden zaman aşımı değil; kural gereği sürdürülmedi, duraklamış koşu iptal edilmedi. Kapanış doğrulandı (`snapshot_eligible`), snapshot `--stopped section_failed` ile alındı, okur çalışmadı.
+
+- **Duruşun nedeni:** özetin ilk çıktısı doğrulamadan sorunsuz geçti (`ok=true`, hata yok; dört `sentence_without_phrasebank_frame` uyarısı cümle onarımını başlattı). Ardından gelen cümle onarımı `abstract.2#2` cümlesini "Temel amaç, …" yerine "Bu çalışma, temel amacın … olduğunu …" biçiminde yeniden yazdı. RF4'ün cümle onarımından sonra tam doğrulayıcıyı yeniden çalıştırması bunu `own_work_phrase_in_claim` olarak yakaladı (`/claims/1/text`); bu noktada ürünün başka onarım yolu yoktu ve bölüm başarısız oldu. Yani yasak kalıbı model ilk yazımda değil, ürünün cümle onarımı getirdi; RF4 bunu birleştirmeden önce yakaladı ama onaramadı.
+- **Sayımlar:** POST öncesi 0 oturum; rapor 24 oturum, `envelope_mismatch` 0/24, 24/24 kodla damgalı; yama girdisi 0; çıkarılan iddia 0. P19: a=[V], b=1 (V tam onarım), c=1, d=0. Adım hatası yok, şema reddi yok.
+- **Satırlar:** R1a ilk denemede geçerli 1/10, R1b onarımla geçerli 9/10, R1c 0/1; R7 5,2 dk ve 24 çağrı. Rapor tamamlanmadığı için R2-R6, R8, R9, R11 ölçülemedi (`run_incomplete`); R10 ölçülmedi.
+
+Bütçe: 107 + 24 = 131 / 293 oturum; okur isteği yeni yok (ortak defterde 6 istek kalır). Sunucu durduruldu, 8765'e dokunulmadı; kanıt `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/c/`.

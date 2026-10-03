@@ -66,3 +66,17 @@ R2-R6, R8, R9, R11: `ölçülemedi: run_incomplete`. Okurlar (K09) başlatılmad
 ## R01
 
 R01 `ölçüldü, rapor tamamlanmadı`: tek koşu IV. bölümde geçersiz model çıktısıyla durdu. Yalnız R1, R7 ve P19 var.
+
+## H9b (3 Ekim 2026): kol A ve kol A2
+
+**Dondurma:** Ek B (`a093f6f`), Ek C (`5c8cb98`), Ek D (B kaydı). **Karar:** [D202](../decisions.md). İki kol da H9'un tablosunu kullandı (geliştirme korpusu, bağımsız değil). Burada yazılan her şey tek rapor modelinde ve tek koşudadır; hata oranı, hız karşılaştırması veya RF/RF2'nin nedensel etkisi değildir.
+
+**Kol A (ürün `682ba1f`):** rapor koşusu ilk yama isteğinde durdu. V. bölümün ilk çıktısında hücre kanıtında bulunmayan çapalar vardı; ürün RF'in yama yolunu seçti ve canlı API isteği `invalid_json_schema` ile reddetti, çünkü yama şemasının `reason` alanında `$ref` yanında başka anahtarlar vardı. Bu ürün hatasıdır, model hatası değildir; yama modeli hiç çıktı vermedi. III'ün tam onarımı iptalle kesildi, IV onarımdan sonra geçerliydi. İptal 11:29:43Z, kapanış doğrulandı. R1 0/1 (ilk denemede geçerli 0/3, onarımla geçerli 1), R7 145,6 s ve 7 çağrı; `envelope_mismatch` 0/7, kodla damgalanan 5/5; çıkarılan iddia 0, `repair_dropped_*` 0; P19 a=[V], b=1, c=0, d=0. Düzeltme RF2'dir (D204).
+
+**Kol A2 (ürün `7cc1168`, H9 verisinin taze ve doğrulanmış kopyası):** rapor koşusu 13:16:50Z'de başladı ve 13:19:52Z'de VI. bölümde durdu. VI'nın ilk çıktısı şemaya uygundu ama hiç iddia ve hiç yetersiz kanıt girdisi taşımıyordu (`empty_section`); ürün bunun için otomatik onarım yapmıyor, koşuyu yeniden yazım için duraklatıyor. Neden zaman aşımı değil, kural gereği sürdürülmedi ve iptal edilmedi. II-V geçerli, VI taslak, sonrakiler başlamadı. R1 0/1 (ilk denemede geçerli 0/4, onarımla geçerli 3), R7 181,8 s ve 10 çağrı. Okur çalışmadı.
+
+- **Yama yolu (D198/D204):** IV'ün ilk çıktısı yama yoluna girdi. Gönderilen şema Ek C'de donan düzeltilmiş şemayla aynıydı (`f30984c2…`); canlı API kabul etti, model çıktı verdi, yama doğrulanıp uygulandı ve IV `valid` yayımlandı. Bu, düzeltilmiş şemanın tek bir istekte kabul edildiğini gösterir; genel güvenilirlik göstermez.
+- **Sayımlar:** çıkarılan iddia 0; `repair_dropped_claim` ve `repair_dropped_insufficient_evidence` 0; `envelope_mismatch` 0/10; doğrulaması olan 9 yama dışı oturumun 9'u kodla damgalı; doğrulaması olmayan rapor oturumu 0. P19: a=[V, IV], b=2 (V tam onarım, IV yama), c=2, d=0. Adım hatası yok; şema reddi yok; B için veto yok.
+- **Ölçülemeyenler:** rapor tamamlanmadığı için R2-R6, R8, R9, R11 ve okur satırları ölçülmedi.
+
+A ve A2 birlikte şunu gösterir: RF'in yama şeması canlı API'de reddediliyordu, RF2'den sonra bir istekte kabul edildi ve yama bir bölümü geçerli yaptı. Rapor bu kez başka bir yerde, boş bölümde durdu; bu duruş için ürün tarafında düzeltme (RF3) koordinatör tarafından açıldı. Kol B'nin sonucu ayrı yazılacak.

@@ -52,7 +52,7 @@ def test_whole_duplicates_keep_policy_and_mtime_guard(tmp_path, route):
         assert lib.conn.execute("SELECT count(*) FROM asset_recovery_operations").fetchone()[0] == 0
 
 
-def test_initial_attachment_keeps_unknown_input_and_no_receipt_guard(tmp_path):
+def test_initial_attachment_records_verified_input_and_no_receipt_guard(tmp_path):
     with api_library(tmp_path) as lib:
         data = make_pdf(["SYNTHETIC fresh initial attachment"])
         sha = hashlib.sha256(data).hexdigest()
@@ -61,7 +61,8 @@ def test_initial_attachment_keeps_unknown_input_and_no_receipt_guard(tmp_path):
         assert (lib.settings.papers_dir / (sha + ".pdf")).read_bytes() == data
         row = lib.conn.execute("SELECT e.input_observation_id FROM asset_extractions e JOIN source_assets a ON a.id = e.asset_id"
                                " WHERE a.sha256 = ?", (sha,)).fetchone()
-        assert row[0] is None
+        assert row[0] is not None
+        assert lib.conn.execute("SELECT integrity FROM asset_file_observations WHERE id = ?", (row[0],)).fetchone()[0] == "verified"
         assert lib.conn.execute("SELECT count(*) FROM asset_recovery_operations").fetchone()[0] == 0
 
 

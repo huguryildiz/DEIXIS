@@ -937,12 +937,14 @@ def test_purge_research_keeps_payload_named_by_another_research_search_run(lib):
 def test_purge_sources_keeps_payload_file_named_by_live_kill_search_query_of_other_research(lib, tmp_path):
     payload = tmp_path / "SYNTHETIC-shared.json"
     payload.write_text("SYNTHETIC payload")
-    lib.conn.execute("UPDATE source_versions SET provider_payload_path = ? WHERE id = ?", (payload.name, lib.ids["a"]))
+    # The gap fixture freezes source a; this test isolates payload retention from O7 protection.
+    svid = lib.ids["b"]
+    lib.conn.execute("UPDATE source_versions SET provider_payload_path = ? WHERE id = ?", (payload.name, svid))
     other, s, _ = kill_search_for_other_research(lib, another_research(lib), records=[], payload=payload.name)
     before = state(lib)
-    lib.conn.execute("DELETE FROM table_rows WHERE source_version_id = ?", (lib.ids["a"],))
-    lib.store.remove_sources(lib.rid, [lib.ids["a"]], "SYNTHETIC removed")
-    _, _, orphan_payloads = lib.store.purge_sources(lib.rid, [lib.ids["a"]])
+    lib.conn.execute("DELETE FROM table_rows WHERE source_version_id = ?", (svid,))
+    lib.store.remove_sources(lib.rid, [svid], "SYNTHETIC removed")
+    _, _, orphan_payloads = lib.store.purge_sources(lib.rid, [svid])
     for name in orphan_payloads:
         (tmp_path / name).unlink()
     assert orphan_payloads == [] and payload.is_file()

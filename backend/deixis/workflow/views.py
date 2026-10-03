@@ -24,6 +24,8 @@ from deixis.workflow.report.store import DISPLAY_ORDER, ReportStore
 from deixis.workflow import waiting as waiting_rules
 from deixis.providers.registry import search_providers
 from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
+from deixis.workflow.evidence_deps import latest_completed_restore, passage_dependencies
+from deixis.workflow.report.passage_freshness import passage_freshness
 
 
 # What the transcript reports from a search plan; the rest of the stored output stays out of the view.
@@ -425,6 +427,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                                           for item in error):
             run["error"] = error
     return report | {"sections": sections, "evidence_changes": {key: value for key, value in changes.items() if key != "sections"},
+                     "passage_freshness": passage_freshness(reports, report_id),
                      "edited_after_version": report["report_version"] if edited else None,
                      "has_human_edits": edited is not None,
                      "edit_check": reports.edit_check_state(report_id) if edited or store.conn.execute(
@@ -978,11 +981,54 @@ def _review_view(store: Store, answer_id: str) -> dict[str, Any] | None:
             "model": dict(session) if session else None}
 
 
+def occurrence_view(store: Store, asset: dict, extraction: dict | None, *, extraction_version=None) -> dict:
+    """Recorded parser input relative to the expected identity, never today's served bytes."""
+    current = store.conn.execute("SELECT id FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'",
+                                 (asset["id"],)).fetchone()
+    extraction_id = extraction["id"] if extraction else None
+    result = {"extraction_id": extraction_id,
+              "extraction_version": extraction["extraction_version"] if extraction else extraction_version,
+              "extractor_profile": extraction.get("extractor_profile") if extraction else None,
+              "outcome": extraction["outcome"] if extraction else None,
+              "is_current": bool(extraction_id and current and extraction_id == current["id"]),
+              "current_extraction_id": current["id"] if current else None,
+              "input": None, "input_relation": "input_not_recorded",
+              "file_restored_after": False, "latest_file_restore": None}
+    if not store._extraction_has_recovery_metadata:
+        return result
+    observation_id = extraction.get("input_observation_id") if extraction else None
+    observation = store.conn.execute(
+        "SELECT id, integrity, observed_sha256 FROM asset_file_observations WHERE id = ?", (observation_id,),
+    ).fetchone()
+    if observation:
+        result["input"] = {"observation_id": observation["id"], "integrity": observation["integrity"],
+                           "observed_sha256": observation["observed_sha256"]}
+        if observation["integrity"] == "verified" and observation["observed_sha256"] == asset["sha256"]:
+            result["input_relation"] = "input_matched_expected_hash"
+        elif observation["integrity"] == "mismatch":
+            result["input_relation"] = "input_differed_from_expected_hash"
+            result["retained_copy"] = store.conn.execute(
+                "SELECT 1 FROM asset_file_observations WHERE kind = 'before_restore'"
+                " AND observed_sha256 = ? AND retained_filename = ? LIMIT 1",
+                (observation["observed_sha256"], "retained-" + observation["observed_sha256"] + ".bin"),
+            ).fetchone() is not None
+    repair = latest_completed_restore(store.conn, asset["sha256"])
+    if repair:
+        result["latest_file_restore"] = store.file_restore_view(repair["id"])
+        result["file_restored_after"] = bool(extraction and repair["finished_at"] > extraction["created_at"])
+    return result
+
+
 def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, Any] | None:
     passage = store.passage(passage_id)
     if not store.was_member(research_id, passage["source_version_id"]):
         return None
     source = store.source(passage["source_version_id"])
+    dependency = passage_dependencies(store.conn, [passage_id])[passage_id]
+    extraction = store.conn.execute("SELECT * FROM asset_extractions WHERE id = ?",
+                                    (dependency["passage_extraction_id"],)).fetchone()
+    occurrence = (occurrence_view(store, store.asset(passage["asset_id"]), dict(extraction) if extraction else None,
+                                  extraction_version=passage["extraction_version"]) if passage["asset_id"] else None)
     return {
         "id": passage["id"], "kind": passage["kind"], "text": passage["text"], "physical_page": passage["physical_page"],
         "printed_label": passage["printed_label"], "abstract_origin": passage["abstract_origin"],
@@ -995,7 +1041,7 @@ def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, A
         "reading_depth": "abstract" if passage["kind"] == "abstract" else "selected_sections",
         "asset_id": passage["asset_id"],
         "rendition": store.asset_rendition(passage["asset_id"]),
-        "evidence_status": store.evidence_statuses([passage_id])[passage_id],
+        "evidence_status": dependency["evidence_status"], "occurrence": occurrence,
         "removed_from_research": not store.is_active_member(research_id, passage["source_version_id"]),
         "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
                                             "cited_by_count", "cited_by_count_at")}

@@ -2801,6 +2801,8 @@ class ResearchFlow:
         try:
             placement = await file_restore.store_pdf_file(self.store, papers, self.deps.settings.recovery_dir, result.data,
                                                           caller="run_fetch", research_id=run["research_id"])
+            read = await text_retry.read_verified(self.store, papers, self.deps.settings.recovery_dir,
+                storage_path=placement.path.name, sha256=sha, byte_size=len(result.data), lock=True)
         except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
             refused = isinstance(exc, file_restore.FileRestoreRefused)
             self.store.finish_step(step["id"], "failed",
@@ -2808,10 +2810,11 @@ class ResearchFlow:
                 error={"url": source["oa_pdf_url"], **({"code": exc.code} if refused else {})})
             return
         path = placement.path
-        extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+        extraction = read.extraction
         asset_id = self.store.add_asset_with_pages(
             source["id"], sha, len(result.data), path.name, "download", result.final_url, None,
             extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
+            input_observation=read.observation,
         )
         status = "succeeded" if extraction.status in ("succeeded", "partial") else "partial"
         self.store.finish_step(step["id"], status, output={"asset_id": asset_id, "extraction_status": extraction.status,

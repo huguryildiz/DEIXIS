@@ -89,7 +89,9 @@ def test_t2_every_attachment_retains_shared_damage_red_on_old(tmp_path, monkeypa
             assert result.status_code in (200, 201), result.text
         receipt(lib)
         assert lib.store.latest_file_restore(lib.sha)["outcome"] == "file_restored"
-        assert lib.conn.execute("SELECT input_observation_id FROM asset_extractions WHERE asset_id <> ?", (lib.aid,)).fetchone()[0] is None
+        observation_id = lib.conn.execute("SELECT input_observation_id FROM asset_extractions WHERE asset_id <> ?", (lib.aid,)).fetchone()[0]
+        assert observation_id is not None
+        assert lib.conn.execute("SELECT integrity FROM asset_file_observations WHERE id = ?", (observation_id,)).fetchone()[0] == "verified"
 
 
 @pytest.mark.parametrize("writer", WRITERS)

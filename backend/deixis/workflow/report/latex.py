@@ -244,6 +244,10 @@ class _Writer:
                                        + list(edit.not_checked)))
         if view.get("evidence_changes", {}).get("any"):
             blocks.append(r"\noindent " + fixed(export_text.evidence_changed_sentence(tr)))
+        freshness = view.get("passage_freshness", {})
+        if freshness.get("affected") or freshness.get("unresolved"):
+            blocks.append(r"\noindent " + fixed(export_text.passage_freshness_sentence(
+                tr, len(freshness["affected"]), len(freshness["unresolved"]))))
         return blocks
 
     def empty(self, section: dict) -> list[str]:

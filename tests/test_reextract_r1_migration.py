@@ -186,10 +186,12 @@ def test_vocabulary_foreign_keys_without_rowid_and_deferral(lib):
     operation = reserve(lib); observation = observe(lib, operation_id=operation["id"])
     result = complete(lib, operation=operation, observation=observation)
     with db.transaction(lib.conn):
+        lib.conn.execute("INSERT INTO recovery_purge_authorizations VALUES (?)", (lib.store.asset(lib.aid)["sha256"],))
         lib.conn.execute("DELETE FROM asset_extractions WHERE asset_id = ?", (lib.aid,))
         # Operations still refer to the deleted baseline and observation until commit.
         lib.conn.execute("DELETE FROM asset_file_observations WHERE id = ?", (observation,))
         lib.conn.execute("DELETE FROM asset_recovery_operations WHERE id = ?", (result["id"],))
+        lib.conn.execute("DELETE FROM recovery_purge_authorizations")
     assert lib.conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
@@ -380,7 +382,10 @@ def test_observation_update_and_conflicting_insert_refused(lib, mode):
     with pytest.raises(sqlite3.IntegrityError):
         insert(lib.conn, "asset_file_observations", original | {"observed_at": "changed"}, "INSERT" if mode == "upsert" else mode, mode == "upsert")
     assert dict(lib.conn.execute("SELECT * FROM asset_file_observations WHERE id = ?", (oid,)).fetchone()) == original
-    lib.conn.execute("DELETE FROM asset_file_observations WHERE id = ?", (oid,))
+    with db.transaction(lib.conn):
+        lib.conn.execute("INSERT INTO recovery_purge_authorizations VALUES (?)", (original["expected_sha256"],))
+        lib.conn.execute("DELETE FROM asset_file_observations WHERE id = ?", (oid,))
+        lib.conn.execute("DELETE FROM recovery_purge_authorizations")
 
 
 @pytest.mark.parametrize("bad", ["other_baseline", "other_operation", "file_operation", "bad_occurrence", "profile_mismatch", "forgot_profile"])

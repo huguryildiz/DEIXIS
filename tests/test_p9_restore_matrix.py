@@ -672,6 +672,12 @@ def rich_library(tmp_path: Path):
         other = create(client, source_scope="attached")
         assert client.delete(f"/api/researches/{other}").status_code == 200
         time.sleep(0.5)  # background answer review and any other idle writes settle
+        # Recovery evidence is part of the rich round trip, including retained bytes.
+        from tests.reextract_r2a_helpers import seed
+        from tests.reextract_r2b_helpers import tear, write
+        recovery = seed(store, settings, "partial")
+        tear(recovery)
+        write(recovery)
         yield SimpleNamespace(settings=settings, client=client, app=app, rid=rid, other=other)
 
 
@@ -682,8 +688,6 @@ def rich_library(tmp_path: Path):
 EMPTY_BECAUSE = {
     "arxiv_sources": "arXiv source reading is off in the test settings",
     "asset_arxiv_versions": "written only by the optional equation reader (Marker), which is not installed",
-    "asset_file_observations": "R1 exposes no file observation or recovery route",
-    "asset_recovery_operations": "R1 exposes no recovery route",
     "chain_links": "citation chaining is off in the test settings",
     "human_selection_links": "written only by human decisions in the screening queue, which this flow does not make",
     "owner_review_snapshots": "no review can be started until B2",
@@ -700,6 +704,7 @@ EMPTY_BECAUSE = {
     "record_references": "reference lists arrive with citation chaining or lookups, both off",
     "report_stale_acknowledgements": "written only when a person acknowledges stale report changes after an upstream edit",
     "research_purge_authorizations": "a temporary row opened and removed inside the purge transaction",
+    "recovery_purge_authorizations": "a temporary row opened and removed inside the recovery purge transaction",
     "scope_english_questions": "written only for a non-English question that gets an English rendering",
     "source_similarities": "written by the semantic ranking step, which needs an embedding model",
     "suspected_duplicates": "written only when two sources look like duplicates of one work",
@@ -783,7 +788,8 @@ def collect_views(client, research_ids: list[str]) -> dict[str, tuple]:
                     _, view = get(f"{base}/reports/{report['id']}")
                     get(f"{base}/reports/{report['id']}/gaps")
                     get(f"{base}/reports/{report['id']}/export")
-                    passages |= keys_named(view, "passage_id")
+                    # Freshness also names unresolved IDs; they are diagnostics, not openable citations.
+                    passages |= keys_named({k: v for k, v in view.items() if k != "passage_freshness"}, "passage_id")
             elif suffix == "/candidates":
                 for item in body:
                     get(f"{base}/candidates/{item['id']}")

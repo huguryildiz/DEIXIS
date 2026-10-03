@@ -121,6 +121,9 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
         lines.extend(edit_lines)
     if view.get("evidence_changes", {}).get("any"):
         lines.extend([export_text.evidence_changed_sentence(tr), ""])
+    freshness = view.get("passage_freshness", {})
+    if freshness.get("affected") or freshness.get("unresolved"):
+        lines.extend([export_text.passage_freshness_sentence(tr, len(freshness["affected"]), len(freshness["unresolved"])), ""])
 
     sections = sorted(view["sections"], key=lambda item: DISPLAY_ORDER.index(item["section_id"])
                       if item["section_id"] in DISPLAY_ORDER else len(DISPLAY_ORDER))

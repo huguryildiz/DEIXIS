@@ -74,13 +74,14 @@ from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
 from deixis.workflow.lineage.view import LineageView
 from deixis.workflow.candidates.run import KillSearchPlanner, candidate_evidence, decompose_budget, request_decomposition
 from deixis.workflow.candidates.store import CandidateStore, InvalidCandidateInput
-from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, report_gaps_view, report_view, research_view
+from deixis.workflow.views import library_version_to_add, library_view, library_work_view, occurrence_view, passage_view, report_gaps_view, report_view, research_view
 from deixis.workflow.worker import Worker
 from deixis.workflow.review import run as review_run
 from deixis.workflow.review.reader import ReviewReader
 from deixis.workflow.review.snapshot import build_snapshot, NotReviewable
 from deixis.workflow.review.stale import stale_reasons
 from deixis.workflow.review.store import ReviewStore, ReviewRefusal, ReviewConflict, applied_matches_suggestion
+from deixis.workflow import recovery_history
 from deixis.workflow.report.review import REVIEW_BUDGET_TOKENS
 from deixis.workflow.flow import CAPABILITIES
 from deixis.domain.canonical import sha256_hex
@@ -1013,12 +1014,16 @@ def create_app(
         store_of(request).restore_research(research_id)
         return {"restored": True}
 
-    def unlink_orphans(files: list[str], payloads: list[str]) -> list[str]:
+    def unlink_orphans(store: Store, files: list[str], payloads: list[str]) -> list[str]:
         """Delete the files a purge orphaned; returns the ones that could not be removed from disk."""
         failures = []
         for root, paths in ((settings.papers_dir, files), (settings.payloads_dir, payloads)):
             safe_root = root.resolve()
             for relative in paths:
+                if root == settings.papers_dir and recovery_history.RETAINED.fullmatch(relative):
+                    if not recovery_history.remove_retained(store, root, relative):
+                        failures.append(relative)
+                    continue
                 path = (safe_root / relative).resolve()
                 if not path.is_relative_to(safe_root) or path == safe_root:
                     failures.append(relative)
@@ -1031,8 +1036,12 @@ def create_app(
 
     @app.delete("/api/trash/{research_id}")
     async def purge_research(research_id: str, request: Request) -> dict[str, Any]:
-        files, payloads = store_of(request).purge_research(research_id)
-        return {"deleted": True, "files_not_removed": unlink_orphans(files, payloads)}
+        store = store_of(request)
+        try:
+            files, payloads = store.purge_research(research_id)
+        except recovery_history.FrozenDependencyUnreadable as exc:
+            return JSONResponse({"code": exc.code, "detail": exc.detail}, status_code=409)
+        return {"deleted": True, "files_not_removed": unlink_orphans(store, files, payloads)}
 
     @app.get("/api/search")
     async def quick_search(request: Request, q: str = Query(max_length=200)) -> dict[str, Any]:
@@ -1611,8 +1620,11 @@ def create_app(
     async def purge_sources(research_id: str, body: SourceRestore, request: Request) -> dict[str, Any]:
         """Delete removed sources for good; refused while an answer, table or report still cites one (D65)."""
         store = store_of(request)
-        purged, files, payloads = store.purge_sources(research_id, body.source_version_ids)
-        return {"deleted": purged, "files_not_removed": unlink_orphans(files, payloads)}
+        try:
+            purged, files, payloads = store.purge_sources(research_id, body.source_version_ids)
+        except recovery_history.FrozenDependencyUnreadable as exc:
+            return JSONResponse({"code": exc.code, "detail": exc.detail}, status_code=409)
+        return {"deleted": purged, "files_not_removed": unlink_orphans(store, files, payloads)}
 
     @app.post("/api/researches/{research_id}/uploads", status_code=201)
     async def upload(research_id: str, request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
@@ -1635,11 +1647,14 @@ def create_app(
             if store.was_member(research_id, svid) and not store.is_active_member(research_id, svid):
                 store.restore_sources(research_id, [svid])  # uploading the same file again undoes its removal (D50)
         else:
-            extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+            read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
+                storage_path=path.name, sha256=sha, byte_size=size, lock=True)
+            extraction = read.extraction
             title = re.sub(r"[_\s]+", " ", Path(filename).stem).strip()[:200] or "Uploaded PDF"
             svid = store.create_upload_source(title)
             store.add_asset_with_pages(svid, sha, size, path.name, "user_upload", None, filename,
-                                       extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+                                       extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
+                                       input_observation=read.observation)
         store.add_to_corpus(research_id, svid, "user_upload", selection_state="included", selection_origin="user")
         return research_view(store, research_id) | {"uploaded_source_version_id": svid,
             "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
@@ -1664,12 +1679,15 @@ def create_app(
         ).fetchone():
             if store.has_asset(source_version_id):
                 raise PdfInUse(source_version_id)
-            extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+            read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
+                storage_path=path.name, sha256=sha, byte_size=size, lock=True)
+            extraction = read.extraction
             filename = Path(file.filename or "document.pdf").name
             flow = request.app.state.worker.flow
             with db.transaction(store.conn):
                 asset_id = store.add_asset_with_pages(source_version_id, sha, size, path.name, "user_upload", None,
-                                                      filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+                                                      filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
+                                                      input_observation=read.observation)
                 if store.scope(research_id).get("search_workflow") == "sw":
                     # The same code, request and queue as a file confirmed from the waiting list (slice 18b,
                     # decision 10), with the same check whether the work may be read at all; legacy is unchanged.
@@ -1764,13 +1782,16 @@ def create_app(
             finally:
                 file_restore.cleanup(staged.path)
             sha, size, path = placement.sha256, placement.size, placement.path
-        extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+        read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
+            storage_path=path.name, sha256=sha, byte_size=size, lock=True)
+        extraction = read.extraction
         filename = Path(file.filename or "document.pdf").name
         flow = request.app.state.worker.flow
         with db.transaction(store.conn):
             pdf_waiting.check_attach(store, research_id, **bound)
             asset_id = store.add_asset_with_pages(source_version_id, sha, size, path.name, "user_upload", None,
-                                                  filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+                                                  filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
+                                                  input_observation=read.observation)
             # The code on the chosen version and, when the work may be read, the reading request and its run, in the
             # same write as the file (slice 18b, decisions 1–5).
             reading = flow.attach_person_file(research_id, source_version_id, asset_id)
@@ -1884,14 +1905,19 @@ def create_app(
                     settings.papers_dir.mkdir(parents=True, exist_ok=True)
                     placement = await file_restore.store_pdf_file(store, settings.papers_dir, settings.recovery_dir, data,
                                                                   caller="zotero_import", research_id=research_id)
+                    read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
+                        storage_path=placement.path.name, sha256=sha, byte_size=len(data), lock=True)
             except (text_retry.FileBusy, file_restore.FileRestoreRefused) as exc:
                 notes.append({"title": item.record.title, "note": f"PDF not added: {exc}"})
                 continue
             path = placement.path
-            extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+            extraction = read.extraction
             # The file is the user's own copy from their library, like an upload; retrieved_from names the attachment.
             store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
-                                       item.pdf_filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+                                       item.pdf_filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
+                                       input_observation=read.observation)
+            if read.observation is not None and read.observation["integrity"] != "verified":
+                notes.append({"title": item.record.title, "note": "PDF input not verified: " + text_retry.INPUT_CHANGED})
             pdfs_added += 1
         return {**research_view(store, research_id), "zotero_import": {"items": len(items), "pdfs_added": pdfs_added, "notes": notes}}
 
@@ -1926,13 +1952,18 @@ def create_app(
                     settings.papers_dir.mkdir(parents=True, exist_ok=True)
                     placement = await file_restore.store_pdf_file(store, settings.papers_dir, settings.recovery_dir, data,
                                                                   caller="zotero_pdfs", research_id=research_id)
+                    read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
+                        storage_path=placement.path.name, sha256=sha, byte_size=len(data), lock=True)
             except (text_retry.FileBusy, file_restore.FileRestoreRefused) as exc:
                 notes.append({"title": source["title"], "note": f"PDF not added: {exc}"})
                 continue
             path = placement.path
-            extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+            extraction = read.extraction
             store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
-                                       item.pdf_filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+                                       item.pdf_filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
+                                       input_observation=read.observation)
+            if read.observation is not None and read.observation["integrity"] != "verified":
+                notes.append({"title": source["title"], "note": "PDF input not verified: " + text_retry.INPUT_CHANGED})
             added += 1
         return {**research_view(store, research_id), "zotero_pdfs": {"checked": len(missing), "added": added, "notes": notes}}
 
@@ -1977,19 +2008,41 @@ def create_app(
         return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": "inline"})
 
     @app.get("/api/researches/{research_id}/assets/{asset_id}/text")
-    async def get_asset_text(research_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+    async def get_asset_text(research_id: str, asset_id: str, request: Request,
+                             extraction_id: str | None = None) -> dict[str, Any]:
         store = store_of(request)
         store.research(research_id)
         asset = store.asset(asset_id)
-        if asset["removed_at"] is not None or not (store.is_active_member(research_id, asset["source_version_id"]) or (
-                store.was_member(research_id, asset["source_version_id"]) and store.research_cites_asset(research_id, asset_id))):
+        svid = asset["source_version_id"]
+        cited = store.was_member(research_id, svid) and store.research_cites_asset(research_id, asset_id)
+        accessible = asset["removed_at"] is None and (store.is_active_member(research_id, svid) or cited)
+        if extraction_id is not None:
+            accessible = (asset["removed_at"] is None and store.is_active_member(research_id, svid)) or (
+                asset["removal_reason"] in (None, "replaced") and cited)
+        if not accessible:
             raise HTTPException(404, "Asset is not part of this research")
         source = store.source(asset["source_version_id"])
-        passages = [p for p in store.passages_for(asset["source_version_id"]) if p["asset_id"] == asset_id]
-        to_check = equations_to_check(store, asset_id, asset["extraction_version"])
+        if extraction_id is None:
+            extraction = store.conn.execute("SELECT * FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'",
+                                            (asset_id,)).fetchone()
+            passages = [p for p in store.passages_for(svid) if p["asset_id"] == asset_id]
+        else:
+            extraction = store.conn.execute(
+                "SELECT * FROM asset_extractions WHERE id = ? AND asset_id = ? AND outcome IN ('current', 'superseded')",
+                (extraction_id, asset_id),
+            ).fetchone()
+            if extraction is None:
+                raise HTTPException(404, "Extraction is not part of this asset")
+            passages = [dict(row) for row in store.conn.execute(
+                "SELECT * FROM passages WHERE asset_id = ? AND extraction_version = ? ORDER BY kind, physical_page, rowid",
+                (asset_id, extraction["extraction_version"]),
+            )]
+        version = extraction["extraction_version"] if extraction else asset["extraction_version"]
+        to_check = equations_to_check(store, asset_id, version)
         source_numbers = {version: latex_numbers(store, asset_id, version)
                           for version in {p["extraction_version"] for p in passages if p["text_source"] == "latex_source"}}
         return {
+            "occurrence": occurrence_view(store, asset, dict(extraction) if extraction else None, extraction_version=version),
             "asset": {k: asset[k] for k in ("id", "extraction_status", "page_count", "origin", "byte_size", "original_filename")}
             | {"rendition": store.asset_rendition(asset_id)},
             "passages": [{k: passage[k] for k in ("id", "kind", "text", "physical_page", "printed_label", "extraction_version", "payload_ref", "text_source")}
@@ -2125,9 +2178,11 @@ def create_app(
             if placement.outcome == "reused":
                 raise SameFile(asset_id)
             return research_view(store, research_id) | {"file_restore": store.file_restore_view(placement.operation_id)}
-        extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+        read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
+            storage_path=path.name, sha256=sha, byte_size=size, lock=True)
+        extraction = read.extraction
         store.replace_asset(asset_id, sha, size, path.name, "user_upload", None, Path(file.filename or "document.pdf").name,
-                            extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+                            extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page, input_observation=read.observation)
         return research_view(store, research_id) | {
             "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
 
@@ -2160,8 +2215,14 @@ def create_app(
             raise HTTPException(404, "File missing")
         with disk_full_refused():
             with text_retry.file_lock(settings.recovery_dir, asset["sha256"]):
-                extraction = await text_retry.drained_thread(pdf.extract_pdf, path)
-                report = store.reextract_asset(asset_id, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+                read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
+                    storage_path=asset["storage_path"], sha256=asset["sha256"], byte_size=asset["byte_size"], lock=False)
+                if read.observation is not None and read.observation["integrity"] != "verified":
+                    return JSONResponse({"code": "input_not_verified", "detail":
+                        "The stored PDF does not match its recorded hash; upload it again to repair it, then extract its text again."},
+                        status_code=409)
+                report = store.reextract_asset(asset_id, read.extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
+                                              input_observation=read.observation)
         return {**research_view(store, research_id), "reextraction": report}
 
     @app.get("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/text-retry")

@@ -476,12 +476,18 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
 async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_dir: Any, origin: str,
                       retrieved_from: str | None, filename: str | None = None, *, research_id: str | None = None,
                       recovery_dir: Path | None = None) -> str:
+    from deixis.workflow import text_retry
+
+    recovery_dir = file_restore.resolve_recovery_dir(store, papers_dir, recovery_dir)
     placement = await file_restore.store_pdf_file(store, papers_dir, recovery_dir, data,
                                                  caller="acquisition", research_id=research_id)
     sha, path = placement.sha256, placement.path
-    extraction = await asyncio.to_thread(pdf.extract_pdf, path)
+    read = await text_retry.read_verified(store, papers_dir, recovery_dir, storage_path=path.name,
+                                          sha256=sha, byte_size=len(data), lock=True)
+    extraction = read.extraction
     return store.add_asset_with_pages(source_version_id, sha, len(data), path.name, origin, retrieved_from, filename,
-                                      extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+                                      extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
+                                      input_observation=read.observation)
 
 
 async def attach_confirmed_candidate(store: Store, source_version_id: str, candidate: dict[str, Any], papers_dir: Any,

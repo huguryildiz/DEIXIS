@@ -499,7 +499,7 @@ TEXT_CLASSES = {
     "helper": ("is_turkish", "pick", "ensure_report_finished", "report_stem"),
     "WHOLE": ("heading", "draft_line", "source_heading", "value_text"),
     "PLAIN": ("references_heading", "report_identity", "section_unvalidated_note", "vi_preface",
-              "missing_rows_sentence", "evidence_changed_sentence", "no_text_sentence", "not_enough_evidence_label",
+              "missing_rows_sentence", "evidence_changed_sentence", "passage_freshness_sentence", "no_text_sentence", "not_enough_evidence_label",
               "table_caption", "corpus_footer", "anchor_note", "findings_heading"),
     "PIECEWISE": ("missing_row_fields", "edit_note", "source_cell", "cell_text", "review_note", "finding_fields"),
 }

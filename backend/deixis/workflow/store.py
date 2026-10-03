@@ -23,6 +23,7 @@ from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
 from deixis.workflow import links, recovery
 from deixis.workflow.source_keys import key_stem, suffixes
+from deixis.workflow.evidence_deps import EVIDENCE_STATUS_SQL
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
 DISCOVERY_RUN_KINDS = ("discovery", "fulltext_fetch", "fulltext_adjudication")
@@ -30,12 +31,6 @@ ENDED_RUN_STATUSES = ("completed", "failed", "cancelled")
 TEXT_RETRY_REFUSALS = ("asset_removed", "no_holding_research", "membership_changed", "asset_replaced",
                       "baseline_changed", "run_active", "input_not_verified", "file_missing", "file_mismatch")
 TEXT_RETRY_INTERRUPTIONS = ("storage_full", "storage_unavailable", "cancelled", "unexpected_error", "process_ended")
-# What became of a passage's file since the passage was stored (D45), over `passages p LEFT JOIN source_assets a`.
-EVIDENCE_STATUS_SQL = (
-    "CASE WHEN a.id IS NULL THEN 'current'"
-    " WHEN a.removed_at IS NOT NULL THEN CASE a.removal_reason WHEN 'replaced' THEN 'pdf_replaced' ELSE 'pdf_removed' END"
-    " WHEN p.extraction_version IS NOT a.extraction_version THEN 'text_superseded' ELSE 'current' END"
-)
 MIN_TITLE_KEY_CHARS = 12  # shorter normalized titles ("Introduction") say too little to suspect a duplicate
 ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions (D46)
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
@@ -400,6 +395,8 @@ class Store:
             source_ids = list(dict.fromkeys(source_ids))
             # Remaining citations and snapshots protect evidence even without corpus membership.
             cited = self.cited_source_versions(source_ids)
+            from deixis.workflow.recovery_history import frozen_source_versions
+            frozen = frozen_source_versions(self.conn, source_ids)
             for source_id in source_ids:
                 # A provider source may be shared by another research. Keep its evidence and files in that case.
                 shared = self.conn.execute(
@@ -408,11 +405,12 @@ class Store:
                     " UNION SELECT 1 FROM kill_search_hits WHERE source_version_id = ? LIMIT 1",
                     (source_id, source_id, source_id, source_id),
                 ).fetchone()
-                if shared or source_id in cited:
+                if shared or source_id in cited or source_id in frozen:
                     continue
                 source = self.conn.execute("SELECT work_id, provider_payload_path FROM source_versions WHERE id = ?", (source_id,)).fetchone()
                 if source is None:
                     continue
+                orphan_files.extend(self._purge_asset_extractions(source_id))
                 if source["provider_payload_path"]:
                     payloads.append(source["provider_payload_path"])
                 payloads.extend(r[0] for r in self.conn.execute(
@@ -428,7 +426,6 @@ class Store:
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (source_id,))
-                self._purge_asset_extractions(source_id)
                 self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (source_id,))
                 self.conn.execute("DELETE FROM source_versions WHERE id = ?", (source_id,))
                 self.conn.execute("DELETE FROM works WHERE id = ? AND NOT EXISTS (SELECT 1 FROM source_versions WHERE work_id = ?)", (source["work_id"], source["work_id"]))
@@ -1554,43 +1551,22 @@ class Store:
             raise NotFound(asset_id)
         return dict(row)
 
-    def _purge_asset_extractions(self, svid: str) -> None:
-        """Delete recovery cycles in the caller's purge transaction, including older schemas."""
-        tables = {r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        columns = {r[1] for r in self.conn.execute("PRAGMA table_info(asset_extractions)")}
-        assets = "SELECT id FROM source_assets WHERE source_version_id = ?"
-        if not {"asset_file_observations", "asset_recovery_operations"}.issubset(tables) or "input_observation_id" not in columns:
-            self.conn.execute(f"DELETE FROM asset_extractions WHERE asset_id IN ({assets})", (svid,))
-            return
-        observations = {r[0] for r in self.conn.execute(
-            f"SELECT input_observation_id FROM asset_extractions WHERE asset_id IN ({assets})", (svid,)) if r[0]}
-        operations = [dict(r) for r in self.conn.execute(
-            f"SELECT * FROM asset_recovery_operations WHERE asset_id IN ({assets})", (svid,))]
-        for operation in operations:
-            observations.update(operation[k] for k in ("before_observation_id", "after_observation_id", "input_observation_id")
-                                if operation[k])
-            observations.update(r[0] for r in self.conn.execute(
-                "SELECT id FROM asset_file_observations WHERE operation_id = ?", (operation["id"],)))
-        self.conn.execute(f"DELETE FROM asset_extractions WHERE asset_id IN ({assets})", (svid,))
-        operation_ids = {operation["id"] for operation in operations}
-        for oid in observations:
-            if self.conn.execute("SELECT 1 FROM asset_extractions WHERE input_observation_id = ?", (oid,)).fetchone():
-                continue
-            holders = {r[0] for r in self.conn.execute(
-                "SELECT id FROM asset_recovery_operations WHERE before_observation_id = ? OR after_observation_id = ?"
-                " OR input_observation_id = ?", (oid, oid, oid))}
-            if holders.issubset(operation_ids):
-                self.conn.execute("DELETE FROM asset_file_observations WHERE id = ?", (oid,))
-        self.conn.execute(f"DELETE FROM asset_recovery_operations WHERE asset_id IN ({assets})", (svid,))
+    def _purge_asset_extractions(self, svid: str) -> list[str]:
+        from deixis.workflow.recovery_history import purge_asset_history
+
+        return purge_asset_history(self.conn, svid)
 
     def asset_passage_count(self, asset_id: str) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM passages WHERE asset_id = ?", (asset_id,)).fetchone()[0]
 
     def add_asset_with_pages(self, svid: str, sha256: str, size: int, storage_path: str, origin: str,
                              retrieved_from: str | None, filename: str | None, extraction: Any,
-                             extraction_version: str, chunker: Any, *, input_observation_id: str | None = None) -> str:
+                             extraction_version: str, chunker: Any, *, input_observation_id: str | None = None,
+                             input_observation: dict | None = None) -> str:
         aid = new_id("ast")
         with transaction(self.conn):
+            if input_observation is not None:
+                input_observation_id = self.add_file_observation(**input_observation)
             try:
                 self.conn.execute(
                     "INSERT INTO source_assets (id, source_version_id, sha256, byte_size, media_type, storage_path, original_filename,"
@@ -1647,7 +1623,8 @@ class Store:
         return extraction_id
 
     def reextract_asset(self, asset_id: str, extraction: Any, extraction_version: str, chunker: Any,
-                        dry_run: bool = False, allow_run_id: str | None = None, guard: Any = None) -> dict[str, Any]:
+                        dry_run: bool = False, allow_run_id: str | None = None, guard: Any = None, *,
+                        input_observation: dict | None = None) -> dict[str, Any]:
         """Append a tool occurrence under D45, retaining the baseline's text pages.
 
         All decision inputs are read under the write lock. A dry run evaluates
@@ -1698,9 +1675,11 @@ class Store:
                 raise RunInProgress(asset_id)
             if report["outcome"] == "current" and old:
                 self.conn.execute("UPDATE asset_extractions SET outcome = 'superseded' WHERE id = ?", (old["id"],))
+            input_observation_id = self.add_file_observation(**input_observation) if input_observation is not None else None
             self._write_extraction(report["source_version_id"], asset_id, extraction, extraction_version, chunker,
                                    report["outcome"], report["rejection_reason"],
-                                   baseline_extraction_id=old["id"] if old else None, decision_code=report["decision_code"])
+                                   baseline_extraction_id=old["id"] if old else None, decision_code=report["decision_code"],
+                                   input_observation_id=input_observation_id)
             if report["outcome"] == "current":
                 self.conn.execute(
                     "UPDATE source_assets SET extraction_version = ?, extraction_status = ?, extraction_error = ?, page_count = ?"
@@ -2068,7 +2047,8 @@ class Store:
             return self._retry_result(operation_id)
 
     def replace_asset(self, asset_id: str, sha256: str, size: int, storage_path: str, origin: str, retrieved_from: str | None,
-                      filename: str | None, extraction: Any, extraction_version: str, chunker: Any) -> str:
+                      filename: str | None, extraction: Any, extraction_version: str, chunker: Any, *,
+                      input_observation: dict | None = None) -> str:
         """Put another file in use for the source version, in every research that uses it (D45).
 
         The new file gets its own passages even when its text is the same; the old file is marked replaced, and the evidence
@@ -2097,7 +2077,9 @@ class Store:
                  extraction.status, extraction_version, extraction.error, extraction.page_count),
             )
             self.conn.execute("UPDATE source_assets SET replaced_by_asset_id = ? WHERE id = ?", (aid, asset_id))
-            self._write_extraction(svid, aid, extraction, extraction_version, chunker, "current")
+            observation_id = self.add_file_observation(**input_observation) if input_observation is not None else None
+            self._write_extraction(svid, aid, extraction, extraction_version, chunker, "current",
+                                   input_observation_id=observation_id)
             for research_id in researches:
                 self._event(research_id, "asset_replaced", {"source_version_id": svid, "asset_id": asset_id, "replaced_by_asset_id": aid})
                 self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (ts, research_id))
@@ -2870,6 +2852,11 @@ class Store:
                 return [], [], []
             if cited := self.cited_source_versions(chosen):
                 raise RevisionConflict(f"Evidence still cites {len(cited)} of these sources; delete their research instead")
+            from deixis.workflow.recovery_history import frozen_source_versions
+            frozen = frozen_source_versions(self.conn, chosen, research_id=research_id) & set(chosen)
+            if frozen:
+                raise RevisionConflict(f"A stored model input or report record still uses passages of {len(frozen)}"
+                                       " of these sources; delete their research instead")
             ts = now()
             self._corpus_changed(research_id, "source_purged", chosen, ts)
             marks = ", ".join("?" * len(chosen))
@@ -2909,6 +2896,7 @@ class Store:
                 source = self.conn.execute("SELECT work_id, provider_payload_path FROM source_versions WHERE id = ?", (svid,)).fetchone()
                 if source is None:
                     continue
+                orphan_files.extend(self._purge_asset_extractions(svid))
                 if source["provider_payload_path"]:
                     payloads.append(source["provider_payload_path"])
                 payloads.extend(r[0] for r in self.conn.execute(
@@ -2924,7 +2912,6 @@ class Store:
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (svid,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (svid,))
                 self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (svid,))
-                self._purge_asset_extractions(svid)
                 self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (svid,))
                 self.conn.execute("DELETE FROM source_versions WHERE id = ?", (svid,))
                 self.conn.execute("DELETE FROM works WHERE id = ? AND NOT EXISTS (SELECT 1 FROM source_versions WHERE work_id = ?)",

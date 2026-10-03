@@ -337,7 +337,7 @@ def test_run_starts_after_reservation_final_check_refuses_new_contract(tmp_path,
 
 @pytest.mark.parametrize("shared", [False, True])
 def test_backup_and_purge_keep_receipt_and_retained_bytes_new_contract(tmp_path, shared):
-    """Paired existing backup/purge guards and T2a; NULL-asset receipts survive even an unshared source purge."""
+    """R3 includes retained evidence in backup; only source sharing keeps unpurged receipts."""
     with store_library(tmp_path) as lib:
         tear(lib)
         # Keep S1 held elsewhere while purging the initiating research.
@@ -349,11 +349,17 @@ def test_backup_and_purge_keep_receipt_and_retained_bytes_new_contract(tmp_path,
         path = lib.settings.papers_dir / ("retained-" + lib.torn_sha + ".bin")
         archive = backup.create_backup(lib.settings, tmp_path / "backups")
         assert archive.is_dir()
-        assert not (archive / "papers" / path.name).exists()  # R3 limitation, pinned explicitly.
+        assert (archive / "papers" / path.name).read_bytes() == lib.torn
         lib.store.trash_research(lib.rid)
-        lib.store.purge_research(lib.rid)
-        assert lib.store.file_restore_view(result.operation_id) == saved and path.read_bytes() == lib.torn
-        assert lib.conn.execute("SELECT count(*) FROM asset_file_observations WHERE operation_id = ?", (result.operation_id,)).fetchone()[0] == 2
+        files, _ = lib.store.purge_research(lib.rid)
+        if shared:
+            assert lib.store.file_restore_view(result.operation_id) == saved and path.read_bytes() == lib.torn
+            assert lib.conn.execute("SELECT count(*) FROM asset_file_observations WHERE operation_id = ?", (result.operation_id,)).fetchone()[0] == 2
+            assert path.name not in files
+        else:
+            assert lib.conn.execute("SELECT count(*) FROM asset_recovery_operations WHERE id = ?", (result.operation_id,)).fetchone()[0] == 0
+            assert lib.conn.execute("SELECT count(*) FROM asset_file_observations WHERE operation_id = ?", (result.operation_id,)).fetchone()[0] == 0
+            assert path.name in files
 
 
 @pytest.mark.parametrize("outcome,reason", [("file_restored", None), ("file_reused", None), ("file_refused", "run_active")])

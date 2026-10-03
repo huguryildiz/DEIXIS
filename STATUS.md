@@ -2,7 +2,7 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 · P9 RF (D198) main'e hazır: rapor onarımı yamayla, paket hash'ini kod yazıyor; P8 B5 (D186) main'e hazır; P7-F2 ve P7-F3 (D199): PubMed alt istekleri artık bütçede sayılıyor ve sınırlanıyor, OpenAI gömme yolu anahtarlı test edildi; P7 çıkışı için yalnız G1-F1 kaldı
+**Son güncelleme:** 3 Ekim 2026 · Yeniden işleme R3 (D197) ve P9 RF (D198) main'de; H9b hazırlanıyor
 
 ## Şu an çalışanlar
 
@@ -31,6 +31,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 - ✅ **Yeniden işleme R2a** (D191): bir kişi, başarısız ya da yarım kalmış bir metin çıkarımını uç nokta ya da CLI ile bir kez yeniden deneyebiliyor; dosyanın hash'i kontrol edilmiş özel bir kopyası, dosya başına kilit altında okunuyor; deneme sürerken o kaynağı tutan araştırmanın koşusu bekliyor. Kendiliğinden yeniden deneme yok; düğme R4'te, dosya onarım makbuzu R2b'de. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 9.781 test geçti.
 - ✅ **Yeniden işleme R2b** (D192): bozuk bir PDF'i yeniden yükleyen, indiren ya da içe aktaran her yol artık tek bir onarım fonksiyonundan geçiyor; bozuk baytlar silinmeden ayrı bir dosyada saklanıyor, bir onarım makbuzu yazılıyor ve o dosyayı okuyabilecek bir koşu sürerken onarım reddediliyor. Kayıtlı metin değişmiyor; kişi R2a'daki yeniden denemeyle metni kurtarıyor. Eşleştirme artık dosya yazmıyor. Saklanan baytlar R3'e kadar yedeğe girmiyor. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 10.528 test geçti.
 - ✅ **Yeniden işleme R2c** (D195): çöken bir süreçten `running` kalmış metin denemesi ya da dosya onarımı artık o dosyanın kilidini alan ilk iş (açılış, worker'ın her turu, aynı dosyanın sonraki denemesi ya da yüklemesi) tarafından `process_ended` olarak kapatılıyor; metin kendiliğinden yeniden denenmiyor, onarım hiçbir zaman "başarılı" sayılmıyor, yalnız dosyanın o anki hâli kaydediliyor. Denklem (Marker) ve arXiv okuyucuları da aynı kilidi alıyor; dosya meşgulse hiçbir şey yazmıyor, koşuyu durdurmuyor. Gerçek alt süreç öldürme, gerçek `SQLITE_FULL`, ayrıştırıcı sınırları ve enjekte `ENOSPC` testleri var. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır.
+- ✅ **Yeniden işleme R3** (D197, göç 0069): eski bir atıf artık kendi metin çıkarımını açıyor ve o metnin hangi baytlardan okunduğu (doğrulanmış, farklı ya da kaydı yok) söyleniyor; rapor ve sahip incelemesi aynı pasaj kuralını kullanıyor, rapor dışa aktarımı artık güncel olmayan pasajları bildiriyor (anlamsal destek denetlenmiyor). Yeni eklenen ya da yükseltilen PDF'ler hash'i doğrulanmış özel bir kopyadan okunuyor ve bu kaydediliyor. Saklanan bozuk baytlar yedeğe giriyor; onarım geçmişi yalnız yetkili kalıcı silmede, o dosyayı tutan başka varlık kalmadığında siliniyor; bir model girdisinde ya da rapor kaydında geçen kaynak tek başına silinemiyor. Sol yazdı, plan Sol medium 3 turda, kod Claude 2 turda hazır; 12.692 test geçti, main'e taşındıktan sonra 13.011. Arayüz R4'te.
 - ✅ **Küçük kalanlar** (D175): dışa aktarma hatasının Türkçesi, slice 31 test eksikleri.
 - ✅ **Onarılan dosyanın yeniden işlenmesi, tasarım** (D176); kodu R1–R5 partilerinde.
 - ✅ **P7 G10 canlı deneme** (3 Ekim 02:48): IEEE, Scopus, CORE, SerpApi birer arama, hepsi HTTP 200.
@@ -42,7 +43,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 2. P7 kapanışı: G1-F1 (P8 B5'ten sonra); P7-F2 ve P7-F3 bitti (D199)
 3. RF (D198): IV. bölüm onarım ve hash kopyalama hataları kodda düzeltilir; sonra H9b kısa yeniden ölçüm (Luna)
 4. P8 B5–B8, sırayla
-5. Yeniden işleme R3–R5; H10
+5. Yeniden işleme R4–R5; H10
 
 Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizlik H9.
 

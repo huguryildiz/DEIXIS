@@ -133,24 +133,13 @@ class ReviewReader:
         ).fetchone()) is not None}
 
     def evidence_dependency(self, passage_id):
-        row = self._conn.execute(
-            "SELECT p.*, a.id AS dependency_asset_id, a.sha256 AS asset_sha256,"
-            " a.removed_at, a.removal_reason, a.extraction_version AS asset_extraction_version,"
-            " e.id AS passage_extraction_id, cur.id AS current_extraction_id_at_snapshot"
-            " FROM passages p LEFT JOIN source_assets a ON a.id = p.asset_id"
-            " LEFT JOIN asset_extractions e ON e.asset_id = p.asset_id AND e.extraction_version = p.extraction_version"
-            " LEFT JOIN asset_extractions cur ON cur.asset_id = p.asset_id AND cur.outcome = 'current'"
-            " WHERE p.id = ?", (passage_id,),
-        ).fetchone()
-        if row is None:
+        from deixis.workflow.evidence_deps import passage_dependencies
+
+        result = passage_dependencies(self._conn, [passage_id])[passage_id]
+        if result is None:
             return None
-        result = dict(row)
-        # EVIDENCE_STATUS_SQL's rule, without importing the writable main store.
-        result["evidence_status"] = (
-            "current" if result["dependency_asset_id"] is None else
-            ("pdf_replaced" if result["removal_reason"] == "replaced" else "pdf_removed") if result["removed_at"] is not None else
-            "text_superseded" if result["extraction_version"] != result["asset_extraction_version"] else "current"
-        )
+        result["current_extraction_id_at_snapshot"] = result.pop("current_extraction_id")
+        result.pop("passage_extraction_outcome")
         return result
 
     def evidence_exists(self, asset_id, extraction_id):

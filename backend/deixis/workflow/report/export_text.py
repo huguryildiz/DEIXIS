@@ -180,6 +180,17 @@ def evidence_changed_sentence(tr: bool) -> str:
                 tr, "Bu rapor yazıldıktan sonra kanıt değişti; rapor metni değişmedi. Pasaj metni denetlenmedi.")
 
 
+def passage_freshness_sentence(tr: bool, affected: int, unresolved: int) -> str:
+    """PLAIN: Disclose identity comparison without claiming semantic support."""
+    if tr:
+        unknown = f"; {unresolved} pasaj çözümlenemedi" if unresolved else ""
+        return (f"Pasaj güncelliği karşılaştırıldı: bu raporda kullanılan {affected} pasaj artık PDF'lerinin güncel metni değil"
+                f"{unknown}. Anlamsal destek denetlenmedi.")
+    unknown = f"; {unresolved} could not be resolved" if unresolved else ""
+    return (f"Passage freshness compared: {affected} passage(s) this report used are no longer the current text of their PDF"
+            f"{unknown}. Semantic support was not checked.")
+
+
 def no_text_sentence(tr: bool) -> str:
     """PLAIN: Return the empty-section sentence."""
     return pick("No text was written for this section.", tr, "Bu bölüm için metin yazılmadı.")

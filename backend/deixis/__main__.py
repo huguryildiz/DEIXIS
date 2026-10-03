@@ -137,7 +137,7 @@ def reextract(settings: Settings, dry_run: bool, retry: str | None = None, expec
     from deixis.documents import pdf
     from deixis.storage import db
     from deixis.workflow.store import RunInProgress, Store
-    from deixis.workflow.text_retry import FileBusy, file_lock
+    from deixis.workflow.text_retry import FileBusy, file_lock, read_verified_sync
 
     if retry is not None:
         return retry_text(settings, retry, expected_extraction, dry_run)
@@ -162,7 +162,14 @@ def reextract(settings: Settings, dry_run: bool, retry: str | None = None, expec
         else:
             try:
                 with file_lock(settings.recovery_dir, store.asset(asset["id"])["sha256"]):
-                    report = store.reextract_asset(asset["id"], pdf.extract_pdf(path), pdf.EXTRACTION_VERSION, pdf.chunk_page, dry_run=dry_run)
+                    stored = store.asset(asset["id"])
+                    read = read_verified_sync(store, settings.papers_dir, settings.recovery_dir,
+                        storage_path=stored["storage_path"], sha256=stored["sha256"], byte_size=stored["byte_size"])
+                    if read.observation is not None and read.observation["integrity"] != "verified":
+                        report = {"outcome": "input_not_verified"}
+                    else:
+                        report = store.reextract_asset(asset["id"], read.extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
+                                                      dry_run=dry_run, input_observation=read.observation)
                 outcome, detail = report["outcome"], report.get("rejection_reason") or ""
             except FileBusy:
                 outcome, detail = "file_busy", ""
@@ -329,6 +336,32 @@ def equations(settings: Settings, action: str) -> int:
     return 0
 
 
+def recovery_files(settings: Settings, delete: bool) -> int:
+    from deixis.workflow import reconcile, recovery_history
+    from deixis.workflow.store import Store
+
+    if (message := schema_problem(settings.db_path)) is not None:
+        print(message, file=sys.stderr)
+        return 2
+    conn = db.connect(settings.db_path)
+    try:
+        db.migrate(conn)
+        store = Store(conn)
+        store.recovery_dir = settings.recovery_dir
+        asyncio.run(reconcile.reconcile_stale(store, settings.papers_dir, settings.recovery_dir))
+        failed = False
+        for name, size in recovery_history.unreferenced_retained(store, settings.papers_dir):
+            if delete:
+                removed = recovery_history.remove_retained(store, settings.papers_dir, name)
+                failed |= not removed
+                print(f"{'deleted' if removed else 'not removed'} {name} {size} bytes")
+            else:
+                print(f"{name} {size} bytes")
+        return int(failed)
+    finally:
+        conn.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="deixis")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -346,10 +379,14 @@ def main(argv: list[str] | None = None) -> int:
     again.add_argument("--expected-extraction", metavar="EXTRACTION_ID", help="The retry's current extraction baseline")
     eq = sub.add_parser("equations", help="Install, check or remove the optional equation reader (Marker, about 4.4 GB)")
     eq.add_argument("action", choices=("install", "status", "remove"))
+    retained = sub.add_parser("recovery-files", help="List unreferenced retained recovery files")
+    retained.add_argument("--delete", action="store_true", help="Delete listed files through the guarded recovery unlink")
     args = parser.parse_args(argv)
     if args.command == "reextract" and bool(args.retry) != bool(args.expected_extraction):
         parser.error("--retry and --expected-extraction must be supplied together")
     settings = load_settings()
+    if args.command == "recovery-files":
+        return recovery_files(settings, args.delete)
     if args.command == "equations":
         return equations(settings, args.action)
     if args.command == "reextract":

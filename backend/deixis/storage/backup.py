@@ -12,18 +12,21 @@ import os
 import shutil
 import sqlite3
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from deixis.config import Settings
 from deixis.storage.db import now
+from deixis.workflow import recovery_history, text_retry
 
 FORMAT = "deixis-backup-v1"
 MANIFEST = "manifest.json"
 DB_NAME = "library.sqlite"
 FILE_DIRS = {"papers": "papers_dir", "provider-payloads": "payloads_dir"}
-NOT_INCLUDED = ["codex-home (model sign-in)", "codex-workspace", "worker.lock"]
+NOT_INCLUDED = ["codex-home (model sign-in)", "codex-workspace", "worker.lock",
+                "recovery (file locks and private temporary copies)"]
 
 
 class BackupError(Exception):
@@ -51,7 +54,21 @@ def _column(conn: sqlite3.Connection, sql: str) -> list[tuple]:
 
 def _referenced_files(conn: sqlite3.Connection) -> dict[str, dict[str, str | None]]:
     """File name -> recorded sha256 (None when the record has no hash), per backup subfolder."""
-    papers = {row[0]: row[1] for row in _column(conn, "SELECT storage_path, sha256 FROM source_assets")}
+    papers = {}
+
+    def add(name, sha):
+        if name in papers and papers[name] is not None and sha is not None and papers[name] != sha:
+            raise BackupError(f"contradictory hashes recorded for papers/{name}")
+        if sha is not None or name not in papers:
+            papers[name] = sha
+
+    for name, sha in _column(conn, "SELECT storage_path, sha256 FROM source_assets"):
+        add(name, sha)
+    for oid, name, sha in _column(conn, "SELECT id, retained_filename, observed_sha256 FROM asset_file_observations"
+                                      " WHERE retained_filename IS NOT NULL"):
+        if not recovery_history.RETAINED.fullmatch(name) or name[9:-4] != sha:
+            raise BackupError(f"invalid retained file identity recorded by observation {oid}")
+        add(name, sha)
     # Abstract passages can own a later query payload; PDF passages hold character ranges, not files.
     payloads: dict[str, str | None] = {}
     for sql in ("SELECT raw_payload_path FROM search_runs WHERE raw_payload_path IS NOT NULL",
@@ -95,13 +112,21 @@ def create_backup(settings: Settings, destination: Path) -> Path:
             src_dir = getattr(settings, FILE_DIRS[folder])
             for name, recorded in sorted(names.items()):
                 src = src_dir / name
-                if not src.is_file():
-                    raise BackupError(f"referenced file is missing: {folder}/{name}")
-                (target / folder).mkdir(exist_ok=True)
-                shutil.copyfile(src, target / folder / name)
-                digest = _sha256(target / folder / name)
-                if recorded is not None and digest != recorded:
-                    raise BackupError(f"file does not match its recorded hash: {folder}/{name}")
+                lock = (recovery_history.waited_hash_lock(settings.recovery_dir, recorded)
+                        if folder == "papers" and not recovery_history.RETAINED.fullmatch(name)
+                        and recorded is not None and text_retry.HASH.fullmatch(recorded) else nullcontext())
+                try:
+                    with lock:
+                        if not src.is_file():
+                            raise BackupError(f"referenced file is missing: {folder}/{name}")
+                        (target / folder).mkdir(exist_ok=True)
+                        shutil.copyfile(src, target / folder / name)
+                        digest = _sha256(target / folder / name)
+                        if recorded is not None and digest != recorded:
+                            raise BackupError(f"file does not match its recorded hash: {folder}/{name}")
+                except text_retry.FileBusy as exc:
+                    raise BackupError(f"papers/{name} is busy with a file repair, text retry or equation read;"
+                                      " try the backup again when it ends") from exc
                 files.append({"path": f"{folder}/{name}", "sha256": digest, "bytes": (target / folder / name).stat().st_size})
 
         manifest = {"format": FORMAT, "created_at": now(), "schema_versions": schema, "files": files, "not_included": NOT_INCLUDED}

@@ -13,6 +13,7 @@ import sqlite3
 import stat
 import tempfile
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -200,6 +201,78 @@ def _sweep(recovery_dir: Path) -> None:
                     logger.exception("Could not remove an orphaned text retry copy")
     except Exception:
         logger.exception("Could not sweep orphaned text retry copies")
+
+
+INPUT_CHANGED = "The stored PDF changed before its text was read; upload it again to repair it."
+
+
+@dataclass(frozen=True)
+class VerifiedRead:
+    extraction: pdf.Extraction
+    observation: dict | None
+
+
+def _read_copy(recovery_dir: Path, sha256: str, *, owned: bool) -> Path:
+    _sweep(recovery_dir)
+    folder = recovery_dir / "tmp"
+    if owned:
+        # The caller's exclusive lock rules out a live owner of these copies.
+        for path in folder.glob(sha256 + "-*.pdf"):
+            _remove_copy(path)
+    _private_dir(folder)
+    descriptor, name = tempfile.mkstemp(prefix=sha256 + "-", suffix=".pdf", dir=folder)
+    os.close(descriptor)
+    return Path(name)
+
+
+def _remove_copy(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except Exception:
+        logger.exception("Could not remove a verified extraction input copy")
+
+
+def _input_observation(storage_path, sha256, byte_size, observed):
+    integrity, sha, size = observed
+    return {"kind": "extraction_input", "operation_id": None, "storage_path": storage_path,
+            "expected_sha256": sha256, "expected_byte_size": byte_size,
+            "observed_sha256": sha, "observed_byte_size": size, "integrity": integrity}
+
+
+async def read_verified(store, papers_dir: Path, recovery_dir: Path, *, storage_path: str,
+                        sha256: str, byte_size: int, lock: bool) -> VerifiedRead:
+    if not HASH.fullmatch(sha256) or not store._extraction_has_recovery_metadata:
+        return VerifiedRead(await drained_thread(pdf.extract_pdf, papers_dir / storage_path), None)
+    if lock:
+        from deixis.workflow.file_restore import writer_lock
+
+        _sweep(recovery_dir)
+        async with writer_lock(recovery_dir, sha256):
+            return await read_verified(store, papers_dir, recovery_dir, storage_path=storage_path,
+                                       sha256=sha256, byte_size=byte_size, lock=False)
+    copy_path = _read_copy(recovery_dir, sha256, owned=True)
+    try:
+        observed = await drained_thread(observe_copy, papers_dir, storage_path, sha256, byte_size, copy_path)
+        extraction = (await drained_thread(pdf.extract_pdf, copy_path) if observed[0] == "verified" else
+                      pdf.Extraction(status="failed", error=INPUT_CHANGED))
+        return VerifiedRead(extraction, _input_observation(storage_path, sha256, byte_size, observed))
+    finally:
+        _remove_copy(copy_path)
+
+
+def read_verified_sync(store, papers_dir: Path, recovery_dir: Path, *, storage_path: str,
+                       sha256: str, byte_size: int) -> VerifiedRead:
+    """Library-wide CLI read; the caller already owns the non-blocking hash lock."""
+    if not HASH.fullmatch(sha256) or not store._extraction_has_recovery_metadata:
+        return VerifiedRead(pdf.extract_pdf(papers_dir / storage_path), None)
+    copy_path = _read_copy(recovery_dir, sha256, owned=True)
+    try:
+        observed = observe_copy(papers_dir, storage_path, sha256, byte_size, copy_path)
+        extraction = (pdf.extract_pdf(copy_path) if observed[0] == "verified" else
+                      pdf.Extraction(status="failed", error=INPUT_CHANGED))
+        return VerifiedRead(extraction, _input_observation(storage_path, sha256, byte_size, observed))
+    finally:
+        _remove_copy(copy_path)
 
 
 def fingerprint(*, asset_id: str, source_version_id: str, research_id: str | None,

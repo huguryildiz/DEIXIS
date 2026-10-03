@@ -416,3 +416,76 @@ H9 başka korpusa/model/efora genellenemez; başarı veya hata oranı, hız ya d
 Keşfin geri çağırımı, literatürün tamamlığı, yenilik/araştırma boşluğu, matematiksel doğruluk, R10 yakalama oranı, lineage L9, kill-search K6, düzenleme ölçümleri R18/R19/R21 ve H10'un gerçek çağrı tekrarları bu işte ölçülmez. Hazır korpus kurmak için yapılan kuyruk seçimi varsayılan keşfin başarısı gibi sunulmaz. Rapor tamamlanırsa diğer borçlar kendiliğinden kapanmaz; her biri ayrı dondurma ve sahip yetkisi ister.
 
 **Sonraki işlem:** koordinatör bu commit'i push eder; 2. aşama ölçüm worktree'sini sabitlenen commit'te kurar ve §6 kuru kontrolünü push edilmiş dondurma commit'iyle çalıştırır, sonra hazırlık başlar. Matris çifti, başka bir Luna işi ve port 8765'teki canlı sunucu ile çakışmaz (§0, §4.1).
+
+## Ek A — 2. dondurma noktası (3 Ekim 2026, hazırlık sonrası, rapor öncesi)
+
+Bu ek §4.4 kayıt tablosunu doldurur. Donmuş kurallar değişmedi. Hazırlıkta donmuş metnin öngörmediği bir ürün duruşu oldu (A.3); yeni ve kayıtlı Claude+Sol medium kararıyla çözüldü, bu inceleme açıkça hüküm vermelidir. Rapor isteği yapılmadı; rapor yalnız bu ekin `gpt-6.1-sol` high incelemesi “hazır” dedikten ve koordinatör push ettikten sonra, §6.1 kuru kontrolü yeni dondurma commit'iyle yeniden geçerse başlar. Özel kanıt `DEIXIS-h9run/.local/p9r-h9/` altında, izlenmeden kalır (`protocol.md`, `evidence/`, `r9/`).
+
+### A.1 Ürün ve dondurma kimlikleri
+
+| Kayıt | Değer |
+|---|---|
+| Ürün (ölçüm worktree'si, ayrık) | `87cee0ba4e566ef311c07007d8b50ce7eb0a5086`, `DEIXIS-h9run`; commit/checkout yok |
+| 1. dondurma commit'i | `6b06866b38cd268a59a673b1d4fca68e9305c7b2` (origin/main); bu ekten önceki belge SHA-256: freeze `a0292076f45789f6b3e5de703d9dfdd26109ac33be96546cc6428a8958fbef17`, istem `a4fd4de259dc9cff27e77734b7c3c71a8f5847403800f4ef8c7d38e649c851af` (istem bu commit'te değişmedi) |
+| §6.1 kuru kontrol (1. dondurma ile) | betik SHA-256 `1f23c45c14c844b7fd7227fe9b86f48172fb951a4e9fc148862baed8b0b9717a`, rc 0; testler 257 geçti; §6.2 sağlık `ok`, `not_owner`, hash eşit |
+| Runtime `skill_package_hash` | `sha256:5ba2d214bd1122f9544aaa537226b6234123bf6be82b3e6e1c6d9ff99dcf75ff` |
+| Şema manifesti (22 dosya) | `7ac32dcdd77ab06b135a54596387cdfa6213237f27ecce923728f95948adcc52` |
+| Yöntem dosya manifesti | `methods/deixis-research`, `skill._package_files` kuralıyla 17 dosya; dosya başına SHA-256 `evidence/method-manifest.json` içinde (dosya SHA-256 `a1f3afb07ce697dee52b879e76707be83a5f65e4cb4254079e33a7a086364b2d`); toplam (`<yol>\0<sha256>\n` satırlarının SHA-256'sı) `422314a616290481779df999f02dd3ad01cad38b26b9490b1afb610de2cf0bb4` |
+| Kit / kit testi | `measure_report.py` `db203420e4b1ade5ab45cfa3b1636cc239bd3efa251554bb8dc1b15912251848`; `test_p6_measure_report.py` `7f7d2f0d500401f30bafe3cee7a4c4bdffd96454a600817158a1aa765d63bdf8` |
+| P19 sorgusu | §4.2.1 baytları `p19.sql` olarak çıkarıldı, SHA-256 `6d53789f7a1b898a4833bb993eaac222b29e5fa0cb209519fe020c3106e6acd1` yeniden doğrulandı |
+
+### A.2 Sunucu, izolasyon ve gözlemci
+
+Sunucu §4.1'in donmuş başlatıcısıyla (`launch.sh`, SHA-256 `8cc600c4b5b33c35cd5f99e6c421941cb649c70ef4dc9d151740051416ef05fd`, dondurma commit'inden aynen çıkarıldı) 06:52:18Z'de başladı: PID 38083, `127.0.0.1:8873`, yeni veri dizini `DEIXIS-h9run/.local/p9r-h9/data`, `.env` yok, null keyring, sağlayıcı anahtarı yok. Codex `codex-cli 0.160.0`, bağlantı `ready`/`signed_in`; `DEIXIS_CODEX_HOME` yalnız `test -d` ile denetlendi (K05 dar istisnası). Alt süreç envanteri: `codex app-server` PID 38865 (09:52:30 yerel). Port 8765 denetimi başlangıçta (`port-8765-20261003T065218Z.json`, `free: true`) ve 07:16Z'de (`lsof` rc 1, dinleyici yok) temiz. 07:16Z durumu: rapor 0, aktif koşu 0, `started` oturum 0.
+
+Rapor gözlemcisi `poll_report.py`, SHA-256 `df97882af8076ec3affa4dde121a4546ad89049c8eae3ae8940b9402c603e6fe`. Salt okunur; her 15 s'de bir JSON satırı yazar, hiçbir şeye müdahale etmez. Satır kısaltılmamış olarak şunları taşır: rapor koşusunun her model oturumu (kimlik, adım, girdi ve deneme numarası, durum, istenen/çözülen model, `validation_json`, araç öğeleri, zamanlar), her `failed`/`outcome_unknown` adımın `error_code` ve tam `error_json` değeri, `report_sections` durumları ve tam doğrulamaları, tam `review_json` ve `reason`, oturum sayıları ve K07 tavan işaretleri (60 oturum / POST'tan 90 dk). Böylece yalnız `client_timeout` kökenli bir duruş karışık nedenden, onarımla düzelen geçersiz ilk çıktı da terminal başarısızlıktan ayrılır. `ps` denetimi üç durumu ayırır: süreç var, süreç temiz biçimde yok (çıkış kodu 1, hata akışı boş) ve denetim başarısız (canlılık bilinmiyor; çıkış kodu ve akışlar yazılır); hata gözlemciyi durdurmaz. **Yürütücü dönüş kaydı:** işçi her turun başında `worker_owner.heartbeat_at` yazar ve yeni tur ancak önceki `flow.execute()` döndükten sonra başlar (`workflow/worker.py::_turn`). Bu yüzden koşu terminal durumdayken son terminal olayından sonra yazılmış bir heartbeat, yürütücünün döndüğünü gösterir (tek işçi, yeniden başlatma yok). Her (koşu, terminal olay kimliği) çifti için ayrı bir 120 s kapanış penceresi vardır; o terminal olayı gören ilk satır pencereyi başlatır. Sürdürülen koşu iki poll arasında yeniden biterse yeni terminal olay kimliği yeni pencere açar. Satırlar pencerenin başlangıcını, geçen saniyeyi, sürenin dolup dolmadığını, `verified` (dönüş kaydı ve sıfır `started` oturum birlikte) ve `snapshot_eligible` (pencere içinde doğrulandı) değerlerini taşır. Nihai snapshot yalnız `snapshot_eligible` doğruyken alınır; pencere dolarsa nihai durum iddiası kurulmaz (§5). Hazırlık gözlemcisi `poll.py` `33dbdde3a75598f6350ba81d4bffad407c1e1e461a5e297429642e2005f66f7e`, istemci `api.py` `7c9bc47913cf5ff4e6b8dc51c6aef2a37ea11e961b98f82a051ddc52cc56d28d`.
+
+### A.3 Sapma 1: `key_terms_needed` duruşu (inceleme hükmü gerekir)
+
+Araştırma `res_5ZrJQgVQ5unqqCRpMbrr` donduğu gibi açıldı (`sw`, `academic`, `question_only`, `standard`, `tr`, `codex`/`gpt-5.6-luna`/`medium`, Q1 metni aynen, anahtar terim yok). İlk keşif koşusu `run_gColvwp6pK4UCZTjDwHL`, 06:53:14Z'de hiçbir model oturumu veya sağlayıcı isteği olmadan `key_terms_needed` ile durdu: ürün İngilizce olmayan soruyu çevirmez ve kullanıcıdan İngilizce anahtar terim bekler (`domain/vocabulary.py::extract`, SW2.1). Donmuş metin bu duruşu öngörmedi; 1. dondurma incelemesi de yakalamadı. Soru metni dondurulduğu için İngilizceye çevrilemez.
+
+**Karar (Claude Opus 5.5 + `gpt-6.1-sol` medium, salt okunur, tek çağrı, uygulamadan önce `protocol.md`'ye yazıldı):** sorunun başının yalnız düz karşılığı, eşanlamlı eklenmeden, `claim:`/`not:` grubu olmadan verilir: `electric vehicle, electric vehicles; charging scheduling; optimization` (ayrıştırıcı: setting, task, outcome). 06:57:05Z'de `POST /scope` ile soru değişmeden kapsam revizyonu 2 açıldı; yeni keşif koşusu `run_inu6W7FeiklGWvBs3U7m`. İlk koşu kayıt olarak durur. Bu ikinci deneme veya timeout sürdürmesi değildir; saat 06:53:14Z'den işlemeye devam etti, sayaçlar birikimli. Sonuç belgesi bunu donmamış bir yürütücü girdisi olarak yazacak: arama ve korpusu biçimlendirdi, sorunun tam çevirisi değildir, kısaltma/eşanlamlı eksikliği geri çağırımı düşürebilir, sonuç yalnız bu terimlerle kurulan korpus içindir ve varsayılan Türkçe keşif başarımı veya literatür tamlığı hakkında bir şey söylemez. İlk duruşun süresi (yaklaşık 4 dk) raporlanır.
+
+### A.4 Protokol, korpus ve tablo (deneme 1; ikinci deneme açılmadı)
+
+Protokol kartı 3 `criterion_proposal` oturumundan sonra beklemeye geçti; öneri hash'i `72083c244f484f4a432214d28f5b8b382377190f89e667011277bf6482c0eeea`; terimler yukarıdaki üç blok, kapı sayımı 2178, `too_broad=false`, dışlama/iddia kelimesi yok. Ürün ayarları keşiften önce kayıtlı: atıf zinciri `auto`, tam metin getirme `overlap` kipinde (en çok 100 eser), `DEIXIS_FULLTEXT_ADJUDICATION=auto`, `max_model_calls 39`, `max_provider_requests 8`. Kart 06:58:35Z'de boş gövdeyle, değiştirilmeden yürütücü (`claude-opus-5-5`) tarafından onaylandı; ürün `approved_by=user` saklar.
+
+Sayılar: 4.925 satır döndü (925'i zincirden), 3.167 tekil eser, 150 özet model tarafından okundu; tam metin 112 eser için arandı, 103'ü getirilemedi, 9'u okundu (ürünün `inspected=0` sayısı yanıt incelemesini sayar, tam metin okumasını değil); otomatik dahil 3 (iki model okumasının uyumu, tam metin), kapsam dışı 18 (model 13, kod 5), PDF bekleyen 103 (yalnız özet; kuyruk satırı yok, §1.2 adım 2 gereği dahil edilemez), kuyruk 6. Saklı bitişler: keşif `run_inu6W7FeiklGWvBs3U7m` 07:03:36.565Z, tam metin karar koşusu `run_B3jDme04LX0ccsjf0rKO` 07:05:12.206Z (07:05:22Z gözlem anıdır).
+
+**K03 kuyruk geçişi:** 6 açık satırın hepsi (normalize başlık, sonra eser kimliği sırası), yalnız saklı metin. İstek 1/2: `claude-opus-5-5` medium, 07:07:18Z-07:07:41Z, ayrı defter (`queue-ledger.jsonl`); paket SHA-256 `d9cd2c45caf3019d5be2d2fe994adf8e6d94d7a9205ed901941579cec6cc5b9a`, yanıt `ffa5fab5da54b4a9fa525dd75c74c678faed882ffd832fcc1696640af2c6b965`. 07:07:05Z'deki ilk başlatma, model çağrılmadan kabukta `timeout` olmadığı için düştü; istek sayılmadı. Karar: 4 dahil (hepsi tam metinden), 2 `criterion_not_met`. Yalnız dahil kararları ürünün kuyruk yoluyla yazıldı (07:11:31-32Z; not karar veren modeli, okuma derinliğini, sayfaları ve gerekçeyi taşır). Ürün bu 4 satırı `user`/`human_include` olarak saklar; D96/D101 gereği bu etiket bu satırlar için yanlıştır ve sonuçta öyle yazılacak. Dışlama kararları ürüne yazılmadı, böylece başka yanlış “person” satırı oluşmadı. Bu 4 eser varsayılan keşfin verimi sayılmaz (seçilim etkisi).
+
+**Gözlem: seçim eserin baş sürümüne yazılıyor.** Ürün her eserin seçimini baş sürüme koyar ve `report_ready` dahil baş sürümleri arar; tablo satırları bu yüzden ürünün varsayılan yolu olan baş sürümlerdir (`rows=None`). 7 eserin 5'inde baş sürüm yalnız özet taşıyan yayımlanmış kayıttır; tam metin kardeş sürümdedir (gönderilmiş/kabul edilmiş). Satır düzeyinde saklı tam metin 2, özet 5. §1.2'deki “en az 3 saklı tam metin” hedefi satır düzeyinde tutmadı; R6/R9 buna göre sınırlı kalabilir. Seçim düzenlenmedi, ürün değişmedi.
+
+| Anahtar | Satır (baş sürüm) | Tam metnin durduğu sürüm | DOI | Giriş | Satır okuma derinliği |
+|---|---|---|---|---|---|
+| Tang16 | `srv_oNUsUxevbSKDEpKe5BTX` | `srv_6c8q6CLkp57dmv98hlJj` (arXiv 1502.01456) | 10.1109/tpwrs.2016.2585202 | kuyruk | özet |
+| Latifi18 | `srv_6K8oGH3IDlVqc2rbplyf` | `srv_Lg6z6iacHpJNXwB3FlnR` | 10.1109/tie.2018.2853609 | kuyruk | özet |
+| Sulthan22 | `srv_EHdqhEzLrupt3TgGRlCA` | `srv_te3kjMIH3NHCVz8zommw` | 10.3390/su14063498 | kuyruk | özet |
+| Qi23 | `srv_JepNQswFq2Quh27XDtRs` | aynı | 10.35833/mpce.2022.000456 | otomatik | seçili bölümler |
+| Hadian20 | `srv_bOvBMnzdvfPiDACsvSDz` | aynı | 10.1109/access.2020.3033662 | kuyruk | seçili bölümler |
+| ClementNyn09 | `srv_JxOi4KJMLaAucvzklHpQ` | `srv_c60Y8NVq5ELa8ZMdVb9x` | 10.1109/tpwrs.2009.2036481 | otomatik | özet |
+| Sarabi16 | `srv_tgvkQdyF08om6B8mPrCV` | `srv_I8zewVotZ4HyhjcxFbRT` | 10.1109/energycon.2016.7513989 | otomatik | özet |
+
+Seçilmeyen uygun iş yok (7 < 10). Kaynak/sürüm/DOI/dosya envanteri: 7 eserin bütün sürümleri, DOI'leri, sürüm etiketleri, kullanılan PDF'lerin `source_assets` kimliği, SHA-256 değeri, bayt boyu ve çıkarım durumu `evidence/source-inventory.json` içinde (SHA-256 `c5479f4c2e47634887f88845510ffd70b15e5234a76e64c0d8fff83c1efbbe26`); yedi tam metin PDF'i (her eser için bir) `succeeded` çıkarım taşır. **Bağımsızlık:** 7 eserin bütün sürümlerinin DOI/arXiv/OpenAlex kimlikleri izlenen belge envanteriyle kesiştirildi; örtüşme yok, hepsi `bağımsız (kimlik düzeyinde)`. Eski yüklenmiş dosya hash'leri ve belgelerde yazılmamış kimlikler `denetlenmedi`.
+
+**Tablo:** `tbl_pQukBcMTicxNo3QPGaf9`, 07:13:14Z, 7 satır, §1.3'ün yedi `text` sütunu aynen. Doldurma `run_m31qpPY68NBbMjBh6CZi` 07:13:30Z-07:14:23Z, 7 `cell_extraction` oturumu. 49 hücre `structurally_valid`: değer 39, `not_found_in_inspected_scope` 9 (Denklem 5, Karar değişkenleri 3, Kısıtlar 1), `unknown` 1. `report_ready`: `ready=true`, `cells_left=0`, `cells_total=49`, `failed_rows=0`, `failed_cells=0`, `included_rows=7`. SHA-256 (sıralı, `sort_keys`, ayırıcısız JSON): satırlar `add8755655933c4599e9a28b58e88df5425cdb5fc8bf4ccb9da56bfad6c4f34d`, sütunlar `3fe1c95aa6fe984e95598c1062c83781c1c5496748ae94cc7c74ac15c15c16e9`, hücre revizyonları `8febd20ce4487543c12c6cb70ee20244eb470dde4ce5a1692384b51c1bd61bd9`, değerler `2b73e6c2057c977aaf99911554e9dd141b72a014be7a94d98450c0036c14dfbe`, kanıt `3f0c5c4915449b761d762b63f9d6d5d6be67c18e211f1a2cbcc3166d2d219332`.
+
+Hazırlık 07:14:23Z'de bitti: saatin 21,1 dk'sı, 2 denemenin 1'i, 300 uygulama oturumunun 45'i (keşif 19, tam metin kararı 19, doldurma 7), 2 kuyruk isteğinin 1'i. Hazırlıkta tek duruş A.3'teki ilk `key_terms_needed` duruşudur; sonraki koşuların hiçbiri durmadı; timeout, kota/yük, model uyuşmazlığı veya araç ihlali yok. Saklı adım hataları: bir `model:abstract_screening` adımı `invalid_model_output` ile bitti (model `skill_package_hash` değerini bir karakter yanlış kopyaladı, `envelope_mismatch`; adımda 1 girdi ve 1 oturum var, onarım gönderimi yok), keşif koşusu tamamlandı; PDF getirme 21 (`fetch_http_error` 19, `fetch_not_pdf` 2) ve başka kopya araması 101 (`no_other_copy`) başarısız adım. 45 oturumun hepsi `completed`.
+
+### A.5 R9 çiftleri (§4.4, rapordan önce)
+
+Denklem sütununun yedi güncel hücresi kaynak-sürümü sonra hücre kimliği sırasıyla okundu. Beşi `not_found_in_inspected_scope` (beşi de yalnız özet okudu), çift vermez. Seçim 07:15:30.565Z'de, rapordan önce yapıldı. İki değer hücresinden, metinde görüntülenen ve kökeni hücrede kayıtlı her ayrı formülasyon hücre sırasıyla alındı; sözle tanımlanan MSE alınmadı:
+
+| # | `source_key` | Formülasyon etiketi | Hücre / revizyon |
+|---|---|---|---|
+| 1 | Qi23 | OPF: min \|ΔP\| = ∫\|P_sub − P_obj\| dt (denk. 9), rampa, gerilim ve güç sınırlarıyla | `cel_KweKW4pTcVCg9rs22yqW` / `crv_5EFjd6rUc3hlWsTKXo8X` |
+| 2 | Qi23 | İkinci aşama EV şarj gücü denetimi P_EV,k(t) | aynı |
+| 3 | Hadian20 | OF1 = a × … + b × … + (c × MSE), metin katmanında görüldüğü kadar | `cel_CoSPTBL2QLgTSTMXU8FX` / `crv_M8NL2aRyCBvuX5R73LyU` |
+| 4 | Hadian20 | BDSO = Bload_total + Bloss_total + BENS_total | aynı |
+| 5 | Hadian20 | BEVCS = Bdischarge_total + Bcharge_total − Cinv_total | aynı |
+
+`pairs.json` SHA-256 `706ae813cfc8bc9e34f0ab981f0ddc21d7d811c34003e8bad8471d72162f547d`; `pairs-provenance.json` (kaynak-sürümü, eser, satır, hücre, revizyon, değer hash'i, köken pasajları ve çapaları) `7e5a080f7b32a37f89caf65eeaf897a69647c1e7e230ffc5adafe50c4b10898b`. Yedi satırın kısa anahtarları tekil; eşleme tek anlamlı. Sonradan çift eklenmez veya değişmez. Modele verilen denklem koşulu rapordan sonra saklı StepInput'tan sınanır.
+
+### A.6 Sonraki adım
+
+İnceleme “hazır” derse koordinatör bu commit'i push eder. Yürütücü push edilmiş hash ile §6.1'i yeniden çalıştırır, 8765 denetimini ve alt süreç envanterini yeniler, gözlemciyi POST zamanıyla başlatır ve tek isteği gönderir: `POST /api/researches/res_5ZrJQgVQ5unqqCRpMbrr/reports`, gövde `{"table_id": "tbl_pQukBcMTicxNo3QPGaf9", "continue_with_failed": false}`.

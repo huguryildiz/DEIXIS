@@ -8,7 +8,9 @@ The compatibility facade validates request fields and declared option values
 before send (B3a, D179) and delegates query rendering/rules to registry declarations
 (B3b, D193), and application search dispatch now uses the facade (B4, D194). Admission and
 payload sanitization run after the equivalent adapter call; stored page revisions
-are checked before continuation. G1 remains open; the equivalence evidence uses synthetic fixtures.
+are checked before continuation. G1 is accepted with conditions for the search capability
+(B5, D196, [acceptance record](p7-acceptance-record.md)); lookup and chaining stay unbound
+until G1-F1. The equivalence evidence uses synthetic fixtures.
 
 ## Five onboarding gates
 
@@ -52,7 +54,7 @@ are checked before continuation. G1 remains open; the equivalence evidence uses 
 5. Record exact commands, results, mismatches and limits in `docs/decisions.md`
    before release admission. Synthetic checks establish application behavior.
    A live probe needs separate authorization; access and quota stay unverified
-   until observed. B5 owns G1 acceptance and product-document wording.
+   until observed. B5 (D196) recorded G1 acceptance and the product-document wording.
 
 Paths abbreviated as `providers/`, `workflow/`, `domain/`, `storage/` and `api/`
 above are under `backend/deixis/`. Admission citations describe the inspected
@@ -106,7 +108,8 @@ request, answer or `SearchOutcome`. It is neither `failed` nor `zero_results`
 and is never persisted to `record_lookups`. Existing helper names are recorded
 in `facade.UNBOUND_HELPERS`; lookup capability binding is a named unscheduled
 owner (D194 decision 10), amending D174's B4 row. D174 Q3's default is not yet
-met; B5 cannot record that binding as done. Chaining dispatch remains unbound.
+met; B5 did not record that binding as done and named it batch G1-F1 (D196), together
+with chaining dispatch, which remains unbound.
 
 Explicit regeneration command from the repository root:
 
@@ -139,7 +142,7 @@ B2 tree. B2 synthetic conformance does not verify provider documentation.
 | b. S2 batch identity | `providers/lookup.py::semantic_scholar_batch` binds normalized DOI/ArXiv identifiers regardless of position. Repeated DOI request positions share an answer when all answers naming that identifier are JSON-equal; conflicting answers fail all its positions. Unbound answers fail, and only order-consistent nulls are not_found. `test_connector_dispatch::test_s2_binding` includes four repeated-DOI cases; `test_s2_workflow_reordered_abstracts` exercises persistence. | B4 fixed (D194) |
 | c. Limit presentation | Search and chain row/step errors retain error_kind; kill-search step errors retain it. Quota pauses as provider_quota_exhausted; temporary limits keep provider_rate_limited, with rate_limited status for both. Synthetic discovery and suppression: `test_connector_dispatch::test_limit_discovery_and_suppression`. | B4 fixed (D194) |
 | d. Raising local errors | Local ValueError conversion remains unscheduled. A removed endpoint in paged reading raises KeyError before usage; S2 kill-search reserves first, then the facade raises ContractViolation (a ValueError subclass). Both accounting paths are pinned in `test_connector_dispatch`. | Unscheduled |
-| e. Logical/transport accounting | `workflow/flow.py:2043,2052` counts one base send plus retries; `providers/pubmed.py:135,162` can send ESearch and EFetch, while `:158-160` returns empty results after one send. Kill-search reserves by declared cost (`flow.py:4656-4657`). | Q4 debt; target accounting batch not scheduled |
+| e. Logical/transport accounting | `workflow/flow.py:2058,2068` counts one base send plus retries; `providers/pubmed.py:143,170` can send ESearch and EFetch, while `:165-167` returns empty results after one send. Kill-search reserves by declared cost (`flow.py:4749-4761`). | Q4 debt; owned by batch P7-F2 (D196), required before P7 closes and before P10 |
 | f. Flow-only outcomes | Missing configuration, quota suppression and transport_budget stay workflow-made outcomes, without dispatch provenance or dropped records. Search rows for suppression hold connector_json NULL; missing configuration still writes only a failed step. | B4 fixed (D194); accounting enforcement remains Q4 debt |
 | g. Descriptive retries | D179 descriptor/module agreement tests remain the guard. B4 forwards the unchanged flow retry allowance; RetryPolicy does not drive send. Policy-driven dispatch would require provider-module changes and remains unscheduled (D194 decision 8). | B3a compatibility fixed (D179); policy-driven dispatch unscheduled |
 | h. Closed admission | `test_connector_dispatch::test_synthetic_registry_dispatch_and_record` proves registry-only synthetic search dispatch and recording without a provider branch. Closed model schemas, lookup/PDF persistence and unknown-source routing still require each future connector's onboarding; this synthetic search does not open them. | B4 integration fixed (D194); each future connector's onboarding |
@@ -162,14 +165,16 @@ B2 tree. B2 synthetic conformance does not verify provider documentation.
 | pubmed_scan. Source-owned classification copy | Round 1 fixed: exactly one `SCAN_ALLOWLIST` entry in `tests/test_connector_boundary.py` permits `fetch_outcome.error_kind`, because EFetch copies the already-classified `SearchOutcome.error_kind` unchanged. Other unresolved expressions still fail closed. | B2 (D178) |
 | option_types. Value-type validation | B3a fixed (D179): `providers/facade.py:94-104` validates exact option types, declared values and an exact nonnegative retry allowance before send. `tests/test_connector_facade.py:266` covers every declared option, explicitly including integer 17 for OpenAlex reference_count/references and S2 bulk sort, with ContractViolation and zero requests; exact str-subclass and synthetic enumerated-value cases are included. `PENDING_B3A` is closed; direct registry behavior stays unchanged. | B3a fixed (D179) |
 | query_delegation. Rendering/rule admission | B3b (D193): registry declarations and `resolve_query_syntax` (`providers/registry.py:142`) drive pure candidate rendering, written counts and issue lists (`query_rules.py:218`); shared compiler allocation (`query_compiler.py:122`) drives both block compilation and the facade (`facade.py:130`). `tests/test_query_delegation.py:37` replays the pre-edit query freeze; undeclared compiler/facade endpoints are named refusal changes under the bounded revision amendment. Module-level rules stay lenient. Query translation through a synthetic registry-only connector is covered; other closed admission surfaces remain in ledger h. | B3b fixed (D193); dispatch remains B4 |
-| pause_text. Missing configuration label | English pause labels and Turkish entries now cover provider_not_configured, provider_quota_exhausted and provider_adapter_revision_changed (including unreadable provenance). Completed searches remain; quota retries require resume/retry. Build/lint are checked by the writer; rendered text is checked by the reviewer. | B4 fixed (D194) |
+| pause_text. Missing configuration label | English pause labels and Turkish entries now cover provider_not_configured, provider_quota_exhausted and provider_adapter_revision_changed (including unreadable provenance). Completed searches remain; quota retries require resume/retry. Build and lint passed with existing warnings; the new pause texts were not inspected in a rendered browser (D194). | B4 fixed (D194) |
 | b4_merge_version | `test_connector_dispatch::test_merge_and_arxiv_versions`: two dispatched providers retain both mappings for one DOI source; arXiv versions remain separate. | B4 fixed (D194) |
 | b4_resume_paging | `test_connector_dispatch::test_resume_provenance`: legacy NULL/current continuation asks the next page once, and the subsequent resume asks no succeeded page twice. | B4 fixed (D194) |
-| b4_resume_lookup | Lookup capability binding is unscheduled (D194 decision 10). Workflow keeps batched direct helpers; single-record facade lookup remains unsupported with zero requests. D174 Q3 default is not met; B5 must retain this limit. | Lookup capability binding; unscheduled (D194) |
+| b4_resume_lookup | Lookup capability binding is unscheduled (D194 decision 10). Workflow keeps batched direct helpers; single-record facade lookup remains unsupported with zero requests. D174 Q3 default is not met; B5 retains this limit and names the owner batch G1-F1 (D196), required before P7 closes and before P10. | Lookup capability binding; unscheduled (D194) |
 | b4_payload_write | `test_connector_dispatch::test_payload_write_failure_publishes_nothing`: OSError publishes no source, candidate, search row or succeeded step. Filesystem and database are still separate writes. | B4 fixed (D194) |
 | b4_limit_provenance | `test_connector_dispatch::test_limit_record_and_pause`, `test_limit_discovery_and_suppression`, `test_chain_limit_error`, `test_kill_limit_error` distinguish recorded limit kinds. | B4 fixed (D194) |
 | b4_s2_binding | `test_connector_dispatch::test_s2_binding` and `test_s2_arxiv_publication_relation` check identifier ownership, including preprint-to-publication links. | B4 fixed (D194) |
 | b4_stored_revision | Migration 0067 adds nullable connector_json without changing earlier rows. `test_connector_dispatch::test_resume_provenance` and `test_resume_changed_descriptor` refuse incompatible/malformed continuation with no send, usage or search row. | B4 fixed (D194) |
+
+## Historical B2 status (D178, before B3a–B5)
 
 Round 1 owner-level dispositions 1-4 were agreed jointly by reviewer Claude
 Opus 5.5 and gpt-6.1-sol medium, as recorded in D178.

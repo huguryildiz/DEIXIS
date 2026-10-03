@@ -49,12 +49,17 @@ IEEE Xplore, SerpApi, bioRxiv, CORE and PubMed. This is a support requirement, n
 claim of implemented connectors or a requirement to query all providers every time.
 Users choose enabled sources and supply their own access where required.
 
-Additional databases must be supported through an extensible connector contract:
+Additional databases are added as reviewed adapters in the DEIXIS codebase through
+the internal, versioned connector contract `deixis.scholarly_connector.v1`
+(`backend/deixis/providers/contract.py`; procedure in [connector onboarding](connector-onboarding.md)):
 query translation, authentication, pagination, normalized publication records,
 source provenance, access links, capabilities and explicit error states. A URL and
-API key alone cannot describe every scholarly API; a new protocol needs an adapter
-or a supported declarative mapping. Citation lookup and full-text retrieval are
-optional capabilities, not assumptions shared by every source.
+API key alone cannot describe every scholarly API; a new protocol needs an adapter.
+A packaged build cannot add sources; no external plugin, runtime loading or
+declarative mapping is offered (D174). Citation lookup and full-text retrieval are
+optional capabilities, not assumptions shared by every source. Every current adapter
+declares only search; the existing lookup and citation-chaining paths call provider
+helpers directly until batch G1-F1 binds them to the contract (D196).
 
 The owner supplied credentials in the conversation. Their VALUES ARE OMITTED from
 this handoff and all copied configuration. No live requests using those credentials

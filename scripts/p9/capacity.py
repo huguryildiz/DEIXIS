@@ -500,6 +500,10 @@ class EventStream(threading.Thread):
         self.url = f"{base}/api/researches/{research_id}/events/stream"
         self.response: Any = None
         self.bytes = 0
+        self.status: int | None = None
+        self.connected_at: float | None = None
+        self.ended_at: float | None = None
+        self.ready = threading.Event()
 
     def run(self) -> None:
         import httpx
@@ -507,10 +511,21 @@ class EventStream(threading.Thread):
         try:
             with httpx.Client(trust_env=False, timeout=None) as client, client.stream("GET", self.url) as response:
                 self.response = response
+                self.status = response.status_code
+                is_sse = response.headers.get("content-type", "").split(";", 1)[0].strip() == "text/event-stream"
                 for chunk in response.iter_raw():
                     self.bytes += len(chunk)
+                    if chunk and self.status == 200 and is_sse and self.connected_at is None:
+                        self.connected_at = time.time()
+                        self.ready.set()
         except Exception:
             return
+        finally:
+            self.ended_at = time.time()
+
+    def covered(self, start: float, end: float) -> bool:
+        return (self.status == 200 and self.connected_at is not None and self.connected_at <= start
+                and (self.ended_at is None or self.ended_at >= end))
 
     def finish(self) -> None:
         try:
@@ -1165,6 +1180,8 @@ def run_rep(point: Any, rep: int, src: Path, info: dict[str, Any], out: Path, no
             fields, problems = k01_fields(st.get("k01"))
             rec.update(fields)
             rec["errors"].extend(problems)
+            if health["non_200"] or not health["n"] or not st.get("k01", {}).get("ok"):
+                rec["health_max_s"] = None
             rec["errors"].extend(f"{name}: {step.get('error')}" for name, step in st.items() if name != "k01" and not step.get("ok"))
             for step, key in (("k04a", "quickfind_s"), ("k04b", "sources_first_paint_s"), ("k04c-pdf", "passage_pdf_text_s"),
                               ("k04c-abstract", "passage_abstract_s")):
@@ -1180,7 +1197,7 @@ def run_rep(point: Any, rep: int, src: Path, info: dict[str, Any], out: Path, no
                 stream = EventStream(server.base, rid)
                 stream.start()
                 try:
-                    time.sleep(0.5)
+                    stream.ready.wait(5)
                     two = run_node(node, work, base_args | {"steps": ["two-tab"]}, node_budget_s(node_units(["two-tab"])), started)
                 finally:  # neither thread may outlive a raising run_node
                     poller2.finish()
@@ -1188,10 +1205,17 @@ def run_rep(point: Any, rep: int, src: Path, info: dict[str, Any], out: Path, no
                 step = two.get("steps", {}).get("two-tab")
                 if step:
                     overlap = poller2.overlapping(step["start_epoch_ms"] / 1000, step["end_epoch_ms"] / 1000)
+                    stream_ok = stream.covered(step["start_epoch_ms"] / 1000, step["end_epoch_ms"] / 1000)
+                    valid = bool(step["ok"] and step.get("first_tab_ready") and stream_ok and overlap["n"] and not overlap["non_200"])
                     rec["two_tab"] = {"ok": step["ok"], "ui_ready_s": step["seconds"], "health": overlap,
-                                      "first_tab_ready": step.get("first_tab_ready"), "stream_bytes": stream.bytes}
-                    rec["two_tab_health_max_s"] = overlap["max_s"]
+                                      "first_tab_ready": step.get("first_tab_ready"), "stream_bytes": stream.bytes,
+                                      "stream_status": stream.status, "stream_connected_at": stream.connected_at,
+                                      "stream_ended_at": stream.ended_at, "stream_covered_window": stream_ok}
+                    rec["two_tab_health_max_s"] = overlap["max_s"] if valid else None
+                    if not valid:
+                        rec["health_max_s"] = None
                 else:
+                    rec["health_max_s"] = None
                     rec["errors"].append("two-tab: " + str(two.get("error") or "no step result"))
         if is_pdf:
             browser = run_node(node, work, base_args | {"steps": ["pdf"], "pages": info["pages"]}, node_budget_s(node_units(["pdf"])), started)
@@ -1208,8 +1232,16 @@ def run_rep(point: Any, rep: int, src: Path, info: dict[str, Any], out: Path, no
     except Exception as exc:
         rec["errors"].append(f"{type(exc).__name__}: {str(exc)[:500]}")
     finally:
+        if not control and not is_pdf:
+            health_valid = bool(rec.get("health_n") and rec.get("health_non_200") == 0 and rec.get("ui_ready_ok") == 1)
+            if point == 5000:
+                health_valid = health_valid and rec.get("two_tab_health_max_s") is not None
+            if not health_valid:
+                rec["health_max_s"] = None  # includes exceptions before browser/stream conditions could be recorded
         server.stop_sampling()
         rec.update(rss_peak_bytes=server.rss_peak or None, rss_final_bytes=server.rss_last or None, rss_samples=server.rss_samples)
+        rec["rss_workload_complete"] = (not is_pdf or bool(rec.get("browser_steps", {}).get("pdf_first_page", {}).get("ok")
+                                                        and rec.get("browser_steps", {}).get("pdf_jump", {}).get("ok")))
         rec["wal_bytes_running"] = file_bytes(data / "library.sqlite-wal")  # while the server is still up
         try:
             server.stop()
@@ -1279,7 +1311,8 @@ def load_reps(out: Path, also: tuple[Path, ...] | list[Path] = ()) -> dict[str, 
 
 def results_of(reps: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, list[Any]]]:
     metrics = {m["name"] for row in FROZEN["rows"].values() for m in row["metrics"]}
-    return {point: {name: [r.get(name) for r in rows] for name in metrics} for point, rows in reps.items()}
+    return {point: {name: [None if name == "rss_peak_bytes" and r.get("rss_workload_complete") is not True else r.get(name)
+                          for r in rows] for name in metrics} for point, rows in reps.items()}
 
 
 def summarize(out: Path, also: tuple[Path, ...] | list[Path] = ()) -> dict[str, Any]:
@@ -1464,6 +1497,8 @@ def cmd_measure(args: argparse.Namespace) -> int:
     guard_repo()
     root = guard_dir(args.root)
     out = guard_out(args.out)
+    if out.exists() and any(out.iterdir()):
+        raise GuardError(f"measurement target is not empty: {out}; use a fresh folder and --also to merge separate workloads")
     out.mkdir(parents=True, exist_ok=True)
     node = find_node()
     started: list[Ident] = []

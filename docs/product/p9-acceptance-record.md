@@ -219,3 +219,7 @@ Result: the model-free matrix passed in two of three complete runs with the sing
 - S10, S11: whether to run H9 (report on a fresh corpus, real model) and H10 (real call after SIGKILL).
 - The contact e-mail in the PDF fetcher's `User-Agent`, the two nearly identical amber colours, and the product choice for pre-D164 password-protected PDFs (section 4).
 - Whether to add CI (S12) and a quiet-machine H5 re-run.
+
+## 10. RR-B correction (3 October 2026)
+
+The closing claim of section 8 (matrix passed in two of three complete runs) was written before RR-B (D170). On the final RR-B code five more complete runs were made on a machine shared with other batches. Run 2 passed every mandatory row. Run 1 failed F04 (a real guard-process leak in a test, fixed) and then one a11y focus spec under load; runs 3 and 4 lost the Playwright ports to another batch; run 5 failed K02b (capacity under load) and cleanup (the other batch's listeners). No back-to-back pair passed, so the P9 exit condition (two clean runs in a row) is not met by these runs and the model-free close of P9 is not confirmed. Raw logs: `/tmp/rrb-matrix-run1` to `run5` (not in the repository).

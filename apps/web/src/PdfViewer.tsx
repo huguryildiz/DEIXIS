@@ -44,7 +44,9 @@ export function PdfViewer({ url, initialPage = 1, title, rendition = false }: { 
   }, [])
 
   useEffect(() => {
-    if (!document || !canvasRef.current || width === 0) return
+    const renderCanvas = canvasRef.current
+    renderCanvas?.removeAttribute('data-rendered-page')
+    if (!document || !renderCanvas || width === 0) return
     let cancelled = false
     let renderTask: ReturnType<Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']> | null = null
     document.getPage(page).then(pdfPage => {
@@ -62,7 +64,9 @@ export function PdfViewer({ url, initialPage = 1, title, rendition = false }: { 
       const context = canvas.getContext('2d')
       if (!context) return
       renderTask = pdfPage.render({ canvas, canvasContext: context, viewport: renderViewport })
-      return renderTask.promise
+      return renderTask.promise.then(() => {
+        if (!cancelled) canvas.dataset.renderedPage = String(page)
+      })
     }).catch(reason => {
       if (!cancelled && (reason as { name?: string }).name !== 'RenderingCancelledException') {
         setError(reason instanceof Error ? reason.message : String(reason))
@@ -70,6 +74,7 @@ export function PdfViewer({ url, initialPage = 1, title, rendition = false }: { 
     })
     return () => {
       cancelled = true
+      renderCanvas.removeAttribute('data-rendered-page')
       renderTask?.cancel()
     }
   }, [document, page, width, zoom])

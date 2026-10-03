@@ -28,13 +28,11 @@ The watchdog that stops the child runs in the parent (`_run_watched`), not in th
 child cannot be relied on: MuPDF's C calls hold the interpreter lock for as long as they run, and on a PDF whose
 decoded content is large the child grew past 1 GiB inside one such call and was never stopped (measured on macOS arm64).
 The in-child thread (`_watch_memory`) stays as a second guard for the other extraction children that share it.
+It also starts a separate, GIL-independent orphan guard (see `child_guard` for its lifecycle and remaining limits).
 """
 
 from __future__ import annotations
 
-import ctypes
-import ctypes.util
-import functools
 import json
 import logging
 import os
@@ -50,7 +48,8 @@ from pathlib import Path
 
 import pymupdf
 
-from deixis.documents import inline_math
+from deixis.documents import child_guard, inline_math
+from deixis.documents.child_guard import _libproc, _resident_bytes  # re-export existing readers
 
 log = logging.getLogger("deixis.pdf")
 EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-layout-v2"
@@ -278,21 +277,31 @@ def _extract_in_process(path: str, max_chars: int, placements: list[dict] | None
     return {"page_count": total, "pages": pages, "failed_pages": failed, "truncated": truncated}
 
 
+def _lifetime_seconds() -> int:
+    try:
+        return max(0, int(os.environ.get("DEIXIS_CHILD_LIFETIME_SECONDS", str(CHILD_LIFETIME_SECONDS))))
+    except ValueError:
+        return CHILD_LIFETIME_SECONDS
+
+
 def _arm_lifetime() -> None:
     """A hard end for the child, whatever its parent does. The parent's clock and memory watch (`_run_watched`) die with the
     parent: after a SIGKILL the child was reparented to PID 1 and ran on. SIGALRM's default action (no Python handler) ends
     the process even inside a C call that holds the interpreter lock. It bounds the child's time, not its memory."""
     if not hasattr(signal, "alarm"):  # Windows
         return
-    try:
-        seconds = int(os.environ.get("DEIXIS_CHILD_LIFETIME_SECONDS", ""))
-    except ValueError:
-        seconds = 0
-    signal.alarm(seconds if seconds > 0 else CHILD_LIFETIME_SECONDS)
+    signal.alarm(_lifetime_seconds())  # explicit zero disables the alarm for negative-control tests
 
 
-def _watch_memory(limit: int) -> None:
+def _watch_memory(limit: int, parent: tuple[int, str] | None = None) -> None:
     _arm_lifetime()
+    guard, guard_start = None, None
+    if _watch_supported() and os.environ.get("DEIXIS_CHILD_GUARD_DISABLED") != "1":
+        try:
+            guard, guard_start = child_guard.start_guard(limit, _lifetime_seconds() or CHILD_LIFETIME_SECONDS,
+                                                         parent or child_guard.original_parent(os.getppid()))
+        except Exception:
+            os._exit(child_guard.GUARD_EXIT_CODE)
     try:
         import resource
     except ImportError:  # Windows
@@ -301,9 +310,11 @@ def _watch_memory(limit: int) -> None:
 
     def watch() -> None:
         while resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale <= limit:
+            if guard is not None:
+                identity = child_guard.process_info(guard.pid)
+                if identity is None or identity.start != guard_start:
+                    os._exit(child_guard.GUARD_EXIT_CODE)
             time.sleep(0.05)
-        sys.stderr.write("memory limit exceeded\n")
-        sys.stderr.flush()
         os._exit(MEMORY_EXIT_CODE)
 
     threading.Thread(target=watch, daemon=True).start()
@@ -321,34 +332,6 @@ def _watch_supported() -> bool:
     return sys.platform == "darwin" or sys.platform.startswith("linux")  # Windows has no memory limit yet
 
 
-@functools.lru_cache(maxsize=1)
-def _libproc():
-    try:
-        libproc = ctypes.CDLL(ctypes.util.find_library("proc") or "libproc.dylib", use_errno=True)
-        libproc.proc_pidinfo.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int]
-        libproc.proc_pidinfo.restype = ctypes.c_int
-        return libproc
-    except (OSError, AttributeError):
-        return None
-
-
-def _resident_bytes(pid: int) -> int | None:
-    """The current resident size of another process, or None when it cannot be read (a vanished process, a failed
-    read, a platform without a reader)."""
-    if sys.platform == "darwin":
-        libproc = _libproc()
-        if libproc is None:
-            return None
-        info = (ctypes.c_uint64 * 12)()  # struct proc_taskinfo, 96 bytes: six uint64 counters (the second is the resident size), then twelve int32
-        size = libproc.proc_pidinfo(pid, 4, 0, ctypes.byref(info), ctypes.sizeof(info))  # PROC_PIDTASKINFO
-        return int(info[1]) if size == ctypes.sizeof(info) else None
-    try:
-        with open(f"/proc/{pid}/statm") as handle:
-            return int(handle.read().split()[1]) * os.sysconf("SC_PAGE_SIZE")
-    except (OSError, ValueError, IndexError):
-        return None
-
-
 def _run_watched(argv: list[str], env: dict, timeout: float, max_memory: int) -> subprocess.CompletedProcess:
     """Run a child to its end, killing it when it passes `timeout` seconds (TimeoutExpired), when its resident size
     passes `max_memory` (returncode MEMORY_EXIT_CODE, stderr says so) or, where the size is supposed to be readable,
@@ -357,7 +340,7 @@ def _run_watched(argv: list[str], env: dict, timeout: float, max_memory: int) ->
     deadline = time.monotonic() + timeout
     supported = _watch_supported()
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-        proc = subprocess.Popen(argv, stdout=out, stderr=err, env=env)
+        proc = subprocess.Popen(argv, stdout=out, stderr=err, env=child_guard.parent_env(env))
         exceeded, unread = False, 0
         try:
             while True:
@@ -415,6 +398,8 @@ def extract_pdf(path: Path, max_chars: int = MAX_TEXT_CHARS, max_memory: int = M
             Path(request.name).unlink(missing_ok=True)
     if completed.returncode == MEMORY_EXIT_CODE:
         return Extraction("failed", error="extraction exceeded the memory limit")
+    if completed.returncode == child_guard.GUARD_EXIT_CODE:
+        return Extraction("failed", error="extraction memory limit could not be watched")
     if completed.returncode != 0:
         # A crash or a signal: the stderr tail is for the log, not for the person.
         log.warning("PDF extraction child exited %s: %s", completed.returncode, completed.stderr.decode(errors="replace")[-400:])

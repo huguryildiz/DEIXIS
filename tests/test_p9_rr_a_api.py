@@ -28,6 +28,11 @@ def app_for(base, http=None):
                       extra_hosts=("testserver",), trusted_clients=("testclient",))
 
 
+def route_first(app):
+    """Put the route just added ahead of the static mount at "/", which create_app adds only when apps/web/dist exists."""
+    app.router.routes.insert(0, app.router.routes.pop())
+
+
 @pytest.mark.parametrize("error_number,status", [(28, 507), (13, 400)])
 def test_multipart_spool_failure(tmp_path, monkeypatch, error_number, status):
     app = app_for(tmp_path)
@@ -57,6 +62,8 @@ def test_http_defaults_keep_status_detail_headers_and_validation(tmp_path):
     def synthetic_error():
         raise HTTPException(404, "SYNTHETIC missing", headers={"x-synthetic": "retained"})
 
+    route_first(app)
+
     with TestClient(app) as client:
         session(client)
         response = client.get("/api/synthetic-http-error")
@@ -80,6 +87,8 @@ def test_an_http_error_with_a_disk_cause_outside_body_parsing_is_left_as_it_was(
             raise OSError(28, "SYNTHETIC no space")
         except OSError as exc:
             raise HTTPException(503, "SYNTHETIC own sentence", headers={"x-synthetic": "kept"}) from exc
+
+    route_first(app)
 
     with TestClient(app) as client:
         session(client)

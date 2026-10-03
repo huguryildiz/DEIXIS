@@ -1062,8 +1062,15 @@ async def run_child(argv: list[str], stdin: bytes = b"", timeout: float = CHILD_
     from deixis.documents import pdf
 
     proc = await asyncio.create_subprocess_exec(*argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                                                stderr=asyncio.subprocess.PIPE, env=env)
+                                                stderr=asyncio.subprocess.PIPE, env=pdf.child_guard.parent_env(env))
     out, err, failure = bytearray(), "", None
+
+    def kill() -> None:
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass  # another task or the child itself already ended it
 
     async def feed() -> None:
         try:
@@ -1081,7 +1088,7 @@ async def run_child(argv: list[str], stdin: bytes = b"", timeout: float = CHILD_
             if len(out) > max_stdout:
                 if failure is None:
                     failure = "output_too_large"
-                proc.kill()
+                kill()
                 return
 
     async def read_err() -> None:
@@ -1103,8 +1110,7 @@ async def run_child(argv: list[str], stdin: bytes = b"", timeout: float = CHILD_
             elif unread >= pdf.WATCH_LOST_TURNS:
                 failure = "memory_watch_lost"
             if failure in ("memory_limit", "memory_watch_lost"):
-                if proc.returncode is None:
-                    proc.kill()
+                kill()
                 return
 
     tasks = [asyncio.create_task(feed()), asyncio.create_task(read_out()), asyncio.create_task(read_err())]
@@ -1122,10 +1128,11 @@ async def run_child(argv: list[str], stdin: bytes = b"", timeout: float = CHILD_
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         if proc.returncode is None:
-            proc.kill()
+            kill()
             await proc.wait()
     if failure is None and proc.returncode:
-        failure = "memory_limit" if proc.returncode == MEMORY_EXIT_CODE else f"exit_{proc.returncode}"
+        failure = ("memory_limit" if proc.returncode == MEMORY_EXIT_CODE else
+                   "memory_watch_lost" if proc.returncode == pdf.child_guard.GUARD_EXIT_CODE else f"exit_{proc.returncode}")
     return ChildResult(proc.returncode, bytes(out), err, failure)
 
 

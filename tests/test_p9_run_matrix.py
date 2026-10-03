@@ -56,6 +56,18 @@ def test_no_junit_file_is_not_a_pass():
     assert res["result"] == NOT and res["note"] == "stage pytest skipped"
 
 
+def test_orphan_evidence_is_mandatory_and_missing_or_skipped_never_passes(tmp_path):
+    row = next(r for r in rm.ROWS if r["id"] == "F04-orphan")
+    assert row["cls"] == "zorunlu"
+    assert rm.evaluate(row, {})["result"] == NOT
+    skipped = junit(tmp_path, [(module, pattern.rstrip("*"), "skipped") for module, pattern in row["rule"][1]])
+    assert rm.evaluate(row, {"process": skipped})["result"] == NOT
+    passed = junit(tmp_path, [(module, pattern.rstrip("*"), "passed") for module, pattern in row["rule"][1]])
+    assert rm.evaluate(row, {"process": passed})["result"] == PASS
+    without_control = [c for c in passed if c["name"] != "test_orphan_memory_guard_disabled_control"]
+    assert rm.evaluate(row, {"process": without_control})["result"] == NOT
+
+
 def test_a_failure_in_one_stage_file_is_not_hidden_by_a_pass_of_the_same_test_in_another(tmp_path):
     data = {"missing": {}, "pytest": junit(tmp_path, [("tests.a", "test_x", "passed")]), "process": junit(tmp_path, [("tests.a", "test_x", "failed")])}
     row = {"id": "T", "rule": ("junit", [("tests.a", "test_x")])}
@@ -80,7 +92,24 @@ def pw_file(tmp_path, suites):
 
 
 def spec(title, status, file="acceptance.spec.ts"):
-    return {"title": title, "file": file, "tests": [{"status": status}]}
+    result = {"expected": "passed", "unexpected": "failed", "flaky": "passed", "skipped": "skipped"}[status]
+    return {"title": title, "file": file, "tests": [{"status": status, "expectedStatus": "passed", "results": [{"status": result}]}]}
+
+
+@pytest.mark.parametrize("test,want", [
+    ({"status": "expected", "expectedStatus": "failed", "results": [{"status": "failed"}]}, NOT),
+    ({"status": "expected", "expectedStatus": "passed", "results": []}, NOT),
+    ({"status": "skipped", "expectedStatus": "passed", "results": [{"status": "skipped"}]}, NOT),
+    ({"status": "flaky", "expectedStatus": "passed", "results": [{"status": "failed"}, {"status": "passed"}]}, FAIL),
+    ({"status": "expected", "expectedStatus": "passed", "results": [{"status": "passed"}, {"status": "failed"}]}, FAIL),
+])
+def test_playwright_execution_evidence_binds_row_suite_and_mandatory_result(tmp_path, test, want):
+    specs = pw_file(tmp_path, [{"file": "acceptance.spec.ts", "specs": [{"title": "A: x", "tests": [test]}]}])
+    data = {"playwright": specs, "web_ok": True, "stage_ok": {"playwright": True}}
+    rows = {r["id"]: r for r in rm.table(data)}
+    assert rows["A"]["result"] == want
+    assert rows["suite-playwright"]["result"] == want
+    assert rm.exit_status([rows["A"], rows["suite-playwright"]]) == 1
 
 
 def test_playwright_rows_match_by_file_and_title_and_include_the_describe_titles(tmp_path):
@@ -211,14 +240,16 @@ def test_every_junit_pattern_matches_a_real_collected_test():
     for line in listing.stdout.splitlines():
         if "::" in line and line.startswith("tests/"):
             path, _, name = line.partition("::")
-            collected.append((path[:-3].replace("/", "."), re.sub(r"\[.*\]$", "", name.split("::")[-1])))
+            full = name.split("::")[-1]
+            collected.append((path[:-3].replace("/", "."), full))
+            collected.append((path[:-3].replace("/", "."), re.sub(r"\[.*\]$", "", full)))
     assert len(collected) > 8000, listing.stdout[-500:]
     unmatched = []
     for row in rm.rows_ordered():
         if row["rule"][0] != "junit":
             continue
         for module, glob in row["rule"][1]:
-            if not any(m == module and fnmatch.fnmatchcase(n, glob) for m, n in collected):
+            if not any(m == module and (n == glob if "[" in glob and "*" not in glob else fnmatch.fnmatchcase(n, glob)) for m, n in collected):
                 unmatched.append("%s: %s::%s" % (row["id"], module, glob))
     assert unmatched == []
 
@@ -334,7 +365,7 @@ def test_a_signal_ends_the_stage_tree_and_raises_aborted(tmp_path):
     import time
     run = rm.Run(rm.parse_args([]), tmp_path / "out", "t")
     (tmp_path / "out").mkdir()
-    proc = subprocess.Popen(["/bin/sleep", "60"], start_new_session=True)
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", str(run.out / "detached-stand-in")], start_new_session=True)
     run.proc = proc
     with pytest.raises(rm.Aborted):
         run.abort(15, None)
@@ -343,6 +374,60 @@ def test_a_signal_ends_the_stage_tree_and_raises_aborted(tmp_path):
             break
         time.sleep(0.1)
     assert proc.poll() is not None
+
+
+def test_interrupted_before_detached_child_registration_is_found_and_killed(tmp_path, monkeypatch):
+    run = rm.Run(rm.parse_args([]), tmp_path / "out", "interrupted")
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", str(run.out / "detached-stand-in")], start_new_session=True)
+    # Inject this owned process table: the workspace sandbox refuses ps, but the real stand-in is still killed.
+    ps = f"{proc.pid} {' '.join(proc.args)}\n"
+    monkeypatch.setattr(rm, "sh", lambda argv: subprocess.CompletedProcess(argv, 0, ps if argv[0] == "ps" else "", ""))
+    try:
+        assert any(f"process {proc.pid}:" in x for x in rm.leftover_findings([], ps, "", [str(run.out)], str(__import__("os").getpid())))
+        assert run.proc is None  # abort happened before registration
+        with pytest.raises(rm.Aborted):
+            run.abort(15, None)
+        rm.kill_started(run)
+        assert proc.wait(timeout=10) != 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+
+
+def test_matrix_capacity_commands_use_three_fresh_folders_and_merge_all_three(tmp_path, monkeypatch):
+    import capacity
+    args = rm.parse_args(["--only", "capacity", "--keep"])
+    run = rm.Run(args, tmp_path / "out", "integration")
+    run.cap_root, run.cap_out = tmp_path / "root", tmp_path / "capacity"
+    run.out.mkdir()
+    monkeypatch.setattr(rm, "gate", lambda *a: None)
+    monkeypatch.setattr(capacity, "require_arm64", lambda: None)
+    monkeypatch.setattr(capacity, "guard_repo", lambda: None)
+    monkeypatch.setattr(capacity, "guard_dir", lambda p: Path(p))
+    monkeypatch.setattr(capacity, "guard_out", lambda p: Path(p))
+    monkeypatch.setattr(capacity, "find_node", lambda: "node")
+    monkeypatch.setattr(capacity, "leftover", lambda _: [])
+    outputs = []
+
+    def measurements(args, root, out, node, started):
+        point = "pdf" if args.pdf else "control" if args.control else "1000"
+        outputs.append(out)
+        (out / f"{point}-rep1.json").write_text(json.dumps({"point": point, "rep": 1, "errors": [], "started_epoch": 1, "load1": 0}))
+    monkeypatch.setattr(capacity, "measure_passes", measurements)
+
+    def stage(name, commands):
+        assert name == "capacity"
+        for argv, _, _ in commands:
+            if argv[2] in ("generate", "pdf-library"):
+                continue
+            assert capacity.main(argv[2:]) == 0
+        run.stages[name] = {}
+    monkeypatch.setattr(run, "stage", stage)
+    monkeypatch.setattr(run, "call", lambda argv, env, repo, fh: capacity.main(argv[2:]))
+    rm.run_stages(args, run, {}, run.out, tmp_path)
+    assert len(set(outputs)) == 3
+    assert set(json.loads((run.cap_out / "summary.json").read_text())["points"]) == {"1000", "pdf", "control"}
 
 
 def test_wait_quiet_waits_for_a_low_load_and_gives_up_after_the_limit():
@@ -436,3 +521,30 @@ def test_a_stage_child_does_not_inherit_blocked_signals(tmp_path):
     assert rc == 0 and out.read_text() == "[]"
     after = signal.pthread_sigmask(signal.SIG_BLOCK, [])
     assert signal.SIGTERM not in after and signal.SIGINT not in after
+
+
+GUARD_TESTS = [
+    "test_guard_decisions[parent0-200-wait]", "test_guard_decisions[None-200-kill]", "test_guard_decisions[None-50-wait]",
+    "test_guard_decisions[parent3-200-kill]", "test_reparented_child_is_orphan_even_when_original_parent_is_alive",
+    "test_unreadable_orphan_rss_fails_closed_after_bounded_turns",
+    "test_guard_ends_with_child_or_at_absolute_deadline[None-0]", "test_guard_ends_with_child_or_at_absolute_deadline[child1-0]",
+    "test_guard_ends_with_child_or_at_absolute_deadline[child2-10]", "test_final_start_time_check_refuses_pid_reuse",
+    "test_guard_start_failure_exits_before_any_extraction", "test_guard_readiness_timeout_is_fail_closed_and_reaped",
+    "test_early_guard_loss_ends_idle_child_with_distinct_code",
+    "test_no_guard_remains_after_child_end_and_stdio_is_devnull[normal]", "test_no_guard_remains_after_child_end_and_stdio_is_devnull[crash]",
+    "test_no_guard_remains_after_child_end_and_stdio_is_devnull[timeout]", "test_no_guard_remains_after_child_end_and_stdio_is_devnull[child_sigkill]",
+    "test_parent_launchers_pass_their_identity", "test_pdf_launcher_passes_parent_start_time_before_child_work",
+    "test_guard_failure_is_a_clear_error_in_every_parent_api[pdf]", "test_guard_failure_is_a_clear_error_in_every_parent_api[ocr]",
+    "test_guard_failure_is_a_clear_error_in_every_parent_api[jats]", "test_arxiv_guard_exit_maps_to_watch_loss"]
+
+
+def test_f04_orphan_is_not_measured_when_any_one_named_guard_test_is_missing():
+    patterns = next(r["rule"][1] for r in rm.ROWS if r["id"] == "F04-orphan")
+    process = ["test_extraction_child_is_ended_by_its_own_lifetime", "test_extraction_child_lifetime_disabled_control",
+               "test_lifetime_observer_rejects_normal_completion", "test_orphan_memory_guard_stops_gil_holding_pdf_by_sigkill",
+               "test_orphan_memory_guard_disabled_control", "test_orphan_guard_parent_alive_preserves_pdf_memory_failure"]
+    cases = [{"module": rm.PROC + "test_p9_children", "name": n, "status": "passed"} for n in process]
+    cases += [{"module": "tests.test_child_guard", "name": n, "status": "passed"} for n in GUARD_TESTS]
+    assert rm.rule_junit(cases, patterns, "x")["result"] == PASS
+    for i in range(len(cases)):
+        assert rm.rule_junit(cases[:i] + cases[i + 1:], patterns, "x")["result"] == NOT, cases[i]

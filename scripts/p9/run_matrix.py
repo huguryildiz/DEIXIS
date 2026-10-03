@@ -79,6 +79,36 @@ ROWS: list[dict[str, Any]] = [
     {"id": "F02", "claim": "SIGKILL during a PDF download or passage write: no half record", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_p9_files", "test_f02*")])},
     {"id": "F03", "claim": "SIGKILL while a backup is taken: before the manifest it is refused, after it restores equal", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records", "rule": ("junit", [(PROC + "test_p9_backup_kill", "test_f03*"), (PROC + "test_p9_restore_process", "test_f03*")])},
     {"id": "F04", "claim": "SIGTERM and Ctrl-C end the server within the bound, with a held model call or extraction", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_p9_shutdown", "test_f04*")])},
+    {"id": "F04-orphan", "claim": "orphan extraction: SIGALRM lifetime and SIGKILL resident guard, negative controls and guard cleanup", "cls": "zorunlu", "kind": "G", "execution": "real processes, kqueue exit status", "data": "synthetic GIL-holding PDF", "rule": ("junit", [
+        (PROC + "test_p9_children", "test_extraction_child_is_ended_by_its_own_lifetime"),
+        (PROC + "test_p9_children", "test_extraction_child_lifetime_disabled_control"),
+        (PROC + "test_p9_children", "test_lifetime_observer_rejects_normal_completion"),
+        (PROC + "test_p9_children", "test_orphan_memory_guard_stops_gil_holding_pdf_by_sigkill"),
+        (PROC + "test_p9_children", "test_orphan_memory_guard_disabled_control"),
+        (PROC + "test_p9_children", "test_orphan_guard_parent_alive_preserves_pdf_memory_failure"),
+        ("tests.test_child_guard", "test_guard_decisions[parent0-200-wait]"),
+        ("tests.test_child_guard", "test_guard_decisions[None-200-kill]"),
+        ("tests.test_child_guard", "test_guard_decisions[None-50-wait]"),
+        ("tests.test_child_guard", "test_guard_decisions[parent3-200-kill]"),
+        ("tests.test_child_guard", "test_reparented_child_is_orphan_even_when_original_parent_is_alive"),
+        ("tests.test_child_guard", "test_unreadable_orphan_rss_fails_closed_after_bounded_turns"),
+        ("tests.test_child_guard", "test_guard_ends_with_child_or_at_absolute_deadline[None-0]"),
+        ("tests.test_child_guard", "test_guard_ends_with_child_or_at_absolute_deadline[child1-0]"),
+        ("tests.test_child_guard", "test_guard_ends_with_child_or_at_absolute_deadline[child2-10]"),
+        ("tests.test_child_guard", "test_final_start_time_check_refuses_pid_reuse"),
+        ("tests.test_child_guard", "test_guard_start_failure_exits_before_any_extraction"),
+        ("tests.test_child_guard", "test_guard_readiness_timeout_is_fail_closed_and_reaped"),
+        ("tests.test_child_guard", "test_early_guard_loss_ends_idle_child_with_distinct_code"),
+        ("tests.test_child_guard", "test_no_guard_remains_after_child_end_and_stdio_is_devnull[normal]"),
+        ("tests.test_child_guard", "test_no_guard_remains_after_child_end_and_stdio_is_devnull[crash]"),
+        ("tests.test_child_guard", "test_no_guard_remains_after_child_end_and_stdio_is_devnull[timeout]"),
+        ("tests.test_child_guard", "test_no_guard_remains_after_child_end_and_stdio_is_devnull[child_sigkill]"),
+        ("tests.test_child_guard", "test_parent_launchers_pass_their_identity"),
+        ("tests.test_child_guard", "test_pdf_launcher_passes_parent_start_time_before_child_work"),
+        ("tests.test_child_guard", "test_guard_failure_is_a_clear_error_in_every_parent_api[pdf]"),
+        ("tests.test_child_guard", "test_guard_failure_is_a_clear_error_in_every_parent_api[ocr]"),
+        ("tests.test_child_guard", "test_guard_failure_is_a_clear_error_in_every_parent_api[jats]"),
+        ("tests.test_child_guard", "test_arxiv_guard_exit_maps_to_watch_loss")])},
     {"id": "F05", "claim": "full disk: a clear refusal, the database is not damaged", "cls": "isteğe bağlı", "kind": "G", "execution": "real process on a 16 MiB disk image", "data": "synthetic records", "rule": ("junit", [(PROC + "test_disk_full", "test_*"), ("tests.test_p9_faults_documents", "test_o12*")])},
     {"id": "F06", "claim": "damaged or truncated library and unknown migration: start refused, data unchanged", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records", "rule": ("junit", [(PROC + "test_library_open_faults", "test_*"), ("tests.test_p9_faults_documents", "test_o8_*"), (PROC + "test_p9_restore_process", "test_b03*")])},
     {"id": "F07", "claim": "provider timeout, 5xx, malformed or empty body, 429, slow answer, zero results: stored status and visible reason", "cls": "zorunlu", "kind": "S", "execution": "automatic test", "data": "mocked providers", "rule": ("junit", [("tests.test_p9_faults_providers", "test_p[1245]_*"), ("tests.test_providers", "test_zero_results_is_distinct_from_failure"), ("tests.test_providers", "test_short_rate_limit_is_retried_and_counted"), ("tests.test_providers", "test_long_rate_limit_is_not_retried"), ("tests.test_search_parallelism", "test_a_host_that_fails_every_query_does_not_pause_the_run_while_another_succeeds"), ("tests.test_search_parallelism", "test_a_run_whose_every_search_fails_pauses"), ("tests.test_candidate_flow", "test_d18_failures_continue_and_unknown_delivery_cannot_become_open")])},
@@ -159,7 +189,9 @@ def rule_junit(cases: Optional[list[dict[str, str]]], patterns: list[tuple[str, 
         return row_result(NOT, "", missing_reason)
     matched, notes = [], []
     for module, glob in patterns:
-        hit = [c for c in cases if c["module"] == module and fnmatch.fnmatchcase(re.sub(r"\[.*\]$", "", c["name"]), glob)]
+        # A pattern without a wildcard that names a parameter set ("name[param]") must match that exact case; others ignore the parameters
+        hit = [c for c in cases if c["module"] == module
+               and (c["name"] == glob if "[" in glob and "*" not in glob else fnmatch.fnmatchcase(re.sub(r"\[.*\]$", "", c["name"]), glob))]
         if not hit:
             notes.append("no test matches %s::%s" % (module, glob))
         matched.extend(hit)
@@ -184,10 +216,20 @@ def playwright_specs(path: Path) -> Optional[list[dict[str, str]]]:
     def walk(suite: dict[str, Any], titles: list[str]) -> None:
         here = titles + ([suite["title"]] if suite.get("title") and not suite.get("file") == suite.get("title") else [])
         for spec in suite.get("specs", []):
-            statuses = [t.get("status") for t in spec.get("tests", [])]
-            if statuses and all(s == "expected" for s in statuses):
+            statuses = []
+            for test in spec.get("tests", []):
+                results = test.get("results", [])
+                if test.get("status") in ("unexpected", "flaky"):
+                    statuses.append("failed")
+                elif test.get("expectedStatus") == "failed" or not results or test.get("status") == "skipped":
+                    statuses.append("skipped")
+                elif test.get("status") == "expected" and results[-1].get("status") == "passed":
+                    statuses.append("passed")
+                else:
+                    statuses.append("failed")
+            if statuses and all(s == "passed" for s in statuses):
                 status = "passed"
-            elif any(s == "skipped" for s in statuses) and not any(s in ("unexpected", "flaky") for s in statuses):
+            elif not statuses or ("skipped" in statuses and "failed" not in statuses):
                 status = "skipped"
             else:
                 status = "failed"
@@ -270,7 +312,8 @@ def rule_suite(name: str, data: dict[str, Any], missing_reason: str) -> dict[str
         evidence = "%d specs, %d failed, %d skipped" % (len(specs), failed, skipped)
         if failed or ok is False:
             return row_result(FAIL, evidence, "%d failed%s" % (failed, "; exit code not 0" if ok is False else ""))
-        return row_result(PASS if specs and ok else NOT, evidence, "" if ok else "the stage did not finish")
+        measured = bool(specs) and not skipped and ok is True
+        return row_result(PASS if measured else NOT, evidence, "" if measured else "skipped or absent execution evidence, or the stage did not finish")
     if ok is None:
         return row_result(NOT, "", missing_reason)
     detail = data.get("lint")
@@ -748,13 +791,15 @@ def run_stages(args: argparse.Namespace, run: Run, meta: dict[str, Any], out: Pa
         env = run.env(P9_CAPACITY_PORT_FIRST="8950")
         cap = [run.python, "scripts/p9/capacity.py"]
         root, cout = str(run.cap_root), str(run.cap_out)
+        normal, pdf_out, control = [str(run.cap_out / name) for name in ("normal", "pdf", "control")]
+        merge = ["--out", cout, "--also", normal, pdf_out, control]
         cmds = [(cap + ["generate", "--root", root], env, REPO), (cap + ["pdf-library", "--root", root], env, REPO),
-                (cap + ["measure", "--root", root, "--out", cout], env, REPO), (cap + ["measure", "--root", root, "--pdf", "--out", cout], env, REPO),
-                (cap + ["measure", "--root", root, "--control", "--out", cout], env, REPO), (cap + ["summarize", "--out", cout], env, REPO),
-                (cap + ["table", "--out", cout], env, REPO)]
+                (cap + ["measure", "--root", root, "--out", normal], env, REPO), (cap + ["measure", "--root", root, "--pdf", "--out", pdf_out], env, REPO),
+                (cap + ["measure", "--root", root, "--control", "--out", control], env, REPO), (cap + ["summarize"] + merge, env, REPO),
+                (cap + ["table"] + merge, env, REPO)]
         run.stage("capacity", cmds)
         with (out / "capacity-limits.txt").open("w", encoding="utf-8") as fh:
-            run.stages["capacity"]["limits_rc"] = run.call(cap + ["limits", "--out", cout], env, REPO, fh)
+            run.stages["capacity"]["limits_rc"] = run.call(cap + ["limits"] + merge, env, REPO, fh)
         if not args.keep:
             shutil.rmtree(str(run.cap_root), ignore_errors=True)
 

@@ -267,7 +267,7 @@ async function run() {
               const total = viewer.querySelector('.pdf-page-controls span')
               if (!total || !total.textContent.includes('/ ' + pages)) return false
               const canvas = viewer.querySelector('canvas')
-              if (!canvas) return false
+              if (!canvas || canvas.getAttribute('data-rendered-page') !== '1') return false
               const info = window.__h5canvas(canvas)
               if (info.dark < 50) { window.__h5state && delete window.__h5state.first; return false }
               return window.__h5stable('first', info.digest) ? { ms: performance.now(), stable_wait_ms: performance.now() - window.__h5first.first, digest: info.digest, w: info.w, h: info.h, dark: info.dark, label: canvas.getAttribute('aria-label') } : false
@@ -275,7 +275,7 @@ async function run() {
             pageOne = ready
             return {
               page_ms: ready.ms, stable_wait_ms: ready.stable_wait_ms, canvas: { w: ready.w, h: ready.h, dark: ready.dark, label: ready.label },
-              stops_at: '"Loading PDF…" gone, toolbar shows "/ ' + args.pages + '", canvas non-zero and not blank (at least 50 pixels, sampled from 128 evenly spaced rows, drawn and darker than 200; polled every 50 ms) and the pixel digest unchanged for 100 ms (pdf.js draws text first and the image later; the 100 ms are inside the time)',
+                stops_at: 'pdf.js render promise resolved for page 1, toolbar shows "/ ' + args.pages + '", canvas not blank and digest stable for 100 ms',
             }
           })
           if (pageOne) {
@@ -283,14 +283,14 @@ async function run() {
               await page.locator('input[aria-label="Page number"]').fill('400', { timeout })
               const ready = await until(page, `(before) => {
                 const canvas = document.querySelector('.pdf-viewer canvas')
-                if (!canvas || !(canvas.getAttribute('aria-label') || '').includes('p. 400')) return false
+                if (!canvas || canvas.getAttribute('data-rendered-page') !== '400' || !(canvas.getAttribute('aria-label') || '').includes('p. 400')) return false
                 const info = window.__h5canvas(canvas)
                 if (info.dark < 50 || info.digest === before) { window.__h5state && delete window.__h5state.jump; return false }
                 return window.__h5stable('jump', info.digest) ? { ms: performance.now(), stable_wait_ms: performance.now() - window.__h5first.jump, digest: info.digest, label: canvas.getAttribute('aria-label') } : false
               }`, pageOne.digest, 50)
               return {
                 page_ms: ready.ms, stable_wait_ms: ready.stable_wait_ms, canvas: { label: ready.label },
-                stops_at: 'canvas aria-label names page 400 AND the sampled pixel digest differs from the page 1 digest AND the canvas is not blank AND that digest is unchanged for 100 ms (the label alone changes before the page is drawn, and pdf.js draws text before the image; the 100 ms are inside the time); starts before fill()',
+                stops_at: 'pdf.js render promise resolved for page 400, label names page 400, canvas not blank and digest differs from page 1 and is stable for 100 ms; starts before fill()',
               }
             })
           } else {

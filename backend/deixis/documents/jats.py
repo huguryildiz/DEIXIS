@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import html
 import io
+import os
 import re
 import subprocess
 import sys
@@ -83,6 +84,8 @@ def render_pdf(xml: bytes, *, timeout: float = RENDER_TIMEOUT_SECONDS, max_memor
         code = completed.returncode
         if code == MEMORY_EXIT_CODE:
             return Rendition("jats_render_memory")
+        if code == 6:  # child_guard.GUARD_EXIT_CODE; no extraction ran or its guard was lost
+            return Rendition("jats_render_failed", error="render memory limit could not be watched")
         if code == PAGES_EXIT_CODE:
             return Rendition("jats_render_pages")
         if code == OUTPUT_EXIT_CODE:
@@ -246,13 +249,16 @@ def _render_child(source: Path, target: Path, max_pages: int, max_output: int) -
 
 
 if __name__ == "__main__":
+    parent_pid = os.getppid()
+    from deixis.documents import child_guard
+    parent = child_guard.original_parent(parent_pid)
     import pymupdf
 
     from deixis.documents.pdf import _watch_memory
 
     pymupdf.TOOLS.mupdf_display_errors(False)
     pymupdf.TOOLS.mupdf_display_warnings(False)
-    _watch_memory(int(sys.argv[3]))
+    _watch_memory(int(sys.argv[3]), parent)
     try:
         sys.exit(_render_child(Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[4]), int(sys.argv[5])))
     except MemoryError:

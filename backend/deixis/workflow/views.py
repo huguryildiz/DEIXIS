@@ -612,13 +612,14 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "SELECT id, abstract_origin FROM passages WHERE source_version_id = ? AND kind = 'abstract' LIMIT 1", (svid,)
         ).fetchone()
         # The link's latest attempt in any research: a refused link is not requested again (see Store.pdf_link_refusal).
+        # Equal start times select the last inserted step (rowid), not the random step id or the index's traversal order.
         fetch = conn.execute(
             "SELECT status, error_code, json_extract(error_json, '$.http_status') AS http_status FROM run_steps"
-            " WHERE operation_key = ? ORDER BY started_at DESC LIMIT 1", (f"fetch:{svid}",)
+            " WHERE operation_key = ? ORDER BY started_at DESC, rowid DESC LIMIT 1", (f"fetch:{svid}",)
         ).fetchone()
         other_copy = conn.execute(
             "SELECT s.status, s.error_code FROM run_steps s JOIN runs r ON r.id = s.run_id"
-            " WHERE r.research_id = ? AND s.operation_key = ? ORDER BY s.started_at DESC LIMIT 1", (research_id, f"other_copy:{svid}")
+            " WHERE r.research_id = ? AND s.operation_key = ? ORDER BY s.started_at DESC, s.rowid DESC LIMIT 1", (research_id, f"other_copy:{svid}")
         ).fetchone()
         pdf_candidates = [{k: r[k] for k in (
             "id", "provider", "candidate_url", "landing_url", "version_label", "license", "identity_status",

@@ -72,7 +72,11 @@ def shut_down(server, sig, expect_forced):
     assert forced == expect_forced, f"{name}: expected {'forced' if expect_forced else 'graceful'}, status {code}\n{server.log_text()[-600:]}"
     assert code == (FORCED if forced else code) and (forced or code in (0, -sig)), (code, forced)
     assert not server.alive() and port_is_free(server.port)
-    left = [i for i in recorded if is_same_and_live(i) and "deixis.documents.pdf" not in i.command]
+    live = [i for i in recorded if is_same_and_live(i)]
+    children = {str(i.pid) for i in live if "deixis.documents.pdf" in i.command}
+    # The orphan guard of a surviving extraction child is its companion and ends with it; a guard whose child is gone is a leak.
+    left = [i for i in live if "deixis.documents.pdf" not in i.command
+            and not ("deixis.documents.child_guard" in i.command and i.command.split("child_guard", 1)[1].split()[:1] and i.command.split("child_guard", 1)[1].split()[0] in children)]
     assert not left, f"{name}: descendants still alive after the server exited: {[(i.pid, i.command[:80]) for i in left]}"
     server.no_network()
     return took

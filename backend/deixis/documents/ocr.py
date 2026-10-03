@@ -74,6 +74,8 @@ def read_page(path: Path, page: int, langs, timeout: float = TIMEOUT_SECONDS, ma
         return OcrPage(page, "failed", error="OCR timed out")
     if completed.returncode == pdf.MEMORY_EXIT_CODE:
         return OcrPage(page, "failed", error="OCR exceeded the memory limit")
+    if completed.returncode == pdf.child_guard.GUARD_EXIT_CODE:
+        return OcrPage(page, "failed", error="OCR memory limit could not be watched")
     if completed.returncode != 0:
         return OcrPage(page, "failed", error=completed.stderr.decode(errors="replace")[-400:])
     raw = json.loads(completed.stdout)
@@ -126,9 +128,11 @@ def _read_in_process(path: str, page_number: int, language: str) -> dict:
 
 
 if __name__ == "__main__":
+    parent_pid = os.getppid()
+    parent = pdf.child_guard.original_parent(parent_pid)
     pymupdf.TOOLS.mupdf_display_errors(False)
     pymupdf.TOOLS.mupdf_display_warnings(False)
-    pdf._watch_memory(int(sys.argv[4]))
+    pdf._watch_memory(int(sys.argv[4]), parent)
     try:
         result = _read_in_process(sys.argv[1], int(sys.argv[2]), sys.argv[3])
     except MemoryError:

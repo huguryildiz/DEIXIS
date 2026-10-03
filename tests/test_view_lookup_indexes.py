@@ -63,7 +63,7 @@ def pdf_extraction(tag):
     return pdf.Extraction("succeeded", 1, [pdf.PageText(1, None, text)])
 
 
-def rich_library(path, works=6):
+def rich_library(path, works=6, equal_order=None):
     """A research with what the per-source loop reads: replaced assets, a failed fetch, another copy lookup, PDF
     candidates and discoveries, a second provider's record, another version, and an earlier run of the same step."""
     conn = db.connect(path)
@@ -96,14 +96,24 @@ def rich_library(path, works=6):
                         pdf.EXTRACTION_VERSION, chunker)
     store.add_asset_with_pages(svids[1], "c" * 64, 10, "c.pdf", "download", None, None, pdf_extraction("c"), pdf.EXTRACTION_VERSION, chunker)
     # An earlier and a later attempt of the same fetch: the view reads the latest one.
-    for run, status, code, started in ((first, "failed", "fetch_http_error", "2026-01-01T00:00:00+00:00"),
-                                       (second, "failed", "fetch_not_pdf", "2026-02-01T00:00:00+00:00")):
+    attempts = [(first, "failed", "fetch_http_error", "2026-01-01T00:00:00+00:00"),
+                (second, "failed", "fetch_not_pdf", "2026-02-01T00:00:00+00:00")]
+    if equal_order is not None:
+        attempts = [attempts[i][:3] + ("2026-01-01T00:00:00+00:00",) for i in equal_order]
+    for run, status, code, started in attempts:
         step = store.step(run["id"], f"fetch:{svids[2]}", "fetch_pdf")
         store.start_step(step["id"], started)
         store.finish_step(step["id"], "failed", error_code=code, error={"http_status": 403})
-    copy = store.step(second["id"], f"other_copy:{svids[2]}", "other_copy")
-    store.start_step(copy["id"], "2026-02-02T00:00:00+00:00")
-    store.finish_step(copy["id"], "succeeded")
+    if equal_order is None:
+        copy = store.step(second["id"], f"other_copy:{svids[2]}", "other_copy")
+        store.start_step(copy["id"], "2026-02-02T00:00:00+00:00")
+        store.finish_step(copy["id"], "succeeded")
+    else:
+        # Two lookups of another copy with the same start time and different results, inserted in the given order.
+        for i in equal_order:
+            copy = store.step([first, second][i]["id"], f"other_copy:{svids[2]}", "other_copy")
+            store.start_step(copy["id"], "2026-02-02T00:00:00+00:00")
+            store.finish_step(copy["id"], "failed", error_code=["copy_a", "copy_b"][i], error={})
     discovery = store.record_pdf_discovery(rid, svids[4], "unpaywall", "SYNTHETIC query",
                                            SimpleNamespace(status="completed", candidates=[1], other_title_count=0, http_status=200, error_code=None))
     store.record_pdf_candidates(svids[4], discovery, [SimpleNamespace(
@@ -111,6 +121,23 @@ def rich_library(path, works=6):
         identity_status="doi_verified", version_status="match")])
     conn.commit()
     return conn, store, rid, svids
+
+
+@pytest.mark.parametrize("order", [(0, 1), (1, 0)])
+def test_equal_started_times_choose_last_inserted_step_and_full_json_is_index_independent(tmp_path, order):
+    conn, store, rid, svids = rich_library(tmp_path / "library.sqlite", equal_order=order)
+    # Force ids opposite to insertion order: ids are random in production, not time keys.
+    conn.execute("PRAGMA foreign_keys=OFF")
+    for kind in ("fetch", "other_copy"):
+        steps = list(conn.execute("SELECT id FROM run_steps WHERE operation_key = ? ORDER BY rowid", (f"{kind}:{svids[2]}",)))
+        for step, ident in zip(steps, [f"stp_z_{kind}", f"stp_a_{kind}"]):
+            conn.execute("UPDATE run_steps SET id = ? WHERE id = ?", (ident, step["id"]))
+    before = view_json(store, rid)
+    chosen = next(s for s in json.loads(before)["sources"] if s["source_version_id"] == svids[2])
+    assert chosen["access"]["fetch"]["error_code"] == ["fetch_http_error", "fetch_not_pdf"][order[-1]]
+    assert chosen["access"]["other_copy"]["error_code"] == ["copy_a", "copy_b"][order[-1]]
+    drop_indexes(conn)
+    assert view_json(store, rid) == before
 
 
 def view_json(store, rid):

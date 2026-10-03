@@ -524,6 +524,54 @@ def test_read_source_passes_the_production_memory_limit_to_the_watcher(tmp_path,
     assert found["content"] == "unreadable" and found["error"] == "memory_limit"
 
 
+def test_memory_kill_followed_by_buffered_stdout_over_the_production_cap_keeps_first_failure(monkeypatch):
+    assert src.MAX_CHILD_STDOUT == 5 * 1024 * 1024
+
+    async def scenario():
+        killed = asyncio.Event()
+
+        class Input:
+            def write(self, _): pass
+            async def drain(self): pass
+            def close(self): pass
+
+        class Output:
+            sent = False
+            async def read(self, _):
+                await killed.wait()
+                if self.sent:
+                    return b""
+                self.sent = True
+                return b"x" * (src.MAX_CHILD_STDOUT + 1)
+
+        class Error:
+            async def read(self, _): return b""
+
+        class Process:
+            pid, returncode = 123, None
+            stdin, stdout, stderr = Input(), Output(), Error()
+            calls = 0
+            def kill(self):
+                self.calls += 1
+                if self.calls > 1:
+                    raise ProcessLookupError("already reaped before returncode publication")
+                killed.set()
+            async def wait(self):
+                self.returncode = -9
+                return self.returncode
+
+        proc = Process()
+        async def start(*args, **kwargs): return proc
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", start)
+        monkeypatch.setattr(pdf, "_watch_supported", lambda: True)
+        monkeypatch.setattr(pdf, "_resident_bytes", lambda _: 2 * MIB)
+        result = await src.run_child(["synthetic"], max_memory=MIB)
+        assert result.failure == "memory_limit"
+        assert len(result.stdout) > src.MAX_CHILD_STDOUT
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.skipif(os.environ.get("DEIXIS_P9_PRODUCTION_THRESHOLD") != "1",
                     reason="F09 for the arXiv source child takes about 30 s; set DEIXIS_P9_PRODUCTION_THRESHOLD=1")
 def test_the_source_child_is_stopped_at_the_production_memory_limit(tmp_path):

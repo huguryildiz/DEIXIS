@@ -9,9 +9,11 @@ its stdin is not tested, because whether the real program ends on stdin EOF is a
 from __future__ import annotations
 
 import fcntl
+from contextlib import contextmanager
 import json
 import os
 import signal
+import select
 import subprocess
 import sys
 import time
@@ -91,25 +93,147 @@ def test_embedding_runner_ends_by_itself_and_frees_its_lock(harness, tmp_path, r
     os.close(probe)
 
 
-def test_extraction_child_is_ended_by_its_own_lifetime(harness, tmp_path):
-    """The parent's 90 s clock and 1 GiB limit die with it; the child's own alarm is what ends an orphan."""
+@contextmanager
+def pdf_case(tmp_path, lifetime="60", guard=True, limit=250 * 1024**2):
+    """Native start-time readers and kqueue, independent of ps and without adopting the child."""
+    from deixis.documents import child_guard as cg
     from scripts.p9 import memory_probe
+    from test_child_guard import wait_for as native_wait, log_rows
 
+    big, ready, gate, log = [tmp_path / name for name in ("big.pdf", "ready.json", "gate", "guard.jsonl")]
+    memory_probe.build_pdf(big, 67 * 1024**2)
+    env = {"PYTHONPATH": str(HERE.parent.parent / "backend"), "DEIXIS_CHILD_LIFETIME_SECONDS": lifetime,
+           "DEIXIS_CHILD_GUARD_DISABLED": "0" if guard else "1", "DEIXIS_CHILD_GUARD_LOG": str(log),
+           "DEIXIS_TEST_MEMORY_LIMIT": str(limit)}
+    out = tmp_path / "parent.jsonl"
+    child, guard_pid = None, None
+    observer = select.kqueue()
+    with out.open("wb") as fh:
+        parent = subprocess.Popen([sys.executable, str(PARENT), "pdf-gated", str(big), str(ready), str(gate)],
+                                  env=env, stdout=fh, stderr=subprocess.STDOUT)
+    try:
+        line = native_wait(lambda: json.loads(ready.read_text()) if ready.exists() and ready.stat().st_size else None, 30)
+        child = line["pid"]
+        identity = cg.process_info(child)
+        assert identity and identity.ppid == parent.pid == line["parent"]
+        rss = cg._resident_bytes(child)
+        assert rss is not None and rss < limit, (rss, limit)
+        guard_row = native_wait(lambda: next((r for r in log_rows(log) if r["action"] == "ready"), None)) if guard else None
+        guard_pid = guard_row["guard_pid"] if guard_row else None
+        # NOTE_EXITSTATUS is 0x04000000 in the installed macOS SDK sys/event.h;
+        # Python does not expose that constant. It is allowed when the observer can signal the target.
+        observer.control([select.kevent(child, filter=select.KQ_FILTER_PROC, flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+                                        fflags=select.KQ_NOTE_EXIT | 0x04000000)], 0, 0)
+        yield parent, child, identity, gate, log, out, observer, guard_pid
+    finally:
+        if parent.poll() is None: parent.kill()
+        parent.wait(10)
+        if child is not None and (current := cg.process_info(child)) and current.start == identity.start:
+            os.kill(child, signal.SIGKILL)
+            native_wait(lambda: cg.process_info(child) is None)
+        if guard_pid is not None:
+            native_wait(lambda: cg.process_info(guard_pid) is None)
+        observer.close()
+
+
+def end_signal(observer, timeout):
+    events = observer.control(None, 1, timeout)
+    assert events, "no child exit observed"
+    event = events[0]
+    assert event.fflags & 0x04000000, "kernel did not supply NOTE_EXITSTATUS"
+    assert os.WIFSIGNALED(event.data), f"child ended without a signal: wait status {event.data}"
+    return os.WTERMSIG(event.data)
+
+
+def orphan(parent, child, identity):
+    from deixis.documents import child_guard as cg
+    from test_child_guard import wait_for as native_wait
+    parent.kill()
+    assert parent.wait(10) == -signal.SIGKILL
+    native_wait(lambda: (info := cg.process_info(child)) and info.start == identity.start and info.ppid != parent.pid)
+
+
+def check_extraction_lifetime(tmp_path, armed):
+    with pdf_case(tmp_path, lifetime="8" if armed else "0", guard=False, limit=64 * 1024**3) as case:
+        parent, child, identity, gate, _, _, observer, _ = case
+        orphan(parent, child, identity)
+        gate.touch()
+        if armed:
+            assert end_signal(observer, 13) == signal.SIGALRM
+        else:
+            with pytest.raises(AssertionError, match="no child exit"):
+                end_signal(observer, 13)
+        print(f"lifetime armed={armed}: " + ("observed SIGALRM" if armed else "disabled control remained alive for 13 s"))
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="non-adopting kqueue exit-status evidence requires macOS")
+def test_extraction_child_is_ended_by_its_own_lifetime(tmp_path):
+    check_extraction_lifetime(tmp_path, True)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="non-adopting kqueue exit-status evidence requires macOS")
+def test_extraction_child_lifetime_disabled_control(tmp_path):
+    check_extraction_lifetime(tmp_path, False)
+
+
+def check_orphan_memory(tmp_path, enabled):
+    from deixis.documents import child_guard as cg
+    from test_child_guard import wait_for as native_wait, log_rows
+    limit = 250 * 1024**2
+    with pdf_case(tmp_path, guard=enabled, limit=limit) as case:
+        parent, child, identity, gate, log, _, observer, guard_pid = case
+        orphan(parent, child, identity)
+        gate.touch()
+        crossed = native_wait(lambda: rss if (rss := cg._resident_bytes(child)) is not None and rss > limit else None, 15) if not enabled else None
+        if enabled:
+            action = native_wait(lambda: next((r for r in log_rows(log) if r["action"] == "kill"), None), 15)
+            assert action["pid"] == child and action["resident_bytes"] > limit
+            assert end_signal(observer, 5) == signal.SIGKILL
+            latency = time.monotonic() - action["monotonic"]
+            native_wait(lambda: cg.process_info(guard_pid) is None)
+            bound = time.monotonic() - action["last_under_at"]
+            print(f"orphan memory guard: RSS={action['resident_bytes']} limit={limit}; kill-sample to observed death {latency:.4f}s; last-under to observation upper bound {bound:.4f}s")
+        else:
+            with pytest.raises(AssertionError, match="no child exit"):
+                end_signal(observer, 2)
+            assert cg.process_info(child).start == identity.start
+            print(f"disabled guard: orphan still alive above limit, RSS={crossed}")
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="non-adopting kqueue exit-status evidence requires macOS")
+def test_orphan_memory_guard_stops_gil_holding_pdf_by_sigkill(tmp_path):
+    check_orphan_memory(tmp_path, True)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="non-adopting kqueue exit-status evidence requires macOS")
+def test_orphan_memory_guard_disabled_control(tmp_path):
+    check_orphan_memory(tmp_path, False)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="real topology and kqueue evidence requires macOS")
+def test_orphan_guard_parent_alive_preserves_pdf_memory_failure(tmp_path):
+    from deixis.documents import pdf
+    from scripts.p9 import memory_probe
     big = tmp_path / "big.pdf"
-    memory_probe.build_pdf(big, 60 * 1024 * 1024)
-    proc, _ = run_parent(harness, tmp_path, ["pdf", str(big)], {"DEIXIS_CHILD_LIFETIME_SECONDS": "8"})
-    child = wait_for(lambda: next((i for i in descendants(proc.pid) if "deixis.documents.pdf" in i.command), None), 20,
-                     "the extraction child")
-    seen = time.monotonic()
-    time.sleep(1.0)
-    kill_parent(harness, proc)
-    time.sleep(max(0.0, seen + 5.0 - time.monotonic()))
-    assert is_same_and_live(child), "the orphan was not alive 5 s after it was first seen (it must not pass by crashing early)"
-    time.sleep(max(0.0, seen + 6.0 - time.monotonic()))  # lifetime (8 s) - 2 s
-    assert is_same_and_live(child), ("the orphan ended before lifetime - 2 s (6 s after it was first seen): it ended early, "
-                                     "and by what means could not be known (alarm, the in-child memory watchdog, or the extraction finishing)")
-    wait_gone([child], 8 + 5 - (time.monotonic() - seen), "the orphaned extraction child (lifetime 8 s, limit 13 s after first seen)")
-    print(f"child pdf: first seen alive, gone {time.monotonic() - seen:.1f} s later (lifetime 8 s, parent killed at 1 s)")
+    memory_probe.build_pdf(big, 67 * 1024**2)
+    result = pdf.extract_pdf(big, max_memory=250 * 1024**2)
+    assert result == pdf.Extraction("failed", error="extraction exceeded the memory limit")
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="exit-status observation requires macOS kqueue")
+def test_lifetime_observer_rejects_normal_completion():
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(.2)"])
+    observer = select.kqueue()
+    try:
+        observer.control([select.kevent(proc.pid, filter=select.KQ_FILTER_PROC, flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+                                        fflags=select.KQ_NOTE_EXIT | 0x04000000)], 0, 0)
+        with pytest.raises(AssertionError, match="ended without a signal"):
+            end_signal(observer, 10)
+        assert proc.wait(5) == 0
+    finally:
+        if proc.poll() is None: proc.kill()
+        proc.wait()
+        observer.close()
 
 
 def test_default_child_lifetime_is_above_every_parent_clock():

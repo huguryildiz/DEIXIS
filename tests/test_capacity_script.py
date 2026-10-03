@@ -196,7 +196,7 @@ def test_a_repetition_is_under_parallel_load_when_it_started_or_ended_at_load_4_
 
 def test_summarize_labels_the_result_by_any_repetition_and_merges_folders_by_point_name(tmp_path):
     def rec(point, rep, **extra):
-        return {"point": point, "rep": rep, "started_epoch": float(rep), "errors": [], "load1": 0.5, "load1_end": 0.5, **extra}
+        return {"point": point, "rep": rep, "started_epoch": float(rep), "errors": [], "load1": 0.5, "load1_end": 0.5, "rss_workload_complete": True, **extra}
 
     a, b = tmp_path / "a", tmp_path / "b"
     a.mkdir(), b.mkdir()
@@ -523,6 +523,12 @@ def _fake_rep(monkeypatch, wal=0):
 
     class FakeStream(FakePoller):
         bytes = 0
+        status, connected_at, ended_at = None, None, None
+        ready = __import__("threading").Event()
+        ready.set()
+
+        def covered(self, start, end):
+            return False
 
         def __init__(self, base, research_id):
             self.finished = False
@@ -555,6 +561,89 @@ def _fake_rep(monkeypatch, wal=0):
     monkeypatch.setattr(capacity, "run_backup", lambda *a, **k: stub_backup)
     Recorded.pollers, Recorded.streams, Recorded.node_calls = [], [], []
     return Recorded
+
+
+@pytest.mark.parametrize("missing", ["health_errors", "first_tab", "second_tab", "stream_http", "stream_connect", "stream_closed", "none"])
+def test_run_rep_publishes_health_only_with_successful_tabs_and_sse_window(library, tmp_path, monkeypatch, missing):
+    root, info = library
+    covered = getattr(capacity.EventStream, "covered", None)
+    fakes = _fake_rep(monkeypatch)
+    monkeypatch.setattr(capacity.time, "sleep", lambda _: None)
+    monkeypatch.setattr(capacity.HealthPoller, "overlapping", lambda *a: {"n": 4, "max_s": .01, "top3_s": [.01], "non_200": int(missing == "health_errors")})
+    stream_cls = capacity.EventStream
+    stream_cls.status = 500 if missing == "stream_http" else 200
+    stream_cls.connected_at = None if missing == "stream_connect" else 0
+    stream_cls.ended_at = 1 if missing == "stream_closed" else None
+    if covered is not None:
+        monkeypatch.setattr(stream_cls, "covered", covered)
+
+    def node(*args):
+        steps = args[2]["steps"]
+        if steps == ["two-tab"]:
+            return {"steps": {"two-tab": {"ok": missing != "second_tab", "seconds": .1, "first_tab_ready": missing != "first_tab", "start_epoch_ms": 2000, "end_epoch_ms": 3000}}}
+        return {"steps": {"k01": {"ok": True, "seconds": .01}}}
+    monkeypatch.setattr(capacity, "run_node", node)
+    monkeypatch.setattr(capacity, "_backup_while_serving", lambda *a: None)
+    out = tmp_path / "out"
+    out.mkdir()
+    rec = capacity.run_rep(5000, 1, root / "n100", info, out, "node", [])
+    published = __import__("json").loads((out / "5000-rep1.json").read_text())
+    expected = .01 if missing == "none" else None
+    assert published["two_tab_health_max_s"] == expected
+    assert published["health_max_s"] == expected
+    assert rec["health_non_200"] == int(missing == "health_errors")
+
+
+def test_failed_pdf_browser_preserves_raw_rss_but_k03a_is_incomplete(library, tmp_path, monkeypatch):
+    root, info = library
+    _fake_rep(monkeypatch)
+    monkeypatch.setattr(capacity, "run_node", lambda *a: {"steps": {}, "killed": True, "error": "before PDF step"})
+    out = tmp_path / "out"
+    out.mkdir()
+    rec = capacity.run_rep("pdf", 1, root / "n100", info | {"pages": 500}, out, "node", [], is_pdf=True)
+    assert rec["rss_peak_bytes"] == 1
+    reps = {p: [dict(rss_peak_bytes=1)] * 3 for p in ("100", "1000", "5000", "7769")}
+    reps["pdf"] = [rec] * 3
+    assert capacity.judge(capacity.FROZEN["rows"]["K03a"], capacity.results_of(reps))["verdict"] == "incomplete"
+    assert rec["rss_workload_complete"] is False
+
+
+@pytest.mark.parametrize("failure", ["ui_failure", "api_timeout", "two_tab_raise"])
+def test_run_rep_exception_paths_cannot_publish_a_fast_health_time(library, tmp_path, monkeypatch, failure):
+    root, info = library
+    _fake_rep(monkeypatch)
+    monkeypatch.setattr(capacity.time, "sleep", lambda _: None)
+    monkeypatch.setattr(capacity.HealthPoller, "overlapping", lambda *a: {"n": 4, "max_s": .01, "top3_s": [.01], "non_200": 0})
+    get = capacity.timed_get
+    if failure == "api_timeout":
+        monkeypatch.setattr(capacity, "timed_get", lambda *a: get(*a) | {"status": "timeout", "seconds": 120})
+    def node(*args):
+        if args[2]["steps"] == ["two-tab"]:
+            raise RuntimeError("two-tab did not complete")
+        return {"steps": {"k01": {"ok": failure != "ui_failure", "seconds": .01}}}
+    monkeypatch.setattr(capacity, "run_node", node)
+    monkeypatch.setattr(capacity, "_backup_while_serving", lambda *a: None)
+    out = tmp_path / "out"
+    out.mkdir()
+    point = 5000 if failure == "two_tab_raise" else 1000
+    rec = capacity.run_rep(point, 1, root / "n100", info, out, "node", [])
+    assert rec["health_n"] == 4 and rec["health_max_s"] is None
+    row = capacity.FROZEN["rows"]["K02b" if point == 5000 else "K02a"]
+    assert capacity.judge(row, capacity.results_of({str(point): [rec] * 3}))["verdict"] == "incomplete"
+
+
+def test_measure_refuses_stale_repetitions_before_starting(library, tmp_path, monkeypatch):
+    import argparse
+    root, _ = library
+    out = tmp_path / "old-out"
+    out.mkdir()
+    for rep in (1, 2, 3): (out / f"100-rep{rep}.json").write_text('{"rep":' + str(rep) + '}')
+    monkeypatch.setattr(capacity, "guard_out", lambda _: out)
+    monkeypatch.setattr(capacity, "find_node", lambda: "node")
+    monkeypatch.setattr(capacity, "measure_passes", lambda *a: pytest.fail("must refuse before starting or merging old repetitions"))
+    monkeypatch.setattr(capacity, "leftover", lambda _: [])
+    with pytest.raises(capacity.GuardError, match="not empty"):
+        capacity.cmd_measure(argparse.Namespace(root=str(root), out=str(out), reps="1"))
 
 
 def test_a_raising_view_request_stops_the_poller_and_the_wal_is_read_after_the_server_stopped(library, monkeypatch):
@@ -755,3 +844,8 @@ def test_a_first_view_request_that_times_out_is_a_result_not_a_harness_error(mon
     monkeypatch.setattr(httpx.Client, "get", hang)
     got = capacity.timed_get("http://127.0.0.1:9", "/api/researches/x")
     assert got["status"] == "timeout" and got["seconds"] >= 0 and got["end"] >= got["start"]
+
+
+def test_a_record_without_the_workload_complete_field_does_not_supply_an_rss_peak():
+    reps = {"pdf": [{"rep": 1, "rss_peak_bytes": 5}, {"rep": 2, "rss_peak_bytes": 6, "rss_workload_complete": True}]}
+    assert capacity.results_of(reps)["pdf"]["rss_peak_bytes"] == [None, 6]

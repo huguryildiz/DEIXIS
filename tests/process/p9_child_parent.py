@@ -66,6 +66,25 @@ def extraction(path: str) -> None:
     pdf._run_watched(argv, env, 60, pdf.MAX_MEMORY_BYTES)
 
 
+def gated_extraction(path: str, ready: str, gate: str) -> None:
+    """One extraction child directly owned by _run_watched; no intermediary process.
+    The gate holds work after _watch_memory readiness so the observer can register
+    NOTE_EXIT before killing the actual watcher parent. All extraction is production code."""
+    from deixis.documents import pdf
+    limit = int(os.environ.get("DEIXIS_TEST_MEMORY_LIMIT", pdf.MAX_MEMORY_BYTES))
+    code = ("from deixis.documents import pdf; from pathlib import Path; import os,json,time\n"
+            f"pdf._watch_memory({limit})\n"
+            f"Path({ready!r}).write_text(json.dumps({{'pid':os.getpid(),'parent':os.getppid(),'time':time.monotonic()}}))\n"
+            f"while not Path({gate!r}).exists(): time.sleep(.01)\n"
+            f"pdf._extract_in_process({path!r},pdf.MAX_TEXT_CHARS)\n")
+    env = {"PYTHONPATH": str(Path(pdf.__file__).resolve().parents[2])}
+    for key in ("DEIXIS_CHILD_LIFETIME_SECONDS", "DEIXIS_CHILD_GUARD_DISABLED", "DEIXIS_CHILD_GUARD_LOG"):
+        if key in os.environ:
+            env[key] = os.environ[key]
+    done = pdf._run_watched([sys.executable, "-c", code], env, 90, limit)
+    say(returncode=done.returncode)
+
+
 if __name__ == "__main__":
     command = sys.argv[1]
     if command == "codex":
@@ -74,3 +93,5 @@ if __name__ == "__main__":
         asyncio.run(embedding(sys.argv[2] == "busy"))
     elif command == "pdf":
         extraction(sys.argv[2])
+    elif command == "pdf-gated":
+        gated_extraction(*sys.argv[2:5])

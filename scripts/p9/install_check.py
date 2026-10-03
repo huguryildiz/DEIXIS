@@ -24,6 +24,7 @@ import getpass
 import hashlib
 import json
 import os
+import posixpath
 import platform
 import plistlib
 import re
@@ -84,6 +85,33 @@ KEYRING_ALTERNATIVE = (
     "The PYTHON_KEYRING_BACKEND isolation did not hold on this keyring version. Use a separate macOS user account, or "
     "redirect HOME to an empty directory (which also makes uv download its own Python), and run the check there."
 )
+
+
+CHROME_NAMES = r"(?:google chrome for testing|google chrome|chromium|chrome|chrome-headless-shell|headless_shell)"
+CHROME_EXECUTABLE = re.compile(
+    r"^/(?:(?![^/]*\.app/)[^ /]+/)*(?:(?:google chrome for testing|google chrome|chromium|chrome)\.app/(?:(?![^/]*\.app/)[^ /]+/)*)?" + CHROME_NAMES + "$")
+
+
+def comm_of(pid: int) -> Optional[str]:
+    """The real executable path of a pid (ps `comm`), which unlike the flattened command line has no argument text in it."""
+    try:
+        done = subprocess.run(["ps", "-ww", "-o", "comm=", "-p", str(pid)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              universal_newlines=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() or None
+
+
+def is_chrome_with_profile(row: Dict[str, Any], profile: str) -> bool:
+    """A process whose real executable (ps comm) is a Chrome binary, started as that executable, with a --user-data-dir flag
+    under this harness's profile prefix. Argument text is only read after the executable is verified; ps cannot give argv
+    boundaries, so a single argument that itself contains the flag text stays indistinguishable (a recorded limit)."""
+    cmd = row["cmd"]
+    exe = comm_of(row["pid"]) if "--user-data-dir=" + profile in cmd else None
+    if not exe or not CHROME_EXECUTABLE.match(exe.lower()) or not (cmd == exe or cmd.startswith(exe + " ")):
+        return False
+    flags = [p[len("user-data-dir="):] for p in cmd.split(" --")[1:] if p.startswith("user-data-dir=")]
+    return bool(flags) and all(" " not in value and ".." not in value.split("/") and posixpath.normpath(value).startswith(profile) for value in flags)
 
 
 class Aborted(Exception):
@@ -551,7 +579,8 @@ class Audit:
         members = [r for r in ps_table() if r["pgid"] == pgid]
         if not members:
             return
-        if not trusted and not any(cmd_mentions_dir(r["cmd"], str(self.work)) or r["pid"] in self.audit_set for r in members):
+        verified = self.__dict__.get("verified", {})
+        if not trusted and not any(verified.get(r["pid"]) == r["cmd"] for r in members):
             return
         for sig in (signal.SIGTERM, signal.SIGKILL):
             try:
@@ -569,18 +598,33 @@ class Audit:
         return proc is not None and proc.poll() is None
 
     def owned_pids(self, table: List[Dict[str, Any]]) -> set:
-        """Processes this harness may signal: members of a group it created and descendants of such a group's leader.
-        A foreign process that merely names the work directory (a `tail` of a log, say) is reported, never signalled."""
-        owned = {r["pid"] for r in table if r["pgid"] in self.groups}
-        for leader in self.groups:
-            owned.update(r["pid"] for r in descendants(table, leader))
+        """Processes this harness may signal: members of a group it created and descendants of such a group's leader,
+        while that leader still runs the recorded command. Ownership once verified is remembered in `self.verified`
+        (pid and command); what the audit merely observed, or what only names the work directory, is reported, never signalled."""
+        verified = self.__dict__.setdefault("verified", {})
+        owned = set()
+        for leader, recorded_cmd in self.groups.items():
+            proc = getattr(self, "procs", {}).get(leader)
+            running = proc is not None and proc.poll() is None  # our own live Popen: the pid cannot have been reused, an exec only changes the command
+            if any(x["pid"] == leader and (running or x["cmd"] == recorded_cmd) for x in table):
+                owned.update(r["pid"] for r in table if r["pgid"] == leader)
+                owned.update(r["pid"] for r in descendants(table, leader))
+        for r in table:
+            if verified.get(r["pid"]) == r["cmd"] and r["pgid"] in self.groups:
+                owned.add(r["pid"])  # the leader has gone: a member verified earlier is still ours
         # Playwright starts Chrome detached, in a group of its own; its profile lives in the fresh work dir, so a process
         # that names that profile belongs to the shell check this harness ran
         profile = str(self.tmp / "playwright_chromiumdev_profile")
-        owned.update(r["pid"] for r in table if profile in r["cmd"])
+        profiles = {r["pid"] for r in table if is_chrome_with_profile(r, profile)}
+        owned.update(profiles)
+        for pid in profiles:
+            owned.update(r["pid"] for r in descendants(table, pid))
+        verified.update({r["pid"]: r["cmd"] for r in table if r["pid"] in owned})
         return owned
 
     def kill_recorded(self, recorded: Dict[int, str]) -> None:
+        """Check pid and command immediately before signalling. Reuse with the identical command, or reuse
+        between this check and kill, remains possible. Freeze ownership before signalling any parent."""
         table = ps_table()
         excluded = own_exclusions(table)
         owned = self.owned_pids(table)
@@ -605,6 +649,7 @@ class Audit:
             if r["pgid"] == top or cmd_mentions_dir(r["cmd"], work):
                 picked[r["pid"]] = r["cmd"]
         picked = {pid: cmd for pid, cmd in picked.items() if pid not in excluded}
+        self.owned_pids(table)  # remembers which of them are verifiably ours
         for pid, cmd in picked.items():
             self.audit_set.setdefault(pid, cmd)
         sockets = lsof_sockets(sorted(picked))
@@ -1034,23 +1079,32 @@ class Audit:
                 path.chmod(0o755)
 
     def final_audit(self) -> None:
-        left = self.survivors(self.audit_set)
-        group_alive = []
         table = ps_table()
         excluded = own_exclusions(table)
-        for pid in self.groups:
-            group_alive.extend("%d %s" % (r["pid"], r["cmd"][:80]) for r in table if r["pgid"] == pid and r["pid"] not in excluded)
-        listening = port_listeners(self.port)
+        owned = self.owned_pids(table)  # includes profile descendants before a parent can disappear
+        recorded = dict(self.audit_set)
+        recorded.update({r["pid"]: r["cmd"] for r in table if r["pid"] in owned and r["pid"] not in excluded})
+        self.audit_set.update(recorded)
+
+        def problems_now() -> List[str]:
+            current = ps_table()
+            excluded_now = own_exclusions(current)
+            groups = ["%d %s" % (r["pid"], r["cmd"][:80]) for r in current
+                      if r["pgid"] in self.groups and r["pid"] not in excluded_now]
+            return self.survivors(recorded) + groups + ["something listens on %d: %s" % (self.port, l) for l in port_listeners(self.port)]
+
         profiles = [p.name for p in self.tmp.glob("playwright_chromiumdev_profile*")] if self.tmp.exists() else []
-        problems = left + group_alive + ["something listens on %d: %s" % (self.port, l) for l in listening]
-        if problems:
-            self.kill_recorded(self.audit_set)
+        before = problems_now()
+        if before:
+            self.kill_recorded(recorded)
             for pid in list(self.groups):
                 self.kill_group(pid, trusted=self.group_trusted(pid))
+        problems = problems_now()
         self.rows["cleanup"] = row("cleanup", ROW_CLAIMS["cleanup"], "pass" if not problems else "fail",
                                    "process table and sockets after every run",
                                    {"recorded_group_leaders": len(self.groups), "audit_set_size": len(self.audit_set), "port": self.port},
-                                   [{"alive": problems, "chrome_profile_dirs_left_in_tmp": profiles, "findings": self.findings}])
+                                   [{"alive_before_cleanup": before, "alive": problems, "reaudited": True,
+                                     "chrome_profile_dirs_left_in_tmp": profiles, "findings": self.findings}])
 
     def finalize(self, forced: Optional[int]) -> int:
         if self.rows["I03"]["result"] == "pending":
@@ -1312,7 +1366,7 @@ def main() -> int:
         (out / "results.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
         for sig, handler in previous.items():
             signal.signal(sig, handler)
-        if args.keep:
+        if args.keep or audit.rows["cleanup"]["result"] != "pass":
             print("work directory kept: %s" % work)
         else:
             make_tree_writable(work)

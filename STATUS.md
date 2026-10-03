@@ -2,7 +2,7 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 · Yeniden işleme R1 (D190) main'e hazır; P8 B2 (D182) ve P7 G1 B1 (D177) main'de
+**Son güncelleme:** 3 Ekim 2026 · P9 RR-B (D170) main'de; matris çifti boş makinede bekliyor
 
 ## Şu an çalışanlar
 
@@ -11,7 +11,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 - ✅ **P7 G1 B3a** (D179): facade seçenek türünü, izinli değerleri ve yeniden deneme sayısını göndermeden denetliyor; 566 doğrudan/facade eşitlik vakası, 181 gönderim biçimi ve 88 yeniden deneme/zaman aşımı uyum testi (yeni takım 925 test); Sol yazdı, plan Sol medium 3 turda, kod Claude 1 turda hazır; 11.180 test geçti. Gönderim hâlâ registry üzerinden; B3b (sorgu yazımı) ayrı parti, sonra B4.
 - ✅ **P7 G1 B2** (D178): sağlayıcı uyum test takımı (641 test, 566 sentetik vaka); anahtar sonradan silinirse istek sayılmıyor ve arama tablosu bozulmuyor; PubMed kota türü, bozuk 200 yanıtı, boş sayfa imleci, başlıkta anahtar ve geçersiz bekleme düzeltildi; Sol yazdı, Claude 2 turda hazır; 9.992 test geçti. Seçenek türü denetimi B3a'ya, kimliksiz kayıt kabulü B4'e kaldı.
 - ✅ **P7 G1 B1** (D177): iç bağlayıcı sözleşmesi (`contract.py`), facade ve 111 sentetik uyumluluk vakası; çalışma akışı değişmedi; Sol yazdı, Claude 2 turda hazır dedi; 9.231 test geçti. Bulunan iki kusur (PubMed EFetch `error_kind` kaybı, S2/IEEE yanlış kökte çöküş) B2'ye yazıldı.
-- 🟡 **P9 RR-B** (`../DEIXIS-rrb`): kod Sol, inceleme ve iki matris koşusu Claude.
+- ✅ **P9 RR-B** (D170): kodu Sol yazdı, Claude inceledi; Claude'un düzeltmelerini Sol 10 turda inceledi, son iki tur "hazır". RR-A'nın iki API testi artık derlenmiş web varken de geçiyor. Matris beş koşuda temiz bir çift vermedi (biri tam geçti; diğerleri yük, başka batch'in portları, K02b). Boş makinede iki koşu gerekli.
 - ✅ **P8 B1** (D181): inceleme sözleşmesi, anlık görüntü, tablolar, bayatlama kuralı; Sol yazdı, Claude 2 turda hazır dedi; 8.839 test geçti.
 - ✅ **P7 G6–G8, G11, G12** (D173): kota ile hız sınırı ayrıldı, kotası biten sağlayıcıya koşu boyunca istek gitmiyor (devam ve yeniden denemede sıfırlanır); Sol yazdı, Claude 3 turda hazır.
 - ✅ **P8 B2** (D182): inceleme koşusu ve rotaları; önizleme, başlatma, gruplu çalıştırma, bulgu kararları, kabul edilen bulgunun mevcut düzenleyiciyle uygulanması (kanıt değiştiyse 409); Sol yazdı, Claude 2 turda hazır; 8.963 test geçti. Gerçek modelle inceleme B4'te.
@@ -24,7 +24,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 
 ## Sıradaki
 
-1. RR-B kapanır → P9'un modelsiz kısmı kapanır
+1. RR-B matris çifti boş makinede (iki temiz koşu üst üste) → P9'un modelsiz kısmı kapanır
 2. P7 G1 eklenti sözleşmesi kodlaması (B1–B5)
 3. H9: K01–K12 kararları Sol medium ile, sonra gerçek model rapor ölçümü (P19 ölçümü de içinde)
 4. P8 B2–B8 ve G1 kodlaması (B1–B5), sırayla
@@ -42,7 +42,7 @@ Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizl
 | P6 | Sentez ve rapor | ✅ beş dilim kapandı; gerçek model ölçümleri P9'a borç |
 | P7 | Bağlantı kapsamı | 🟡 D172, D173 kapandı; G10 canlı erişim gösterildi; G1 tasarımı D174, kodu sırada |
 | P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181), B2 (D182); sırada B3–B8 |
-| P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, H6 düzeltmeleri bitti; RR-B sürüyor; H9–H10 yok |
+| P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, H6 düzeltmeleri bitti; RR-B kodu main'de (D170), matris çifti boş makinede bekliyor; H9–H10 yok |
 | P10 | macOS / Windows paketi | ❌ |
 
 ## Ölçülmemiş borçlar

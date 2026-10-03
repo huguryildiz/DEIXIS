@@ -41,6 +41,23 @@ const meta = (page: Page, key: string) => sheet(page).locator(`[data-claim-key="
 const claimByKey = (report: ReportDetail, key: string) => report.sections.flatMap(s => s.claims).find(c => c.claim_key === key)!
 const reading = (page: Page, key: string) => meta(page, key).locator('..').locator('.evidence-report-paragraph').first()
 const readingClaim = (page: Page, key: string) => reading(page, key).locator(':scope > span').nth(Number(key.split('.').at(-1)) - 1)
+// The app shows one toast at a time and a later toast replaces it, so a transient notice can vanish within a poll gap when an
+// unrelated, event-driven toast lands right after it. This records text present at a mutation callback;
+// it does not prove how long the toast stayed visible. The init script runs on every navigation.
+async function watchToasts(page: Page) {
+  await page.addInitScript(() => {
+    const seen: string[] = []; (window as unknown as { __toasts: string[] }).__toasts = seen
+    let previous: Element | null = null, previousText: string | null = null
+    new MutationObserver(() => {
+      const toast = document.querySelector('.toast'), text = toast?.textContent ?? null
+      if (text && (toast !== previous || text !== previousText)) seen.push(text)
+      previous = toast; previousText = text
+    })
+      .observe(document, { childList: true, subtree: true, characterData: true })
+  })
+}
+const toastCursor = (page: Page) => page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts.length)
+const toastSeen = (page: Page, cursor: number, pattern: RegExp) => expect.poll(async () => (await page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts)).slice(cursor).some(text => pattern.test(text)), { message: `a toast matching ${pattern} after cursor ${cursor}` }).toBe(true)
 const dismissToasts = async (page: Page) => { for (const button of await page.getByRole('button', { name: 'Dismiss notification' }).all()) await button.click().catch(() => {}) }
 
 // Copied workflow, not imported from another spec: an included source and a filled column precede the report.
@@ -76,6 +93,7 @@ async function csrfCookie(page: Page) {
 }
 async function fixture(page: Page): Promise<Fixture> {
   await page.setViewportSize({ width: 1440, height: 1000 })
+  await watchToasts(page)
   const rid = await readyResearch(page, 'SYNTHETIC: How are molecule release schedules compared? [report-two-citations]')
   await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
   await expect.poll(async () => {
@@ -123,10 +141,12 @@ async function openEdit(page: Page, key: string) {
 async function saveText(page: Page, key: string, text: string) {
   const form = await openEdit(page, key)
   await form.getByLabel('Claim text').fill(text)
+  const cursor = await toastCursor(page)
   await form.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(form).toHaveCount(0)
   await expect(meta(page, key).getByRole('button', { name: 'Edit', exact: true })).toBeFocused()
   await expect(meta(page, key).getByRole('button', { name: 'Edit', exact: true })).toBeEnabled()
+  return cursor
 }
 async function chromeText(root: Locator) {
   return root.evaluate(el => {
@@ -169,12 +189,13 @@ test('edited text check records errors, stays visible when stale and lists skipp
   await expect(panel(page).getByRole('status')).toHaveText('Edited by hand after version 1; edited text was not checked again.')
   const checkButton = panel(page).getByRole('button', { name: 'Check edited text', exact: true })
   await expect(checkButton).toBeEnabled()
+  const checkCursor = await toastCursor(page)
   await checkButton.click()
   await expect(panel(page).getByText('Current', { exact: true })).toBeVisible()
   const checked = (await f.read()).edit_check!
   const counts = `${checked.errors} ${checked.errors === 1 ? 'error' : 'errors'}, ${checked.warnings} ${checked.warnings === 1 ? 'warning' : 'warnings'}`
   await expect(panel(page).getByRole('status')).toContainText(counts)
-  await expect(page.getByText(`Check recorded: ${counts}. Whether the cited evidence supports each sentence was not checked.`, { exact: true })).toBeVisible()
+  await toastSeen(page, checkCursor, new RegExp(`^Check recorded: ${counts}\\. Whether the cited evidence supports each sentence was not checked\\.$`))
   const item = panel(page).locator('.evidence-report-check-items li').filter({ hasText: 'banned word' })
   await expect(item).toContainText('Error')
   await expect(item).toContainText('III. Background and Taxonomy')
@@ -220,9 +241,10 @@ test('two same-source citations are edited per link, restored with history and o
   await expect(form.getByRole('button', { name: 'Save', exact: true })).toBeEnabled()
   await forbiddenWords(form)
   await shotThemes(page, form, 'report-edit-form-desktop')
+  const saveCursor = await toastCursor(page)
   await form.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(form).toHaveCount(0)
-  await expect(page.getByText('Claim saved. 1 citation removed from this sentence; the edit was not checked.', { exact: true })).toBeVisible()
+  await toastSeen(page, saveCursor, /^Claim saved\. 1 citation removed from this sentence; the edit was not checked\.$/)
   expect(bodies[0]).not.toHaveProperty('text')
   expect(bodies[0].link_ids).toEqual([claim.evidence[1].link_id])
   let current = claimByKey(await f.read(), claim.claim_key)
@@ -236,22 +258,24 @@ test('two same-source citations are edited per link, restored with history and o
   await shotThemes(page, history, 'report-edit-history-desktop')
   await expect(history.locator('li').first().getByRole('button', { name: 'Restore', exact: true })).toBeVisible()
   await forbiddenWords(history)
+  const restoreCursor = await toastCursor(page)
   await history.locator('li').first().getByRole('button', { name: 'Restore', exact: true }).click()
   await expect(meta(page, claim.claim_key).getByRole('button', { name: 'Edit', exact: true })).toBeFocused()
-  await expect(page.getByText('Version restored with its text and citations.', { exact: true })).toBeVisible()
+  await toastSeen(page, restoreCursor, /^Version restored with its text and citations\.$/)
   current = claimByKey(await f.read(), claim.claim_key)
   expect(current.evidence).toHaveLength(2); expect(current.removed_links).toEqual([])
   await expect(history.locator('li').first().getByRole('button', { name: 'Restore', exact: true })).toHaveCount(0)
-  await saveText(page, claim.claim_key, 'SYNTHETIC revised cell statement.')
+  const textCursor = await saveText(page, claim.claim_key, 'SYNTHETIC revised cell statement.')
   expect(bodies.at(-1)).toHaveProperty('text', 'SYNTHETIC revised cell statement.')
   expect(bodies.at(-1)).not.toHaveProperty('link_ids')
-  await expect(page.getByText('Claim saved. The new text was not checked.', { exact: true })).toBeVisible()
+  await toastSeen(page, textCursor, /^Claim saved\. The new text was not checked\.$/)
   const combined = await openEdit(page, claim.claim_key)
   await combined.getByLabel('Claim text').fill('SYNTHETIC changed text and evidence.')
   for (const box of await combined.getByRole('checkbox').all()) await box.uncheck()
   await expect(combined).toContainText('No citation will remain on this sentence.')
+  const combinedCursor = await toastCursor(page)
   await combined.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect(page.getByText('Claim saved. text changed and 2 citations removed from this sentence; the edit was not checked.', { exact: true })).toBeVisible()
+  await toastSeen(page, combinedCursor, /^Claim saved\. text changed and 2 citations removed from this sentence; the edit was not checked\.$/)
 })
 
 test('removing every citation labels owner removals and leaves a never-cited claim distinct', async ({ page }) => {
@@ -350,8 +374,9 @@ test('conflicting save preserves the typed draft and unchecked intent; keyboard 
   await form.getByLabel('Claim text').fill('SYNTHETIC draft retained.')
   await form.getByRole('checkbox').first().uncheck()
   await apiEdit(page, f, claim, { text: 'SYNTHETIC another tab wrote this.' })
+  const conflictCursor = await toastCursor(page)
   await form.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect(page.getByText(/Not applied:/)).toBeVisible()
+  await toastSeen(page, conflictCursor, /^Not applied:/)
   await expect(form).toHaveAttribute('data-expected-version', String(claim.version + 1))
   await expect(form.getByLabel('Claim text')).toHaveValue('SYNTHETIC draft retained.')
   await expect(form.getByRole('checkbox').first()).not.toBeChecked()
@@ -641,8 +666,9 @@ test('409 recovery is not overwritten by an older GET and keeps the draft versio
   try {
     await bumpEvent(page, f); await old.started
     await apiEdit(page, f, claim, { text: 'SYNTHETIC recovery text.' })
+    const conflictCursor = await toastCursor(page)
     await form.getByRole('button', { name: 'Save', exact: true }).click()
-    await expect(page.getByText(/Not applied:/)).toBeVisible()
+    await toastSeen(page, conflictCursor, /^Not applied:/)
     await expect(form).toHaveAttribute('data-expected-version', String(claim.version + 1))
     await expect(readingClaim(page, 'III.1')).toContainText('SYNTHETIC recovery text.')
     old.release(); await processed(page, 'old-after-conflict')
@@ -693,11 +719,16 @@ test('check and acknowledge each discard old reads, confirm outcomes, and reads 
   await reopen(page)
   for (const status of [409, 500]) {
     await page.route(`${f.url}/check-edits`, route => route.fulfill({ status, json: { detail: 'SYNTHETIC check refusal' } }))
+    // Let reads still in flight from the reopen or the previous refusal land first; they are not the confirming GET counted below.
+    for (let seen = -1; seen !== gets;) { seen = gets; await page.waitForTimeout(700) }
     const before = gets
+    const checkCursor = await toastCursor(page)
     await panel(page).getByRole('button', { name: 'Check edited text', exact: true }).click()
     await expect.poll(() => gets).toBe(before + 1)
-    await expect(page.getByText(status === 409 ? /Not applied: SYNTHETIC check refusal/ : 'SYNTHETIC check refusal', { exact: status !== 409 })).toBeVisible()
+    await toastSeen(page, checkCursor, status === 409 ? /^Not applied: SYNTHETIC check refusal/ : /^SYNTHETIC check refusal$/)
     await dismissToasts(page)
+    await page.waitForTimeout(1000)
+    expect(gets).toBe(before + 1) // the refusal caused exactly the confirming read, no second one
   }
 })
 

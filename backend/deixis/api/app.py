@@ -688,8 +688,19 @@ def create_app(
         app.state.institutional_access = None
         app.state.local_tools = local_tools.LocalTools(http)
         app.state.recovered = worker.recover() if owner else None
+        app.state.reconciled = None
+        async def reconcile_recovery() -> None:
+            import logging
+            from deixis.workflow import reconcile
+
+            try:
+                app.state.reconciled = await reconcile.reconcile_stale(store, settings.papers_dir, settings.recovery_dir)
+            except Exception:
+                logging.getLogger(__name__).exception("Recovery reconciliation failed at startup; continuing")
+
         if owner:
             app.state.legacy_cancelled = worker.cancel_legacy_discovery()
+            await reconcile_recovery()
 
         async def take_over_when_released() -> None:
             # A previous instance may still be shutting down and holding the lock; own the worker once it is released.
@@ -697,6 +708,7 @@ def create_app(
                 await asyncio.sleep(1.0)
             app.state.recovered = worker.recover()
             app.state.legacy_cancelled = worker.cancel_legacy_discovery()
+            await reconcile_recovery()
             app.state.owner = True
             equations.start()
             await worker.run_forever()
@@ -2130,6 +2142,7 @@ def create_app(
                 request.app.state.worker.wake()
             response.status_code = 202 if result["lifecycle"] == "running" else 200
             return {**research_view(store, research_id), "recovery": result}
+        text_retry.precheck(settings.papers_dir, asset["storage_path"])
         if (asset["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION:  # equations read on it too (D52)
             reason = {"succeeded": "already_current", "pending": "pending"}.get(asset["extraction_status"], "retry_available")
             return {**research_view(store, research_id), "reextraction": {"asset_id": asset_id, "outcome": "unchanged", "reason": reason}}

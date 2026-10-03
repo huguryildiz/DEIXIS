@@ -136,11 +136,15 @@ async def restore_file(store, papers_dir: Path, recovery_dir: Path, staged: Stag
         if not text_retry.HASH.fullmatch(staged.sha256):
             raise ValueError("Invalid file SHA-256")
         recovery_dir = resolve_recovery_dir(store, papers_dir, recovery_dir)
+        from deixis.workflow import reconcile
+
+        await reconcile.reconcile_try_hash(store, papers_dir, recovery_dir, staged.sha256)
         target = papers_dir / (staged.sha256 + ".pdf")
         result = Placement(target, staged.sha256, staged.size, "reused")
         if await text_retry.drained_thread(pdf_files.file_is_whole, target, staged.sha256, staged.size):
             return result
         async with writer_lock(recovery_dir, staged.sha256):
+            await reconcile.reconcile_hash(store, papers_dir, recovery_dir, staged.sha256)
             try:
                 observed = await text_retry.drained_thread(pdf_files.inspect_file, target)
             except pdf_files.FileNotRegular as exc:

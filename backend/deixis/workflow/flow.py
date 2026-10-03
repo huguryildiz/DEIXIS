@@ -2676,7 +2676,7 @@ class ResearchFlow:
             except math_reader.MathReaderUnavailable as exc:
                 self.store.finish_step(step["id"], "failed", error_code="equation_reader_unavailable", error={"error": str(exc)})
                 self._pause(run_id, "equation_reader_unavailable", {"error": str(exc)})
-            if state["state"] == "failed":
+            if state["state"] == "failed" and state.get("outcome") != "file_busy":
                 self.store.finish_step(step["id"], "failed", error_code="equations_failed", error={"asset_id": asset_id, **state})
                 self._pause(run_id, "equations_failed", {"asset_id": asset_id, **state})
             self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, **state})

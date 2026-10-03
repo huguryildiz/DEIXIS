@@ -42,6 +42,7 @@ class Worker:
         self._wake = asyncio.Event()
         self._stop = asyncio.Event()
         self._failed: tuple[str, str, dict] | None = None  # (run id, pause reason, error) not yet written
+        self._reconcile_errors: set[type[Exception]] = set()
 
     def acquire(self) -> bool:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -129,6 +130,7 @@ class Worker:
         if self._failed is not None:
             self._write_failure()
         self.store.conn.execute("UPDATE worker_owner SET heartbeat_at = ? WHERE instance_id = ?", (now(), self.instance_id))
+        await self.reconcile_recovery()
         run = self.store.next_queued_run()
         if run is None:
             self._wake.clear()
@@ -152,6 +154,21 @@ class Worker:
             self._write_failure()
         else:
             self._run_ended(run["id"])
+
+    async def reconcile_recovery(self) -> dict[str, int] | None:
+        if self.store.recovery_dir is None or not self.store._extraction_has_recovery_metadata:
+            return None
+        from deixis.workflow import reconcile
+
+        try:
+            result = await reconcile.reconcile_stale(self.store, self.flow.deps.settings.papers_dir, self.store.recovery_dir)
+        except Exception as exc:
+            if type(exc) not in self._reconcile_errors:
+                self._reconcile_errors.add(type(exc))
+                log.exception("Recovery reconciliation failed; continuing the worker turn")
+            return None
+        self._reconcile_errors.clear()
+        return result
 
     def _write_failure(self) -> None:
         """Record the failure of a run. When the write itself fails (the disk is still full) the failure stays in

@@ -6,6 +6,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -54,7 +55,8 @@ def test_cli_pre_reservation_refusals_exit_two_without_new_operation(tmp_path, m
         elif kind == "active": lib.store.create_run(lib.rid, "answer", {}, None)
         elif kind == "removed": lib.store.remove_asset(lib.rid, lib.svid, lib.aid)
         before = counts(lib.store)
-        assert invoke(lib, monkeypatch) == 2
+        with child_lock(lib) if kind == "running" else nullcontext():
+            assert invoke(lib, monkeypatch) == 2
         assert capsys.readouterr().err.startswith("Text retry refused:")
         assert counts(lib.store) == before
 
@@ -98,7 +100,7 @@ def test_cli_parser_interruption_exit_one_and_pending_failure_names_running_limi
     with store_library(tmp_path / "pending") as lib:
         monkeypatch.setattr(Store, "interrupt_text_retry", fail)
         assert invoke(lib, monkeypatch) == 1
-        assert "stays running until a later version reconciles it" in capsys.readouterr().err
+        assert "The text retry operation stays running until DEIXIS reconciles it (at its next start, while it runs, or at the next retry of this file)." in capsys.readouterr().err
         assert lib.conn.execute("SELECT lifecycle FROM asset_recovery_operations").fetchone()[0] == "running"
 
 

@@ -230,6 +230,9 @@ async def execute_text_retry(store, settings, *, asset_id: str, expected_extract
     precheck(settings.papers_dir, asset["storage_path"])
     try:
         with file_lock(settings.recovery_dir, asset["sha256"]):
+            from deixis.workflow import reconcile
+
+            await reconcile.reconcile_hash(store, settings.papers_dir, settings.recovery_dir, asset["sha256"])
             operation = store.reserve_text_retry(asset_id, expected_extraction_id=expected_extraction_id,
                 idempotency_key=idempotency_key, request_fingerprint=request_fingerprint, research_id=research_id)
             if operation["replayed"]:

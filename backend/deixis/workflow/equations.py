@@ -24,13 +24,14 @@ import re
 import shutil
 import subprocess
 from collections import Counter
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from deixis.documents import arxiv_source, math_reader, pdf
 from deixis.storage.db import new_id, now, transaction
-from deixis.workflow import recovery
+from deixis.workflow import file_restore, recovery, text_retry
 from deixis.workflow.store import NotFound, RunInProgress, Store
 
 log = logging.getLogger(__name__)
@@ -244,6 +245,33 @@ class EquationService:
         finally:
             self._waiting -= 1
 
+    def _reader_lock(self, asset):
+        # Legacy synthetic identifiers cannot name a writer/retry lock or a repair target.
+        if not text_retry.HASH.fullmatch(asset["sha256"]):
+            return nullcontext()
+        return text_retry.file_lock(file_restore.resolve_recovery_dir(self.store, self.papers_dir), asset["sha256"])
+
+    async def _drain(self, awaitable):
+        """Do not forward cancellation to a child-owning read or shared reader close."""
+        task = asyncio.ensure_future(awaitable)
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    continue
+                except BaseException:
+                    break
+            try:
+                task.result()
+            except asyncio.CancelledError:
+                pass
+            except BaseException:
+                log.exception("Equation read failed while draining cancellation")
+            raise
+
     async def _read(self, asset_id: str, run_id: str | None, retry: bool, background: bool) -> dict[str, Any]:
         global reading
         async with self._lock:
@@ -258,40 +286,55 @@ class EquationService:
             if not self.available():
                 raise math_reader.MathReaderUnavailable("the equation reader (Marker) is not installed")
             asset = self.store.asset(asset_id)
-            version = target_version(asset["extraction_version"])
-            path = self.papers_dir / asset["storage_path"]
-            base = await asyncio.to_thread(pdf.extract_pdf, path)
-            ocr_pages = self._ocr_pages(asset) if OCR_SUFFIX.search(asset["extraction_version"] or "") else {}
-            if ocr_pages:
-                base.pages = sorted(base.pages + [pdf.PageText(n, None, text, "ocr") for n, text in ocr_pages.items()
-                                                  if n not in {p.physical_page for p in base.pages}], key=lambda p: p.physical_page)
-                base.status = "succeeded" if len(base.pages) == base.page_count else "partial"
-            base.extraction_version = version.removesuffix("+" + math_reader.MATH_VERSION)
-            selected = sorted(set(await asyncio.to_thread(math_reader.math_pages, path)) | set(await asyncio.to_thread(math_reader.table_pages, path))
-                              | {number - 1 for number in ocr_pages})
-            self._forget_failure(asset_id, version)
-            if not selected:
-                self._record_without_passages(asset, version, NO_MATH, attempts + 1)
-                return equation_state(self.store, asset_id)
-            title = self.store.conn.execute("SELECT title FROM source_versions WHERE id = ?", (asset["source_version_id"],)).fetchone()
-            reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": len(selected), "started_at": now()}
-            self._background_reading, self._preempted = background, False
             try:
-                read = await self.reader.read(path, selected)
-            except RuntimeError as exc:
-                read = None
-                if not (background and self._preempted):  # a stopped background read is not a failure
-                    self._record_without_passages(asset, version, f"equation reading failed: {exc}"[:400], attempts + 1)
-            finally:
-                reading, self._background_reading, self._preempted = None, False, False
-            if read is None:
-                return equation_state(self.store, asset_id)
-            # OCR pages have no text layer to check an equation against.
-            text_layer = {i: found for i, found in read.equations.items() if i + 1 not in ocr_pages}
-            unchecked = await asyncio.to_thread(math_reader.check_equations, path, text_layer)
-            extraction = math_reader.merge(base, read.pages, selected, unchecked)
-            self.store.reextract_asset(asset_id, extraction, extraction.extraction_version, pdf.chunk_page, allow_run_id=run_id)
-            return equation_state(self.store, asset_id)
+                with self._reader_lock(asset):
+                    version = target_version(asset["extraction_version"])
+                    path = self.papers_dir / asset["storage_path"]
+                    base = await text_retry.drained_thread(pdf.extract_pdf, path)
+                    ocr_pages = self._ocr_pages(asset) if OCR_SUFFIX.search(asset["extraction_version"] or "") else {}
+                    if ocr_pages:
+                        base.pages = sorted(base.pages + [pdf.PageText(n, None, text, "ocr") for n, text in ocr_pages.items()
+                                                          if n not in {p.physical_page for p in base.pages}], key=lambda p: p.physical_page)
+                        base.status = "succeeded" if len(base.pages) == base.page_count else "partial"
+                    base.extraction_version = version.removesuffix("+" + math_reader.MATH_VERSION)
+                    selected = sorted(set(await text_retry.drained_thread(math_reader.math_pages, path)) | set(await text_retry.drained_thread(math_reader.table_pages, path))
+                                      | {number - 1 for number in ocr_pages})
+                    self._forget_failure(asset_id, version)
+                    if not selected:
+                        self._record_without_passages(asset, version, NO_MATH, attempts + 1)
+                        return equation_state(self.store, asset_id)
+                    title = self.store.conn.execute("SELECT title FROM source_versions WHERE id = ?", (asset["source_version_id"],)).fetchone()
+                    reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": len(selected), "started_at": now()}
+                    self._background_reading, self._preempted = background, False
+                    try:
+                        read = await self.reader.read(path, selected)
+                    except RuntimeError as exc:
+                        read = None
+                        if not (background and self._preempted):  # a stopped background read is not a failure
+                            self._record_without_passages(asset, version, f"equation reading failed: {exc}"[:400], attempts + 1)
+                    except Exception:
+                        raise
+                    except BaseException:
+                        # A cancelled reader request may still be touching the PDF; drain it before unlocking.
+                        try:
+                            await self._drain(self.reader.close())
+                        except asyncio.CancelledError:
+                            pass
+                        except BaseException:
+                            log.exception("Could not close the equation reader while unwinding")
+                        raise
+                    finally:
+                        reading, self._background_reading, self._preempted = None, False, False
+                    if read is None:
+                        return equation_state(self.store, asset_id)
+                    # OCR pages have no text layer to check an equation against.
+                    text_layer = {i: found for i, found in read.equations.items() if i + 1 not in ocr_pages}
+                    unchecked = await text_retry.drained_thread(math_reader.check_equations, path, text_layer)
+                    extraction = math_reader.merge(base, read.pages, selected, unchecked)
+                    self.store.reextract_asset(asset_id, extraction, extraction.extraction_version, pdf.chunk_page, allow_run_id=run_id)
+                    return equation_state(self.store, asset_id)
+            except text_retry.FileBusy:
+                return equation_state(self.store, asset_id) | {"outcome": "file_busy"}
 
     # ---- the arXiv source route (D104) -------------------------------------------------------------------------------
     async def _eligibility(self, asset: dict[str, Any]) -> dict[str, Any]:
@@ -301,7 +344,7 @@ class EquationService:
         if row is not None:
             return dict(row)
         try:
-            stamp = await asyncio.to_thread(arxiv_source.stamp_key, self.papers_dir / asset["storage_path"])
+            stamp = await text_retry.drained_thread(arxiv_source.stamp_key, self.papers_dir / asset["storage_path"])
         except Exception:  # noqa: BLE001 - an unreadable PDF has no stamp
             stamp = None
         # The row check, the record read, the decision and the insert are one BEGIN IMMEDIATE transaction: no other process
@@ -349,126 +392,131 @@ class EquationService:
         asset = self.store.asset(asset_id)
         if not self.route_active():
             return state
-        version = await self._eligibility(asset) if state["state"] in ("pending", "no_source", "failed") else None
-        # A failed extraction keeps its attempt count across the next attempt (as a failed Marker read does).
-        attempts = state.get("attempts", 0) if state.get("reason") == EXTRACTION_FAILED else 0
-        if retry and version and version["arxiv_key"] and state["state"] in ("no_source", "failed"):
-            self.sources.reset(version["arxiv_key"])  # the person's retry
-            self._forget_failure(asset_id, source_target_version(asset["extraction_version"]))
-            state = equation_state(self.store, asset_id)
-        elif state["state"] == "failed" and state.get("reason") == EXTRACTION_FAILED and attempts < MAX_ATTEMPTS:
-            self._forget_failure(asset_id, source_target_version(asset["extraction_version"]))
-            state = equation_state(self.store, asset_id)
-        if state["state"] != "pending" or version is None or version["eligibility"] != "eligible":
-            return equation_state(self.store, asset_id)
-        start_version = asset["extraction_version"]
-        target = source_target_version(start_version)
-        key = version["arxiv_key"]
-        self._forget_failure(asset_id, target)  # a record_version_changed row whose record is eligible again
-        row = await self.sources.ensure(key)
-        if row.get("outcome") == "rate_gate_busy":
-            return equation_state(self.store, asset_id) | {"outcome": "rate_gate_busy"}
-        if row["status"] != "downloaded":
-            return equation_state(self.store, asset_id)
-        data, problem = await self.sources.read(key)
-        if problem == "busy":
-            return equation_state(self.store, asset_id) | {"outcome": "rate_gate_busy"}
-        if problem == "repair":
-            self._events(asset, "arxiv_source_corrupt", {"arxiv_key": key, "repair": True})
-            row = await self.sources.ensure(key)
-            if row.get("outcome") == "rate_gate_busy" or row["status"] != "downloaded":
-                return equation_state(self.store, asset_id) | ({"outcome": row["outcome"]} if row.get("outcome") else {})
-            data, problem = await self.sources.read(key)
-        if problem == "busy":
-            return equation_state(self.store, asset_id) | {"outcome": "rate_gate_busy"}
-        if problem:
-            self._events(asset, "arxiv_source_corrupt", {"arxiv_key": key, "repair": False})
-            return equation_state(self.store, asset_id)
-        path = self.papers_dir / asset["storage_path"]
-        ocr_pages = self._ocr_pages(asset) if OCR_SUFFIX.search(start_version or "") else {}
-        title = self.store.conn.execute("SELECT title FROM source_versions WHERE id = ?", (asset["source_version_id"],)).fetchone()
-        reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": asset["page_count"], "started_at": now(),
-                   "route": arxiv_source.ENGINE}
-        base = None
         try:
-            found = await arxiv_source.read_source(data, path, set(ocr_pages))
-            with transaction(self.store.conn):
-                self.store.conn.execute("UPDATE arxiv_sources SET content = ?, inspected_at = ?, error = ? WHERE arxiv_key = ?",
-                                        (found["content"], now(), found.get("error"), key))
-            if found["content"] == "tex" and found["placements"]:
-                base = await asyncio.to_thread(pdf.extract_pdf, path, placements=found["placements"])
-        finally:
-            reading = None
-        if found["content"] != "tex":
-            return equation_state(self.store, asset_id)
-        arxiv_id, number = arxiv_source.split_key(key)
-        summary = {"arxiv_id": arxiv_id, "version": number, "version_from": version["version_from"],
-                   "record_label": version["record_label"], "status": row["status"], "content": "tex", "sha256": row["sha256"],
-                   "params": arxiv_source.PARAMS, "number_lines": found["number_lines"], "candidates": found["candidates"],
-                   "child_seconds": found.get("child_seconds")}
-        not_placed = Counter(found["not_placed"])
-        if base is not None and base.status == "failed":  # a time or memory limit, not an absence of matches
-            self._record_source_rejection(asset, target, EXTRACTION_FAILED, summary | {"placed": [], "not_placed": dict(not_placed)},
-                                          {"attempts": attempts + 1, "error": (base.error or "")[:400]})
-            self._events(asset, "equations_failed", {"reason": EXTRACTION_FAILED, "attempts": attempts + 1, "route": arxiv_source.ENGINE})
-            return equation_state(self.store, asset_id)
-        if base is None:
-            self._record_source_rejection(asset, target, NOTHING_PLACED, summary | {"placed": [], "not_placed": dict(not_placed)})
-            return equation_state(self.store, asset_id)
-        placement = base.placement or {"placed": [], "refused": []}
-        not_placed.update(r["reason"] for r in placement["refused"])
-        details = {(p["page"], p["n"]): p for p in found["placements"]}
-        placed = [{"page": p["page"], "n": p["n"], "start": p["start"], "end": p["end"]}
-                  | {k: details[(p["page"], p["n"])][k] for k in ("group", "recall", "f1", "window_margin", "paper_margin")}
-                  for p in placement["placed"]]
-        summary |= {"placed": placed, "not_placed": dict(not_placed)}
-        if any(r["reason"] == OFFSETS_UNRESOLVED for r in placement["refused"]):
-            self._record_source_rejection(asset, target, OFFSETS_UNRESOLVED, summary)
-            return equation_state(self.store, asset_id)
-        if not placed:
-            self._record_source_rejection(asset, target, NOTHING_PLACED, summary)
-            return equation_state(self.store, asset_id)
-        if ocr_pages:
-            base.pages = sorted(base.pages + [pdf.PageText(n, None, text, "ocr") for n, text in ocr_pages.items()
-                                              if n not in {p.physical_page for p in base.pages}], key=lambda p: p.physical_page)
-            base.status = "succeeded" if len(base.pages) == base.page_count else "partial"
-        base.extraction_version, base.math = target, {"engine": arxiv_source.ENGINE, "source": summary}
+            with self._reader_lock(asset):
+                version = await self._eligibility(asset) if state["state"] in ("pending", "no_source", "failed") else None
+                # A failed extraction keeps its attempt count across the next attempt (as a failed Marker read does).
+                attempts = state.get("attempts", 0) if state.get("reason") == EXTRACTION_FAILED else 0
+                if retry and version and version["arxiv_key"] and state["state"] in ("no_source", "failed"):
+                    self.sources.reset(version["arxiv_key"])  # the person's retry
+                    self._forget_failure(asset_id, source_target_version(asset["extraction_version"]))
+                    state = equation_state(self.store, asset_id)
+                elif state["state"] == "failed" and state.get("reason") == EXTRACTION_FAILED and attempts < MAX_ATTEMPTS:
+                    self._forget_failure(asset_id, source_target_version(asset["extraction_version"]))
+                    state = equation_state(self.store, asset_id)
+                if state["state"] != "pending" or version is None or version["eligibility"] != "eligible":
+                    return equation_state(self.store, asset_id)
+                start_version = asset["extraction_version"]
+                target = source_target_version(start_version)
+                key = version["arxiv_key"]
+                self._forget_failure(asset_id, target)  # a record_version_changed row whose record is eligible again
+                row = await self.sources.ensure(key)
+                if row.get("outcome") == "rate_gate_busy":
+                    return equation_state(self.store, asset_id) | {"outcome": "rate_gate_busy"}
+                if row["status"] != "downloaded":
+                    return equation_state(self.store, asset_id)
+                data, problem = await self.sources.read(key)
+                if problem == "busy":
+                    return equation_state(self.store, asset_id) | {"outcome": "rate_gate_busy"}
+                if problem == "repair":
+                    self._events(asset, "arxiv_source_corrupt", {"arxiv_key": key, "repair": True})
+                    row = await self.sources.ensure(key)
+                    if row.get("outcome") == "rate_gate_busy" or row["status"] != "downloaded":
+                        return equation_state(self.store, asset_id) | ({"outcome": row["outcome"]} if row.get("outcome") else {})
+                    data, problem = await self.sources.read(key)
+                if problem == "busy":
+                    return equation_state(self.store, asset_id) | {"outcome": "rate_gate_busy"}
+                if problem:
+                    self._events(asset, "arxiv_source_corrupt", {"arxiv_key": key, "repair": False})
+                    return equation_state(self.store, asset_id)
+                path = self.papers_dir / asset["storage_path"]
+                ocr_pages = self._ocr_pages(asset) if OCR_SUFFIX.search(start_version or "") else {}
+                title = self.store.conn.execute("SELECT title FROM source_versions WHERE id = ?", (asset["source_version_id"],)).fetchone()
+                reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": asset["page_count"], "started_at": now(),
+                           "route": arxiv_source.ENGINE}
+                base = None
+                try:
+                    found = await self._drain(arxiv_source.read_source(data, path, set(ocr_pages)))
+                    with transaction(self.store.conn):
+                        self.store.conn.execute("UPDATE arxiv_sources SET content = ?, inspected_at = ?, error = ? WHERE arxiv_key = ?",
+                                                (found["content"], now(), found.get("error"), key))
+                    if found["content"] == "tex" and found["placements"]:
+                        base = await text_retry.drained_thread(lambda: pdf.extract_pdf(path, placements=found["placements"]))
+                finally:
+                    reading = None
+                if found["content"] != "tex":
+                    return equation_state(self.store, asset_id)
+                arxiv_id, number = arxiv_source.split_key(key)
+                summary = {"arxiv_id": arxiv_id, "version": number, "version_from": version["version_from"],
+                           "record_label": version["record_label"], "status": row["status"], "content": "tex", "sha256": row["sha256"],
+                           "params": arxiv_source.PARAMS, "number_lines": found["number_lines"], "candidates": found["candidates"],
+                           "child_seconds": found.get("child_seconds")}
+                not_placed = Counter(found["not_placed"])
+                if base is not None and base.status == "failed":  # a time or memory limit, not an absence of matches
+                    self._record_source_rejection(asset, target, EXTRACTION_FAILED, summary | {"placed": [], "not_placed": dict(not_placed)},
+                                                  {"attempts": attempts + 1, "error": (base.error or "")[:400]})
+                    self._events(asset, "equations_failed", {"reason": EXTRACTION_FAILED, "attempts": attempts + 1, "route": arxiv_source.ENGINE})
+                    return equation_state(self.store, asset_id)
+                if base is None:
+                    self._record_source_rejection(asset, target, NOTHING_PLACED, summary | {"placed": [], "not_placed": dict(not_placed)})
+                    return equation_state(self.store, asset_id)
+                placement = base.placement or {"placed": [], "refused": []}
+                not_placed.update(r["reason"] for r in placement["refused"])
+                details = {(p["page"], p["n"]): p for p in found["placements"]}
+                placed = [{"page": p["page"], "n": p["n"], "start": p["start"], "end": p["end"]}
+                          | {k: details[(p["page"], p["n"])][k] for k in ("group", "recall", "f1", "window_margin", "paper_margin")}
+                          for p in placement["placed"]]
+                summary |= {"placed": placed, "not_placed": dict(not_placed)}
+                if any(r["reason"] == OFFSETS_UNRESOLVED for r in placement["refused"]):
+                    self._record_source_rejection(asset, target, OFFSETS_UNRESOLVED, summary)
+                    return equation_state(self.store, asset_id)
+                if not placed:
+                    self._record_source_rejection(asset, target, NOTHING_PLACED, summary)
+                    return equation_state(self.store, asset_id)
+                if ocr_pages:
+                    base.pages = sorted(base.pages + [pdf.PageText(n, None, text, "ocr") for n, text in ocr_pages.items()
+                                                      if n not in {p.physical_page for p in base.pages}], key=lambda p: p.physical_page)
+                    base.status = "succeeded" if len(base.pages) == base.page_count else "partial"
+                base.extraction_version, base.math = target, {"engine": arxiv_source.ENGINE, "source": summary}
 
-        def guard(conn: Any) -> str | None:
-            """Decision 6's last-write check, inside the write's BEGIN IMMEDIATE transaction, before its first write."""
-            now_asset = conn.execute("SELECT removed_at, extraction_version FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
-            if now_asset["removed_at"] is not None:
-                return "asset_removed"
-            record = dict(conn.execute("SELECT doi, landing_url, oa_pdf_url, version_label FROM source_versions WHERE id = ?",
-                                       (asset["source_version_id"],)).fetchone())
-            if (result := arxiv_source.record_eligibility(key, record)) != "eligible":
-                conn.execute("UPDATE asset_arxiv_versions SET eligibility = ?, record_label = ?, checked_at = ? WHERE asset_id = ?",
-                             (result, record["version_label"], now(), asset_id))
-                conn.execute(
-                    "INSERT INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages,"
-                    " passage_count, outcome, rejection_reason, created_at, math_json, extractor_profile, baseline_extraction_id)"
-                    " SELECT ?, ?, ?, ?, NULL, ?, 0, 0, 'rejected', ?, ?, ?, ?,"
-                    " (SELECT id FROM asset_extractions WHERE asset_id = ? AND outcome = 'current')"
-                    " WHERE NOT EXISTS (SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?)",
-                    (new_id("ext"), asset_id, target, asset["extraction_status"], asset["page_count"], RECORD_VERSION_CHANGED, now(),
-                     json.dumps({"engine": arxiv_source.ENGINE, "eligibility": result}), recovery.profile_of(target),
-                     asset_id, asset_id, target))
-                for research_id in [r[0] for r in conn.execute("SELECT research_id FROM corpus_memberships WHERE source_version_id = ?",
-                                                                (asset["source_version_id"],))]:
-                    self.store._event(research_id, "arxiv_source_refused", {"asset_id": asset_id, "reason": RECORD_VERSION_CHANGED,
-                                                                            "eligibility": result})
-                return RECORD_VERSION_CHANGED
-            if now_asset["extraction_version"] != start_version or "+marker-" in (now_asset["extraction_version"] or ""):
-                return "superseded"
-            if not self.route_flag() or self.marker_present():
-                return "superseded_by_marker"
-            return None
+                def guard(conn: Any) -> str | None:
+                    """Decision 6's last-write check, inside the write's BEGIN IMMEDIATE transaction, before its first write."""
+                    now_asset = conn.execute("SELECT removed_at, extraction_version FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
+                    if now_asset["removed_at"] is not None:
+                        return "asset_removed"
+                    record = dict(conn.execute("SELECT doi, landing_url, oa_pdf_url, version_label FROM source_versions WHERE id = ?",
+                                               (asset["source_version_id"],)).fetchone())
+                    if (result := arxiv_source.record_eligibility(key, record)) != "eligible":
+                        conn.execute("UPDATE asset_arxiv_versions SET eligibility = ?, record_label = ?, checked_at = ? WHERE asset_id = ?",
+                                     (result, record["version_label"], now(), asset_id))
+                        conn.execute(
+                            "INSERT INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages,"
+                            " passage_count, outcome, rejection_reason, created_at, math_json, extractor_profile, baseline_extraction_id)"
+                            " SELECT ?, ?, ?, ?, NULL, ?, 0, 0, 'rejected', ?, ?, ?, ?,"
+                            " (SELECT id FROM asset_extractions WHERE asset_id = ? AND outcome = 'current')"
+                            " WHERE NOT EXISTS (SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?)",
+                            (new_id("ext"), asset_id, target, asset["extraction_status"], asset["page_count"], RECORD_VERSION_CHANGED, now(),
+                             json.dumps({"engine": arxiv_source.ENGINE, "eligibility": result}), recovery.profile_of(target),
+                             asset_id, asset_id, target))
+                        for research_id in [r[0] for r in conn.execute("SELECT research_id FROM corpus_memberships WHERE source_version_id = ?",
+                                                                        (asset["source_version_id"],))]:
+                            self.store._event(research_id, "arxiv_source_refused", {"asset_id": asset_id, "reason": RECORD_VERSION_CHANGED,
+                                                                                    "eligibility": result})
+                        return RECORD_VERSION_CHANGED
+                    if now_asset["extraction_version"] != start_version or "+marker-" in (now_asset["extraction_version"] or ""):
+                        return "superseded"
+                    if not self.route_flag() or self.marker_present():
+                        return "superseded_by_marker"
+                    return None
 
-        try:
-            report = self.store.reextract_asset(asset_id, base, target, source_chunker, allow_run_id=run_id, guard=guard)
-        except NotFound:  # removed before the write began; the guard covers a removal racing the write itself
-            return equation_state(self.store, asset_id) | {"outcome": "asset_removed"}
-        return equation_state(self.store, asset_id) | {"outcome": report.get("reason") or report["outcome"]}
+                try:
+                    report = self.store.reextract_asset(asset_id, base, target, source_chunker, allow_run_id=run_id, guard=guard)
+                except NotFound:  # removed before the write began; the guard covers a removal racing the write itself
+                    return equation_state(self.store, asset_id) | {"outcome": "asset_removed"}
+                return equation_state(self.store, asset_id) | {"outcome": report.get("reason") or report["outcome"]}
+
+        except text_retry.FileBusy:
+            return equation_state(self.store, asset_id) | {"outcome": "file_busy"}
 
     def _ocr_pages(self, asset: dict[str, Any]) -> dict[int, str]:
         """The current OCR text of each page, rebuilt from its passages (chunks of one page follow each other)."""
@@ -548,7 +596,7 @@ class EquationService:
                 continue
             try:
                 state = await self.read_asset(asset_id, background=True)
-                if state.get("route") and state["state"] == "pending":
+                if state.get("outcome") == "file_busy" or (state.get("route") and state["state"] == "pending"):
                     await asyncio.sleep(RETRY_SECONDS)  # the rate gate was busy: give way before trying again
             except RunInProgress:
                 await asyncio.sleep(RETRY_SECONDS)  # applied after the run that uses the source ends
@@ -568,14 +616,22 @@ class EquationService:
             self._task = asyncio.create_task(self.run_forever())
 
     async def stop(self) -> None:
-        if self._task:
-            self._task.cancel()
-            self._task = None
-        for task in (*self._retries, *([self._install] if self._install else [])):
+        tasks = tuple(t for t in (self._task, *self._retries, self._install) if t is not None)
+        self._task = None
+        for task in tasks:
             task.cancel()
         if self._install_proc and self._install_proc.returncode is None:
             self._install_proc.kill()
-        await self.reader.close()
+        try:
+            await self._drain(self.reader.close())
+        finally:
+            for task in tasks:
+                try:
+                    await self._drain(task)
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    log.exception("Equation task failed during shutdown")
 
     # ---- installing the reader from Settings ---------------------------------------------------
     def installing(self) -> bool:

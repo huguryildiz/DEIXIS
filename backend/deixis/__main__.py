@@ -221,7 +221,7 @@ def retry_text(settings: Settings, asset_id: str, expected_extraction: str, dry_
         if operation is not None or (store is not None and store.pending_text_retry_interruptions):
             if operation is not None:
                 if operation["lifecycle"] == "running":
-                    print("The text retry operation stays running until a later version reconciles it.", file=sys.stderr)
+                    print("The text retry operation stays running until DEIXIS reconciles it (at its next start, while it runs, or at the next retry of this file).", file=sys.stderr)
                 else:
                     try:
                         _retry_line(store.text_retry_view(operation["id"]))
@@ -229,7 +229,7 @@ def retry_text(settings: Settings, asset_id: str, expected_extraction: str, dry_
                         # Reporting an interruption must not hide the error that caused it.
                         pass
             else:
-                print("The text retry operation stays running until a later version reconciles it.", file=sys.stderr)
+                print("The text retry operation stays running until DEIXIS reconciles it (at its next start, while it runs, or at the next retry of this file).", file=sys.stderr)
             print(f"Text retry interrupted by {type(exc).__name__}.", file=sys.stderr)
             return 1
         if (failure := _storage_cause(exc)) is not None:

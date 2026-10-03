@@ -29,7 +29,7 @@ DISCOVERY_RUN_KINDS = ("discovery", "fulltext_fetch", "fulltext_adjudication")
 ENDED_RUN_STATUSES = ("completed", "failed", "cancelled")
 TEXT_RETRY_REFUSALS = ("asset_removed", "no_holding_research", "membership_changed", "asset_replaced",
                       "baseline_changed", "run_active", "input_not_verified", "file_missing", "file_mismatch")
-TEXT_RETRY_INTERRUPTIONS = ("storage_full", "storage_unavailable", "cancelled", "unexpected_error")
+TEXT_RETRY_INTERRUPTIONS = ("storage_full", "storage_unavailable", "cancelled", "unexpected_error", "process_ended")
 # What became of a passage's file since the passage was stored (D45), over `passages p LEFT JOIN source_assets a`.
 EVIDENCE_STATUS_SQL = (
     "CASE WHEN a.id IS NULL THEN 'current'"
@@ -1816,15 +1816,16 @@ class Store:
             return self._retry_result(operation_id)
 
     def flush_text_retry_interruptions(self) -> None:
+        from deixis.workflow.file_restore import transaction as restore_transaction
+
         for oid, reason in list(self.pending_text_retry_interruptions.items()):
             try:
-                self.interrupt_text_retry(oid, reason)
+                with restore_transaction(self.conn):
+                    self.interrupt_text_retry(oid, reason)
             except Exception:
                 logging.getLogger(__name__).exception("Could not persist pending text retry interruption %s", oid)
             else:
                 self.pending_text_retry_interruptions.pop(oid, None)
-        from deixis.workflow.file_restore import transaction as restore_transaction
-
         for oid, reason in list(self.pending_file_restore_interruptions.items()):
             try:
                 with restore_transaction(self.conn):

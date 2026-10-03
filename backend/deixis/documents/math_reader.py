@@ -253,6 +253,26 @@ def clean_markdown(markdown: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
+async def _drain(awaitable):
+    """Retain read ownership until a thread or shared close finishes, even after repeated cancellation."""
+    task = asyncio.ensure_future(awaitable)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except BaseException:
+                break
+        try:
+            task.result()
+        except BaseException:
+            pass  # The original cancellation is the result, including when the drained work failed.
+        raise
+
+
 class MathReader:
     """One Marker process shared by every caller; requests are served one at a time."""
 
@@ -295,7 +315,7 @@ class MathReader:
             if self.process is None or self.process.returncode is not None:
                 await self._start()
             self._requests += 1
-            math_boxes, image_pages = await asyncio.to_thread(inline_math_marks, path, pages)
+            math_boxes, image_pages = await _drain(asyncio.to_thread(inline_math_marks, path, pages))
             request = {"id": self._requests, "path": str(path), "pages": pages, "image_pages": image_pages, "math_boxes": math_boxes}
             self.process.stdin.write((json.dumps(request) + "\n").encode())
             await self.process.stdin.drain()
@@ -319,10 +339,25 @@ class MathReader:
         return f"marker-{self.marker_version or MARKER_PACKAGE.split('==')[1]}"
 
     async def close(self) -> None:
-        process, self.process = self.process, None
-        if process and process.returncode is None:
-            process.stdin.close()
-            try:
-                await asyncio.wait_for(process.wait(), 10)
-            except asyncio.TimeoutError:
-                process.kill()
+        closing = getattr(self, "_closing", None)
+        process = self.process
+        if process is not None and (closing is None or closing[0] is not process):
+            async def finish():
+                try:
+                    if process.returncode is None:
+                        process.stdin.close()
+                        await asyncio.wait_for(process.wait(), 10)
+                except asyncio.TimeoutError:
+                    pass
+                finally:
+                    if process.returncode is None:
+                        try:
+                            process.kill()
+                        except ProcessLookupError:
+                            pass
+                    await process.wait()
+
+            self.process = None
+            closing = self._closing = (process, asyncio.create_task(finish()))
+        if closing is not None:
+            await _drain(closing[1])

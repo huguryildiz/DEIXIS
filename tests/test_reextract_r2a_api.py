@@ -586,13 +586,21 @@ def test_ordinary_upgrade_cancellation_holds_lock_until_parser_thread_returns(tm
         assert not text_retry.lock_held(lib.settings.recovery_dir, lib.sha)
 
 
-def test_second_store_reservation_and_other_research_queued_run_refuse(tmp_path):
+@pytest.mark.parametrize("locked", [False, True])
+def test_second_store_reservation_and_other_research_queued_run_refuse(tmp_path, locked):
     with api_library(tmp_path) as lib:
         second = db.connect(lib.settings.db_path)
         try:
             Store(second).reserve_text_retry(lib.aid, expected_extraction_id=lib.eid, idempotency_key="other-key", request_fingerprint="other")
-            response = lib.client.post(url(lib), json=body(lib))
-            assert response.status_code == 409 and response.json()["code"] == "operation_running"
+            with child_lock(lib) if locked else __import__("contextlib").nullcontext():
+                response = lib.client.post(url(lib), json=body(lib))
+            prior = lib.store.text_retry_by_key("other-key")
+            if locked:
+                assert response.status_code == 409 and response.json()["code"] == "file_busy"
+                assert prior["lifecycle"] == "running"
+            else:
+                assert response.status_code == 200 and response.json()["recovery"]["outcome"] == "promoted"
+                assert (prior["lifecycle"], prior["reason"]) == ("interrupted", "process_ended")
         finally: second.close()
     with api_library(tmp_path / "active") as lib:
         other = sharing(lib)

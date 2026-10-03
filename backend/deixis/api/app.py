@@ -899,6 +899,8 @@ def create_app(
 
     @app.get("/api/connections")
     async def connections(request: Request, refresh: bool = False) -> dict[str, Any]:
+        from deixis.providers.facade import connectors
+        descriptors = {p: f.descriptor for p, f in connectors().items()}
         models = {}
         for name, adapter in request.app.state.adapters.items():
             models[name] = await adapter.health(refresh=refresh)
@@ -910,6 +912,8 @@ def create_app(
             "providers": [
                 {"id": p, "implemented": True, "access_mode": c.access_mode(), "supplementary": c.supplementary,
                  "key_env": c.key_env, "role": provider_role(c),
+                 "contract_id": descriptors[p].contract_id, "adapter_revision": descriptors[p].adapter_revision,
+                 "capabilities": sorted(descriptors[p].capabilities),
                  "note": f"Add the key in Settings or set {c.key_env} in .env to enable it." if c.access_mode() == "not_configured"
                  else "Access and quota are recorded per request; not verified in advance."}
                 for p, c in CONNECTORS.items()

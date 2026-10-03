@@ -305,7 +305,21 @@ def golden(name, value):
     if os.environ.get("DEIXIS_WRITE_SEARCH_FIXTURES"):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
-    return json.loads(path.read_text(encoding="utf-8"))
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    # D194 adds provenance and copies the already-recorded limit kind to the
+    # step. Retain the sequential freeze and every other expected field.
+    for row in expected["search_runs"]:
+        row["connector_json"] = json.dumps({
+            "contract_id": "deixis.scholarly_connector.v1", "adapter_revision": 2,
+            "query_rules_revision": "deixis.query_rules.r1",
+            "payload": "sanitized_json" if row["raw_payload_path"] is not None else None,
+            "dropped_records": 0,
+        }, sort_keys=True)
+        error_kind = json.loads(row["error_json"]).get("error_kind")
+        if error_kind is not None:
+            step = expected["steps"][row["step_id"].removeprefix("step:")]
+            step["error"]["error_kind"] = error_kind
+    return expected
 
 
 def same(value):

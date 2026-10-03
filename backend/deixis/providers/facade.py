@@ -1,4 +1,4 @@
-"""Compatibility boundary; application dispatch still uses registry callables.
+"""Compatibility boundary for application search dispatch.
 
 Change CONTRACT_ID for protocol methods, required fields or vocabulary, and
 QUERY_RULES_REVISION for rendering/rule output. Adapter request, mapping, cursor,
@@ -16,8 +16,15 @@ unregistered provider from a QUERY_RULES_REVISION bump only if every registered
 provider/default or declared endpoint renders, counts and validates identically,
 and module-level rule functions retain every historical output. Other rendered
 query or issue-list changes still require the bump (D193).
+
+Dispatched pages record contract and adapter revisions. Resume accepts legacy
+NULL provenance, but refuses malformed or incompatible recorded revisions (D194).
+Admission and sanitization are application post-processing, separate from search
+adapter equivalence. Lookup and chaining helpers remain unbound capabilities.
 """
 
+from dataclasses import dataclass, replace
+from copy import deepcopy
 from inspect import signature
 
 from deixis.providers import registry, query_rules, query_compiler, contract
@@ -64,6 +71,59 @@ def search_request(query_text: str, limit: int, **kwargs) -> contract.SearchRequ
     """Map registry-call keywords without validating or changing their values."""
     fields = {name: kwargs.pop(name, None) for name in ("cursor", "max_rate_limit_retries", "endpoint")}
     return contract.SearchRequest(query_text, limit, **fields, options=kwargs)
+
+
+def sanitize(value, secrets):
+    """Copy JSON-like data, replacing only the operation's supplied secrets."""
+    secrets = sorted({s for s in secrets if s}, key=lambda s: (-len(s), s))
+
+    def clean(item):
+        if isinstance(item, str):
+            for secret in secrets:
+                item = item.replace(secret, "<redacted>")
+            return item
+        if isinstance(item, dict):
+            keys = [clean(key) for key in item]
+            if len(set(keys)) != len(keys):
+                return {"<omitted>": "secret_key_collision"}
+            return {key: clean(v) for key, v in zip(keys, item.values())}
+        if isinstance(item, list):
+            return [clean(v) for v in item]
+        return deepcopy(item)
+
+    return clean(value)
+
+
+def usable_identity(value):
+    return (isinstance(value, str) and bool(value.strip()) and value.strip() != "None"
+            and not value.strip().startswith(("{", "[")))
+
+
+@dataclass(frozen=True)
+class Dispatched:
+    outcome: registry.common.SearchOutcome
+    dropped_records: int
+    connector: dict
+
+    @property
+    def returned_count(self):
+        return len(self.outcome.records) + self.dropped_records
+
+
+async def dispatch_search(provider_id, http, query_text, limit, api_key, contact_email, **registry_kwargs) -> Dispatched:
+    connector = CompatibilityConnector(registry.CONNECTORS[provider_id])
+    request = search_request(query_text, limit, **registry_kwargs)
+    outcome = await connector.search(request, contract.ConnectorContext(http, api_key, contact_email))
+    records = [replace(record, raw=sanitize(record.raw, (api_key,))) for record in outcome.records
+               if usable_identity(record.provider_record_id)]
+    dropped = len(outcome.records) - len(records)
+    outcome = replace(outcome, records=records, raw_payload=sanitize(outcome.raw_payload, (api_key,)))
+    descriptor = connector.descriptor
+    provenance = {"contract_id": descriptor.contract_id, "adapter_revision": descriptor.adapter_revision,
+                  "query_rules_revision": descriptor.query_rules_revision,
+                  "payload": "sanitized_json" if outcome.raw_payload is not None else None,
+                  "dropped_records": dropped}
+    return Dispatched(outcome, dropped, provenance)
 
 
 class CompatibilityConnector:

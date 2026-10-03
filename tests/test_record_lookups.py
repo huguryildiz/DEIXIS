@@ -93,7 +93,9 @@ def test_a_record_it_holds_without_an_abstract_is_found_with_no_abstract():
 
 
 def test_a_different_external_doi_is_a_link_and_the_same_one_is_not():
-    (answers, _), _ = s2([ARXIV_DOI], lambda r: httpx.Response(200, json=[paper(DOI, paper_id="s2xyz")]))
+    answer = paper(DOI, paper_id="s2xyz")
+    answer["externalIds"]["ArXiv"] = "2601.00001"
+    (answers, _), _ = s2([ARXIV_DOI], lambda r: httpx.Response(200, json=[answer]))
     assert answers[ARXIV_DOI].linked_dois == [DOI] and answers[ARXIV_DOI].paper_id == "s2xyz"
     (same, _), _ = s2([DOI], lambda r: httpx.Response(200, json=[paper(DOI)]))
     assert same[DOI].linked_dois == []

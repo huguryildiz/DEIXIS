@@ -10,9 +10,9 @@ Endpoints verified against the provider documentation on 2026-09-21:
   `https://api.semanticscholar.org/graph/v1/swagger.json`): the body is `{"ids": [...]}`, `fields` is a single-value
   *query* parameter and not part of the body, at most 500 ids and 10 MB come back at a time, and the accepted id
   forms include `DOI:<doi>` and `ARXIV:<id>`. The spec does not state what an unknown id answers or that the answer
-  keeps the input order; this module reads the documented example's list answer positionally and refuses a list whose
-  length differs from the request, so a reordered or short answer is recorded as a failure rather than attached to
-  the wrong record.
+  keeps the input order. This module requires the requested length and binds answers by DOI/ArXiv identifier
+  regardless of position. Repeated requests share an answer when every answer naming that identifier is JSON-equal.
+  Conflicting answers fail; only an order-consistent null means not_found, and unbound answers fail.
 - Crossref REST API, `GET /works/{doi}` (Swagger at `https://api.crossref.org/swagger-docs`): the work sits under
   `message`, `reference-count` is an integer, `relation` maps a relation type to a list of `{id, id-type,
   asserted-by}`, and a DOI that does not exist answers 404.
@@ -29,6 +29,7 @@ recorded and the run goes on (D18).
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
@@ -92,7 +93,40 @@ async def semantic_scholar_batch(client: httpx.AsyncClient, dois: list[str], api
     except (json.JSONDecodeError, TypeError) as exc:
         outcome.status, outcome.error = "parse_error", str(exc)[:300]
         return _all_failed(dois), outcome
-    answers = {doi: _s2_answer(doi, item) for doi, item in zip(dois, payload)}
+    def arxiv(value):
+        return re.sub(r"v\d+$", "", value.strip().casefold())
+
+    def names(item, doi):
+        external = item.get("externalIds") if isinstance(item, dict) else None
+        if not isinstance(external, dict):
+            return False
+        value = external.get("ArXiv" if doi.startswith(ARXIV_DOI_PREFIX) else "DOI")
+        if not isinstance(value, str) or not value.strip():
+            return False
+        return (arxiv(value) == arxiv(doi[len(ARXIV_DOI_PREFIX):]) if doi.startswith(ARXIV_DOI_PREFIX)
+                else normalize_doi(value) == doi)
+
+    positions = {}
+    for i, doi in enumerate(dois):
+        positions.setdefault(doi, []).append(i)
+    named = [[doi for doi in positions if names(item, doi)] for item in payload]
+    consistent = all(item is None or matches == [dois[i]] for i, (item, matches) in enumerate(zip(payload, named)))
+    answers = {}
+    ambiguous = 0
+    for doi, requested_positions in positions.items():
+        matches = [j for j, identifiers in enumerate(named) if doi in identifiers]
+        # JSON comparison ignores object-key order without equating booleans with numbers.
+        equal = matches and len({json.dumps(payload[j], sort_keys=True) for j in matches}) == 1
+        if equal:
+            answers[doi] = _s2_answer(doi, payload[matches[0]])
+        elif not matches and consistent and all(payload[i] is None for i in requested_positions):
+            answers[doi] = LookupAnswer("not_found")
+        else:
+            answers[doi] = LookupAnswer("failed")
+            ambiguous += len(matches) if len(matches) > 1 else 0
+    unbound = sum(not matches and (item is not None or not consistent) for item, matches in zip(payload, named))
+    if unbound or ambiguous:
+        outcome.error = f"unbound answers: {unbound}; ambiguous answers: {ambiguous}"
     outcome.status = "completed"
     outcome.raw_payload = {"ids": ids, "answers": payload}
     return answers, outcome
@@ -101,7 +135,7 @@ async def semantic_scholar_batch(client: httpx.AsyncClient, dois: list[str], api
 def _s2_answer(doi: str, item: Any) -> LookupAnswer:
     if not isinstance(item, dict):  # the documented answer for an id Semantic Scholar does not hold
         return LookupAnswer("not_found")
-    external = {k: str(v) for k, v in (item.get("externalIds") or {}).items() if v}
+    external = {k: v for k, v in item["externalIds"].items() if isinstance(v, str) and v.strip()}
     named = normalize_doi(external.get("DOI"))
     count = item.get("referenceCount")
     return LookupAnswer(

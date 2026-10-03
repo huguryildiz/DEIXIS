@@ -553,7 +553,8 @@ def test_a_work_whose_published_version_is_not_a_survey_is_still_screened(tmp_pa
     preprint = work(2, title=SURVEY_TITLE, abstract=ABSTRACT, doi="10.48550/arxiv.2601.00001")
     preprint["primary_location"] = {"version": "submittedVersion"}
     sources = Sources(works=[published, preprint],
-                      s2={"2601.00001": paper(doi="10.1/a", paper_id="s2xyz")})
+                      s2={"2601.00001": paper(doi="10.1/a", paper_id="s2xyz")
+                          | {"externalIds": {"DOI": "10.1/a", "ArXiv": "2601.00001"}}})
     app = app_for(tmp_path, monkeypatch, sources)
     client = client_of(app)
     try:

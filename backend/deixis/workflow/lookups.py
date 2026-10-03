@@ -321,11 +321,13 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
         return
     connector = CONNECTORS["semantic_scholar"]
     store.add_usage(run["id"], "lookup_requests")
-    answers, outcome = await lookup.semantic_scholar_batch(http, [row["doi"] for row in asking], connector.api_key(),
+    api_key = connector.api_key()
+    answers, outcome = await lookup.semantic_scholar_batch(http, [row["doi"] for row in asking], api_key,
                                                            max_rate_limit_retries=waits)
     if outcome.retries:
         store.add_usage(run["id"], "lookup_requests", outcome.retries)
-    payload_ref = _write_payload(settings, step["id"], outcome.raw_payload)
+    from deixis.providers.facade import sanitize
+    payload_ref = _write_payload(settings, step["id"], sanitize(outcome.raw_payload, (api_key,)))
     added = [store_answer(store, row["source_version_id"], "semantic_scholar", answers[row["doi"]], step["id"],
                           payload_ref) for row in asking]
     # The step succeeded whatever the source answered: a failure is an answer stored on the record, not a broken run.
@@ -416,7 +418,8 @@ async def _scopus_step(store: Store, http: httpx.AsyncClient, settings: Settings
         payload_ref = None
         if outcome.raw_payload is not None:
             payloads[row["doi"]] = outcome.raw_payload
-            payload_ref = _write_payload(settings, step["id"], payloads)
+            from deixis.providers.facade import sanitize
+            payload_ref = _write_payload(settings, step["id"], sanitize(payloads, (api_key,)))
         added.append(store_answer(store, row["source_version_id"], "scopus", answer, step["id"], payload_ref))
     store.finish_step(step["id"], "succeeded", output=_counts(added, asked=asked) | {"rate_limit_retries": waits})
 

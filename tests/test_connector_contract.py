@@ -92,60 +92,58 @@ def test_http_400_echoed_key_is_absent_from_outcome(provider_id, endpoint_id):
 # These are characterization cases, never identity-conformance claims. The table
 # is populated with enumerated observed outcomes and checked against the ledger.
 IDENTITY_KNOWN_MISMATCHES = {
-    ("openalex", None, "identity_null"): {"ledger": "identity_openalex", "owner": "B4", "expected": {"status": "completed", "record_ids": ["W1","None"]}},
-    ("openalex", None, "identity_empty"): {"ledger": "identity_openalex", "owner": "B4", "expected": {"status": "completed", "record_ids": ["W1",""]}},
-    ("openalex", None, "identity_number"): {"ledger": "identity_openalex", "owner": "B4", "expected": {"status": "completed", "record_ids": ["W1","17"]}},
-    ("openalex", None, "identity_object"): {"ledger": "identity_openalex", "owner": "B4", "expected": {"status": "completed", "record_ids": ["W1","{'SYNTHETIC': 'id'}"]}},
-    ("semantic_scholar", None, "identity_null"): {"ledger": "identity_semantic_scholar", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","None"]}},
-    ("semantic_scholar", None, "identity_empty"): {"ledger": "identity_semantic_scholar", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
-    ("semantic_scholar", None, "identity_number"): {"ledger": "identity_semantic_scholar", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","17"]}},
-    ("semantic_scholar", None, "identity_object"): {"ledger": "identity_semantic_scholar", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","{'SYNTHETIC': 'id'}"]}},
-    ("semantic_scholar", "bulk", "identity_null"): {"ledger": "identity_semantic_scholar", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","None"]}},
-    ("semantic_scholar", "bulk", "identity_empty"): {"ledger": "identity_semantic_scholar", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
-    ("semantic_scholar", "bulk", "identity_number"): {"ledger": "identity_semantic_scholar", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","17"]}},
-    ("semantic_scholar", "bulk", "identity_object"): {"ledger": "identity_semantic_scholar", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","{'SYNTHETIC': 'id'}"]}},
-    ("crossref", None, "identity_missing"): {"ledger": "identity_crossref", "owner": "B4", "expected": {"status": "completed", "record_ids": ["10.9999/synthetic.1","None"]}},
-    ("crossref", None, "identity_null"): {"ledger": "identity_crossref", "owner": "B4", "expected": {"status": "completed", "record_ids": ["10.9999/synthetic.1","None"]}},
-    ("crossref", None, "identity_empty"): {"ledger": "identity_crossref", "owner": "B4", "expected": {"status": "completed", "record_ids": ["10.9999/synthetic.1","None"]}},
-    ("arxiv", None, "identity_missing"): {"ledger": "identity_arxiv", "owner": "B4", "expected": {"status": "completed", "record_ids": ["2101.00001v1",""]}},
-    ("arxiv", None, "identity_null"): {"ledger": "identity_arxiv", "owner": "B4", "expected": {"status": "completed", "record_ids": ["2101.00001v1",""]}},
-    ("arxiv", None, "identity_empty"): {"ledger": "identity_arxiv", "owner": "B4", "expected": {"status": "completed", "record_ids": ["2101.00001v1",""]}},
-    ("biorxiv", None, "identity_null"): {"ledger": "identity_biorxiv", "owner": "B4", "expected": {"status": "completed", "record_ids": ["W1","None"]}},
-    ("biorxiv", None, "identity_empty"): {"ledger": "identity_biorxiv", "owner": "B4", "expected": {"status": "completed", "record_ids": ["W1",""]}},
-    ("biorxiv", None, "identity_number"): {"ledger": "identity_biorxiv", "owner": "B4", "expected": {"status": "completed", "record_ids": ["W1","17"]}},
-    ("biorxiv", None, "identity_object"): {"ledger": "identity_biorxiv", "owner": "B4", "expected": {"status": "completed", "record_ids": ["W1","{'SYNTHETIC': 'id'}"]}},
-    ("ieee_xplore", None, "identity_missing"): {"ledger": "identity_ieee_xplore", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
-    ("ieee_xplore", None, "identity_null"): {"ledger": "identity_ieee_xplore", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
-    ("ieee_xplore", None, "identity_empty"): {"ledger": "identity_ieee_xplore", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
-    ("ieee_xplore", None, "identity_number"): {"ledger": "identity_ieee_xplore", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","17"]}},
-    ("ieee_xplore", None, "identity_object"): {"ledger": "identity_ieee_xplore", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","{'SYNTHETIC': 'id'}"]}},
-    ("scopus", None, "identity_missing"): {"ledger": "identity_scopus", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
-    ("scopus", None, "identity_null"): {"ledger": "identity_scopus", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
-    ("scopus", None, "identity_empty"): {"ledger": "identity_scopus", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
-    ("scopus", None, "identity_number"): {"ledger": "identity_scopus", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","17"]}},
-    ("scopus", None, "identity_object"): {"ledger": "identity_scopus", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","{'SYNTHETIC': 'id'}"]}},
-    ("core", None, "identity_missing"): {"ledger": "identity_core", "owner": "B4", "expected": {"status": "completed", "record_ids": ["1",""]}},
-    ("core", None, "identity_null"): {"ledger": "identity_core", "owner": "B4", "expected": {"status": "completed", "record_ids": ["1",""]}},
-    ("core", None, "identity_empty"): {"ledger": "identity_core", "owner": "B4", "expected": {"status": "completed", "record_ids": ["1",""]}},
-    ("core", None, "identity_number"): {"ledger": "identity_core", "owner": "B4", "expected": {"status": "completed", "record_ids": ["1","17"]}},
-    ("core", None, "identity_object"): {"ledger": "identity_core", "owner": "B4", "expected": {"status": "completed", "record_ids": ["1","{'SYNTHETIC': 'id'}"]}},
-    ("serpapi", None, "identity_missing"): {"ledger": "identity_serpapi", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","None"]}},
-    ("serpapi", None, "identity_null"): {"ledger": "identity_serpapi", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","None"]}},
-    ("serpapi", None, "identity_empty"): {"ledger": "identity_serpapi", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
-    ("serpapi", None, "identity_number"): {"ledger": "identity_serpapi", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","17"]}},
-    ("serpapi", None, "identity_object"): {"ledger": "identity_serpapi", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","{'SYNTHETIC': 'id'}"]}},
+    ("openalex", None, "identity_null"): {"ledger": "identity_openalex", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["W1","None"]}},
+    ("openalex", None, "identity_empty"): {"ledger": "identity_openalex", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["W1",""]}},
+    ("openalex", None, "identity_number"): {"ledger": "identity_openalex", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["W1","17"]}},
+    ("openalex", None, "identity_object"): {"ledger": "identity_openalex", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["W1","{'SYNTHETIC': 'id'}"]}},
+    ("semantic_scholar", None, "identity_null"): {"ledger": "identity_semantic_scholar", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","None"]}},
+    ("semantic_scholar", None, "identity_empty"): {"ledger": "identity_semantic_scholar", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
+    ("semantic_scholar", None, "identity_number"): {"ledger": "identity_semantic_scholar", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","17"]}},
+    ("semantic_scholar", None, "identity_object"): {"ledger": "identity_semantic_scholar", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","{'SYNTHETIC': 'id'}"]}},
+    ("semantic_scholar", "bulk", "identity_null"): {"ledger": "identity_semantic_scholar", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","None"]}},
+    ("semantic_scholar", "bulk", "identity_empty"): {"ledger": "identity_semantic_scholar", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
+    ("semantic_scholar", "bulk", "identity_number"): {"ledger": "identity_semantic_scholar", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","17"]}},
+    ("semantic_scholar", "bulk", "identity_object"): {"ledger": "identity_semantic_scholar", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","{'SYNTHETIC': 'id'}"]}},
+    ("crossref", None, "identity_missing"): {"ledger": "identity_crossref", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["10.9999/synthetic.1","None"]}},
+    ("crossref", None, "identity_null"): {"ledger": "identity_crossref", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["10.9999/synthetic.1","None"]}},
+    ("crossref", None, "identity_empty"): {"ledger": "identity_crossref", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["10.9999/synthetic.1","None"]}},
+    ("arxiv", None, "identity_missing"): {"ledger": "identity_arxiv", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["2101.00001v1",""]}},
+    ("arxiv", None, "identity_null"): {"ledger": "identity_arxiv", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["2101.00001v1",""]}},
+    ("arxiv", None, "identity_empty"): {"ledger": "identity_arxiv", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["2101.00001v1",""]}},
+    ("biorxiv", None, "identity_null"): {"ledger": "identity_biorxiv", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["W1","None"]}},
+    ("biorxiv", None, "identity_empty"): {"ledger": "identity_biorxiv", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["W1",""]}},
+    ("biorxiv", None, "identity_number"): {"ledger": "identity_biorxiv", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["W1","17"]}},
+    ("biorxiv", None, "identity_object"): {"ledger": "identity_biorxiv", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["W1","{'SYNTHETIC': 'id'}"]}},
+    ("ieee_xplore", None, "identity_missing"): {"ledger": "identity_ieee_xplore", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
+    ("ieee_xplore", None, "identity_null"): {"ledger": "identity_ieee_xplore", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
+    ("ieee_xplore", None, "identity_empty"): {"ledger": "identity_ieee_xplore", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
+    ("ieee_xplore", None, "identity_number"): {"ledger": "identity_ieee_xplore", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","17"]}},
+    ("ieee_xplore", None, "identity_object"): {"ledger": "identity_ieee_xplore", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","{'SYNTHETIC': 'id'}"]}},
+    ("scopus", None, "identity_missing"): {"ledger": "identity_scopus", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
+    ("scopus", None, "identity_null"): {"ledger": "identity_scopus", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
+    ("scopus", None, "identity_empty"): {"ledger": "identity_scopus", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
+    ("scopus", None, "identity_number"): {"ledger": "identity_scopus", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","17"]}},
+    ("scopus", None, "identity_object"): {"ledger": "identity_scopus", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","{'SYNTHETIC': 'id'}"]}},
+    ("core", None, "identity_missing"): {"ledger": "identity_core", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["1",""]}},
+    ("core", None, "identity_null"): {"ledger": "identity_core", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["1",""]}},
+    ("core", None, "identity_empty"): {"ledger": "identity_core", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["1",""]}},
+    ("core", None, "identity_number"): {"ledger": "identity_core", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["1","17"]}},
+    ("core", None, "identity_object"): {"ledger": "identity_core", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["1","{'SYNTHETIC': 'id'}"]}},
+    ("serpapi", None, "identity_missing"): {"ledger": "identity_serpapi", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","None"]}},
+    ("serpapi", None, "identity_null"): {"ledger": "identity_serpapi", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","None"]}},
+    ("serpapi", None, "identity_empty"): {"ledger": "identity_serpapi", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1",""]}},
+    ("serpapi", None, "identity_number"): {"ledger": "identity_serpapi", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","17"]}},
+    ("serpapi", None, "identity_object"): {"ledger": "identity_serpapi", "owner": "B4 admission (D194)", "expected": {"status": "completed", "record_ids": ["synthetic1","{'SYNTHETIC': 'id'}"]}},
 }
 
-PENDING_B4 = {
-    "b4_merge_version": {"section": "8.1 records/integration", "owner": "B4", "case": "temp-store merge/version through facade"},
-    "b4_resume_paging": {"section": "8.1 paging", "owner": "B4", "case": "resumed paging through facade"},
-    "b4_resume_lookup": {"section": "8.1 paging/integration", "owner": "B4", "case": "resumed lookup through facade"},
-    "l": {"section": "7, 8.1 payload", "owner": "B4", "case": "nested key in raw_payload and record.raw; sanitize before persistence; digest sanitized form",
-          "reproduction": "OpenAlex positive body plus results[0].SYNTHETIC_nested={key: supplied key}; raw_payload and record.raw retain it on 5990b02; no B2 leak assertion"},
-    "b4_payload_write": {"section": "7, 8.1 integration", "owner": "B4", "case": "failed payload write publishes no success"},
-    "b4_limit_provenance": {"section": "6.2, 8.1 errors", "owner": "B4", "case": "quota versus rate limit in step error and pause reason"},
-    "b4_s2_binding": {"section": "4, 8.1 identity", "owner": "B4", "case": "S2 batch reorder binding by externalIds"},
-    "b4_stored_revision": {"section": "9, 8.1 integration", "owner": "B4", "case": "stored adapter-revision refusal"},
+B4_EVIDENCE = {
+    "b4_merge_version": "test_connector_dispatch::test_merge_and_arxiv_versions",
+    "b4_resume_paging": "test_connector_dispatch::test_resume_provenance",
+    "l": "test_connector_dispatch::test_payload_echo_recorded",
+    "b4_payload_write": "test_connector_dispatch::test_payload_write_failure_publishes_nothing",
+    "b4_limit_provenance": "test_connector_dispatch::test_limit_discovery_and_suppression",
+    "b4_s2_binding": "test_connector_dispatch::test_s2_binding",
+    "b4_stored_revision": "test_connector_dispatch::test_resume_provenance",
 }
 
 COVERED_ELSEWHERE = {
@@ -428,10 +426,13 @@ def test_pending_and_existing_evidence():
     rows = {line.split("|")[1].strip().split(".")[0]: line.split("|")[-2].strip()
             for line in ledger.splitlines() if line.startswith("| ")}
     assert rows["option_types"] == "B3a fixed (D179)"
-    for name, entry in PENDING_B4.items():
-        assert rows[name] == entry["owner"], name
+    for name, target in B4_EVIDENCE.items():
+        assert rows[name] == "B4 fixed (D194)", name
+        module, function = target.split("::")
+        assert callable(getattr(importlib.import_module(module), function)), target
+    assert rows["b4_resume_lookup"] == "Lookup capability binding; unscheduled (D194)"
     for name, entry in IDENTITY_KNOWN_MISMATCHES.items():
-        assert rows[entry["ledger"]] == entry["owner"] == "B4", name
+        assert rows[entry["ledger"]] == entry["owner"] == "B4 admission (D194)", name
     for target in COVERED_ELSEWHERE.values():
         module, function = target.split("::")
         assert callable(getattr(importlib.import_module(module), function)), target
@@ -539,7 +540,7 @@ def test_dispatched_missing_key_alone_pauses_then_retry_sends_once(dispatch_flow
 
 
 @pytest.mark.parametrize("key", [None, SYNTHETIC_KEY])
-def test_dispatch_reads_the_key_once_per_attempt(dispatch_flow, key):
+def test_dispatch_reads_the_key_once_per_attempt(dispatch_flow, monkeypatch, key):
     flow, new_run = dispatch_flow
     run = new_run()
     reads, sends = [], []
@@ -549,15 +550,18 @@ def test_dispatch_reads_the_key_once_per_attempt(dispatch_flow, key):
     async def search(http, query, limit, checked, contact, **kwargs):
         sends.append(checked)
         return SearchOutcome("zero_results", None, "SYNTHETIC", "api_key")
-    connector = SimpleNamespace(provider_id="ieee_xplore", key_required=True, api_key=api_key, search=search)
+    connector = replace(registry.CONNECTORS["ieee_xplore"], search=search)
+    monkeypatch.setitem(registry.CONNECTORS, "ieee_xplore", connector)
+    monkeypatch.setattr(registry.Connector, "api_key", lambda self: api_key())
     outcome = asyncio.run(flow._send_search(run["id"], connector, {"query_text": baseline.QUERY}, 1))
+    outcome = outcome.outcome if isinstance(outcome, facade.Dispatched) else outcome
     assert len(reads) == 1
     assert sends == ([key] if key else [])
     assert outcome.status == ("zero_results" if key else "not_configured")
     assert flow.store.run(run["id"])["usage"].get("provider_requests", 0) == (1 if key else 0)
 
 
-def test_transient_retry_refreshes_snapshot_before_counting(dispatch_flow):
+def test_transient_retry_refreshes_snapshot_before_counting(dispatch_flow, monkeypatch):
     flow, new_run = dispatch_flow
     run = new_run()
     reads, sends = [], []
@@ -567,7 +571,9 @@ def test_transient_retry_refreshes_snapshot_before_counting(dispatch_flow):
     async def search(*args, **kwargs):
         sends.append(args[3])
         return SearchOutcome("failed", "before_send", "SYNTHETIC", "api_key")
-    connector = SimpleNamespace(provider_id="ieee_xplore", key_required=True, api_key=api_key, search=search)
+    connector = replace(registry.CONNECTORS["ieee_xplore"], search=search)
+    monkeypatch.setitem(registry.CONNECTORS, "ieee_xplore", connector)
+    monkeypatch.setattr(registry.Connector, "api_key", lambda self: api_key())
     with fake_clock() as waits:
         outcome = asyncio.run(flow._send_search(run["id"], connector, {"query_text": baseline.QUERY}, 1))
     assert len(reads) == 2 and sends == [SYNTHETIC_KEY] and waits == [1.5]
@@ -628,10 +634,12 @@ def test_kill_dispatch_reads_the_key_once_per_attempt(candidate_lib, monkeypatch
     async def search(http, query, limit, checked, contact, **kw):
         sends.append(checked)
         return SearchOutcome("zero_results", None, "SYNTHETIC", "api_key")
-    source = SimpleNamespace(provider_id="ieee_xplore", key_required=True, api_key=api_key, search=search)
+    source = replace(registry.CONNECTORS["ieee_xplore"], search=search)
+    monkeypatch.setattr(registry.Connector, "api_key", lambda self: api_key())
     monkeypatch.setitem(registry.CONNECTORS, "ieee_xplore", source)
     outcome = asyncio.run(lib.flow._kill_search_request(run, query))
     assert len(reads) == 1 and sends == ([key] if key else [])
+    outcome = outcome.outcome if isinstance(outcome, facade.Dispatched) else outcome
     assert outcome.status == ("zero_results" if key else "not_configured")
     reserve = run["target"]["transport"]["providers"][0]["requests_per_search"] * (1 + run["target"]["transport"]["providers"][0]["rate_limit_retries"])
     assert lib.store.run(run["id"])["usage"].get("provider_requests",0) == (reserve if key else 0)
@@ -660,6 +668,7 @@ def test_pubmed_efetch_quota_stops_later_searches(dispatch_flow, monkeypatch):
     source = registry.CONNECTORS["pubmed"]
     try:
         first = asyncio.run(flow._send_search(run["id"], source, {"query_text":"SYNTHETIC first"}, 1))
+        first = first.outcome if isinstance(first, facade.Dispatched) else first
         assert first.error_kind == "quota_exhausted"
         second = asyncio.run(flow._send_search(run["id"], source, {"query_text":"SYNTHETIC later"}, 1))
         assert second.error_kind == "quota_exhausted" and second.delivery_class == "before_send"

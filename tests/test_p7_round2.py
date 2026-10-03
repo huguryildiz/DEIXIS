@@ -100,19 +100,21 @@ def quota_flow(tmp_path):
     conn.close()
 
 
-def connector(provider, calls):
+def connector(provider, calls, monkeypatch):
     async def search(*args, **kwargs):
         calls.append(provider)
         return common.SearchOutcome("rate_limited", "rejected_not_executed", "SYNTHETIC", "keyless",
                                     error_kind="quota_exhausted")
-    return SimpleNamespace(provider_id=provider, search=search, api_key=lambda: None, access_mode=lambda: "keyless", key_required=False)
+    source = replace(CONNECTORS[provider], search=search, key_env=None, key_required=False)
+    monkeypatch.setitem(CONNECTORS, provider, source)
+    return source
 
 
-def test_exhausted_provider_is_suppressed_only_in_its_run(quota_flow):
+def test_exhausted_provider_is_suppressed_only_in_its_run(quota_flow, monkeypatch):
     flow, new_run = quota_flow
     run = new_run()
     calls = []
-    first, other = connector("openalex", calls), connector("crossref", calls)
+    first, other = connector("openalex", calls, monkeypatch), connector("crossref", calls, monkeypatch)
     async def exercise():
         await flow._send_search(run["id"], first, {"query_text": "one"}, 3)
         blocked = await flow._send_search(run["id"], first, {"query_text": "two"}, 3)
@@ -130,7 +132,7 @@ def test_execute_resets_quota_guard_on_same_flow(quota_flow, monkeypatch):
     flow, new_run = quota_flow
     run = new_run()
     calls = []
-    source = connector("openalex", calls)
+    source = connector("openalex", calls, monkeypatch)
 
     async def execute_run(run_id):
         await flow._send_search(run_id, source, {"query_text": "one"}, 3)
@@ -197,7 +199,7 @@ def test_count_probe_obeys_search_quota_guard(quota_flow, monkeypatch):
     flow, new_run = quota_flow
     run = new_run()
     calls = []
-    source = connector("openalex", calls)
+    source = connector("openalex", calls, monkeypatch)
     monkeypatch.setitem(module.CONNECTORS, "openalex", source)
     async def count(*args, **kwargs):
         calls.append("count")
@@ -222,4 +224,4 @@ def test_recorded_search_and_pause_preserve_quota_kind(quota_flow):
     reason, detail = flow._record_search(run, step, {"provider_id": "openalex", "query_text": "one"}, outcome, 3)
     row = flow.store.conn.execute("SELECT error_json FROM search_runs WHERE run_id = ?", (run["id"],)).fetchone()
     assert json.loads(row[0])["error_kind"] == "quota_exhausted"
-    assert reason == "provider_rate_limited" and detail["error_kind"] == "quota_exhausted"
+    assert reason == "provider_quota_exhausted" and detail["error_kind"] == "quota_exhausted"

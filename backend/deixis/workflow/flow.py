@@ -37,7 +37,7 @@ from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
-from deixis.providers import openalex, query_compiler
+from deixis.providers import openalex, query_compiler, facade, contract
 from deixis.providers.common import FIRST_PAGE, MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi
 from deixis.providers.registry import CONNECTORS, Connector, endpoint_options, reading, search_providers
 from deixis.storage.db import dumps, new_id, now, transaction
@@ -248,6 +248,7 @@ class _PageRead:
     stop_reason: str | None  # decided when the page arrived
     started_at: str          # the request's own clock, which its step carries
     finished_at: str
+    dispatched: facade.Dispatched | None = None
 
 
 @dataclass
@@ -261,13 +262,14 @@ class _QueryRead:
     ended: bool = False
 
 
-def _stop_reason(connector: Connector, outcome: SearchOutcome, ok: bool, read_total: int, read_limit: int) -> str | None:
+def _stop_reason(connector: Connector, outcome: SearchOutcome, ok: bool, read_total: int, read_limit: int,
+                 returned_count: int | None = None) -> str | None:
     """Why this page ends the query's read, or None while another page follows."""
     if not ok:
         return "page_failed"
     if connector.paging == "single_page":
         return "single_page"
-    if outcome.next_cursor is None or not outcome.records:
+    if outcome.next_cursor is None or not (len(outcome.records) if returned_count is None else returned_count):
         # The provider has no more. An empty page ends the read even when it carries a cursor: the read total would
         # not grow, and the query would ask for empty pages until its request allowance ran out.
         return "exhausted"
@@ -1694,6 +1696,7 @@ class ResearchFlow:
         connector = CONNECTORS["openalex"]
         attempts = 0
         while True:
+            operation_key = connector.api_key()
             self.store.add_usage(run_id, "chain_requests")
             # The provider's own rate-limit retries are requests too: they get only what the chain's limit leaves.
             left = run["budget"]["max_chain_requests"] - self.store.run(run_id)["usage"].get("chain_requests", 0)
@@ -1701,9 +1704,9 @@ class ResearchFlow:
             async with fetch_module.host_gate(openalex.WORKS_URL):
                 if cites is not None:
                     outcome = await openalex.citing_works(self.deps.http, cites, cursor or FIRST_PAGE, per_page,
-                                                          connector.api_key(), self.deps.settings.contact_email, retries)
+                                                          operation_key, self.deps.settings.contact_email, retries)
                 else:
-                    outcome = await openalex.works_by_ids(self.deps.http, batch or [], connector.api_key(),
+                    outcome = await openalex.works_by_ids(self.deps.http, batch or [], operation_key,
                                                           self.deps.settings.contact_email, retries)
             if outcome.retries:
                 self.store.add_usage(run_id, "chain_requests", outcome.retries)
@@ -1714,12 +1717,13 @@ class ResearchFlow:
                 continue
             break
         self._record_chain(run, step, key, direction, outcome, forms, links, cites=cites, page=page, batch=batch,
-                           per_page=per_page)
+                           per_page=per_page, operation_key=operation_key)
         return self.store.step(run_id, key, chaining.STEP_KIND)["output"] if outcome.status in ("completed", "zero_results") else None
 
     def _record_chain(self, run: dict[str, Any], step: dict[str, Any], key: str, direction: str, outcome: SearchOutcome,
                       forms: dict[str, list[str]], links: list[Any], *, cites: str | None, page: int | None,
-                      batch: list[str] | None = None, per_page: int = CHAIN_CITING_PAGE) -> None:
+                      batch: list[str] | None = None, per_page: int = CHAIN_CITING_PAGE,
+                      operation_key: str | None = None) -> None:
         """Write one answered chain request: the filter runs first, and only the records that pass are written, as a
         search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is kept, passing
         or not, in `chain_links`."""
@@ -1727,6 +1731,7 @@ class ResearchFlow:
         settings = self.deps.settings
         payload_path = payload_digest = None
         if outcome.raw_payload is not None:
+            outcome.raw_payload = facade.sanitize(outcome.raw_payload, (operation_key,))
             settings.payloads_dir.mkdir(parents=True, exist_ok=True)
             payload_path = f"{step['id']}.json"
             (settings.payloads_dir / payload_path).write_text(json.dumps(outcome.raw_payload), encoding="utf-8")
@@ -1740,7 +1745,8 @@ class ResearchFlow:
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
             result_count=len(passed), provider_total=outcome.provider_total, page_limit=per_page,
             error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit,
-                              "returned": len(outcome.records), "passed_filter": len(passed)}),
+                              "returned": len(outcome.records), "passed_filter": len(passed)}
+                             | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {})),
             raw_payload_path=payload_path, payload_sha256=payload_digest,
             **({"page_number": page} if page is not None else {}),
         )
@@ -1762,7 +1768,8 @@ class ResearchFlow:
                 final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
                 self.store.record_search(search_fields, "openalex", [], payload_path, step["id"], final,
                                          error_code=outcome.status,
-                                         error={"error": outcome.error, "http_status": outcome.http_status},
+                                         error={"error": outcome.error, "http_status": outcome.http_status}
+                                         | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {}),
                                          delivery_class=outcome.delivery_class)
                 return
             became = {record.provider_record_id: self.store.find_source_by_identifier("openalex", record.provider_record_id)
@@ -2030,7 +2037,7 @@ class ResearchFlow:
         return True
 
     async def _send_search(self, run_id: str, connector: Connector, query: dict[str, Any], limit: int,
-                           page: Page | None = None, stop: Callable[[], bool] | None = None) -> SearchOutcome | None:
+                           page: Page | None = None, stop: Callable[[], bool] | None = None) -> SearchOutcome | facade.Dispatched | None:
         """Send one search request, with its bounded retries, counting each against the run and, for an sw page,
         against the query's own count too (D89). Exhausted providers are remembered for this execution in memory;
         later searches send nothing and consume no request allowance. Every resume or retry resets the guard.
@@ -2050,10 +2057,11 @@ class ResearchFlow:
                                      "api_key" if key else "keyless", error_kind="quota_exhausted")
             self.store.add_usage(run_id, "provider_requests", query=query_key)
             # A paged read supplies the connector's search options.
-            outcome = await connector.search(self.deps.http, query["query_text"], limit, key,
+            dispatched = await facade.dispatch_search(connector.provider_id, self.deps.http, query["query_text"], limit, key,
                                              self.deps.settings.contact_email,
                                              **({"cursor": page.cursor, "max_rate_limit_retries": page.rate_limit_retries,
                                                  **connector.sw_options, **endpoint_options(query)} if page else {}))
+            outcome = dispatched.outcome
             if outcome.error_kind == "quota_exhausted":
                 self._quota_out.setdefault(run_id, set()).add(connector.provider_id)
             if outcome.retries:
@@ -2064,11 +2072,12 @@ class ResearchFlow:
                 if stop is not None and stop():
                     return None
                 continue
-            return outcome
+            return dispatched
 
-    def _record_search(self, run: dict[str, Any], step: dict[str, Any], query: dict[str, Any], outcome: SearchOutcome,
+    def _record_search(self, run: dict[str, Any], step: dict[str, Any], query: dict[str, Any], outcome: SearchOutcome | facade.Dispatched,
                        limit: int, page: Page | None = None, stop_reason: str | None = None,
-                       finished_at: str | None = None) -> tuple[str, dict[str, Any]] | None:
+                       finished_at: str | None = None,
+                       dispatched: facade.Dispatched | None = None) -> tuple[str, dict[str, Any]] | None:
         """Write one answered request: its payload, its search run, its records and its step's ending together.
 
         For an sw page, `stop_reason` is the one the read decided when the page arrived (`_read_query`).
@@ -2077,6 +2086,14 @@ class ResearchFlow:
         run_id, rid = run["id"], run["research_id"]
         settings = self.deps.settings
         provider = CONNECTORS[query["provider_id"]].provider_id
+        if isinstance(outcome, facade.Dispatched):
+            dispatched, outcome = outcome, outcome.outcome
+        if outcome.status in ("adapter_revision_changed", "connector_provenance_invalid"):
+            self.store.finish_step(step["id"], "failed", output={"status": outcome.status, "result_count": 0},
+                                   error_code=outcome.status, error={"error": outcome.error},
+                                   delivery_class="before_send", finished_at=finished_at)
+            return "provider_adapter_revision_changed", {"provider": provider, "http_status": None,
+                                                         "error_kind": None, "retry_after": None}
         if outcome.status == "not_configured":
             # No provider request existed: preserve a retryable step, without a retrieval row (D178).
             self.store.finish_step(step["id"], "failed", output={"status": "not_configured", "result_count": 0},
@@ -2102,11 +2119,12 @@ class ResearchFlow:
                              # never silent (D88).
                              | ({"rate_limit_retries": page.rate_limit_retries} if page else {})),
             raw_payload_path=payload_path, payload_sha256=payload_digest,
+            connector_json=dumps(dispatched.connector) if dispatched is not None else None,
         )
         ok = outcome.status in ("completed", "zero_results")
         read_total = None
         if page is not None:
-            read_total = page.read_before + len(outcome.records)
+            read_total = page.read_before + (dispatched.returned_count if dispatched else len(outcome.records))
             # The total a later page did not repeat is the one an earlier page reported; unknown stays NULL, not zero.
             total = outcome.provider_total if outcome.provider_total is not None else page.known_total
             search_fields |= dict(
@@ -2115,6 +2133,8 @@ class ResearchFlow:
             )
         if ok:
             output = {"status": outcome.status, "result_count": len(outcome.records)}
+            if dispatched is not None and dispatched.dropped_records:
+                output["dropped_records"] = dispatched.dropped_records
             if page is not None:
                 output |= {"page": page.number, "next_cursor": outcome.next_cursor, "read_total": read_total,
                            "provider_total": outcome.provider_total, "stop_reason": stop_reason}
@@ -2124,10 +2144,14 @@ class ResearchFlow:
             return None
         final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
         self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], final,
-                                 error_code=outcome.status, error={"error": outcome.error, "http_status": outcome.http_status},
+                                 step_output={"dropped_records": dispatched.dropped_records}
+                                 if dispatched is not None and dispatched.dropped_records else None,
+                                 error_code=outcome.status, error={"error": outcome.error, "http_status": outcome.http_status}
+                                 | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {}),
                                  delivery_class=outcome.delivery_class, first_rank=page.read_before if page else 0,
                                  finished_at=finished_at)
-        return f"provider_{outcome.status}", {"provider": provider, "http_status": outcome.http_status,
+        reason = "provider_quota_exhausted" if outcome.error_kind == "quota_exhausted" else f"provider_{outcome.status}"
+        return reason, {"provider": provider, "http_status": outcome.http_status,
                                               "error_kind": outcome.error_kind,
                                               "retry_after": outcome.rate_limit.get("retry-after")}
 
@@ -2232,6 +2256,25 @@ class ResearchFlow:
             progress.set()
         return False
 
+    def _continuation_error(self, step, connector):
+        row = self.store.conn.execute("SELECT connector_json FROM search_runs WHERE step_id = ?", (step["id"],)).fetchone()
+        if row is None:
+            return "connector_provenance_invalid"
+        if row["connector_json"] is None:
+            return None  # Pre-B4 pages retain compatibility continuation.
+        try:
+            recorded = json.loads(row["connector_json"])
+        except (ValueError, TypeError):
+            return "connector_provenance_invalid"
+        if (not isinstance(recorded, dict) or not isinstance(recorded.get("contract_id"), str)
+                or type(recorded.get("adapter_revision")) is not int):
+            return "connector_provenance_invalid"
+        current = facade.CompatibilityConnector(CONNECTORS[connector.provider_id]).descriptor
+        if (recorded["contract_id"] not in contract.SUPPORTED_CONTRACTS
+                or recorded["adapter_revision"] != current.adapter_revision):
+            return "adapter_revision_changed"
+        return None
+
     async def _read_query(self, run: dict[str, Any], read: _QueryRead, retry_failed: bool, effort: str,
                           abort: asyncio.Event | None = None) -> bool:
         """Read one sw query page by page up to this effort's read limit, holding each page for `_write_query`.
@@ -2245,6 +2288,7 @@ class ResearchFlow:
         query_key = f"search:{read.index}"
         allowance = page_allowance(read.query, effort, run["budget"])
         cursor, before, number, known_total = FIRST_PAGE, 0, 0, None
+        continuation_step = None
         while True:
             key = query_key if number == 0 else f"{query_key}:page:{number}"
             step = self.store.existing_step(run_id, key)
@@ -2253,6 +2297,7 @@ class ResearchFlow:
                 output = (step["output"] or {}) if status == "succeeded" else {}
                 if status != "succeeded" or output.get("stop_reason") or not output.get("next_cursor"):
                     return False
+                continuation_step = step
                 before = output.get("read_total", before)
                 if output.get("provider_total") is not None:
                     known_total = output["provider_total"]
@@ -2269,6 +2314,17 @@ class ResearchFlow:
                 # nothing is sent, and the step of the page it would have asked for says why (D89).
                 read.allowance_ended = key
                 return False
+            if continuation_step is not None:
+                error = self._continuation_error(continuation_step, connector)
+                if error is not None:
+                    refused_page = Page(number, cursor, before, known_total, SW_READ_LIMIT[effort],
+                                        PROVIDER_WAIT[effort], query_key, allowance)
+                    read.pages.append(_PageRead(key, refused_page,
+                        SearchOutcome(error, "before_send", "Continuation refused", "keyless", error=error),
+                        0, "page_failed", now(), now()))
+                    read.ended = True
+                    return False
+                continuation_step = None
             if number and connector.page_gap:
                 await asyncio.sleep(connector.page_gap)  # only before a page that is really requested
                 if (abort is not None and abort.is_set()) or self._stop_requested(run_id, revision):
@@ -2285,12 +2341,15 @@ class ResearchFlow:
                 stop=lambda: (abort is not None and abort.is_set()) or self._stop_requested(run_id, revision))
             if outcome is None:
                 return True
+            dispatched = outcome if isinstance(outcome, facade.Dispatched) else None
+            returned_count = dispatched.returned_count if dispatched else len(outcome.records)
+            outcome = dispatched.outcome if dispatched else outcome
             ok = outcome.status in ("completed", "zero_results")
-            read_total = before + len(outcome.records)
-            stop_reason = _stop_reason(connector, outcome, ok, read_total, page.read_limit)
+            read_total = before + returned_count
+            stop_reason = _stop_reason(connector, outcome, ok, read_total, page.read_limit, returned_count)
             if stop_reason is None and self._query_requests(run_id, query_key) >= allowance:
                 stop_reason = "budget_exhausted"  # the next page would need a request the query no longer has (D89)
-            read.pages.append(_PageRead(key, page, outcome, limit, stop_reason, started, now()))
+            read.pages.append(_PageRead(key, page, outcome, limit, stop_reason, started, now(), dispatched))
             if stop_reason:
                 return False
             before = read_total
@@ -2311,7 +2370,7 @@ class ResearchFlow:
                 step = self.store.step(run["id"], held.key, kind)
                 self.store.start_step(step["id"], started_at=held.started_at)
                 failure = self._record_search(run, step, read.query, held.outcome, held.limit, held.page,
-                                              held.stop_reason, held.finished_at) or failure
+                                              held.stop_reason, held.finished_at, held.dispatched) or failure
         if read.allowance_ended is not None:
             step = self.store.step(run["id"], read.allowance_ended, kind)
             if step["status"] != "cancelled":  # a resumed run finds it already closed and writes nothing again
@@ -4682,7 +4741,7 @@ class ResearchFlow:
         except InvalidCandidateInput:
             self._fail(run["id"], "candidate_publication_failed")
 
-    async def _kill_search_request(self, run: dict, query: dict) -> SearchOutcome:
+    async def _kill_search_request(self, run: dict, query: dict) -> SearchOutcome | facade.Dispatched:
         """One logical query, no paging/enrichment; reservations survive uncertain delivery."""
         from deixis.workflow.candidates.run import KILL_RECORDS
         connector = CONNECTORS[query["provider_id"]]
@@ -4700,16 +4759,19 @@ class ResearchFlow:
                     return SearchOutcome("transport_budget", "before_send", "unsent: transport budget", "api_key" if key else "keyless")
                 # Conservatively charge the whole possible HTTP attempt, never refund it.
                 self.store.add_usage(run["id"], "provider_requests", reserve)
-            outcome = await connector.search(self.deps.http, query["query_text"], KILL_RECORDS,
+            dispatched = await facade.dispatch_search(connector.provider_id, self.deps.http, query["query_text"], KILL_RECORDS,
                 key, self.deps.settings.contact_email, **endpoint_options(query))
+            outcome = dispatched.outcome
             if outcome.delivery_class != "before_send" or outcome.status != "failed" or attempt + 1 == transport["transient_attempts"]:
-                return outcome
+                return dispatched
             await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1))
         raise AssertionError("bounded transport has no attempts")
 
     def _kill_search_record_query(self, run: dict, search: dict, step: dict, position: int,
-                                  query: dict, outcome: SearchOutcome) -> None:
+                                  query: dict, outcome: SearchOutcome | facade.Dispatched) -> None:
         from deixis.workflow.candidates.store import CandidateStore, TERMINAL_OUTCOMES
+        dispatched = outcome if isinstance(outcome, facade.Dispatched) else None
+        outcome = dispatched.outcome if dispatched else outcome
         ok = outcome.status in ("completed", "zero_results")
         status = "succeeded" if ok else "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
         with transaction(self.store.conn):
@@ -4727,9 +4789,13 @@ class ResearchFlow:
             cs.record_query(search["id"], position=position, provider=query["provider_id"],
                 query_text=query["query_text"], status=status, records=outcome.records if ok else [],
                 error_code=None if ok else outcome.status, raw_payload_path=path, payload_sha256=digest, step_id=step["id"])
-            self.store.finish_step(step["id"], status, output={"status": outcome.status, "result_count": len(outcome.records) if ok else 0},
+            output = {"status": outcome.status, "result_count": len(outcome.records) if ok else 0}
+            if dispatched is not None and dispatched.dropped_records:
+                output["dropped_records"] = dispatched.dropped_records
+            self.store.finish_step(step["id"], status, output=output,
                 error_code=None if ok else outcome.status, delivery_class=outcome.delivery_class,
-                error=None if ok else {"error": outcome.error, "http_status": outcome.http_status})
+                error=None if ok else {"error": outcome.error, "http_status": outcome.http_status}
+                | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {}))
 
     def _kill_search_summary(self, run: dict, search: dict, outcomes: dict, failure_code=None) -> dict:
         from deixis.workflow.candidates.run import search_summary

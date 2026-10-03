@@ -15,7 +15,8 @@ criterion names a comparator and both reading runs find no part of one more work
 a `comparator_exclusion_withheld` row), "[read-fails]" (the first reading run of the
 person's file of case L answers nothing usable, so the file is not read until the person asks again),
 "[fill-fails-one-row]" (every extraction for the fixed bisection study returns invalid JSON, including its bounded
-repair; the other rows fill normally, so the missing-row report choice can be exercised).
+repair; the other rows fill normally, so the missing-row report choice can be exercised),
+"[answer-hold]" (a grounded-answer call waits for `answer-release` in the fixture data directory, failing after 60 s).
 
 `DEIXIS_FIXTURE_QUEUE=on` (case J, slice 17) switches on retrieval and reading and serves the queue works below instead
 of the A–I records; every other case leaves it unset and gets the server it always had. `DEIXIS_FIXTURE_AUDIT=on` (cases
@@ -464,6 +465,13 @@ class ScriptedCodex:
                                   "quote_number": len(pair["allowed_quotes"]) + 1 if "[report-bad-anchor]" in question else 1}
                                  for pair in pairs], "claims": []}
             return ModelStepResult("completed", raw_text=json.dumps(patch), resolved_model=requested_model)
+        if task == "grounded_answer" and "[answer-hold]" in question:
+            for _ in range(600):
+                if self.data_dir is not None and (self.data_dir / "answer-release").exists():
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                return ModelStepResult("failed", error="SYNTHETIC answer hold timed out")
         if task == "owner_review" and "[review-hold]" in question:
             for _ in range(600):
                 if self.data_dir is not None and (self.data_dir / "review-release").exists():

@@ -137,8 +137,6 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const keyTerms = useRef<HTMLInputElement>(null)
   const jumped = useRef(false)
   const lastRun = useRef<{ id: string; status: RunStatus } | null>(null)
-  const focusRuns = useRef<Run[]>([])
-  useEffect(() => { focusRuns.current = view?.runs ?? [] }, [view])
   // Runs another toast already announced when they were opened (a person's file whose attach opened its reading, 18b).
   const announcedRuns = useRef(new Set<string>())
   const titleInput = useRef<HTMLTextAreaElement>(null)
@@ -267,10 +265,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
   // Only the run returned by this successful request can receive its focus handoff.
   const toRunStatus = (runId: string, origin: Element | null) => { focusWhenLost(() => {
-    const runs = focusRuns.current.filter(r => TRANSCRIPT_KINDS.has(r.kind)).reverse()
-    const index = runs.findIndex(r => r.id === runId)
-    return (index >= 0 ? document.querySelectorAll<HTMLElement>('.chat-turn .chat-toggle')[index] : null)
-      ?? document.querySelector<HTMLElement>(`.run-strip-status[data-run-id="${runId}"]`)
+    const escapedId = CSS.escape(runId)
+    return document.querySelector<HTMLElement>(`.chat-turn .chat-toggle[data-run-id="${escapedId}"]`)
+      ?? document.querySelector<HTMLElement>(`.run-strip-status[data-run-id="${escapedId}"]`)
   }, 2500, false, origin) }
   const startAnswer = async () => {
     const origin = document.activeElement

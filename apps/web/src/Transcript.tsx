@@ -564,7 +564,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const waitingNext = collapsed ? order.filter((_, i) => phaseStates[i] === 'waiting').map(key => t((key === 'pdf' && attachedOnly ? attachedTitles(included.length) : titles[key])[2]).toLocaleLowerCase(uiLocale())) : []
   return <section className={`chat-turn${active ? ' is-active' : ''}`}>
     <div className="chat-group">
-      <button type="button" className="chat-toggle" aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
+      <button type="button" className="chat-toggle" data-run-id={run.id} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
         {expanded ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
         <span className={active ? 'shimmer-text' : undefined}>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span>
         {active && <LoaderCircle size={14} className="chat-spin" aria-hidden />}

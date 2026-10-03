@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, request as apiRequest, test, type Browser, type Locator, type Page } from '@playwright/test'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 // P9 H6 accessibility audit (plan X01 to X06). Synthetic records and a scripted model: this measures the interface,
@@ -957,19 +957,55 @@ async function press(page: Page, key: string, step: string, expected?: () => Pro
   return audit(page, `${step} [${key}]`, tab ? 'tab' : 'action')
 }
 
-async function tabTo(page: Page, target: Locator, step: string, opts: { max?: number; shift?: boolean } = {}) {
+class TabTargetGoneError extends Error {
+  constructor(step: string) { super(`target gone while tabbing to "${step}"`) }
+}
+
+async function tabTo(page: Page, target: Locator, step: string, opts: { max?: number; shift?: boolean; transient?: boolean } = {}) {
   const max = opts.max ?? 160
-  await expect(target.first()).toBeVisible()
-  const is = () => target.first().evaluate(el => el === document.activeElement, undefined, { timeout: 3000 }).catch(() => false)
-  if (await is()) { await audit(page, step); return }
-  // Tab forward to a control after the focus point, Shift+Tab back to one before it.
-  const before = opts.shift ?? await target.first().evaluate(el => document.activeElement !== document.body && !!(el.compareDocumentPosition(document.activeElement!) & Node.DOCUMENT_POSITION_FOLLOWING))
-  for (let i = 0; i < max; i++) {
-    await page.keyboard.press(before ? 'Shift+Tab' : 'Tab')
+  // Persistent controls can detach during a reload; each focus check waits for them to reappear.
+  if (!opts.transient) {
+    await expect(target.first()).toBeVisible()
+    const is = () => target.first().evaluate(el => el === document.activeElement, undefined, { timeout: 3000 }).catch(() => false)
     if (await is()) { await audit(page, step); return }
+    // Tab forward to a control after the focus point, Shift+Tab back to one before it.
+    const before = opts.shift ?? await target.first().evaluate(el => document.activeElement !== document.body && !!(el.compareDocumentPosition(document.activeElement!) & Node.DOCUMENT_POSITION_FOLLOWING))
+    for (let i = 0; i < max; i++) {
+      await page.keyboard.press(before ? 'Shift+Tab' : 'Tab')
+      if (await is()) { await audit(page, step); return }
+      await audit(page, `${step} (on the way, ${i + 1})`, 'tab')
+    }
+    const where = await target.first().evaluate(el => `${el.tagName} "${(el.textContent ?? '').trim().slice(0, 30)}" tabindex=${el.getAttribute('tabindex')} selected=${el.getAttribute('aria-selected')} inert=${!!el.closest('[inert]')} hidden=${!!el.closest('[hidden],[aria-hidden=true]')}`).catch(() => 'target gone')
+    throw new Error(`could not reach "${step}" with ${max} Tab presses; target is ${where}`)
+  }
+  // evaluateAll reads the current match without waiting for a removed control to reappear.
+  // A replacement portal is the next match, so the walk follows the current toast.
+  const state = async () => {
+    const value = await target.first().evaluateAll(elements => {
+      const el = elements[0]
+      return el ? {
+        focused: el === document.activeElement,
+        before: document.activeElement !== document.body && !!(el.compareDocumentPosition(document.activeElement!) & Node.DOCUMENT_POSITION_FOLLOWING),
+      } : null
+    })
+    if (!value) throw new TabTargetGoneError(step)
+    return value
+  }
+  const current = await state()
+  if (current.focused) { await audit(page, step); return }
+  // Tab forward to a control after the focus point, Shift+Tab back to one before it.
+  const before = opts.shift ?? current.before
+  for (let i = 0; i < max; i++) {
+    await state()
+    await page.keyboard.press(before ? 'Shift+Tab' : 'Tab')
+    if ((await state()).focused) { await audit(page, step); return }
     await audit(page, `${step} (on the way, ${i + 1})`, 'tab')
   }
-  const where = await target.first().evaluate(el => `${el.tagName} "${(el.textContent ?? '').trim().slice(0, 30)}" tabindex=${el.getAttribute('tabindex')} selected=${el.getAttribute('aria-selected')} inert=${!!el.closest('[inert]')} hidden=${!!el.closest('[hidden],[aria-hidden=true]')}`).catch(() => 'target gone')
+  const where = await target.first().evaluateAll(elements => {
+    const el = elements[0]
+    return el ? `${el.tagName} "${(el.textContent ?? '').trim().slice(0, 30)}" tabindex=${el.getAttribute('tabindex')} selected=${el.getAttribute('aria-selected')} inert=${!!el.closest('[inert]')} hidden=${!!el.closest('[hidden],[aria-hidden=true]')}` : 'target gone'
+  })
+  if (where === 'target gone') throw new TabTargetGoneError(step)
   throw new Error(`could not reach "${step}" with ${max} Tab presses; target is ${where}`)
 }
 
@@ -979,7 +1015,13 @@ async function tabTo(page: Page, target: Locator, step: string, opts: { max?: nu
 async function dismissToastsByKeyboard(page: Page) {
   const button = page.getByRole('button', { name: 'Dismiss notification' })
   if (!await button.count()) return
-  await tabTo(page, button, 'Dismiss notification', { shift: false })
+  try {
+    await tabTo(page, button, 'Dismiss notification', { shift: false, transient: true })
+  } catch (error) {
+    if (!(error instanceof TabTargetGoneError)) throw error
+    observations.push('Dismiss notification: toast left before keyboard dismissal; no Enter or focus-return audit.')
+    return
+  }
   await page.keyboard.press('Enter')
   await expect(button).toHaveCount(0)
   await quiet(page)
@@ -1321,6 +1363,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await press(page, 'Enter', 'Add column button', () => expect(editor).toHaveCount(0))
     await tabTo(page, page.getByRole('button', { name: /^Fill empty cells/ }), 'Fill empty cells')
     await press(page, 'Enter', 'Fill empty cells', () => expect(page.locator('[data-cell="0:0"]')).toContainText('SYNTHETIC fake value', { timeout: 60_000 }))  // a text column here
+    await expect(page.locator('.evidence-run')).toHaveCount(0, { timeout: 60_000 })
     await dismissToastsByKeyboard(page)
     const cell = page.locator('[data-cell="0:0"]')
     await tabTo(page, cell, 'evidence cell')
@@ -1358,6 +1401,11 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
     const open = page.getByRole('button', { name: 'Open evidence report' })
     await expect(open).toBeVisible({ timeout: 90_000 })
+    const card = open.and(page.locator('.report-artifact'))
+    await expect(card).toBeVisible({ timeout: 90_000 })
+    await expect(card.locator('.report-artifact-meta')).toHaveText(/^Evidence report · (V\d+|draft)$/, { timeout: 90_000 })
+    await expect(card).not.toContainText('being written')
+    await expect(page.locator('.run-strip-status')).toHaveCount(0, { timeout: 90_000 })
     await dismissToastsByKeyboard(page)
     await tabTo(page, open, 'Open evidence report')
     const sheet = page.locator('.report-sheet').last()
@@ -1408,9 +1456,132 @@ test.describe.serial('X05: A to G by keyboard', () => {
 })
 
 // ---------------------------------------------------------------------------------------------------------------
+type AnswerFocusTrace = {
+  focus: Array<{ time: number; tag: string; class: string; runId: string | null }>
+  earlyFlushes: Array<{ time: number; runId: string | null; headingExisted: boolean; callbacks: number }>
+}
+type AnswerFocusWindow = typeof window & { __x05AnswerFocus?: AnswerFocusTrace }
+
 test.describe('X05 regressions: asynchronous focus ownership', () => {
   test.beforeAll(async () => { await keys.ensure() })
   test.afterAll(() => { writeFocusLog() })
+
+  test('answer handoff uses the run heading before passive effects and keeps it after completion', async ({ page }) => {
+    const releaseFile = path.join(keys.dataDir, 'answer-release')
+    rmSync(releaseFile, { force: true })
+    let researchId: string | undefined
+    let runId: string | undefined
+    let assertionFailed = false
+    let assertionError: unknown
+    const cleanupErrors: string[] = []
+    try {
+      // Model a frame between React's DOM commit and passive effects. A real frame or an insertion flush
+      // consumes each callback once; cancellation still removes it from both paths. React can flush effects
+      // synchronously, so only the old-lookup browser check establishes that this hook exposes the race.
+      await page.addInitScript(() => {
+        const trace: AnswerFocusTrace = { focus: [], earlyFlushes: [] }
+        ;(window as AnswerFocusWindow).__x05AnswerFocus = trace
+        document.addEventListener('focusin', event => {
+          const target = event.target
+          if (target instanceof Element) trace.focus.push({ time: performance.now(), tag: target.tagName,
+            class: target.getAttribute('class') ?? '', runId: target.getAttribute('data-run-id') })
+        }, true)
+        const requestFrame = window.requestAnimationFrame.bind(window)
+        const cancelFrame = window.cancelAnimationFrame.bind(window)
+        const pending = new Map<number, FrameRequestCallback>()
+        const run = (id: number, time: number) => {
+          const callback = pending.get(id)
+          if (!callback) return
+          pending.delete(id)
+          cancelFrame(id)
+          callback(time)
+        }
+        window.requestAnimationFrame = callback => {
+          const id = requestFrame(time => run(id, time))
+          pending.set(id, callback)
+          return id
+        }
+        window.cancelAnimationFrame = id => { pending.delete(id); cancelFrame(id) }
+        new MutationObserver(records => {
+          for (const record of records) for (const node of record.addedNodes) {
+            if (!(node instanceof Element)) continue
+            const statuses = node.matches('.run-strip-status') ? [node] : [...node.querySelectorAll('.run-strip-status')]
+            for (const status of statuses) {
+              if (!status.isConnected || pending.size === 0) continue
+              const runId = status.getAttribute('data-run-id')
+              const time = performance.now()
+              const callbacks = [...pending.keys()]
+              trace.earlyFlushes.push({ time, runId, callbacks: callbacks.length,
+                headingExisted: runId !== null && !!document.querySelector(`.chat-turn .chat-toggle[data-run-id="${CSS.escape(runId)}"]`) })
+              for (const id of callbacks) run(id, time)
+            }
+          }
+        }).observe(document, { childList: true, subtree: true })
+      })
+      await startResearch(page, keys, 'SYNTHETIC [answer-hold]: How is molecule release scheduling optimized?')
+      researchId = page.url().match(/#\/research\/([^/]+)/)?.[1]
+      if (!researchId) throw new Error('research id missing from URL')
+      await openTab(page, /Answer/)
+      await tabTo(page, page.getByRole('button', { name: 'Generate answer now' }), 'held answer start')
+      const posted = page.waitForResponse(response => response.url() === `${keys.url()}api/researches/${researchId}/runs`
+        && response.request().method() === 'POST')
+      await page.keyboard.press('Enter')
+      const response = await posted
+      runId = (await response.json() as { id: string }).id
+      expect(response.ok()).toBe(true)
+      expect(runId).toBeTruthy()
+      const escapedId = await page.evaluate(id => CSS.escape(id), runId)
+      const status = page.locator(`.run-strip-status[data-run-id="${escapedId}"]`)
+      const heading = page.locator(`.chat-turn .chat-toggle[data-run-id="${escapedId}"]`)
+      await expect(status).toBeVisible()
+      await expect(status).toContainText('Answer · Running')
+      await expect(heading).toBeFocused()
+      const trace = await page.evaluate(() => (window as AnswerFocusWindow).__x05AnswerFocus)
+      if (!trace) throw new Error('answer focus hook trace missing')
+      expect(trace.earlyFlushes.some(flush => flush.runId === runId && flush.headingExisted && flush.callbacks > 0),
+        'the insertion hook flushed queued callbacks while the new run heading existed').toBe(true)
+      expect(trace.focus.filter(target => target.class.split(/\s+/).includes('run-strip-status')),
+        'focus never went to the temporary run strip').toEqual([])
+      writeFileSync(releaseFile, 'SYNTHETIC release\n')
+      await expect(heading).toContainText('Ran answer generation', { timeout: 60_000 })
+      await quiet(page)
+      await expect(heading).toBeFocused()
+    } catch (error) {
+      assertionFailed = true
+      assertionError = error
+    } finally {
+      try {
+        if (!existsSync(releaseFile)) writeFileSync(releaseFile, 'SYNTHETIC cleanup release\n')
+        if (runId && researchId) {
+          const cleanupDeadline = Date.now() + 60_000
+          await expect.poll(async () => {
+            const response = await page.request.get(`${keys.url()}api/researches/${researchId}`)
+            const view = await response.json() as { runs: Array<{ id: string; status: string }> }
+            return view.runs.find(run => run.id === runId)?.status ?? 'missing'
+          }, { timeout: 60_000 }).toMatch(/^(completed|failed|cancelled)$/)
+          // The event-driven page reload follows the API transition; snapshot only after the temporary node leaves.
+          const escapedId = await page.evaluate(id => CSS.escape(id), runId)
+          await expect(page.locator(`.run-strip-status[data-run-id="${escapedId}"]`)).toHaveCount(0, { timeout: Math.max(1, cleanupDeadline - Date.now()) })
+        }
+      } catch (error) { cleanupErrors.push(String(error)) }
+      try {
+        const snapshot = await page.evaluate(() => {
+          const active = document.activeElement
+          return { activeElement: { tag: active?.tagName ?? null, class: active?.getAttribute('class') ?? null,
+            runId: active?.getAttribute('data-run-id') ?? null, body: active === document.body },
+          trace: (window as AnswerFocusWindow).__x05AnswerFocus ?? null }
+        })
+        await test.info().attach('answer-handoff-focus', { contentType: 'application/json',
+          body: JSON.stringify({ researchId, runId, ...snapshot, cleanupErrors }, null, 2) })
+      } catch (error) { cleanupErrors.push(String(error)) }
+      finally {
+        try { rmSync(releaseFile, { force: true }) } catch (error) { cleanupErrors.push(String(error)) }
+      }
+      if (cleanupErrors.length) test.info().annotations.push({ type: 'answer-hold-cleanup', description: cleanupErrors.join('; ') })
+    }
+    if (assertionFailed) throw assertionError
+    if (cleanupErrors.length) throw new Error(`answer hold cleanup failed: ${cleanupErrors.join('; ')}`)
+  })
 
   for (const key of ['Shift', 'ArrowLeft', 'Tab']) test(`fill status: ${key} ${key === 'Tab' ? 'moves focus and cancels follow' : 'keeps follow until the current cell'}`, async ({ page }) => {
     test.setTimeout(240_000)

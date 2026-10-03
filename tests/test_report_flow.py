@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from deixis.config import Settings
-from deixis.domain import skill
+from deixis.domain import contracts, skill
 from deixis.models.adapter import ModelStepResult
 from deixis.storage import db
 from deixis.storage.db import dumps, new_id
@@ -17,7 +17,7 @@ from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
 from deixis.workflow.report.sections import _citation_links, _pause_detail, run_report
 from deixis.workflow.report.phrasing import _report_checkpoint
 from deixis.workflow.report.assembly import run_assembly_checks
-from deixis.workflow.report import assembly
+from deixis.workflow.report import assembly, sections
 from deixis.workflow.report.selection import SECTION_BUDGET_TOKENS
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.store import Store
@@ -530,18 +530,25 @@ def test_report_invalid_output_reason_uses_first_model_issue(tmp_path):
     assert _reason_codes(store, run) == [("IV", issue["code"])]
 
 
-def test_report_rewrite_reason_uses_first_three_issues(tmp_path):
-    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, empty_section="VIII")
-    with pytest.raises(RunStopped):
-        asyncio.run(run_report(flow, run, scope))
+def test_report_rewrite_reason_uses_first_three_issues(tmp_path, monkeypatch):
+    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path)
+    asyncio.run(run_report(flow, run, scope))
     section = reports.section(report_id, "VIII")
-    assert section["status"] == "draft"
     issue_codes = [f"synthetic_limitation_{i}" for i in range(5)]
     issues = [{"code": code, "detail": f"SYNTHETIC issue {i}"}
               for i, code in enumerate(issue_codes)]
     reports.save_section_draft(section["id"], section["step_id"], "draft", section["draft"],
                                section["validation"] | {"issues": issues}, section["word_count"])
+    run_section = sections._run_section
+
+    async def seeded_draft(*args):
+        return "draft" if args[-1] == "VIII" else await run_section(*args)
+
+    monkeypatch.setattr(sections, "_run_section", seeded_draft)
+    with pytest.raises(RunStopped):
+        _resume_report(flow, store, run, scope)
     assert store.run(run["id"])["pause_reason"] == "section_must_be_rewritten"
+    assert reports.section(report_id, "VIII")["status"] == "draft"
     assert reports.section(report_id, "VIII")["validation"]["issues"] == issues
     detail = _pause_detail(reports, report_id, ["VIII"], 3)
     assert detail["sections"] == ["VIII"]
@@ -772,12 +779,15 @@ def test_an_empty_section_without_insufficient_evidence_pauses_the_run(tmp_path)
         asyncio.run(run_report(flow, run, scope))
 
     assert store.run(run["id"])["status"] == "paused"
-    assert store.run(run["id"])["pause_reason"] == "section_must_be_rewritten"
+    assert store.run(run["id"])["pause_reason"] == "section_failed"
     section = reports.section(report_id, "IV")
-    assert section["status"] == "draft"
+    assert section["status"] == "failed"
     validation = section["validation"]
-    assert validation["issues"] == [{"code": "empty_section",
-                                     "detail": "section has no claims or insufficient-evidence entries"}]
+    assert validation["issues"] == [{"code": "empty_section", "path": "/claims",
+                                     "message": contracts.EMPTY_REPORT_SECTION_MESSAGE}]
+    assert store.run(run["id"])["error"] == {
+        "sections": ["IV"], "reasons": [{"section_id": "IV", "code": "empty_section", "detail": None}],
+    }
 
 
 def test_an_unframed_section_is_repaired_and_the_report_completes(tmp_path):

@@ -1964,8 +1964,16 @@ def report_section_repair_issues(failed: Any, repaired: Any) -> list[Issue]:
     return issues
 
 
+EMPTY_REPORT_SECTION_MESSAGE = (
+    "section has no claims or insufficient-evidence entries; write at least one claim supported by the given evidence, "
+    "or one insufficient_evidence entry naming the missing material and why; never invent a claim, passage, cell, gap or quote"
+)
+
+
 def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]],
                           draft: dict[str, Any], report: ValidationReport) -> None:
+    if not draft["claims"] and not draft["insufficient_evidence"]:
+        report.issues.append(Issue("empty_section", "/claims", EMPTY_REPORT_SECTION_MESSAGE))
     # Display-only records (for example glossary passages and failed rows) confer no use rights.
     allowed = {"psg_P": allow["passage_ids"], "cel_L": allow.get("cell_ids", set()),
                "col_C": allow.get("column_ids", set()),

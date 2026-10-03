@@ -1,0 +1,37 @@
+{
+  "SYNTHETIC": "shape replayed from H9b A2 VI output mss_CThHztI2ODi1BIJBAHfE; no real text",
+  "step_input": {
+    "step_input_id": "sti_SYNTHETICRF301",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "task_type": "report_section",
+    "question": {"text": "SYNTHETIC report question", "language_hint": "en"},
+    "sources": [],
+    "passages": [],
+    "allowlist": {
+      "cell_ids": [], "passage_ids": [], "source_ids": [], "gap_ids": [],
+      "column_ids": ["col_SYNTHETICRF301"]
+    },
+    "report_target": {
+      "section_id": "VI",
+      "cells": [],
+      "gap_candidates": [],
+      "plan": {
+        "limitations_column_id": null,
+        "allowed_support": {"VI": ["analyst_inference"]}
+      },
+      "prior_summaries": [
+        {"section_id": "V", "claim_key": "V.1", "first_sentence": "SYNTHETIC outcomes use different conditions.", "support_type": "source_stated", "reading_depth": "abstract"},
+        {"section_id": "V", "claim_key": "V.2", "first_sentence": "SYNTHETIC metrics differ across conditions.", "support_type": "source_stated", "reading_depth": "selected_sections"}
+      ]
+    }
+  },
+  "output": {
+    "schema_version": "deixis.report_section_draft.v2",
+    "step_input_id": "sti_SYNTHETICRF301",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "section_id": "VI",
+    "claims": [], "citation_anchors": [], "subsections": [], "gaps": [], "insufficient_evidence": []
+  }
+}

@@ -104,6 +104,7 @@ class Dispatched:
     outcome: registry.common.SearchOutcome
     dropped_records: int
     connector: dict
+    transport: tuple[dict, ...] = ()
 
     @property
     def returned_count(self):
@@ -113,7 +114,8 @@ class Dispatched:
 async def dispatch_search(provider_id, http, query_text, limit, api_key, contact_email, **registry_kwargs) -> Dispatched:
     connector = CompatibilityConnector(registry.CONNECTORS[provider_id])
     request = search_request(query_text, limit, **registry_kwargs)
-    outcome = await connector.search(request, contract.ConnectorContext(http, api_key, contact_email))
+    with registry.common.collect_transport() as transport:
+        outcome = await connector.search(request, contract.ConnectorContext(http, api_key, contact_email))
     records = [replace(record, raw=sanitize(record.raw, (api_key,))) for record in outcome.records
                if usable_identity(record.provider_record_id)]
     dropped = len(outcome.records) - len(records)
@@ -123,7 +125,7 @@ async def dispatch_search(provider_id, http, query_text, limit, api_key, contact
                   "query_rules_revision": descriptor.query_rules_revision,
                   "payload": "sanitized_json" if outcome.raw_payload is not None else None,
                   "dropped_records": dropped}
-    return Dispatched(outcome, dropped, provenance)
+    return Dispatched(outcome, dropped, provenance, tuple(transport))
 
 
 class CompatibilityConnector:

@@ -90,21 +90,26 @@ def quota_flow(tmp_path):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     store = Store(conn)
-    deps = SimpleNamespace(store=store, http=None,
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(429, json={"error": "SYNTHETIC daily quota exhausted"})))
+    deps = SimpleNamespace(store=store, http=client,
                            settings=SimpleNamespace(contact_email=None, payloads_dir=tmp_path / "payloads"))
     flow = ResearchFlow(deps)
     def new_run():
         rid = store.create_research("SYNTHETIC?", "academic", "standard", ["openalex"], "fake", "m", "en")
         return store.create_run(rid, "discovery", {"max_provider_requests": 10}, None)
     yield flow, new_run
+    asyncio.run(client.aclose())
+    if deps.http is not client:
+        asyncio.run(deps.http.aclose())
     conn.close()
 
 
 def connector(provider, calls, monkeypatch):
-    async def search(*args, **kwargs):
+    async def search(http, *args, **kwargs):
         calls.append(provider)
-        return common.SearchOutcome("rate_limited", "rejected_not_executed", "SYNTHETIC", "keyless",
-                                    error_kind="quota_exhausted")
+        _, outcome = await common.send(http, "https://synthetic.invalid/search", {}, {}, "SYNTHETIC", "keyless")
+        return outcome
     source = replace(CONNECTORS[provider], search=search, key_env=None, key_required=False)
     monkeypatch.setitem(CONNECTORS, provider, source)
     return source
@@ -159,10 +164,12 @@ def test_search_round_records_suppression_and_retry_sends_again(quota_flow, monk
 
     async def search(http, query, *args, **kwargs):
         calls.append(query)
-        if len(calls) == 1:
-            return common.SearchOutcome("rate_limited", "rejected_not_executed", "SYNTHETIC", "keyless",
-                                        error_kind="quota_exhausted")
-        return common.SearchOutcome("zero_results", "answered", "SYNTHETIC", "keyless")
+        response, outcome = await common.send(http, "https://synthetic.invalid/search", {}, {}, "SYNTHETIC", "keyless")
+        return replace(outcome, status="zero_results", delivery_class="answered") if response is not None else outcome
+
+    flow.deps.http = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(429, json={"error": "SYNTHETIC daily quota exhausted"})
+        if len(calls) == 1 else httpx.Response(200, json={})))
 
     monkeypatch.setitem(CONNECTORS, "openalex", replace(CONNECTORS["openalex"], search=search, key_env=None))
 

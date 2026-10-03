@@ -157,8 +157,8 @@ def test_kill_spy_and_snapshot(candidate_lib, monkeypatch):
         return await original(self, request, context)
     monkeypatch.setattr(facade.CompatibilityConnector, "search", spy)
     client(lib.flow, lambda r: httpx.Response(200, json={"articles": []}))
-    sent = asyncio.run(lib.flow._kill_search_request(run, q))
-    lib.flow._kill_search_record_query(run, search, step, 1, q, sent)
+    sent, trace = asyncio.run(lib.flow._kill_search_request(run, q))
+    lib.flow._kill_search_record_query(run, search, step, 1, q, sent, trace)
     assert reads == [True] and calls == [baseline.SYNTHETIC_KEY]
 
 
@@ -167,7 +167,7 @@ def test_synthetic_registry_dispatch_and_record(dispatch_flow, monkeypatch):
     run = new_run(("openalex",))
     seen = []
     async def search(http, text, limit, key, contact, **kwargs):
-        response = await http.get("https://synthetic.invalid/search")
+        response, _ = await common.send(http, "https://synthetic.invalid/search", {}, {}, "SYNTHETIC", "keyless")
         return common.SearchOutcome("completed", None, "SYNTHETIC", "keyless",
                                     records=[record("synthetic-id", doi=None)], raw_payload=response.json())
     synthetic = registry.Connector("synthetic_dispatch", search, 2, host="synthetic.invalid", paging="single_page")
@@ -251,8 +251,8 @@ def test_kill_limit_error(candidate_lib, monkeypatch):
     lib = candidate_lib
     run, q, search, step = prepare_kill(lib, monkeypatch)
     client(lib.flow, lambda r: httpx.Response(403, json={"error": "SYNTHETIC daily quota exhausted"}))
-    sent = asyncio.run(lib.flow._kill_search_request(run, q))
-    lib.flow._kill_search_record_query(run, search, step, 1, q, sent)
+    sent, trace = asyncio.run(lib.flow._kill_search_request(run, q))
+    lib.flow._kill_search_record_query(run, search, step, 1, q, sent, trace)
     saved = lib.store.existing_step(run["id"], "kill-search:1")
     assert saved["error_code"] == "rate_limited" and json.loads(saved["error_json"])["error_kind"] == "quota_exhausted"
 
@@ -364,11 +364,14 @@ def test_kill_admission_and_payload(candidate_lib, monkeypatch):
         return common.SearchOutcome("completed", None, "SYNTHETIC", "api_key",
             records=[record("None", doi=None), record("123", doi=A)], raw_payload={"echo": baseline.SYNTHETIC_KEY})
     install(monkeypatch, "ieee_xplore", send)
-    sent = asyncio.run(lib.flow._kill_search_request(run, q))
-    lib.flow._kill_search_record_query(run, search, step, 1, q, sent)
+    sent, trace = asyncio.run(lib.flow._kill_search_request(run, q))
+    lib.flow._kill_search_record_query(run, search, step, 1, q, sent, trace)
     row = lib.candidate_store.queries(search["id"])[0]
     saved = lib.store.existing_step(run["id"], "kill-search:1")
-    assert saved["output"] == {"status": "completed", "result_count": 1, "dropped_records": 1}
+    output = dict(saved["output"])
+    assert output.pop("transport") == {"reserved": 3, "attempts": 0, "sends": 0,
+                                       "dispatches": [{"subrequests": []}]}
+    assert output == {"status": "completed", "result_count": 1, "dropped_records": 1}
     assert row["record_count"] == 1
     payload = json.loads((lib.flow.deps.settings.payloads_dir / row["raw_payload_path"]).read_text())
     assert payload == {"echo": "<redacted>"} and row["payload_sha256"] == canonical.sha256_hex(payload)

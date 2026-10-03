@@ -901,6 +901,18 @@ class Store:
             self.conn.execute("UPDATE runs SET usage_json = ?, updated_at = ? WHERE id = ?", (dumps(usage), now(), run_id))
         return usage
 
+    def settle_usage(self, run_id: str, query: str | None, request_delta: int, sends: int) -> dict[str, Any]:
+        """Atomically settle a reservation and record observed sends, which never spend a query's share."""
+        with transaction(self.conn):
+            usage = self.run(run_id)["usage"]
+            usage["provider_requests"] = usage.get("provider_requests", 0) + request_delta
+            if query is not None:
+                counts = usage.setdefault("query_requests", {})
+                counts[query] = counts.get(query, 0) + request_delta
+            usage["provider_sends"] = usage.get("provider_sends", 0) + sends
+            self.conn.execute("UPDATE runs SET usage_json = ?, updated_at = ? WHERE id = ?", (dumps(usage), now(), run_id))
+        return usage
+
     # ---- steps --------------------------------------------------------------------------
     def step(self, run_id: str, operation_key: str, kind: str, output: Any = None) -> dict[str, Any]:
         """The step with this key, opened `pending` when there is none. `output` is written only on that opening: a

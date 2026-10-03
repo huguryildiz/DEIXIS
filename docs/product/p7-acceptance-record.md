@@ -114,6 +114,7 @@ Frozen fixtures, unchanged since D179/D193 and checked here: `tests/fixtures/con
 | B3b | D193 | Query rendering and rules from registry declarations; byte-equal compiler output | 11,686 passed, 0 failed |
 | B4 | D194 | Search dispatch through the facade; four named changes; continuation refusal; migration 0067 | 12,235 passed, 0 failed |
 | B5 | D196 | This record; 12,377 passed, 0 failed on `30b070c` | section 3.1 |
+| P7-F2, P7-F3 | D199 | Transport accounting (PubMed subrequests counted and bounded, sends apart from reservations); authenticated OpenAI embedding tests and own-key redaction in embedding errors | 12,574 passed, 0 failed, 2 skipped |
 
 ## 5. Compatibility and exception ledger
 
@@ -135,6 +136,10 @@ The refactor itself (B1, B3a's equivalence, B3b's rendering, B4's dispatch) is c
 | D194 3 | Stored payloads and record `raw` are sanitized of the operation's own key before writing and hashing |
 | D194 4 | Records without a usable provider identity are dropped and counted |
 | D194 | A pending page refuses to continue when its recorded adapter revision changed or its provenance is unreadable |
+| D199 1 | Discovery charges each PubMed EFetch attempt; a dispatch reserves its declared worst case first and settles to the attempts made; a run's observed sends are counted as `provider_sends` |
+| D199 2 | Discovery does not resend a transient connection failure once the query's share is spent (all connectors) |
+| D199 3 | PubMed's per-page share is sized for two subrequests |
+| D199 4 | OpenAI and Gemini embedding errors no longer carry the request key when a reply echoes it |
 
 Two bounded version-rule amendments replace revision bumps and are recorded in [connector-onboarding.md](connector-onboarding.md): B3a's pre-send input refusals (D179) and B3b's undeclared-input refusals (D193). Neither changes what an accepted request sends or returns.
 
@@ -150,8 +155,8 @@ Decided jointly by Claude Opus 5.5 and gpt-6.1-sol medium. "Limit" means the ite
 | 4 | Numeric-text record IDs admitted | `"17"` from OpenAlex, bioRxiv or S2 is admitted because the adapter's string cannot show its JSON type; valid numeric identities such as CORE's must stay admitted | Limit |
 | 5 | Kill-search writes no `connector_json` | Kill-search writes to the candidate store, not `search_runs`. Kill-search runs can resume pending work, but that path has no paged continuation needing the B4 revision check | Limit |
 | 6 | Chaining calls OpenAlex directly | `workflow/flow.py:1704-1709` (`citing_works`, `works_by_ids`); count and distribution probes at `flow.py:581` and `:1093` also call OpenAlex directly | Chaining: blocks P7, G1-F1. Count/distribution probes: limit |
-| 7 | PubMed request accounting (Q4, ledger e) | Discovery counts one base request plus retries per search (`flow.py:2058`, `:2068`), while PubMed can send ESearch and then EFetch; kill-search reserves `requests_per_search=2` times (1 + retries) (`flow.py:4749`) | Blocks P7; P7-F2. Owning it satisfies Q4 for G1 |
-| 8 | OpenAI embedding path | `documents/embeddings.py:218,289`: shares `embed_openai_compatible` with Ollama and LM Studio, whose refusal, 429, 413 and success cases D173 tests. The credential probe has Bearer and 401 tests, and missing-key cases exist (`tests/test_settings_connections.py:225`, `tests/test_semantic_retrieval.py:151`); the authenticated `Embedder("openai", ...)` run has no separate test | Blocks P7; P7-F3 |
+| 7 | PubMed request accounting (Q4, ledger e) | P7-F2 collects every subrequest at dispatch, settles discovery run/query reservations atomically to attempts, records observed provider_sends and preserves both PubMed stages. Kill-search keeps reservations and charges excess. Discovery starts no page or transient retry after its share is spent; the settled bound is `share - 1 + R` unless an adapter exceeds its declared cost, which is charged and recorded. `tests/test_transport_accounting.py` and the 566-case registry replay cover these rules | Closed by P7-F2 (D199). Limits: an in-flight crash keeps the reservation; a stop during transient backoff writes no step, so that operation's trace is lost while its counts stay; an adapter that raises keeps the reservation and loses its collected entries (ledger d) |
+| 8 | OpenAI embedding path | `tests/test_openai_embedding.py` exercises authenticated POST URL, model, exactly one Bearer header, input truncation, batching, shuffled indexes, unit vectors, success, 401 without retry, missing-key zero sends, and local unauthenticated contrast. OpenAI/Gemini echoed-key errors are redacted on 401 and exhausted 429. Direct ResearchFlow cases store similarities under `openai:text-embedding-3-small` or a redacted embedding_failed step; stored rows, events and files are checked for the synthetic key | Closed by P7-F3 (D199). Mocked transport only; live OpenAI access and error formats unmeasured |
 | 9 | Other recorded limits | Ledger k (empty or null result containers, not checked against provider documentation); `scopus_count_unmapped`; only the operation's own key is redacted; live error and quota formats unmeasured; G12 not reproduced | Limit |
 
 ## 7. Named follow-up batches
@@ -161,8 +166,8 @@ These are not implemented in B5. Each must land before P7 closes and before P10.
 | Batch | Scope | Closes |
 |---|---|---|
 | **G1-F1: lookup and chaining capability binding** | Bind the existing single and batched lookup helpers and OpenAlex chaining (`citing_works`, `works_by_ids`) through versioned capabilities, keeping identity, batching, accounting and unsupported behavior | Items 3 and 6 (chaining); D174 Q3 |
-| **P7-F2: transport accounting** | Separate actual sends from reservations; count and bound every PubMed subrequest and retry, with explicit reconciliation rules for discovery and kill-search | Item 7; ledger e; Q4 |
-| **P7-F3: OpenAI embedding auth and 401** | Exercise the authenticated OpenAI embedding route: URL, model and Bearer placement, success and 401, with provider-specific cases or a justified shared-path argument | Item 8 |
+| **P7-F2: transport accounting** | Done (D199): subrequests collected at the dispatch boundary, discovery reservations settled atomically to attempts, observed sends counted apart, kill-search reservations kept with excess charged, a transport record on each step. Evidence: `tests/test_transport_accounting.py` and the 566-case registry conformance replay | Item 7; ledger e, f, j; Q4 |
+| **P7-F3: OpenAI embedding auth and 401** | Done (D199): authenticated OpenAI route and workflow cases; the sent key is redacted from OpenAI and Gemini reply errors, including exhausted 429. Evidence: `tests/test_openai_embedding.py` | Item 8 |
 
 ## 8. Unsupported operations and live evidence
 
@@ -186,13 +191,15 @@ Exit condition (implementation plan, P7 row): "Her etkin bağlantı auth/model/k
 | Area | Deterministic evidence | Open |
 |---|---|---|
 | Model connections (Codex, Claude, Gemini, DeepSeek) | D172 (G2–G5), D173 (G6, G7) | Live error and quota formats unmeasured |
-| Embeddings (built-in, Gemini, Ollama, LM Studio, OpenAI) | Coverage note section 2; D173 (G11) | OpenAI authenticated run: P7-F3 |
-| Scholarly connectors (ten) | Sections 3 to 5; D172 (G9), D173 (G8) | Lookup and chaining binding: G1-F1; PubMed accounting: P7-F2; live error and quota formats unmeasured |
+| Embeddings (built-in, Gemini, Ollama, LM Studio, OpenAI) | Coverage note section 2; D173 (G11); P7-F3 authenticated OpenAI and workflow tests, OpenAI/Gemini error redaction | Live error and quota formats unmeasured |
+| Scholarly connectors (ten) | Sections 3 to 5; D172 (G9), D173 (G8); P7-F2 registry-driven transport accounting and focused synthetic workflow tests | Lookup and chaining binding: G1-F1; live error and quota formats unmeasured |
 | Live access | G10: four keyed connectors, one search each | Live formats unmeasured |
 | Unimplemented connections listed | Coverage note section 4: nine model connections shown as not implemented, no research adapter for OpenAI or LM Studio; Google Scholar is reached through SerpApi rather than a separate connector; Zotero is an implemented import path, not a search connector | none |
 | G12 | Not reproduced: 50 of 50 serial runs and 20 of 20 parallel runs of its file passed (D173) | Remains unreproduced |
 
 Verdict: **not met** (section 1). P7 can close when G1-F1, P7-F2 and P7-F3 pass their gates, on deterministic evidence, with the live rows above carried as limits.
+
+Update after D199 (2026-10-03): P7-F2 and P7-F3 have passed their gates (items 7 and 8 closed, ledger e and Q4 closed). P7 exit is still **not met**; the only remaining closing batch is G1-F1.
 
 ## Limits
 

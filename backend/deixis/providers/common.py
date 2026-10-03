@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
@@ -22,6 +24,19 @@ MAX_RATE_LIMIT_RETRIES = 2
 MAX_RETRY_WAIT_SECONDS = 10.0  # a longer provider wait pauses the run instead of blocking it
 
 FIRST_PAGE = "*"  # asks a provider for the first page of a paged read; an offset provider reads it as offset 0
+
+_transport_collector: ContextVar[list[dict[str, Any]] | None] = ContextVar("search_transport", default=None)
+
+
+@contextmanager
+def collect_transport():
+    """Collect source-owned transport facts independently of an adapter's outcome."""
+    entries: list[dict[str, Any]] = []
+    token = _transport_collector.set(entries)
+    try:
+        yield entries
+    finally:
+        _transport_collector.reset(token)
 
 
 @dataclass
@@ -149,7 +164,8 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
 
     A 429 is retried at most `max_rate_limit_retries` times when the provider's wait is short or unstated (then
     `unstated_wait` seconds times the retry number, bounded by `max_retry_wait`); each retry is a
-    separate request and is counted by the caller through `outcome.retries`. The caller's own effort may lower that
+    separate request. The dispatch collector records attempts and observed sends for every subrequest, independently
+    of the adapter's outcome; `outcome.retries` retains its historical meaning. The caller's own effort may lower that
     count, down to not waiting at all (D88); the default is what every caller sent before there was a parameter.
     Another 4xx means the provider rejected the request; a 5xx leaves it unknown whether the request was processed.
 
@@ -158,6 +174,18 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
     effort's waiting rule (D88) ever applies to them.
     """
     retries = 0
+    def finish(response, outcome):
+        entries = _transport_collector.get()
+        if entries is not None:
+            parts = urlsplit(url)
+            location = f"{parts.scheme}://{parts.netloc.rsplit('@', 1)[-1]}{parts.path}"
+            attempts = outcome.retries + 1
+            entries.append({"url": redact(location, *secrets), "attempts": attempts,
+                            "sends": attempts - int(outcome.delivery_class == "before_send"),
+                            "retries": outcome.retries, "status": outcome.status,
+                            "http_status": outcome.http_status, "delivery_class": outcome.delivery_class})
+        return response, outcome
+
     while True:
         try:
             # A body makes this a POST; everything else — the Semantic Scholar gate (D67), the bounded 429 retries
@@ -172,11 +200,11 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
             else:
                 response = await attempt()
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
-            return None, SearchOutcome("failed", "before_send", description, access_mode, error=type(exc).__name__, retries=retries)
+            return finish(None, SearchOutcome("failed", "before_send", description, access_mode, error=type(exc).__name__, retries=retries))
         except httpx.TimeoutException as exc:
-            return None, SearchOutcome("timeout", "after_send_unknown", description, access_mode, error=type(exc).__name__, retries=retries)
+            return finish(None, SearchOutcome("timeout", "after_send_unknown", description, access_mode, error=type(exc).__name__, retries=retries))
         except httpx.HTTPError as exc:
-            return None, SearchOutcome("failed", "after_send_unknown", description, access_mode, error=type(exc).__name__, retries=retries)
+            return finish(None, SearchOutcome("failed", "after_send_unknown", description, access_mode, error=type(exc).__name__, retries=retries))
         rate = {h: redact(response.headers[h], *secrets) for h in (*rate_headers, "retry-after") if h in response.headers}
         base = dict(request_description=description, access_mode=access_mode, http_status=response.status_code, rate_limit=rate,
                     retries=retries)
@@ -190,8 +218,8 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
         if response.status_code == 429 and response.headers.get("x-ratelimit-remaining-usd") == "0":
             kind = "quota_exhausted"
         if kind == "quota_exhausted":
-            return None, SearchOutcome("rate_limited", "rejected_not_executed", **base, error_kind=kind,
-                                       error=redact(response.text[:300] or detail, *secrets))
+            return finish(None, SearchOutcome("rate_limited", "rejected_not_executed", **base, error_kind=kind,
+                                       error=redact(response.text[:300] or detail, *secrets)))
         ieee_temporary = response.status_code == 403 and "Over Queries Per Second" in detail
         if response.status_code in rate_limit_statuses or ieee_temporary:
             wait = _retry_wait(response.headers.get("retry-after"), retries, unstated_wait, max_retry_wait)
@@ -199,17 +227,17 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                 retries += 1
                 await asyncio.sleep(wait)
                 continue
-            return None, SearchOutcome("rate_limited", "rejected_not_executed", **base,
+            return finish(None, SearchOutcome("rate_limited", "rejected_not_executed", **base,
                                        error_kind="rate_limited",
                                        error=redact(response.text[:300], *secrets)
-                                       or f"{response.status_code} Too Many Requests")
+                                       or f"{response.status_code} Too Many Requests"))
         if response.status_code in (401, 403):
             status = "entitlement_missing" if access_mode == "api_key" else "auth_required"
-            return None, SearchOutcome(status, "rejected_not_executed", **base, error=redact(response.text[:300], *secrets))
+            return finish(None, SearchOutcome(status, "rejected_not_executed", **base, error=redact(response.text[:300], *secrets)))
         if response.status_code != 200:
             delivery = "rejected_not_executed" if 400 <= response.status_code < 500 else "after_send_unknown"
-            return None, SearchOutcome("failed", delivery, **base, error=redact(response.text[:300], *secrets))
-        return response, SearchOutcome("completed", None, **base)
+            return finish(None, SearchOutcome("failed", delivery, **base, error=redact(response.text[:300], *secrets)))
+        return finish(response, SearchOutcome("completed", None, **base))
 
 
 def _retry_wait(retry_after: str | None, retries: int, unstated_wait: float,

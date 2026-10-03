@@ -36,6 +36,11 @@ class Faulty(Hosts):
         super().__init__()
         self.mode = mode
 
+    @property
+    def transport_log(self):
+        # Timeout exits before Hosts logs; other faults label the query "x", not the sent query.
+        return None
+
     def answer(self, host, params, entry):
         entry["provider"] = {"api.openalex.org": "openalex", "api.semanticscholar.org": "semantic_scholar"}.get(host, "serpapi")
         entry["query"], entry["start"] = "x", 0

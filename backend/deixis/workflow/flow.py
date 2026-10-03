@@ -230,8 +230,8 @@ def page_allowance(query: dict[str, Any], effort: str, budget: dict[str, Any]) -
     and waits out fewer 429s.
     """
     read_limit = SW_READ_LIMIT[effort]
-    per_page = 1 + PROVIDER_WAIT[effort] + MAX_TRANSIENT_NETWORK_RETRIES
     connector = reading(query)  # the endpoint the query names pages its own way (D93)
+    per_page = connector.requests_per_search * (1 + PROVIDER_WAIT[effort]) + MAX_TRANSIENT_NETWORK_RETRIES
     pages = 1 if connector.paging == "single_page" else math.ceil(
         min(read_limit, connector.max_reachable or read_limit) / connector.max_results)
     return pages * per_page + budget.get("retry_provider_requests", 0)
@@ -249,6 +249,7 @@ class _PageRead:
     started_at: str          # the request's own clock, which its step carries
     finished_at: str
     dispatched: facade.Dispatched | None = None
+    transport: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -2037,7 +2038,8 @@ class ResearchFlow:
         return True
 
     async def _send_search(self, run_id: str, connector: Connector, query: dict[str, Any], limit: int,
-                           page: Page | None = None, stop: Callable[[], bool] | None = None) -> SearchOutcome | facade.Dispatched | None:
+                           page: Page | None = None, stop: Callable[[], bool] | None = None,
+                           transport: dict[str, Any] | None = None) -> SearchOutcome | facade.Dispatched | None:
         """Send one search request, with its bounded retries, counting each against the run and, for an sw page,
         against the query's own count too (D89). Exhausted providers are remembered for this execution in memory;
         later searches send nothing and consume no request allowance. Every resume or retry resets the guard.
@@ -2046,6 +2048,8 @@ class ResearchFlow:
         page is left unwritten and a resumed run asks for it again (second review of 13f, 2026-09-23). The 429 waits
         inside a connector's own `send` are not interrupted."""
         query_key = page.query_key if page else None
+        transport = transport if transport is not None else {}
+        reserve = connector.requests_per_search * (1 + (page.rate_limit_retries if page else MAX_RATE_LIMIT_RETRIES))
         attempts = 0
         while True:
             key = connector.api_key()
@@ -2055,18 +2059,27 @@ class ResearchFlow:
             if connector.provider_id in self._quota_out.get(run_id, set()):
                 return SearchOutcome("rate_limited", "before_send", "Suppressed: provider quota exhausted in this run",
                                      "api_key" if key else "keyless", error_kind="quota_exhausted")
-            self.store.add_usage(run_id, "provider_requests", query=query_key)
+            self.store.add_usage(run_id, "provider_requests", reserve, query=query_key)
             # A paged read supplies the connector's search options.
             dispatched = await facade.dispatch_search(connector.provider_id, self.deps.http, query["query_text"], limit, key,
                                              self.deps.settings.contact_email,
                                              **({"cursor": page.cursor, "max_rate_limit_retries": page.rate_limit_retries,
                                                  **connector.sw_options, **endpoint_options(query)} if page else {}))
             outcome = dispatched.outcome
+            actual = sum(entry["attempts"] for entry in dispatched.transport)
+            sends = sum(entry["sends"] for entry in dispatched.transport)
+            self.store.settle_usage(run_id, query_key, actual - reserve, sends)
+            transport["reserved"] = transport.get("reserved", 0) + reserve
+            transport["attempts"] = transport.get("attempts", 0) + actual
+            transport["sends"] = transport.get("sends", 0) + sends
+            if actual > reserve:
+                transport["over_reservation"] = transport.get("over_reservation", 0) + actual - reserve
+            transport.setdefault("dispatches", []).append({"subrequests": list(dispatched.transport)})
             if outcome.error_kind == "quota_exhausted":
                 self._quota_out.setdefault(run_id, set()).add(connector.provider_id)
-            if outcome.retries:
-                self.store.add_usage(run_id, "provider_requests", outcome.retries, query=query_key)
-            if outcome.status == "failed" and outcome.delivery_class == "before_send" and attempts < MAX_TRANSIENT_NETWORK_RETRIES:
+            if (outcome.status == "failed" and outcome.delivery_class == "before_send"
+                    and attempts < MAX_TRANSIENT_NETWORK_RETRIES
+                    and (page is None or self._query_requests(run_id, page.query_key) < page.allowance)):
                 attempts += 1
                 await asyncio.sleep(1.5 * attempts)
                 if stop is not None and stop():
@@ -2077,7 +2090,8 @@ class ResearchFlow:
     def _record_search(self, run: dict[str, Any], step: dict[str, Any], query: dict[str, Any], outcome: SearchOutcome | facade.Dispatched,
                        limit: int, page: Page | None = None, stop_reason: str | None = None,
                        finished_at: str | None = None,
-                       dispatched: facade.Dispatched | None = None) -> tuple[str, dict[str, Any]] | None:
+                       dispatched: facade.Dispatched | None = None,
+                       transport: dict[str, Any] | None = None) -> tuple[str, dict[str, Any]] | None:
         """Write one answered request: its payload, its search run, its records and its step's ending together.
 
         For an sw page, `stop_reason` is the one the read decided when the page arrived (`_read_query`).
@@ -2088,15 +2102,16 @@ class ResearchFlow:
         provider = CONNECTORS[query["provider_id"]].provider_id
         if isinstance(outcome, facade.Dispatched):
             dispatched, outcome = outcome, outcome.outcome
+        transport_output = {"transport": transport} if transport and transport.get("dispatches") else {}
         if outcome.status in ("adapter_revision_changed", "connector_provenance_invalid"):
-            self.store.finish_step(step["id"], "failed", output={"status": outcome.status, "result_count": 0},
+            self.store.finish_step(step["id"], "failed", output={"status": outcome.status, "result_count": 0} | transport_output,
                                    error_code=outcome.status, error={"error": outcome.error},
                                    delivery_class="before_send", finished_at=finished_at)
             return "provider_adapter_revision_changed", {"provider": provider, "http_status": None,
                                                          "error_kind": None, "retry_after": None}
         if outcome.status == "not_configured":
-            # No provider request existed: preserve a retryable step, without a retrieval row (D178).
-            self.store.finish_step(step["id"], "failed", output={"status": "not_configured", "result_count": 0},
+            # Missing configuration creates no retrieval row, even after an earlier dispatch in this operation.
+            self.store.finish_step(step["id"], "failed", output={"status": "not_configured", "result_count": 0} | transport_output,
                                    error_code="not_configured",
                                    error={"error": outcome.request_description, "http_status": None},
                                    delivery_class="before_send", finished_at=finished_at)
@@ -2132,7 +2147,7 @@ class ResearchFlow:
                 unread_count=max(0, total - read_total) if stop_reason and total is not None else None,
             )
         if ok:
-            output = {"status": outcome.status, "result_count": len(outcome.records)}
+            output = {"status": outcome.status, "result_count": len(outcome.records)} | transport_output
             if dispatched is not None and dispatched.dropped_records:
                 output["dropped_records"] = dispatched.dropped_records
             if page is not None:
@@ -2144,8 +2159,8 @@ class ResearchFlow:
             return None
         final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
         self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], final,
-                                 step_output={"dropped_records": dispatched.dropped_records}
-                                 if dispatched is not None and dispatched.dropped_records else None,
+                                 step_output=(transport_output | {"dropped_records": dispatched.dropped_records}
+                                 if dispatched is not None and dispatched.dropped_records else transport_output or None),
                                  error_code=outcome.status, error={"error": outcome.error, "http_status": outcome.http_status}
                                  | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {}),
                                  delivery_class=outcome.delivery_class, first_rank=page.read_before if page else 0,
@@ -2336,9 +2351,11 @@ class ResearchFlow:
             ceiling = min(page.read_limit, connector.max_reachable or page.read_limit)
             limit = min(connector.max_results, ceiling - page.read_before)
             started = now()
+            transport: dict[str, Any] = {}
             outcome = await self._send_search(
                 run_id, connector, read.query, limit, page,
-                stop=lambda: (abort is not None and abort.is_set()) or self._stop_requested(run_id, revision))
+                stop=lambda: (abort is not None and abort.is_set()) or self._stop_requested(run_id, revision),
+                transport=transport)
             if outcome is None:
                 return True
             dispatched = outcome if isinstance(outcome, facade.Dispatched) else None
@@ -2349,7 +2366,7 @@ class ResearchFlow:
             stop_reason = _stop_reason(connector, outcome, ok, read_total, page.read_limit, returned_count)
             if stop_reason is None and self._query_requests(run_id, query_key) >= allowance:
                 stop_reason = "budget_exhausted"  # the next page would need a request the query no longer has (D89)
-            read.pages.append(_PageRead(key, page, outcome, limit, stop_reason, started, now(), dispatched))
+            read.pages.append(_PageRead(key, page, outcome, limit, stop_reason, started, now(), dispatched, transport))
             if stop_reason:
                 return False
             before = read_total
@@ -2370,7 +2387,7 @@ class ResearchFlow:
                 step = self.store.step(run["id"], held.key, kind)
                 self.store.start_step(step["id"], started_at=held.started_at)
                 failure = self._record_search(run, step, read.query, held.outcome, held.limit, held.page,
-                                              held.stop_reason, held.finished_at, held.dispatched) or failure
+                                              held.stop_reason, held.finished_at, held.dispatched, held.transport) or failure
         if read.allowance_ended is not None:
             step = self.store.step(run["id"], read.allowance_ended, kind)
             if step["status"] != "cancelled":  # a resumed run finds it already closed and writes nothing again
@@ -4741,34 +4758,46 @@ class ResearchFlow:
         except InvalidCandidateInput:
             self._fail(run["id"], "candidate_publication_failed")
 
-    async def _kill_search_request(self, run: dict, query: dict) -> SearchOutcome | facade.Dispatched:
+    async def _kill_search_request(self, run: dict, query: dict) -> tuple[SearchOutcome | facade.Dispatched, dict]:
         """One logical query, no paging/enrichment; reservations survive uncertain delivery."""
         from deixis.workflow.candidates.run import KILL_RECORDS
         connector = CONNECTORS[query["provider_id"]]
         transport = next(t for t in run["target"]["transport"]["providers"] if t["provider"] == connector.provider_id)
         reserve = transport["requests_per_search"] * (1 + transport["rate_limit_retries"])
+        record: dict = {}
         for attempt in range(transport["transient_attempts"]):
             self._candidate_send_gate(run)
             key = connector.api_key()
             if connector.key_required and not key:
                 return SearchOutcome("not_configured", "before_send",
-                                     f"{connector.provider_id} search not sent: access=not_configured", "not_configured")
+                                     f"{connector.provider_id} search not sent: access=not_configured", "not_configured"), record
             with transaction(self.store.conn):
                 used = self.store.run(run["id"])["usage"].get("provider_requests", 0)
                 if used + reserve > run["budget"]["max_provider_requests"]:
-                    return SearchOutcome("transport_budget", "before_send", "unsent: transport budget", "api_key" if key else "keyless")
+                    return SearchOutcome("transport_budget", "before_send", "unsent: transport budget", "api_key" if key else "keyless"), record
                 # Conservatively charge the whole possible HTTP attempt, never refund it.
                 self.store.add_usage(run["id"], "provider_requests", reserve)
             dispatched = await facade.dispatch_search(connector.provider_id, self.deps.http, query["query_text"], KILL_RECORDS,
                 key, self.deps.settings.contact_email, **endpoint_options(query))
             outcome = dispatched.outcome
+            actual = sum(entry["attempts"] for entry in dispatched.transport)
+            sends = sum(entry["sends"] for entry in dispatched.transport)
+            excess = max(0, actual - reserve)
+            self.store.settle_usage(run["id"], None, excess, sends)
+            record["reserved"] = record.get("reserved", 0) + reserve
+            record["attempts"] = record.get("attempts", 0) + actual
+            record["sends"] = record.get("sends", 0) + sends
+            if excess:
+                record["over_reservation"] = record.get("over_reservation", 0) + excess
+            record.setdefault("dispatches", []).append({"subrequests": list(dispatched.transport)})
             if outcome.delivery_class != "before_send" or outcome.status != "failed" or attempt + 1 == transport["transient_attempts"]:
-                return dispatched
+                return dispatched, record
             await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1))
         raise AssertionError("bounded transport has no attempts")
 
     def _kill_search_record_query(self, run: dict, search: dict, step: dict, position: int,
-                                  query: dict, outcome: SearchOutcome | facade.Dispatched) -> None:
+                                  query: dict, outcome: SearchOutcome | facade.Dispatched,
+                                  transport: dict | None = None) -> None:
         from deixis.workflow.candidates.store import CandidateStore, TERMINAL_OUTCOMES
         dispatched = outcome if isinstance(outcome, facade.Dispatched) else None
         outcome = dispatched.outcome if dispatched else outcome
@@ -4790,6 +4819,8 @@ class ResearchFlow:
                 query_text=query["query_text"], status=status, records=outcome.records if ok else [],
                 error_code=None if ok else outcome.status, raw_payload_path=path, payload_sha256=digest, step_id=step["id"])
             output = {"status": outcome.status, "result_count": len(outcome.records) if ok else 0}
+            if transport and transport.get("dispatches"):
+                output["transport"] = transport
             if dispatched is not None and dispatched.dropped_records:
                 output["dropped_records"] = dispatched.dropped_records
             self.store.finish_step(step["id"], status, output=output,
@@ -4863,10 +4894,11 @@ class ResearchFlow:
             step = self.store.step(run["id"], f"search:{position}", f"provider_search:{query['provider_id']}")
             if step["status"] == "outcome_unknown":
                 outcome = SearchOutcome(step["error_code"] or "outcome_unknown", "after_send_unknown", "recovered delivery unknown", "unknown")
+                transport = None
             else:
                 self.store.start_step(step["id"])
-                outcome = await self._kill_search_request(run, query)
-            self._kill_search_record_query(run, search, step, position, query, outcome)
+                outcome, transport = await self._kill_search_request(run, query)
+            self._kill_search_record_query(run, search, step, position, query, outcome, transport)
             self._candidate_send_gate(run)
         outcomes = {}
         if any(q["status"] == "succeeded" for q in cs.queries(search["id"])):

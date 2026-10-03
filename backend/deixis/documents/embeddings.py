@@ -28,6 +28,7 @@ from deixis.documents import local_embedding
 import httpx
 
 from deixis.models.gemini import API_URL, error_message
+from deixis.providers.common import redact
 
 MODEL = "gemini-embedding-2"
 DIMENSIONS = 768
@@ -112,7 +113,7 @@ NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout, httpx.U
 
 
 async def _send(send: Callable[[], Any], budget: RateBudget | None, stop: Callable[[], None] | None,
-                on_sent: Callable[[], None] | None = None) -> httpx.Response:
+                on_sent: Callable[[], None] | None = None, secret: str | None = None) -> httpx.Response:
     """One batch's request, sent again after each HTTP 429 the budget can wait out; any other failure raises.
 
     `on_sent` is called each time the request was issued: a reply came back (any status), or it failed after the
@@ -138,7 +139,7 @@ async def _send(send: Callable[[], Any], budget: RateBudget | None, stop: Callab
         if response.status_code != 429 or budget is None:
             return response
         if retries >= EMBED_RATE_LIMIT_RETRIES:
-            raise EmbeddingError(f"HTTP 429: rate limited {retries + 1} times on one batch: {error_message(response)}")
+            raise EmbeddingError(f"HTTP 429: rate limited {retries + 1} times on one batch: {redact(error_message(response), secret)}")
         wait = retry_after(response)
         wait = DEFAULT_WAITS[min(retries, len(DEFAULT_WAITS) - 1)] if wait is None else wait
         if wait > budget.seconds_left:
@@ -204,9 +205,9 @@ async def embed(client: httpx.AsyncClient, key: str, texts: list[str], task_type
                      "outputDimensionality": DIMENSIONS} for text in texts[start:start + BATCH]]
         response = await _send(lambda requests=requests: client.post(
             f"{API_URL}/models/{MODEL}:batchEmbedContents", json={"requests": requests},
-            headers={"x-goog-api-key": key}, timeout=60), budget, stop, on_sent)
+            headers={"x-goog-api-key": key}, timeout=60), budget, stop, on_sent, key)
         if response.status_code != 200:
-            raise EmbeddingError(f"HTTP {response.status_code}: {error_message(response)}")
+            raise EmbeddingError(f"HTTP {response.status_code}: {redact(error_message(response), key)}")
         body = _json(response)
         items = body.get("embeddings") if isinstance(body, dict) else None
         if not isinstance(items, list):
@@ -225,9 +226,9 @@ async def embed_openai_compatible(client: httpx.AsyncClient, base_url: str, key:
         chunk = [t[:MAX_CHARS] for t in texts[start:start + BATCH]]
         response = await _send(lambda chunk=chunk: client.post(
             f"{base_url}/embeddings", timeout=120, json={"model": model, "input": chunk},
-            headers={"Authorization": f"Bearer {key}"} if key else {}), budget, stop, on_sent)
+            headers={"Authorization": f"Bearer {key}"} if key else {}), budget, stop, on_sent, key)
         if response.status_code != 200:
-            raise EmbeddingError(f"HTTP {response.status_code}: {error_message(response)}")
+            raise EmbeddingError(f"HTTP {response.status_code}: {redact(error_message(response), key)}")
         body = _json(response)
         items = body.get("data") if isinstance(body, dict) else None
         if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):

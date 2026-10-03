@@ -15,7 +15,7 @@ import pytest
 
 import connector_baseline as baseline
 from connector_baseline import SYNTHETIC_KEY, deny_network, response_spec, fake_clock
-from deixis.providers import contract, facade, registry
+from deixis.providers import common, contract, facade, registry
 from deixis.providers.common import SearchOutcome
 from deixis.storage import db
 from deixis.workflow.flow import ResearchFlow, Page
@@ -234,7 +234,7 @@ def assert_auth(request, fixture, key):
         assert SYNTHETIC_KEY not in str(value)
 
 
-def replay_case(provider_id, endpoint_id, fixture, case, *, direct=False, key=SYNTHETIC_KEY):
+def replay_case(provider_id, endpoint_id, fixture, case, *, direct=False, key=SYNTHETIC_KEY, dispatched=False):
     """Real search parser; native success bodies, strict subrequest order and finite script."""
     connector = registry.CONNECTORS[provider_id]
     ep = endpoint_fixture(fixture, endpoint_id)
@@ -293,11 +293,25 @@ def replay_case(provider_id, endpoint_id, fixture, case, *, direct=False, key=SY
             kwargs = {"cursor": case.get("cursor"), "max_rate_limit_retries": 2, **options}
             if endpoint_id is not None:
                 kwargs["endpoint"] = endpoint_id
-            if direct:
-                return await connector.search(client, baseline.QUERY, case.get("limit", 1), key, baseline.CONTACT, **kwargs)
-            request = contract.SearchRequest(baseline.QUERY, case.get("limit", 1), endpoint=endpoint_id,
-                                            cursor=case.get("cursor"), max_rate_limit_retries=2, options=options)
-            return await facade.connectors()[provider_id].search(request, contract.ConnectorContext(client, key, baseline.CONTACT))
+            with common.collect_transport() as entries:
+                if dispatched:
+                    result = await facade.dispatch_search(provider_id, client, baseline.QUERY, case.get("limit", 1),
+                                                         key, baseline.CONTACT, **kwargs)
+                    outcome, entries = result.outcome, result.transport
+                elif direct:
+                    outcome = await connector.search(client, baseline.QUERY, case.get("limit", 1), key, baseline.CONTACT, **kwargs)
+                else:
+                    request = contract.SearchRequest(baseline.QUERY, case.get("limit", 1), endpoint=endpoint_id,
+                                                    cursor=case.get("cursor"), max_rate_limit_retries=2, options=options)
+                    outcome = await facade.connectors()[provider_id].search(request, contract.ConnectorContext(client, key, baseline.CONTACT))
+            assert sum(e["attempts"] for e in entries) == len(requests)
+            connect_failures = attempts if case.get("exception") == "connect" else 0
+            assert sum(e["sends"] for e in entries) == len(requests) - connect_failures
+            assert sum(e["retries"] for e in entries) == outcome.retries
+            assert len(entries) <= connector.requests_per_search
+            assert all(0 <= e["retries"] <= 2 for e in entries)
+            assert SYNTHETIC_KEY not in json.dumps(entries)
+            return outcome
     with fake_clock() as waits:
         outcome = asyncio.run(run())
     assert not remaining, (provider_id, endpoint_id, case["name"], remaining)
@@ -363,6 +377,8 @@ CASES = [(pid, e.endpoint_id, FIXTURES[pid], case)
                          ids=[f"{p}/{e or 'default'}/g{c['group']}/{c['name']}" for p,e,f,c in CASES])
 def test_conformance_case(provider_id, endpoint_id, fixture, case):
     check_case(provider_id, endpoint_id, fixture, case)
+    replay_case(provider_id, endpoint_id, fixture, case, direct=True)
+    replay_case(provider_id, endpoint_id, fixture, case, dispatched=True)
 
 
 def test_exact_coverage():
@@ -549,7 +565,9 @@ def test_dispatch_reads_the_key_once_per_attempt(dispatch_flow, monkeypatch, key
         return key if len(reads) == 1 else None if key else SYNTHETIC_KEY
     async def search(http, query, limit, checked, contact, **kwargs):
         sends.append(checked)
+        await common.send(http, "https://synthetic.invalid/search", {}, {}, "SYNTHETIC", "api_key", secrets=(checked,))
         return SearchOutcome("zero_results", None, "SYNTHETIC", "api_key")
+    flow.deps.http = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
     connector = replace(registry.CONNECTORS["ieee_xplore"], search=search)
     monkeypatch.setitem(registry.CONNECTORS, "ieee_xplore", connector)
     monkeypatch.setattr(registry.Connector, "api_key", lambda self: api_key())
@@ -570,7 +588,11 @@ def test_transient_retry_refreshes_snapshot_before_counting(dispatch_flow, monke
         return SYNTHETIC_KEY if len(reads) == 1 else None
     async def search(*args, **kwargs):
         sends.append(args[3])
-        return SearchOutcome("failed", "before_send", "SYNTHETIC", "api_key")
+        _, outcome = await common.send(args[0], "https://synthetic.invalid/search", {}, {}, "SYNTHETIC", "api_key")
+        return outcome
+    def refused(request):
+        raise httpx.ConnectError("SYNTHETIC", request=request)
+    flow.deps.http = httpx.AsyncClient(transport=httpx.MockTransport(refused))
     connector = replace(registry.CONNECTORS["ieee_xplore"], search=search)
     monkeypatch.setitem(registry.CONNECTORS, "ieee_xplore", connector)
     monkeypatch.setattr(registry.Connector, "api_key", lambda self: api_key())
@@ -614,10 +636,10 @@ def test_kill_search_missing_key_charges_no_reservation(candidate_lib, monkeypat
     run, query, search, step = prepare_kill(lib, monkeypatch)
     monkeypatch.delenv("IEEE_API_KEY")
     before = lib.store.run(run["id"])["usage"].get("provider_requests", 0)
-    outcome = asyncio.run(lib.flow._kill_search_request(run, query))
+    outcome, trace = asyncio.run(lib.flow._kill_search_request(run, query))
     assert outcome.status == "not_configured" and outcome.delivery_class == "before_send"
     assert lib.store.run(run["id"])["usage"].get("provider_requests", 0) == before
-    lib.flow._kill_search_record_query(run, search, step, 1, query, outcome)
+    lib.flow._kill_search_record_query(run, search, step, 1, query, outcome, trace)
     row = lib.candidate_store.queries(search["id"])[0]
     assert row["status"] == "failed" and row["error_code"] == "not_configured" and row["record_count"] == 0
     assert lib.seen == []
@@ -637,7 +659,7 @@ def test_kill_dispatch_reads_the_key_once_per_attempt(candidate_lib, monkeypatch
     source = replace(registry.CONNECTORS["ieee_xplore"], search=search)
     monkeypatch.setattr(registry.Connector, "api_key", lambda self: api_key())
     monkeypatch.setitem(registry.CONNECTORS, "ieee_xplore", source)
-    outcome = asyncio.run(lib.flow._kill_search_request(run, query))
+    outcome, trace = asyncio.run(lib.flow._kill_search_request(run, query))
     assert len(reads) == 1 and sends == ([key] if key else [])
     outcome = outcome.outcome if isinstance(outcome, facade.Dispatched) else outcome
     assert outcome.status == ("zero_results" if key else "not_configured")
@@ -648,7 +670,7 @@ def test_kill_dispatch_reads_the_key_once_per_attempt(candidate_lib, monkeypatch
         reads.clear()
         sends.clear()
         run["budget"]["max_provider_requests"] = 0
-        refused = asyncio.run(lib.flow._kill_search_request(run, query))
+        refused, trace = asyncio.run(lib.flow._kill_search_request(run, query))
         assert refused.status == "transport_budget" and refused.access_mode == "api_key"
         assert len(reads) == 1 and sends == []
         assert lib.store.run(run["id"])["usage"]["provider_requests"] == reserve
@@ -672,7 +694,8 @@ def test_pubmed_efetch_quota_stops_later_searches(dispatch_flow, monkeypatch):
         assert first.error_kind == "quota_exhausted"
         second = asyncio.run(flow._send_search(run["id"], source, {"query_text":"SYNTHETIC later"}, 1))
         assert second.error_kind == "quota_exhausted" and second.delivery_class == "before_send"
-        assert len(requests) == 2 and flow.store.run(run["id"])["usage"]["provider_requests"] == 1
+        assert len(requests) == 2 and flow.store.run(run["id"])["usage"]["provider_requests"] == 2
+        assert flow.store.run(run["id"])["usage"]["provider_sends"] == 2
     finally:
         asyncio.run(flow.deps.http.aclose())
 

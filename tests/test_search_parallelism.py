@@ -93,6 +93,11 @@ class Hosts:
         self.waiting = set()  # (query, start) of the requests a `hold` is keeping in flight
         self.most = {"hosts": 0}
 
+    @property
+    def transport_log(self):
+        """Independent per-query request evidence; fault subclasses may have no such log."""
+        return self.log
+
     async def __call__(self, request):
         host, params = request.url.host, request.url.params
         if host == "api.openalex.org" and params.get("per_page") == "1" and params.get("select") == "id":
@@ -203,6 +208,7 @@ class Session:
     """One app and client for a test: a discovery, then any resume or retry, read before the client closes."""
 
     def __init__(self, tmp_path, monkeypatch, hosts, second_round=()):
+        self.hosts = hosts
         self.app = setup(tmp_path, monkeypatch, hosts, second_round)
         self.client = client_of(self.app)
         self.store = self.app.state.store
@@ -225,7 +231,7 @@ class Session:
         return self
 
     def evidence(self):
-        return evidence(self.store, self.rid, self.run_id)
+        return evidence(self.store, self.rid, self.run_id, self.hosts.transport_log)
 
     def close(self):
         self.client.__exit__(None, None, None)
@@ -263,7 +269,7 @@ def rows(store, sql, *args):
     return [dict(r) for r in store.conn.execute(sql, args)]
 
 
-def evidence(store, rid, run_id):
+def evidence(store, rid, run_id, request_log=None):
     """What the search stage wrote, in write order. Only run steps' clocks and creation order are left out."""
     labels = Labels()
     steps = {s["id"]: s for s in rows(store, "SELECT * FROM run_steps WHERE run_id = ?", run_id)}
@@ -276,6 +282,36 @@ def evidence(store, rid, run_id):
                     | {"output": json.loads(s["output_json"]) if s["output_json"] else None,
                        "error": json.loads(s["error_json"]) if s["error_json"] else None}
                     for s in steps.values() if s["kind"].startswith("provider_search:")}
+    # Compare the original evidence fields to the sequential freeze; verify additive transport facts separately.
+    for row in rows(store, "SELECT * FROM search_runs WHERE run_id = ?", run_id):
+        output = search_steps[steps[row["step_id"]]["operation_key"]]["output"]
+        trace = output.pop("transport")
+        allowance = json.loads(row["error_json"])["rate_limit_retries"]
+        assert trace["reserved"] == 1 + allowance
+        assert len(trace["dispatches"]) == 1
+        subrequests = trace["dispatches"][0]["subrequests"]
+        assert len(subrequests) == 1
+        entry = subrequests[0]
+        assert trace["attempts"] == sum(e["attempts"] for e in subrequests)
+        assert trace["sends"] == sum(e["sends"] for e in subrequests)
+        assert 0 <= trace["sends"] <= trace["attempts"] <= trace["reserved"]
+        assert entry["attempts"] == 1 + entry["retries"]
+        assert entry["sends"] == entry["attempts"] - int(entry["delivery_class"] == "before_send")
+        if request_log is not None:
+            start = row["page_number"] * CONNECTORS[row["provider"]].max_results
+            expected_attempts = sum(e["provider"] == row["provider"] and e["query"] == row["query_text"] and e["start"] == start
+                                    for e in request_log)
+            assert trace["attempts"] == trace["sends"] == entry["attempts"] == entry["sends"] == expected_attempts
+            assert entry["retries"] == expected_attempts - 1
+        assert entry["http_status"] == json.loads(row["error_json"])["http_status"]
+        assert entry["status"] == ("completed" if row["status"] in ("zero_results", "parse_error") else row["status"])
+        assert entry["delivery_class"] == row["delivery_class"]
+        assert entry["url"].startswith("https://") and "?" not in entry["url"]
+        assert "over_reservation" not in trace
+        if row["status"] not in ("completed", "zero_results"):
+            assert output.pop("search_run_id") == row["id"]
+        if not output:
+            search_steps[steps[row["step_id"]]["operation_key"]]["output"] = None
     found = labels({
         "events": events,
         "search_runs": rows(store, "SELECT * FROM search_runs WHERE research_id = ? ORDER BY rowid", rid),
@@ -297,6 +333,39 @@ def evidence(store, rid, run_id):
     found["links"] = sorted(found["links"], key=lambda link: json.dumps(link, sort_keys=True))
     found["heads"] = sorted(found["heads"])
     return found
+
+
+@pytest.mark.parametrize("fault", ["reserved", "attempts", "sends", "subrequests", "retries"])
+def test_evidence_without_request_log_checks_transport_consistency(tmp_path, monkeypatch, fault):
+    session = Session(tmp_path, monkeypatch, Hosts(rate_limited=())).discover()
+    try:
+        evidence(session.store, session.rid, session.run_id)
+        step = next(s for s in rows(session.store, "SELECT * FROM run_steps WHERE run_id = ?", session.run_id)
+                    if s["kind"].startswith("provider_search:"))
+        output = json.loads(step["output_json"])
+        trace = output["transport"]
+        if fault == "reserved":
+            trace["reserved"] = 0
+        elif fault in ("attempts", "sends"):
+            trace[fault] += 1
+        elif fault == "subrequests":
+            trace["dispatches"][0]["subrequests"] = []
+        else:
+            trace["dispatches"][0]["subrequests"][0]["retries"] += 1
+        session.store.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?", (json.dumps(output), step["id"]))
+        with pytest.raises(AssertionError):
+            evidence(session.store, session.rid, session.run_id)
+    finally:
+        session.close()
+
+
+def test_evidence_with_empty_request_log_does_not_skip_transport_check(tmp_path, monkeypatch):
+    session = Session(tmp_path, monkeypatch, Hosts(rate_limited=())).discover()
+    try:
+        with pytest.raises(AssertionError):
+            evidence(session.store, session.rid, session.run_id, [])
+    finally:
+        session.close()
 
 
 def golden(name, value):

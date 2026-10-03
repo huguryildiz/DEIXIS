@@ -6,9 +6,9 @@
 
 Rapor koşusu yarıda durdu. IV. bölüm, bir onarım denemesinden sonra da geçersiz çıktı verdi. Bu yüzden R2, R3, R4, R5, R6, R8, R9 ve R11 ölçülemedi (`run_incomplete`). R10 tasarım gereği ölçülmedi. Okur çalışmadı. Yalnız R1, R7 ve P19 kayıtlı. Bu bir rapor kalitesi hükmü değildir: tek koşu, tek rapor modeli (`codex`/`gpt-5.6-luna`/`medium`), geliştirme sonrası yeni korpus ve rapora hazır tablo koşuluyla sınırlıdır.
 
-Durma nedeni saklı kayıtlardan okundu. IV. bölümün ilk çıktısında bir hücre çapası hücre kanıtında bulunamadı (`anchor_not_in_cell_evidence`). Ürün tek çapa onarımı gönderdi. Onarım çıktısında iki ayrı sorun vardı: model `skill_package_hash` değerini bir karakter yanlış kopyaladı (`envelope_mismatch`), ve atıf çapalarının hiçbirinde ne `passage_id` ne `cell_id` vardı (`citation_anchor_target_count`). Hata `client_timeout` değildi; freeze §5 gereği koşu sürdürülmedi. Koşu zaten `paused` (`section_failed`) durumundaydı; durumu korundu, iptal gönderilmedi.
+Durma nedeni saklı kayıtlardan okundu. IV. bölümün ilk çıktısında bir hücre çapası hücre kanıtında bulunamadı (`anchor_not_in_cell_evidence`). Ürün tek çapa onarımı gönderdi. Onarım çıktısında iki ayrı sorun vardı: model `skill_package_hash` değerini bir karakter yanlış kopyaladı (`envelope_mismatch`), ve 21 atıf çapasının her biri hem `passage_id` hem `cell_id` taşıyordu; şema tam birini istiyor (`citation_anchor_target_count`). *(3 Ekim düzeltmesi, D198/D202: bu cümlenin ilk sürümü “hiçbirinde ne `passage_id` ne `cell_id` vardı” diyordu; saklı onarım çıktısı ikisinin de dolu olduğunu gösteriyor.)* Hata `client_timeout` değildi; freeze §5 gereği koşu sürdürülmedi. Koşu zaten `paused` (`section_failed`) durumundaydı; durumu korundu, iptal gönderilmedi.
 
-Aynı hash kopyalama hatası hazırlıkta bir özet tarama adımında da görüldü (Ek A.4). İki gözlem bir hata oranı vermez.
+Aynı hash kopyalama hatası hazırlıkta iki oturumda daha görüldü: bir özet tarama oturumu (`mss_h5nfepCU8lHyzXZ1W3qz`, adım başarısız) ve bir tam metin kararı oturumu (`mss_IEbEtej7GQuNAUvyNukU`, adım onarımla başarılı). 52 oturumda üç gözlem bir hata oranı vermez. *(3 Ekim düzeltmesi, D198: ilk sürüm yalnız özet tarama adımını sayıyordu.)*
 
 ## Kimlikler
 

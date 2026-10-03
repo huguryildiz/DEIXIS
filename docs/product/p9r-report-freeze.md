@@ -489,3 +489,101 @@ Denklem sütununun yedi güncel hücresi kaynak-sürümü sonra hücre kimliği 
 ### A.6 Sonraki adım
 
 İnceleme “hazır” derse koordinatör bu commit'i push eder. Yürütücü push edilmiş hash ile §6.1'i yeniden çalıştırır, 8765 denetimini ve alt süreç envanterini yeniler, gözlemciyi POST zamanıyla başlatır ve tek isteği gönderir: `POST /api/researches/res_5ZrJQgVQ5unqqCRpMbrr/reports`, gövde `{"table_id": "tbl_pQukBcMTicxNo3QPGaf9", "continue_with_failed": false}`.
+
+## Ek B — H9b: RF sonrası rapor yolunun yeniden ölçümü (3 Ekim 2026, koşudan önce dondu)
+
+**Dayanak.** Koordinatör görevi (3 Ekim): RF düzeltmesinden ([D198](../decisions.md), `682ba1f`) sonra rapor yolunu gerçek modelle kısa bir yeniden ölçüm. Açık noktalar Claude Opus 5.5 + `gpt-6.1-sol` medium tarafından, salt okunur ortak kararla, sahip adına kararlaştırıldı ([D202](../decisions.md)). Bu ekte yazılmayan her kural H9'dakiyle aynıdır (§1-§7, Ek A): K05 canlı `codex-home` dar istisnası, port 8765 ön koşulu ve koordinatör kuralı, `env -i` başlatma, null keyring, `.env` yok, `codex`/`gpt-5.6-luna`/`medium`, izole veri dizini ve 8873, ayrık ölçüm worktree'si, yazan ve inceleyen farklı şirketin modeli. H9'un donmuş metni ve Ek A değişmez.
+
+### B.1 Ürün ve donmuş değerler
+
+| Kayıt | Değer |
+|---|---|
+| Ürün | `682ba1f0fcd0259b743aa4e14294d33851fe81d4` (RF, D198; ortak karar anında `origin/main`; bu ek yazılırken main `03422d7`'ye, D197'ye ilerledi), ayrık worktree `/Users/huguryildiz/Documents/GitHub/DEIXIS-h9b-run`, kendi `.venv`'i (`uv sync --frozen`, arm64, Python 3.12.13). Main ilerlese de yeniden sabitlenmez. Bu commit H9'dan sonra gelen başka işleri de içerir (87cee0b'den sonra: D184, D185, D186, D194, D195, D196, D199); H9 ile karşılaştırma RF'nin nedensel etkisini ayıramaz. |
+| Runtime `skill_package_hash` | `sha256:1a7e67137173f49fc2acca70edc940a5f0589cf216cf20a2d8f5f606b3b93c4e` (D198 ile aynı) |
+| Şema manifesti (23 dosya) | `73fd58185ee36da262ee2d405c1ad9116f5dd9385d8a2b457c8d9a8df25f1797` |
+| Yöntem dosya manifesti | 17 dosya, toplam `027153692672b923f6f932d2e2eb988cdc4f92cf4323e8571cb70899d20b93b4` (`evidence/method-manifest.json`, `a416e1b2cd3a54d11e68b8842936b754680eccb74d83fe9548617e8f7d9be1f7`) |
+| Kit / kit testi | değişmedi: `db203420e4b1ade5ab45cfa3b1636cc239bd3efa251554bb8dc1b15912251848` / `7f7d2f0d500401f30bafe3cee7a4c4bdffd96454a600817158a1aa765d63bdf8` |
+| P19 sorgusu | §4.2.1 baytları aynen (`p19.sql`, `6d53789f7a1b898a4833bb993eaac222b29e5fa0cb209519fe020c3106e6acd1`) |
+
+Özel kanıt `DEIXIS-h9b-run/.local/p9r-h9b/` altında izlenmeden kalır. Yürütücü dosyaları:
+
+- `gate_b.sh`: §6.1'in H9b sürümü. Ürün/dondurma atalığı, `## D202` varlığı, RF kod imleri, bütünlük, paket hash'i, kit pinleri, şema manifesti, tüm ağacın temizliği; ayrıca aşağıdaki `h9b-files` bloğunu push edilmiş dondurma belgesinden okur ve listelenen her dosyanın SHA-256 değerini denetler (kendisi dahil).
+- `launch_b.sh`: §4.1 başlatıcısının H9b sürümü. `H9B_ARM` (`a`/`b`) ve `H9B_FREEZE_COMMIT` ister; A için kopya veri dizini var olmalı, B için yok olmalı; başka bir H9b sunucusu varsa veya `pgrep` temiz bir “eşleşme yok” (çıkış 1, boş çıktı) vermezse başlamaz; 8765 denetimi H9'daki işlevle aynı.
+- `poll_b.py`: hazırlık gözlemcisi (H9 `poll.py` + kol/PID argümanı + `ps`'in üç durumu).
+- `poll_report_b.py`: rapor gözlemcisi. Ek A.2'nin mantığı; yalnız bu kolun rapor koşusunu izler; her poll'un bütün okumaları tek SQLite okuma işleminde yapılır, böylece duraklamış durum ile sürdürme sonrası heartbeat/oturum karışmaz; `ps` ancak çıkış kodu 0, dolu stdout ve boş stderr ile “canlı” der.
+- `api.py`: istemci (H9 ile aynı).
+- `h9b_counts.py`, `p19_count.py`: B.5'in sayımları. `logical_table.py`: A tablosunun mantıksal hash'i. `manifest.py`: dosya manifesti. Üç sayım betiği veritabanını yalnız `mode=ro` ile ve tek okuma işleminde açar; açamazsa durur (`immutable` yedeği yoktur).
+
+```h9b-files
+d38ff84c7db98926cc00d302cf7bdc09b3367ed4eecd95e7ff524f14b3fe91c0  .local/p9r-h9b/gate_b.sh
+783e7bd42cd80ab7437bdb46210636a9b1bcb1890de775f369a08ade91b76c95  .local/p9r-h9b/launch_b.sh
+841d46ce67479636e37fbf26ce81d17327b306ab343d390e2b6cd350e0217239  .local/p9r-h9b/poll_b.py
+c9d60768bbde2ef70ed3de52905b71f0cc79ec16e2efbfa05f3c418770181803  .local/p9r-h9b/poll_report_b.py
+7c9bc47913cf5ff4e6b8dc51c6aef2a37ea11e961b98f82a051ddc52cc56d28d  .local/p9r-h9b/api.py
+b44a93835b3b7bfd17bf4d5c10731304ab62a436e5729132ccf2bae80654a08e  .local/p9r-h9b/h9b_counts.py
+58219952459a2e2bedc25722b5d7e5e158e04cbbe02d9d6a205e401f63136993  .local/p9r-h9b/p19_count.py
+6d53789f7a1b898a4833bb993eaac222b29e5fa0cb209519fe020c3106e6acd1  .local/p9r-h9b/p19.sql
+e3307b794ff24f4a93fb2abca701dac2e34a7992491036b68df05a08cec4210f  .local/p9r-h9b/logical_table.py
+e1c375b4e8aecf61906472a0c60caa5932a3c0f2f5e201e2da0424a0cca97183  .local/p9r-h9b/manifest.py
+a416e1b2cd3a54d11e68b8842936b754680eccb74d83fe9548617e8f7d9be1f7  .local/p9r-h9b/evidence/method-manifest.json
+f83d25b490fc1c29b6fc0799085a5e1ec93f8387c980ec9d2cf5eac138a7d939  .local/p9r-h9b/evidence/a-source-manifest.json
+f83d25b490fc1c29b6fc0799085a5e1ec93f8387c980ec9d2cf5eac138a7d939  .local/p9r-h9b/evidence/a-copy-manifest.json
+5ed7ef4ec5843dcd3451cdbadb5adbfd245c3bede4cac269ee4f731e0296d8d1  .local/p9r-h9b/evidence/a-logical-table-before.json
+706ae813cfc8bc9e34f0ab981f0ddc21d7d811c34003e8bad8471d72162f547d  .local/p9r-h9b/r9/a-pairs.json
+7e5a080f7b32a37f89caf65eeaf897a69647c1e7e230ffc5adafe50c4b10898b  .local/p9r-h9b/r9/a-pairs-provenance.json
+```
+
+`h9b_counts.py` ve `p19_count.py` H9 verisinde denendi: H9'un P19 satır hash'ini (`b325ed94…8422`) ve a-e sayılarını aynen verdiler; H9'un 52 oturumunda üç `envelope_mismatch` buldular (D198 ile aynı), hazırlık aralığında (POST'tan önce) 45 oturumda iki. Kuru `gate_b.sh` (dondurma belgesi denetimleri dışarıda) rc 0; kuru regresyon testleri (§6.1 listesi + `tests/test_report_path_fix.py`, `tests/test_report_path_fix_contracts.py`) 331 geçti. Bunlar modelsiz denetimlerdir.
+
+### B.2 İki kol: A önce, B ondan bağımsız
+
+İki kolun sunucusu aynı anda çalışmaz; ikisi de 8873'tedir. Kollardan biri durursa öteki yine koşar.
+
+**Kol A: H9 tablosu, geliştirme korpusu.** H9'un durdurulmuş veri dizini (`DEIXIS-h9run/.local/p9r-h9/data`) `cp -Rp` ile `DEIXIS-h9b-run/.local/p9r-h9b/a/data` dizinine kopyalandı; SQLite yan dosyaları dahil 65 dosya, sert bağ yok (`nlink` en çok 1), kaynak ve kopya manifesti aynı: `80764df489b155375c3a4e0ed91d4185c68f66df9ee60fdd69719e2a4a2ded1f` (`evidence/a-source-manifest.json`, `f83d25b4…a7d939`). Asıl H9 dizinine yazılmaz. Araştırma `res_5ZrJQgVQ5unqqCRpMbrr`, tablo `tbl_pQukBcMTicxNo3QPGaf9`. Tablonun mantıksal hash'leri (`logical_table.py`, kopyalamadan önce; kopyada da, sunucu başlamadan, bayt bayt aynı çıktı; `evidence/a-logical-table-before.json`): satırlar 7, sütunlar 7, sütun revizyonları 7, hücreler 49, güncel revizyonlar 49, kanıt bağları 101. Migration 0067-0068 ilk başlangıçta uygulanır. **A'nın POST kapısı:** başlangıçtan sonra ve POST'tan önce mantıksal hash'lerin altısı da aynı olmalı, tablo listesinde `report_ready.ready=true`, aktif koşu 0, `started` oturum 0. H9'un duraklamış eski rapor koşusu ve raporu tarihsel kayıt olarak kalır; “sıfır eski rapor” şartından muaf tutulur, hiçbir zaman sürdürülmez veya iptal edilmez. Kapı geçmezse A `ölçülemedi` yazılır; tablo onarılmaz. **A'nın ikinci kapısı** (Claude + Sol medium ortak kararı, `evidence/decide2-out.md`): A'nın korpus, tablo ve R9 kayıtları H9b'de hazırlanmaz; Ek A'da incelenmiş ve burada hash'leriyle donmuş H9 kayıtlarıdır. Bu yüzden Sol high'ın onayladığı ve push edilen Ek B A'nın ikinci kapısıdır; POST öncesi mekanik denetimlerin sonucu `protocol.md`'ye ve sonuca yazılır, herhangi bir uyuşmazlık yürütücü takdiri olmadan `ölçülemedi` verir. R9 çiftleri H9'unkilerdir (`r9/a-pairs.json` `706ae813cfc8bc9e34f0ab981f0ddc21d7d811c34003e8bad8471d72162f547d`, köken `r9/a-pairs-provenance.json` `7e5a080f…898b`); sonradan değişmez. A'nın sonucu bağımsız kanıt değildir: RF, H9'un saklı çıktıları üzerinde geliştirildi.
+
+**Kol B: yeni hazırlık, Q3.** Soru §1.1'deki Q3 metni, kelimesi kelimesine: “Su dağıtım ağlarında pompa zamanlaması için hangi optimizasyon modelleri kullanılmıştır? Karar değişkenlerini, enerji maliyeti amacını, hidrolik ve depo kısıtlarını, talep belirsizliğini ve değerlendirme koşullarını karşılaştırın.” İngilizce anahtar terimler Ek A.3'ün kuralıyla (sorunun başının düz karşılığı, tekil/çoğul dışında eşanlamlı yok, `claim:`/`not:` grubu yok) şimdi dondu ve araştırma oluşturulurken verilir: `water distribution network, water distribution networks; pump scheduling; optimization`. Bu sınırlı sözcük dağarcığı geri çağırımı düşürebilir. Geri kalan her hazırlık kuralı H9'daki gibidir: yeni ve boş veri dizini `DEIXIS-h9b-run/.local/p9r-h9b/b/data`, `sw`, akademik, yalnız soru, keşif eforu `standard`, dil `tr`; protokol kartı değiştirilmeden yürütücü tarafından onaylanır; §1.2 seçim kuralları ve K03 kuyruk geçişi (`claude-opus-5-5` medium, yalnız saklı metin); §1.3'ün yedi `text` sütunu aynen; §1.2'nin 6-10 eser kuralı. Bağımsızlık H9'un belge envanteri (`old-corpus-inventory.json` `b428c970…423a`) ve H9 korpusunun 7 eserlik kaynak envanteri (`source-inventory.json` `c5479f4c…be26`) ile, Ek A'daki yöntemle denetlenir. **B'nin ikinci kapısı:** B'nin korpus, tablo ve R9 kayıtları (Ek A.4/A.5 biçiminde) B'nin POST'undan önce tarihli **Ek C** olarak yazılır; `gpt-6.1-sol` high en çok 3 tur inceler, koordinatör push eder, `gate_b.sh` push edilmiş hash ile yeniden geçer. B'nin hazırlığı bu kapıyı beklemeden başlayabilir.
+
+### B.3 Bütçe
+
+H9 360 uygulama oturumunun 52'sini kullandı; 308 kaldı. H9b: A raporu 60 oturum / POST'tan 90 dk; B hazırlığı en çok 2 deneme, birlikte 180 oturum / 240 dk (her doldurma 60 / 60 içinde; saat B'nin ilk keşif koşusunun kuyruğa girdiği anda başlar); B raporu 60 / 90. Toplam 300; kalan 8 oturum yalnız gözlenen tavan aşımı içindir, yeni deneme değildir. Her yeni oturum sayılır (onarım, yeniden gönderim, hazırlık denemeleri dahil); A'ya kopyalanan H9 oturumları tarihsel kayıttır, sayılmaz. K03 kuyruk istekleri: deneme başına en çok 1, B'de toplam en çok 2, 30 dk, ayrı defter. Okurlar (K09) yalnız tamamlanan rapor için: rapor başına en çok 4 istek / 60 dk, H9b toplamında en çok 8 / 120 dk (H9'un okur iznine açık ek); ayrı defter.
+
+### B.4 Durdurma
+
+Her kolda tek rapor koşusu; sonuç beğenilmedi diye ikinci rapor yok. §5'in kuralları her rapor koşusu için aynen: yalnız bütün terminal kök nedenler `client_timeout` ise 10 dk sonra bir kez sürdürme; kota/yük, model uyuşmazlığı, araç ihlali, başka veya karışık hata, ikinci timeout, bütçe dolması veya okunamayan sayaç o kolun raporunu durdurur. Hâlâ çalışan koşu yalnız ölçümü bitirmek için kendi API'siyle iptal edilir; duraklamış koşu iptal edilmez. Kapanış: Ek A.2'nin yürütücü dönüş kaydı ve 120 s penceresi (`snapshot_eligible`). Nihai snapshot'tan hemen önce gözlemcinin en yeni satırı aynı terminal olay kimliği için `snapshot_eligible=true` göstermelidir; göstermezse nihai durum iddiası kurulmaz. Durmuş raporda kit `snapshot ... --stopped <neden>` ve `score` çalışır, okur çalışmaz; yalnız R1, R7, P19 ve B.5 sayıları korunur. Hazırlıkta K08 ve §5'in hazırlık kuralları aynen. Port 8765 denetimi (Ek A.2 / §4.1.1 biçiminde, `launch_b.sh` içindeki aynı işlev) her sunucu başlangıcında, B'nin her hazırlık denemesinin başında, her POST'tan hemen önce ve her nihai snapshot'tan önce yapılır; dinleyici veya başarısız denetim §4.1.1 madde 3'ü tetikler.
+
+### B.5 Sayılanlar (her rapor koşusu için, salt okunur)
+
+`h9b_counts.py <library> <report_id> <başlangıç> [<bitiş>]`; sınırlar saat dilimli ISO zamanlarıdır ve UTC anı olarak karşılaştırılır, saat dilimsiz veya ters sınır reddedilir. Çağrılar: A'da `<sunucu başlangıcı> <POST zamanı>` (beklenen 0 oturum) ve `<POST zamanı>`; B'de `<ilk keşif koşusunun created_at değeri> <POST zamanı>` (hazırlık) ve `<POST zamanı>` (rapor). Sayılanlar:
+
+- **Yama girdileri:** taşıma şeması `properties.schema_version.const = "deixis.report_section_anchor_repair.v1"` olan `report_section` girdileri. Ayrı sayılar: oluşturulan girdi, oturumu olan deneme, doğrulanıp uygulanan yama (`validation_json.anchor_patch` var), birleşik taslağı `ok=true` olan, bölümü `valid` yayımlanan. Her girdi bölüm, adım, deneme ve sorunlarıyla listelenir.
+- **Yamayla çıkarılan iddialar:** `anchor_patch.changes` içinde `claim_key` ve `removed` taşıyan her öğe; bölüm yayımlandı mı, son taslağın `insufficient_evidence` kaydında bağlamı tam `<claim_key>: ` ile başlayıp boş olmayan açıklama süren bir giriş var mı.
+- **Bırakılan iddia/belirsizlik:** `repair_dropped_claim` ve `repair_dropped_insufficient_evidence` sorunlarının geçiş sayısı ve etkilenen ayrı oturumlar. Doğrulaması olmayan `report_section` oturumları ayrıca listelenir; sayıları bilinmez, sıfır sayılmaz.
+- **Hash:** `başlangıç <= started_at < bitiş` aralığındaki her oturumda `envelope_mismatch` geçişi ve oturum kimlikleri (beklenen 0), doğrulaması olmayan oturumlar ve yama oturumları ayrı listelenir; damga paydası doğrudan sayılır: doğrulaması olan, yama olmayan oturumlar; pay: bunlardan `skill_package_hash` damgası taşıyanlar. Yama birleşimleri yeniden bağlanır, damgalanmaz. Aşamalar ayrı çağrılarla verilir: A'da [sunucu başlangıcı, POST) ve [POST, -); B'de [ilk keşif koşusu, POST) hazırlık ve [POST, -) rapor.
+- **P19 a-e** (`p19_count.py`): §4.2.1 sorgusu ve kuralları aynen. (e) tam onarımda §4.2.1 gibi: çıkarılan anahtar `insufficient_evidence` kaydının `context` veya `reason` metninde tam kimliğiyle geçmelidir (`V.1`, `V.10` ile eşleşmez). Yama denemesinde yama çıktısı tam iddia kümesi taşımadığı için başarısız temel taslak ile adımın doğrulanmış birleşik sonucu karşılaştırılır ve görünürlük için katı kural uygulanır: bağlam tam `<claim_key>: ` ile başlar ve boş olmayan açıklama sürer. İki tür ayrı listelenir. Okunamayan taslak, eksik iddia listesi veya eksik onarım doğrulaması `not_readable`/eksik diye ayrıca yazılır, sıfır sayılmaz.
+- R1/R7 ve rapor tamamlanırsa kitin bütün satırları ile K09 okurları (§4.3 aynen), H9'daki gibi.
+
+Maruz kalma olmadan sıfır, etkinlik kanıtı değildir: yama yoluna hiç girilmezse “yama ölçülmedi” yazılır.
+
+### B.6 Komutlar
+
+```sh
+# her kol için ayrı ayrı, push edilmiş H9b dondurma hash'iyle
+cd /Users/huguryildiz/Documents/GitHub/DEIXIS-h9b-run
+H9B_FREEZE_COMMIT=<hash> zsh .local/p9r-h9b/gate_b.sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend:. .venv/bin/python -m pytest -q -n 0 -p no:cacheprovider \
+  --basetemp=/tmp/p9-h9b-preflight-tests tests/test_report_anchor_repair.py tests/test_report_handles.py \
+  tests/test_report_failed_rows.py tests/test_report_api.py tests/test_p6_measure_report.py \
+  tests/test_report_path_fix.py tests/test_report_path_fix_contracts.py
+H9B_ARM=a H9B_FREEZE_COMMIT=<hash> nohup zsh .local/p9r-h9b/launch_b.sh > .local/p9r-h9b/evidence/server-a.log 2>&1 &
+# rapor: POST /api/researches/<id>/reports {"table_id": "<tablo>", "continue_with_failed": false}
+.venv/bin/python .local/p9r-h9b/poll_report_b.py a <sunucu PID> <araştırma> <rapor koşusu> <POST zamanı>
+PYTHONPATH=backend:. .venv/bin/python scripts/p6_eval/measure_report.py snapshot --base http://127.0.0.1:8873 \
+  --research <araştırma> --report <rapor> --db .local/p9r-h9b/<kol>/data/library.sqlite \
+  --out .local/p9r-h9b/evidence/<kol>/report --seed 20261003 --sample 30 --pairs .local/p9r-h9b/r9/<kol>-pairs.json
+```
+
+`gate_b.sh` her kolun sunucusu başlamadan önce yeniden çalışır. Sunucu bir kolun işi bitince SIGTERM ile durdurulur; sunucunun ve kayıtlı `codex app-server` alt süreçlerinin çıkışı 120 s içinde ≤5 s aralıklı `ps` okumalarıyla doğrulanır.
+
+### B.7 Sonuç dili
+
+Her kol ayrı yazılır: A “geliştirme korpusunda yeniden ölçüm (bağımsız değil)”, B “yeni korpus, tek koşu”. İkisi de tek rapor modeline ve rapora hazır tablo koşuluna bağlıdır. Hata oranı, hız/maliyet karşılaştırması, D198'in nedensel etkisi veya genel rapor kalitesi yazılmaz. Sonuçlar `p9r-report-results.md`'ye tarihli H9b bölümü olarak eklenir; karar D202'ye yazılır.

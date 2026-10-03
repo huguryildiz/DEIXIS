@@ -2,12 +2,13 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 · Yeniden işleme R2b (D192) ve P7 G1 B3b (D193) main'e hazır; P8 B4 (D184) ölçüldü (tek koşu); P8 B3 (D183) main'de; P9 RR-B (D170) main'de, matris çifti boş makinede bekliyor
+**Son güncelleme:** 3 Ekim 2026 · Yeniden işleme R2b (D192) ve P7 G1 B3b (D193) main'e hazır; P8 B4 (D184) ölçüldü (tek koşu); P8 B3 (D183) main'de; P9 RR-B (D170) main'de, matris çifti boş makinede bekliyor; H9 1. dondurma (D171) yazıldı, kapı açık değil
 
 ## Şu an çalışanlar
 
 Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. Sol (gpt-6.1-sol) yazarsa Claude inceler, Claude yazarsa Sol inceler. Sahip onayı gereken kararlar Sol medium ile ortak verilir.
 
+- ✅ **H9 1. dondurma** (D171): K01–K12 Claude + Sol medium ile sahip adına kararlaştırıldı; konu elektrikli araç şarj zamanlaması, model Luna medium, anahtarsız kaynaklar. Ayrı oturum açılmış bir Codex dizini yok; canlı `codex-home` dar istisnayla kullanılacak. H8 bağımlılığı açık istisnayla geçildi (matris çifti H9 ile aynı anda koşmaz). Model çağrısı yapılmadı. Sol high incelemesi 8 turda “hazır” demedi; 8765 yolu sadeleştirildi (başlangıç denetimi + koordinatör kuralı), son turun 3 orta bulgusu düzeltildi ve Sol medium doğrulamasında “hazır”; 1. kapı geçti.
 - ✅ **P7 G1 B3b** (D193): sorgu yazımı ve kuralları her bağlayıcının registry bildirimine taşındı; yazım ve kural kodunda sağlayıcı dalı kalmadı (eski `compile_queries` stratejisinin OpenAlex/SerpApi seçimleri derleyici politikası olarak duruyor), yeni bir kaynak yalnız registry kaydıyla sorgu alabiliyor. Değişiklikten önce dondurulan 39.586 çağrının çıktısı bayt bayt aynı; yalnız bildirilmemiş uç noktalar için 97 girdi artık reddediliyor (adlandırılmış değişiklik). Sol yazdı, plan Sol medium 3 turda, kod Claude 2 turda hazır; 11.686 test geçti. Gönderim hâlâ registry üzerinden; sırada B4.
 - ✅ **P7 G1 B3a** (D179): facade seçenek türünü, izinli değerleri ve yeniden deneme sayısını göndermeden denetliyor; 566 doğrudan/facade eşitlik vakası, 181 gönderim biçimi ve 88 yeniden deneme/zaman aşımı uyum testi (yeni takım 925 test); Sol yazdı, plan Sol medium 3 turda, kod Claude 1 turda hazır; 11.180 test geçti. Gönderim hâlâ registry üzerinden; B3b (sorgu yazımı) ayrı parti, sonra B4.
 - ✅ **P7 G1 B2** (D178): sağlayıcı uyum test takımı (641 test, 566 sentetik vaka); anahtar sonradan silinirse istek sayılmıyor ve arama tablosu bozulmuyor; PubMed kota türü, bozuk 200 yanıtı, boş sayfa imleci, başlıkta anahtar ve geçersiz bekleme düzeltildi; Sol yazdı, Claude 2 turda hazır; 9.992 test geçti. Seçenek türü denetimi B3a'ya, kimliksiz kayıt kabulü B4'e kaldı.
@@ -30,7 +31,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 
 1. RR-B matris çifti boş makinede (iki temiz koşu üst üste) → P9'un modelsiz kısmı kapanır
 2. P7 G1 eklenti sözleşmesi kodlaması (B1–B5)
-3. H9: K01–K12 kararları Sol medium ile, sonra gerçek model rapor ölçümü (P19 ölçümü de içinde)
+3. H9 2. aşama: kuru kontrol, hazırlık, 2. dondurma, tek rapor koşusu (P19 dahil); matris çifti, başka Luna işi ve 8765'teki canlı sunucuyla aynı anda değil
 4. P8 B2–B8 ve G1 kodlaması (B1–B5), sırayla
 5. Yeniden işleme R2c–R5; H10
 
@@ -46,7 +47,7 @@ Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizl
 | P6 | Sentez ve rapor | ✅ beş dilim kapandı; gerçek model ölçümleri P9'a borç |
 | P7 | Bağlantı kapsamı | 🟡 D172, D173 kapandı; G10 canlı erişim gösterildi; G1 tasarımı D174, kodu sırada |
 | P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181), B2 (D182), B3 (D183), B4 (D184, sentetik vakalar, tek koşu); sırada B5–B8 |
-| P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, H6 düzeltmeleri bitti; RR-B kodu main'de (D170), matris çifti boş makinede bekliyor; H9–H10 yok |
+| P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, H6 düzeltmeleri bitti; RR-B kodu main'de (D170), matris çifti boş makinede bekliyor; H9 1. dondurma (D171), kapı açık değil, ölçüm yok; H10 yok |
 | P10 | macOS / Windows paketi | ❌ |
 
 ## Ölçülmemiş borçlar

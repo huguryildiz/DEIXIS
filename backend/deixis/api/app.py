@@ -37,6 +37,7 @@ from deixis.documents import pdf
 from deixis.documents import pdf_files
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
+from deixis.workflow import text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ, CHAIN_PLAN_ROOM,
                                  CHAIN_REQUEST_LIMIT, CRITERION_CALLS, SEARCH_QUERY_CALLS,
                                  SUGGESTION_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict, effort_limits)
@@ -67,7 +68,7 @@ from deixis.workflow.report import export as report_export
 from deixis.workflow.report import latex_export
 from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
                                    SeedUnavailable, Store, LegacyResearchReadOnly, DISCOVERY_RUN_KINDS,
-                                   legacy_research_read_only)
+                                   legacy_research_read_only, RequestConflict, RecoveryConflict, NotRetryable)
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow.lineage.run import LineagePlanner, stale_link_revisions
 from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
@@ -562,6 +563,13 @@ class TemplateCreate(BaseModel):
     table_id: str = Field(max_length=40)
 
 
+class TextRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["retry_failed_or_partial"]
+    expected_current_extraction_id: str = Field(min_length=1, max_length=64)
+    idempotency_key: str = Field(pattern=r"^[A-Za-z0-9_-]{8,128}$")
+
+
 class DiskFull(Exception):
     """The upload could not be written because the disk is full (`store_upload`)."""
 
@@ -646,6 +654,7 @@ def create_app(
         conn = db.connect(settings.db_path)
         db.migrate(conn)
         store = Store(conn)
+        store.recovery_dir = settings.recovery_dir
         store.link_published_versions()  # preprints flagged beside their published record before D48
         store.assign_source_keys()  # works stored before D59
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.USER_AGENT})
@@ -784,6 +793,31 @@ def create_app(
     @app.exception_handler(RunInProgress)
     async def source_run_in_progress(_: Request, exc: RunInProgress):
         return JSONResponse({"detail": "A research using this source has a run in progress; try again when it has stopped"}, status_code=409)
+
+    @app.exception_handler(RequestConflict)
+    async def retry_request_conflict(_: Request, exc: RequestConflict):
+        return JSONResponse({"detail": "This request key was used for a different text retry.", "code": "request_conflict"}, status_code=409)
+
+    @app.exception_handler(RecoveryConflict)
+    async def retry_conflict(_: Request, exc: RecoveryConflict):
+        details = {"baseline_changed": "The current extraction changed; read it before retrying.",
+                   "operation_running": "A text retry is already reserved for this asset.",
+                   "operation_not_running": "This text retry is no longer running."}
+        return JSONResponse({"detail": details.get(str(exc), "This text retry conflicts with the current recovery state."),
+                             "code": str(exc)}, status_code=409)
+
+    @app.exception_handler(NotRetryable)
+    async def retry_not_retryable(_: Request, exc: NotRetryable):
+        return JSONResponse({"detail": "This extraction is not eligible for a text retry.",
+                             "code": "not_retryable", "reason": str(exc)}, status_code=422)
+
+    @app.exception_handler(text_retry.FileBusy)
+    async def retry_file_busy(_: Request, exc: text_retry.FileBusy):
+        return JSONResponse({"detail": str(exc), "code": "file_busy"}, status_code=409)
+
+    @app.exception_handler(text_retry.FileMissing)
+    async def retry_file_missing(_: Request, exc: text_retry.FileMissing):
+        return JSONResponse({"detail": "File missing"}, status_code=404)
 
     @app.exception_handler(NotASource)
     async def not_a_source(_: Request, exc: NotASource):
@@ -2031,19 +2065,69 @@ def create_app(
         return research_view(store, research_id)
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/extractions")
-    async def reextract_asset(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+    async def reextract_asset(research_id: str, source_version_id: str, asset_id: str, request: Request,
+                              response: Response, body: TextRetryRequest | None = None) -> dict[str, Any]:
         """Extract the PDF in use again with the current extractor; it becomes current only if it loses no visible text (D45)."""
         store = store_of(request)
         asset = asset_in_use(store, research_id, source_version_id, asset_id)
+        if body is not None:
+            try:
+                with disk_full_refused():
+                    result = await text_retry.execute_text_retry(store, settings, asset_id=asset_id,
+                        expected_extraction_id=body.expected_current_extraction_id, idempotency_key=body.idempotency_key,
+                        research_id=research_id, source_version_id=source_version_id)
+            except RunInProgress:
+                return JSONResponse({"detail": "A research using this source has an active run; try again when it ends.",
+                                     "code": "run_active"}, status_code=409)
+            finally:
+                request.app.state.worker.wake()
+            response.status_code = 202 if result["lifecycle"] == "running" else 200
+            return {**research_view(store, research_id), "recovery": result}
         if (asset["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION:  # equations read on it too (D52)
-            return {**research_view(store, research_id), "reextraction": {"asset_id": asset_id, "outcome": "unchanged"}}
+            reason = {"succeeded": "already_current", "pending": "pending"}.get(asset["extraction_status"], "retry_available")
+            return {**research_view(store, research_id), "reextraction": {"asset_id": asset_id, "outcome": "unchanged", "reason": reason}}
         root = settings.papers_dir.resolve()
         path = (root / asset["storage_path"]).resolve()
         if not path.is_relative_to(root) or not path.exists():
             raise HTTPException(404, "File missing")
-        extraction = await asyncio.to_thread(pdf.extract_pdf, path)
-        report = store.reextract_asset(asset_id, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+        with disk_full_refused():
+            with text_retry.file_lock(settings.recovery_dir, asset["sha256"]):
+                extraction = await text_retry.drained_thread(pdf.extract_pdf, path)
+                report = store.reextract_asset(asset_id, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
         return {**research_view(store, research_id), "reextraction": report}
+
+    @app.get("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/text-retry")
+    async def text_retry_capability(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.flush_text_retry_interruptions()
+        asset = asset_in_use(store, research_id, source_version_id, asset_id)
+        current = store._retry_baseline(asset_id)
+        latest = store.conn.execute("SELECT id FROM asset_recovery_operations WHERE asset_id = ? AND kind = 'text_retry'"
+                                    " ORDER BY created_at DESC, id DESC LIMIT 1", (asset_id,)).fetchone()
+        reason = None
+        if current is None:
+            reason = "no_current_extraction"
+        elif current["status"] == "succeeded":
+            reason = "already_current"
+        elif current["status"] == "pending":
+            reason = "pending"
+        elif store.conn.execute("SELECT 1 FROM asset_recovery_operations WHERE asset_id = ? AND kind = 'text_retry'"
+                                " AND lifecycle = 'running'", (asset_id,)).fetchone():
+            reason = "operation_running"
+        elif store._asset_run_active(source_version_id):
+            reason = "run_active"
+        else:
+            try:
+                text_retry.precheck(settings.papers_dir, asset["storage_path"])
+            except text_retry.FileMissing:
+                reason = "file_missing"
+        return {"current_extraction_id": current["id"] if current else None,
+                "status": current["status"] if current else asset["extraction_status"],
+                "extractor_profile": current["extractor_profile"] if current else None,
+                "extraction_version": current["extraction_version"] if current else asset["extraction_version"],
+                "diagnostic_only": bool(current["diagnostic_only"]) if current else False,
+                "can_retry_text": reason is None, "reason": reason,
+                "latest_operation": store.text_retry_view(latest["id"]) if latest else None}
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/equations", status_code=202)
     async def reread_equations(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:

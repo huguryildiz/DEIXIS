@@ -62,6 +62,10 @@ class Settings:
         return self.data_dir / "papers"
 
     @property
+    def recovery_dir(self) -> Path:
+        return self.data_dir / "recovery"
+
+    @property
     def payloads_dir(self) -> Path:
         return self.data_dir / "provider-payloads"
 

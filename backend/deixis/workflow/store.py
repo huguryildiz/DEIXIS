@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from deixis.domain.canonical import sha256_hex
@@ -24,6 +26,9 @@ from deixis.workflow.source_keys import key_stem, suffixes
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
 DISCOVERY_RUN_KINDS = ("discovery", "fulltext_fetch", "fulltext_adjudication")
 ENDED_RUN_STATUSES = ("completed", "failed", "cancelled")
+TEXT_RETRY_REFUSALS = ("asset_removed", "no_holding_research", "membership_changed", "asset_replaced",
+                      "baseline_changed", "run_active", "input_not_verified", "file_missing", "file_mismatch")
+TEXT_RETRY_INTERRUPTIONS = ("storage_full", "storage_unavailable", "cancelled", "unexpected_error")
 # What became of a passage's file since the passage was stored (D45), over `passages p LEFT JOIN source_assets a`.
 EVIDENCE_STATUS_SQL = (
     "CASE WHEN a.id IS NULL THEN 'current'"
@@ -141,6 +146,9 @@ def legacy_research_read_only(scope: dict[str, Any]) -> bool:
 class Store:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+        self.recovery_dir: Path | None = None
+        self.pending_text_retry_interruptions: dict[str, str] = {}
+        self._text_retry_probe_errors: set[tuple[str, int | None]] = set()
         self._columns: dict[str, set[str]] = {}
         # Migrations precede Store construction; historical fixtures retain their schema.
         self._extraction_has_recovery_metadata = any(
@@ -794,8 +802,34 @@ class Store:
         return run
 
     def next_queued_run(self) -> dict[str, Any] | None:
-        row = self.conn.execute("SELECT id FROM runs WHERE status = 'queued' ORDER BY created_at LIMIT 1").fetchone()
-        return self.run(row["id"]) if row else None
+        self.flush_text_retry_interruptions()
+        from deixis.workflow.text_retry import lock_held
+
+        for row in self.conn.execute("SELECT id, research_id FROM runs WHERE status = 'queued' ORDER BY created_at"):
+            operations = self.conn.execute(
+                "SELECT o.id, o.expected_sha256 FROM asset_recovery_operations o"
+                " JOIN source_assets a ON a.id = o.asset_id"
+                " JOIN corpus_memberships m ON m.source_version_id = a.source_version_id"
+                " WHERE m.research_id = ? AND o.kind = 'text_retry' AND o.lifecycle = 'running'",
+                (row["research_id"],)).fetchall() if self._extraction_has_recovery_metadata else []
+            live = False
+            for operation in operations:
+                try:
+                    live = self.recovery_dir is None or lock_held(self.recovery_dir, operation["expected_sha256"])
+                except OSError as exc:
+                    # Unknown lock ownership defers this research, not the entire worker queue.
+                    live = True
+                    key = (operation["id"], exc.errno)
+                    if key not in self._text_retry_probe_errors:
+                        self._text_retry_probe_errors.add(key)
+                        logging.getLogger(__name__).warning(
+                            "Could not probe text retry lock for operation %s (errno=%s); deferring its research",
+                            operation["id"], exc.errno)
+                if live:
+                    break
+            if not live:
+                return self.run(row["id"])
+        return None
 
     def update_run(self, run_id: str, event: str | None = None, **fields: Any) -> dict[str, Any]:
         columns = {k: (dumps(v) if k in ("usage_json", "error_json") and v is not None else v) for k, v in fields.items()}
@@ -1669,6 +1703,12 @@ class Store:
             " WHERE m.source_version_id = ? AND r.status IN ('queued', 'running', 'pause_requested')"
             " AND r.id IS NOT ? LIMIT 1", (svid, allow_run_id)).fetchone() is not None
 
+    def _asset_run_started(self, svid: str) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM corpus_memberships m JOIN runs r ON r.research_id = m.research_id"
+            " WHERE m.source_version_id = ? AND r.status IN ('running', 'pause_requested') LIMIT 1",
+            (svid,)).fetchone() is not None
+
     def add_file_observation(self, *, kind: str, storage_path: str, expected_sha256: str, expected_byte_size: int,
                              observed_sha256: str | None, observed_byte_size: int | None, integrity: str,
                              operation_id: str | None = None, retained_filename: str | None = None) -> str:
@@ -1683,13 +1723,103 @@ class Store:
                  observed_byte_size, integrity, retained_filename, now()))
         return oid
 
-    def _retry_result(self, operation_id: str) -> dict[str, Any]:
+    def _text_retry_operation(self, operation_id: str) -> dict[str, Any]:
+        """Internal reservation state; never serialize this row into a public response."""
         row = self.conn.execute("SELECT * FROM asset_recovery_operations WHERE id = ?", (operation_id,)).fetchone()
         if row is None:
             raise NotFound(operation_id)
+        return dict(row)
+
+    def text_retry_view(self, operation_id: str) -> dict[str, Any]:
+        row = self._text_retry_operation(operation_id)
         extraction = self.conn.execute(
-            "SELECT id FROM asset_extractions WHERE recovery_operation_id = ?", (operation_id,)).fetchone()
-        return dict(row) | {"extraction_id": extraction[0] if extraction else None}
+            "SELECT id, extraction_version, status FROM asset_extractions WHERE recovery_operation_id = ?",
+            (operation_id,)).fetchone()
+        observation = self.conn.execute("SELECT integrity FROM asset_file_observations WHERE id = ?",
+                                        (row["input_observation_id"],)).fetchone()
+        coverage = None
+        if row["old_coverage_json"] is not None and row["new_coverage_json"] is not None:
+            old, new = json.loads(row["old_coverage_json"]), json.loads(row["new_coverage_json"])
+            coverage = {"old_text_pages": sorted({p[0] for p in old["manifest"]}),
+                        "new_text_pages": sorted({p[0] for p in new["manifest"]}),
+                        "missing_pages": sorted(new["missing_pages"])}
+        result = {k: row[k] for k in ("asset_id", "lifecycle", "outcome", "reason", "decision_code",
+                  "input_observation_id", "baseline_extraction_id", "created_at", "finished_at")}
+        return result | {"operation_id": row["id"], "input_integrity": observation[0] if observation else None,
+                         "extraction_id": extraction["id"] if extraction else None,
+                         "extraction_version": extraction["extraction_version"] if extraction else None,
+                         "candidate_status": extraction["status"] if extraction else None, "coverage": coverage}
+
+    def _retry_result(self, operation_id: str) -> dict[str, Any]:
+        """Internal Store result, retaining the R1 operation-row contract."""
+        return self._text_retry_operation(operation_id) | self.text_retry_view(operation_id)
+
+    def text_retry_by_key(self, idempotency_key: str) -> dict[str, Any] | None:
+        return row_dict(self.conn.execute(
+            "SELECT * FROM asset_recovery_operations WHERE idempotency_key = ?", (idempotency_key,)).fetchone())
+
+    def record_text_retry_input(self, operation_id: str, **fields: Any) -> str:
+        with transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["kind"] != "text_retry" or operation["lifecycle"] != "running":
+                raise RecoveryConflict("operation_not_running")
+            oid = self.add_file_observation(**fields, kind="extraction_input", operation_id=operation_id)
+            self.conn.execute("UPDATE asset_recovery_operations SET input_observation_id = ? WHERE id = ?",
+                              (oid, operation_id))
+            return oid
+
+    def _text_retry_event(self, operation_id: str) -> None:
+        operation = self.text_retry_view(operation_id)
+        asset = row_dict(self.conn.execute("SELECT * FROM source_assets WHERE id = ?",
+                                           (operation["asset_id"],)).fetchone())
+        if asset:
+            payload = {k: operation[k] for k in ("asset_id", "operation_id", "lifecycle", "outcome", "reason",
+                        "decision_code", "extraction_version", "baseline_extraction_id")}
+            payload["source_version_id"] = asset["source_version_id"]
+            for rid in self._asset_researches(asset["source_version_id"]):
+                self._event(rid, "asset_text_retried", payload)
+
+    def refuse_text_retry(self, operation_id: str, reason: str, *, input_observation_id: str | None = None) -> dict[str, Any]:
+        if reason not in TEXT_RETRY_REFUSALS:
+            raise ValueError("Unknown text retry refusal")
+        with transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["kind"] != "text_retry":
+                raise RecoveryConflict("operation_not_running")
+            if operation["lifecycle"] == "completed":
+                return self._retry_result(operation_id)
+            if operation["lifecycle"] != "running":
+                raise RecoveryConflict("operation_not_running")
+            code = "input_not_verified" if reason in ("file_missing", "file_mismatch") else None
+            self.conn.execute(
+                "UPDATE asset_recovery_operations SET lifecycle = 'completed', outcome = 'refused', reason = ?,"
+                " decision_code = ?, input_observation_id = COALESCE(input_observation_id, ?), finished_at = ? WHERE id = ?",
+                (reason, code, input_observation_id, now(), operation_id))
+            self._text_retry_event(operation_id)
+            return self._retry_result(operation_id)
+
+    def interrupt_text_retry(self, operation_id: str, reason: str) -> dict[str, Any]:
+        if reason not in TEXT_RETRY_INTERRUPTIONS:
+            raise ValueError("Unknown text retry interruption")
+        with transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["lifecycle"] != "running":
+                return self._retry_result(operation_id)
+            if operation["kind"] != "text_retry":
+                raise RecoveryConflict("operation_not_running")
+            self.conn.execute("UPDATE asset_recovery_operations SET lifecycle = 'interrupted', reason = ?,"
+                              " finished_at = ? WHERE id = ?", (reason, now(), operation_id))
+            self._text_retry_event(operation_id)
+            return self._retry_result(operation_id)
+
+    def flush_text_retry_interruptions(self) -> None:
+        for oid, reason in list(self.pending_text_retry_interruptions.items()):
+            try:
+                self.interrupt_text_retry(oid, reason)
+            except Exception:
+                logging.getLogger(__name__).exception("Could not persist pending text retry interruption %s", oid)
+            else:
+                self.pending_text_retry_interruptions.pop(oid, None)
 
     def _retry_baseline(self, asset_id: str) -> dict[str, Any] | None:
         row = row_dict(self.conn.execute(
@@ -1708,7 +1838,7 @@ class Store:
             if prior:
                 if prior["request_fingerprint"] != request_fingerprint:
                     raise RequestConflict(idempotency_key)
-                return self._retry_result(prior["id"])
+                return self._retry_result(prior["id"]) | {"replayed": True}
             asset = self.asset(asset_id)
             if asset["removed_at"] is not None:
                 raise NotFound(asset_id)
@@ -1732,15 +1862,15 @@ class Store:
                 (operation_id, asset_id, research_id, asset["sha256"], asset["byte_size"], baseline["id"],
                  baseline["extractor_profile"], idempotency_key, request_fingerprint,
                  dumps({"manifest": baseline["manifest"], "missing_pages": []}), now()))
-            return self._retry_result(operation_id)
+            return self._retry_result(operation_id) | {"replayed": False}
 
     def complete_text_retry(self, operation_id: str, extraction: Any, chunker: Any, *,
                             input_observation_id: str | None) -> dict[str, Any]:
         """Publish one already parsed candidate atomically; a completed operation is replayed."""
         with transaction(self.conn):
-            operation = self._retry_result(operation_id)
+            operation = self._text_retry_operation(operation_id)
             if operation["lifecycle"] == "completed":
-                return operation
+                return self._retry_result(operation_id)
             if operation["kind"] != "text_retry" or operation["lifecycle"] != "running":
                 raise RecoveryConflict("operation_not_running")
             if (getattr(extraction, "ocr", None) is not None or getattr(extraction, "math", None) is not None
@@ -1757,11 +1887,13 @@ class Store:
                 reason = "asset_removed"
             elif not self._asset_researches(asset["source_version_id"]):
                 reason = "no_holding_research"
+            elif operation["research_id"] is not None and not self.is_active_member(operation["research_id"], asset["source_version_id"]):
+                reason = "membership_changed"
             elif asset["sha256"] != operation["expected_sha256"] or asset["byte_size"] != operation["expected_byte_size"]:
                 reason = "asset_replaced"
             elif baseline is None or baseline["id"] != operation["baseline_extraction_id"]:
                 reason = "baseline_changed"
-            elif self._asset_run_active(asset["source_version_id"]):
+            elif self._asset_run_started(asset["source_version_id"]):
                 reason = "run_active"
             elif (observation is None or observation["kind"] != "extraction_input" or observation["integrity"] != "verified"
                   or observation["expected_sha256"] != operation["expected_sha256"]
@@ -1769,11 +1901,8 @@ class Store:
                 reason = "input_not_verified"
             version, decision = None, None
             if reason:
-                outcome = "refused"
-                code = "input_not_verified" if reason == "input_not_verified" else None
-                self.conn.execute(
-                    "UPDATE asset_recovery_operations SET lifecycle = 'completed', outcome = ?, reason = ?,"
-                    " decision_code = ?, finished_at = ? WHERE id = ?", (outcome, reason, code, now(), operation_id))
+                return self.refuse_text_retry(operation_id, reason, input_observation_id=(
+                    observation["id"] if observation else None))
             else:
                 manifest = recovery.coverage_manifest(extraction, chunker)
                 decision = recovery.decide(baseline, {"status": extraction.status, "error": extraction.error,
@@ -1794,16 +1923,11 @@ class Store:
                         " WHERE id = ?", (version, extraction.status, extraction.error, extraction.page_count, asset["id"]))
                 self.conn.execute(
                     "UPDATE asset_recovery_operations SET lifecycle = 'completed', outcome = ?, decision_code = ?,"
-                    " input_observation_id = ?, old_coverage_json = ?, new_coverage_json = ?, finished_at = ? WHERE id = ?",
+                    " input_observation_id = COALESCE(input_observation_id, ?), old_coverage_json = ?, new_coverage_json = ?, finished_at = ? WHERE id = ?",
                     (outcome, code, input_observation_id,
                      dumps({"manifest": decision.old_coverage, "missing_pages": decision.missing_pages}),
                      dumps({"manifest": decision.new_coverage, "missing_pages": decision.missing_pages}), now(), operation_id))
-            if asset:
-                for research_id in self._asset_researches(asset["source_version_id"]):
-                    self._event(research_id, "asset_text_retried", {
-                        "asset_id": asset["id"], "source_version_id": asset["source_version_id"], "operation_id": operation_id,
-                        "outcome": outcome, "decision_code": code, "extraction_version": version,
-                        "baseline_extraction_id": operation["baseline_extraction_id"]})
+            self._text_retry_event(operation_id)
             return self._retry_result(operation_id)
 
     def replace_asset(self, asset_id: str, sha256: str, size: int, storage_path: str, origin: str, retrieved_from: str | None,

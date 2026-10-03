@@ -15,6 +15,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 - ✅ **P7 G6–G8, G11, G12** (D173): kota ile hız sınırı ayrıldı, kotası biten sağlayıcıya koşu boyunca istek gitmiyor (devam ve yeniden denemede sıfırlanır); Sol yazdı, Claude 3 turda hazır.
 - ✅ **P8 B2** (D182): inceleme koşusu ve rotaları; önizleme, başlatma, gruplu çalıştırma, bulgu kararları, kabul edilen bulgunun mevcut düzenleyiciyle uygulanması (kanıt değiştiyse 409); Sol yazdı, Claude 2 turda hazır; 8.963 test geçti. Gerçek modelle inceleme B4'te.
 - ✅ **Yeniden işleme R1** (D190, göç 0066): bir metin çıkarımının kendi kimliği var; kurtarma denemesi eskisinin yanına yeni bir kayıt olarak yazılır, hangisinin geçerli olacağına test edilmiş tek bir kural karar verir; eski pasajlar ve atıflar değişmez. Henüz düğme ya da rota yok (R2a). Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 9.614 test geçti.
+- ✅ **Yeniden işleme R2a** (D191): bir kişi, başarısız ya da yarım kalmış bir metin çıkarımını uç nokta ya da CLI ile bir kez yeniden deneyebiliyor; dosyanın hash'i kontrol edilmiş özel bir kopyası, dosya başına kilit altında okunuyor; deneme sürerken o kaynağı tutan araştırmanın koşusu bekliyor. Kendiliğinden yeniden deneme yok; düğme R4'te, dosya onarım makbuzu R2b'de. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 9.781 test geçti.
 - ✅ **Küçük kalanlar** (D175): dışa aktarma hatasının Türkçesi, slice 31 test eksikleri.
 - ✅ **Onarılan dosyanın yeniden işlenmesi, tasarım** (D176); kodu R1–R5 partilerinde.
 - ✅ **P7 G10 canlı deneme** (3 Ekim 02:48): IEEE, Scopus, CORE, SerpApi birer arama, hepsi HTTP 200.
@@ -26,7 +27,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 2. P7 G1 eklenti sözleşmesi kodlaması (B1–B5)
 3. H9: K01–K12 kararları Sol medium ile, sonra gerçek model rapor ölçümü (P19 ölçümü de içinde)
 4. P8 B2–B8 ve G1 kodlaması (B1–B5), sırayla
-5. Yeniden işleme R2a (rota, CLI, dosya kilidi, hash), sonra R2b–R5; H10
+5. Yeniden işleme R2b (dosya onarım makbuzu), sonra R2c–R5; H10
 
 Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizlik H9.
 

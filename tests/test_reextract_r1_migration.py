@@ -284,7 +284,8 @@ def test_operation_frozen_request_columns(lib, column):
     op = reserve(lib)
     value = 11 if column == "expected_byte_size" else "changed"
     with pytest.raises(sqlite3.IntegrityError): lib.conn.execute(f"UPDATE asset_recovery_operations SET {column} = ? WHERE id = ?", (value, op["id"]))
-    assert lib.store._retry_result(op["id"]) == op
+    assert op["replayed"] is False
+    assert lib.store._retry_result(op["id"]) == {k: v for k, v in op.items() if k != "replayed"}
 
 
 @pytest.mark.parametrize("lifecycle,outcome,finished,allowed", [
@@ -338,7 +339,8 @@ def test_operation_conflicts_refuse_without_replacing_any_unique_key(lib, mode, 
     else: candidate[key] = original[key]
     with pytest.raises(sqlite3.IntegrityError):
         insert(lib.conn, "asset_recovery_operations", candidate, "INSERT" if mode == "upsert" else mode, mode == "upsert")
-    assert lib.store._retry_result(original["id"]) == original
+    assert original["replayed"] is False
+    assert lib.store._retry_result(original["id"]) == {k: v for k, v in original.items() if k != "replayed"}
 
 
 @pytest.mark.parametrize("mode", ["INSERT", "INSERT OR REPLACE", "upsert"])

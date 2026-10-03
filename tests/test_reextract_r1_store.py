@@ -101,7 +101,7 @@ def test_t1_empty_failed_baseline_recovers_beside_old_occurrence(tmp_path):
         events = [e for e in lib.store.events_after(rid, 0) if e["type"] == "asset_text_retried"]
         assert len(events) == 1
         assert events[0]["payload"] == {"asset_id": lib.aid, "source_version_id": lib.svid, "operation_id": result["id"],
-            "outcome": "promoted", "decision_code": "recovered_text", "extraction_version": new["extraction_version"],
+            "lifecycle": "completed", "reason": None, "outcome": "promoted", "decision_code": "recovered_text", "extraction_version": new["extraction_version"],
             "baseline_extraction_id": old["id"]}
     lib.conn.close()
 
@@ -188,7 +188,9 @@ def test_t5_page_count_recovery_requires_observed_corrupt_input(tmp_path, integr
 
 def test_t6_rejected_then_promoted_occurrences_and_replay(lib):
     first = reserve(lib, "first")
-    assert reserve(lib, "first") == first
+    replay = reserve(lib, "first")
+    assert replay["replayed"] is True and first["replayed"] is False
+    assert {k: v for k, v in replay.items() if k != "replayed"} == {k: v for k, v in first.items() if k != "replayed"}
     rejected = complete(lib, extraction("failed", 0, (), "SYNTHETIC failure"), first)
     second = reserve(lib, "second")
     promoted = complete(lib, operation=second)
@@ -246,7 +248,8 @@ def test_completion_refusals_write_no_candidate(lib, kind):
     elif kind == "run_active":
         other = lib.store.create_research("SYNTHETIC other?", "attached", "quick", [], "fake", "fake", None)
         lib.store.add_to_corpus(other, lib.svid, "user_upload")
-        lib.store.create_run(other, "answer", {}, None)
+        run = lib.store.create_run(other, "answer", {}, None)
+        lib.store.update_run(run["id"], status="running")
     elif kind == "asset_removed":
         lib.store.remove_asset(lib.rid, lib.svid, lib.aid)
     elif kind == "no_holding_research":
@@ -369,7 +372,8 @@ def test_failed_event_write_rolls_back_candidate_head_and_completion(lib, monkey
     with pytest.raises(RuntimeError, match="event write failure"):
         lib.store.complete_text_retry(operation["id"], extraction(pages=(1, 2, 3)), chunk, input_observation_id=observation)
     assert protected(lib) == before and lib.store.events_after(lib.rid, 0) == events
-    assert lib.store._retry_result(operation["id"]) == operation
+    assert operation["replayed"] is False
+    assert lib.store._retry_result(operation["id"]) == {k: v for k, v in operation.items() if k != "replayed"}
 
 
 @pytest.mark.parametrize("status", ["queued", "running", "pause_requested"])
@@ -380,8 +384,11 @@ def test_reserve_and_complete_refuse_each_active_run_status(lib, status):
     before = protected(lib)
     with pytest.raises(RunInProgress): reserve(lib)
     result = complete(lib, operation=operation)
-    assert result["reason"] == "run_active" and result["extraction_id"] is None
-    assert protected(lib) == before
+    if status == "queued":
+        assert result["outcome"] == "promoted" and result["extraction_id"] is not None
+    else:
+        assert result["reason"] == "run_active" and result["extraction_id"] is None
+        assert protected(lib) == before
 
 
 def test_removed_asset_cannot_be_reserved(lib):
@@ -400,7 +407,11 @@ def test_reservation_replays_after_asset_removal_and_conflicting_key_still_refus
     before = protected(lib)
     events = lib.store.events_after(lib.rid, 0)
     changes = lib.conn.total_changes
-    assert reserve(lib, "removed-replay") == operation
+    replay = reserve(lib, "removed-replay")
+    assert replay["replayed"] is True
+    if not completed:
+        assert operation["replayed"] is False
+    assert {k: v for k, v in replay.items() if k != "replayed"} == {k: v for k, v in operation.items() if k != "replayed"}
     with pytest.raises(RequestConflict):
         lib.store.reserve_text_retry(lib.aid, expected_extraction_id=operation["baseline_extraction_id"],
             idempotency_key="removed-replay", request_fingerprint="different")

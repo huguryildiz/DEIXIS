@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import dataclasses
 import os
 import socket
@@ -13,6 +14,7 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
+from uuid import uuid4
 
 import uvicorn
 
@@ -128,13 +130,17 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...]) ->
     return 0
 
 
-def reextract(settings: Settings, dry_run: bool) -> int:
+def reextract(settings: Settings, dry_run: bool, retry: str | None = None, expected_extraction: str | None = None) -> int:
     """Extract every PDF in use again with the current extractor; one line per file, then a summary (D45, D47)."""
     from collections import Counter
 
     from deixis.documents import pdf
     from deixis.storage import db
     from deixis.workflow.store import RunInProgress, Store
+    from deixis.workflow.text_retry import FileBusy, file_lock
+
+    if retry is not None:
+        return retry_text(settings, retry, expected_extraction, dry_run)
 
     if (message := schema_problem(settings.db_path)) is not None:
         print(message, file=sys.stderr)
@@ -142,6 +148,7 @@ def reextract(settings: Settings, dry_run: bool) -> int:
     conn = db.connect(settings.db_path)
     db.migrate(conn)
     store = Store(conn)
+    store.recovery_dir = settings.recovery_dir
     assets = conn.execute(
         "SELECT a.id, a.storage_path, a.extraction_version, v.title FROM source_assets a JOIN source_versions v ON v.id = a.source_version_id"
         " WHERE a.removed_at IS NULL AND a.extraction_version IS NOT ? AND IFNULL(a.extraction_version, '') NOT LIKE ? || '+%'"
@@ -154,8 +161,11 @@ def reextract(settings: Settings, dry_run: bool) -> int:
             outcome, detail = "file_missing", ""
         else:
             try:
-                report = store.reextract_asset(asset["id"], pdf.extract_pdf(path), pdf.EXTRACTION_VERSION, pdf.chunk_page, dry_run=dry_run)
+                with file_lock(settings.recovery_dir, store.asset(asset["id"])["sha256"]):
+                    report = store.reextract_asset(asset["id"], pdf.extract_pdf(path), pdf.EXTRACTION_VERSION, pdf.chunk_page, dry_run=dry_run)
                 outcome, detail = report["outcome"], report.get("rejection_reason") or ""
+            except FileBusy:
+                outcome, detail = "file_busy", ""
             except RunInProgress:
                 outcome, detail = "run_in_progress", ""
         outcomes[outcome] += 1
@@ -163,6 +173,140 @@ def reextract(settings: Settings, dry_run: bool) -> int:
     print(f"{'Dry run: ' if dry_run else ''}{len(assets)} PDFs, " + ", ".join(f"{n} {k}" for k, n in sorted(outcomes.items())))
     conn.close()
     return 0
+
+
+def _storage_cause(exc: BaseException):
+    failure = db.describe_failure(exc)
+    while failure is None and exc.__cause__ is not None:
+        exc = exc.__cause__
+        failure = db.describe_failure(exc)
+    return failure
+
+
+def _retry_line(result: dict) -> None:
+    print(f"{result['lifecycle']} {result['outcome'] or '-'} {result['reason'] or result['decision_code'] or '-'} "
+          f"{result['operation_id']} {result['extraction_version'] or '-'}")
+
+
+def retry_text(settings: Settings, asset_id: str, expected_extraction: str, dry_run: bool) -> int:
+    from deixis.workflow import text_retry
+    from deixis.workflow.store import Store, NotFound, NotRetryable, RecoveryConflict, RequestConflict, RunInProgress
+
+    if dry_run:
+        return plan_text_retry(settings, asset_id, expected_extraction)
+    conn, store, key = None, None, "cli-" + uuid4().hex
+    try:
+        check_schema_known(settings.db_path)
+        conn = db.connect(settings.db_path)
+        db.migrate(conn)
+        store = Store(conn)
+        store.recovery_dir = settings.recovery_dir
+        asset = store.asset(asset_id)
+        result = asyncio.run(text_retry.execute_text_retry(store, settings, asset_id=asset_id,
+            expected_extraction_id=expected_extraction, idempotency_key=key, research_id=None,
+            source_version_id=asset["source_version_id"]))
+        _retry_line(result)
+        return 0 if result["lifecycle"] == "completed" else 1
+    except (NotFound, NotRetryable, RecoveryConflict, RequestConflict, RunInProgress, text_retry.FileBusy,
+            text_retry.FileMissing) as exc:
+        print(f"Text retry refused: {type(exc).__name__} ({exc}).", file=sys.stderr)
+        return 2
+    except BaseException as exc:
+        operation = None
+        if store is not None:
+            try:
+                operation = store.text_retry_by_key(key)
+            except Exception:
+                pass
+        if operation is not None or (store is not None and store.pending_text_retry_interruptions):
+            if operation is not None:
+                if operation["lifecycle"] == "running":
+                    print("The text retry operation stays running until a later version reconciles it.", file=sys.stderr)
+                else:
+                    try:
+                        _retry_line(store.text_retry_view(operation["id"]))
+                    except Exception:
+                        # Reporting an interruption must not hide the error that caused it.
+                        pass
+            else:
+                print("The text retry operation stays running until a later version reconciles it.", file=sys.stderr)
+            print(f"Text retry interrupted by {type(exc).__name__}.", file=sys.stderr)
+            return 1
+        if (failure := _storage_cause(exc)) is not None:
+            print(failure[2], file=sys.stderr)
+            return 3
+        if isinstance(exc, (UnknownSchemaError, SchemaCheckUnreadable)):
+            print(str(exc), file=sys.stderr)
+            return 2
+        raise
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def plan_text_retry(settings: Settings, asset_id: str, expected_extraction: str) -> int:
+    import tempfile
+    from deixis.documents import pdf
+    from deixis.workflow import recovery, text_retry
+    from deixis.workflow.store import Store, NotFound
+
+    try:
+        with text_retry.library_snapshot(settings.db_path) as conn:
+            applied = {r[0] for r in conn.execute("SELECT version FROM schema_migrations")}
+            if applied != db.packaged_versions():
+                print("this library needs a migration; start DEIXIS once or run without --dry-run", file=sys.stderr)
+                return 2
+            store = Store(conn)
+            try:
+                asset = store.asset(asset_id)
+            except NotFound:
+                print("would refuse asset_removed")
+                return 0
+            baseline = store._retry_baseline(asset_id)
+            reason = None
+            if asset["removed_at"] is not None:
+                reason = "asset_removed"
+            elif baseline is None or baseline["id"] != expected_extraction:
+                reason = "baseline_changed"
+            elif baseline["status"] in ("succeeded", "pending"):
+                reason = "already_current" if baseline["status"] == "succeeded" else "pending"
+            elif store._asset_run_active(asset["source_version_id"]):
+                reason = "run_active"
+            elif conn.execute("SELECT 1 FROM asset_recovery_operations WHERE asset_id = ? AND kind = 'text_retry'"
+                               " AND lifecycle = 'running'", (asset_id,)).fetchone():
+                reason = "operation_running"
+            if reason:
+                print(f"would refuse {reason}")
+                return 0
+            try:
+                text_retry.precheck(settings.papers_dir, asset["storage_path"])
+            except text_retry.FileMissing:
+                print("would refuse file_missing")
+                return 0
+            with tempfile.TemporaryDirectory(prefix="deixis-retry-input-") as folder:
+                copy_path = Path(folder) / "input.pdf"
+                integrity, _, _ = text_retry.observe_copy(settings.papers_dir, asset["storage_path"],
+                    asset["sha256"], asset["byte_size"], copy_path)
+                if integrity != "verified":
+                    print("would refuse " + ("file_missing" if integrity == "missing" else "file_mismatch"))
+                    return 0
+                try:
+                    candidate = pdf.extract_pdf(copy_path)
+                except Exception as exc:
+                    print(f"Text retry planning parser failed with {type(exc).__name__}.", file=sys.stderr)
+                    return 1
+                decision = recovery.decide(baseline, {"status": candidate.status, "error": candidate.error,
+                    "page_count": candidate.page_count, "extractor_profile": candidate.extraction_version,
+                    "manifest": recovery.coverage_manifest(candidate, pdf.chunk_page)})
+                print(f"would {'promote' if decision.promote else 'reject'} {decision.decision_code}")
+                return 0
+    except text_retry.SnapshotUnavailable as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except (OSError, SchemaCheckUnreadable) as exc:
+        failure = _storage_cause(exc)
+        print(failure[2] if failure else "Could not copy the library or extraction input for this dry run.", file=sys.stderr)
+        return 3
 
 
 def equations(settings: Settings, action: str) -> int:
@@ -198,14 +342,18 @@ def main(argv: list[str] | None = None) -> int:
     load.add_argument("backup", type=Path, help="A backup folder created by `deixis backup`")
     again = sub.add_parser("reextract", help="Extract the text of every PDF in use again with the current extractor")
     again.add_argument("--dry-run", action="store_true", help="Report what would become current or be rejected; write nothing")
+    again.add_argument("--retry", metavar="ASSET_ID", help="Retry one failed or partial text extraction")
+    again.add_argument("--expected-extraction", metavar="EXTRACTION_ID", help="The retry's current extraction baseline")
     eq = sub.add_parser("equations", help="Install, check or remove the optional equation reader (Marker, about 4.4 GB)")
     eq.add_argument("action", choices=("install", "status", "remove"))
     args = parser.parse_args(argv)
+    if args.command == "reextract" and bool(args.retry) != bool(args.expected_extraction):
+        parser.error("--retry and --expected-extraction must be supplied together")
     settings = load_settings()
     if args.command == "equations":
         return equations(settings, args.action)
     if args.command == "reextract":
-        return reextract(settings, args.dry_run)
+        return reextract(settings, args.dry_run, args.retry, args.expected_extraction)
     if args.command in ("backup", "restore"):
         try:
             if args.command == "backup":

@@ -67,7 +67,6 @@ def test_lineage_schema_is_registered_strict_and_resolves_its_refs():
             if '$ref' in node:
                 assert validator._resolver.lookup(node['$ref']).contents
     schema = contracts.load_schema('LineageLinksDraft')
-    assert contracts.strict_compatibility_issues(schema) == []
     assert 'continues_predecessor_uncertainty' not in json.dumps(schema)
     wire = contracts.step_output_schema('lineage_links')
     assert 'common.schema.json' not in json.dumps(wire)

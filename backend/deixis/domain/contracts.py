@@ -265,6 +265,15 @@ def model_output_schema(task_type: str) -> dict[str, Any]:
     return schema
 
 
+def model_transport_schemas() -> dict[str, dict]:
+    """Enumerate the schemas sent by workflow and model-behavior callers."""
+    return {
+        **{f"model_output_schema:{task}": model_output_schema(task) for task in TASK_OUTPUTS},
+        **{f"step_output_schema:{task}": step_output_schema(task) for task in TASK_OUTPUTS},
+        "report_section_anchor_patch_schema": report_section_anchor_patch_schema(),
+    }
+
+
 def stamp_package_hash(task_type: str, step_input: dict[str, Any], draft: Any) -> tuple[Any, list[dict[str, Any]]]:
     changes = []
     if not isinstance(draft, dict):
@@ -279,28 +288,147 @@ def stamp_package_hash(task_type: str, step_input: dict[str, Any], draft: Any) -
     return draft, changes
 
 
-def strict_compatibility_issues(schema: Any, path: str = "$") -> list[str]:
-    """Objects must close additionalProperties and require every property.
+_STRICT_KEYWORDS = frozenset("""
+    type properties required additionalProperties items enum const anyOf $ref $defs
+    description title pattern format minLength maxLength minimum maximum
+    exclusiveMinimum exclusiveMaximum multipleOf minItems maxItems
+""".split())
+_STRICT_TYPES = frozenset("string number integer boolean object array null".split())
+_STRICT_FORMATS = frozenset("date-time time date duration email hostname ipv4 ipv6 uuid".split())
 
-    Structured-output implementations commonly require this form; a nullable type
-    expresses an optional value instead of an omitted key.
+
+def _schema_children(node: dict, path: str, *, definitions: bool = True):
+    """Only schema positions; property names and keyword data are not schemas."""
+    for key in ("properties", "$defs") if definitions else ("properties",):
+        if isinstance(node.get(key), dict):
+            for name, child in node[key].items():
+                yield child, f"{path}.{key}.{name}"
+    if "items" in node:
+        yield node["items"], f"{path}.items"
+    if isinstance(node.get("anyOf"), list):
+        for index, child in enumerate(node["anyOf"]):
+            yield child, f"{path}.anyOf[{index}]"
+
+
+def _strict_ref_target(ref: Any, root: dict) -> dict | None:
+    if ref == "#":
+        return root
+    if not isinstance(ref, str) or not re.fullmatch(r"#/\$defs/([^/~]|~[01])+", ref):
+        return None
+    name = ref.removeprefix("#/$defs/").replace("~1", "/").replace("~0", "~")
+    defs = root.get("$defs", {})
+    target = defs.get(name) if isinstance(defs, dict) else None
+    return target if isinstance(target, dict) else None
+
+
+def _strict_schema_walk(node: Any, path: str, root: dict, totals: list[int], *, is_root: bool = False) -> list[str]:
+    # R8 (DEIXIS policy): boolean and other non-object subschemas are refused.
+    if not isinstance(node, dict):
+        return [f"R8 {path}: subschema is not an object"]
+    issues = []
+    # R1 (rejection observed): H9b's API refused a $ref with sibling keywords.
+    if "$ref" in node and len(node) != 1:
+        issues.append(f"R1 {path}: $ref has sibling keywords")
+    typ = node.get("type")
+    # R2 (documented): nullable objects must also be closed and fully required.
+    if typ == "object" or (isinstance(typ, list) and "object" in typ) or "properties" in node:
+        props = node.get("properties", {})
+        if node.get("additionalProperties") is not False:
+            issues.append(f"R2 {path}: additionalProperties is not false")
+        required = node.get("required", [])
+        if (not isinstance(props, dict) or not isinstance(required, list)
+                or not all(isinstance(name, str) for name in required)
+                or sorted(required) != sorted(props)):
+            issues.append(f"R2 {path}: required does not list every property")
+    # R3 (DEIXIS policy): keyword allowlist and valid, distinct type names.
+    for key in node:
+        if key not in _STRICT_KEYWORDS:
+            issues.append(f"R3 {path}: unsupported keyword {key}")
+    if "type" in node and not (
+        isinstance(typ, str) and typ in _STRICT_TYPES
+        or isinstance(typ, list) and bool(typ)
+        and all(isinstance(t, str) and t in _STRICT_TYPES for t in typ)
+        and len(set(typ)) == len(typ)
+    ):
+        issues.append(f"R3 {path}: invalid type")
+    # R5 (documented resolution; DEIXIS policy for local syntax/root-only $defs).
+    if "$ref" in node and _strict_ref_target(node["$ref"], root) is None:
+        issues.append(f"R5 {path}: $ref must resolve to # or a root $defs entry")
+    if "$defs" in node and not is_root:
+        issues.append(f"R5 {path}: $defs is only allowed at the root")
+    # R6 (documented): only the supported format names are admitted.
+    if "format" in node and (not isinstance(node["format"], str) or node["format"] not in _STRICT_FORMATS):
+        issues.append(f"R6 {path}: unsupported format")
+    # R7 (documented thresholds; DEIXIS policy syntactic counting).
+    for key in ("properties", "$defs"):
+        if isinstance(node.get(key), dict):
+            if key == "properties":
+                totals[0] += len(node[key])
+            totals[2] += sum(len(name) for name in node[key])
+    enum = node.get("enum")
+    if isinstance(enum, list):
+        totals[1] += len(enum)
+        length = sum(len(value) for value in enum if isinstance(value, str))
+        totals[2] += length
+        if len(enum) > 250 and all(isinstance(value, str) for value in enum) and length > 15_000:
+            issues.append(f"R7 {path}: string enum exceeds 15000 characters")
+    if isinstance(node.get("const"), str):
+        totals[2] += len(node["const"])
+    # R8 (DEIXIS policy): arrays have items and anyOf has at least one branch.
+    if (typ == "array" or isinstance(typ, list) and "array" in typ) and "items" not in node:
+        issues.append(f"R8 {path}: array has no items")
+    if "anyOf" in node and (not isinstance(node["anyOf"], list) or not node["anyOf"]):
+        issues.append(f"R8 {path}: anyOf is not a non-empty list")
+    for child, child_path in _schema_children(node, path):
+        issues += _strict_schema_walk(child, child_path, root, totals)
+    return issues
+
+
+def _strict_object_depth(node: Any, root: dict, depth: int, active: frozenset[int]) -> int:
+    if not isinstance(node, dict) or id(node) in active:
+        return depth
+    active = active | {id(node)}
+    typ = node.get("type")
+    depth += int(typ == "object" or isinstance(typ, list) and "object" in typ or "properties" in node)
+    deepest = depth
+    # R7 (DEIXIS policy): a per-path guard permits recursion and revisits shared defs.
+    target = _strict_ref_target(node.get("$ref"), root)
+    if target is not None:
+        deepest = max(deepest, _strict_object_depth(target, root, depth, active))
+    for child, _ in _schema_children(node, "", definitions=False):
+        deepest = max(deepest, _strict_object_depth(child, root, depth, active))
+    return deepest
+
+
+def strict_compatibility_issues(schema: Any, path: str = "$") -> list[str]:
+    """Conservative offline guard for OpenAI strict mode, not a full specification.
+
+    R1: rejection observed (H9b $ref siblings). R2, R4, R6: documented.
+    R3, R8: DEIXIS policy. R5: documented resolution, DEIXIS policy local
+    references/root-only $defs. R7: documented thresholds, DEIXIS policy counting.
+    Documentation is not re-read offline in RF2. Existing constraint keywords
+    have request accepted evidence only, not evidence of keyword enforcement.
+    Fine-tuned-model restrictions are omitted: DEIXIS does not send to those
+    models. Claude and Gemini have separate adapter rules, not checked here.
+    Also use Draft202012Validator.check_schema to check keyword value shapes.
     """
-    issues: list[str] = []
-    if isinstance(schema, dict):
-        if schema.get("type") == "object" or "properties" in schema:
-            props = schema.get("properties", {})
-            if schema.get("additionalProperties") is not False:
-                issues.append(f"{path}: additionalProperties is not false")
-            if sorted(schema.get("required", [])) != sorted(props):
-                issues.append(f"{path}: required does not list every property")
-        for bad in ("oneOf", "allOf", "not", "if"):
-            if bad in schema:
-                issues.append(f"{path}: uses {bad}")
-        for key, value in schema.items():
-            issues += strict_compatibility_issues(value, f"{path}.{key}")
-    elif isinstance(schema, list):
-        for i, value in enumerate(schema):
-            issues += strict_compatibility_issues(value, f"{path}[{i}]")
+    root = schema if isinstance(schema, dict) else {}
+    # R4 (documented): apply root-only rules once, never to properties/branches.
+    issues = []
+    if root.get("type") != "object" or "anyOf" in root:
+        issues.append(f"R4 {path}: root must have type object and no anyOf")
+    totals = [0, 0, 0]  # properties, enum values, counted string characters
+    issues += _strict_schema_walk(schema, path, root, totals, is_root=True)
+    # R7 (documented thresholds; DEIXIS policy counting and reference depth).
+    for count, limit, label in zip(totals, (5000, 1000, 120_000), ("properties", "enum values", "string characters")):
+        if count > limit:
+            issues.append(f"R7 {path}: total {label} exceeds {limit}")
+    depth = _strict_object_depth(root, root, 0, frozenset())
+    defs = root.get("$defs", {})
+    if isinstance(defs, dict):
+        depth = max([depth] + [_strict_object_depth(node, root, 0, frozenset()) for node in defs.values()])
+    if depth > 10:
+        issues.append(f"R7 {path}: object nesting exceeds 10 levels")
     return issues
 
 

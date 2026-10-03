@@ -197,6 +197,17 @@ def test_s1_patch_schemas_resolve_refs_and_reject_whitespace(field):
     assert not canonical.is_valid(draft) and not validator.is_valid(draft)
 
 
+@pytest.mark.parametrize("reason,accepted", [(None, True), ("Short reason", True), ("x" * 600, True),
+                                           ("", False), ("   ", False), ("x" * 601, False)])
+def test_patch_reason_canonical_and_transport_boundaries(reason, accepted):
+    from jsonschema import Draft202012Validator
+    draft = patch(REPLAY["sections"]["IV"]["step_input"], claims=[{
+        "claim_key": "IV.9", "text": None, "removed": False, "context": None, "reason": reason,
+    }])
+    assert contracts.canonical_validator("ReportSectionAnchorRepair").is_valid(draft) is accepted
+    assert Draft202012Validator(contracts.report_section_anchor_patch_schema()).is_valid(draft) is accepted
+
+
 @pytest.mark.parametrize("field,size", [("anchors", 301), ("claims", 41)])
 def test_s1_patch_schema_rejects_overlong_arrays(field, size):
     """New contract S1 paired with A1: deterministic array bounds apply before merging."""

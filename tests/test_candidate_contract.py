@@ -72,7 +72,6 @@ def test_candidate_schemas_are_registered_strict_and_resolve_their_refs():
         for node in walk(validator.schema):
             if "$ref" in node:
                 assert validator._resolver.lookup(node["$ref"]).contents
-        assert contracts.strict_compatibility_issues(validator.schema) == []
         wire = contracts.step_output_schema(task)
         assert "common.schema.json" not in json.dumps(wire)
         assert contracts.strict_compatibility_issues(wire) == []

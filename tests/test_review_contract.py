@@ -24,7 +24,7 @@ def input_codes(step_input):
 def test_owner_review_schema_is_closed_and_strict(wire):
     schema = contracts.step_output_schema("owner_review") if wire else contracts.load_schema("OwnerReview")
     Draft202012Validator.check_schema(schema)
-    assert contracts.strict_compatibility_issues(schema) == []
+    assert contracts.strict_compatibility_issues(contracts.step_output_schema("owner_review")) == []
     draft = output(); draft["verdict"] = "invented"
     assert "schema_invalid" in codes(si(), draft)
 

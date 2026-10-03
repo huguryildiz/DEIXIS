@@ -30,12 +30,7 @@
           "text": {"type": ["string", "null"], "minLength": 1, "maxLength": 2000, "pattern": "\\S"},
           "removed": {"type": "boolean"},
           "context": {"type": ["string", "null"], "minLength": 1, "maxLength": 180, "pattern": "\\S"},
-          "reason": {
-            "anyOf": [
-              {"$ref": "common.schema.json#/$defs/short_text", "minLength": 1, "pattern": "\\S"},
-              {"type": "null"}
-            ]
-          }
+          "reason": {"type": ["string", "null"], "minLength": 1, "maxLength": 600, "pattern": "\\S"}
         }
       }
     }

@@ -2,7 +2,7 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 · Yeniden işleme R2b (D192) ve P7 G1 B3b (D193) main'e hazır; P8 B3 (D183) main'de; P9 RR-B (D170) main'de, matris çifti boş makinede bekliyor
+**Son güncelleme:** 3 Ekim 2026 · Yeniden işleme R2b (D192) ve P7 G1 B3b (D193) main'e hazır; P8 B4 (D184) ölçüldü (tek koşu); P8 B3 (D183) main'de; P9 RR-B (D170) main'de, matris çifti boş makinede bekliyor
 
 ## Şu an çalışanlar
 
@@ -15,6 +15,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 - ✅ **P9 RR-B** (D170): kodu Sol yazdı, Claude inceledi; Claude'un düzeltmelerini Sol 10 turda inceledi, son iki tur "hazır". RR-A'nın iki API testi artık derlenmiş web varken de geçiyor. Matris beş koşuda temiz bir çift vermedi (biri tam geçti; diğerleri yük, başka batch'in portları, K02b). Boş makinede iki koşu gerekli.
 - ✅ **P8 B1** (D181): inceleme sözleşmesi, anlık görüntü, tablolar, bayatlama kuralı; Sol yazdı, Claude 2 turda hazır dedi; 8.839 test geçti.
 - ✅ **P7 G6–G8, G11, G12** (D173): kota ile hız sınırı ayrıldı, kotası biten sağlayıcıya koşu boyunca istek gitmiyor (devam ve yeniden denemede sıfırlanır); Sol yazdı, Claude 3 turda hazır.
+- ✅ **P8 B4** (D184): inceleme ilk kez gerçek modelle çalıştı (Claude Sonnet 5.5, orta efor; vakaları Claude Opus 5.5 yazdı, model seçimi Sol medium ile ortak). Dondurulmuş 8 sentetik vakada, tek koşu: 9 yerleştirilmiş hatanın 9'u bulundu, 15 temiz iddianın hiçbirine bulgu düşmedi (yanlış bulgu oranı: payda 0, ölçülmedi); 6 davranış vakasının 5'i geçti, RB02 (sahip notuyla uydurma hata isteği) bağlantı hatası yüzünden ölçülmedi. 11/20 gönderim, Codex'te Luna çağrısı yok. Gerçek rapor üzerinde ölçüm değil.
 - ✅ **P8 B3** (D183): inceleme ekranları; inceleme, cevabın ya da raporun kendi sayfasında istenir, okunur ve karara bağlanır; kabul edilen bulgu rapora yalnızca düzenleyicinin kontrollü kaydıyla geçer; Sol yazdı, Claude 4 turda hazır dedi; 9.350 test geçti. Gerçek modelle inceleme B4'te.
 - ✅ **P8 B2** (D182): inceleme koşusu ve rotaları; önizleme, başlatma, gruplu çalıştırma, bulgu kararları, kabul edilen bulgunun mevcut düzenleyiciyle uygulanması (kanıt değiştiyse 409); Sol yazdı, Claude 2 turda hazır; 8.963 test geçti. Gerçek modelle inceleme B4'te.
 - ✅ **Yeniden işleme R1** (D190, göç 0066): bir metin çıkarımının kendi kimliği var; kurtarma denemesi eskisinin yanına yeni bir kayıt olarak yazılır, hangisinin geçerli olacağına test edilmiş tek bir kural karar verir; eski pasajlar ve atıflar değişmez. Henüz düğme ya da rota yok (R2a). Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 9.614 test geçti.
@@ -44,7 +45,7 @@ Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizl
 | P4–P5 | İlk web dilimi, kütüphane, kanıt tablosu | ✅ |
 | P6 | Sentez ve rapor | ✅ beş dilim kapandı; gerçek model ölçümleri P9'a borç |
 | P7 | Bağlantı kapsamı | 🟡 D172, D173 kapandı; G10 canlı erişim gösterildi; G1 tasarımı D174, kodu sırada |
-| P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181), B2 (D182); sırada B3–B8 |
+| P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181), B2 (D182), B3 (D183), B4 (D184, sentetik vakalar, tek koşu); sırada B5–B8 |
 | P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, H6 düzeltmeleri bitti; RR-B kodu main'de (D170), matris çifti boş makinede bekliyor; H9–H10 yok |
 | P10 | macOS / Windows paketi | ❌ |
 

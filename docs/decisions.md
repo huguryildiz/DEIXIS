@@ -2,6 +2,17 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D176 — P9 H7 finding 2: a repaired file gets an evidence-preserving recovery path; old extractions and their passages stay, a recovered extraction is a new, visible head
+
+**Status:** accepted (design only; nothing implemented). Written by gpt-6.1-sol high; reviewed cross-vendor by Claude Opus 5.5 in two rounds (round 1 "düzeltmeyle hazır", 0 high, 10 medium or low; round 2 "hazır", 2 low, both fixed by the author). Owner questions Q1 to Q6 decided jointly by the coordinator (Claude) and gpt-6.1-sol medium on the owner's standing instruction: all six defaults taken.
+**Date:** 2026-10-03.
+
+**Context:** D165 and D169 left one known defect open: an asset row stored from a torn download stays `failed` after a new upload repairs the file, because no route extracts again for a known hash and re-extraction answers "unchanged" for the same `EXTRACTION_VERSION` (`store.py` ~1532). The review found the same dead end in OCR (version label built from `pdf.EXTRACTION_VERSION`, a rejected `base+ocr-` row blocks OCR forever) and about ten paths that replace a torn file silently.
+
+**Decision:** The design is [p9-reextract-design.md](product/p9-reextract-design.md). Re-upload restores the bytes, records the outcome and offers one explicit retry (Q1); every replacement of a not-whole file goes through one `restore_file(op)` that writes a receipt, keeps the damaged bytes and takes the lock; a recovered extraction is a new head with its own identity, `UNIQUE(asset_id, extraction_version)` stays (P8 B1 relies on it); `no_change` is stored as `rejected` with `decision_code='no_change'`; old citations open their stored extraction text (Q5); "file repaired" is shown separately and is not a P8 B1 stale reason (Q6); a fetch inside a run that meets a torn file refuses with a named step code and the run continues without that PDF. Batches R1, R2a, R2b, R2c, R3, R5; implementation starts after P8 B1 lands and reuses B1's evidence helper.
+
+**Limits:** Design only; no test ran for it. A legacy `partial` row whose page count changed is recorded as not recoverable by this design. Password-protected PDFs get only a narrow zero-passage diagnostic exception, no password support.
+
 ## D174 — P7 G1: the connector contract is an internal, versioned interface for reviewed adapters with a registry-driven conformance suite; external plugins are not offered
 
 **Status:** accepted (design only; nothing implemented). Written by gpt-6.1-sol high; reviewed cross-vendor by Claude Opus 5.5 in three rounds (round 1 "düzeltmeyle hazır", 1 high + 4 medium + 4 low; round 2 "düzeltmeyle hazır", 1 medium on a red test kept across batches; fixed by moving the missing-key guard into B2). Owner questions Q1 to Q5 decided jointly by the coordinator (Claude) and gpt-6.1-sol medium on the owner's standing instruction: all five defaults taken.

@@ -5,7 +5,8 @@ The B1 boundary is `deixis.scholarly_connector.v1` in
 registration to reviewed adapters in the codebase. Packaged builds cannot add
 sources. No runtime import path, URL, key or API request can register code.
 The compatibility facade validates request fields and declared option values
-before send (B3a, D179), but application dispatch still uses the old registry
+before send (B3a, D179) and delegates query rendering/rules to registry declarations
+(B3b, D193), but application dispatch still uses the old registry
 callables. G1 remains open; the equivalence evidence uses synthetic fixtures.
 
 ## Five onboarding gates
@@ -23,8 +24,15 @@ callables. G1 remains open; the equivalence evidence uses synthetic fixtures.
    without provider branches. Add managed keys if needed in
    `backend/deixis/credentials.py:39`; source keys remain `testable=False`
    (`credentials.py:36`). Do not emulate unsupported remote operations.
-3. Check all admission surfaces: `providers/query_rules.py:13,46,191`,
-   `providers/query_compiler.py:67,126,137`, `domain/rules.py:56,60`,
+3. Declare a display name and default/endpoint `query_syntax` in
+   `providers/registry.py:36,76,77`; `resolve_query_syntax` (`registry.py:142`)
+   refuses missing declarations. Reuse pure kinds in `providers/query_rules.py:219`;
+   construction checks their vocabularies and unused parameters (`query_rules.py:235`).
+   Add query freeze coverage in `tests/query_baseline.py:90` and
+   `tests/test_query_delegation.py:37`. `NAMES` is a compatibility dictionary,
+   not an admission surface. Check compiler delegation/allocation
+   (`providers/query_compiler.py:70,106,122`) and facade rendering/rules
+   (`providers/facade.py:126,130`), plus `domain/rules.py:56,60`,
    `workflow/routing.py:88`, `contracts/research/common.schema.json:36`,
    `methods/deixis-research/SKILL.md:10`, `api/app.py:807-822`, and connection labels
    in `apps/web/src/labels.ts:206`. Lookup persistence has closed provider and
@@ -74,6 +82,17 @@ what an accepted request sends or returns still requires the bump. B3a changes
 neither `CONTRACT_ID` nor `QUERY_RULES_REVISION`, and retains the byte-identical
 111-case freeze. gpt-6.1-sol medium accepted this alternative to bumping affected
 adapter revisions in plan review round 1 (D179).
+
+B3b's bounded amendment exempts the intentional refusal, before rendering or
+checking, of an endpoint the connector does not declare or a provider the registry
+does not hold from a `QUERY_RULES_REVISION` bump. This requires byte-identical
+rendering, written counts and validation for every registered provider with None
+or a declared endpoint, and byte-identical module-level rule outputs for every
+input. Any other rendered-query or issue-list change still requires the bump.
+The module-level rule functions retain their historical lenient endpoint behavior;
+compiler rendering and the facade resolve strictly. gpt-6.1-sol medium agreed to
+this amendment in plan review round 1 (D193). The query freeze retains the old
+undeclared-input outputs separately from its unchanged replay domain.
 
 All B1 facades declare only `search`. Lookup returns `unsupported` without a
 request, answer or `SearchOutcome`. It is neither `failed` nor `zero_results`
@@ -133,6 +152,7 @@ B2 tree. B2 synthetic conformance does not verify provider documentation.
 | scopus_count_unmapped. Unmapped count | Scopus's STANDARD mapping does not read `citedby-count`; `ProviderRecord.cited_by_count=None` means unknown, including when the synthetic body supplies zero. Group 3's zero-preservation rule applies only where the adapter maps a count. The `counts_zero` case asserts None; adding the mapping is an enhancement, not a defect. No mapping change in B2. | Unscheduled enhancement |
 | pubmed_scan. Source-owned classification copy | Round 1 fixed: exactly one `SCAN_ALLOWLIST` entry in `tests/test_connector_boundary.py` permits `fetch_outcome.error_kind`, because EFetch copies the already-classified `SearchOutcome.error_kind` unchanged. Other unresolved expressions still fail closed. | B2 (D178) |
 | option_types. Value-type validation | B3a fixed (D179): `providers/facade.py:94-104` validates exact option types, declared values and an exact nonnegative retry allowance before send. `tests/test_connector_facade.py:266` covers every declared option, explicitly including integer 17 for OpenAlex reference_count/references and S2 bulk sort, with ContractViolation and zero requests; exact str-subclass and synthetic enumerated-value cases are included. `PENDING_B3A` is closed; direct registry behavior stays unchanged. | B3a fixed (D179) |
+| query_delegation. Rendering/rule admission | B3b (D193): registry declarations and `resolve_query_syntax` (`providers/registry.py:142`) drive pure candidate rendering, written counts and issue lists (`query_rules.py:218`); shared compiler allocation (`query_compiler.py:122`) drives both block compilation and the facade (`facade.py:130`). `tests/test_query_delegation.py:37` replays the pre-edit query freeze; undeclared compiler/facade endpoints are named refusal changes under the bounded revision amendment. Module-level rules stay lenient. Query translation through a synthetic registry-only connector is covered; other closed admission surfaces remain in ledger h. | B3b fixed (D193); dispatch remains B4 |
 | pause_text. Missing configuration label | `apps/web/src/labels.ts:32-71` has no `provider_not_configured` pause text; the fallback displays the raw code. No web edit is authorized in B2. | Next web batch |
 | b4_merge_version | Section 8.1 records/integration: temp-store merge/version through the dispatched facade. Existing registry/store tests are separate evidence. | B4 |
 | b4_resume_paging | Section 8.1 paging: resumed paging through the dispatched facade. | B4 |

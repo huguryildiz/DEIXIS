@@ -361,7 +361,7 @@ def test_duplicate_term_retained_occurrences(groups):
 
 
 @pytest.mark.parametrize("optimize", [False, True])
-def test_rendering_mismatch_raises_even_with_optimized_python(optimize, tmp_path):
+def test_rendering_and_compilation_share_allocation_even_with_optimized_python(optimize, tmp_path):
     code = '''
 import socket
 def forbidden(*args, **kwargs):
@@ -369,14 +369,20 @@ def forbidden(*args, **kwargs):
 socket.socket.connect = forbidden
 socket.getaddrinfo = forbidden
 from deixis.providers import facade, query_compiler
-query_compiler._fit_blocks = lambda *args: ("mismatched query", [])
-try:
-    facade.connectors()["openalex"].render_query([["alpha"], ["beta"]])
-except RuntimeError as exc:
-    if "query rendering mismatch for openalex/None" not in str(exc):
-        raise
-else:
-    raise AssertionError("rendering mismatch was not refused")
+query_compiler.fit_block_counts = lambda *args: ("shared query", [1, 1])
+groups = [["alpha", "unused"], ["beta"]]
+rendered = facade.connectors()["openalex"].render_query(groups)
+vocabulary = {"terms": [
+    {"block": block, "root": term, "phrase": term, "in_query": "phrase", "dropped": None}
+    for block, group in zip(("setting", "task"), groups) for term in group
+]}
+compiled = query_compiler.compile_block_queries(vocabulary, ["openalex"], 1)
+if rendered.native_query != "shared query" or compiled[0]["query_text"] != "shared query":
+    raise AssertionError("rendering and compilation did not use the shared allocation")
+if rendered.retained != ("alpha", "beta") or rendered.dropped != ("unused",):
+    raise AssertionError("facade ignored shared occurrence counts")
+if compiled[0]["dropped_terms"] != ["unused"]:
+    raise AssertionError("compiler ignored shared occurrence counts")
 '''
     paths = [str(ROOT / "backend"), *(p for p in sys.path if "site-packages" in p)]
     env = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": os.pathsep.join(paths), "PYTHONDONTWRITEBYTECODE": "1"}

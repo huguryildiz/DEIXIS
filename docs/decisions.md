@@ -2,6 +2,76 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D193 — P7 G1 B3b: registry query declarations preserve compiler output and allocation, with bounded undeclared-input refusals
+
+**Status:** accepted (B3b implemented). Task prompt `docs/product/p7-g1-b3b-prompt.md` written by Claude Opus 5.5, reviewed by gpt-6.1-sol medium in three rounds (r1 düzeltmeyle hazır, 1 high + 4 medium; r2 düzeltmeyle hazır, 2 medium; r3 hazır). Code by gpt-6.1-sol high, reviewed cross-vendor by Claude Opus 5.5: round 1 düzeltmeyle hazır (1 medium: declaration kinds failed open on an unknown kind; 3 low), round 2 hazır. Owner-level choices decided jointly by Claude Opus 5.5 and gpt-6.1-sol medium in plan round 1: the decision 7 refusal amendment instead of a `QUERY_RULES_REVISION` bump, `compile_queries`' OpenAlex/SerpApi literals kept as compiler policy, `NAMES` kept as a compatibility dictionary, and registry-held declarations with strict/lenient resolution.
+**Date:** 2026-10-03, detached `e19a7f7`, worktree `DEIXIS-g1-b3b`.
+
+**Context:** D174 assigns query rendering/validation to connector declarations and allocation/order/budgets to the compiler. D179 keeps B3b separate from request-validation equivalence. The existing 33 rendering and 44 rule fixtures alone do not provide broad compiler byte-equality evidence.
+
+**Decision:** Pure frozen `query_rules.QuerySyntax` declarations supply candidate rendering, leading written counts and ordered issues. Construction rejects unknown kinds, unknown extra rules and parameters the kind never reads. Every registered connector declares its display name and default syntax, and S2's bulk endpoint declares its own syntax. One registry resolver fails closed for compiler/facade rendering and missing declarations; module-level rule wrappers resolve lazily and retain historical lenient endpoint checks. Only plain-kind issue messages use the connector's display name. `NAMES` remains the original ordered mutable compatibility dictionary, read by no production policy; `PLAIN_PROVIDERS` is derived from registry declarations. `query_rules.BOOLEAN_OPERATORS` supplies the compiler's compatibility export and plain rendering.
+
+`query_compiler.fit_block_counts` owns the existing allocation loop. `_fit_blocks` adapts its counts to dropped occurrences, and the facade uses the same counts for retained/dropped occurrences, without a second loop or mismatch cross-check. Trimming order, tie-breaks, character/operator/word budgets, dictionary key order, duplicate occurrences, empty-block exceptions and three-block quirks remain characterized rather than corrected. `compile_queries`' OpenAlex/SerpApi strategy and budget literals remain compiler policy; its concept-role `"core"` also matches a provider ID in the static scanner and is explicitly allowed only inside that function.
+
+The refactor is separate from the named refusal changes: compiler rendering/counting/block fitting refuses undeclared endpoints with `ContractViolation` and unregistered providers with `KeyError`; facade rendering/checking refuses endpoints absent from its descriptor. Module-level rules keep old results even for undeclared endpoint strings. The bounded amendment in [connector onboarding](product/connector-onboarding.md) and the facade docstring exempts only these pre-render/check refusals from `QUERY_RULES_REVISION` bumps, provided registered/default and declared-endpoint rendering/counting/validation and all module-level rule outputs remain byte-identical. Every other query/issue-list change still needs the bump. Contract, adapter, query-rule and compiler revisions stay unchanged.
+
+**Evidence:** Before the first production edit, `tests/query_baseline.py --write` captured the untouched `e19a7f7` code. All four production hashes were still original. The immutable freeze is **3,227,353 bytes**, SHA-256 `ecc658ad6b5964e513f90144de0220a552e170ba11afe1f85d989fe22ac5e586`: **39,683 calls**, comprising **39,586 unchanged replay calls** in 188 function/pair groups and **97 old non-refusal outputs** retained in a separate undeclared section. A clean `e19a7f7` archive under `/tmp` independently regenerated identical bytes. Serialization uses unsorted `json.dumps(..., indent=2, ensure_ascii=False)` and preserves dictionary order; argument/result interning reduces storage without canonicalization.
+
+There are 342 rule texts, 19 term classes plus duplicate/sanitization cases, all eleven registered/default or declared-endpoint pairs, exact 299/300/301 rendered lengths for every pair, allocation ties/unbalanced/empty/three-block groups, and both compiler strategies with the requested provider lists, limits, depth and routing cases. Successful outputs below include recorded None/empty results; None is separately counted as a subset. Undeclared-pair rows in the unchanged section contain only module-level rule checks.
+
+**Freeze counts by function:**
+
+| Group | Successful outputs | Recorded exceptions | None outputs (subset) |
+|---|---:|---:|---:|
+| `entries/display_name` | 10 | 0 | 0 |
+| `entries/_render` | 440 | 0 | 0 |
+| `entries/_rendered` | 440 | 0 | 0 |
+| `entries/_fit_blocks` | 580 | 4 | 25 |
+| `entries/render_query` | 580 | 3 | 25 |
+| `entries/_fit` | 370 | 1 | 11 |
+| `entries/syntax_issues` | 10260 | 342 | 0 |
+| `entries/boolean_part` | 10602 | 0 | 6333 |
+| `entries/query_issues` | 10260 | 342 | 0 |
+| `entries/facade_query_issues` | 3762 | 0 | 0 |
+| `entries/compile_queries` | 1200 | 1 | 0 |
+| `entries/compile_block_queries` | 295 | 0 | 0 |
+| `entries/_compact_openalex` | 37 | 0 | 5 |
+| `entries/_terms` | 28 | 0 | 0 |
+| `entries/quoted` | 27 | 0 | 0 |
+| `entries/NAMES` | 1 | 0 | 0 |
+| `entries/PLAIN_PROVIDERS` | 1 | 0 | 0 |
+| `undeclared/_render` | 20 | 0 | 0 |
+| `undeclared/_rendered` | 20 | 0 | 0 |
+| `undeclared/_fit_blocks` | 19 | 0 | 6 |
+| `undeclared/render_query` | 19 | 0 | 6 |
+| `undeclared/facade_query_issues` | 19 | 0 | 0 |
+
+**Freeze counts by provider/endpoint:**
+
+| Group | Successful outputs | Recorded exceptions | None outputs (subset) |
+|---|---:|---:|---:|
+| `entries/openalex/None` | 1597 | 0 | 5 |
+| `entries/semantic_scholar/None` | 1595 | 2 | 347 |
+| `entries/semantic_scholar/bulk` | 1559 | 0 | 350 |
+| `entries/crossref/None` | 1595 | 2 | 347 |
+| `entries/arxiv/None` | 1597 | 0 | 347 |
+| `entries/biorxiv/None` | 1597 | 0 | 5 |
+| `entries/pubmed/None` | 1597 | 0 | 347 |
+| `entries/ieee_xplore/None` | 1597 | 0 | 5 |
+| `entries/scopus/None` | 1597 | 0 | 292 |
+| `entries/core/None` | 1597 | 0 | 5 |
+| `entries/serpapi/None` | 1595 | 2 | 350 |
+
+Other unchanged rows comprise module-rule checks on 19 undeclared endpoint pairs (19,494 successful outputs, 0 exceptions, 3,652 None), the unregistered provider (342 successful outputs, 686 exceptions, 342 None), and provider-free compiler/helper rows (1,534 successful outputs, 1 exception, 5 None).
+The separate undeclared section retains 97 old non-refusal outputs across 20 pairs, including 12 None; all 97 now have named refusal tests.
+
+The original connector `baseline.json` stays byte-identical: scratch captures match all **408,249 bytes**, SHA-256 `e9aa47950ea55a770b9d8dff1eebc89e39760d8e777361760d3e9f0d3a04b4b0`, without `--write`.
+
+Round 1 verification: **339 query-delegation tests passed**; the required twenty-file focused suite gave **2,930 passed, 60 existing dependency deprecation warnings in 48.43 s**. Nine new cases cover two unknown kinds, unknown extra rules and 20 unused parameter/kind combinations. A disposable registered-kind mutation (`plain` to `Plain`) fails a named construction test, bringing detected mutations to eight. Before round 1, the new suite gave **138 failed, 192 passed** on unchanged old code, with all 188 freeze replay groups passing. Commands, timings and logs are in `/tmp/g1b3b-impl-report.md`.
+
+Full suite: writer sandbox **11,660 passed, 17 failed** with the same sandbox-only names as D179; reviewer runs outside the sandbox **11,677 passed, 0 failed, 2 skipped** (400.6 s) before round 1 and **11,686 passed, 0 failed, 2 skipped** (383.0 s) after it. The reviewer regenerated the query freeze on a clean `e19a7f7` archive (byte-identical) and reproduced 138 failed / 192 passed for the new module on unchanged code. `git diff --check` passed.
+
+**Limits:** Synthetic inputs establish byte equality on the enumerated corpus, not every possible vocabulary or live-provider truth, recall or scientific correctness. No live provider/model call, network/DNS operation or service restart. Search dispatch still uses registry callables and workflow still calls the compiler. PRISMA-S cites new file digests for `registry.py` and `query_compiler.py`, which is code provenance rather than changed query output. B4's quota/temporary-limit provenance, identifier-bound S2 lookup, payload sanitization, usable-identity admission and all `PENDING_B4` integration cases remain. G1 stays open. No push, publication, PR or external-service change.
 ## D183 — P8 B3: review screens: a review is requested, read and decided inside the target's own sheet, and a finding reaches report text only through the editor's checked apply save
 
 **Status:** accepted, implemented. Writer: gpt-6.1-sol high (batch prompt `docs/product/p8-b3-prompt.md` by Claude Opus 5.5, reviewed by gpt-6.1-sol medium in four rounds until hazır; owner-level decisions 1 and 6 agreed with Sol medium in round 1). Cross-vendor code review by Claude Opus 5.5 in four rounds: round 1 düzeltmeyle hazır (six medium, five low), round 2 one high and two medium (global `header` CSS broke the detail header, a wall-of-text group heading, browser cases 7 and 8 depended on events decisions do not emit), round 3 one low (default disclosure markers replaced with Lucide chevrons), round 4 one medium (the transcript focus handoff indexed run toggles without review runs; one shared kind set now feeds both), then hazır.

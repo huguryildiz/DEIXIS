@@ -2,12 +2,13 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 · P8 B3 (D183) main'de; P9 RR-B (D170) main'de, matris çifti boş makinede bekliyor
+**Son güncelleme:** 3 Ekim 2026 · P7 G1 B3b (D193) main'e hazır; P8 B3 (D183) main'de; P9 RR-B (D170) main'de, matris çifti boş makinede bekliyor
 
 ## Şu an çalışanlar
 
 Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. Sol (gpt-6.1-sol) yazarsa Claude inceler, Claude yazarsa Sol inceler. Sahip onayı gereken kararlar Sol medium ile ortak verilir.
 
+- ✅ **P7 G1 B3b** (D193): sorgu yazımı ve kuralları her bağlayıcının registry bildirimine taşındı; yazım ve kural kodunda sağlayıcı dalı kalmadı (eski `compile_queries` stratejisinin OpenAlex/SerpApi seçimleri derleyici politikası olarak duruyor), yeni bir kaynak yalnız registry kaydıyla sorgu alabiliyor. Değişiklikten önce dondurulan 39.586 çağrının çıktısı bayt bayt aynı; yalnız bildirilmemiş uç noktalar için 97 girdi artık reddediliyor (adlandırılmış değişiklik). Sol yazdı, plan Sol medium 3 turda, kod Claude 2 turda hazır; 11.686 test geçti. Gönderim hâlâ registry üzerinden; sırada B4.
 - ✅ **P7 G1 B3a** (D179): facade seçenek türünü, izinli değerleri ve yeniden deneme sayısını göndermeden denetliyor; 566 doğrudan/facade eşitlik vakası, 181 gönderim biçimi ve 88 yeniden deneme/zaman aşımı uyum testi (yeni takım 925 test); Sol yazdı, plan Sol medium 3 turda, kod Claude 1 turda hazır; 11.180 test geçti. Gönderim hâlâ registry üzerinden; B3b (sorgu yazımı) ayrı parti, sonra B4.
 - ✅ **P7 G1 B2** (D178): sağlayıcı uyum test takımı (641 test, 566 sentetik vaka); anahtar sonradan silinirse istek sayılmıyor ve arama tablosu bozulmuyor; PubMed kota türü, bozuk 200 yanıtı, boş sayfa imleci, başlıkta anahtar ve geçersiz bekleme düzeltildi; Sol yazdı, Claude 2 turda hazır; 9.992 test geçti. Seçenek türü denetimi B3a'ya, kimliksiz kayıt kabulü B4'e kaldı.
 - ✅ **P7 G1 B1** (D177): iç bağlayıcı sözleşmesi (`contract.py`), facade ve 111 sentetik uyumluluk vakası; çalışma akışı değişmedi; Sol yazdı, Claude 2 turda hazır dedi; 9.231 test geçti. Bulunan iki kusur (PubMed EFetch `error_kind` kaybı, S2/IEEE yanlış kökte çöküş) B2'ye yazıldı.

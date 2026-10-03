@@ -9,11 +9,14 @@ OpenAlex), IEEE Xplore, CORE and the inside of a Scopus field group.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from typing import Callable
 
 NAMES = {"openalex": "OpenAlex", "semantic_scholar": "Semantic Scholar", "crossref": "Crossref", "arxiv": "arXiv",
          "pubmed": "PubMed",
          "biorxiv": "bioRxiv", "ieee_xplore": "IEEE Xplore", "scopus": "Scopus", "core": "CORE", "serpapi": "SerpApi"}
 MAX_PLAIN_WORDS = 8
+BOOLEAN_OPERATORS = ("AND", "OR", "NOT", "ANDNOT")
 MAX_ARXIV_OPERATORS = 5
 SCOPUS_GROUP = re.compile(r"^\s*(TITLE-ABS-KEY|TITLE|ABS|KEY)\((.*)\)\s*$", re.DOTALL)
 ARXIV_OPERAND = re.compile(r'^(ti|abs|all|au|cat|jr|co):("[^"]+"|[^\s"()]+)$')
@@ -32,18 +35,34 @@ def balanced(query: str) -> bool:
 
 def boolean_part(provider_id: str, query: str) -> str | None:
     """The part of a query that OpenAlex-style boolean checks apply to, or None."""
-    if provider_id in ("openalex", "biorxiv", "ieee_xplore", "core"):
+    from deixis.providers.registry import resolve_query_syntax
+
+    try:
+        declaration = resolve_query_syntax(provider_id, strict=False)
+    except KeyError:
+        return None
+    return _boolean_part(declaration, query)
+
+
+def syntax_issues(provider_id: str, query: str, endpoint: str | None = None) -> list[str]:
+    from deixis.providers.registry import resolve_query_syntax
+
+    return _syntax_issues(resolve_query_syntax(provider_id, endpoint, strict=False), query)
+
+
+def _boolean_part(declaration: QuerySyntax, query: str) -> str | None:
+    if declaration.boolean_checks:
         return query
-    if provider_id == "scopus" and (match := SCOPUS_GROUP.match(query)) and balanced(match.group(2)):
+    if declaration.kind == "field_group" and (match := SCOPUS_GROUP.match(query)) and balanced(match.group(2)):
         return match.group(2)
     return None
 
 
-def syntax_issues(provider_id: str, query: str, endpoint: str | None = None) -> list[str]:
-    name = NAMES[provider_id]
-    if provider_id == "semantic_scholar" and endpoint == "bulk":
+def _syntax_issues(declaration: QuerySyntax, query: str) -> list[str]:
+    if declaration.kind == "bulk":
         return _bulk_issues(query)
-    if provider_id in ("semantic_scholar", "crossref"):
+    if declaration.kind == "plain":
+        name = declaration.display_name
         issues = []
         if re.search(r'["()]', query) or re.search(r"\b(AND|OR|NOT)\b", query):
             issues.append(f"{name} ignores quotes, parentheses and AND/OR/NOT; write plain distinctive words")
@@ -51,21 +70,19 @@ def syntax_issues(provider_id: str, query: str, endpoint: str | None = None) -> 
             issues.append(f"more than {MAX_PLAIN_WORDS} words; {name} ranks records matching any word, so keep only distinctive words")
         return issues
     if not balanced(query):
-        silently = {"ieee_xplore": " (it returns zero records instead of an error)",
-                    "core": " (it returns other records instead of an error)"}.get(provider_id, "")
-        return [f"unbalanced quotes or parentheses{silently}"]
-    if provider_id == "core":
+        return [f"unbalanced quotes or parentheses{declaration.unbalanced_suffix}"]
+    if declaration.extra_rules == "field_phrase":
         issues = []
         if re.search(r"\b[A-Za-z]+:", re.sub(r'"[^"]*"', "", query)):
             issues.append("CORE does not read a field prefix such as title: as a filter; write the query without field prefixes")
         if '"' in query and not re.search(r"\bAND\b", query):
             issues.append("CORE answers a quoted phrase without AND with an error; join the phrase with AND to a group of alternatives")
         return issues
-    if provider_id == "scopus" and not SCOPUS_GROUP.match(query):
+    if declaration.kind == "field_group" and not SCOPUS_GROUP.match(query):
         return ["wrap the whole query in one field group such as TITLE-ABS-KEY(...)"]
-    if provider_id == "serpapi" and (re.search(r"[()]", query) or re.search(r"\b(AND|NOT)\b", query)):
+    if declaration.kind == "scholar" and (re.search(r"[()]", query) or re.search(r"\b(AND|NOT)\b", query)):
         return ["Google Scholar reads no parentheses, AND or NOT; use quoted phrases, plain words and OR"]
-    if provider_id == "arxiv":
+    if declaration.kind == "fielded":
         return _arxiv_issues(query)
     return []
 
@@ -193,10 +210,86 @@ def query_issues(provider_id: str, query: str, endpoint: str | None = None) -> l
 
     `endpoint` is the one an sw query names (D93); a query that names none is checked as it always was.
     """
-    issues = syntax_issues(provider_id, query, endpoint)
-    boolean = boolean_part(provider_id, query)
-    if boolean is None or issues:
-        return issues
-    if openalex_or_is_ambiguous(boolean):
-        issues.append("OR alternatives beside other terms without parentheses")
-    return issues + openalex_query_shape_issues(boolean)
+    from deixis.providers.registry import resolve_query_syntax
+
+    return resolve_query_syntax(provider_id, endpoint, strict=False).query_issues(query)
+
+
+@dataclass(frozen=True)
+class QuerySyntax:
+    """Pure candidate rendering, prefix counts and rules; allocation belongs to the compiler.
+
+    The resolver binds the plain-word display name from its connector. Other
+    messages belong to kinds or explicit parameters, independent of that name.
+    """
+
+    kind: str = "boolean"
+    operand_prefix: str = ""
+    operand_suffix: str = ""
+    wrapper: str = ""
+    boolean_checks: bool = False
+    unbalanced_suffix: str = ""
+    extra_rules: str = ""
+    display_name: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.kind not in ("boolean", "plain", "bulk", "scholar", "field_group", "fielded"):
+            raise ValueError(f"unknown query syntax kind {self.kind!r}")
+        if self.extra_rules not in ("", "field_phrase"):
+            raise ValueError(f"unknown query extra_rules {self.extra_rules!r}")
+        supported = {
+            "boolean_checks": ("boolean",),
+            "operand_prefix": ("boolean", "field_group", "fielded"),
+            "operand_suffix": ("boolean", "field_group", "fielded"),
+            "wrapper": ("field_group",),
+            "extra_rules": ("boolean", "scholar", "field_group", "fielded"),
+            "unbalanced_suffix": ("boolean", "scholar", "field_group", "fielded"),
+        }
+        for parameter, kinds in supported.items():
+            if getattr(self, parameter) and self.kind not in kinds:
+                raise ValueError(f"query syntax kind {self.kind!r} does not read {parameter}")
+
+    def render(self, core: list[str], family: list[str], quoted: Callable[[str], str]) -> str:
+        if self.kind == "bulk":
+            return " + ".join(quoted(group[0]) if len(group) == 1 else "(" + " | ".join(quoted(t) for t in group) + ")"
+                              for group in (core, family) if group)
+        if self.kind == "plain":
+            def words(text: str, seen: set[str]) -> list[str]:
+                kept: dict[str, str] = {}
+                for word in text.split():
+                    if word not in BOOLEAN_OPERATORS and word.lower() not in seen:
+                        kept.setdefault(word.lower(), word)
+                return list(kept.values())
+
+            core_words = words(core[0], set())
+            family_words = words(family[0], {w.lower() for w in core_words}) if family else []
+            cap = MAX_PLAIN_WORDS
+            family_words = family_words[: max(1, cap - len(core_words))] if family_words else []
+            return " ".join(core_words[: cap - len(family_words)] + family_words)
+        if self.kind == "scholar":
+            return " ".join([quoted(core[0]), *([" OR ".join(quoted(t) for t in family)] if family else [])])
+
+        def group(terms: list[str]) -> str:
+            operands = [f"{self.operand_prefix}{quoted(t)}{self.operand_suffix}" for t in terms]
+            return operands[0] if len(operands) == 1 else "(" + " OR ".join(operands) + ")"
+
+        text = " AND ".join(group(terms) for terms in (core, family) if terms)
+        return f"{self.wrapper}({text})" if self.wrapper else text
+
+    def written_counts(self, kept: list[list[str]]) -> list[int]:
+        if self.kind == "plain":
+            return [min(len(group), 1) for group in kept]
+        if self.kind == "scholar":
+            return [min(len(group), 1) if position == 0 else len(group) for position, group in enumerate(kept)]
+        # Preserve the historical counts for a third block even though render
+        # receives only two blocks. B3b characterizes, rather than corrects, it.
+        return [len(group) for group in kept]
+
+    def query_issues(self, query: str) -> list[str]:
+        issues = _syntax_issues(self, query)
+        boolean = _boolean_part(self, query)
+        if boolean is None or issues:
+            return issues
+        if openalex_or_is_ambiguous(boolean):
+            issues.append("OR alternatives beside other terms without parentheses")
+        return issues + openalex_query_shape_issues(boolean)

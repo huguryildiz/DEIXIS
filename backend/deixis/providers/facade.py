@@ -10,6 +10,12 @@ exemption requires unchanged registry callables and identical requests/outcomes
 for every still-accepted request. Changing what an accepted request sends or
 returns still requires the adapter_revision bump. An omitted endpoint retains
 the historical default; incompatible descriptors raise ContractViolation.
+
+B3b exempts refusing, before rendering or checking, an undeclared endpoint or
+unregistered provider from a QUERY_RULES_REVISION bump only if every registered
+provider/default or declared endpoint renders, counts and validates identically,
+and module-level rule functions retain every historical output. Other rendered
+query or issue-list changes still require the bump (D193).
 """
 
 from inspect import signature
@@ -37,7 +43,8 @@ def descriptor_for(connector: registry.Connector, order: int) -> contract.Connec
                        connector.page_gap if e.page_gap is None else e.page_gap, e.total, options(e.options), retry)
                        for eid, e in connector.endpoints.items())
     return contract.ConnectorDescriptor(
-        pid, query_rules.NAMES[pid], order, contract.CONTRACT_ID, connector.adapter_revision,
+        pid, connector.display_name if connector.display_name is not None else pid,
+        order, contract.CONTRACT_ID, connector.adapter_revision,
         connector.key_env, connector.key_required, connector.searchable, connector.sw_searchable,
         connector.supplementary, connector.host, connector.lineage, connector.requests_per_search,
         frozenset({"search"}), contract.QUERY_RULES_REVISION, endpoints,
@@ -117,25 +124,17 @@ class CompatibilityConnector:
         return contract.LookupOutcome("unsupported", operation=operation)
 
     def query_issues(self, text: str, endpoint: str | None = None) -> list[str]:
-        return query_rules.query_issues(self.descriptor.provider_id, text, endpoint)
+        self._endpoint(endpoint)
+        return registry.resolve_query_syntax(self.descriptor.provider_id, endpoint).query_issues(text)
 
     def render_query(self, groups, endpoint: str | None = None) -> contract.QueryRendering | None:
+        self._endpoint(endpoint)
         pid = self.descriptor.provider_id
         groups = [list(g) for g in groups]
-        fitted = query_compiler._fit_blocks(pid, groups, endpoint)
+        fitted = query_compiler.fit_block_counts(pid, groups, endpoint)
         if fitted is None:
             return None
-        # Recover occurrence positions using the compiler's prefix allocation, not values.
-        counts = [len(g) for g in groups]
-        while True:
-            kept = [g[:n] for g, n in zip(groups, counts)]
-            text = query_compiler._render(pid, kept[0], kept[1] if len(kept) > 1 else [], endpoint)
-            if len(text) <= query_compiler.MAX_QUERY_CHARS and not query_rules.query_issues(pid, text, endpoint):
-                used = query_compiler._rendered(pid, kept, endpoint)
-                retained = tuple(term for g, n in zip(groups, used) for term in g[:n])
-                dropped = tuple(term for g, n in zip(groups, used) for term in g[n:])
-                if (text, list(dropped)) != fitted:
-                    raise RuntimeError(f"query rendering mismatch for {pid}/{endpoint}: "
-                                       "recomputed text or dropped occurrences differ from _fit_blocks")
-                return contract.QueryRendering(text, retained, dropped, contract.QUERY_RULES_REVISION)
-            counts[max(range(len(counts)), key=lambda i: (counts[i], i))] -= 1
+        text, used = fitted
+        retained = tuple(term for g, n in zip(groups, used) for term in g[:n])
+        dropped = tuple(term for g, n in zip(groups, used) for term in g[n:])
+        return contract.QueryRendering(text, retained, dropped, contract.QUERY_RULES_REVISION)

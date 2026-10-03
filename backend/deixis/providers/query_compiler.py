@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from deixis.providers import query_rules
-from deixis.providers.registry import CONNECTORS, search_providers
+from deixis.providers.registry import CONNECTORS, resolve_query_syntax, search_providers
 
 VERSION = "deixis.query_compiler.v2"
 COMPACT_VERSION = "deixis.query_compiler.v3.compact_openalex_v1"
@@ -27,8 +27,9 @@ MAX_QUERY_CHARS = 300
 # when its family has more alternatives than fit.
 MAX_TERMS = 1 + query_rules.OPENALEX_MAX_OPERATORS
 CORE_TERMS = 2
-PLAIN_PROVIDERS = ("semantic_scholar", "crossref")
-BOOLEAN_OPERATORS = ("AND", "OR", "NOT", "ANDNOT")
+PLAIN_PROVIDERS = tuple(pid for pid, connector in CONNECTORS.items()
+                        if connector.query_syntax is not None and connector.query_syntax.kind == "plain")
+BOOLEAN_OPERATORS = query_rules.BOOLEAN_OPERATORS
 COMPACT_STOPWORDS = {"a", "an", "and", "are", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the", "to", "with"}
 ROLE_NAMES = {"mechanism": "mechanism", "method": "method", "outcome": "outcome", "context": "context",
               "adjacent_field": "adjacent field"}
@@ -67,38 +68,17 @@ def _group(operands: list[str]) -> str:
 
 
 def _render(provider: str, core: list[str], family: list[str], endpoint: str | None = None) -> str:
-    if endpoint == "bulk":  # Semantic Scholar's bulk syntax (D93): `|` inside a block, `+` between blocks
-        return " + ".join(quoted(group[0]) if len(group) == 1 else "(" + " | ".join(quoted(t) for t in group) + ")"
-                          for group in (core, family) if group)
-    if provider in PLAIN_PROVIDERS:  # plain words: the first core term, then the first family term
-        def words(text: str, seen: set[str]) -> list[str]:
-            kept: dict[str, str] = {}
-            for word in text.split():
-                if word not in BOOLEAN_OPERATORS and word.lower() not in seen:
-                    kept.setdefault(word.lower(), word)
-            return list(kept.values())
-
-        core_words = words(core[0], set())
-        family_words = words(family[0], {w.lower() for w in core_words}) if family else []
-        # A long core term leaves room for at least one family word, so the word cap never drops a block whole
-        # (review of 13g, 2026-09-23).
-        cap = query_rules.MAX_PLAIN_WORDS
-        family_words = family_words[: max(1, cap - len(core_words))] if family_words else []
-        return " ".join(core_words[: cap - len(family_words)] + family_words)
-    if provider == "serpapi":  # Google Scholar reads no parentheses, so only the first core term stands before the OR chain
-        return " ".join([quoted(core[0]), *([" OR ".join(quoted(t) for t in family)] if family else [])])
-    operand = {"arxiv": lambda t: f"abs:{quoted(t)}", "pubmed": lambda t: f"{quoted(t)}[Title/Abstract]"}.get(provider, quoted)
-    text = " AND ".join(_group([operand(t) for t in group]) for group in (core, family) if group)
-    return f"TITLE-ABS-KEY({text})" if provider == "scopus" else text
+    return resolve_query_syntax(provider, endpoint).render(core, family, quoted)
 
 
 def _fit(provider: str, core: list[str], family: list[str]) -> str | None:
     """The query with as many leading terms of each group as the provider's rules allow, or None."""
+    declaration = resolve_query_syntax(provider)
     n_family = min(len(family), MAX_TERMS - min(len(core), CORE_TERMS))
     n_core = min(len(core), MAX_TERMS - n_family)
     while True:
         text = _render(provider, core[:n_core], family[:n_family])
-        if len(text) <= MAX_QUERY_CHARS and not query_rules.query_issues(provider, text):
+        if len(text) <= MAX_QUERY_CHARS and not declaration.query_issues(text):
             return text
         if n_family > 1:
             n_family -= 1
@@ -127,28 +107,34 @@ def _rendered(provider: str, kept: list[list[str]], endpoint: str | None = None)
     """How many leading terms of each block `_render` really wrote: a plain-word query takes the first term of each
     block, and SerpApi the first term of the first block (second review of 13g, 2026-09-23). A bulk query writes them
     all."""
-    if provider in PLAIN_PROVIDERS and endpoint is None:
-        return [min(len(group), 1) for group in kept]
-    if provider == "serpapi":
-        return [min(len(group), 1) if position == 0 else len(group) for position, group in enumerate(kept)]
-    return [len(group) for group in kept]
+    return resolve_query_syntax(provider, endpoint).written_counts(kept)
 
 
 def _fit_blocks(provider: str, groups: list[list[str]], endpoint: str | None = None) -> tuple[str, list[str]] | None:
-    """One query holding as many leading terms of each block as the provider's rules allow, with what was dropped.
+    """The fitted text and dropped occurrences, using the shared prefix allocation."""
+    fitted = fit_block_counts(provider, groups, endpoint)
+    if fitted is None:
+        return None
+    text, used = fitted
+    return text, [term for group, count in zip(groups, used) for term in group[count:]]
+
+
+def fit_block_counts(provider: str, groups: list[list[str]], endpoint: str | None = None) -> tuple[str, list[int]] | None:
+    """One fitted query and the number of leading occurrences written from each block.
 
     A term goes from the end of the block that still holds the most terms, the last such block on a tie, and every
     block keeps at least one term: a block that lost all of its terms would widen the query into another question
     (SW2.7). Taking from the last block first cut a long task block to one term while the setting block kept five
     (D90).
     """
+    declaration = resolve_query_syntax(provider, endpoint)
     counts = [len(group) for group in groups]
     while True:
         kept = [group[:count] for group, count in zip(groups, counts)]
         text = _render(provider, kept[0], kept[1] if len(kept) > 1 else [], endpoint)
-        if len(text) <= MAX_QUERY_CHARS and not query_rules.query_issues(provider, text, endpoint):
+        if len(text) <= MAX_QUERY_CHARS and not declaration.query_issues(text):
             used = _rendered(provider, kept, endpoint)
-            return text, [term for group, count in zip(groups, used) for term in group[count:]]
+            return text, used
         if max(counts) <= 1:
             return None
         counts[max(range(len(counts)), key=lambda position: (counts[position], position))] -= 1

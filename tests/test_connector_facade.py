@@ -295,7 +295,10 @@ def test_option_values_accepted_with_equivalence(provider_id, endpoint_id, name,
                                        native_script(provider_id, endpoint_id, fixture))
     assert result[0].status == "completed"
     if name == "sort" and value == "":
-        assert result[1][0].url.params["sort"] == registry.CONNECTORS[provider_id].sw_query["sort"]
+        if provider_id == "openalex":
+            assert "sort" not in result[1][0].url.params
+        else:
+            assert result[1][0].url.params["sort"] == registry.CONNECTORS[provider_id].sw_query.get("sort", "")
 
 
 @pytest.mark.parametrize("provider_id,endpoint_id", PAIRS, ids=[f"{p}/{e or 'default'}" for p, e in PAIRS])

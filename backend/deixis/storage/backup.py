@@ -59,6 +59,10 @@ def _referenced_files(conn: sqlite3.Connection) -> dict[str, dict[str, str | Non
                 "SELECT raw_payload_path FROM kill_search_queries WHERE raw_payload_path IS NOT NULL",
                 "SELECT payload_ref FROM passages WHERE kind = 'abstract' AND payload_ref IS NOT NULL"):
         payloads.update({row[0]: None for row in _column(conn, sql)})
+    for name, digest in _column(conn, "SELECT raw_payload_path, payload_file_sha256 FROM watch_reads WHERE raw_payload_path IS NOT NULL"):
+        if name in payloads and payloads[name] is not None and payloads[name] != digest:
+            raise BackupError(f"conflicting recorded payload hashes: {name}")
+        payloads[name] = digest
     refs = {"papers": papers, "provider-payloads": payloads}
     for folder, names in refs.items():
         for name in names:

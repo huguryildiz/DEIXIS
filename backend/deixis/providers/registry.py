@@ -59,6 +59,7 @@ class Connector:
     # Extra arguments an sw paged read passes to `search`, so a legacy request stays byte for byte what it was and
     # the flow never names a provider to decide what to ask for (slice 05).
     sw_options: dict[str, Any] = field(default_factory=dict)
+    options: tuple[str, ...] = ()
     # The host name a search request goes to, taken from the URL the module sends it to. Two connectors that share one
     # are read one request at a time between them (D89): bioRxiv is searched through OpenAlex.
     host: str = ""
@@ -91,7 +92,8 @@ def _host(url: str) -> str:
 
 CONNECTORS = {c.provider_id: c for c in (
     Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",
-              sw_options={"reference_count": True, "references": True}, host=_host(openalex.WORKS_URL), adapter_revision=2,
+              sw_options={"reference_count": True, "references": True}, options=("sort", "publication_date"),
+              host=_host(openalex.WORKS_URL), adapter_revision=3,
               display_name="OpenAlex", query_syntax=QuerySyntax(boolean_checks=True)),
     # Semantic Scholar's relevance search serves `offset + limit` up to 1,000 and refuses a deeper page. An sw query
     # goes to the bulk endpoint instead: up to 1,000 papers a call, continued by a token (D93).

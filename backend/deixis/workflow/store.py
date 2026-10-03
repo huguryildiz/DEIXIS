@@ -339,6 +339,9 @@ class Store:
             purge_candidates(self.conn, research_id)
             from deixis.workflow.review.store import purge_owner_reviews
             source_ids.extend(purge_owner_reviews(self.conn, research_id))
+            from deixis.workflow.watch.store import purge_watches
+            if self.conn.execute("SELECT 1 FROM sqlite_master WHERE name='watches'").fetchone():
+                payloads.extend(purge_watches(self.conn, research_id))
             self.conn.execute(
                 "DELETE FROM report_edit_checks WHERE report_id IN"
                 " (SELECT id FROM reports WHERE research_id = ?)", (research_id,),
@@ -436,6 +439,9 @@ class Store:
                 " UNION SELECT 1 FROM kill_search_queries WHERE raw_payload_path = ?"
                 " UNION SELECT 1 FROM passages WHERE payload_ref = ?", (p, p, p, p)
             ).fetchone()]
+            if self.conn.execute("SELECT 1 FROM sqlite_master WHERE name='watch_reads'").fetchone():
+                payloads = [p for p in payloads if not self.conn.execute(
+                    "SELECT 1 FROM watch_reads WHERE raw_payload_path=?", (p,)).fetchone()]
         return orphan_files, payloads
 
     def selection_revision(self, research_id: str) -> int:
@@ -754,7 +760,8 @@ class Store:
             stage = {"discovery": "discovery", "answer": "inspection", "pdf_collection": "inspection",
                      "fulltext_fetch": "inspection", "fulltext_adjudication": "inspection",
                      "research_title": "intake", "lineage_links": "synthesis",
-                     "claim_decomposition": "candidate", "kill_search": "candidate", "review": "claim_check"}.get(kind, "extraction")
+                     "claim_decomposition": "candidate", "kill_search": "candidate", "review": "claim_check",
+                     "watch_check": "discovery"}.get(kind, "extraction")
             self.conn.execute(
                 "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",

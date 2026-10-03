@@ -704,6 +704,12 @@ EMPTY_BECAUSE = {
     "source_similarities": "written by the semantic ranking step, which needs an embedding model",
     "suspected_duplicates": "written only when two sources look like duplicates of one work",
     "table_purge_authorizations": "a temporary row opened and removed inside the table purge",
+    "watches": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
+    "watch_checks": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
+    "watch_reads": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
+    "watch_seen": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
+    "watch_seen_alias": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
+    "watch_items": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
 }
 
 

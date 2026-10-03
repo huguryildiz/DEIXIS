@@ -860,6 +860,14 @@ def create_app(
     async def review_refusal(_: Request, exc: ReviewRefusal):
         return JSONResponse(exc.extra_fields | {"detail": exc.detail, "code": exc.code}, status_code=exc.status_code)
 
+    from deixis.api.watch_routes import register_watch_routes
+    from deixis.workflow.watch.store import WatchRefusal
+    register_watch_routes(app)
+
+    @app.exception_handler(WatchRefusal)
+    async def watch_refusal(_: Request, exc: WatchRefusal):
+        return JSONResponse({"detail": exc.detail, "code": exc.code}, status_code=exc.status)
+
     @app.exception_handler(LegacyResearchReadOnly)
     async def legacy_read_only(_: Request, exc: LegacyResearchReadOnly):
         return JSONResponse({"detail": "legacy_research_read_only"}, status_code=409)

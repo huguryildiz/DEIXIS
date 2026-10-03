@@ -45,7 +45,8 @@ def descriptor_for(connector: registry.Connector, order: int) -> contract.Connec
         return tuple(contract.OptionDescriptor(name, "str" if name == "sort" else "bool", None) for name in names)
 
     endpoints = (contract.EndpointDescriptor(None, connector.paging, connector.max_results,
-                 connector.max_reachable, connector.page_gap, connector.total, options(connector.sw_options), retry),)
+                 connector.max_reachable, connector.page_gap, connector.total,
+                 options(tuple(connector.sw_options) + connector.options), retry),)
     endpoints += tuple(contract.EndpointDescriptor(eid, e.paging, e.max_results, e.max_reachable,
                        connector.page_gap if e.page_gap is None else e.page_gap, e.total, options(e.options), retry)
                        for eid, e in connector.endpoints.items())

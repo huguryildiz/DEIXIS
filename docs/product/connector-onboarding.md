@@ -82,6 +82,14 @@ The next page fails without a send, usage, search row, page-one restart or provi
 swap. Query-rule revision is recorded, not compared. Kill-search is terminal and
 records no `connector_json`. These application checks change no adapter revision.
 
+P8 B5 adds optional OpenAlex `sort` and `publication_date` search options and
+bumps its adapter revision from 2 to 3. Default requests and outcomes retain the
+prior replay domain unchanged. A discovery query paused under revision 2 refuses
+its next OpenAlex page with `adapter_revision_changed`, without a send; additive
+options are not exempted from the version rule. bioRxiv remains at revision 2
+with no new declared options. The freeze adds one `sorted_first_page` case,
+replayed directly and through the facade, beyond the unchanged required shapes.
+
 B3a's bounded amendment exempts facade enforcement, before any send, of an
 input constraint already declared by the descriptor: option names, value types
 and values, and request field types. It also expressly adopts one facade rule
@@ -141,6 +149,7 @@ B2 tree. B2 synthetic conformance does not verify provider documentation.
 
 | Item | Current evidence and consequence | Owner |
 |---|---|---|
+| watch_options. Optional OpenAlex date sort | P8 B5 declares `sort` and `publication_date`, adapter revision 3. `test_watch_old_entrypoints` checks direct requests and facade admission; `test_connector_boundary` replays all prior requests/results unchanged and the extra sorted-page case; option-type conformance iterates both new declarations. `test_watch_check::test_discovery_revision_two_continuation_refused_after_watch_adapter_bump` proves the revision-2 continuation refusal. No provider probe. | P8 B5 (D186) |
 | a. Missing key on dispatch | B2 fixed: `workflow/flow.py:2044-2047` snapshots the key before quota/accounting; `:2080-2087` records a failed step only; `:4668-4671` guards kill-search before reservation. No migration or `search_runs` row for missing configuration; other unsent outcomes retain their rows. | B2 (D178) |
 | b. S2 batch identity | `providers/lookup.py::semantic_scholar_batch` binds normalized DOI/ArXiv identifiers regardless of position. Repeated DOI request positions share an answer when all answers naming that identifier are JSON-equal; conflicting answers fail all its positions. Unbound answers fail, and only order-consistent nulls are not_found. `test_connector_dispatch::test_s2_binding` includes four repeated-DOI cases; `test_s2_workflow_reordered_abstracts` exercises persistence. | B4 fixed (D194) |
 | c. Limit presentation | Search and chain row/step errors retain error_kind; kill-search step errors retain it. Quota pauses as provider_quota_exhausted; temporary limits keep provider_rate_limited, with rate_limited status for both. Synthetic discovery and suppression: `test_connector_dispatch::test_limit_discovery_and_suppression`. | B4 fixed (D194) |

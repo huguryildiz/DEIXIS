@@ -387,6 +387,8 @@ class ResearchFlow:
                 self._candidate_send_gate(run)
             elif run["kind"] == "review":
                 await self._owner_review(run)
+            elif run["kind"] == "watch_check":
+                await self._watch_check(run)
             elif run["kind"] == "table_columns":
                 await self._table_columns(run, scope)
             else:
@@ -4986,6 +4988,49 @@ class ResearchFlow:
                 outcomes[svid] = "assessed"
         refused = any(q["error_code"] == "transport_budget" for q in cs.queries(search["id"]))
         self._kill_search_finish(run, search, outcomes, "transport_budget" if refused else None)
+
+    async def _watch_check(self, run: dict) -> None:
+        from deixis.workflow.watch.store import WatchStore
+        from deixis.workflow.watch.run import Callbacks, run as watch_run
+
+        watches = WatchStore(self.store)
+        check = watches.check(run["research_id"], run["target"]["check_id"])
+
+        def gate():
+            try:
+                self._checkpoint(run["id"], run["scope_revision"])
+            except RunStopped:
+                return "stopped"
+            except NotFound:
+                watches.cancel_unavailable(run["id"])
+                return "research_unavailable"
+            current = self.store.run(run["id"])
+            if current["status"] != "running":
+                return "stopped"
+            try:
+                watch = watches.watch(run["research_id"], run["target"]["watch_id"])
+            except NotFound:
+                reason = "research_unavailable"
+            else:
+                reason = "watch_disabled" if not watch["enabled"] else watches.follows_old_scope(watch)
+            if reason:
+                if reason == "research_unavailable":
+                    watches.cancel_unavailable(run["id"])
+                else:
+                    self.store.update_run(run["id"], event="run_cancelled", status="cancelled", pause_reason=reason)
+                return reason
+            return None
+
+        async def send(request):
+            return await self.deps.http.send(request, follow_redirects=False)
+
+        callbacks = Callbacks(gate=gate, run=lambda: self.store.run(run["id"]),
+            add_usage=lambda key, amount: self.store.add_usage(run["id"], key, amount),
+            step=lambda key, kind: self.store.step(run["id"], key, kind),
+            existing_step=lambda key: self.store.existing_step(run["id"], key),
+            start_step=self.store.start_step, send=send, host_gate=fetch_module.host_gate,
+            headers=self.deps.http.headers)
+        await watch_run(watches, check, callbacks, self.deps.settings)
 
     # ---- owner-requested review ---------------------------------------------------------
     def _owner_review_send_gate(self, run: dict) -> None:

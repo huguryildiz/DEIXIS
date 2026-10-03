@@ -543,7 +543,7 @@ def test_resume_provenance(dispatch_flow, monkeypatch, provenance, error):
     page = Page(0, "*", 0, None, 2, 0, "search:0", 10)
     _, first, _ = record_sent(flow, run, query(), page=page)
     if provenance == "current":
-        provenance = json.dumps({"contract_id": contract.CONTRACT_ID, "adapter_revision": 2})
+        provenance = json.dumps({"contract_id": contract.CONTRACT_ID, "adapter_revision": registry.CONNECTORS["openalex"].adapter_revision})
     if provenance == "missing-row":
         # A succeeded page whose recorded search points to a different step.
         flow.store.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?",
@@ -592,7 +592,7 @@ def test_migration_0067_preserves_0066_rows(tmp_path, monkeypatch):
     migrations = tmp_path / "migrations"
     migrations.mkdir()
     numbers = [int(p.name.split("_")[0]) for p in real.glob("*.sql")]
-    assert len(numbers) == len(set(numbers)) and max(numbers) == 67
+    assert len(numbers) == len(set(numbers)) and 67 in numbers
     for path in real.glob("*.sql"):
         if int(path.name.split("_")[0]) <= 66:
             shutil.copy(path, migrations / path.name)

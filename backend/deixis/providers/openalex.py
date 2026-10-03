@@ -14,6 +14,8 @@ limit, while basic paging stops at 10,000.
 from __future__ import annotations
 
 import json
+import re
+from datetime import date
 from typing import Any
 
 import httpx
@@ -119,11 +121,16 @@ async def search_works(
     reference_count: bool = False,
     references: bool = False,
     max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
+    *, sort: str | None = None, publication_date: bool = False,
 ) -> SearchOutcome:
     per_page = min(per_page, MAX_RESULTS)
     select = SELECT + "".join(f",{field}" for field, asked in
                               ((REFERENCE_COUNT_FIELD, reference_count), (REFERENCES_FIELD, references)) if asked)
     params: dict[str, Any] = {SEARCH_PARAM: query, "per_page": per_page, "select": select}
+    if publication_date:
+        params["select"] += ",publication_date"
+    if sort:
+        params["sort"] = sort
     if works_filter:
         params["filter"] = works_filter
     if contact_email:
@@ -136,6 +143,7 @@ async def search_works(
     description = (f"GET {WORKS_URL} {SEARCH_PARAM}={query!r}" + (f" filter={works_filter}" if works_filter else "")
                    + f" per_page={per_page}" + (f" cursor={cursor}" if cursor is not None else "")
                    + f" access={access_mode}")
+    description += (f" sort={sort}" if sort else "") + (" select+publication_date" if publication_date else "")
     response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
                                    (api_key,), max_rate_limit_retries=max_rate_limit_retries)
     return _works_page(response, outcome, cursor)
@@ -174,19 +182,36 @@ MAX_IDS_PER_REQUEST = 100
 
 async def citing_works(client: httpx.AsyncClient, work_id: str, cursor: str, per_page: int = MAX_RESULTS,
                        api_key: str | None = None, contact_email: str | None = None,
-                       max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
+                       max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES, *,
+                       sort: str | None = None, publication_date: bool = False) -> SearchOutcome:
     """One page of the works that cite `work_id` (`filter=cites:W…`), read by cursor like an sw query's pages."""
     per_page = min(per_page, MAX_RESULTS)
     works_filter = f"cites:{work_id}"
     params: dict[str, Any] = {"filter": works_filter, "per_page": per_page, "select": CHAIN_SELECT, "cursor": cursor}
+    if publication_date:
+        params["select"] += ",publication_date"
+    if sort:
+        params["sort"] = sort
     if contact_email:
         params["mailto"] = contact_email
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     access_mode = "api_key" if api_key else "keyless"
     description = f"GET {WORKS_URL} filter={works_filter} per_page={per_page} cursor={cursor} access={access_mode}"
+    description += (f" sort={sort}" if sort else "") + (" select+publication_date" if publication_date else "")
     response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
                                    (api_key,), max_rate_limit_retries=max_rate_limit_retries)
     return _works_page(response, outcome, cursor)
+
+
+def publication_date_of(raw: dict) -> str | None:
+    value = raw.get("publication_date")
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return None
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return None
+    return value
 
 
 async def works_by_ids(client: httpx.AsyncClient, ids: list[str], api_key: str | None = None,

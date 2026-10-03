@@ -2,12 +2,13 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 · P7-F2 ve P7-F3 (D199): PubMed alt istekleri artık bütçede sayılıyor ve sınırlanıyor, OpenAI gömme yolu anahtarlı test edildi; P7 çıkışı için yalnız G1-F1 kaldı
+**Son güncelleme:** 3 Ekim 2026 · P8 B5 (D186) main'e hazır; P7-F2 ve P7-F3 (D199): PubMed alt istekleri artık bütçede sayılıyor ve sınırlanıyor, OpenAI gömme yolu anahtarlı test edildi; P7 çıkışı için yalnız G1-F1 kaldı
 
 ## Şu an çalışanlar
 
 Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. Sol (gpt-6.1-sol) yazarsa Claude inceler, Claude yazarsa Sol inceler. Sahip onayı gereken kararlar Sol medium ile ortak verilir.
 
+- ✅ **P8 B5** (D186): yayın takibinin veri modeli ve elle kontrol; bir araştırmanın dondurulmuş sorguları ya da dahil edilen kaynaklarını atıf yapan işler yeniden okunuyor, ilk kontrol sessiz taban çiziyor, sonraki kontrollerde yeni bir kayıt araştırma başına bir kez listeleniyor; kütüphaneye, korpusa ve sayımlara hiçbir şey girmiyor (göç 0068). Tarihe göre sıralı okuma yalnız OpenAlex'te (bağdaştırıcı sürümü 2→3); diğer kaynaklarda kapsama "bilinmiyor". Ekleme yolu yok (R6), zamanlayıcı B6'da, ekranlar B7'de. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 12.521 test geçti. Gerçek sağlayıcı çağrılmadı.
 - ✅ **P7-F2 ve P7-F3** (D199): bir aramanın gönderdiği her HTTP isteği artık sağlayıcı kodundan bağımsız toplanıyor. PubMed'in ikinci isteği (EFetch) önceden sayılmıyordu; şimdi keşif aramasında önce en kötü durum ayrılıyor, yanıt gelince gerçek deneme sayısına indiriliyor ve sorgunun payı bunu sınırlıyor. Gerçekten gönderilen istekler `provider_sends` adlı ayrı sayaçta; aday aramasında ayrılan pay geri verilmiyor, gönderilen ayrıca sayılıyor. OpenAI gömme yolu sahte taşımayla anahtarlı sınandı (adres, model, Bearer, başarı, 401); yanıt anahtarı geri yansıtırsa OpenAI ve Gemini hata metninden siliniyor. Göç yok. Sol yazdı, plan Sol medium 2 turda, kod Claude 2 turda hazır; 12.574 test geçti. Canlı hata biçimleri ölçülmedi.
 - ✅ **P7 G1 B5** (D196): G1 kabul kaydı yazıldı (`docs/product/p7-acceptance-record.md`). İç, sürümlü arama sözleşmesi koşullu kabul edildi: 2.686 uyum testi geçti, on bağlayıcı ve on bir uç nokta; tam pytest 12.377 geçti, 0 başarısız. README ve api-and-data artık "kaynak, kod tabanında incelenmiş adaptörle eklenir; paket sürümü kaynak ekleyemez" diyor. P7 çıkışı karşılanmadı. P10'dan önce üç parti kaldı: G1-F1 (lookup ve atıf zincirini sözleşmeye bağlama), P7-F2 (PubMed alt isteklerini bütçede sayma), P7-F3 (anahtarlı OpenAI gömme testi). Kararlar Claude ve Sol medium ortak; metni Claude yazdı, Sol high 3 turda inceledi, son tur “hazır”. Kod değişmedi.
 - ✅ **P7 G1 B4** (D194): arama gönderimi artık facade üzerinden (istekler ve yanıtlar aynı); dört adlandırılmış değişiklik: kota ile geçici hız sınırı ayrı duraklama nedeni, S2 toplu yanıtları konuma göre değil kimliğe göre bağlanıyor, kayıtlı yüklerde anahtar yok, kimliği kullanılamayan kayıt atılıp sayılıyor; kayıtlı sayfa sürümü değiştiyse devam reddediliyor (göç 0067). Sol yazdı, plan Sol medium 3 turda, kod Claude 2 turda hazır; 12.235 test geçti. Lookup yetenek bağlama ve RetryPolicy yürütümü takvimsiz; G1 kabulü B5'te.
@@ -53,7 +54,7 @@ Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizl
 | P4–P5 | İlk web dilimi, kütüphane, kanıt tablosu | ✅ |
 | P6 | Sentez ve rapor | ✅ beş dilim kapandı; gerçek model ölçümleri P9'a borç |
 | P7 | Bağlantı kapsamı | 🟡 D172, D173 kapandı; G10 canlı erişim gösterildi; G1 koşullu kabul (D196, yalnız arama); P7-F2/F3 bitti (D199); çıkış karşılanmadı, G1-F1 kaldı; canlı hata/kota biçimleri ölçülmedi |
-| P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181), B2 (D182), B3 (D183), B4 (D184, sentetik vakalar, tek koşu), B8a (D185, aday incelemesi); sırada B5–B7 ve B8b |
+| P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181), B2 (D182), B3 (D183), B4 (D184, sentetik vakalar, tek koşu), B8a (D185, aday incelemesi), B5 (D186, modelsiz, sahte sağlayıcı); sırada B6, B7 ve B8b |
 | P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, H6 düzeltmeleri bitti; RR-B kodu main'de (D170), matris çifti boş makinede bekliyor; H9 ölçüldü (D171): rapor tamamlanmadı, yalnız R1/R7/P19; H10 yok |
 | P10 | macOS / Windows paketi | ❌ |
 

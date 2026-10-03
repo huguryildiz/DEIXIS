@@ -4,7 +4,7 @@
   "base_commit": "5990b02",
   "descriptors": [
     {
-      "adapter_revision": 2,
+      "adapter_revision": 3,
       "capabilities": [
         "search"
       ],
@@ -23,6 +23,16 @@
             },
             {
               "name": "references",
+              "value_type": "bool",
+              "values": null
+            },
+            {
+              "name": "sort",
+              "value_type": "str",
+              "values": null
+            },
+            {
+              "name": "publication_date",
               "value_type": "bool",
               "values": null
             }
@@ -458,7 +468,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "first_page",
-      "adapter_revision": 2,
+      "adapter_revision": 3,
       "calls": [
         {
           "provider_id": "openalex",
@@ -594,7 +604,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "malformed_200",
-      "adapter_revision": 2,
+      "adapter_revision": 3,
       "calls": [
         {
           "provider_id": "openalex",
@@ -692,7 +702,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "next_page",
-      "adapter_revision": 2,
+      "adapter_revision": 3,
       "calls": [
         {
           "provider_id": "openalex",
@@ -828,7 +838,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "non_json_200",
-      "adapter_revision": 2,
+      "adapter_revision": 3,
       "calls": [
         {
           "provider_id": "openalex",
@@ -926,7 +936,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "quota_exhausted",
-      "adapter_revision": 2,
+      "adapter_revision": 3,
       "calls": [
         {
           "provider_id": "openalex",
@@ -1026,7 +1036,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "retry_then_success",
-      "adapter_revision": 2,
+      "adapter_revision": 3,
       "calls": [
         {
           "provider_id": "openalex",
@@ -1212,7 +1222,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "unpaged",
-      "adapter_revision": 2,
+      "adapter_revision": 3,
       "calls": [
         {
           "provider_id": "openalex",
@@ -1339,7 +1349,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "unpaged_keyless",
-      "adapter_revision": 2,
+      "adapter_revision": 3,
       "calls": [
         {
           "provider_id": "openalex",
@@ -1450,6 +1460,148 @@
                 }
               ],
               "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 access=keyless",
+              "retries": 0,
+              "status": "completed"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "openalex/default/sorted_first_page",
+      "provider_id": "openalex",
+      "endpoint_id": null,
+      "shape": "sorted_first_page",
+      "adapter_revision": 3,
+      "calls": [
+        {
+          "provider_id": "openalex",
+          "endpoint_id": null,
+          "query_text": "synthetic query",
+          "limit": 1,
+          "key": true,
+          "kwargs": {
+            "cursor": "*",
+            "max_rate_limit_retries": 2,
+            "reference_count": true,
+            "references": true,
+            "sort": "publication_date:desc",
+            "publication_date": true
+          }
+        }
+      ],
+      "script": [
+        {
+          "url": "https://api.openalex.org/works",
+          "status": 200,
+          "body_file": "openalex-1.json",
+          "headers": {}
+        }
+      ],
+      "expected": {
+        "requests": [
+          {
+            "method": "GET",
+            "url": "https://api.openalex.org/works",
+            "params": [
+              [
+                "cursor",
+                "*"
+              ],
+              [
+                "mailto",
+                "synthetic@example.org"
+              ],
+              [
+                "per_page",
+                "1"
+              ],
+              [
+                "search.title_and_abstract",
+                "synthetic query"
+              ],
+              [
+                "select",
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,referenced_works_count,referenced_works,publication_date"
+              ],
+              [
+                "sort",
+                "publication_date:desc"
+              ]
+            ],
+            "headers": [
+              [
+                "accept",
+                "*/*"
+              ],
+              [
+                "accept-encoding",
+                "gzip, deflate"
+              ],
+              [
+                "authorization",
+                "Bearer <key>"
+              ],
+              [
+                "connection",
+                "keep-alive"
+              ],
+              [
+                "host",
+                "api.openalex.org"
+              ],
+              [
+                "user-agent",
+                "python-httpx/<version>"
+              ]
+            ],
+            "json": null
+          }
+        ],
+        "waits": [],
+        "results": [
+          {
+            "outcome": {
+              "access_mode": "api_key",
+              "delivery_class": null,
+              "error": null,
+              "error_kind": null,
+              "http_status": 200,
+              "next_cursor": "synthetic-token",
+              "payload_sha256": "f69ccd664d23fb72e3c3fa1396bcff9c51db5251e25f6d730caac2e40238c87d",
+              "provider_total": 2,
+              "rate_limit": {},
+              "records": [
+                {
+                  "abstract": "SYNTHETIC evidence",
+                  "abstract_origin": "provider_openalex_inverted_index",
+                  "author_keywords": [],
+                  "authors": [],
+                  "cited_by_count": null,
+                  "doi": "10.9999/synthetic.1",
+                  "identifiers": {},
+                  "issue": null,
+                  "landing_url": "https://example.org/1",
+                  "merge_by_doi": true,
+                  "oa_pdf_url": null,
+                  "oa_pdf_version": null,
+                  "other_versions": [],
+                  "pages": null,
+                  "provider_record_id": "W1",
+                  "publication_type": null,
+                  "raw_sha256": "5e5e6bd417a3953c17ea39b22fecb5e363a0e0ec53199279b4f2ff56939fe3e7",
+                  "reference_count": 1,
+                  "references": [
+                    "W9"
+                  ],
+                  "title": "SYNTHETIC boundary page 1",
+                  "venue": null,
+                  "version_label": "publishedVersion",
+                  "volume": null,
+                  "year": 2021
+                }
+              ],
+              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 cursor=* access=api_key sort=publication_date:desc select+publication_date",
               "retries": 0,
               "status": "completed"
             }
@@ -12416,7 +12568,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "openalex_zero_usd",
-      "adapter_revision": 2,
+      "adapter_revision": 3,
       "calls": [
         {
           "provider_id": "openalex",

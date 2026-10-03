@@ -68,9 +68,11 @@ def call_spec(provider, endpoint, shape, cursor=None):
     kwargs = {}
     if endpoint is not None:
         kwargs.update(endpoint=endpoint, sort=semantic_scholar.BULK_SORT)
-    if shape in {"first_page", "next_page"}:
+    if shape in {"first_page", "next_page", "sorted_first_page"}:
         kwargs.update(cursor=common.FIRST_PAGE if shape == "first_page" else cursor,
                       max_rate_limit_retries=2, **c.sw_options)
+    if shape == "sorted_first_page":
+        kwargs.update(cursor=common.FIRST_PAGE, sort="publication_date:desc", publication_date=True)
     return {"provider_id": provider, "endpoint_id": endpoint, "query_text": QUERY, "limit": 1,
             "key": bool(c.key_env) and shape not in {"unpaged_keyless", "missing_key"}, "kwargs": kwargs}
 
@@ -237,6 +239,8 @@ def capture():
             for shape in sorted(required_shapes(registry.CONNECTORS[pid], eid)):
                 # SerpApi ignores all cursors and issues the same single-page request.
                 freeze(case_spec(pid, eid, shape, cursor if cursor is not None else "ignored"))
+            if pid == "openalex" and eid is None:
+                freeze(case_spec(pid, eid, "sorted_first_page"))
             if endpoint.paging == "offset":
                 for cursor in ("-1", "x"):
                     case = case_spec(pid, eid, "bad_offset_" + cursor)

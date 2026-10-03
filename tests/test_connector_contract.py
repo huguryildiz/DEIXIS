@@ -403,7 +403,7 @@ def test_registration_schema_and_purity(memory_keychain, tmp_path):
                     assert result.status == "unsupported" and result.outcome is None and result.answer is None
     asyncio.run(run())
     assert registry.Connector("synthetic", deny_network, 1).adapter_revision == 1
-    assert all(c.adapter_revision == 2 for c in registry.CONNECTORS.values())
+    assert all(c.adapter_revision == (3 if c.provider_id == "openalex" else 2) for c in registry.CONNECTORS.values())
     enum = json.loads((ROOT / "contracts/research/common.schema.json").read_text())["$defs"]["provider_id"]["enum"]
     assert set(enum) == set(registry.CONNECTORS)
     assert os.environ == before_env and memory_keychain.items == before_keys and list(tmp_path.iterdir()) == before_files

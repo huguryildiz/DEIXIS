@@ -379,7 +379,7 @@ def golden(name, value):
     # step. Retain the sequential freeze and every other expected field.
     for row in expected["search_runs"]:
         row["connector_json"] = json.dumps({
-            "contract_id": "deixis.scholarly_connector.v1", "adapter_revision": 2,
+            "contract_id": "deixis.scholarly_connector.v1", "adapter_revision": CONNECTORS[row["provider"]].adapter_revision,
             "query_rules_revision": "deixis.query_rules.r1",
             "payload": "sanitized_json" if row["raw_payload_path"] is not None else None,
             "dropped_records": 0,

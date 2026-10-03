@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Copy, Download, FileCode, FileText, Quote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { api, ApiError, type ReportClaim, type ReportDetail, type ReportLink, type ReportSection, type ResearchView } from '../api'
+import { api, ApiError, type ReportClaim, type ReportDetail, type ReportLink, type ReportSection, type ResearchView, type ReviewFindingRow } from '../api'
 import { MathText } from '../MathText'
 import { failedRowReasonText, failedSectionReasonText, pauseReasonText, reportAssemblyDraftText, reportChangeLabels, reportChangeViaLabels, reportSupportLabels } from '../labels'
 import { Notice } from '../Notice'
@@ -16,19 +16,14 @@ import { ClaimEdit, type ClaimEditBody } from './ClaimEdit'
 import { ClaimHistory } from './ClaimHistory'
 import { EditCheckPanel } from './EditCheckPanel'
 import { checkCounts } from './editLabels'
+import { REPORT_HEADINGS as HEADINGS } from '../review/reportHeadings'
+import { ReviewPane } from '../review/ReviewPane'
+import { ReviewSummary } from '../review/ReviewSummary'
+import { useReviewList } from '../review/useReviewList'
+import { ApplyEditor } from '../review/ApplyEditor'
+import { scrollBehavior } from '../motion'
 
 const DISPLAY = ['abstract', 'index_terms', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX']
-const HEADINGS: Record<string, [string, string]> = {
-  abstract: ['Abstract', 'Özet'], index_terms: ['Index Terms', 'Dizin Terimleri'],
-  I: ['I. Introduction', 'I. Giriş'], II: ['II. Review Methodology', 'II. İnceleme Yöntemi'],
-  III: ['III. Background and Taxonomy', 'III. Arka Plan ve Sınıflandırma'],
-  IV: ['IV. Literature Synthesis', 'IV. Literatür Sentezi'],
-  V: ['V. Comparative Findings', 'V. Karşılaştırmalı Bulgular'],
-  VI: ['VI. Candidate Unanswered Aspects', 'VI. Cevaplanmamış Yön Adayları'],
-  VII: ['VII. Future Directions', 'VII. Gelecek Yönelimler'],
-  VIII: ['VIII. Limitations and Threats to Validity', 'VIII. Sınırlılıklar ve Geçerlilik Tehditleri'],
-  IX: ['IX. Conclusion', 'IX. Sonuç'], references: ['References', 'Kaynaklar'],
-}
 const finished = new Set(['completed', 'failed', 'cancelled'])
 
 const saveBlob = (blob: Blob, filename: string) => {
@@ -77,6 +72,19 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
   const [report, setReport] = useState<ReportDetail | null>(null)
   const [error, setError] = useState('')
   const [evidenceView, setEvidenceView] = useState(false)
+  const [reviewMode, setReviewMode] = useState(false)
+  const [requestReview, setRequestReview] = useState(false)
+  const reviewList = useReviewList(researchId, 'report', reportId, view.last_event_id)
+  const reviewsButton = useRef<HTMLButtonElement>(null), scrollRoot = useRef<HTMLDivElement>(null), documentScroll = useRef(0)
+  const [applying, setApplying] = useState<{ reviewId: string; finding: ReviewFindingRow; claim: ReportClaim } | null>(null)
+  const mode = (on: boolean, request = false) => {
+    if (on && !reviewMode) documentScroll.current = scrollRoot.current?.scrollTop ?? 0
+    setRequestReview(request); setReviewMode(on)
+    requestAnimationFrame(() => {
+      if (scrollRoot.current) scrollRoot.current.scrollTop = on ? 0 : documentScroll.current
+      if (!on) reviewsButton.current?.focus({ preventScroll: true })
+    })
+  }
   const [editing, setEditing] = useState<string | null>(null)
   const [editError, setEditError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -116,7 +124,19 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
   }
   // Focus moves to the opener while the form still holds it: removing the focused field first lets the modal pull focus to the sheet.
   const focusOpener = () => { const opener = claimFocus.returnFocus.current; if (opener?.isConnected) opener.focus({ preventScroll: true }) }
-  const closeEdit = () => { focusOpener(); setEditing(null); claimFocus.restoreFocus() }
+  const closeEdit = () => { focusOpener(); setEditing(null); setApplying(null); claimFocus.restoreFocus() }
+  const openApply = async (reviewId: string, findingId: string) => {
+    const [review, next] = await Promise.all([api.review(researchId, reviewId), api.report(researchId, reportId)])
+    const finding = review.findings.find(f => f.id === findingId)
+    const claim = next.sections.flatMap(s => s.claims).find(c => c.id === finding?.finding.target.record_id)
+    if (!finding?.dependency_fingerprint || !claim) throw new Error(t('The claim is no longer available in this report.'))
+    applyMutation(next); setEvidenceView(true); setEditing(claim.id); setApplying({ reviewId, finding, claim }); mode(false)
+    requestAnimationFrame(() => {
+      documentRoot.current?.querySelector(`[data-claim-key="${CSS.escape(claim.claim_key)}"]`)?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })
+      rememberClaim(claim.id)
+      documentRoot.current?.querySelector<HTMLTextAreaElement>('.evidence-report-edit textarea')?.focus({ preventScroll: true })
+    })
+  }
   const markdown = async (action: 'copy' | 'download') => {
     setExportBusy(true)
     try {
@@ -250,6 +270,8 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
           : 'The model flagged {r} rewritten sentences as possibly no longer matching their sources; they were returned to their original wording.', { r: review.reverted.length }) : '',
         review.sections_not_reviewed.length ? t('Not read: {sections}.', { sections: review.sections_not_reviewed.map(item => labels(item.section_id)).join(', ') }) : '', t("The review covers the model's base version; human edits were not reviewed.")].filter(Boolean).join(' ')
   const exportBlocked = !report || !finished.has(report.run?.status ?? '') || report.status === 'in_progress'
+  const reviewUnavailable = !report || !finished.has(report.run?.status ?? '') || !['valid', 'draft'].includes(report.status)
+    ? t('A report can be reviewed once its run has finished.') : ''
   const equationNumbers = new Map<string, number>()
   for (const id of DISPLAY) for (const claim of report?.sections.find(section => section.section_id === id)?.claims ?? [])
     if (claim.equation_ref && !equationNumbers.has(claim.equation_ref)) equationNumbers.set(claim.equation_ref, equationNumbers.size + 1)
@@ -259,11 +281,16 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
     return <td key={column.column_id}>{cell ? cell.state === 'value' ? valueText(cell.value, column.options) : cell.state === 'not_verified' ? t('{value} (not verified: no quote linked)', { value: valueText(cell.value, column.options) }) : t(cell.state.replaceAll('_', ' ')) : '—'}</td>
   })}</tr>)}</tbody></table></div>
   return <Sheet open onOpenChange={open => { if (!open) onClose() }}><SheetContent className={`detail-sheet report-sheet ${dark ? 'dark' : ''}`}>
-    <SheetHeader className="report-toolbar"><div className="report-toolbar-title"><FileText size={17} aria-hidden /><SheetTitle>{title}</SheetTitle></div><SheetDescription className="sr-only">{t('Evidence report')}</SheetDescription><div className="report-toolbar-actions"><Button variant="ghost" size="sm" aria-pressed={evidenceView} onClick={() => setEvidenceView(on => !on)}><Quote size={14} aria-hidden />{t('Evidence view')}</Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Copy Markdown')} onClick={() => void markdown('copy')}><Copy size={14} aria-hidden /><span className="report-export-label">{t('Copy Markdown')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download .md')} onClick={() => void markdown('download')}><Download size={14} aria-hidden /><span className="report-export-label">{t('Download .md')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download LaTeX')} onClick={() => void latex()}><FileCode size={14} aria-hidden /><span className="report-export-label">{t('Download LaTeX')}</span></Button></div></SheetHeader>
-    <div className="report-scroll"><article ref={documentRoot} className="report-document evidence-report-document">
+    <SheetHeader className="report-toolbar"><div className="report-toolbar-title"><FileText size={17} aria-hidden /><SheetTitle>{title}</SheetTitle></div><SheetDescription className="sr-only">{t('Evidence report')}</SheetDescription><div className="report-toolbar-actions"><Button ref={reviewsButton} variant="ghost" size="sm" aria-label={t('Reviews, {n}', { n: reviewList.reviews.length })} aria-pressed={reviewMode} onClick={() => mode(!reviewMode)}>{t('Reviews')} <span className="research-tab-count" aria-hidden>{reviewList.reviews.length}</span></Button><Button variant="ghost" size="sm" aria-pressed={evidenceView} onClick={() => setEvidenceView(on => !on)}><Quote size={14} aria-hidden />{t('Evidence view')}</Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Copy Markdown')} onClick={() => void markdown('copy')}><Copy size={14} aria-hidden /><span className="report-export-label">{t('Copy Markdown')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download .md')} onClick={() => void markdown('download')}><Download size={14} aria-hidden /><span className="report-export-label">{t('Download .md')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download LaTeX')} onClick={() => void latex()}><FileCode size={14} aria-hidden /><span className="report-export-label">{t('Download LaTeX')}</span></Button></div></SheetHeader>
+    <div className="report-scroll" ref={scrollRoot}>
+    {reviewMode && <ReviewPane researchId={researchId} targetKind="report" targetId={reportId} version={report?.report_version ?? 0} eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} unavailableReason={reviewUnavailable} sources={view.sources} sectionLabel={labels} showRequest={requestReview} open={(id, anchor) => onOpenCitation(id, anchor, true)} changed={async () => { await reviewList.refresh(); await onChanged() }} apply={openApply} />}
+    <article ref={documentRoot} hidden={reviewMode} className="report-document evidence-report-document">
       {error && <Notice tone="error">{error}</Notice>}
       {!report ? <p>{t('Loading report…')}</p> : <>
-        <header className="report-document-head"><p>{report.status === 'valid' ? t('Evidence report · V{n}', { n: report.report_version ?? '' }) : report.status === 'draft' ? (report.sections.every(section => section.status === 'valid') && reportAssemblyDraftText(report.run?.error)) || t('DRAFT: {n} sections not validated', { n: report.sections.filter(section => section.status !== 'valid').length }) : t('Evidence report · being written')}</p><h1>{title}</h1><time>{new Date(report.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'long' })}</time><EditCheckPanel report={report} finished={finished.has(report.run?.status ?? '')} busy={busy} checking={checking} labels={labels} onCheck={() => void check()} />{report.run?.status === 'paused' && <p role="status">{t('Paused: {reason}', { reason: pauseReasonText(report.run.pause_reason) || t('Report paused') })}</p>}</header>
+        <header className="report-document-head"><p>{report.status === 'valid' ? t('Evidence report · V{n}', { n: report.report_version ?? '' }) : report.status === 'draft' ? (report.sections.every(section => section.status === 'valid') && reportAssemblyDraftText(report.run?.error)) || t('DRAFT: {n} sections not validated', { n: report.sections.filter(section => section.status !== 'valid').length }) : t('Evidence report · being written')}</p><h1>{title}</h1><time>{new Date(report.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'long' })}</time>
+          <ReviewSummary reviews={reviewList.reviews} open={() => mode(true)} /><button type="button" className="review-entry" disabled={Boolean(reviewUnavailable)} aria-describedby={reviewUnavailable ? `report-review-unavailable-${reportId}` : undefined} onClick={() => mode(true, true)}>{t('Review with another model')}</button>
+          {reviewUnavailable && <p id={`report-review-unavailable-${reportId}`}>{reviewUnavailable}</p>}
+          <EditCheckPanel report={report} finished={finished.has(report.run?.status ?? '')} busy={busy} checking={checking} labels={labels} onCheck={() => void check()} />{report.run?.status === 'paused' && <p role="status">{t('Paused: {reason}', { reason: pauseReasonText(report.run.pause_reason) || t('Report paused') })}</p>}</header>
         {report.missing_rows && <Notice tone="attention">
           <p>{t('{n} of {m} sources did not complete the table (missing cells: {cells}). These rows were excluded from the report’s evidence assessment and aggregation denominators.', { n: report.missing_rows.counts.failed, m: report.missing_rows.counts.included, cells: report.missing_rows.counts.cells_missing })}</p>
           <ul>{report.missing_rows.failed_rows.map(row => <li key={row.source_version_id}>{row.source_key || row.title}: {failedRowReasonText(row.reason)}</li>)}</ul>
@@ -315,14 +342,14 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
                 <Button variant="ghost" size="sm" data-edit-claim={claim.id} disabled={Boolean(editReason)} focusableWhenDisabled aria-describedby={editReason ? editReasonId : undefined} title={!finished.has(report.run?.status ?? '') ? t('A report can be edited once its run has finished.') : undefined} onClick={() => { rememberClaim(claim.id); setEditing(claim.id); setEditError('') }}>{t('Edit')}</Button>
                 {editReason && <p id={editReasonId}>{editReason}</p>}
                 <ClaimHistory claim={claim} createdAt={report.created_at} busy={busy} restore={from => void save(claim, { restore_from: from })} />
-                {editing === claim.id && <ClaimEdit claim={claim} conflicts={conflicts} busy={busy} error={editError} cancel={closeEdit} sourceName={sourceName} save={(body, expectedVersion) => void save(claim, body, expectedVersion)} />}
+                {editing === claim.id && (applying ? <ApplyEditor key={`${applying.reviewId}:${applying.finding.id}`} researchId={researchId} reportId={reportId} reviewId={applying.reviewId} finding={applying.finding} claim={applying.claim} sourceName={sourceName} cancel={closeEdit} refreshed={applyMutation} saved={async next => { applyMutation(next); closeEdit(); await reviewList.refresh(); await onChanged() }} /> : <ClaimEdit claim={claim} conflicts={conflicts} busy={busy} error={editError} cancel={closeEdit} sourceName={sourceName} save={(body, expectedVersion) => void save(claim, body, expectedVersion)} />)}
               </div>
             })}{id === 'IV' && firstTableParagraph === number && tableNode}</div>)}
             {!section.claims.length && !section.draft?.text && (section.draft?.insufficient_evidence?.length ? section.draft.insufficient_evidence.map((entry, index) => <p key={index}>{t('Not enough evidence: {reason}', { reason: entry.reason })}</p>) : <p>{t('No text was written for this section.')}</p>)}
             {id === 'VI' && <ReportAspects researchId={researchId} reportId={reportId} eventCursor={view.last_event_id} valid={section.status === 'valid'} onOpen={onOpenCandidate} />}
           </section>
         })}<section className="evidence-report-section"><h2>{labels('references')}</h2><ol className="evidence-report-references">{report.references.map(ref => <li key={ref.number}><span>[{ref.number}] {ref.authors.join(', ')}{ref.authors.length ? ', ' : ''}</span>{ref.open_passage_id ? <button type="button" onClick={() => onOpenCitation(ref.open_passage_id!, null, false)}>{ref.title}</button> : ref.title}{ref.venue ? `, ${ref.venue}` : ''}{ref.year ? `, ${ref.year}` : ''}</li>)}</ol></section></div>
-        <p className="evidence-report-provenance">{anchorNote} {removedClaims > 0 && t(removedClaims === 1 ? '1 claim has no direct citation after citations were removed by hand.' : '{n} claims have no direct citations after citations were removed by hand.', { n: removedClaims })} {reviewNote}</p>
+        <p className="evidence-report-provenance">{anchorNote} {removedClaims > 0 && t(removedClaims === 1 ? '1 claim has no direct citation after citations were removed by hand.' : '{n} claims have no direct citations after citations were removed by hand.', { n: removedClaims })} {t('Claim check (automatic; it can return a rewritten sentence to its original wording):')} {reviewNote}</p>
         {review?.status === 'reviewed' && review.findings.length > 0 && <details className="evidence-report-history"><summary><ChevronRight size={14} aria-hidden className="closed" /><ChevronDown size={14} aria-hidden className="opened" />{t('Review findings ({k})', { k: review.findings.length })}</summary><p>{t('Model findings')}</p><ul>{review.findings.map((finding, index) => <li key={index}>{finding.section_id ? labels(finding.section_id) : t('Report')} · {t(reviewCodes[finding.code] ?? 'Other')} · {finding.text}</li>)}</ul></details>}
       </>}
     </article></div>

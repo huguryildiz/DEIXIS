@@ -21,6 +21,7 @@ export const runStatusLabels: Record<RunStatus, string> = {
 }
 
 export const runKindLabels: Record<RunKind, string> = {
+  review: 'Review by another model',
   discovery: 'Search & screening', answer: 'Answer', report: 'Evidence report', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title', lineage_links: 'Development links', claim_decomposition: 'Claim breakdown', kill_search: 'Prior-art search for a claim',
 }
 
@@ -30,6 +31,14 @@ export const reportChangeLabels: Record<string, string> = { cell_changed: 'a cit
 export const reportChangeViaLabels: Record<string, string> = { body_ref: '(through the section it summarises)', gap_ref: '(through a candidate aspect)' }
 
 const pauseReasons: Record<string, string> = {
+  research_unavailable: 'The research is no longer available.',
+  skill_package_changed: 'The method package changed. This run cannot send more calls with its frozen package.',
+  review_unavailable: 'The review is no longer available.',
+  unknown_run_kind: 'The run kind is not recognised.',
+  nothing_reviewed: 'No group was reviewed.',
+  message_too_large: 'request exceeds the size limit',
+  repair_message_too_large: 'repair request exceeds the size limit',
+  deadline_passed: 'review deadline passed',
   user_requested: 'You paused this run.',
   disk_full: 'The disk is full, so DEIXIS could not save this run. Free some space and start the run again.',
   backend_restarted: 'DEIXIS was closed while this run was working. Completed steps are kept; resuming may repeat an unfinished search or model call.',
@@ -70,6 +79,7 @@ const pauseReasons: Record<string, string> = {
   vocabulary_too_broad: 'Every remaining term is too frequent to search on its own, and they are all in one block. Add a term to the other block, or replace one with a narrower phrase.',
   search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.',
 }
+export { reviewFindingLabels, reviewFocusLabels, reviewDecisionLabels, reviewStaleLabels, reviewNotReviewedLabels, reviewContextLabels, notReviewedText } from './review/labels'
 export const pauseReasonText = (reason: string | null) => (reason ? t(pauseReasons[reason] ?? reason) : '')
 // What the run stored about a model stop, in the connection's own words: a usage limit and a rate limit read differently
 // there, and DEIXIS does not guess which one it was. A second line under the reason, never a replacement for it.

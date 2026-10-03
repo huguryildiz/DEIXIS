@@ -268,7 +268,15 @@ def review_read_model(review, snapshot, run, steps, inputs, sessions, findings, 
         "requested_model": {"connection": review["requested_connection"], "model": review["requested_model"],
                             "reasoning_effort": review["requested_effort"]}, "models_that_answered": answered,
         "focus": review["focus"], "owner_note": review["owner_note"], "created_at": review["created_at"],
-        "snapshot": {k: snapshot[k] for k in ("id", "target_kind", "target_id", "content_sha256", "created_at")},
+        "snapshot": {k: snapshot[k] for k in ("id", "target_kind", "target_id", "content_sha256", "created_at")} | {
+            "scope_revision": content["scope_revision"],
+            "claims": [{k: c[k] for k in ("claim_ref", "section_ref")} for c in content["claims"]],
+            "sources": [{k: s[k] for k in ("source_id", "title", "year", "version_label", "reading_depth")}
+                        for s in content["sources"]],
+            "cells": [{k: c[k] for k in ("cell_id", "column_id", "column_name", "source_version_id")}
+                      for c in content["cells"]],
+            "columns": [{k: c[k] for k in ("column_id", "name")} for c in content["columns"]]},
+        "skill_package_hash": run["target"].get("skill_package_hash"),
         "groups": groups, "not_reviewed": not_reviewed, "findings": rows,
         "finding_count": len(rows), "open_finding_count": sum(r["current_decision"] is None for r in rows),
         "supported_points": supported, "context_limits": limits, "stale_reasons": stale, "assessment_notice": ASSESSMENT_NOTICE}

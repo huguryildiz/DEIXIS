@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import type { ReportClaim } from '../api'
 import { Notice } from '../Notice'
@@ -6,11 +6,12 @@ import { t } from '../i18n'
 
 export type ClaimEditBody = { text?: string; note?: string | null; link_ids?: string[]; restore_from?: string }
 
-export function ClaimEdit({ claim, conflicts, save, cancel, busy, error, sourceName }: {
+export function ClaimEdit({ claim, conflicts, save, cancel, busy, error, sourceName, initialText, context, locked = false }: {
   claim: ReportClaim; conflicts: number; save: (body: ClaimEditBody, expectedVersion: number) => void
   cancel: () => void; busy: boolean; error: string; sourceName: (sourceVersionId: string) => string
+  initialText?: string; context?: ReactNode; locked?: boolean
 }) {
-  const [text, setText] = useState(claim.text)
+  const [text, setText] = useState(initialText ?? claim.text)
   const [note, setNote] = useState('')
   const [unchecked, setUnchecked] = useState<Set<string>>(() => new Set())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
@@ -35,9 +36,10 @@ export function ClaimEdit({ claim, conflicts, save, cancel, busy, error, sourceN
   }
   const toggle = (previous: Set<string>, id: string) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next }
   return <form className="evidence-report-edit" data-expected-version={expectedVersion} onSubmit={event => { event.preventDefault(); submit() }} onKeyDown={event => {
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel() }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (!locked) cancel() }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); submit() }
   }}>
+    {context}
     <label>{t('Claim text')}<textarea ref={field} data-stored-text value={text} readOnly={busy} onChange={event => setText(event.target.value)} aria-invalid={Boolean(error)} /></label>
     <label>{t('Edit note (optional)')}<input data-stored-text value={note} readOnly={busy} onChange={event => setNote(event.target.value)} /></label>
     {claim.evidence.length > 0 ? <fieldset><legend>{t('Citations to keep')}</legend><ul className="evidence-report-citation-choices">{claim.evidence.map(link => {
@@ -51,7 +53,7 @@ export function ClaimEdit({ claim, conflicts, save, cancel, busy, error, sourceN
     })}</ul><p>{t(claim.evidence.length === 1 ? '{k} of {n} citation kept' : '{k} of {n} citations kept', { k: kept.length, n: claim.evidence.length })}</p>{kept.length === 0 && <Notice tone="attention">{t('No citation will remain on this sentence. Its support type stays as the model wrote it, and you can bring the citations back from History.')}</Notice>}</fieldset>
       : <p className="evidence-report-fine">{t(claim.original_evidence_count > 0 ? 'This sentence has no citations to keep. History can bring earlier citations back.' : 'This sentence has no citations to keep.')}</p>}
     {error && <p role="alert" data-stored-text>{error}</p>}
-    <div><Button type="submit" disabled={!canSave} aria-describedby={reason ? reasonId : undefined}>{t('Save')}</Button><Button type="button" variant="outline" onClick={cancel}>{t('Cancel')}</Button></div>
+    <div><Button type="submit" disabled={!canSave} aria-describedby={reason ? reasonId : undefined}>{t('Save')}</Button><Button type="button" variant="outline" disabled={locked} aria-describedby={locked ? reasonId : undefined} onClick={cancel}>{t('Cancel')}</Button></div>
     {reason && <p id={reasonId}>{reason}</p>}
   </form>
 }

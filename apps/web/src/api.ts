@@ -159,9 +159,10 @@ export type SearchPlan = {
   concepts: { label: string; role: string; synonyms: string[] }[]
   queries: { provider_id: string; query_text: string; rationale: string }[]
 }
-export type RunKind = 'discovery' | 'answer' | 'report' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search'
+export type RunKind = 'discovery' | 'answer' | 'report' | 'review' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
+  plan?: { groups: ReviewGroup[] }
   table_id?: string; column_id?: string; source_version_id?: string; cell_version?: number
   candidate_id?: string; candidate_version_id?: string; expected_version?: number
   model?: CandidatePlan['model']; providers?: string[]; transport?: CandidatePlan['transport']; limits?: CandidatePlan['limits']
@@ -883,13 +884,67 @@ export type CandidateEvidence = {
 }
 export type ReportGap = { id: string; gap_id: string; kind: string; text: string }
 
+export type ReviewFocus = 'source_support' | 'assumptions_and_consistency'
+export type ReviewRequest = {
+  target_kind: 'answer' | 'report'; target_id: string; focus: ReviewFocus; owner_note: string | null
+  connection: string; model: string; reasoning_effort: string | null
+}
+export type ReviewNotReviewed = { claim_ref: string; section_ref: string | null; reason: string; request_chars?: number | null; group_index?: number }
+export type ReviewPreview = {
+  claim_count: number; passage_count: number; characters_to_be_sent: number; logical_steps: number
+  steps_with_repair_bound: number; total_send_bound: number; estimated_input_tokens_per_group: number[]
+  estimated_input_tokens_total: number; cost_estimated: false; not_reviewed: ReviewNotReviewed[]
+  snapshot_sha256: string; preview_fingerprint: string; connection: string; connection_display_name: string
+}
+export type ReviewGroup = { group_index: number; group_count: number; claim_refs: string[]; request_chars: number; passage_count: number }
+export type ReviewState = RunStatus | 'partial'
+export type ReviewCard = {
+  id: string; run_id: string; state: ReviewState; pause_reason: string | null; failure_reason: string | null; outcome_unknown: boolean
+  requested_model: { connection: string; model: string; reasoning_effort: string | null }
+  created_at: string; finding_count: number; open_finding_count: number
+}
+export type ReviewTargetRef = { kind: 'claim' | 'section' | 'whole' | 'cell'; ref: string | null }
+export type ReviewEvidence = { passage_id: string; source_version_id: string; anchor_text: string; anchor_match: 'exact' | 'normalized' }
+export type ReviewResolvedTarget = {
+  target_ref: ReviewTargetRef; target: { kind: string; ref: string | null; record_id: string | null; text_at_snapshot: string | null }
+  group_index: number; group_count: number
+}
+export type ReviewFindingKind = 'unsupported' | 'partially_supported' | 'overstated' | 'missing_context' | 'inconsistent' | 'assumption_unstated' | 'other'
+export type ReviewFinding = ReviewResolvedTarget & {
+  kind: ReviewFindingKind; evidence: ReviewEvidence[]; rationale: string; possible_impact: string; suggested_fix: string | null; uncertainty: string
+}
+export type ReviewDecision = { id: string; ordinal: number; decision: 'accepted' | 'dismissed' | 'deferred'; reason: string | null; applied_ref: string | null; created_at: string }
+export type ReviewFindingRow = {
+  id: string; ordinal: number; finding: ReviewFinding; current_decision: ReviewDecision | null; decision_history: ReviewDecision[]
+  written_against_earlier_text: boolean; dependency_fingerprint: string | null
+}
+export type ReviewDetail = ReviewCard & {
+  focus: ReviewFocus; owner_note: string | null; skill_package_hash: string | null; assessment_notice: string
+  snapshot: {
+    id: string; target_kind: 'answer' | 'report'; target_id: string; content_sha256: string; created_at: string; scope_revision: number
+    claims: { claim_ref: string; section_ref: string | null }[]
+    sources: { source_id: string; title: string; year: number | null; version_label: string | null; reading_depth: string }[]
+    cells: { cell_id: string; column_id: string; column_name: string; source_version_id: string }[]
+    columns: { column_id: string; name: string }[]
+  }
+  groups: (ReviewGroup & { coverage: 'reviewed' | 'not_reviewed' | 'pending'; not_reviewed: ReviewNotReviewed[] })[]
+  not_reviewed: ReviewNotReviewed[]; findings: ReviewFindingRow[]
+  supported_points: (ReviewResolvedTarget & { evidence: ReviewEvidence[] })[]
+  context_limits: (ReviewResolvedTarget & { code: string; text: string })[]
+  models_that_answered: { step_id: string; step_input_id: string; connection: string; requested_model: string; resolved_model: string | null; status: string }[]
+  stale_reasons: ({ code: string; claim_ref?: string; cell_id?: string; column_id?: string; source_version_ids?: string[]; targets?: ReviewTargetRef[]; target_ref?: ReviewTargetRef })[]
+}
+export type ReviewApplyResult = { decision: ReviewDecision; revision: { id: string }; applied_matches_suggestion: boolean }
+
 export class ApiError extends Error {
   status: number
   // A 422 from the approval route names every fault of the correction at once; the card shows them by their row.
   errors: string[]
   // A 409 of the human queue says why: `row_changed` or `reading_started` (slice 17).
   reason: string | null
-  constructor(status: number, message: string, errors: string[] = [], reason: string | null = null) { super(message); this.status = status; this.errors = errors; this.reason = reason }
+  code: string | null
+  details: Record<string, unknown> | null
+  constructor(status: number, message: string, errors: string[] = [], reason: string | null = null, code: string | null = null, details: Record<string, unknown> | null = null) { super(message); this.status = status; this.errors = errors; this.reason = reason; this.code = code; this.details = details }
 }
 
 let csrfToken: string | null = null
@@ -923,15 +978,21 @@ async function responseError(response: Response): Promise<ApiError> {
   let detail = response.statusText
   let errors: string[] = []
   let reason: string | null = null
+  let code: string | null = null
+  let details: Record<string, unknown> | null = null
   try {
     const body = await response.json()
+    if (typeof body.code === 'string') {
+      code = body.code
+      details = Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'code' && key !== 'detail'))
+    }
     // A refusal that names its cause with a `code` carries an English sentence that is also its i18n key (P9 H3).
     if (typeof body.detail === 'string') detail = typeof body.code === 'string' ? t(body.detail) : body.detail
     // A validation refusal answers with a list of faults rather than one sentence (slice 08a).
     else if (Array.isArray(body.detail?.errors)) { errors = body.detail.errors.map(String); detail = errors.join(' · ') }
     else if (typeof body.detail?.message === 'string') { detail = body.detail.message; reason = typeof body.detail.reason === 'string' ? body.detail.reason : null }
   } catch { /* keep status text */ }
-  return new ApiError(response.status, detail, errors, reason)
+  return new ApiError(response.status, detail, errors, reason, code, details)
 }
 
 async function reportMarkdown(id: string, reportId: string): Promise<{ text: string; filename: string }> {
@@ -953,6 +1014,12 @@ async function reportLatex(id: string, reportId: string): Promise<{ blob: Blob; 
 }
 
 export const api = {
+  previewReview: (id: string, body: ReviewRequest) => request<ReviewPreview>(`/api/researches/${id}/reviews/preview`, json('POST', body)),
+  startReview: (id: string, body: string, key: string) => request<{ review: { id: string }; run: Run }>(`/api/researches/${id}/reviews`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
+  reviews: (id: string, kind: 'answer' | 'report', targetId: string) => request<ReviewCard[]>(`/api/researches/${id}/reviews?${new URLSearchParams({ target_kind: kind, target_id: targetId })}`),
+  review: (id: string, reviewId: string) => request<ReviewDetail>(`/api/researches/${id}/reviews/${reviewId}`),
+  decideReview: (id: string, reviewId: string, findingId: string, body: string, key: string) => request<{ decision: ReviewDecision; no_change_made: boolean }>(`/api/researches/${id}/reviews/${reviewId}/findings/${findingId}/decisions`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
+  applyReview: (id: string, reviewId: string, findingId: string, body: string, key: string) => request<ReviewApplyResult>(`/api/researches/${id}/reviews/${reviewId}/findings/${findingId}/apply`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
   researches: () => request<ResearchSummary[]>('/api/researches'),
   trash: () => request<Trash>('/api/trash'),
   moveToTrash: (id: string) => request<{ trashed: boolean }>(`/api/researches/${id}`, { method: 'DELETE' }),

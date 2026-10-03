@@ -441,7 +441,8 @@ class ScriptedCodex:
     connection = "codex"
     enforces_schema = True  # as the real Codex adapter does (D86); the flow reads it before every model step
 
-    def __init__(self) -> None:
+    def __init__(self, data_dir: Path | None = None) -> None:
+        self.data_dir = data_dir
         self.failed_once: set[str] = set()
         self.unread_run: dict[str, str] = {}  # the one reading run per research that cannot read case L's file
         self.first_lineage_run: dict[str, str] = {}
@@ -454,6 +455,13 @@ class ScriptedCodex:
         global RATE_LIMIT_MODE
         si = parse_step_input(message)
         question, task = si["question"]["text"], si["task_type"]
+        if task == "owner_review" and "[review-hold]" in question:
+            for _ in range(600):
+                if self.data_dir is not None and (self.data_dir / "review-release").exists():
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                return ModelStepResult("failed", error="SYNTHETIC hold timed out")
         RATE_LIMIT_MODE = "[rate-limit]" in question
         global LINEAGE_MODE, LINEAGE_REJECT_MODE
         LINEAGE_REJECT_MODE = '[lineage-reject]' in question
@@ -484,6 +492,38 @@ class ScriptedCodex:
 
     def respond(self, si: dict[str, Any], question: str) -> dict[str, Any]:
         output = json.loads(valid_response(si))
+        if si["task_type"] == "owner_review" and "[review-finding]" in question:
+            passages = {p["passage_id"]: p for p in si["passages"]}
+            cells = {c["cell_id"]: c for c in si["review_input"]["cells"]}
+            first = None
+            for claim in si["review_input"]["claims"]:
+                ids = [c["passage_id"] for c in claim["citations"] if c["passage_id"]]
+                ids.extend(pid for c in claim["citations"] if c["cell_id"]
+                           for e in cells[c["cell_id"]]["evidence"] for pid in [e["passage_id"]])
+                if ids:
+                    first = claim, passages[ids[0]]
+                    break
+            if first is not None:
+                claim, passage = first
+                anchor = passage["text"][:80]
+                if len(passage["text"]) > 80 and not passage["text"][80].isspace():
+                    anchor = anchor.rsplit(" ", 1)[0]
+                anchor = anchor.strip()
+                if len(anchor) < 12:
+                    raise RuntimeError("SYNTHETIC review fixture needs a 12-character word-boundary quote")
+                output["findings"] = [{"finding_handle": "f1", "target_ref": {"kind": "claim", "ref": claim["claim_ref"]},
+                    "kind": "overstated", "evidence": [{"passage_handle": passage["passage_id"], "anchor": anchor}],
+                    "rationale": "SYNTHETIC: the wording exceeds the supplied passage.",
+                    "possible_impact": "SYNTHETIC: the reader may infer a wider scope.",
+                    "suggested_fix": "SYNTHETIC: a narrower wording of this claim.",
+                    "uncertainty": "SYNTHETIC: only the supplied text was read."},
+                    {"finding_handle": "f2", "target_ref": {"kind": "whole", "ref": None},
+                    "kind": "assumption_unstated", "evidence": [], "rationale": "SYNTHETIC: an assumption is unstated.",
+                    "possible_impact": "SYNTHETIC: scope may be unclear.", "suggested_fix": None,
+                    "uncertainty": "SYNTHETIC reviewer inference."}]
+            if any(p["reading_depth"] == "abstract" for p in si["passages"]):
+                output["context_limits"].append({"code": "only_abstract", "target_ref": {"kind": "whole", "ref": None},
+                    "text": "SYNTHETIC: this call includes an abstract passage."})
         if '[candidate]' in question or '[candidate-access]' in question:
             if si['task_type'] == 'claim_decomposition':
                 output['claim_statement'] = si['candidate_target']['origin_text']
@@ -750,7 +790,7 @@ def main() -> None:
         handler, local_embedder = fake_builtin(args.data_dir)
     if ARXIV_SOURCE_MODE:
         fake_arxiv_source()  # before create_app: SourceStore reads fetch_module.fetch_file at construction
-    app = create_app(settings, adapters={"codex": ScriptedCodex()},
+    app = create_app(settings, adapters={"codex": ScriptedCodex(args.data_dir)},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fetch,
                      local_embedder=local_embedder, xml_fetcher=europepmc_xml if EUROPEPMC_MODE else None)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", timeout_graceful_shutdown=1)

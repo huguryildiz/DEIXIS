@@ -15,6 +15,9 @@ import { Transcript } from './Transcript'
 import { PdfReadiness } from './PdfReadiness'
 import { ReportReadiness } from './report/ReportReadiness'
 import { ReportView } from './report/ReportView'
+import { ReviewPane } from './review/ReviewPane'
+import { ReviewSummary } from './review/ReviewSummary'
+import { useReviewList } from './review/useReviewList'
 import { CandidatesView, type CandidateSelection } from './candidate/CandidatesView'
 import { CANDIDATE_KINDS } from './candidate/CandidateRunLine'
 import { ZoteroPanel } from './ZoteroPanel'
@@ -38,6 +41,7 @@ import { WaitingForPdf } from './WaitingForPdf'
 import { EnglishQuestion, UploadedTextNote } from './SemanticNotes'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
+const TRANSCRIPT_KINDS = new Set<RunKind>(['discovery', 'pdf_collection', 'fulltext_fetch', 'fulltext_adjudication', 'pdf_ocr', 'answer', 'report', 'review'])
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 // A research title wraps across the whole column, so the rename field grows with its text instead of scrolling sideways.
@@ -263,7 +267,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
   // Only the run returned by this successful request can receive its focus handoff.
   const toRunStatus = (runId: string, origin: Element | null) => { focusWhenLost(() => {
-    const runs = focusRuns.current.filter(r => ['discovery', 'pdf_collection', 'fulltext_fetch', 'fulltext_adjudication', 'pdf_ocr', 'answer', 'report'].includes(r.kind)).reverse()
+    const runs = focusRuns.current.filter(r => TRANSCRIPT_KINDS.has(r.kind)).reverse()
     const index = runs.findIndex(r => r.id === runId)
     return (index >= 0 ? document.querySelectorAll<HTMLElement>('.chat-turn .chat-toggle')[index] : null)
       ?? document.querySelector<HTMLElement>(`.run-strip-status[data-run-id="${runId}"]`)
@@ -488,14 +492,14 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
       <TabsContent value="answer">
         {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
-        <Transcript view={{ ...view, runs: view.runs.filter(r => r.kind === 'discovery' || r.kind === 'pdf_collection' || r.kind === 'fulltext_fetch' || r.kind === 'fulltext_adjudication' || r.kind === 'pdf_ocr' || r.kind === 'answer' || r.kind === 'report') }} modelText={modelText}
+        <Transcript view={{ ...view, runs: view.runs.filter(r => TRANSCRIPT_KINDS.has(r.kind)) }} modelText={modelText}
           onRetryFailedSearches={discoveryReadOnly ? undefined : async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
           onProtocolApproved={async () => { toast('success', t('Correction recorded. The run is queued again.')); await load(); onChanged() }}
           onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
           onGiveKeyTerms={() => { keyTerms.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }); keyTerms.current?.focus({ preventScroll: true }) }}
           queueCount={hasQueue ? queueCount : 0} onOpenQueue={showQueue}
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
-          latestAnswer={answer ? <><AnswerBlock researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
+          latestAnswer={answer ? <><AnswerBlock eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
         {!answer && tableCards}
         {view.reportRuns[0] && <button type="button" className="report-artifact" onClick={() => setOpenEvidenceReportId(view.reportRuns[0].id)} aria-label={t('Open evidence report')}>
           <span className="report-artifact-preview" aria-hidden="true"><strong>{heading}</strong></span>
@@ -626,7 +630,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       description={replaceTarget ? `${t('{file} will be read in later answers and cells instead of the current file. The current file is not deleted: evidence that cites it keeps opening it.', { file: replaceTarget.file.name })} ${t(replaceTarget.impact.researches.length === 1 ? 'The source is used in {n} research;' : 'The source is used in {n} researches;', { n: replaceTarget.impact.researches.length })} ${t('{cells} evidence table cells and {quotes} answer quotes cite the current file.', { cells: replaceTarget.impact.cells, quotes: replaceTarget.impact.quotes })}` : ''}
       context={replaceTarget?.source.title} confirmLabel={t('Replace PDF')} cancelLabel={t('Cancel')} busy={busy}
       onConfirm={confirmReplacement} onOpenChange={open => { if (!open) setReplaceTarget(null) }} />
-    {olderReport && <AnswerBlock researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
+    {olderReport && <AnswerBlock eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
       reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf} />}
     {openEvidenceReportId && <ReportView researchId={id} reportId={openEvidenceReportId} view={view} title={heading} dark={dark} onClose={() => setOpenEvidenceReportId(null)}
       onOpenCandidate={candidate => { setOpenEvidenceReportId(null); setCandidateSelection({ ...candidate, id: candidate.card?.id ?? candidate.id }); goTab('candidates') }}
@@ -669,11 +673,24 @@ async function writeClipboard(text: string) {
   if (!copied) throw new Error('copy failed')
 }
 
-function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void }) {
+function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, runActive }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void; eventCursor: number; runActive: boolean }) {
   const modelText = useModelText()
   const [style, setStyle] = useState<CitationStyle>(() => { try { const saved = localStorage.getItem('deixis-citation-style'); return saved && Object.keys(citationStyles).includes(saved) ? saved as CitationStyle : 'apa' } catch { return 'apa' } })
   const [copied, setCopied] = useState(false)
   const toast = useToast()
+  const [reviewMode, setReviewMode] = useState(false)
+  const [requestReview, setRequestReview] = useState(false)
+  const reviewList = useReviewList(researchId, 'answer', answer.id, eventCursor, answer.status === 'structurally_valid')
+  const reviewsButton = useRef<HTMLButtonElement>(null), scrollRoot = useRef<HTMLDivElement>(null), documentScroll = useRef(0)
+  const mode = (on: boolean, request = false) => {
+    if (on && !reviewMode) documentScroll.current = scrollRoot.current?.scrollTop ?? 0
+    setReviewMode(on); setRequestReview(request)
+    requestAnimationFrame(() => {
+      if (scrollRoot.current) scrollRoot.current.scrollTop = on ? 0 : documentScroll.current
+      if (!on) reviewsButton.current?.focus({ preventScroll: true })
+    })
+  }
+  const openReviews = (request = false) => { mode(true, request); onReportOpenChange(true) }
   const chooseStyle = (next: CitationStyle) => { setStyle(next); try { localStorage.setItem('deixis-citation-style', next) } catch { /* the choice still applies for this tab */ } }
   if (answer.status === 'clarification' && answer.clarification) {
     return <div className="legacy-answer"><div className="section-label">{t('Clarification needed')}</div><h2>{answer.clarification.question}</h2><p>{answer.clarification.why_it_matters}</p>{answer.clarification.options.length > 0 && <ul className="plain-list">{answer.clarification.options.map(o => <li key={o}>{o}</li>)}</ul>}<p className="legacy-mini-note">{t('Revise the question below to continue.')}</p></div>
@@ -807,18 +824,21 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
       <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
     </button>}
     {showCard && <AnswerFlowNote answer={answer} />}
-    <Sheet open={reportOpen} onOpenChange={open => { onReportOpenChange(open); if (!open) setCopied(false) }}>
+    {showCard && <><ReviewSummary reviews={reviewList.reviews} open={() => openReviews()} /><button type="button" className="review-entry" onClick={() => openReviews(true)}>{t('Review with another model')}</button></>}
+    <Sheet open={reportOpen} onOpenChange={open => { onReportOpenChange(open); if (!open) { setCopied(false); setReviewMode(false); setRequestReview(false) } }}>
       <SheetContent className={`detail-sheet report-sheet ${dark ? 'dark' : ''}`}>
         <SheetHeader className="report-toolbar">
           <div className="report-toolbar-title"><FileText size={17} aria-hidden /><SheetTitle>{title}</SheetTitle></div>
           <SheetDescription className="sr-only">{t('Source-linked research report, version {n}.', { n: version })}</SheetDescription>
           <div className="report-toolbar-actions">
+            <Button ref={reviewsButton} variant="ghost" size="sm" aria-label={t('Reviews, {n}', { n: reviewList.reviews.length })} aria-pressed={reviewMode} onClick={() => mode(!reviewMode)}>{t('Reviews')} <span className="research-tab-count" aria-hidden>{reviewList.reviews.length}</span></Button>
             <Button variant="ghost" size="sm" onClick={() => { void copyReport() }}>{copied ? <CircleCheck size={16} /> : <Copy size={16} />}{t(copied ? 'Copied' : 'Copy')}</Button>
             <Button variant="ghost" size="sm" onClick={downloadReport}><Download size={16} />{t('Download')}</Button>
           </div>
         </SheetHeader>
-        <div className="report-scroll">
-          <article className="report-document">
+        <div className="report-scroll" ref={scrollRoot}>
+          {reviewMode && <ReviewPane researchId={researchId} targetKind="answer" targetId={answer.id} version={version} eventCursor={eventCursor} runActive={runActive} sources={sources} sectionLabel={ref => ref} showRequest={requestReview} open={onOpen} changed={async () => { await reviewList.refresh() }} />}
+          <article hidden={reviewMode} className="report-document">
             <header className="report-document-head"><p>{t('Report')} · V{version}</p><h1>{title}</h1><time>{new Date(answer.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'long' })}</time></header>
             {report}
           </article>
@@ -898,10 +918,10 @@ function ReviewNote({ review }: { review: Answer['review'] }) {
   if (!review) return null
   const model = review.model ? <> · <ModelName connection={review.model.connection} text={modelText(review.model.resolved_model ?? review.model.requested_model)} /></> : null
   if (review.status === 'failed') {
-    return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span>{model && <strong>{t('Reviewer')}{model}:</strong>} {t('The reviewer did not produce a usable review.')} {pauseReasonText(review.failure_reason)} {t('The answer is unchanged.')}</span></p>
+    return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span>{model && <strong>{t('Claim check (automatic)')}{model}:</strong>} {t('The reviewer did not produce a usable review.')} {pauseReasonText(review.failure_reason)} {t('The answer is unchanged.')}</span></p>
   }
   const counts = (Object.keys(verdictLabels) as Verdict[]).map(v => [v, review.reviews.filter(r => r.verdict === v).length] as const).filter(([, n]) => n > 0)
-  return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span><strong>{t('Reviewer')}{model}:</strong> {counts.map(([v, n]) => `${n} ${t(verdictLabels[v])}`).join(' · ')}. {review.notes && `${review.notes} `}{t('This is an additional model’s reading of each claim against its cited passages. It does not change the answer and is not independent verification.')}</span></p>
+  return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span><strong>{t('Claim check (automatic)')}{model}:</strong> {counts.map(([v, n]) => `${n} ${t(verdictLabels[v])}`).join(' · ')}. {review.notes && `${review.notes} `}{t('This is an additional model’s reading of each claim against its cited passages. It does not change the answer and is not independent verification.')}</span></p>
 }
 
 // Bibliography files for reference managers, downloaded from the local API.

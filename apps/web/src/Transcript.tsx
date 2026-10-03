@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert } from 'lucide-react'
-import type { ResearchView, Run, Verdict } from './api'
+import { api, type ResearchView, type Run, type Verdict, type ReviewCard } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
@@ -50,6 +50,7 @@ const stagePhases: Record<string, PhaseKey> = { screening: 'screen', inspection:
 const basisLabels: Record<string, string> = { metadata_only: 'metadata only', title_only: 'title only', title_and_abstract: 'title and abstract' }
 
 function phaseOf(kind: string): PhaseKey | null {
+  if (kind === 'model:owner_review') return 'review'
   if (kind === 'model:report_plan') return 'plan'
   if (kind === 'model:report_section' || kind === 'model:report_phrase_repair') return 'sections'
   if (kind === 'model:report_review') return 'assembly'
@@ -165,6 +166,50 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const [openPhases, setOpenPhases] = useState<Partial<Record<PhaseKey, boolean>>>({})
   // While the run works, the phases it has not reached collapse into one "Next:" line; the full ladder stays one click away.
   const [allSteps, setAllSteps] = useState(false)
+  const [ownerReview, setOwnerReview] = useState<{ card: ReviewCard; kind: 'answer' | 'report' } | null>(null)
+  const reviewLookup = useRef<{
+    identity: string
+    targets: Map<string, Promise<ReviewCard[]>>
+    found?: { card: ReviewCard; kind: 'answer' | 'report'; status: Run['status'] }
+    refresh?: { status: Run['status']; promise: Promise<void> }
+  } | null>(null)
+  const reviewTargets = JSON.stringify([...view.answers.map(a => ['answer', a.id]), ...view.reportRuns.map(r => ['report', r.id])])
+  useEffect(() => {
+    if (run.kind !== 'review') return
+    let live = true
+    const identity = `${view.research.id}:${run.id}`
+    if (reviewLookup.current?.identity !== identity) reviewLookup.current = { identity, targets: new Map() }
+    const lookup = reviewLookup.current
+    const targets = JSON.parse(reviewTargets) as ['answer' | 'report', string][]
+    void (async () => {
+      for (const [kind, id] of targets) {
+        if (lookup.found || !live) break
+        const key = `${kind}:${id}`
+        // Keep even pending/failed lookups: research events must not repeat a full-card list request.
+        let request = lookup.targets.get(key)
+        if (!request) { request = api.reviews(view.research.id, kind, id); lookup.targets.set(key, request) }
+        const cards = await request.catch(() => [])
+        const card = cards.find(c => c.run_id === run.id)
+        if (card) lookup.found = { card, kind, status: run.status }
+      }
+      const found = lookup.found
+      if (!found || !live) return
+      if (found.status !== run.status) {
+        if (lookup.refresh?.status !== run.status) {
+          const refresh = { status: run.status, promise: Promise.resolve() }
+          lookup.refresh = refresh
+          refresh.promise = api.review(view.research.id, found.card.id).then(detail => {
+            if (lookup.refresh !== refresh) return
+            found.card = { ...found.card, state: detail.state, failure_reason: detail.failure_reason, pause_reason: detail.pause_reason, outcome_unknown: detail.outcome_unknown }
+            found.status = refresh.status
+          })
+        }
+        await lookup.refresh.promise
+      }
+      if (live) setOwnerReview({ card: found.card, kind: found.kind })
+    })().catch(() => { /* Keep the last recorded assessment if its status refresh fails. */ })
+    return () => { live = false }
+  }, [run.id, run.kind, run.status, view.research.id, reviewTargets])
   // A finished run folds away once something follows it; the latest search stays open so its queries can be read.
   const expanded = open ?? (run.status !== 'completed' || (latest && run.kind === 'discovery'))
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
@@ -172,7 +217,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const steps = run.steps ?? []
   // An sw discovery run queued since slice 17a fetches the full text itself, beside its screening.
   const overlap = run.kind === 'discovery' && (run.budget.fulltext_fetch as unknown as { mode?: string } | undefined)?.mode === 'overlap'
-  const order: PhaseKey[] = run.kind === 'report' ? ['plan', 'sections', 'assembly'] : run.kind === 'discovery' ? ['plan', 'search', 'screen', ...(overlap ? ['pdf' as const] : [])] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
+  const order: PhaseKey[] = run.kind === 'review' ? ['review'] : run.kind === 'report' ? ['plan', 'sections', 'assembly'] : run.kind === 'discovery' ? ['plan', 'search', 'screen', ...(overlap ? ['pdf' as const] : [])] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
   const reached = run.kind === 'report' && !active ? 2 : Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
   // A citation chain's requests are not searches of the question; the screening phase reports them (D95).
@@ -207,6 +252,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const fetchSummary = steps.find(s => s.kind === 'code:fulltext_summary' && s.status === 'succeeded')?.output
   const fetchWorks = steps.filter(s => s.kind === 'code:fulltext_work')
   const stateOf = (i: number): PhaseState => {
+    if (run.kind === 'review' && ownerReview && ['partial', 'failed', 'cancelled', 'paused'].includes(ownerReview.card.state)) return 'attention'
     if (run.kind === 'report' && order[i] === 'assembly') return active ? 'waiting' : run.status === 'completed' ? 'done' : 'attention'
     if (run.kind === 'report' && order[i] === 'sections' && run.status === 'paused') return 'attention'
     const hasTrouble = groups[i].some(troubled)
@@ -222,6 +268,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const attachedOnly = view.scope.source_scope === 'attached'
 
   const title = (key: PhaseKey, state: PhaseState, group: Step[]) => {
+    if (run.kind === 'review') return t('Review by another model')
     if (run.kind === 'report' && key === 'plan') return t(state === 'running' ? 'Planning the report' : state === 'done' ? 'Planned the report' : 'Report plan')
     const finished = searches.filter(s => s.status === 'completed' || s.status === 'zero_results').length
     if ((state === 'done' || state === 'attention') && key === 'search' && finished) return plural(finished, 'Conducted {n} search', 'Conducted {n} searches')
@@ -325,6 +372,11 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
 
   // What the finished phase found, from the counts and fields the model already wrote; nothing is narrated for it.
   const report = (key: PhaseKey, state: PhaseState, group: Step[]): ReactNode => {
+    if (run.kind === 'review' && key === 'review') return <ul className="chat-list">{(run.target?.plan?.groups ?? []).map(item => {
+      const step = group.find(s => s.operation_key === `owner_review:${item.group_index}`)
+      const status = step?.status === 'succeeded' ? 'done' : step && troubled(step) ? 'attention' : step?.status === 'running' ? 'running' : 'waiting'
+      return <li key={item.group_index} className={`is-${status}`}><span className="chat-step-icon" role="img" aria-label={t(status === 'done' ? 'Done' : status === 'attention' ? 'Stopped here' : status === 'running' ? 'In progress' : 'Waiting')}>{status === 'done' ? <Check size={13} aria-hidden /> : status === 'attention' ? <TriangleAlert size={13} aria-hidden /> : status === 'running' ? <LoaderCircle size={14} aria-hidden /> : <Minus size={13} aria-hidden />}</span><span>{t('Group {i} of {n}', { i: item.group_index, n: item.group_count })}{step?.error_code && <small>{pauseReasonText(step.error_code)}</small>}{step?.status === 'outcome_unknown' && <small>{t('Outcome unknown')}</small>}</span></li>
+    })}</ul>
     if (run.kind === 'report' && key === 'assembly' && group.some(step => step.kind === 'model:report_review')) return <p>{t('Report review')}</p>
     if (run.kind === 'report' && key === 'sections' && group.length) return <>{group.filter(step => step.kind === 'model:report_section').map(step => {
       const section = step.operation_key.replace('report_section:', '')
@@ -475,12 +527,14 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
     plan: run.kind === 'report' ? undefined : literature, screen: literature,
     semantic: embeddingStep ? { role: embeddingProviders[embeddingConnection], connection: embeddingConnection, model: embeddingModel, effort: null } : undefined,
     answer: { role: 'Answer', connection: answer?.model?.connection ?? scope.model_connection, model: answer?.model?.resolved_model ?? answer?.model?.requested_model ?? scope.requested_model, effort: scope.reasoning_effort },
-    review: { role: 'Reviewer', connection: answer?.review?.model?.connection ?? view.reviewer.connection ?? scope.model_connection, model: answer?.review?.model?.resolved_model ?? view.reviewer.model, effort: view.reviewer.reasoning_effort },
+    review: run.kind === 'review' ? (ownerReview ? { role: 'Review', connection: ownerReview.card.requested_model.connection, model: ownerReview.card.requested_model.model, effort: ownerReview.card.requested_model.reasoning_effort } : undefined) : { role: 'Reviewer', connection: answer?.review?.model?.connection ?? view.reviewer.connection ?? scope.model_connection, model: answer?.review?.model?.resolved_model ?? view.reviewer.model, effort: view.reviewer.reasoning_effort },
   }
   const providers = new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(view.scope.search_providers.map(providerName))
   // Worded as what happened, so it reads apart from the run strip's status next to the tabs.
   const outcome = active ? 'active' : run.status
-  const label = t((run.kind === 'discovery' ? discoveryHeadings : run.kind === 'pdf_collection' ? collectionHeadings : run.kind === 'fulltext_fetch' ? fulltextHeadings : run.kind === 'fulltext_adjudication' ? readingHeadings : run.kind === 'pdf_ocr' ? ocrHeadings : run.kind === 'report' ? reportHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
+  const reviewState = ownerReview?.card.state ?? run.status
+  const reviewFailure = ownerReview?.card.failure_reason ?? null
+  const label = run.kind === 'review' ? [t('Review by another model'), t(reviewState === 'partial' ? 'Partial' : runStatusLabels[reviewState]), ...(reviewState === 'failed' ? [pauseReasonText(reviewFailure) || t('The run failed.')] : [])].join(' · ') : t((run.kind === 'discovery' ? discoveryHeadings : run.kind === 'pdf_collection' ? collectionHeadings : run.kind === 'fulltext_fetch' ? fulltextHeadings : run.kind === 'fulltext_adjudication' ? readingHeadings : run.kind === 'pdf_ocr' ? ocrHeadings : run.kind === 'report' ? reportHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
   const olderRevision = run.scope_revision !== view.research.current_scope_revision
   const tokens = totalTokens(answer?.model?.token_usage)
   // What the run spent against what it was allowed; the token figure is the answer step's own, and no cost is estimated.
@@ -506,9 +560,9 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         <time>{durationText(secondsBetween(started, clock))}</time>
       </button>
       {expanded && <>
-        {latest && active && !collapsed && <div className="chat-run-plan" role="note">
+        {(run.kind === 'review' || (latest && active && !collapsed)) && <div className="chat-run-plan" role="note">
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />
-          <div><p className="chat-run-plan-title">{run.kind === 'report' ? t('Write a sectioned report from the evidence table, one model step per section.') : run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'fulltext_fetch' ? t('Retrieve the open full text of the candidate works in rank order; nothing is included or excluded by this.') : run.kind === 'fulltext_adjudication' ? t('A model reads selected passages of each work twice; code checks every quote on the page and decides.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
+          <div><p className="chat-run-plan-title">{run.kind === 'review' ? (ownerReview && run.target?.plan?.groups ? plural(run.target.plan.groups.length, 'A model you chose reads a stored copy of the {target} in {n} group. It changes nothing in the {target}.', 'A model you chose reads a stored copy of the {target} in {n} groups. It changes nothing in the {target}.', { target: t(ownerReview.kind === 'answer' ? 'answer' : 'report'), n: run.target.plan.groups.length }) : t('A model you chose reads a stored copy. It changes no target text.')) : run.kind === 'report' ? t('Write a sectioned report from the evidence table, one model step per section.') : run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'fulltext_fetch' ? t('Retrieve the open full text of the candidate works in rank order; nothing is included or excluded by this.') : run.kind === 'fulltext_adjudication' ? t('A model reads selected passages of each work twice; code checks every quote on the page and decides.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
         </div>}
         <ol className="chat-steps">{order.map((key, i) => {
         const state = stateOf(i)
@@ -521,7 +575,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         const note = report(key, state, group)
         const hasDetails = hasQueries || hasConcepts || Boolean(note)
         // Closed by default; a search in progress shows its queries so the live row can be read.
-        const detailsOpen = openPhases[key] ?? (hasQueries && state === 'running')
+        const detailsOpen = openPhases[key] ?? (run.kind === 'review' || hasQueries && state === 'running')
         // A search that did not complete belongs to the search line itself, in the attention colour, not to a paragraph after the run (D18).
         const missed = key === 'search' ? failedProviders : []
         return <li key={key} className={`chat-step is-${state}`}>
@@ -570,7 +624,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         </li>}</ol>
         <div className="chat-run-foot">
           {/* What ran this run and what it spent: one quiet line under the phases, not a disclosure. */}
-          {run.status !== 'queued' && run.kind !== 'pdf_collection' && run.kind !== 'pdf_ocr' && run.kind !== 'fulltext_fetch' && <p className="chat-run-meta">
+          {(run.status !== 'queued' || run.kind === 'review') && run.kind !== 'pdf_collection' && run.kind !== 'pdf_ocr' && run.kind !== 'fulltext_fetch' && <p className="chat-run-meta">
             {models.length > 0 && <span className="chat-run-models">{models}</span>}
             <span>{spend}</span>
           </p>}

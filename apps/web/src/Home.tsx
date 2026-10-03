@@ -12,6 +12,7 @@ import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroPanel } from './ZoteroPanel'
 import { ConnectionIcon } from './connectionIcons'
 import { Notice } from './Notice'
+import { defaultEffort, exposesEffortControl, listedEffort } from './modelEffort'
 
 export const effortLabels: Record<Effort, string> = { quick: 'Quick', standard: 'Standard', detailed: 'Detailed' }
 
@@ -40,21 +41,6 @@ function effortDetail(effort: Effort, limits: EffortLimits | null | undefined): 
 
 export function Option({ icon: Icon, title, detail }: { icon: LucideIcon; title: string; detail?: ReactNode }) {
   return <span className="intake-option"><Icon size={16} /><span><strong>{title}</strong>{detail && <small>{detail}</small>}</span></span>
-}
-
-// Gemini CLI has no user-facing effort control. Keep its internal API thinking configuration out of the UI and requests.
-type SelectableModel = ModelOption & { connection?: string }
-const exposesEffortControl = (model: SelectableModel | undefined) => model?.connection !== 'gemini'
-
-// Each model with a user-facing effort control starts from the model's declared default.
-export const defaultEffort = (models: SelectableModel[], id: string) => {
-  const m = models.find(x => x.id === id)
-  if (!exposesEffortControl(m)) return null
-  return m?.default_reasoning_effort ?? null
-}
-const listedEffort = (models: SelectableModel[], id: string, effort: string | null) => {
-  const model = models.find(m => m.id === id)
-  return exposesEffortControl(model) && model?.reasoning_efforts?.some(e => e.id === effort) ? effort : null
 }
 
 // The models of every connection in one list. An entry's id is `connection:model`, so each role can pick from any connection.

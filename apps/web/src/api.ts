@@ -159,7 +159,7 @@ export type SearchPlan = {
   concepts: { label: string; role: string; synonyms: string[] }[]
   queries: { provider_id: string; query_text: string; rationale: string }[]
 }
-export type RunKind = 'discovery' | 'answer' | 'report' | 'review' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search'
+export type RunKind = 'discovery' | 'answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
@@ -660,7 +660,7 @@ export type SemanticArm = {
 export type ResearchSummary = {
   id: string; title: string; question: string; version: number; source_scope: SourceScope; effort: Effort; last_run_status: RunStatus | null
   last_run_kind: RunKind | null
-  answer_count: number; created_at: string; updated_at: string
+  answer_count: number; followup_new: number; created_at: string; updated_at: string
 }
 export type TrashedResearch = { id: string; title: string; trashed_at: string }
 // The Trash page's groups (D50); a trashed research's tables and removed sources go and come back with it and are not listed.
@@ -1063,7 +1063,77 @@ async function reportLatex(id: string, reportId: string): Promise<{ blob: Blob; 
   return { blob: await response.blob(), filename, notes: /^\d+$/.test(header) && Number.isSafeInteger(Number(header)) ? Number(header) : 0 }
 }
 
+export type WatchKind = 'protocol_queries' | 'citing_works'
+export type WatchCaps = { per_page: number; pages: number; citing_sources: number; max_provider_requests: number; max_records: number; rate_limit_retries: number; deadline_seconds: number }
+export type WatchUnit = {
+  unit_key: string; provider_id?: string; display_name?: string; query_text?: string; work_id?: string; openalex_id?: string | null
+  status: string; page_size?: number; date_sorted?: boolean; baseline?: boolean; continuation?: boolean
+  requested_from?: string | null; requested_to?: string; index?: number
+}
+export type WatchObservation = {
+  pages_read: number; pages_answered: number; exhausted: boolean; cut_by_cap: boolean; sort_sent: string | null
+  oldest_publication_date: string | null; newest_publication_date: string | null; finished: boolean
+  requested_from: string | null; requested_to: string; coverage: 'baseline_complete' | 'baseline_incomplete' | 'covered' | 'coverage_not_reached' | 'coverage_unknown'
+  unread_window: { from: string | null; to: string } | null
+}
+export type WatchGap = {
+  id: string; watch_id: string; research_id: string; opening_id: string; first_missed_due: string; last_missed_due: string
+  missed_periods: number; observed_until: string | null; noticed_at: string; schedule_version: number
+  outcome: 'catch_up_chosen' | 'catch_up_off' | 'opening_cap' | 'one_per_research' | 'not_eligible' | 'changed_before_record'
+  outcome_reason: string | null; next_due_at: string | null; created_at: string; catch_up_check_id: string | null; catch_up_queued: boolean
+}
+export type WatchSchedule = {
+  mode: 'manual' | 'interval'; interval_days: 1 | 7 | 30 | null; catch_up: boolean | null
+  schedule_version: number; [key: string]: unknown
+}
+export type WatchCheck = {
+  id: string; watch_id: string; research_id: string; run_id: string; trigger: 'manual' | 'scheduled' | 'catch_up'
+  period_start: string; requested_from: string | null; requested_to: string; state_version: number; missed_periods: number
+  completed_at: string | null; created_at: string; state: 'queued' | 'running' | 'pause_requested' | 'paused' | 'cancelled' | 'failed' | 'succeeded' | 'partial'
+  pause_reason: string | null; failure_reason: string | null; outcome_unknown: boolean; partial_reasons: string[]
+  config_revision: { units: WatchUnit[]; skipped_units: WatchUnit[]; [key: string]: unknown }; schedule: WatchSchedule | null
+  gap: { from: string; to: string; missed_periods: number; notice: string } | null; caps: WatchCaps; units: WatchUnit[]
+  observed: { units: Record<string, WatchObservation>; partial_reasons: string[]; rolled_over: number; rolled_over_units: number; skipped_units: WatchUnit[] }
+  provider_status: Record<string, { provider: string; status: string; error_kind: string | null; returned: number; dropped: number }>
+  counts: { records_read: number; new: number; notices: number; already_seen: number; already_in_library: number; baseline: number
+    may_be_version: number; baseline_undated: number; returned: number; dropped: number; records_over_threshold: number
+    new_open: number; dismissed: number; added: number; caps: WatchCaps; units: Record<string, { [key: string]: unknown }> } | null
+  baseline_undated: { titles: string[]; count: number; notice: string }; follows_old_scope_reason: string | null
+}
+export type Watch = {
+  id: string; research_id: string; kind: WatchKind; mode: 'manual' | 'interval'; interval_days: 1 | 7 | 30 | null
+  catch_up: boolean | null; enabled: boolean; protocol_record_id: string | null; scope_revision: number
+  state_version: number; schedule_version: number; last_checked_at: string | null; last_success_at: string | null
+  next_due_at: string | null; created_at: string; disabled_at: string | null; waiting_reason: 'watch_follows_old_scope' | 'check_paused' | null
+  follows_old_scope: boolean; follows_old_scope_reason: string | null; gaps: WatchGap[]
+  baseline: Record<string, number | { state: 'pending' | 'partial' | 'complete'; cut?: string; cursor?: string | null; pages_read?: number; success_boundary?: string | null; covered_back_to?: string | null }>
+  last_check: WatchCheck | null; notice: string
+}
+export type WatchRelation = { relation: string; against?: 'seen' | 'library'; id?: string; title?: string; link_kind?: string; rule?: string; check_id?: string }
+export type WatchItem = {
+  id: string; research_id: string; check_id: string; seen_id: string; kind: 'new_record' | 'notice'; status: 'new' | 'dismissed' | 'merged' | 'added'
+  merged_into_item_id: string | null; dismissed_reason: string | null; dismissed_at: string | null; created_at: string
+  record: { title: string; authors: string[]; year: number | null; publication_date: string | null
+    publication_date_source: 'openalex.publication_date' | 'not_returned'; version_time: string | null; provider: string
+    provider_record_id: string; doi: string | null; landing_url: string | null; abstract: string | null; identifiers: Record<string, unknown>
+    version_label: string | null; retrieved_at: string; aliases: string[]; relations: WatchRelation[] }
+  doi: string | null; landing_url: string | null; first_seen_at: string; identity_uncertain: boolean; identity_notice: string | null
+  found_by: unknown[]; relations: WatchRelation[]; may_be_version_json: WatchRelation[]; kind_history: unknown[]
+}
+export type WatchPreview = { kind: WatchKind; units: WatchUnit[]; caps: WatchCaps; citing_works_count: number; no_openalex_id: number; notice: string }
+export type WatchCommandResult = { replayed: boolean; watch_id?: string; check_id?: string; run_id?: string; item_id?: string; watch?: Watch; check?: WatchCheck; run?: Run; item?: WatchItem }
+
 export const api = {
+  previewWatch: (id: string, kind: WatchKind) => request<WatchPreview>(`/api/researches/${id}/watches/preview`, json('POST', { kind })),
+  createWatch: (id: string, body: string, key: string) => request<WatchCommandResult>(`/api/researches/${id}/watches`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
+  watches: (id: string) => request<Watch[]>(`/api/researches/${id}/watches`),
+  checkWatch: (id: string, wid: string, body: string, key: string) => request<WatchCommandResult>(`/api/researches/${id}/watches/${wid}/checks`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
+  disableWatch: (id: string, wid: string, body: string, key: string) => request<WatchCommandResult>(`/api/researches/${id}/watches/${wid}/disable`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
+  scheduleWatch: (id: string, wid: string, body: string, key: string) => request<WatchCommandResult>(`/api/researches/${id}/watches/${wid}/schedule`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
+  rebindWatch: (id: string, wid: string, body: string, key: string) => request<WatchCommandResult>(`/api/researches/${id}/watches/${wid}/rebind`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
+  watchCheck: (id: string, wid: string, cid: string) => request<WatchCheck>(`/api/researches/${id}/watches/${wid}/checks/${cid}`),
+  watchItems: (id: string, status: WatchItem['status'] = 'new') => request<WatchItem[]>(`/api/researches/${id}/watch-items?${new URLSearchParams({ status })}`),
+  dismissWatchItem: (id: string, iid: string, body: string, key: string) => request<WatchCommandResult>(`/api/researches/${id}/watch-items/${iid}/dismiss`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
   previewReview: (id: string, body: ReviewRequest) => request<ReviewPreview>(`/api/researches/${id}/reviews/preview`, json('POST', body)),
   startReview: (id: string, body: string, key: string) => request<{ review: { id: string }; run: Run }>(`/api/researches/${id}/reviews`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
   reviews: (id: string, kind: ReviewTargetKind, targetId: string) => request<ReviewCard[]>(`/api/researches/${id}/reviews?${new URLSearchParams({ target_kind: kind, target_id: targetId })}`),

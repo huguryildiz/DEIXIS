@@ -115,6 +115,7 @@ export const runStatusLabels: Record<RunStatus, string> = {
 }
 
 export const runKindLabels: Record<RunKind, string> = {
+  watch_check: 'Follow-up check',
   review: 'Review by another model',
   discovery: 'Search & screening', answer: 'Answer', report: 'Evidence report', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title', lineage_links: 'Development links', claim_decomposition: 'Claim breakdown', kill_search: 'Prior-art search for a claim',
 }
@@ -125,6 +126,11 @@ export const reportChangeLabels: Record<string, string> = { cell_changed: 'a cit
 export const reportChangeViaLabels: Record<string, string> = { body_ref: '(through the section it summarises)', gap_ref: '(through a candidate aspect)' }
 
 const pauseReasons: Record<string, string> = {
+  no_provider_read: 'No provider read succeeded.',
+  watch_disabled: 'The follow-up was turned off.',
+  watch_state_changed: 'The follow-up changed while this check was working.',
+  watch_protocol_changed: 'The follow-up’s frozen protocol changed.',
+  adapter_revision_changed: 'The connector version changed; this check cannot continue its frozen reads.',
   research_unavailable: 'The research is no longer available.',
   skill_package_changed: 'The method package changed. This run cannot send more calls with its frozen package.',
   review_unavailable: 'The review is no longer available.',
@@ -326,6 +332,8 @@ export const localToolIcon = (id: string) => (id === 'gemini_cli' ? 'gemini' : i
 export const providerRole = (role: string | undefined) => t(role === 'verification' ? 'Metadata verification' : 'Record search')
 
 export const stepLabel = (kind: string, key: string, candidate = false) => {
+  if (kind === 'watch_read') return t('Follow-up provider read')
+  if (kind === 'watch_complete') return t('Recording follow-up results')
   if (kind === 'model:claim_decomposition') return t('Claim breakdown (model)')
   if (kind === 'model:kill_search_query') return t('Search terms (model)')
   if (kind === 'model:claim_assessment') return t('Claim assessment (model)')

@@ -19,6 +19,8 @@ import { ReportReadiness } from './report/ReportReadiness'
 import { ReportView } from './report/ReportView'
 import { ReviewPane } from './review/ReviewPane'
 import { ReviewSummary } from './review/ReviewSummary'
+import { FollowUpView } from './followup/FollowUpView'
+import { useFollowUpCount } from './followup/useFollowUp'
 import { useReviewList } from './review/useReviewList'
 import { CandidatesView, type CandidateSelection } from './candidate/CandidatesView'
 import { CANDIDATE_KINDS } from './candidate/CandidateRunLine'
@@ -100,7 +102,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [titleDraft, setTitleDraft] = useState('')
   const [error, setError] = useState('')
   const toast = useToast()
-  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'queue' || initialTab === 'waiting' || initialTab === 'evidence' || initialTab === 'candidates' || initialTab === 'artifacts' || initialTab === 'activity' ? initialTab : 'answer')
+  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'queue' || initialTab === 'waiting' || initialTab === 'evidence' || initialTab === 'followup' || initialTab === 'candidates' || initialTab === 'artifacts' || initialTab === 'activity' ? initialTab : 'answer')
   const [candidateCount, setCandidateCount] = useState<number | null>(null)
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null)
   const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean; reportCitation?: boolean } | null>(null)
@@ -169,6 +171,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // Tables of this research, for the Evidence count and the table cards; refreshed on every recorded event (a table created, edited, trashed or restored).
   const [tables, setTables] = useState<TableSummary[] | null>(null)
   const lastEventId = view?.last_event_id
+  const followupCount = useFollowUpCount(id, lastEventId)
+  const followupChanged = useCallback(async () => { await load(); onChanged() }, [load, onChanged])
   useEffect(() => {
     let live = true
     api.tables(id).then(list => { if (live) setTables(list) }, () => { /* the count and cards are left out */ })
@@ -211,6 +215,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (!view || !current) return
     const previous = lastRun.current
     lastRun.current = { id: current.id, status: current.status }
+    if (current.kind === 'watch_check') return
     if (!previous || (previous.id === current.id && previous.status === current.status)) return
     const label = t(current.kind === 'answer' ? 'Answer generation' : runKindLabels[current.kind])
     const reason = pauseReasonText(current.pause_reason)
@@ -256,6 +261,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const run = view.runs[0] as Run | undefined
   const active = run ? ACTIVE.has(run.status) : false
   const candidateRun = view.runs.find(r => CANDIDATE_KINDS.has(r.kind) && (ACTIVE.has(r.status) || r.status === 'paused'))
+  const watchRun = view.runs.find(r => r.kind === 'watch_check' && (ACTIVE.has(r.status) || r.status === 'paused'))
   const answer = view.answers[0] as Answer | undefined
   const hasAcademic = view.scope.source_scope !== 'attached'
   const needsSeed = view.scope.source_scope === 'attached_and_academic' && view.scope.seed_mode === 'uploaded_seed'
@@ -480,16 +486,19 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
     <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => { goTab(String(value)); setPicked([]) }}>
       <div className="research-tabs-bar">
-        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger>{hasQueue && <TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger>}{hasQueue && <TabsTrigger value="waiting">{t('Waiting for your PDF')} <span className="research-tab-count">{waitingCount}</span></TabsTrigger>}<TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="candidates" tabIndex={0}>{t('Candidates')} <span className="research-tab-count" title={candidateCount === null ? t('Loading candidates…') : undefined}>{candidateCount ?? '…'}</span></TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + view.reportRuns.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
+        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger>{hasQueue && <TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger>}{hasQueue && <TabsTrigger value="waiting">{t('Waiting for your PDF')} <span className="research-tab-count">{waitingCount}</span></TabsTrigger>}<TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="followup">{t('Follow-up')}{(followupCount.loading || followupCount.count !== null) && <span className="research-tab-count" aria-label={followupCount.loading ? t('Loading follow-up') : undefined} title={followupCount.loading ? t('Loading follow-up') : undefined}>{followupCount.loading ? '…' : followupCount.count}</span>}</TabsTrigger><TabsTrigger value="candidates" tabIndex={0}>{t('Candidates')} <span className="research-tab-count" title={candidateCount === null ? t('Loading candidates…') : undefined}>{candidateCount ?? '…'}</span></TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + view.reportRuns.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
         {/* The live run carries its own quiet Pause; these controls ride with the tabs so pause, resume and cancel stay reachable from every tab.
             A table run is controlled on the Evidence tab above its table; elsewhere the bar only links there. */}
         {candidateRun && tab !== 'candidates' && <button type="button" className="run-chip" aria-label={t('Open the Candidates tab to control this run')} onClick={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); goTab('candidates') }}>
           <span className={`run-chip-dot${ACTIVE.has(candidateRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[candidateRun.kind])} · {t(runStatusLabels[candidateRun.status])}<ChevronRight size={13} aria-hidden />
         </button>}
+        {watchRun && tab !== 'followup' && <button type="button" className="run-chip" aria-label={t('Open the Follow-up tab to control this run')} onClick={() => goTab('followup')}>
+          <span className={`run-chip-dot${ACTIVE.has(watchRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels.watch_check)} · {t(runStatusLabels[watchRun.status])}<ChevronRight size={13} aria-hidden />
+        </button>}
         {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? tab !== 'evidence' && <button type="button" className="run-chip" title={t('Open the Evidence tab to control this run')} onClick={() => { goTab('evidence'); setPicked([]) }}>
           <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
         </button>
-        : run && !CANDIDATE_KINDS.has(run.kind) && (active || run.status === 'paused') && <div className="run-strip">
+        : run && run.kind !== 'watch_check' && !CANDIDATE_KINDS.has(run.kind) && (active || run.status === 'paused') && <div className="run-strip">
           <span className="run-strip-status" data-run-id={run.id} tabIndex={-1}>{active && <LoaderCircle size={13} className="chat-spin" aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
           {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />{t('Pause')}</Button>}
           {/* A run stopped for the approval has no plain Resume: it would freeze a protocol nobody saw, and the
@@ -593,6 +602,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
       <TabsContent value="evidence">
         <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
+      </TabsContent>
+
+      <TabsContent value="followup">
+        <FollowUpView researchId={id} view={view} dark={dark} onReload={followupCount.reload} onChanged={followupChanged} />
       </TabsContent>
 
       <TabsContent value="candidates" keepMounted>
@@ -1288,6 +1301,7 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'asset_reextracted': return lucide(ScanText, t('PDF text extracted again'), [p.outcome === 'current' ? { label: t('in use'), tone: 'ok' } : { label: t('not used'), tone: 'warn' }, { label: String(p.extraction_version), tone: 'neutral' }])
     case 'selection_changed': return lucide(UserPen, t('You marked a source'), [{ label: t(selectionStates[String(p.state)] ?? String(p.state)), tone: selectionTones[String(p.state)] ?? 'neutral' }])
     case 'answer_saved': return lucide(MessageSquareQuote, t('Answer saved'), [statusChip(p.status)])
+    case 'watch_check_completed': return lucide(ListChecks, t('Follow-up check completed'), [{ label: t('{n} new', { n: Number(p.new ?? 0) }), tone: 'neutral' }, { label: t('{n} notices', { n: Number(p.notices ?? 0) }), tone: 'neutral' }])
     case 'table_changed': return lucide(Table2, t('Evidence table changed'))
     case 'table_trashed': return lucide(Trash2, t('Evidence table moved to Trash'))
     case 'table_restored': return lucide(RotateCcw, t('Evidence table restored'))

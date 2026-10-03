@@ -315,6 +315,7 @@ export default function App() {
         {researches.slice(0, 12).map(r => {
           const StatusIcon = r.last_run_status ? recentStatusIcons[r.last_run_status] : FlaskConical
           const status = t(r.last_run_status ? runStatusLabels[r.last_run_status] : 'No run yet')
+          const followupText = r.followup_new > 0 ? `, ${t(r.followup_new === 1 ? '{n} new follow-up record' : '{n} new follow-up records', { n: r.followup_new })}` : ''
           return <div key={r.id} className={`recent-row ${r.id === activeId ? 'is-active' : ''}`}>
             {renameId === r.id
               ? <div className="recent-open is-renaming"><span className="recent-status" data-status={r.last_run_status ?? 'none'}><StatusIcon size={16} className={r.last_run_status && activeRunStatuses.has(r.last_run_status) ? 'recent-status-spinning' : undefined} aria-hidden="true" /></span><input
@@ -328,7 +329,7 @@ export default function App() {
                 onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void commitRename(r) } else if (event.key === 'Escape') { event.preventDefault(); cancelRename() } }}
                 onBlur={() => void commitRename(r)}
               /></div>
-              : <button className="recent-open" onClick={event => openRecent(event, r.id)} onDoubleClick={() => beginRename(r)} title={`${r.question} · ${status}`} aria-label={`${r.title} · ${status}`}><span className="recent-status" data-status={r.last_run_status ?? 'none'}><StatusIcon size={16} className={r.last_run_status && activeRunStatuses.has(r.last_run_status) ? 'recent-status-spinning' : undefined} aria-hidden="true" /></span><span className="recent-title">{r.title}</span><time className="recent-time" dateTime={r.updated_at}>{sinceLabel(r.updated_at)}</time></button>}
+              : <button className="recent-open" onClick={event => openRecent(event, r.id)} onDoubleClick={() => beginRename(r)} title={`${r.question} · ${status}${followupText}`} aria-label={`${r.title} · ${status}${followupText}`}><span className="recent-status" data-status={r.last_run_status ?? 'none'}><StatusIcon size={16} className={r.last_run_status && activeRunStatuses.has(r.last_run_status) ? 'recent-status-spinning' : undefined} aria-hidden="true" /></span><span className="recent-title">{r.title}</span><span className="followup-sidebar-count" hidden={!r.followup_new} aria-label={followupText.slice(2)}>{r.followup_new}</span><time className="recent-time" dateTime={r.updated_at}>{sinceLabel(r.updated_at)}</time></button>}
             <DropdownMenu><DropdownMenuTrigger className="recent-more" disabled={actionBusy === r.id} aria-label={t('Actions for {title}', { title: r.title })} title={t('More actions')}><Ellipsis size={16} /></DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-auto"><DropdownMenuItem onClick={() => beginRename(r)}><PencilLine size={15} />{t('Rename')}</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => moveToTrash(r)}><Trash2 size={15} />{t('Move to Trash')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
         })}

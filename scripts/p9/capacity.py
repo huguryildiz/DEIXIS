@@ -421,11 +421,22 @@ class Server:
                 try:
                     if client.get(f"{self.base}/api/health").status_code == 200:
                         self.startup_s = time.perf_counter() - began
+                        self.refresh_ident()
                         return
                 except httpx.HTTPError:
                     pass
                 time.sleep(0.05)
         raise RuntimeError(f"/api/health did not answer 200 within {deadline} s; log tail: {self.log.read_text()[-600:]}")
+
+    def refresh_ident(self) -> None:
+        """The venv python re-executes as the framework Python.app after Popen returns, so `ps` shows a different command
+        once the server is up; the record taken right after Popen then never matches and signal_if_same would silently send
+        nothing (the stop timed out and left the server running). Re-record it once the server answers, if it is the same
+        process (same pid and start time)."""
+        found = ident_of(self.proc.pid)
+        if found is not None and self.ident is not None and found.lstart == self.ident.lstart and found.command != self.ident.command:
+            self.started[self.started.index(self.ident)] = found
+            self.ident = found
 
     def _sample(self) -> None:
         while self._sampling.is_set() and self.proc is not None:
@@ -445,6 +456,7 @@ class Server:
         self.stop_sampling()
         if self.proc is None or self.ident is None:
             return
+        self.refresh_ident()  # a start that failed before /api/health answered still owns a re-executed child
         if self.proc.poll() is None:
             signal_if_same(self.ident, signal.SIGTERM)
             try:

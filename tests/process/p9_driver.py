@@ -39,6 +39,7 @@ from deixis.api.app import create_app  # noqa: E402
 from deixis.config import Settings  # noqa: E402
 from deixis.documents import fetch as fetch_module  # noqa: E402
 from deixis.documents import pdf  # noqa: E402
+from deixis.documents import pdf_files  # noqa: E402
 from deixis.documents.fetch import FetchResult  # noqa: E402
 from deixis.storage import db  # noqa: E402
 from fakes import parse_step_input  # noqa: E402
@@ -134,21 +135,24 @@ def guard_network() -> None:
 
 
 def hold_paper_write(data_dir: Path) -> None:
+    """Hold the Nth PDF write into papers/ at half its bytes. Since R2b (D192) every PDF is staged by
+    pdf_files.stage_bytes into a papers/*.part file and then placed by os.replace in restore_file."""
     papers = os.path.realpath(data_dir / "papers")
-    real_write_bytes = pathlib.Path.write_bytes
+    real_stage_bytes = pdf_files.stage_bytes
 
-    def write_bytes(self, data):
-        if os.path.realpath(self.parent) == papers and self.suffix in (".pdf", ".part") and bump("paper_write") == HOLD_PAPER_WRITE_NTH:
+    def stage_bytes(path, data):
+        path = Path(path)
+        if os.path.realpath(path.parent) == papers and path.suffix in (".pdf", ".part") and bump("paper_write") == HOLD_PAPER_WRITE_NTH:
             data = bytes(data)
-            fd = os.open(self, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
             os.write(fd, data[: len(data) // 2])
             os.fsync(fd)
             os.close(fd)
-            log(kind="held", what="paper_write", file=self.name, written=len(data) // 2, total=len(data))
+            log(kind="held", what="paper_write", file=path.name, written=len(data) // 2, total=len(data))
             time.sleep(3600)
-        return real_write_bytes(self, data)
+        return real_stage_bytes(path, data)
 
-    pathlib.Path.write_bytes = write_bytes
+    pdf_files.stage_bytes = stage_bytes
 
 
 def hold_extract() -> None:

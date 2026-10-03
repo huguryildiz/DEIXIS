@@ -54,3 +54,7 @@ Rows `T14` and `T16` were added to `scripts/p9/run_matrix.py` by this batch (cla
 - **Gap acknowledgement in-session only** (D188), section 4 item 7.
 - **Catch-up limits** (D187): catch-up selects one watch per research per opening, across at most three researches; the other watch kind is not checked at that opening. Busy-library admission can delay checks indefinitely, and the send deadline does not bound completion time.
 - **B8b model pair** (D189): target texts by gpt-6.1-sol, reviewer Claude `sonnet` medium, chosen with gpt-6.1-sol medium because `gpt-5.6-luna` needs the coordinator's go under the K05 exception and none was given to this batch.
+
+## 5. Matrix-fix note (3 October 2026, D210)
+
+The full matrix was run twice in a row on the matrix-fix commit (worktree `DEIXIS-mfix`, `66e2352` plus origin/main) and both runs ended with every mandatory row geçti (on the code of `476f183`; after a Sol review the capacity stop gained one more refresh and its test was rewritten, and the pair on that final code is pending): `F02` (3 tests), `suite-process` (45), `suite-pytest`, `suite-playwright` (212 specs), `suite-capacity`, the mandatory K rows and `cleanup`. `T14` and `T16` stayed geçti. F02 and capacity are now green. Causes: stale F02 write hold (PDF staging moved in R2b/R3), a capacity stop that never signalled a re-executed server, and a report.spec test that still expected the pre-RF4 draft; no product code changed. The matrix ran under parallel load from other sessions. The verdict text above is unchanged.

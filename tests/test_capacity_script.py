@@ -849,3 +849,38 @@ def test_a_first_view_request_that_times_out_is_a_result_not_a_harness_error(mon
 def test_a_record_without_the_workload_complete_field_does_not_supply_an_rss_peak():
     reps = {"pdf": [{"rep": 1, "rss_peak_bytes": 5}, {"rep": 2, "rss_peak_bytes": 6, "rss_workload_complete": True}]}
     assert capacity.results_of(reps)["pdf"]["rss_peak_bytes"] == [None, 6]
+
+
+def test_stop_signals_a_server_that_re_executed_after_popen_even_when_health_never_answered(tmp_path):
+    """The venv python re-executes as the framework Python.app after Popen returns; the record taken before that never
+    matched again, so the stop sent nothing and timed out (P9 matrix-fix). This is the failed-startup path: nothing
+    refreshed the record on a healthy answer, so stop() itself must."""
+    import subprocess
+    import threading
+    import time
+
+    go, ready = tmp_path / "go", tmp_path / "ready"
+    code = ("import os,sys,time,pathlib\n"
+            "go,ready=pathlib.Path(sys.argv[1]),pathlib.Path(sys.argv[2])\n"
+            "while not go.exists(): time.sleep(0.01)\n"
+            "os.execv(sys.executable,[sys.executable,'-c',"
+            "'import sys,time,pathlib; pathlib.Path(sys.argv[1]).write_text(\"x\"); time.sleep(60)',str(ready)])\n")
+    proc = subprocess.Popen([sys.executable, "-c", code, str(go), str(ready)])
+    try:
+        before = capacity.ident_of(proc.pid)
+        server = capacity.Server.__new__(capacity.Server)
+        server.proc, server.ident, server.started = proc, before, [before]
+        server.port, server._sampling, server._sampler = capacity.pick_port(), threading.Event(), None
+        go.write_text("go")
+        deadline = time.time() + 30
+        while not ready.exists():
+            assert time.time() < deadline, "the child never re-executed"
+            time.sleep(0.01)
+        assert capacity.ident_of(proc.pid).command != before.command, "the re-exec must change what ps shows"
+        assert not capacity.signal_if_same(before, 0), "the stale record must not match after the re-exec"
+        server.stop()
+        assert proc.poll() is not None, "stop() must end the re-executed child"
+        assert server.started == [server.ident] and server.ident != before
+    finally:
+        proc.kill()
+        proc.wait()

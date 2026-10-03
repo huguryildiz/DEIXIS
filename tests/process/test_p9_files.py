@@ -104,22 +104,24 @@ def test_f02_file_complete_row_missing(harness, tmp_path):
     discovery_to_answer_ready(c, rid)
     answer = start_run(c, rid, "answer")
     held = first.wait_held("extract")
-    name = held["file"]
-    path = data / "papers" / name
-    assert path.exists() and sha256_file(path) == path.stem
+    # Since R3 (D197) the extraction reads a private hash-verified copy named <sha256>-<token>.pdf; the placed
+    # hash-named file is the one that must be complete while its row is missing.
+    sha = held["file"][:64]
+    path = data / "papers" / (sha + ".pdf")
+    assert path.exists() and sha256_file(path) == sha
     size_before, mtime_before = path.stat().st_size, path.stat().st_mtime_ns
-    assert count(data, "source_assets", "sha256 = ?", (path.stem,)) == 0, "the row must not exist yet"
+    assert count(data, "source_assets", "sha256 = ?", (sha,)) == 0, "the row must not exist yet"
     first.no_network()
     first.kill9()
 
     second = harness.start_server(data, "second")
-    assert path.exists() and sha256_file(path) == path.stem
-    assert count(data, "source_assets", "sha256 = ?", (path.stem,)) == 0
+    assert path.exists() and sha256_file(path) == sha
+    assert count(data, "source_assets", "sha256 = ?", (sha,)) == 0
     assert_library_sound(data)
     assert second.client.post(f"/api/runs/{answer}/resume").status_code in (200, 202)
     row = wait_run(second.client, rid, answer)
     assert row["status"] == "completed", row
-    assert count(data, "source_assets", "sha256 = ?", (path.stem,)) == 1, "the row should appear on resume"
+    assert count(data, "source_assets", "sha256 = ?", (sha,)) == 1, "the row should appear on resume"
     assert (path.stat().st_size, path.stat().st_mtime_ns) == (size_before, mtime_before), "the complete file must be reused, not rewritten"
     assert count(data, "answers", "research_id = ?", (rid,)) == 1
     assert file_problems(data) == []

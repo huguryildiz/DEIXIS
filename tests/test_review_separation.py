@@ -1,4 +1,4 @@
-"""B1 read-only boundary; real worker/API lifecycle tests remain with B2."""
+"""Review-package read boundary, including B2's pure run planner."""
 
 import ast
 import inspect
@@ -13,6 +13,7 @@ from tests.review_helpers import report_with_sections, review_lib, all_rows
 
 def test_review_package_import_and_write_boundary():
     root = Path("backend/deixis/workflow/review")
+    assert (root / "run.py").is_file()
     forbidden = {"deixis.workflow.store", "deixis.workflow.report.store", "deixis.workflow.tables",
                  "deixis.workflow.candidates.store", "deixis.workflow.lineage.store", "deixis.workflow.flow"}
     for file in root.glob("*.py"):

@@ -76,6 +76,14 @@ from deixis.workflow.candidates.run import KillSearchPlanner, candidate_evidence
 from deixis.workflow.candidates.store import CandidateStore, InvalidCandidateInput
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, passage_view, report_gaps_view, report_view, research_view
 from deixis.workflow.worker import Worker
+from deixis.workflow.review import run as review_run
+from deixis.workflow.review.reader import ReviewReader
+from deixis.workflow.review.snapshot import build_snapshot, NotReviewable
+from deixis.workflow.review.stale import stale_reasons
+from deixis.workflow.review.store import ReviewStore, ReviewRefusal, ReviewConflict, applied_matches_suggestion
+from deixis.workflow.report.review import REVIEW_BUDGET_TOKENS
+from deixis.workflow.flow import CAPABILITIES
+from deixis.domain.canonical import sha256_hex
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 MULTIPART_OVERHEAD_BYTES = 64 * 1024
@@ -159,6 +167,52 @@ class EnglishQuestion(BaseModel):
 
 class StartRun(BaseModel):
     kind: Literal["discovery", "answer", "pdf_collection", "research_title", "fulltext_fetch", "fulltext_adjudication"]
+
+
+class ReviewPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_kind: Literal["answer", "report", "candidate"]
+    target_id: str = Field(min_length=1, max_length=64)
+    focus: Literal["source_support", "assumptions_and_consistency"]
+    owner_note: str | None = Field(default=None, max_length=500)
+    connection: str = Field(min_length=1, max_length=40)
+    model: str = Field(min_length=1, max_length=120)
+    reasoning_effort: str | None = Field(default=None, min_length=1, max_length=40)
+
+    @field_validator("owner_note")
+    @classmethod
+    def nonblank_note(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError("owner_note must be non-blank when supplied")
+        return value
+
+
+class ReviewStartRequest(ReviewPreviewRequest):
+    snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    preview_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ReviewDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["accepted", "dismissed", "deferred"]
+    reason: str | None = Field(default=None, max_length=2000)
+    expected_ordinal: int = Field(ge=0)
+
+    @field_validator("reason")
+    @classmethod
+    def nonblank_reason(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError("reason must be non-blank when supplied")
+        return value
+
+
+class ReviewApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str | None = Field(default=None, max_length=20_000)
+    link_ids: list[str] | None = Field(default=None, max_length=100)
+    note: str | None = Field(default=None, max_length=2000)
+    expected_version: int = Field(ge=0)
+    dependency_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class SelectionChange(BaseModel):
@@ -754,6 +808,10 @@ def create_app(
     @app.exception_handler(RevisionConflict)
     async def conflict(_: Request, exc: RevisionConflict):
         return JSONResponse({"detail": str(exc)}, status_code=409)
+
+    @app.exception_handler(ReviewRefusal)
+    async def review_refusal(_: Request, exc: ReviewRefusal):
+        return JSONResponse(exc.extra_fields | {"detail": exc.detail, "code": exc.code}, status_code=exc.status_code)
 
     @app.exception_handler(LegacyResearchReadOnly)
     async def legacy_read_only(_: Request, exc: LegacyResearchReadOnly):
@@ -1992,6 +2050,180 @@ def create_app(
             raise HTTPException(409, "Only a failed equation reading is read again")
         service.retry(asset_id)
         return research_view(store, research_id)
+
+    # ---- owner-requested reviews --------------------------------------------------------------
+    def review_stores(request):
+        store = store_of(request)
+        reader = ReviewReader(store, ReportStore(store))
+        return store, reader, ReviewStore(store.conn, reader)
+
+    def review_of(request, research_id, review_id):
+        store, reader, reviews = review_stores(request)
+        review = reviews._review(review_id)
+        if review["research_id"] != research_id:
+            raise NotFound(review_id)
+        return store, reader, reviews, review, reviews.snapshot(review["snapshot_id"])
+
+    def review_finding_of(request, research_id, review_id, finding_id):
+        store, reader, reviews, review, saved = review_of(request, research_id, review_id)
+        finding = next((f for f in reviews.findings(review_id) if f["id"] == finding_id), None)
+        if finding is None:
+            raise NotFound(finding_id)
+        return store, reader, reviews, review, saved, finding
+
+    async def review_model(request, body):
+        adapter = request.app.state.adapters.get(body.connection)
+        if adapter is None:
+            raise HTTPException(422, f"Model connection '{body.connection}' is not available")
+        health = await adapter.health()
+        check_offered(health.get("models"), body.connection, body.model, body.reasoning_effort)
+        return adapter, health
+
+    def review_plan(request, research_id, body, adapter):
+        _, reader, _ = review_stores(request)
+        if body.target_kind == "candidate":
+            raise ReviewRefusal(422, "candidate_review_not_built", "Candidate review is not built yet (B8).")
+        try:
+            content, markers = build_snapshot(reader, research_id, body.target_kind, body.target_id)
+        except NotReviewable as exc:
+            raise ReviewRefusal(422, "not_reviewable", str(exc)) from exc
+        model = (body.connection, body.model, body.reasoning_effort)
+        plan = review_run.plan_groups("rvs_" + "0" * 20, content, body.focus, body.owner_note, model,
+            request.app.state.package, CAPABILITIES, enforces_schema=adapter.enforces_schema,
+            max_request_chars=REVIEW_BUDGET_TOKENS * 4)
+        if not plan["groups"]:
+            raise ReviewRefusal(422, "nothing_reviewable", "No claim fits the review input bounds.",
+                                not_reviewed=plan["not_reviewed"])
+        digest = sha256_hex(content)
+        fingerprint = review_run.preview_fingerprint(digest, model, body.focus, body.owner_note,
+                                                     request.app.state.package.package_hash, plan)
+        return content, markers, plan, digest, fingerprint
+
+    def review_card(request, research_id, review_id):
+        store, reader, reviews, review, saved = review_of(request, research_id, review_id)
+        run = store.run(review["run_id"])
+        steps = [dict(r) | {"output": json.loads(r["output_json"]) if r["output_json"] else None}
+                 for r in store.conn.execute("SELECT * FROM run_steps WHERE run_id = ? ORDER BY rowid", (run["id"],))]
+        inputs = {r["id"]: json.loads(r["payload_json"]) for r in store.conn.execute(
+            "SELECT id, payload_json FROM step_inputs WHERE run_id = ?", (run["id"],))}
+        sessions = [dict(r) for r in store.conn.execute("SELECT * FROM model_sessions WHERE run_id = ? ORDER BY rowid", (run["id"],))]
+        findings = reviews.findings(review_id)
+        decisions = {f["id"]: reviews.decisions(f["id"]) for f in findings}
+        content = saved["content"]
+        live = reader.report_claims(content["target_id"]) if content["target_kind"] == "report" else reader.answer_claims(content["target_id"])
+        fingerprints = {}
+        if content["target_kind"] == "report":
+            fingerprints = {f["finding"]["target_ref"]["ref"]: review_run.dependency_fingerprint(reader, content, f["finding"]["target_ref"]["ref"])
+                            for f in findings if f["finding"]["target_ref"]["kind"] == "claim"}
+        return review_run.review_read_model(review, saved, run, steps, inputs, sessions, findings, decisions,
+            stale_reasons(reader, saved), live_claims={c["id"]: c for c in live}, dependency_fingerprints=fingerprints)
+
+    review_path = "/api/researches/{research_id}/reviews"
+    finding_path = review_path + "/{review_id}/findings/{finding_id}"
+
+    @app.post(review_path + "/preview")
+    async def preview_owner_review(research_id: str, body: ReviewPreviewRequest, request: Request):
+        adapter, health = await review_model(request, body)
+        content, _, plan, digest, fingerprint = review_plan(request, research_id, body, adapter)
+        return review_run.preview_numbers(content, plan) | {"snapshot_sha256": digest, "preview_fingerprint": fingerprint,
+            "connection": body.connection, "connection_display_name": health.get("display_name", body.connection)}
+
+    @app.post(review_path, status_code=202)
+    async def start_owner_review(research_id: str, body: ReviewStartRequest, request: Request,
+                                 idempotency_key: str = Header(min_length=1, max_length=200)):
+        from datetime import datetime, timedelta
+        store, _, reviews = review_stores(request)
+        store.research(research_id)
+        key = f"review:{research_id}:{idempotency_key}"
+        digest = review_run.command_hash("start", research_id, body.target_kind, body.target_id, body.model_dump())
+
+        def replay():
+            old = store.conn.execute("SELECT id FROM runs WHERE idempotency_key = ?", (key,)).fetchone()
+            if old is None:
+                return None
+            run = store.run(old["id"])
+            if run["target"].get("request_hash") != digest:
+                raise ReviewConflict("idempotency_key_reused", "This key was used for a different review request.")
+            row = store.conn.execute("SELECT * FROM owner_reviews WHERE run_id = ?", (run["id"],)).fetchone()
+            return {"review": dict(row), "run": run}
+
+        if old := replay():
+            return old
+        adapter, _ = await review_model(request, body)
+        with db.transaction(store.conn):
+            if old := replay():
+                return old
+            if store.conn.execute("SELECT 1 FROM runs WHERE research_id = ? AND status IN ('queued','running','pause_requested')",
+                                  (research_id,)).fetchone():
+                raise ReviewConflict("run_active", "This research has an active run. Wait for it to stop before starting a review.")
+            content, markers, plan, snapshot_hash, fingerprint = review_plan(request, research_id, body, adapter)
+            if snapshot_hash != body.snapshot_sha256:
+                raise ReviewConflict("target_changed", "The target changed after the preview. Preview it again.")
+            if fingerprint != body.preview_fingerprint:
+                raise ReviewConflict("preview_changed", "The review request or package changed after the preview. Preview it again.")
+            deadline = (datetime.fromisoformat(db.now()) + timedelta(seconds=review_run.REVIEW_DEADLINE_SECONDS)).isoformat(timespec="milliseconds")
+            run = store.create_run(research_id, "review", review_run.review_budget(len(plan["groups"])), key,
+                {"snapshot_sha256": snapshot_hash, "preview_fingerprint": fingerprint, "request_hash": digest,
+                 "plan": plan, "skill_package_hash": request.app.state.package.package_hash, "deadline_at": deadline})
+            snapshot_id = reviews.add_snapshot(content, markers)
+            review = reviews.create_review(research_id, snapshot_id, run["id"], focus=body.focus, owner_note=body.owner_note,
+                requested_connection=body.connection, requested_model=body.model, requested_effort=body.reasoning_effort, idempotency_key=key)
+            reviews.set_not_reviewed(review["id"], plan["not_reviewed"])
+        request.app.state.worker.wake()
+        return {"review": reviews._review(review["id"]), "run": run}
+
+    @app.get(review_path)
+    async def list_owner_reviews(research_id: str, target_kind: str, target_id: str, request: Request):
+        _, _, reviews = review_stores(request)
+        cards = [review_card(request, research_id, r["id"]) for r in reviews.reviews_for_target(research_id, target_kind, target_id)]
+        return [{k: card[k] for k in ("id", "run_id", "state", "pause_reason", "failure_reason", "outcome_unknown",
+                                     "requested_model", "created_at", "finding_count", "open_finding_count")} for card in cards]
+
+    @app.get(review_path + "/{review_id}")
+    async def get_owner_review(research_id: str, review_id: str, request: Request):
+        return review_card(request, research_id, review_id)
+
+    @app.post(finding_path + "/decisions")
+    async def decide_owner_review_finding(research_id: str, review_id: str, finding_id: str,
+                                         body: ReviewDecisionRequest, request: Request,
+                                         idempotency_key: str = Header(min_length=1, max_length=200)):
+        store = store_of(request)
+        if body.decision == "dismissed" and body.reason is None:
+            raise HTTPException(422, "A dismissed finding needs a reason.")
+        with db.transaction(store.conn):
+            _, _, reviews, _, saved, _ = review_finding_of(request, research_id, review_id, finding_id)
+            digest = review_run.command_hash("decision", research_id, saved["target_kind"], saved["target_id"],
+                                             body.model_dump() | {"finding_id": finding_id})
+            decision = reviews.add_decision(finding_id, body.decision, body.reason,
+                idempotency_key=f"review-decision:{research_id}:{idempotency_key}", request_hash=digest, expected_ordinal=body.expected_ordinal)
+        return {"decision": decision, "no_change_made": saved["target_kind"] == "answer" and body.decision == "accepted"}
+
+    @app.post(finding_path + "/apply")
+    async def apply_owner_review_finding(research_id: str, review_id: str, finding_id: str,
+                                        body: ReviewApplyRequest, request: Request,
+                                        idempotency_key: str = Header(min_length=1, max_length=200)):
+        store = store_of(request)
+        key = f"review-apply:{finding_id}:{idempotency_key}"
+        with db.transaction(store.conn):
+            _, reader, reviews, _, saved, finding = review_finding_of(request, research_id, review_id, finding_id)
+            ref = finding["finding"]["target_ref"]
+            if saved["target_kind"] != "report" or ref["kind"] != "claim":
+                raise ReviewRefusal(422, "not_applicable", "Only a report-claim finding can be applied through this editor.")
+            digest = review_run.command_hash("apply", research_id, saved["target_kind"], saved["target_id"],
+                                             body.model_dump() | {"finding_id": finding_id})
+            decision = reviews.decision_request(key, digest)
+            if decision is None:
+                content = saved["content"]
+                if review_run.dependency_fingerprint(reader, content, ref["ref"]) != body.dependency_fingerprint:
+                    raise ReviewConflict("dependencies_changed", "The claim or its evidence dependencies changed. Reopen the editor before saving.")
+                claim = next(c for c in content["claims"] if c["claim_ref"] == ref["ref"])
+                revision_id = ReportStore(store).edit_claim(research_id, content["target_id"], claim["claim_id"],
+                    text=body.text, restore_from=None, note=body.note, expected_version=body.expected_version,
+                    idempotency_key=key, link_ids=body.link_ids)
+                decision = reviews.add_decision(finding_id, "accepted", applied_ref=revision_id, idempotency_key=key, request_hash=digest)
+            revision = next(r for r in reader.report_claim_revisions(finding["finding"]["target"]["record_id"]) if r["id"] == decision["applied_ref"])
+        return {"decision": decision, "revision": revision,
+                "applied_matches_suggestion": applied_matches_suggestion(finding["finding"], revision["text"])}
 
     # ---- evidence tables (P5, D37) -------------------------------------------------------------
     def tables_of(request: Request) -> TableStore:

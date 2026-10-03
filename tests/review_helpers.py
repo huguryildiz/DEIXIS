@@ -43,7 +43,8 @@ def make_answer(lib, status="structurally_valid", text="SYNTHETIC answer claim."
     input_id = db.new_id("sti")
     store.insert_step_input(step["id"], lib["rid"], run["id"], 0,
         {"step_input_id": input_id, "task_type": "grounded_answer", "scope_revision": 1,
-         "skill_package_hash": skill.package_hash()}, "base", "developer", "message", {})
+         "skill_package_hash": skill.package_hash(), "sources": [{"source_id": lib["source_id"]}],
+         "passages": [{"passage_id": lib["section_passage"]}]}, "base", "developer", "message", {})
     aid = store.save_answer(lib["rid"], run["id"], step["id"], input_id, 1, status,
         {"title": "SYNTHETIC answer", "answer_language": "en", "claims": [{"claim_label": "c1", "section": "Methods",
           "text": text, "support_type": "source_stated"}]}, {},
@@ -107,7 +108,7 @@ def stored_review(lib, kind="report"):
     review = lib["reviews"].create_review(lib["rid"], saved["id"], run_id, focus="source_support", requested_connection="fake")
     payload = step_payload(lib, saved, run_id)
     resolved = resolve_finding(saved["content"], payload, finding(payload))
-    fid = lib["reviews"].add_findings(review["id"], [{"finding": resolved, "step_input_id": payload["step_input_id"]}])[0]
+    fid = lib["reviews"].add_findings(review["id"], [resolved])[0]
     return saved, review, payload, fid
 
 

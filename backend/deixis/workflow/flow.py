@@ -96,7 +96,7 @@ CHAIN_RANK_BASE = 1_000_000_000
 # Steps whose records are shown as short handles instead of stored identifiers, because long random IDs were
 # mis-copied (D12). The abstract stage joined them in slice 09: its batches name 20 candidates each.
 HANDLE_TASKS = ("grounded_answer", "answer_review", "cell_extraction", "abstract_screening",
-                "fulltext_adjudication", "lineage_links") + contracts.REPORT_TASKS + contracts.CANDIDATE_TASKS
+                "fulltext_adjudication", "lineage_links") + contracts.REPORT_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS
 FORMULATION_SCORE_THRESHOLD = 3
 FORMULATION_TERMS = re.compile(
     r"\b(?:minimi[sz]e|maximi[sz]e|subject\s+to|s\.\s*t|objective\s+function|constraints?|decision\s+variables?"
@@ -351,7 +351,7 @@ class ResearchFlow:
 
     async def _execute_run(self, run_id: str) -> None:
         run = self.store.run(run_id)
-        scope = self.store.scope(run["research_id"], run["scope_revision"])
+        scope = {} if run["kind"] == "review" else self.store.scope(run["research_id"], run["scope_revision"])
         try:
             if run["kind"] == "discovery":
                 await self._discovery(run, scope)
@@ -382,8 +382,12 @@ class ResearchFlow:
             elif run["kind"] == "kill_search":
                 await self._kill_search(run, scope)
                 self._candidate_send_gate(run)
-            else:
+            elif run["kind"] == "review":
+                await self._owner_review(run)
+            elif run["kind"] == "table_columns":
                 await self._table_columns(run, scope)
+            else:
+                self._fail(run_id, "unknown_run_kind", {"kind": run["kind"]})
         except RunStopped:
             return
         if self.store.run(run_id)["status"] in ("running", "pause_requested") and run["kind"] == "discovery" and self._overlaps(run):
@@ -4844,6 +4848,96 @@ class ResearchFlow:
         refused = any(q["error_code"] == "transport_budget" for q in cs.queries(search["id"]))
         self._kill_search_finish(run, search, outcomes, "transport_budget" if refused else None)
 
+    # ---- owner-requested review ---------------------------------------------------------
+    def _owner_review_send_gate(self, run: dict) -> None:
+        from datetime import datetime
+        from deixis.workflow.review.run import ReviewDeadlinePassed
+        self._checkpoint(run["id"])
+        if self.store.run(run["id"])["status"] != "running":
+            raise RunStopped
+        try:
+            self.store.research(run["research_id"])
+        except NotFound:
+            self._fail(run["id"], "research_unavailable")
+        if self.deps.package.package_hash != run["target"]["skill_package_hash"]:
+            self._fail(run["id"], "skill_package_changed")
+        if datetime.fromisoformat(now()) >= datetime.fromisoformat(run["target"]["deadline_at"]):
+            raise ReviewDeadlinePassed
+
+    async def _owner_review(self, run: dict) -> None:
+        from deixis.workflow.review import run as reviews
+        from deixis.workflow.review.reader import ReviewReader
+        from deixis.workflow.review.store import ReviewStore, resolve_finding
+        from deixis.workflow.report.store import ReportStore
+        from deixis.workflow.report.review import REVIEW_BUDGET_TOKENS
+        rs = ReviewStore(self.store.conn, ReviewReader(self.store, ReportStore(self.store)))
+        row = self.store.conn.execute("SELECT * FROM owner_reviews WHERE run_id = ?", (run["id"],)).fetchone()
+        if row is None:
+            self._fail(run["id"], "review_unavailable")
+        review = dict(row)
+        try:
+            snapshot = rs.snapshot(review["snapshot_id"])
+        except NotFound:
+            self._fail(run["id"], "research_unavailable")
+        content = snapshot["content"]
+        scope = content["scope"]
+        model = (review["requested_connection"], review["requested_model"], review["requested_effort"])
+        omitted = json.loads(review["sections_not_reviewed_json"])
+
+        def not_reviewed(group, reason, output=None):
+            output = output or {}
+            for ref in group["claim_refs"]:
+                claim = next(c for c in content["claims"] if c["claim_ref"] == ref)
+                entry = {"group_index": group["group_index"], "claim_ref": ref, "section_ref": claim["section_ref"],
+                         "reason": reason, "step_input_id": output.get("blocked_step_input_id") or output.get("step_input_id"),
+                         "request_chars": output.get("request_chars")}
+                if entry not in omitted:
+                    omitted.append(entry)
+            rs.set_not_reviewed(review["id"], omitted)
+
+        for group in run["target"]["plan"]["groups"]:
+            self._checkpoint(run["id"])
+            key = f"owner_review:{group['group_index']}"
+            step = self.store.existing_step(run["id"], key)
+            if step and step["status"] == "succeeded":
+                output = step["output"]
+            elif step and step["status"] == "failed" and step["error_code"] in ("invalid_model_output", "message_too_large"):
+                output = (step["output"] or {}) | {"invalid": True}
+                not_reviewed(group, output.get("size_failure_reason", step["error_code"]), output)
+                continue
+            else:
+                def builder(step_id):
+                    return reviews.review_step_input(snapshot["id"], content, review, group, run_id=run["id"],
+                        step_id=step_id, research_id=run["research_id"], package_hash=run["target"]["skill_package_hash"],
+                        capabilities=CAPABILITIES, budget=run["budget"], step_input_id=new_id("sti"), created_at=now())
+
+                def gate():
+                    self._owner_review_send_gate(run)
+
+                def resend():
+                    gate()
+                    return self.store.run(run["id"])["usage"].get("model_calls", 0) < run["budget"]["max_model_calls"]
+
+                try:
+                    gate()
+                    output = await self.deps.limiter.run(f"{run['id']}:{key}", lambda: self._model_step(
+                        run, scope, key, "owner_review", model=model, limiter=self.deps.limiter,
+                        send_gate=gate, resend_guard=resend, step_input_builder=builder,
+                        max_request_chars=REVIEW_BUDGET_TOKENS * 4,
+                        attempt_record=lambda payload: {"send_record": {"task": "owner_review", "group_index": group["group_index"]}}))
+                except reviews.ReviewDeadlinePassed:
+                    step = self.store.existing_step(run["id"], key)
+                    if step and step["status"] == "running":
+                        self.store.finish_step(step["id"], "failed", output=step["output"], error_code="deadline_passed")
+                    not_reviewed(group, "deadline_passed")
+                    continue
+            if output.get("invalid"):
+                not_reviewed(group, output.get("size_failure_reason", "invalid_model_output"), output)
+                continue
+            payload = self.store.step_input_payload(output["step_input_id"])
+            resolved = [resolve_finding(content, payload, finding) for finding in output["result"]["findings"]]
+            rs.add_group_findings(review["id"], payload["step_input_id"], resolved)
+
     # ---- model steps -------------------------------------------------------------------
     def _lineage_send_gate(self, run: dict[str, Any]) -> None:
         self._checkpoint(run["id"], run["scope_revision"])
@@ -5095,6 +5189,8 @@ class ResearchFlow:
                           send_gate: Callable[[], None] | None = None,
                           attempt_record: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
                           candidate_target: dict[str, Any] | None = None,
+                          step_input_builder: Callable[[str], dict] | None = None,
+                          max_request_chars: int | None = None,
                           ) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run. `budget_short="skip"` is the sw
@@ -5204,7 +5300,7 @@ class ResearchFlow:
                 self.store.finish_step(step["id"], "failed", error_code="budget_exhausted", **sent_output())
                 # Resume keeps the counter and ceiling: cancel and request a new preview to progress.
                 halt("budget_exhausted", {"limit": "model_calls"})
-            payload = self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
+            payload = step_input_builder(step["id"]) if step_input_builder is not None else self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
                                        claims or [], model, extraction_target, report_target, vocabulary_target,
                                        screening_target, suggestion_target, adjudication_target, lineage_target, candidate_target)
             if attempt_record is not None:
@@ -5240,7 +5336,12 @@ class ResearchFlow:
                 message = prompt.repair_message(shown, contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues,
                                                 anchor_context)
             self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema, selection_revision)
-            if max_message_chars is not None and len(message) > max_message_chars:
+            measured_chars = None
+            if max_request_chars is not None:
+                from deixis.workflow.review.run import request_chars
+                measured_chars = request_chars(base, developer, message, schema, adapter.enforces_schema)
+            if (max_message_chars is not None and len(message) > max_message_chars
+                    or max_request_chars is not None and measured_chars > max_request_chars):
                 # An oversized repair was never sent. Known-failed pairs keep the last sent
                 # fingerprint; the blocked input remains stored separately for the size audit.
                 output = {"invalid": True, "issues": [], "step_input_id": sent_input or payload["step_input_id"],
@@ -5249,6 +5350,9 @@ class ResearchFlow:
                     output = {"invalid": True, "issues": [], "message_too_large": True} | sent_output()["output"]
                     output["blocked_step_input_id"] = payload["step_input_id"]
                     output["blocked_send_record"] = extra
+                if max_request_chars is not None:
+                    output["request_chars"] = measured_chars
+                    output["size_failure_reason"] = "repair_message_too_large" if repair_issues is not None else "message_too_large"
                 self.store.finish_step(step["id"], "failed", output=output, error_code="message_too_large",
                                        error=repair_issues)
                 return output
@@ -5295,7 +5399,7 @@ class ResearchFlow:
                                                **sent_output())
                 halt("model_mismatch", mismatch)
             output_text = result.raw_text or ""
-            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS + contracts.CANDIDATE_TASKS:
+            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS:
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             # Field names from the alias table are put right before validation and the renames recorded (D86).
             output_text, normalised_changes = contracts.normalise_output(task_type, output_text)

@@ -729,7 +729,7 @@ class Store:
             stage = {"discovery": "discovery", "answer": "inspection", "pdf_collection": "inspection",
                      "fulltext_fetch": "inspection", "fulltext_adjudication": "inspection",
                      "research_title": "intake", "lineage_links": "synthesis",
-                     "claim_decomposition": "candidate", "kill_search": "candidate"}.get(kind, "extraction")
+                     "claim_decomposition": "candidate", "kill_search": "candidate", "review": "claim_check"}.get(kind, "extraction")
             self.conn.execute(
                 "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",

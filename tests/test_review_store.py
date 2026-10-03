@@ -8,7 +8,7 @@ import pytest
 
 from deixis.storage import db
 from deixis.domain.rules import RevisionConflict
-from deixis.workflow.review.store import applied_matches_suggestion, TARGET_KINDS, FOCUSES, DECISIONS
+from deixis.workflow.review.store import applied_matches_suggestion, resolve_finding, TARGET_KINDS, FOCUSES, DECISIONS
 from tests.review_helpers import report_with_sections, review_lib, stored_review, snapshot, review_run, step_payload, rows
 from tests.test_report_claim_links import edit, claim
 
@@ -34,7 +34,7 @@ def test_sql_boundary_refuses_blank_notes_and_dismissal_reasons(review_lib, blan
                                 " VALUES (?, ?, ?, ?, 'source_support', ?, 'fake', 'now')",
                                 (db.new_id("orv"), lib["rid"], saved["id"], run, blank))
         else:
-            lib["conn"].execute("INSERT INTO owner_review_decisions VALUES (?, ?, 1, 'dismissed', ?, NULL, 'now')",
+            lib["conn"].execute("INSERT INTO owner_review_decisions (id, finding_id, ordinal, decision, reason, applied_ref, created_at) VALUES (?, ?, 1, 'dismissed', ?, NULL, 'now')",
                                 (db.new_id("ord"), fid, blank))
 
 
@@ -105,7 +105,7 @@ def test_run_snapshot_and_step_guards(review_lib, case):
         review = lib["reviews"].create_review(rid, saved["id"], run_id, focus="source_support", requested_connection="fake")
         payload = step_payload(lib, saved)  # another review run
         with pytest.raises(sqlite3.IntegrityError):
-            lib["reviews"].add_findings(review["id"], [{"finding": {}, "step_input_id": payload["step_input_id"]}])
+            lib["reviews"].add_findings(review["id"], [resolve_finding(saved["content"], payload, {"target_ref": {"kind": "whole", "ref": None}})])
     else:
         with pytest.raises(sqlite3.IntegrityError):
             lib["reviews"].create_review(rid, saved["id"], run_id, focus="source_support", requested_connection="fake")
@@ -134,14 +134,14 @@ def test_review_request_idempotency_is_bound_to_fields(review_lib):
 
 
 def test_decision_ordinals_override_timestamp_and_id_order(review_lib):
-    lib = review_lib; _, review, payload, fid = stored_review(lib); store = lib["reviews"]
+    lib = review_lib; saved, review, payload, fid = stored_review(lib); store = lib["reviews"]
     assert store.current_decision(fid) is None
     for id_, ordinal in (("ord_ZZZZZZZZ", 1), ("ord_AAAAAAAA", 2)):
-        lib["conn"].execute("INSERT INTO owner_review_decisions VALUES (?, ?, ?, 'deferred', NULL, NULL, 'same')", (id_, fid, ordinal))
+        lib["conn"].execute("INSERT INTO owner_review_decisions (id, finding_id, ordinal, decision, reason, applied_ref, created_at) VALUES (?, ?, ?, 'deferred', NULL, NULL, 'same')", (id_, fid, ordinal))
     assert [r["ordinal"] for r in store.decisions(fid)] == [1, 2]
     assert store.current_decision(fid)["id"] == "ord_AAAAAAAA"
     assert store.add_decision(fid, "accepted")["ordinal"] == 3
-    other = store.add_findings(review["id"], [{"finding": {}, "step_input_id": payload["step_input_id"]}])[0]
+    other = store.add_findings(review["id"], [resolve_finding(saved["content"], payload, {"target_ref": {"kind": "whole", "ref": None}})])[0]
     assert [store.add_decision(other, d, "SYNTHETIC reason")["ordinal"] for d in DECISIONS] == [1, 2, 3]
 
 
@@ -158,7 +158,7 @@ def test_applied_ref_rejections(review_lib, monkeypatch, case):
     if case == "whole":
         # A separate whole-target finding, since findings are immutable.
         payload = step_payload(lib, saved, review["run_id"])
-        fid = lib["reviews"].add_findings(review["id"], [{"finding": {"target_ref": {"kind": "whole", "ref": None}}, "step_input_id": payload["step_input_id"]}])[0]
+        fid = lib["reviews"].add_findings(review["id"], [resolve_finding(saved["content"], payload, {"target_ref": {"kind": "whole", "ref": None}})])[0]
     target = next(c for c in saved["content"]["claims"] if c["claim_ref"] == saved["content"]["claims"][0]["claim_ref"])
     other = claim(lib, "III.1" if target["claim_ref"] == "abstract.1" else "abstract.1")
     revision_id = db.new_id("rcv")

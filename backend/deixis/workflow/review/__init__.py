@@ -1,1 +1,1 @@
-"""Owner-requested review foundations; no run, route or model call is registered here."""
+"""Owner-requested review snapshots, planning and separate assessment records."""

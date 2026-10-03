@@ -22,6 +22,10 @@ class DuplicateReviewRef(ValueError):
 class ReviewInputTooLarge(ValueError):
     """A stored value cannot be represented within the review input bounds."""
 
+    def __init__(self, message, *, parts=None):
+        super().__init__(message)
+        self.parts = parts
+
 
 def _unique(rows, field):
     refs = [row[field] for row in rows]
@@ -142,12 +146,13 @@ def review_step_input_parts(snapshot_id, content, *, focus, owner_note, group_in
               for c in content["claims"] if c["claim_ref"] in selected]
     cids = {e["cell_id"] for c in claims for e in c["citations"] if e["cell_id"]}
     cells = []
+    oversized_cells = []
     for cell in content["cells"]:
         if cell["cell_id"] not in cids:
             continue
         value_text = None if cell["value"] is None else json.dumps(cell["value"], ensure_ascii=False, separators=(",", ":"), allow_nan=False)
         if value_text is not None and len(value_text) > 4000:
-            raise ReviewInputTooLarge(f"cell {cell['cell_id']}: value_text exceeds 4000 characters")
+            oversized_cells.append(cell["cell_id"])
         cells.append({"cell_id": cell["cell_id"], "column_id": cell["column_id"], "source_id": cell["source_version_id"],
                       "state": cell["state"], "value_text": value_text, "evidence": copy.deepcopy(cell["evidence"])})
     pids = {e["passage_id"] for c in claims for e in c["citations"] if e["passage_id"]}
@@ -166,8 +171,12 @@ def review_step_input_parts(snapshot_id, content, *, focus, owner_note, group_in
               "claims": claims, "sections": sections, "cells": cells, "columns": columns,
               "elements": copy.deepcopy(content.get("elements", [])), "candidate_statement": content.get("candidate_statement"),
               "passage_ids": [p["passage_id"] for p in passages]}
-    return {"sources": sources, "passages": passages, "review_input": review,
+    parts = {"sources": sources, "passages": passages, "review_input": review,
             "allowlist": {"candidate_ids": [], "source_ids": [s["source_id"] for s in sources],
                           "passage_ids": review["passage_ids"].copy(), "cell_ids": [c["cell_id"] for c in cells],
                           "claim_refs": [c["claim_ref"] for c in claims], "section_refs": [s["section_ref"] for s in sections],
                           "element_refs": [e["element_ref"] for e in review["elements"]]}}
+    if oversized_cells:
+        # Retain the unshortened, unsendable parts only for the planner's size audit.
+        raise ReviewInputTooLarge(f"cell {oversized_cells[0]}: value_text exceeds 4000 characters", parts=parts)
+    return parts

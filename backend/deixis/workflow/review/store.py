@@ -6,6 +6,7 @@ import copy
 import json
 import re
 import sqlite3
+from dataclasses import dataclass
 
 from deixis.domain.canonical import canonical_json, sha256_hex
 from deixis.domain.contracts import locate_anchor
@@ -18,8 +19,35 @@ FOCUSES = ("source_support", "assumptions_and_consistency")
 DECISIONS = ("accepted", "dismissed", "deferred")
 
 
-class SnapshotDependencyUnreadable(ValueError):
+class ReviewRefusal(Exception):
+    def __init__(self, status_code, code, detail, **extra_fields):
+        super().__init__(detail)
+        self.status_code = status_code
+        self.code = code
+        self.detail = detail
+        self.extra_fields = extra_fields
+
+
+class SnapshotDependencyUnreadable(ReviewRefusal, ValueError):
     """Dependency protection cannot safely interpret a stored snapshot."""
+
+    def __init__(self, detail):
+        super().__init__(409, "snapshot_dependency_unreadable", detail)
+        self.detail = "A stored review snapshot could not be read, so nothing was deleted."
+
+
+class ReviewConflict(ReviewRefusal, RevisionConflict):
+    def __init__(self, code, detail):
+        super().__init__(409, code, detail)
+
+
+@dataclass(frozen=True)
+class ResolvedFinding:
+    finding_json: dict
+    step_input_id: str
+
+    def __getitem__(self, key):
+        return self.finding_json[key]
 
 
 def _table_exists(conn, name):
@@ -114,7 +142,9 @@ def resolve_finding(content, step_input, finding):
         target.update(record_id=row[record_key], text_at_snapshot=row.get("text") if kind != "section" else
                       "\n".join(c["text"] for c in content["claims"] if c["section_ref"] == label))
     passages = {p["passage_id"]: p for p in step_input["passages"]}
-    result = copy.deepcopy(finding) | {"target": target}
+    result = copy.deepcopy(finding) | {"target": target,
+        "group_index": step_input["review_input"]["group_index"],
+        "group_count": step_input["review_input"]["group_count"]}
     if "evidence" in finding:
         evidence = []
         for item in finding["evidence"]:
@@ -128,10 +158,12 @@ def resolve_finding(content, step_input, finding):
             evidence.append({"passage_id": pid, "source_version_id": passage["source_id"],
                              "anchor_text": anchor.text, "anchor_match": anchor.kind})
         result["evidence"] = evidence
-    return result
+    return ResolvedFinding(result, step_input["step_input_id"])
 
 
 def applied_matches_suggestion(finding_json, revision_text):
+    if isinstance(finding_json, ResolvedFinding):
+        finding_json = finding_json.finding_json
     finding = json.loads(finding_json) if isinstance(finding_json, str) else finding_json
     suggestion = finding.get("suggested_fix")
     return suggestion is not None and " ".join(suggestion.split()) == " ".join(revision_text.split())
@@ -206,6 +238,9 @@ class ReviewStore:
             self.conn.execute("UPDATE owner_reviews SET failure_reason = ? WHERE id = ?", (reason, review_id))
 
     def add_findings(self, review_id, rows):
+        rows = list(rows)
+        if any(not isinstance(row, ResolvedFinding) for row in rows):
+            raise TypeError("findings must come from resolve_finding")
         ids = []
         with transaction(self.conn):
             self._review(review_id)
@@ -215,10 +250,21 @@ class ReviewStore:
                 finding_id = new_id("orf")
                 self.conn.execute(
                     "INSERT INTO owner_review_findings (id, review_id, ordinal, finding_json, step_input_id) VALUES (?, ?, ?, ?, ?)",
-                    (finding_id, review_id, ordinal, canonical_json(row["finding"]), row["step_input_id"]),
+                    (finding_id, review_id, ordinal, canonical_json(row.finding_json), row.step_input_id),
                 )
                 ids.append(finding_id)
         return ids
+
+    def add_group_findings(self, review_id, step_input_id, resolved):
+        resolved = list(resolved)
+        if any(not isinstance(row, ResolvedFinding) or row.step_input_id != step_input_id for row in resolved):
+            raise TypeError("group findings must resolve from the group's StepInput")
+        with transaction(self.conn):
+            self._review(review_id)
+            if self.conn.execute("SELECT 1 FROM owner_review_findings WHERE review_id = ? AND step_input_id = ?",
+                                 (review_id, step_input_id)).fetchone():
+                return []
+            return self.add_findings(review_id, resolved)
 
     def findings(self, review_id):
         self._review(review_id)
@@ -226,20 +272,34 @@ class ReviewStore:
             "SELECT * FROM owner_review_findings WHERE review_id = ? ORDER BY ordinal", (review_id,),
         )]
 
-    def add_decision(self, finding_id, decision, reason=None, applied_ref=None):
+    def decision_request(self, key, request_hash):
+        old = self.conn.execute("SELECT * FROM owner_review_decisions WHERE idempotency_key = ?", (key,)).fetchone()
+        if old is not None and old["request_hash"] != request_hash:
+            raise ReviewConflict("idempotency_key_reused", "This key was used for a different review command.")
+        return dict(old) if old is not None else None
+
+    def add_decision(self, finding_id, decision, reason=None, applied_ref=None, *,
+                     idempotency_key=None, request_hash=None, expected_ordinal=None):
         if decision not in DECISIONS or decision == "dismissed" and (reason is None or not reason.strip()):
             raise ValueError("dismissed needs a reason and decision must be known")
         if applied_ref is not None and decision != "accepted":
             raise ValueError("only accepted decisions can name an applied revision")
         with transaction(self.conn):
             finding, review = self._finding_review(finding_id)
+            if idempotency_key is not None:
+                replay = self.decision_request(idempotency_key, request_hash)
+                if replay is not None:
+                    return replay
+            current = self.current_decision(finding_id)
+            if expected_ordinal is not None and expected_ordinal != (current["ordinal"] if current else 0):
+                raise ReviewConflict("decision_changed", "The finding's decision changed. Read it again before deciding.")
             if applied_ref is not None:
                 self._check_applied(finding, review, applied_ref)
             ordinal = self.conn.execute("SELECT COALESCE(MAX(ordinal), 0) + 1 FROM owner_review_decisions WHERE finding_id = ?", (finding_id,)).fetchone()[0]
             decision_id = new_id("ord")
             self.conn.execute(
-                "INSERT INTO owner_review_decisions (id, finding_id, ordinal, decision, reason, applied_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (decision_id, finding_id, ordinal, decision, reason, applied_ref, now()),
+                "INSERT INTO owner_review_decisions (id, finding_id, ordinal, decision, reason, applied_ref, created_at, idempotency_key, request_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (decision_id, finding_id, ordinal, decision, reason, applied_ref, now(), idempotency_key, request_hash),
             )
         return dict(self.conn.execute("SELECT * FROM owner_review_decisions WHERE id = ?", (decision_id,)).fetchone())
 

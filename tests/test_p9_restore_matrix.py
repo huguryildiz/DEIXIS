@@ -682,6 +682,8 @@ def rich_library(tmp_path: Path):
 EMPTY_BECAUSE = {
     "arxiv_sources": "arXiv source reading is off in the test settings",
     "asset_arxiv_versions": "written only by the optional equation reader (Marker), which is not installed",
+    "asset_file_observations": "R1 exposes no file observation or recovery route",
+    "asset_recovery_operations": "R1 exposes no recovery route",
     "chain_links": "citation chaining is off in the test settings",
     "human_selection_links": "written only by human decisions in the screening queue, which this flow does not make",
     "owner_review_snapshots": "no review can be started until B2",

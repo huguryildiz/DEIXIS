@@ -18,7 +18,7 @@ from deixis.domain.canonical import sha256_hex
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
-from deixis.workflow import links
+from deixis.workflow import links, recovery
 from deixis.workflow.source_keys import key_stem, suffixes
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
@@ -106,6 +106,18 @@ class RunInProgress(Exception):
     """A research using the source has a queued, running or pause-requested run (D45)."""
 
 
+class RequestConflict(Exception):
+    """An idempotency key was already used for a different request."""
+
+
+class RecoveryConflict(Exception):
+    """The retry baseline moved or another retry owns the asset."""
+
+
+class NotRetryable(Exception):
+    """The current extraction is healthy or still pending."""
+
+
 class SameFile(Exception):
     """A PDF can only be replaced by a different file (D45)."""
 
@@ -130,6 +142,9 @@ class Store:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
         self._columns: dict[str, set[str]] = {}
+        # Migrations precede Store construction; historical fixtures retain their schema.
+        self._extraction_has_recovery_metadata = any(
+            row[1] == "extractor_profile" for row in conn.execute("PRAGMA table_info(asset_extractions)"))
         # Pure functions of rows that are never rewritten, kept for the life of this store (slice 18b): a file's page
         # digest by (asset, extraction version) — an extraction's passages are written once and shadowed, never
         # changed — and the file each work of a frozen reading plan read, by run.
@@ -400,7 +415,7 @@ class Store:
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (source_id,))
                 self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (source_id,))
-                self.conn.execute("DELETE FROM asset_extractions WHERE asset_id IN (SELECT id FROM source_assets WHERE source_version_id = ?)", (source_id,))
+                self._purge_asset_extractions(source_id)
                 self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (source_id,))
                 self.conn.execute("DELETE FROM source_versions WHERE id = ?", (source_id,))
                 self.conn.execute("DELETE FROM works WHERE id = ? AND NOT EXISTS (SELECT 1 FROM source_versions WHERE work_id = ?)", (source["work_id"], source["work_id"]))
@@ -1372,11 +1387,19 @@ class Store:
             current = row["extraction_version"] or ""
             if result == "eligible" or not current.endswith("+" + arxiv_source.SOURCE_VERSION):
                 continue
-            previous = self.conn.execute(
-                "SELECT * FROM asset_extractions WHERE asset_id = ? AND outcome = 'superseded' AND created_at <="
-                " (SELECT created_at FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?)"
-                " AND extraction_version <> ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
-                (row["asset_id"], row["asset_id"], current, current)).fetchone()
+            withdrawn = self.conn.execute(
+                "SELECT baseline_extraction_id FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?",
+                (row["asset_id"], current)).fetchone()
+            if withdrawn and withdrawn["baseline_extraction_id"] is not None:
+                previous = self.conn.execute(
+                    "SELECT * FROM asset_extractions WHERE id = ? AND asset_id = ? AND outcome = 'superseded'",
+                    (withdrawn["baseline_extraction_id"], row["asset_id"])).fetchone()
+            else:
+                previous = self.conn.execute(
+                    "SELECT * FROM asset_extractions WHERE asset_id = ? AND outcome = 'superseded' AND created_at <="
+                    " (SELECT created_at FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?)"
+                    " AND extraction_version <> ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                    (row["asset_id"], row["asset_id"], current, current)).fetchone()
             if previous is None:
                 continue
             self.conn.execute("UPDATE asset_extractions SET outcome = 'superseded' WHERE asset_id = ? AND extraction_version = ?",
@@ -1475,12 +1498,41 @@ class Store:
             raise NotFound(asset_id)
         return dict(row)
 
+    def _purge_asset_extractions(self, svid: str) -> None:
+        """Delete recovery cycles in the caller's purge transaction, including older schemas."""
+        tables = {r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        columns = {r[1] for r in self.conn.execute("PRAGMA table_info(asset_extractions)")}
+        assets = "SELECT id FROM source_assets WHERE source_version_id = ?"
+        if not {"asset_file_observations", "asset_recovery_operations"}.issubset(tables) or "input_observation_id" not in columns:
+            self.conn.execute(f"DELETE FROM asset_extractions WHERE asset_id IN ({assets})", (svid,))
+            return
+        observations = {r[0] for r in self.conn.execute(
+            f"SELECT input_observation_id FROM asset_extractions WHERE asset_id IN ({assets})", (svid,)) if r[0]}
+        operations = [dict(r) for r in self.conn.execute(
+            f"SELECT * FROM asset_recovery_operations WHERE asset_id IN ({assets})", (svid,))]
+        for operation in operations:
+            observations.update(operation[k] for k in ("before_observation_id", "after_observation_id", "input_observation_id")
+                                if operation[k])
+            observations.update(r[0] for r in self.conn.execute(
+                "SELECT id FROM asset_file_observations WHERE operation_id = ?", (operation["id"],)))
+        self.conn.execute(f"DELETE FROM asset_extractions WHERE asset_id IN ({assets})", (svid,))
+        operation_ids = {operation["id"] for operation in operations}
+        for oid in observations:
+            if self.conn.execute("SELECT 1 FROM asset_extractions WHERE input_observation_id = ?", (oid,)).fetchone():
+                continue
+            holders = {r[0] for r in self.conn.execute(
+                "SELECT id FROM asset_recovery_operations WHERE before_observation_id = ? OR after_observation_id = ?"
+                " OR input_observation_id = ?", (oid, oid, oid))}
+            if holders.issubset(operation_ids):
+                self.conn.execute("DELETE FROM asset_file_observations WHERE id = ?", (oid,))
+        self.conn.execute(f"DELETE FROM asset_recovery_operations WHERE asset_id IN ({assets})", (svid,))
+
     def asset_passage_count(self, asset_id: str) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM passages WHERE asset_id = ?", (asset_id,)).fetchone()[0]
 
     def add_asset_with_pages(self, svid: str, sha256: str, size: int, storage_path: str, origin: str,
                              retrieved_from: str | None, filename: str | None, extraction: Any,
-                             extraction_version: str, chunker: Any) -> str:
+                             extraction_version: str, chunker: Any, *, input_observation_id: str | None = None) -> str:
         aid = new_id("ast")
         with transaction(self.conn):
             try:
@@ -1495,11 +1547,14 @@ class Store:
                 if self.has_asset(svid):
                     raise PdfInUse(svid) from exc
                 raise
-            self._write_extraction(svid, aid, extraction, extraction_version, chunker, "current")
+            self._write_extraction(svid, aid, extraction, extraction_version, chunker, "current",
+                                   input_observation_id=input_observation_id)
         return aid
 
     def _write_extraction(self, svid: str, aid: str, extraction: Any, extraction_version: str, chunker: Any,
-                          outcome: str, rejection_reason: str | None = None) -> None:
+                          outcome: str, rejection_reason: str | None = None, *, baseline_extraction_id: str | None = None,
+                          input_observation_id: str | None = None, recovery_operation_id: str | None = None,
+                          diagnostic_only: bool = False, decision_code: str | None = None) -> str:
         passage_ids = []
         for page in extraction.pages:
             # A chunk holding a display equation placed from the arXiv source is labelled per chunk (D104): the rest of
@@ -1511,76 +1566,91 @@ class Store:
                     svid, aid, "pdf_page", page.physical_page, page.printed_label, None, f"chars:{start}-{end}", extraction_version, text,
                     label)))
         math, ocr = getattr(extraction, "math", None), getattr(extraction, "ocr", None)
-        self.conn.execute(
+        extraction_id = new_id("ext")
+        statement = (
             "INSERT INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages, passage_count,"
-            " outcome, rejection_reason, created_at, math_json, ocr_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (new_id("ext"), aid, extraction_version, extraction.status, extraction.error, extraction.page_count,
+            " outcome, rejection_reason, created_at, math_json, ocr_json, extractor_profile, baseline_extraction_id,"
+            " input_observation_id, recovery_operation_id, diagnostic_only, decision_code)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        values = (extraction_id, aid, extraction_version, extraction.status, extraction.error, extraction.page_count,
              len({page for page, _ in passage_ids}), len(set(pid for _, pid in passage_ids)), outcome, rejection_reason, now(),
-             dumps(math) if math is not None else None, dumps(ocr) if ocr is not None else None),
-        )
+             dumps(math) if math is not None else None, dumps(ocr) if ocr is not None else None,
+             recovery.profile_of(extraction_version), baseline_extraction_id, input_observation_id,
+             recovery_operation_id, int(diagnostic_only), decision_code)
+        if not self._extraction_has_recovery_metadata:
+            # Historical migration fixtures still exercise initial attachment at
+            # schema 0053. Recovery metadata cannot be silently lost there.
+            if baseline_extraction_id or input_observation_id or recovery_operation_id or diagnostic_only or decision_code:
+                raise ValueError("Recovery metadata requires migration 0066")
+            statement = statement.replace(
+                ", extractor_profile, baseline_extraction_id, input_observation_id, recovery_operation_id, diagnostic_only, decision_code", "")
+            statement = statement.replace(
+                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?", "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?")
+            values = values[:13]
+        self.conn.execute(statement, values)
+        return extraction_id
 
     def reextract_asset(self, asset_id: str, extraction: Any, extraction_version: str, chunker: Any,
                         dry_run: bool = False, allow_run_id: str | None = None, guard: Any = None) -> dict[str, Any]:
-        """Write a new text extraction of a PDF in use; it becomes current only if it loses nothing visible (D45).
+        """Append a tool occurrence under D45, retaining the baseline's text pages.
 
-        Current: its status is not worse, its page count is equal and it has text on no fewer pages. Otherwise it is
-        recorded as rejected and the old text stays in use. Old passages are shadowed, never deleted. An OCR reading (D51)
-        that found text on no page is rejected too, and is reported as `asset_ocr_read` with its page counts.
-
-        `guard(conn)` (the arXiv source route's last-write check, D104) runs inside this write's own `BEGIN IMMEDIATE`
-        transaction before its first write; a reason it returns refuses the write: no passage is written and the current
-        extraction stays (whatever the guard itself wrote in the transaction is kept).
+        All decision inputs are read under the write lock. A dry run evaluates
+        without writing. The optional source-route guard precedes those reads.
         """
-        asset = self.asset(asset_id)
-        if asset["removed_at"] is not None:
-            raise NotFound(asset_id)
-        if self.conn.execute("SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?",
-                             (asset_id, extraction_version)).fetchone():
-            return {"asset_id": asset_id, "outcome": "unchanged"}
-        old = self.conn.execute(
-            "SELECT status, page_count, text_pages, passage_count FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'",
-            (asset_id,)).fetchone()
-        rank = {"succeeded": 3, "partial": 2, "no_text": 1, "failed": 0}
-        text_pages = len({page.physical_page for page in extraction.pages if chunker(page.text)})
-        reason = None
-        if old is not None:
-            if rank.get(extraction.status, 0) < rank.get(old["status"], 0):
-                reason = f"status {extraction.status} is worse than {old['status']}"
-            elif extraction.page_count != old["page_count"]:
-                reason = f"page count {extraction.page_count} differs from {old['page_count']}"
-            elif text_pages < old["text_pages"]:
-                reason = f"text on {text_pages} pages, fewer than {old['text_pages']}"
-        # A Marker reading keeps OCR pages it was built on (D52) but is not itself an OCR reading.
+        manifest = recovery.coverage_manifest(extraction, chunker)
+        text_pages = len(recovery.pages(manifest))
         ocr = getattr(extraction, "ocr", None) if getattr(extraction, "math", None) is None else None
-        if ocr is not None and not reason and not ocr["pages_with_text"]:
-            reason = "OCR found no text"
-        report = {"asset_id": asset_id, "source_version_id": asset["source_version_id"], "outcome": "rejected" if reason else "current",
-                  "rejection_reason": reason, "old_version": asset["extraction_version"], "text_pages": text_pages,
-                  "old_text_pages": old["text_pages"] if old else None}
+
+        def evaluate() -> tuple[dict[str, Any], dict[str, Any] | None, list[str]]:
+            asset = self.asset(asset_id)
+            if asset["removed_at"] is not None:
+                raise NotFound(asset_id)
+            if self.conn.execute("SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?",
+                                 (asset_id, extraction_version)).fetchone():
+                return {"asset_id": asset_id, "outcome": "unchanged"}, None, []
+            old = row_dict(self.conn.execute(
+                "SELECT * FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'", (asset_id,)).fetchone())
+            reason, code = None, "upgraded"
+            if old is not None:
+                if recovery.STATUS_RANK.get(extraction.status, 0) < recovery.STATUS_RANK.get(old["status"], 0):
+                    reason, code = f"status {extraction.status} is worse than {old['status']}", "status_worse"
+                elif extraction.page_count != old["page_count"]:
+                    reason, code = f"page count {extraction.page_count} differs from {old['page_count']}", "page_count_changed"
+                elif text_pages < old["text_pages"]:
+                    reason, code = f"text on {text_pages} pages, fewer than {old['text_pages']}", "fewer_text_pages"
+                elif not recovery.pages(recovery.stored_manifest(self.conn, asset_id, old["extraction_version"])).issubset(
+                        recovery.pages(manifest)):
+                    reason, code = "an earlier text page is missing", "text_page_lost"
+            if ocr is not None and not reason and not ocr["pages_with_text"]:
+                reason, code = "OCR found no text", "ocr_found_no_text"
+            researches = self._asset_researches(asset["source_version_id"])
+            return {"asset_id": asset_id, "source_version_id": asset["source_version_id"],
+                    "outcome": "rejected" if reason else "current", "rejection_reason": reason,
+                    "decision_code": code, "old_version": asset["extraction_version"], "text_pages": text_pages,
+                    "old_text_pages": old["text_pages"] if old else None}, old, researches
+
         if dry_run:
-            return report
-        researches = [r[0] for r in self.conn.execute(
-            "SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (asset["source_version_id"],))]
+            return evaluate()[0]
         with transaction(self.conn):
             if guard is not None and (refusal := guard(self.conn)):
-                return {"asset_id": asset_id, "source_version_id": asset["source_version_id"], "outcome": "refused", "reason": refusal}
-            # The run that asked for this extraction (an answer waiting for its sources' equations, D52) does not block it.
-            active = self.conn.execute(
-                f"SELECT 1 FROM runs WHERE research_id IN ({', '.join('?' * len(researches))}) AND status IN"
-                f" ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) AND id IS NOT ? LIMIT 1", (*researches, *ACTIVE_RUN_STATUSES, allow_run_id)
-            ).fetchone() if researches else None
-            if active:
+                return {"asset_id": asset_id, "source_version_id": self.asset(asset_id)["source_version_id"],
+                        "outcome": "refused", "reason": refusal}
+            report, old, researches = evaluate()
+            if report["outcome"] == "unchanged":
+                return report
+            if self._asset_run_active(report["source_version_id"], allow_run_id):
                 raise RunInProgress(asset_id)
-            if not reason:
-                self.conn.execute("UPDATE asset_extractions SET outcome = 'superseded' WHERE asset_id = ? AND outcome = 'current'",
-                                  (asset_id,))
-            self._write_extraction(asset["source_version_id"], asset_id, extraction, extraction_version, chunker,
-                                   report["outcome"], reason)
-            if not reason:
+            if report["outcome"] == "current" and old:
+                self.conn.execute("UPDATE asset_extractions SET outcome = 'superseded' WHERE id = ?", (old["id"],))
+            self._write_extraction(report["source_version_id"], asset_id, extraction, extraction_version, chunker,
+                                   report["outcome"], report["rejection_reason"],
+                                   baseline_extraction_id=old["id"] if old else None, decision_code=report["decision_code"])
+            if report["outcome"] == "current":
                 self.conn.execute(
                     "UPDATE source_assets SET extraction_version = ?, extraction_status = ?, extraction_error = ?, page_count = ?"
                     " WHERE id = ?", (extraction_version, extraction.status, extraction.error, extraction.page_count, asset_id))
-            payload = {k: report[k] for k in ("asset_id", "source_version_id", "outcome", "rejection_reason")} | {"extraction_version": extraction_version}
+            payload = {k: report[k] for k in ("asset_id", "source_version_id", "outcome", "rejection_reason")} | {
+                "extraction_version": extraction_version}
             for research_id in researches:
                 if ocr is not None:
                     self._event(research_id, "asset_ocr_read", payload | {k: ocr[k] for k in (
@@ -1588,6 +1658,153 @@ class Store:
                 else:
                     self._event(research_id, "asset_reextracted", payload)
         return report
+
+    def _asset_researches(self, svid: str) -> list[str]:
+        return [r[0] for r in self.conn.execute(
+            "SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (svid,))]
+
+    def _asset_run_active(self, svid: str, allow_run_id: str | None = None) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM corpus_memberships m JOIN runs r ON r.research_id = m.research_id"
+            " WHERE m.source_version_id = ? AND r.status IN ('queued', 'running', 'pause_requested')"
+            " AND r.id IS NOT ? LIMIT 1", (svid, allow_run_id)).fetchone() is not None
+
+    def add_file_observation(self, *, kind: str, storage_path: str, expected_sha256: str, expected_byte_size: int,
+                             observed_sha256: str | None, observed_byte_size: int | None, integrity: str,
+                             operation_id: str | None = None, retained_filename: str | None = None) -> str:
+        """Record caller-observed bytes; this method neither reads nor hashes a file."""
+        oid = new_id("obs")
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO asset_file_observations (id, operation_id, kind, storage_path, expected_sha256,"
+                " expected_byte_size, observed_sha256, observed_byte_size, integrity, retained_filename, observed_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (oid, operation_id, kind, storage_path, expected_sha256, expected_byte_size, observed_sha256,
+                 observed_byte_size, integrity, retained_filename, now()))
+        return oid
+
+    def _retry_result(self, operation_id: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM asset_recovery_operations WHERE id = ?", (operation_id,)).fetchone()
+        if row is None:
+            raise NotFound(operation_id)
+        extraction = self.conn.execute(
+            "SELECT id FROM asset_extractions WHERE recovery_operation_id = ?", (operation_id,)).fetchone()
+        return dict(row) | {"extraction_id": extraction[0] if extraction else None}
+
+    def _retry_baseline(self, asset_id: str) -> dict[str, Any] | None:
+        row = row_dict(self.conn.execute(
+            "SELECT e.*, o.integrity AS input_integrity FROM asset_extractions e"
+            " LEFT JOIN asset_file_observations o ON o.id = e.input_observation_id"
+            " WHERE e.asset_id = ? AND e.outcome = 'current'", (asset_id,)).fetchone())
+        if row is not None:
+            row["manifest"] = recovery.stored_manifest(self.conn, asset_id, row["extraction_version"])
+        return row
+
+    def reserve_text_retry(self, asset_id: str, *, expected_extraction_id: str, idempotency_key: str,
+                           request_fingerprint: str, research_id: str | None = None) -> dict[str, Any]:
+        with transaction(self.conn):
+            prior = self.conn.execute(
+                "SELECT * FROM asset_recovery_operations WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
+            if prior:
+                if prior["request_fingerprint"] != request_fingerprint:
+                    raise RequestConflict(idempotency_key)
+                return self._retry_result(prior["id"])
+            asset = self.asset(asset_id)
+            if asset["removed_at"] is not None:
+                raise NotFound(asset_id)
+            baseline = self._retry_baseline(asset_id)
+            if baseline is None or baseline["id"] != expected_extraction_id:
+                raise RecoveryConflict("baseline_changed")
+            if baseline["status"] in ("succeeded", "pending"):
+                raise NotRetryable("already_current" if baseline["status"] == "succeeded" else "pending")
+            if self._asset_run_active(asset["source_version_id"]):
+                raise RunInProgress(asset_id)
+            if self.conn.execute(
+                    "SELECT 1 FROM asset_recovery_operations WHERE asset_id = ? AND kind = 'text_retry'"
+                    " AND lifecycle = 'running'", (asset_id,)).fetchone():
+                raise RecoveryConflict("operation_running")
+            operation_id = new_id("rop")
+            self.conn.execute(
+                "INSERT INTO asset_recovery_operations (id, kind, asset_id, research_id, expected_sha256, expected_byte_size,"
+                " baseline_extraction_id, baseline_profile, mode, idempotency_key, request_fingerprint, lifecycle,"
+                " old_coverage_json, created_at)"
+                " VALUES (?, 'text_retry', ?, ?, ?, ?, ?, ?, 'retry_failed_or_partial', ?, ?, 'running', ?, ?)",
+                (operation_id, asset_id, research_id, asset["sha256"], asset["byte_size"], baseline["id"],
+                 baseline["extractor_profile"], idempotency_key, request_fingerprint,
+                 dumps({"manifest": baseline["manifest"], "missing_pages": []}), now()))
+            return self._retry_result(operation_id)
+
+    def complete_text_retry(self, operation_id: str, extraction: Any, chunker: Any, *,
+                            input_observation_id: str | None) -> dict[str, Any]:
+        """Publish one already parsed candidate atomically; a completed operation is replayed."""
+        with transaction(self.conn):
+            operation = self._retry_result(operation_id)
+            if operation["lifecycle"] == "completed":
+                return operation
+            if operation["kind"] != "text_retry" or operation["lifecycle"] != "running":
+                raise RecoveryConflict("operation_not_running")
+            if (getattr(extraction, "ocr", None) is not None or getattr(extraction, "math", None) is not None
+                    or recovery.profile_of(extraction.extraction_version) != extraction.extraction_version
+                    or any(getattr(page, "text_source", "text_layer") != "text_layer"
+                           or getattr(page, "latex_blocks", None) for page in extraction.pages)):
+                raise ValueError("Text retry requires a plain text-layer extraction")
+            asset = row_dict(self.conn.execute("SELECT * FROM source_assets WHERE id = ?", (operation["asset_id"],)).fetchone())
+            baseline = self._retry_baseline(operation["asset_id"])
+            observation = row_dict(self.conn.execute("SELECT * FROM asset_file_observations WHERE id = ?",
+                                                    (input_observation_id,)).fetchone())
+            reason = None
+            if asset is None or asset["removed_at"] is not None:
+                reason = "asset_removed"
+            elif not self._asset_researches(asset["source_version_id"]):
+                reason = "no_holding_research"
+            elif asset["sha256"] != operation["expected_sha256"] or asset["byte_size"] != operation["expected_byte_size"]:
+                reason = "asset_replaced"
+            elif baseline is None or baseline["id"] != operation["baseline_extraction_id"]:
+                reason = "baseline_changed"
+            elif self._asset_run_active(asset["source_version_id"]):
+                reason = "run_active"
+            elif (observation is None or observation["kind"] != "extraction_input" or observation["integrity"] != "verified"
+                  or observation["expected_sha256"] != operation["expected_sha256"]
+                  or observation["expected_byte_size"] != operation["expected_byte_size"]):
+                reason = "input_not_verified"
+            version, decision = None, None
+            if reason:
+                outcome = "refused"
+                code = "input_not_verified" if reason == "input_not_verified" else None
+                self.conn.execute(
+                    "UPDATE asset_recovery_operations SET lifecycle = 'completed', outcome = ?, reason = ?,"
+                    " decision_code = ?, finished_at = ? WHERE id = ?", (outcome, reason, code, now(), operation_id))
+            else:
+                manifest = recovery.coverage_manifest(extraction, chunker)
+                decision = recovery.decide(baseline, {"status": extraction.status, "error": extraction.error,
+                    "page_count": extraction.page_count, "extractor_profile": extraction.extraction_version, "manifest": manifest})
+                version = recovery.occurrence(extraction.extraction_version, operation_id)
+                code = decision.decision_code
+                outcome = ("diagnosis_updated" if decision.diagnostic_only else "promoted") if decision.promote else (
+                    "no_change" if code == "no_change" else "rejected")
+                if decision.promote:
+                    self.conn.execute("UPDATE asset_extractions SET outcome = 'superseded' WHERE id = ?", (baseline["id"],))
+                self._write_extraction(asset["source_version_id"], asset["id"], extraction, version, chunker,
+                    "current" if decision.promote else "rejected", None if decision.promote else f"Text retry rejected: {code}.",
+                    baseline_extraction_id=baseline["id"], input_observation_id=input_observation_id,
+                    recovery_operation_id=operation_id, diagnostic_only=decision.diagnostic_only, decision_code=code)
+                if decision.promote:
+                    self.conn.execute(
+                        "UPDATE source_assets SET extraction_version = ?, extraction_status = ?, extraction_error = ?, page_count = ?"
+                        " WHERE id = ?", (version, extraction.status, extraction.error, extraction.page_count, asset["id"]))
+                self.conn.execute(
+                    "UPDATE asset_recovery_operations SET lifecycle = 'completed', outcome = ?, decision_code = ?,"
+                    " input_observation_id = ?, old_coverage_json = ?, new_coverage_json = ?, finished_at = ? WHERE id = ?",
+                    (outcome, code, input_observation_id,
+                     dumps({"manifest": decision.old_coverage, "missing_pages": decision.missing_pages}),
+                     dumps({"manifest": decision.new_coverage, "missing_pages": decision.missing_pages}), now(), operation_id))
+            if asset:
+                for research_id in self._asset_researches(asset["source_version_id"]):
+                    self._event(research_id, "asset_text_retried", {
+                        "asset_id": asset["id"], "source_version_id": asset["source_version_id"], "operation_id": operation_id,
+                        "outcome": outcome, "decision_code": code, "extraction_version": version,
+                        "baseline_extraction_id": operation["baseline_extraction_id"]})
+            return self._retry_result(operation_id)
 
     def replace_asset(self, asset_id: str, sha256: str, size: int, storage_path: str, origin: str, retrieved_from: str | None,
                       filename: str | None, extraction: Any, extraction_version: str, chunker: Any) -> str:
@@ -2446,7 +2663,7 @@ class Store:
                 self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (svid,))
                 self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (svid,))
                 self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (svid,))
-                self.conn.execute("DELETE FROM asset_extractions WHERE asset_id IN (SELECT id FROM source_assets WHERE source_version_id = ?)", (svid,))
+                self._purge_asset_extractions(svid)
                 self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (svid,))
                 self.conn.execute("DELETE FROM source_versions WHERE id = ?", (svid,))
                 self.conn.execute("DELETE FROM works WHERE id = ? AND NOT EXISTS (SELECT 1 FROM source_versions WHERE work_id = ?)",

@@ -557,8 +557,7 @@ def test_current_equation_origin_warning_is_preserved_on_edited_math(report_with
     lib = report_with_sections
     conn = lib["store"].conn
     passage = lib["store"]._insert_passage(lib["source_id"], None, "section", None, None, None,
-                                           None, None, "SYNTHETIC math evidence. $$x$$")
-    conn.execute("UPDATE passages SET text_source = ? WHERE id = ?", (text_source, passage))
+                                           None, None, "SYNTHETIC math evidence. $$x$$", text_source=text_source)
     payload = lib["store"].step_input_payload(lib["report_input_id"])
     payload["passages"].append({"passage_id": passage})
     payload["step_input_id"] = new_id("sti")

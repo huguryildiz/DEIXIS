@@ -334,8 +334,8 @@ def test_a_failed_re_extraction_is_its_own_reason_and_is_tried_again_like_a_fail
     target = pdf.EXTRACTION_VERSION + "+arxiv-latex-v1"
 
     def age():  # the failed row is older than RETRY_AFTER
-        store.conn.execute("UPDATE asset_extractions SET created_at = '2000-01-01T00:00:00.000+00:00' WHERE asset_id = ?"
-                           " AND extraction_version = ?", (aid, target))
+        # Move the retry window around the immutable synthetic failure record.
+        monkeypatch.setattr(equations, "RETRY_AFTER", equations.timedelta(seconds=-1))
     state = read(svc, aid)
     assert (state["state"], state["reason"], state["attempts"]) == ("failed", "extraction_failed", 1)
     row = store.conn.execute("SELECT outcome, passage_count, math_json FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?",

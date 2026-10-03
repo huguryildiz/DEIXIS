@@ -30,6 +30,7 @@ from typing import Any
 
 from deixis.documents import arxiv_source, math_reader, pdf
 from deixis.storage.db import new_id, now, transaction
+from deixis.workflow import recovery
 from deixis.workflow.store import NotFound, RunInProgress, Store
 
 log = logging.getLogger(__name__)
@@ -51,14 +52,14 @@ reading: dict[str, Any] | None = None
 
 def target_version(current: str | None = None) -> str:
     """The version an equation reading of a PDF gets: the current text layer version, its OCR reading if any, then Marker."""
-    ocr = OCR_SUFFIX.search(current or "")
-    return math_reader.target_version(pdf.EXTRACTION_VERSION + (ocr.group(0) if ocr else ""))
+    ocr = OCR_SUFFIX.search(recovery.profile_of(current or ""))
+    return math_reader.target_version(recovery.text_base(current) + (ocr.group(0) if ocr else ""))
 
 
 def source_target_version(current: str | None) -> str:
     """The version a source reading of a PDF gets: its text layer, its OCR reading if any, then the arXiv source."""
-    ocr = OCR_SUFFIX.search(current or "")
-    return pdf.EXTRACTION_VERSION + (ocr.group(0) if ocr else "") + SOURCE_SUFFIX
+    ocr = OCR_SUFFIX.search(recovery.profile_of(current or ""))
+    return recovery.text_base(current) + (ocr.group(0) if ocr else "") + SOURCE_SUFFIX
 
 
 def source_summary(math: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -332,10 +333,14 @@ class EquationService:
         without passages; `extra` carries a failed extraction's attempt count and error."""
         with transaction(self.store.conn):
             self.store.conn.execute(
-                "INSERT OR IGNORE INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages,"
-                " passage_count, outcome, rejection_reason, created_at, math_json) VALUES (?, ?, ?, ?, NULL, ?, 0, 0, 'rejected', ?, ?, ?)",
+                "INSERT INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages,"
+                " passage_count, outcome, rejection_reason, created_at, math_json, extractor_profile, baseline_extraction_id)"
+                " SELECT ?, ?, ?, ?, NULL, ?, 0, 0, 'rejected', ?, ?, ?, ?,"
+                " (SELECT id FROM asset_extractions WHERE asset_id = ? AND outcome = 'current')"
+                " WHERE NOT EXISTS (SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?)",
                 (new_id("ext"), asset["id"], version, asset["extraction_status"], asset["page_count"], reason, now(),
-                 json.dumps({"engine": arxiv_source.ENGINE} | ({"source": source} if source else {}) | (extra or {}))),
+                 json.dumps({"engine": arxiv_source.ENGINE} | ({"source": source} if source else {}) | (extra or {})),
+                 recovery.profile_of(version), asset["id"], asset["id"], version),
             )
 
     async def _read_source(self, asset_id: str, run_id: str | None, retry: bool, state: dict[str, Any]) -> dict[str, Any]:
@@ -440,10 +445,14 @@ class EquationService:
                 conn.execute("UPDATE asset_arxiv_versions SET eligibility = ?, record_label = ?, checked_at = ? WHERE asset_id = ?",
                              (result, record["version_label"], now(), asset_id))
                 conn.execute(
-                    "INSERT OR IGNORE INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages,"
-                    " passage_count, outcome, rejection_reason, created_at, math_json) VALUES (?, ?, ?, ?, NULL, ?, 0, 0, 'rejected', ?, ?, ?)",
+                    "INSERT INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages,"
+                    " passage_count, outcome, rejection_reason, created_at, math_json, extractor_profile, baseline_extraction_id)"
+                    " SELECT ?, ?, ?, ?, NULL, ?, 0, 0, 'rejected', ?, ?, ?, ?,"
+                    " (SELECT id FROM asset_extractions WHERE asset_id = ? AND outcome = 'current')"
+                    " WHERE NOT EXISTS (SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?)",
                     (new_id("ext"), asset_id, target, asset["extraction_status"], asset["page_count"], RECORD_VERSION_CHANGED, now(),
-                     json.dumps({"engine": arxiv_source.ENGINE, "eligibility": result})))
+                     json.dumps({"engine": arxiv_source.ENGINE, "eligibility": result}), recovery.profile_of(target),
+                     asset_id, asset_id, target))
                 for research_id in [r[0] for r in conn.execute("SELECT research_id FROM corpus_memberships WHERE source_version_id = ?",
                                                                 (asset["source_version_id"],))]:
                     self.store._event(research_id, "arxiv_source_refused", {"asset_id": asset_id, "reason": RECORD_VERSION_CHANGED,
@@ -474,17 +483,21 @@ class EquationService:
         """A failed attempt has no passages; the next attempt's row takes its place and carries the attempt count."""
         with transaction(self.store.conn):
             self.store.conn.execute("DELETE FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?"
-                                    " AND outcome = 'rejected' AND passage_count = 0", (asset_id, version))
+                                    " AND outcome = 'rejected' AND passage_count = 0 AND recovery_operation_id IS NULL", (asset_id, version))
 
     def _record_without_passages(self, asset: dict[str, Any], version: str, reason: str, attempts: int) -> None:
         researches = [r[0] for r in self.store.conn.execute(
             "SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (asset["source_version_id"],))]
         with transaction(self.store.conn):
             self.store.conn.execute(
-                "INSERT OR IGNORE INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages,"
-                " passage_count, outcome, rejection_reason, created_at, math_json) VALUES (?, ?, ?, ?, NULL, ?, 0, 0, 'rejected', ?, ?, ?)",
+                "INSERT INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages,"
+                " passage_count, outcome, rejection_reason, created_at, math_json, extractor_profile, baseline_extraction_id)"
+                " SELECT ?, ?, ?, ?, NULL, ?, 0, 0, 'rejected', ?, ?, ?, ?,"
+                " (SELECT id FROM asset_extractions WHERE asset_id = ? AND outcome = 'current')"
+                " WHERE NOT EXISTS (SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?)",
                 (new_id("ext"), asset["id"], version, asset["extraction_status"], asset["page_count"], reason, now(),
-                 json.dumps({"engine": "marker", "attempts": attempts})),
+                 json.dumps({"engine": "marker", "attempts": attempts}), recovery.profile_of(version),
+                 asset["id"], asset["id"], version),
             )
             if reason != NO_MATH:
                 for research_id in researches:

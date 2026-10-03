@@ -2533,6 +2533,9 @@ class ResearchFlow:
             return
         self.store.start_step(step["id"])
         base = await asyncio.to_thread(pdf.extract_pdf, path)
+        from deixis.workflow import recovery
+
+        base.extraction_version = recovery.text_base(self.store.asset(asset_id)["extraction_version"])
         try:
             read = ocr.merge(base, pages, langs)
         except ValueError as exc:  # the extractor changed since the pages were found

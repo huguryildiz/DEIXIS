@@ -476,6 +476,8 @@ def test_a_mention_only_change_does_not_change_stale_link_revisions(lib):
     result = model_decision(lib, inputs=inputs)
     assert mention not in {e["passage_id"] for e in lib.lineage.evidence(result["revision_id"])}
     before = stale_link_revisions(lib.store, lib.tid)
+    # Deliberate synthetic tamper after the snapshot, in this isolated test library.
+    lib.conn.execute("DROP TRIGGER passages_no_update")
     lib.conn.execute("UPDATE passages SET extraction_version = 'SYNTHETIC-old' WHERE id = ?", (mention,))
     assert stale_link_revisions(lib.store, lib.tid) == before == {}
 

@@ -1985,14 +1985,21 @@ def create_app(
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/ocr", status_code=202)
     async def read_with_ocr(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
         """Start a `pdf_ocr` run that reads the PDF's scanned pages with the local Tesseract; no file leaves the machine (D51)."""
+        from deixis.workflow import recovery
+
         store = store_of(request)
         asset = asset_in_use(store, research_id, source_version_id, asset_id)
+        current = store.conn.execute(
+            "SELECT diagnostic_only, error FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'",
+            (asset_id,)).fetchone()
+        if current and current["diagnostic_only"] and current["error"] == pdf.ERROR_PASSWORD:
+            raise HTTPException(422, "This PDF requires a password; OCR cannot read it")
         if asset["extraction_status"] == "succeeded":
             raise HTTPException(422, "Text was extracted from every page of this PDF")
         status = await asyncio.to_thread(ocr.tesseract_status)
         if not status["available"]:
             raise HTTPException(422, status["reason"])
-        version = ocr.target_version(pdf.EXTRACTION_VERSION, status["version"], status["languages"])
+        version = ocr.target_version(recovery.text_base(asset["extraction_version"]), status["version"], status["languages"])
         if store.conn.execute("SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?", (asset_id, version)).fetchone():
             raise HTTPException(409, "This PDF was already read with this OCR version and these languages")
         run = store.create_run(research_id, "pdf_ocr", {"max_model_calls": 0, "max_provider_requests": 0}, None,

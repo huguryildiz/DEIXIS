@@ -2233,8 +2233,6 @@ def create_app(
 
     def review_plan(request, research_id, body, adapter):
         _, reader, _ = review_stores(request)
-        if body.target_kind == "candidate":
-            raise ReviewRefusal(422, "candidate_review_not_built", "Candidate review is not built yet (B8).")
         try:
             content, markers = build_snapshot(reader, research_id, body.target_kind, body.target_id)
         except NotReviewable as exc:
@@ -2262,7 +2260,8 @@ def create_app(
         findings = reviews.findings(review_id)
         decisions = {f["id"]: reviews.decisions(f["id"]) for f in findings}
         content = saved["content"]
-        live = reader.report_claims(content["target_id"]) if content["target_kind"] == "report" else reader.answer_claims(content["target_id"])
+        live = (reader.report_claims(content["target_id"]) if content["target_kind"] == "report" else
+                reader.answer_claims(content["target_id"]) if content["target_kind"] == "answer" else [])
         fingerprints = {}
         if content["target_kind"] == "report":
             fingerprints = {f["finding"]["target_ref"]["ref"]: review_run.dependency_fingerprint(reader, content, f["finding"]["target_ref"]["ref"])
@@ -2316,7 +2315,8 @@ def create_app(
             deadline = (datetime.fromisoformat(db.now()) + timedelta(seconds=review_run.REVIEW_DEADLINE_SECONDS)).isoformat(timespec="milliseconds")
             run = store.create_run(research_id, "review", review_run.review_budget(len(plan["groups"])), key,
                 {"snapshot_sha256": snapshot_hash, "preview_fingerprint": fingerprint, "request_hash": digest,
-                 "plan": plan, "skill_package_hash": request.app.state.package.package_hash, "deadline_at": deadline})
+                 "plan": plan, "target_kind": body.target_kind, "target_id": body.target_id,
+                 "skill_package_hash": request.app.state.package.package_hash, "deadline_at": deadline})
             snapshot_id = reviews.add_snapshot(content, markers)
             review = reviews.create_review(research_id, snapshot_id, run["id"], focus=body.focus, owner_note=body.owner_note,
                 requested_connection=body.connection, requested_model=body.model, requested_effort=body.reasoning_effort, idempotency_key=key)
@@ -2348,7 +2348,7 @@ def create_app(
                                              body.model_dump() | {"finding_id": finding_id})
             decision = reviews.add_decision(finding_id, body.decision, body.reason,
                 idempotency_key=f"review-decision:{research_id}:{idempotency_key}", request_hash=digest, expected_ordinal=body.expected_ordinal)
-        return {"decision": decision, "no_change_made": saved["target_kind"] == "answer" and body.decision == "accepted"}
+        return {"decision": decision, "no_change_made": saved["target_kind"] in {"answer", "candidate"} and body.decision == "accepted"}
 
     @app.post(finding_path + "/apply")
     async def apply_owner_review_finding(research_id: str, review_id: str, finding_id: str,

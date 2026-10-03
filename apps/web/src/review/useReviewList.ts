@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, type ReviewCard } from '../api'
+import { api, type ReviewCard, type ReviewTargetKind } from '../api'
 
-export function useReviewList(researchId: string, kind: 'answer' | 'report', targetId: string, eventCursor: number, enabled = true) {
+export function useReviewList(researchId: string, kind: ReviewTargetKind, targetId: string, eventCursor: number, enabled = true) {
   const [reviews, setReviews] = useState<ReviewCard[]>([])
   const [error, setError] = useState('')
   const sequence = useRef(0)

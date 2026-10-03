@@ -268,9 +268,8 @@ def test_model_skill_and_provider_metadata_do_not_add_reasons(review_lib, monkey
     assert stale_reasons(lib["reader"], saved) == []
 
 
-def test_candidate_and_trashed_targets_are_explicit(review_lib):
+def test_trashed_targets_are_explicit(review_lib):
     lib = review_lib; saved = snapshot(lib)
-    with pytest.raises(NotImplementedError, match="B8"): stale_reasons(lib["reader"], saved | {"target_kind": "candidate"})
     lib["store"].trash_research(lib["rid"])
     with pytest.raises(NotFound): stale_reasons(lib["reader"], saved)
 
@@ -284,6 +283,7 @@ def test_claim_text_changed_is_effective_text_only():
 def test_every_declared_reason_has_a_named_test():
     from pathlib import Path
     text = Path(__file__).read_text()
+    text += Path(__file__).with_name("test_review_candidate_stale.py").read_text()
     assert len(REASONS) == len(set(REASONS))
     for reason in REASONS:
         assert f"def test_{reason}" in text or f'"{reason}"' in text.split('def test_each_evidence_reason')[0]

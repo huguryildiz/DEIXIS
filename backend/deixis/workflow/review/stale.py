@@ -12,7 +12,19 @@ REASONS = (
     "newer_report_version", "report_version_changed", "claim_edited", "claim_removed", "cell_changed",
     "rows_added", "rows_removed", "column_revised", "passage_changed", "asset_changed",
     "extraction_changed", "evidence_missing", "pdf_replaced", "pdf_removed", "text_superseded",
+    "newer_candidate_version", "newer_kill_search", "kill_search_changed", "owner_status_changed",
 )
+
+
+def kill_search_token(reader, search):
+    if search is None:
+        return None
+    rows = reader.kill_search_rows(search["id"])
+    # The reviewed search remains the token's subject even if a newer one exists.
+    value = {k: search[k] for k in ("outcome", "found", "kept", "rank_cut", "duplicates")}
+    value.update(rows)
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest()
 
 
 def markers_for(reader: ReviewReader, research_id, target_kind, target_id, content):
@@ -20,8 +32,15 @@ def markers_for(reader: ReviewReader, research_id, target_kind, target_id, conte
         research = reader.research(research_id)
         markers = {"scope_revision": research["current_scope_revision"]}
         if target_kind == "candidate":
-            raise NotImplementedError("B8 owns candidate review stale tokens")
-        if target_kind == "answer":
+            version = reader.candidate_version(target_id)
+            candidate = reader.candidate(version["candidate_id"])
+            latest = reader.latest_kill_search(target_id)
+            owner = reader.latest_override(target_id)
+            markers.update(candidate_current_version=candidate["current_version"],
+                latest_kill_search_id=latest["id"] if latest else None,
+                kill_search_token=kill_search_token(reader, reader.kill_search(content["kill_search"]["id"])),
+                latest_override_id=owner["id"] if owner else None)
+        elif target_kind == "answer":
             latest = reader.latest_answer(research_id)
             markers.update({"latest_answer_id": latest,
                             "latest_answer_version": reader.answer(latest)["report_version"] if latest else None,
@@ -46,6 +65,17 @@ def markers_for(reader: ReviewReader, research_id, target_kind, target_id, conte
 
 def _targets(content, passage_id):
     targets = []
+    if content["target_kind"] == "candidate":
+        for source in content["matrix"]:
+            for cell in source["cells"]:
+                if any(q["passage_id"] == passage_id for q in cell["quotes"]):
+                    target = {"kind": "candidate_element", "ref": cell["element_ref"]}
+                    if target not in targets:
+                        targets.append(target)
+        if not targets:
+            passage = next(p for p in content["passages"] if p["passage_id"] == passage_id)
+            targets.append({"kind": "candidate_source", "ref": passage["source_id"]})
+        return targets
     for claim in content["claims"]:
         if any(e["passage_id"] == passage_id for e in claim["citations"]):
             targets.append({"kind": "claim", "ref": claim["claim_ref"]})
@@ -56,8 +86,6 @@ def _targets(content, passage_id):
 
 
 def stale_reasons(reader: ReviewReader, snapshot_row) -> list[dict]:
-    if snapshot_row["target_kind"] == "candidate":
-        raise NotImplementedError("B8 owns candidate review stale reasons")
     content = snapshot_row.get("content") or json.loads(snapshot_row["content_json"])
     old = snapshot_row.get("markers") or json.loads(snapshot_row["markers_json"])
     reasons = []
@@ -79,6 +107,16 @@ def stale_reasons(reader: ReviewReader, snapshot_row) -> list[dict]:
                 add("sources_removed", source_version_ids=sorted(before - after))
             if before == after and any(old[key] != live[key] for key in ("selection_stamp", "selection_revision")):
                 add("selection_changed")
+        elif snapshot_row["target_kind"] == "candidate":
+            if live["candidate_current_version"] != old["candidate_current_version"]:
+                add("newer_candidate_version", version=live["candidate_current_version"])
+            if live["latest_kill_search_id"] != old["latest_kill_search_id"]:
+                add("newer_kill_search", kill_search_id=live["latest_kill_search_id"])
+            elif live["kill_search_token"] != old["kill_search_token"]:
+                add("kill_search_changed")
+            if live["latest_override_id"] != old["latest_override_id"]:
+                owner = reader.latest_override(snapshot_row["target_id"])
+                add("owner_status_changed", status=owner["status"] if owner else None)
         else:
             if (live["latest_report_version"] or 0) > (old["latest_report_version"] or 0):
                 add("newer_report_version", report_version=live["latest_report_version"])

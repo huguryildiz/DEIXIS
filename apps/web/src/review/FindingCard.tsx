@@ -25,7 +25,7 @@ export function FindingCard({ researchId, review, row, sourceName, open, refresh
   const { finding, current_decision: current } = row
   const command = useWriteCommand(`${researchId}:${review.id}:${row.id}:decision`, c => api.decideReview(researchId, review.id, row.id, c.body, c.key), async result => {
     setDismissing(false); setReason(''); setError('')
-    toast('success', result.no_change_made ? t('Recorded. No change was made to the answer.') : t('Recorded. No text was changed.'))
+    toast('success', result.no_change_made ? t(review.snapshot.target_kind === 'candidate' ? 'Recorded. No change was made to the candidate.' : 'Recorded. No change was made to the answer.') : t('Recorded. No text was changed.'))
     await refresh()
   }, async e => {
     dismissKey.current = crypto.randomUUID()

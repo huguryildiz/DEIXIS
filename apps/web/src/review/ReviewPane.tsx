@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { api, type ReviewDetail as Detail, type Source } from '../api'
+import { api, type ReviewDetail as Detail, type Source, type ReviewTargetKind } from '../api'
 import { ModelName } from '../ModelName'
 import { useModelText } from '../modelText'
 import { Notice } from '../Notice'
@@ -11,9 +11,9 @@ import { ReviewDetail } from './ReviewDetail'
 import { ReviewRequest } from './ReviewRequest'
 import './review.css'
 
-export function ReviewPane({ researchId, targetKind, targetId, version, eventCursor, runActive, unavailableReason = '', sources, sectionLabel, showRequest = false, open, changed, apply }: {
-  researchId: string; targetKind: 'answer' | 'report'; targetId: string; version: number; eventCursor: number; runActive: boolean
-  unavailableReason?: string; sources: Source[]; sectionLabel: (ref: string) => string; showRequest?: boolean; open: (id: string, anchor: string) => void
+export function ReviewPane({ researchId, targetKind, targetId, version, eventCursor, runActive, unavailableReason = '', sources, sectionLabel, showRequest = false, readOnly = false, sourceName, open, changed, apply }: {
+  researchId: string; targetKind: ReviewTargetKind; targetId: string; version: number; eventCursor: number; runActive: boolean
+  unavailableReason?: string; sources: Source[]; sectionLabel: (ref: string) => string; showRequest?: boolean; readOnly?: boolean; sourceName?: (id: string) => string; open: (id: string, anchor: string, review?: Detail) => void
   changed: () => void | Promise<void>; apply?: (reviewId: string, findingId: string) => Promise<void>
 }) {
   const { reviews, error: listError, refresh: refreshList } = useReviewList(researchId, targetKind, targetId, eventCursor)
@@ -37,8 +37,8 @@ export function ReviewPane({ researchId, targetKind, targetId, version, eventCur
     <header><h2 ref={heading} tabIndex={-1}>{t('Review by another model')}</h2><p className="review-muted">{t(detail?.assessment_notice ?? 'This is an assessment by a model. It is not peer review and not independent verification.')}</p></header>
     {(error || listError) && <Notice tone="error">{error || listError}</Notice>}
     {reviews.length === 0 ? <p className="review-muted">{t('No review by another model is recorded for this target.')}</p> : <div className="review-list" aria-label={t('Reviews')}>{reviews.map(review => <button type="button" className="review-list-row" key={review.id} aria-pressed={!request && selectedId === review.id} onClick={() => { setSelected(review.id); setRequest(false) }}><span>{t(review.state === 'partial' ? 'Partial' : runStatusLabels[review.state])}</span><ModelName connection={review.requested_model.connection} text={modelText(review.requested_model.model)} /><time>{new Date(review.created_at).toLocaleString(uiLocale())}</time><span>{t(review.finding_count === 1 ? '{n} finding · {m} open' : '{n} findings · {m} open', { n: review.finding_count, m: review.open_finding_count })}</span></button>)}</div>}
-    <Button type="button" variant="ghost" size="sm" disabled={Boolean(unavailableReason)} aria-describedby={unavailableReason ? `review-unavailable-${targetId}` : undefined} onClick={() => setRequest(true)}>{t('Review with another model')}</Button>
+    {!readOnly && <Button type="button" variant="ghost" size="sm" disabled={Boolean(unavailableReason)} aria-describedby={unavailableReason ? `review-unavailable-${targetId}` : undefined} onClick={() => setRequest(true)}>{t('Review with another model')}</Button>}
     {unavailableReason && <p id={`review-unavailable-${targetId}`}>{unavailableReason}</p>}
-    {request ? <ReviewRequest researchId={researchId} targetKind={targetKind} targetId={targetId} version={version} runActive={runActive} unavailableReason={unavailableReason} sectionLabel={sectionLabel} started={async id => { setSelected(id); setRequest(false); await refreshList(); await changed() }} /> : selectedId && detail?.id === selectedId ? <ReviewDetail researchId={researchId} review={detail} sources={sources} sectionLabel={sectionLabel} open={open} refresh={refresh} apply={apply} /> : selectedId ? <p role="status">{t('Loading review…')}</p> : null}
+    {request && !readOnly ? <ReviewRequest researchId={researchId} targetKind={targetKind} targetId={targetId} version={version} runActive={runActive} unavailableReason={unavailableReason} sectionLabel={sectionLabel} sourceName={sourceName} started={async id => { setSelected(id); setRequest(false); await refreshList(); await changed() }} /> : selectedId && detail?.id === selectedId ? <ReviewDetail researchId={researchId} review={detail} sources={sources} sectionLabel={sectionLabel} open={(id, anchor) => open(id, anchor, detail)} refresh={refresh} apply={apply} /> : selectedId ? <p role="status">{t('Loading review…')}</p> : null}
   </div>
 }

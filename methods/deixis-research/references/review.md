@@ -16,6 +16,13 @@ answer. When the text shown is insufficient, record a `context_limits` entry
 with its target rather than padding the response with faults. `whole` means
 only the content supplied in this call, not groups you have not seen.
 
+For a candidate, read the owner's claim, elements and conditions. The recorded
+`candidate_context.matrix` is a prior model's kill-search assessment of the
+supplied works, not a source. If a matrix cell conflicts with its quoted passage,
+target the element; if the statement conflicts with its elements or conditions,
+target `whole`. Unread or unassessed works limit context and provide no evidence
+of absence. Never call the candidate novel, open, closed or validated.
+
 Each `unsupported`, `partially_supported` or `overstated` finding must quote
 the passage on which the assessment rests. Every `supported_points` entry
 requires a located quote too. Copy an exact contiguous passage-owned span into

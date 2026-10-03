@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert } from 'lucide-react'
-import { api, type ResearchView, type Run, type Verdict, type ReviewCard } from './api'
+import { api, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
@@ -166,22 +166,34 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const [openPhases, setOpenPhases] = useState<Partial<Record<PhaseKey, boolean>>>({})
   // While the run works, the phases it has not reached collapse into one "Next:" line; the full ladder stays one click away.
   const [allSteps, setAllSteps] = useState(false)
-  const [ownerReview, setOwnerReview] = useState<{ card: ReviewCard; kind: 'answer' | 'report' } | null>(null)
+  const [ownerReview, setOwnerReview] = useState<{ card: ReviewCard; kind: ReviewTargetKind } | null>(null)
   const reviewLookup = useRef<{
     identity: string
     targets: Map<string, Promise<ReviewCard[]>>
-    found?: { card: ReviewCard; kind: 'answer' | 'report'; status: Run['status'] }
+    found?: { card: ReviewCard; kind: ReviewTargetKind; status: Run['status'] }
     refresh?: { status: Run['status']; promise: Promise<void> }
   } | null>(null)
   const reviewTargets = JSON.stringify([...view.answers.map(a => ['answer', a.id]), ...view.reportRuns.map(r => ['report', r.id])])
+  const candidateReviewPlan = Boolean(run.target?.plan?.groups.some(g => g.source_ids !== undefined))
+  const reviewTargetKind = run.target?.target_kind
+  const reviewTargetId = run.target?.target_id
   useEffect(() => {
     if (run.kind !== 'review') return
     let live = true
     const identity = `${view.research.id}:${run.id}`
     if (reviewLookup.current?.identity !== identity) reviewLookup.current = { identity, targets: new Map() }
     const lookup = reviewLookup.current
-    const targets = JSON.parse(reviewTargets) as ['answer' | 'report', string][]
+    const storedTarget = reviewTargetKind && reviewTargetId
+    const targets = storedTarget ? [[reviewTargetKind, reviewTargetId] as [ReviewTargetKind, string]] : JSON.parse(reviewTargets) as [ReviewTargetKind, string][]
     void (async () => {
+      // Source-group plans alone do not identify a target; confirm it against the exact version review list.
+      if (!storedTarget && candidateReviewPlan && !lookup.found) {
+        const candidates = await api.candidates(view.research.id)
+        for (const candidate of candidates) {
+          const card = await api.candidate(view.research.id, candidate.id)
+          targets.push(...card.versions.map(v => ['candidate', v.id] as [ReviewTargetKind, string]))
+        }
+      }
       for (const [kind, id] of targets) {
         if (lookup.found || !live) break
         const key = `${kind}:${id}`
@@ -209,7 +221,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
       if (live) setOwnerReview({ card: found.card, kind: found.kind })
     })().catch(() => { /* Keep the last recorded assessment if its status refresh fails. */ })
     return () => { live = false }
-  }, [run.id, run.kind, run.status, view.research.id, reviewTargets])
+  }, [run.id, run.kind, run.status, view.research.id, reviewTargets, candidateReviewPlan, reviewTargetKind, reviewTargetId])
   // A finished run folds away once something follows it; the latest search stays open so its queries can be read.
   const expanded = open ?? (run.status !== 'completed' || (latest && run.kind === 'discovery'))
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
@@ -562,7 +574,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
       {expanded && <>
         {(run.kind === 'review' || (latest && active && !collapsed)) && <div className="chat-run-plan" role="note">
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />
-          <div><p className="chat-run-plan-title">{run.kind === 'review' ? (ownerReview && run.target?.plan?.groups ? plural(run.target.plan.groups.length, 'A model you chose reads a stored copy of the {target} in {n} group. It changes nothing in the {target}.', 'A model you chose reads a stored copy of the {target} in {n} groups. It changes nothing in the {target}.', { target: t(ownerReview.kind === 'answer' ? 'answer' : 'report'), n: run.target.plan.groups.length }) : t('A model you chose reads a stored copy. It changes no target text.')) : run.kind === 'report' ? t('Write a sectioned report from the evidence table, one model step per section.') : run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'fulltext_fetch' ? t('Retrieve the open full text of the candidate works in rank order; nothing is included or excluded by this.') : run.kind === 'fulltext_adjudication' ? t('A model reads selected passages of each work twice; code checks every quote on the page and decides.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
+          <div><p className="chat-run-plan-title">{run.kind === 'review' ? (ownerReview && run.target?.plan?.groups ? plural(run.target.plan.groups.length, 'A model you chose reads a stored copy of the {target} in {n} group. It changes nothing in the {target}.', 'A model you chose reads a stored copy of the {target} in {n} groups. It changes nothing in the {target}.', { target: t(ownerReview.kind === 'candidate' ? 'candidate' : ownerReview.kind === 'answer' ? 'answer' : 'report'), n: run.target.plan.groups.length }) : t('A model you chose reads a stored copy. It changes no target text.')) : run.kind === 'report' ? t('Write a sectioned report from the evidence table, one model step per section.') : run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'fulltext_fetch' ? t('Retrieve the open full text of the candidate works in rank order; nothing is included or excluded by this.') : run.kind === 'fulltext_adjudication' ? t('A model reads selected passages of each work twice; code checks every quote on the page and decides.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
         </div>}
         <ol className="chat-steps">{order.map((key, i) => {
         const state = stateOf(i)

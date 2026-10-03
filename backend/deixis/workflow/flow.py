@@ -5000,6 +5000,14 @@ class ResearchFlow:
                          "request_chars": output.get("request_chars")}
                 if entry not in omitted:
                     omitted.append(entry)
+            if not group["claim_refs"]:
+                for source_id in group.get("source_ids", []) or [None]:
+                    entry = {"group_index": group["group_index"], "claim_ref": None, "section_ref": None,
+                             "source_id": source_id, "reason": reason,
+                             "step_input_id": output.get("blocked_step_input_id") or output.get("step_input_id"),
+                             "request_chars": output.get("request_chars")}
+                    if entry not in omitted:
+                        omitted.append(entry)
             rs.set_not_reviewed(review["id"], omitted)
 
         for group in run["target"]["plan"]["groups"]:

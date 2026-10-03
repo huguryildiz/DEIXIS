@@ -37,13 +37,16 @@ def envelope(saved, group, **kwargs):
 def test_review_envelope_all_fixture_targets_and_capability_copy(kind):
     fixture = si(kind)
     part = fixture["review_input"]
-    # Candidate snapshot building belongs to B8; this verifies its existing
-    # contract-shaped fixture can still receive the same frozen envelope.
     saved = {"research_id": fixture["research_id"], "target_kind": kind, "scope_revision": fixture["scope_revision"],
              "scope": {"question": fixture["question"]["text"], "language": "en", "steering": "SYNTHETIC steering"},
              "claims": copy.deepcopy(part["claims"]), "sections": copy.deepcopy(part["sections"]),
              "cells": [], "columns": part["columns"], "sources": fixture["sources"], "passages": fixture["passages"],
              "elements": part["elements"], "candidate_statement": part["candidate_statement"]}
+    if kind == "candidate":
+        from tests.review_candidate_helpers import candidate_context_fixture
+        context = candidate_context_fixture(fixture)
+        saved.update({k: context[k] for k in ("candidate_version", "conditions", "critical_assumption", "nearest_simple_explanation")})
+        saved.update(kill_search=context["kill_search"], candidate_status=context["status"], matrix=context["matrix"])
     for c in part["cells"]:
         saved["cells"].append(c | {"source_version_id": c["source_id"], "value": json.loads(c["value_text"]) if c["value_text"] else None})
     before = copy.deepcopy(CAPABILITIES)

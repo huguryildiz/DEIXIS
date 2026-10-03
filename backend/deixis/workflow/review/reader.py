@@ -156,3 +156,57 @@ class ReviewReader:
     def evidence_exists(self, asset_id, extraction_id):
         return ((asset_id is None or self._conn.execute("SELECT 1 FROM source_assets WHERE id = ?", (asset_id,)).fetchone() is not None)
                 and (extraction_id is None or self._conn.execute("SELECT 1 FROM asset_extractions WHERE id = ?", (extraction_id,)).fetchone() is not None))
+
+    def candidate_version(self, version_id):
+        row = self._conn.execute("SELECT * FROM candidate_versions WHERE id = ?", (version_id,)).fetchone()
+        if row is None:
+            raise NotFound(version_id)
+        return dict(row)
+
+    def candidate(self, candidate_id):
+        row = self._conn.execute("SELECT * FROM research_candidates WHERE id = ?", (candidate_id,)).fetchone()
+        if row is None:
+            raise NotFound(candidate_id)
+        return dict(row)
+
+    def candidate_elements(self, version_id):
+        return [dict(r) for r in self._conn.execute(
+            "SELECT * FROM claim_elements WHERE candidate_version_id = ? ORDER BY position, id", (version_id,))]
+
+    def latest_kill_search(self, version_id):
+        row = self._conn.execute("SELECT * FROM kill_searches WHERE candidate_version_id = ?"
+            " ORDER BY created_at DESC, id DESC LIMIT 1", (version_id,)).fetchone()
+        return dict(row) if row else None
+
+    def kill_search(self, search_id):
+        row = self._conn.execute("SELECT * FROM kill_searches WHERE id = ?", (search_id,)).fetchone()
+        return dict(row) if row else None
+
+    def kill_search_rows(self, search_id):
+        return {
+            "queries": [dict(r) for r in self._conn.execute(
+                "SELECT * FROM kill_search_queries WHERE kill_search_id = ? ORDER BY position", (search_id,))],
+            "hits": [dict(r) for r in self._conn.execute(
+                "SELECT * FROM kill_search_hits WHERE kill_search_id = ? ORDER BY rank_key, source_version_id", (search_id,))],
+            "cells": [dict(r) for r in self._conn.execute(
+                "SELECT * FROM claim_matrix_cells WHERE kill_search_id = ? ORDER BY source_version_id, element_id, id", (search_id,))],
+            "evidence": [dict(r) for r in self._conn.execute(
+                "SELECT * FROM claim_matrix_evidence WHERE kill_search_id = ? ORDER BY id", (search_id,))],
+            "query_record_count": self._conn.execute(
+                "SELECT COUNT(*) FROM kill_search_query_records WHERE kill_search_id = ?", (search_id,)).fetchone()[0],
+        }
+
+    def latest_override(self, version_id):
+        row = self._conn.execute("SELECT * FROM candidate_status_overrides WHERE candidate_version_id = ?"
+            " ORDER BY created_at DESC, id DESC LIMIT 1", (version_id,)).fetchone()
+        return dict(row) if row else None
+
+    def assessment_input(self, input_id):
+        row = self._conn.execute("SELECT payload_json FROM step_inputs WHERE id = ?", (input_id,)).fetchone()
+        return row[0] if row else None
+
+    def run_scope_revision(self, run_id):
+        row = self._conn.execute("SELECT scope_revision FROM runs WHERE id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise NotFound(run_id)
+        return row[0]

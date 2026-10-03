@@ -45,6 +45,7 @@
         "cells",
         "columns",
         "candidate_statement",
+        "candidate_context",
         "passage_ids"
       ],
       "properties": {
@@ -353,6 +354,361 @@
               }
             }
           }
+        },
+        "candidate_context": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "candidate_version",
+                "conditions",
+                "critical_assumption",
+                "nearest_simple_explanation",
+                "kill_search",
+                "status",
+                "matrix"
+              ],
+              "properties": {
+                "candidate_version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  "maxItems": 6
+                },
+                "critical_assumption": {
+                  "type": "string",
+                  "maxLength": 4000
+                },
+                "nearest_simple_explanation": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 4000
+                },
+                "kill_search": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "outcome",
+                    "found",
+                    "kept",
+                    "rank_cut",
+                    "duplicates",
+                    "assessed",
+                    "unread",
+                    "queries_total",
+                    "queries_succeeded",
+                    "queries_failed",
+                    "queries_unknown",
+                    "reading_depths"
+                  ],
+                  "properties": {
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "paused",
+                        "completed",
+                        "failed",
+                        "stopped"
+                      ]
+                    },
+                    "found": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "kept": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 8
+                    },
+                    "rank_cut": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "duplicates": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "assessed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unread": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queries_total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queries_succeeded": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queries_failed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queries_unknown": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "reading_depths": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "abstract",
+                        "stored_passages",
+                        "metadata_only"
+                      ],
+                      "properties": {
+                        "abstract": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "stored_passages": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "metadata_only": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                },
+                "status": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "computed",
+                    "owner"
+                  ],
+                  "properties": {
+                    "computed": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "status",
+                        "reasons"
+                      ],
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "not_run",
+                            "undecided",
+                            "narrowed",
+                            "closed",
+                            "open"
+                          ]
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          "maxItems": 48
+                        }
+                      }
+                    },
+                    "owner": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "status",
+                            "reason"
+                          ],
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "not_run",
+                                "undecided",
+                                "narrowed",
+                                "closed",
+                                "open"
+                              ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "maxLength": 2000
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "matrix": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "source_id",
+                      "reading_depth",
+                      "work_relevance",
+                      "states_whole_claim",
+                      "note",
+                      "cells",
+                      "whole_claim_quotes"
+                    ],
+                    "properties": {
+                      "source_id": {
+                        "type": "string",
+                        "pattern": "^srv_[0-9A-Za-z]{8,40}$",
+                        "maxLength": 44
+                      },
+                      "reading_depth": {
+                        "type": "string",
+                        "enum": [
+                          "abstract",
+                          "stored_passages",
+                          "metadata_only"
+                        ]
+                      },
+                      "work_relevance": {
+                        "type": "string",
+                        "enum": [
+                          "unrelated",
+                          "related",
+                          "uncertain"
+                        ]
+                      },
+                      "states_whole_claim": {
+                        "type": "boolean"
+                      },
+                      "note": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 400
+                      },
+                      "cells": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "element_ref",
+                            "relation",
+                            "condition_alignment",
+                            "note",
+                            "quotes"
+                          ],
+                          "properties": {
+                            "element_ref": {
+                              "type": "string",
+                              "maxLength": 4,
+                              "pattern": "^e[0-9]{1,3}$"
+                            },
+                            "relation": {
+                              "type": "string",
+                              "enum": [
+                                "explicit_support",
+                                "reasoned_inference",
+                                "partial_match",
+                                "no_match_in_supplied_text",
+                                "uncertain"
+                              ]
+                            },
+                            "condition_alignment": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "enum": [
+                                "aligned",
+                                "different_conditions",
+                                "unclear",
+                                null
+                              ]
+                            },
+                            "note": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 300
+                            },
+                            "quotes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "passage_id",
+                                  "quote"
+                                ],
+                                "properties": {
+                                  "passage_id": {
+                                    "type": "string",
+                                    "maxLength": 44,
+                                    "pattern": "^psg_[0-9A-Za-z]{8,40}$"
+                                  },
+                                  "quote": {
+                                    "type": "string",
+                                    "maxLength": 1000
+                                  }
+                                }
+                              },
+                              "maxItems": 3
+                            }
+                          }
+                        },
+                        "maxItems": 6
+                      },
+                      "whole_claim_quotes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "passage_id",
+                            "quote"
+                          ],
+                          "properties": {
+                            "passage_id": {
+                              "type": "string",
+                              "maxLength": 44,
+                              "pattern": "^psg_[0-9A-Za-z]{8,40}$"
+                            },
+                            "quote": {
+                              "type": "string",
+                              "maxLength": 1000
+                            }
+                          }
+                        },
+                        "maxItems": 3
+                      }
+                    }
+                  },
+                  "maxItems": 8
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "candidate_statement": {
           "type": [

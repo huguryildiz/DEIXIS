@@ -12,7 +12,7 @@ from deixis.domain.canonical import sha256_hex
 from deixis.domain.rules import MAX_RATE_LIMIT_MODEL_RETRIES, schema_repairs
 from deixis.domain.skill import RUNTIME_FILES
 from deixis.models import prompt
-from .snapshot import ReviewInputTooLarge, review_step_input_parts
+from .snapshot import ReviewInputTooLarge, review_step_input_parts, _bound_errors
 from .stale import claim_text_changed
 from .store import resolve_finding
 
@@ -44,7 +44,8 @@ def review_step_input(snapshot_id, content, review_row, group, *, run_id, step_i
     oversized = None
     try:
         parts = review_step_input_parts(snapshot_id, content, focus=review_row["focus"], owner_note=review_row["owner_note"],
-            group_index=group["group_index"], group_count=group["group_count"], claim_refs=group["claim_refs"])
+            group_index=group["group_index"], group_count=group["group_count"], claim_refs=group["claim_refs"],
+            source_ids=group.get("source_ids"))
     except ReviewInputTooLarge as exc:
         oversized, parts = exc, exc.parts
     language = content["scope"]["language"]
@@ -83,6 +84,8 @@ def first_request(payload, package, enforces_schema):
 def _bound_reason(error):
     path = list(error.absolute_path)
     field = str(path[-1]) if path else "input"
+    if path and isinstance(path[-1], int) and ("candidate_context" in path or "elements" in path):
+        field = str(path[-2])
     if error.validator == "maxItems":
         return "too_many_" + field
     if error.validator == "maxLength":
@@ -97,9 +100,12 @@ def plan_groups(snapshot_id, content, focus, owner_note, model, package, capabil
     """Pack in stored order; check the entire closed envelope without shortening evidence."""
     group_limit = min(REVIEW_GROUP_CHAR_LIMIT, max_request_chars * 4 // 5)
     row = {"focus": focus, "owner_note": owner_note, "requested_connection": model[0], "requested_model": model[1]}
+    candidate = content["target_kind"] == "candidate"
 
     def measure(refs, index, count):
         group = {"claim_refs": refs, "group_index": index, "group_count": count}
+        if candidate:
+            group.update(claim_refs=[], source_ids=refs)
         try:
             payload = review_step_input(snapshot_id, content, row, group, run_id="run_" + "0" * 20,
                 step_id="stp_" + "0" * 20, research_id=content["research_id"], package_hash=package.package_hash,
@@ -113,17 +119,20 @@ def plan_groups(snapshot_id, content, focus, owner_note, model, package, capabil
         # check_step_input includes semantic bounds as well as the schema. The
         # validator supplies precise bound names for an unrepresentable single claim.
         issues = contracts.check_step_input(payload)
-        reasons = [_bound_reason(e) for e in contracts.canonical_validator("StepInput").iter_errors(payload)]
-        if cell_too_large:
+        errors = list(contracts.canonical_validator("StepInput").iter_errors(payload))
+        reasons = [_bound_reason(e) for e in (_bound_errors(errors) if candidate else errors)]
+        if cell_too_large and not candidate:
             reasons = [r for r in reasons if r != "value_text_too_long"] + ["cell_value_too_large"]
         if len(payload["passages"]) > REVIEW_MAX_PASSAGES:
             reasons.append("too_many_passages")
         if issues and not reasons:
             reasons = [i.code for i in issues]
         if size > group_limit:
-            reasons.append("claim_too_large")
+            reasons.append("source_too_large" if candidate else "claim_too_large")
         return size, list(dict.fromkeys(reasons)), len(payload["passages"])
 
+    if candidate:
+        return _plan_candidate_groups(content, measure, group_limit, max_request_chars)
     count_hint = 1
     for _ in range(len(content["claims"]) + 2):
         refs_groups, omitted, current = [], [], []
@@ -162,6 +171,51 @@ def plan_groups(snapshot_id, content, focus, owner_note, model, package, capabil
     raise ValueError("review plan did not stabilize")
 
 
+def _plan_candidate_groups(content, measure, group_limit, max_request_chars):
+    def result(groups, omitted):
+        return {"version": PLAN_VERSION, "groups": groups, "not_reviewed": omitted,
+                "request_char_limit": max_request_chars, "group_char_limit": group_limit,
+                "max_passages": REVIEW_MAX_PASSAGES}
+
+    size, reasons, _ = measure([], 1, 1)
+    if reasons:
+        return result([], [{"claim_ref": None, "section_ref": None, "source_id": None,
+                           "reason": reason, "request_chars": size}
+                          for reason in dict.fromkeys(["candidate_too_large", *reasons])])
+    count_hint = 1
+    for _ in range(len(content["matrix"]) + 2):
+        packed, omitted, current = [], [], []
+        for source in content["matrix"]:
+            sid = source["source_id"]
+            size, reasons, _ = measure(current + [sid], len(packed) + 1, count_hint)
+            reasons = [r for r in reasons if r != "review_group_out_of_range"]
+            if current and reasons:
+                packed.append(current)
+                current = []
+                size, reasons, _ = measure([sid], len(packed) + 1, count_hint)
+                reasons = [r for r in reasons if r != "review_group_out_of_range"]
+            if reasons:
+                omitted.extend({"claim_ref": None, "section_ref": None, "source_id": sid,
+                    "reason": reason, "request_chars": size} for reason in reasons)
+            else:
+                current.append(sid)
+        if current or not content["matrix"]:
+            packed.append(current)
+        count = len(packed)
+        if count and count != count_hint:
+            count_hint = count
+            continue
+        groups = []
+        for i, ids in enumerate(packed, 1):
+            size, reasons, passages = measure(ids, i, count)
+            if reasons:
+                raise ValueError("candidate review plan did not stabilize")
+            groups.append({"group_index": i, "group_count": count, "claim_refs": [], "source_ids": ids,
+                "request_chars": size, "passage_count": passages})
+        return result(groups, omitted)
+    raise ValueError("candidate review plan did not stabilize")
+
+
 def preview_fingerprint(snapshot_sha256, model, focus, owner_note, package_hash, plan):
     return sha256_hex({"snapshot_sha256": snapshot_sha256, "connection": model[0], "model": model[1],
         "effort": model[2], "focus": focus, "owner_note": owner_note, "skill_package_hash": package_hash,
@@ -179,10 +233,12 @@ def preview_numbers(content, plan):
     pids = set()
     for g in groups:
         parts = review_step_input_parts("rvs_" + "0" * 20, content, focus="source_support", owner_note=None,
-            claim_refs=g["claim_refs"], group_index=g["group_index"], group_count=g["group_count"])
+            claim_refs=g["claim_refs"], source_ids=g.get("source_ids"), group_index=g["group_index"], group_count=g["group_count"])
         pids.update(parts["allowlist"]["passage_ids"])
     sizes = [g["request_chars"] for g in groups]
-    return {"claim_count": len(sent_refs), "passage_count": len(pids), "characters_to_be_sent": sum(sizes),
+    return {"claim_count": len(sent_refs), "element_count": len(content.get("elements", [])) if groups else 0,
+        "matrix_source_count": len({sid for g in groups for sid in g.get("source_ids", [])}),
+        "passage_count": len(pids), "characters_to_be_sent": sum(sizes),
         "logical_steps": len(groups), "steps_with_repair_bound": len(groups) * (1 + schema_repairs("owner_review")),
         "total_send_bound": review_budget(len(groups))["max_model_calls"],
         "estimated_input_tokens_per_group": [s / 4 for s in sizes], "estimated_input_tokens_total": sum(sizes) / 4,
@@ -275,7 +331,13 @@ def review_read_model(review, snapshot, run, steps, inputs, sessions, findings, 
                         for s in content["sources"]],
             "cells": [{k: c[k] for k in ("cell_id", "column_id", "column_name", "source_version_id")}
                       for c in content["cells"]],
-            "columns": [{k: c[k] for k in ("column_id", "name")} for c in content["columns"]]},
+            "columns": [{k: c[k] for k in ("column_id", "name")} for c in content["columns"]],
+            **({"elements": [{k: e[k] for k in ("element_ref", "position", "kind")} for e in content["elements"]],
+                "candidate_version": content["candidate_version"], "candidate_id": content["candidate_id"],
+                "kill_search_id": content["kill_search"]["id"],
+                "matrix_sources": [{k: m[k] for k in ("source_id", "rank_key")} for m in content["matrix"]],
+                "passages": [{k: p[k] for k in ("passage_id", "source_id", "locator", "text")} for p in content["passages"]]}
+               if content["target_kind"] == "candidate" else {})},
         "skill_package_hash": run["target"].get("skill_package_hash"),
         "groups": groups, "not_reviewed": not_reviewed, "findings": rows,
         "finding_count": len(rows), "open_finding_count": sum(r["current_decision"] is None for r in rows),

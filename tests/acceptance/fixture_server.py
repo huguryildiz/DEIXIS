@@ -493,6 +493,17 @@ class ScriptedCodex:
     def respond(self, si: dict[str, Any], question: str) -> dict[str, Any]:
         output = json.loads(valid_response(si))
         if si["task_type"] == "owner_review" and "[review-finding]" in question:
+            if si["review_input"]["target_kind"] == "candidate":
+                cell = next(c for m in si["review_input"]["candidate_context"]["matrix"] for c in m["cells"] if c["quotes"])
+                quote = cell["quotes"][0]
+                output["findings"] = [{"finding_handle": "f1", "target_ref": {"kind": "candidate_element", "ref": cell["element_ref"]},
+                    "kind": "partially_supported", "evidence": [{"passage_handle": quote["passage_id"], "anchor": quote["quote"]}],
+                    "rationale": "SYNTHETIC: this element exceeds the quoted scope.", "possible_impact": "SYNTHETIC: the scope may be unclear.",
+                    "suggested_fix": "SYNTHETIC: narrow this element.", "uncertainty": "SYNTHETIC: only supplied passages were read."},
+                    {"finding_handle": "f2", "target_ref": {"kind": "whole", "ref": None}, "kind": "assumption_unstated", "evidence": [],
+                    "rationale": "SYNTHETIC: an assumption is unstated.", "possible_impact": "SYNTHETIC: scope may be unclear.",
+                    "suggested_fix": None, "uncertainty": "SYNTHETIC reviewer inference."}]
+                return output
             passages = {p["passage_id"]: p for p in si["passages"]}
             cells = {c["cell_id"]: c for c in si["review_input"]["cells"]}
             first = None

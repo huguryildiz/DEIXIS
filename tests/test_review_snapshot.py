@@ -129,6 +129,6 @@ def test_resolved_finding_stores_source_owned_words_and_snapshot_target(review_l
     with pytest.raises(ValueError): resolve_finding(saved["content"], payload, f)
 
 
-def test_candidate_snapshot_names_b8(review_lib):
-    with pytest.raises(NotImplementedError, match="B8"):
+def test_candidate_snapshot_missing_version_is_not_found(review_lib):
+    with pytest.raises(NotFound):
         build_snapshot(review_lib["reader"], review_lib["rid"], "candidate", "candidate")

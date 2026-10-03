@@ -124,7 +124,7 @@
   {
    "deixis_file": "references/review.md",
    "derived_from": [],
-   "change": "Written for DEIXIS on 2026-10-03 (D180, D181), not upstream text. Loaded only for owner_review. Reads an immutable stored copy, permits empty findings, requires exact or normalized quotes for source support, records context limits and never applies suggested fixes. Not measured; tried against no model. B4 owns the behavior cases."
+   "change": "Written for DEIXIS on 2026-10-03 (D180, D181), not upstream text. Loaded only for owner_review. Reads an immutable stored copy, permits empty findings, requires exact or normalized quotes for source support, records context limits and never applies suggested fixes. Not measured; tried against no model. B4 owns the behavior cases. 2026-10-03 (D185): candidate_context supplies owner conditions, prior-model matrix assessments, supplied passage quotes and unread counts; element and whole targets remain separate. Candidate wording has not been read by a real model (B8b)."
   }
  ],
  "phrasebank": {

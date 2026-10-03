@@ -1148,17 +1148,35 @@
    "review_scope": [
     "IV"
    ],
-   "review_sections": [{
-    "section_id": "IV",
-    "claims": [{
-     "claim_key": "IV.1", "text": "SYNTHETIC claim about release scheduling.",
-     "support_type": "source_stated", "table_ref": null, "equation_ref": null, "count": null,
-     "citations": [{"passage_id": "psg_SYNA1pg003", "cell_id": null,
-                    "anchor_text": "The objective minimizes expected bit error probability"}]
-    }],
-    "repairs": [{"sentence_id": "IV.1#1", "before": "SYNTHETIC original claim.",
-                 "after": "SYNTHETIC claim about release scheduling."}]
-   }],
+   "review_sections": [
+    {
+     "section_id": "IV",
+     "claims": [
+      {
+       "claim_key": "IV.1",
+       "text": "SYNTHETIC claim about release scheduling.",
+       "support_type": "source_stated",
+       "table_ref": null,
+       "equation_ref": null,
+       "count": null,
+       "citations": [
+        {
+         "passage_id": "psg_SYNA1pg003",
+         "cell_id": null,
+         "anchor_text": "The objective minimizes expected bit error probability"
+        }
+       ]
+      }
+     ],
+     "repairs": [
+      {
+       "sentence_id": "IV.1#1",
+       "before": "SYNTHETIC original claim.",
+       "after": "SYNTHETIC claim about release scheduling."
+      }
+     ]
+    }
+   ],
    "limitations_core": null
   }
  },
@@ -2818,7 +2836,8 @@
    "candidate_statement": null,
    "passage_ids": [
     "psg_SYNA1abs01"
-   ]
+   ],
+   "candidate_context": null
   }
  },
  "R_owner_review_report": {
@@ -2945,7 +2964,8 @@
    "candidate_statement": null,
    "passage_ids": [
     "psg_SYNA1abs01"
-   ]
+   ],
+   "candidate_context": null
   }
  },
  "R_owner_review_candidate": {
@@ -3056,7 +3076,53 @@
    "candidate_statement": "SYNTHETIC statement.",
    "passage_ids": [
     "psg_SYNA1abs01"
-   ]
+   ],
+   "candidate_context": {
+    "candidate_version": 1,
+    "conditions": [
+     "SYNTHETIC condition"
+    ],
+    "critical_assumption": "SYNTHETIC assumption",
+    "nearest_simple_explanation": null,
+    "kill_search": {
+     "outcome": "completed",
+     "found": 1,
+     "kept": 1,
+     "rank_cut": 0,
+     "duplicates": 0,
+     "assessed": 1,
+     "unread": 0,
+     "queries_total": 1,
+     "queries_succeeded": 1,
+     "queries_failed": 0,
+     "queries_unknown": 0,
+     "reading_depths": {
+      "abstract": 1,
+      "stored_passages": 0,
+      "metadata_only": 0
+     }
+    },
+    "status": {
+     "computed": {
+      "status": "narrowed",
+      "reasons": [
+       "partial_overlap"
+      ]
+     },
+     "owner": null
+    },
+    "matrix": [
+     {
+      "source_id": "srv_SYNA1pub01",
+      "reading_depth": "abstract",
+      "work_relevance": "related",
+      "states_whole_claim": false,
+      "note": "SYNTHETIC note",
+      "cells": [],
+      "whole_claim_quotes": []
+     }
+    ]
+   }
   }
  }
 }

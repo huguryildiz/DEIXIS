@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ScanSearch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, type Connections, type ReviewFocus, type ReviewPreview, type ReviewRequest as RequestBody, type ReviewNotReviewed } from '../api'
+import { api, type Connections, type ReviewFocus, type ReviewPreview, type ReviewRequest as RequestBody, type ReviewNotReviewed, type ReviewTargetKind } from '../api'
 import { connectionModels, ModelPicker, modelKey, notReadyReasons } from '../Home'
 import { defaultEffort, listedEffort } from '../modelEffort'
 import { ConnectionIcon } from '../connectionIcons'
@@ -13,9 +13,9 @@ import { newCommand, pendingCommand, useWriteCommand } from './commands'
 import { RetryNotice } from './RetryNotice'
 import { NotReviewed } from './NotReviewed'
 
-export function ReviewRequest({ researchId, targetKind, targetId, version, runActive, unavailableReason = '', sectionLabel, started }: {
-  researchId: string; targetKind: 'answer' | 'report'; targetId: string; version: number; runActive: boolean
-  unavailableReason?: string; sectionLabel: (ref: string) => string; started: (id: string) => void | Promise<void>
+export function ReviewRequest({ researchId, targetKind, targetId, version, runActive, unavailableReason = '', sectionLabel, sourceName, started }: {
+  researchId: string; targetKind: ReviewTargetKind; targetId: string; version: number; runActive: boolean
+  unavailableReason?: string; sourceName?: (id: string) => string; sectionLabel: (ref: string) => string; started: (id: string) => void | Promise<void>
 }) {
   const identity = `${researchId}:${targetKind}:${targetId}:start`
   const [restored] = useState(() => pendingCommand(identity))
@@ -86,7 +86,7 @@ export function ReviewRequest({ researchId, targetKind, targetId, version, runAc
   const number = (n: number) => new Intl.NumberFormat(uiLocale(), { maximumFractionDigits: 0 }).format(n)
   return <form className="review-request" onSubmit={event => { event.preventDefault(); if (preview && !disabledReason) void command.send(newCommand({ ...preview.body, snapshot_sha256: preview.value.snapshot_sha256, preview_fingerprint: preview.value.preview_fingerprint }, preview.key)) }}>
     <h3>{t('Review with another model')}</h3>
-    <p>{t(targetKind === 'answer' ? 'Answer · V{n}' : 'Evidence report · V{n}', { n: version })}</p>
+    <p>{t(targetKind === 'candidate' ? 'Candidate · version {n}' : targetKind === 'answer' ? 'Answer · V{n}' : 'Evidence report · V{n}', { n: version })}</p>
     <fieldset disabled={Boolean(command.pending)} role="radiogroup" aria-label={t('Review focus')}><legend>{t('Review focus')}</legend>
       <label><input type="radio" name={radioName} checked={focus === 'source_support'} onChange={() => { change(); setFocus('source_support') }} />{t('Source support: does each claim follow from what it cites')}</label>
       <label><input type="radio" name={radioName} checked={focus === 'assumptions_and_consistency'} onChange={() => { change(); setFocus('assumptions_and_consistency') }} />{t('Assumptions and consistency: unstated assumptions, contradictions, scope wider than the evidence; findings are reviewer inference')}</label>
@@ -98,15 +98,15 @@ export function ReviewRequest({ researchId, targetKind, targetId, version, runAc
     <p id={`${noteId}-hint`}>{t('Sent to the model as your instruction.')} {t('{n} of 500 characters', { n: note.length })}</p>
     <Button type="button" variant="outline" disabled={Boolean(unavailableReason) || !chosen || previewBusy || Boolean(command.pending)} aria-describedby={unavailableReason ? reasonId : !chosen ? `${reasonId}-model` : previewBusy ? `${reasonId}-preview` : command.pending ? reasonId : undefined} onClick={() => void previewReview()}>{t('Preview')}</Button>
     {previewBusy && <p id={`${reasonId}-preview`} role="status">{t('Preparing preview…')}</p>}
-    {error && <Notice tone="error">{error}{omitted.length > 0 && <NotReviewed rows={omitted} sectionLabel={sectionLabel} />}</Notice>}
+    {error && <Notice tone="error">{error}{omitted.length > 0 && <NotReviewed rows={omitted} sourceName={sourceName} sectionLabel={sectionLabel} />}</Notice>}
     {preview && <section className="review-disclosure" aria-labelledby={`${reasonId}-disclosure`}>
       <h4 id={`${reasonId}-disclosure`} ref={heading} tabIndex={-1}>{t('What will be sent')}</h4>
-      <dl><div><dt>{t('Claims')}</dt><dd>{number(preview.value.claim_count)}</dd></div><div><dt>{t('Passages')}</dt><dd>{number(preview.value.passage_count)}</dd></div><div><dt>{t('Characters')}</dt><dd>{number(preview.value.characters_to_be_sent)}</dd></div></dl>
+      <dl>{targetKind === 'candidate' ? <><div><dt>{t('Elements')}</dt><dd>{number(preview.value.element_count)}</dd></div><div><dt>{t('Sources with matrix rows')}</dt><dd>{number(preview.value.matrix_source_count)}</dd></div></> : <div><dt>{t('Claims')}</dt><dd>{number(preview.value.claim_count)}</dd></div>}<div><dt>{t('Passages')}</dt><dd>{number(preview.value.passage_count)}</dd></div><div><dt>{t('Characters')}</dt><dd>{number(preview.value.characters_to_be_sent)}</dd></div></dl>
       <p className="review-connection"><ConnectionIcon id={preview.value.connection} />{preview.value.connection_display_name && preview.value.connection_display_name !== preview.value.connection ? preview.value.connection_display_name : connectionName(preview.value.connection)}</p>
       <p>{t(preview.value.logical_steps === 1 ? '{n} logical step' : '{n} logical steps', { n: preview.value.logical_steps })} · {t(preview.value.steps_with_repair_bound === 1 ? '{n} step with repair' : '{n} steps with repair', { n: preview.value.steps_with_repair_bound })} · {t(preview.value.total_send_bound === 1 ? 'at most {n} model call' : 'at most {n} model calls', { n: preview.value.total_send_bound })}</p>
       <p>{t('Estimated input tokens: {n}', { n: number(preview.value.estimated_input_tokens_total) })} · {t('estimated, four characters per token')}</p>
       <p>{t('Per group: {tokens}', { tokens: preview.value.estimated_input_tokens_per_group.map(number).join(', ') })}</p><p>{t('Cost is not estimated.')}</p>
-      {preview.value.not_reviewed.length > 0 && <><h4>{t('Not reviewed')}</h4><NotReviewed rows={preview.value.not_reviewed} sectionLabel={sectionLabel} /></>}
+      {preview.value.not_reviewed.length > 0 && <><h4>{t('Not reviewed')}</h4><NotReviewed rows={preview.value.not_reviewed} sourceName={sourceName} sectionLabel={sectionLabel} /></>}
     </section>}
     <div className="review-actions"><Button type="submit" disabled={Boolean(disabledReason) || command.busy} aria-describedby={disabledReason ? reasonId : undefined}>{t('Start review')}</Button></div>
     {disabledReason && <p id={reasonId}>{disabledReason}</p>}

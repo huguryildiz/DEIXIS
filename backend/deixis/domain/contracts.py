@@ -467,6 +467,35 @@ def _check_owner_review_input(si: dict[str, Any], records: dict[str, set[str]]) 
     if target["owner_note"] is not None and not target["owner_note"].strip():
         reject("review_owner_note_blank", "/review_input/owner_note", "note must not be blank")
     kind = target["target_kind"]
+    context = target["candidate_context"]
+    if (kind == "candidate") != (context is not None):
+        reject("review_target_shape_mismatch", "/review_input/candidate_context", kind)
+    if kind == "candidate" and context is not None:
+        passages = {p["passage_id"]: p for p in si["passages"]}
+        elements = set(allow.get("element_refs", []))
+        seen_sources = set()
+        for i, source in enumerate(context["matrix"]):
+            path = f"/review_input/candidate_context/matrix/{i}"
+            sid = source["source_id"]
+            if sid not in records["source_ids"] or sid not in allow["source_ids"]:
+                reject("review_matrix_source_missing", path + "/source_id", sid)
+            if sid in seen_sources:
+                reject("duplicate_review_ref", path, sid)
+            seen_sources.add(sid)
+            seen_elements = set()
+            for j, cell in enumerate(source["cells"]):
+                ref = cell["element_ref"]
+                if ref not in elements:
+                    reject("review_matrix_element_missing", path + f"/cells/{j}/element_ref", ref)
+                if ref in seen_elements:
+                    reject("duplicate_review_ref", path + f"/cells/{j}", ref)
+                seen_elements.add(ref)
+            for quote in source["whole_claim_quotes"] + [q for c in source["cells"] for q in c["quotes"]]:
+                pid = quote["passage_id"]
+                if pid not in passages or pid not in allow["passage_ids"]:
+                    reject("review_matrix_passage_missing", path, pid)
+                elif passages[pid]["source_id"] != sid:
+                    reject("review_matrix_passage_source_mismatch", path, pid)
     if (kind == "answer" and (target["sections"] or target["cells"] or target["columns"] or target["elements"]
                              or target["candidate_statement"] is not None or any(c["section_ref"] is not None for c in target["claims"]))
             or kind == "report" and (target["elements"] or target["candidate_statement"] is not None)
@@ -1821,6 +1850,9 @@ REVIEW_INPUT_ID_FIELDS = (
     ("review_input/claims/*/citations/*/cell_id", "cel_L"),
     ("review_input/cells/*/cell_id", "cel_L"), ("review_input/cells/*/source_id", "srv_S"),
     ("review_input/cells/*/evidence/*/passage_id", "psg_P"),
+    ("review_input/candidate_context/matrix/*/source_id", "srv_S"),
+    ("review_input/candidate_context/matrix/*/cells/*/quotes/*/passage_id", "psg_P"),
+    ("review_input/candidate_context/matrix/*/whole_claim_quotes/*/passage_id", "psg_P"),
 )
 REVIEW_OUTPUT_ID_FIELDS = (
     ("findings/*/evidence/*/passage_handle", "psg_P"),

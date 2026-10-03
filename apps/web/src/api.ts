@@ -163,6 +163,7 @@ export type RunKind = 'discovery' | 'answer' | 'report' | 'review' | 'pdf_collec
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
+  target_kind?: ReviewTargetKind; target_id?: string
   table_id?: string; column_id?: string; source_version_id?: string; cell_version?: number
   candidate_id?: string; candidate_version_id?: string; expected_version?: number
   model?: CandidatePlan['model']; providers?: string[]; transport?: CandidatePlan['transport']; limits?: CandidatePlan['limits']
@@ -885,25 +886,27 @@ export type CandidateEvidence = {
 export type ReportGap = { id: string; gap_id: string; kind: string; text: string }
 
 export type ReviewFocus = 'source_support' | 'assumptions_and_consistency'
+export type ReviewTargetKind = 'answer' | 'report' | 'candidate'
 export type ReviewRequest = {
-  target_kind: 'answer' | 'report'; target_id: string; focus: ReviewFocus; owner_note: string | null
+  target_kind: ReviewTargetKind; target_id: string; focus: ReviewFocus; owner_note: string | null
   connection: string; model: string; reasoning_effort: string | null
 }
-export type ReviewNotReviewed = { claim_ref: string; section_ref: string | null; reason: string; request_chars?: number | null; group_index?: number }
+export type ReviewNotReviewed = { claim_ref: string | null; section_ref: string | null; source_id?: string | null; reason: string; request_chars?: number | null; group_index?: number }
 export type ReviewPreview = {
   claim_count: number; passage_count: number; characters_to_be_sent: number; logical_steps: number
+  element_count: number; matrix_source_count: number
   steps_with_repair_bound: number; total_send_bound: number; estimated_input_tokens_per_group: number[]
   estimated_input_tokens_total: number; cost_estimated: false; not_reviewed: ReviewNotReviewed[]
   snapshot_sha256: string; preview_fingerprint: string; connection: string; connection_display_name: string
 }
-export type ReviewGroup = { group_index: number; group_count: number; claim_refs: string[]; request_chars: number; passage_count: number }
+export type ReviewGroup = { group_index: number; group_count: number; claim_refs: string[]; source_ids?: string[]; request_chars: number; passage_count: number }
 export type ReviewState = RunStatus | 'partial'
 export type ReviewCard = {
   id: string; run_id: string; state: ReviewState; pause_reason: string | null; failure_reason: string | null; outcome_unknown: boolean
   requested_model: { connection: string; model: string; reasoning_effort: string | null }
   created_at: string; finding_count: number; open_finding_count: number
 }
-export type ReviewTargetRef = { kind: 'claim' | 'section' | 'whole' | 'cell'; ref: string | null }
+export type ReviewTargetRef = { kind: 'claim' | 'section' | 'whole' | 'cell' | 'candidate_element' | 'candidate_source'; ref: string | null }
 export type ReviewEvidence = { passage_id: string; source_version_id: string; anchor_text: string; anchor_match: 'exact' | 'normalized' }
 export type ReviewResolvedTarget = {
   target_ref: ReviewTargetRef; target: { kind: string; ref: string | null; record_id: string | null; text_at_snapshot: string | null }
@@ -921,7 +924,11 @@ export type ReviewFindingRow = {
 export type ReviewDetail = ReviewCard & {
   focus: ReviewFocus; owner_note: string | null; skill_package_hash: string | null; assessment_notice: string
   snapshot: {
-    id: string; target_kind: 'answer' | 'report'; target_id: string; content_sha256: string; created_at: string; scope_revision: number
+    id: string; target_kind: ReviewTargetKind; target_id: string; content_sha256: string; created_at: string; scope_revision: number
+    elements?: { element_ref: string; position: number; kind: string }[]
+    candidate_version?: number; candidate_id?: string; kill_search_id?: string
+    matrix_sources?: { source_id: string; rank_key: number }[]
+    passages?: { passage_id: string; source_id: string; locator: { kind: string; physical_page?: number | null; printed_label?: string | null }; text: string }[]
     claims: { claim_ref: string; section_ref: string | null }[]
     sources: { source_id: string; title: string; year: number | null; version_label: string | null; reading_depth: string }[]
     cells: { cell_id: string; column_id: string; column_name: string; source_version_id: string }[]
@@ -932,7 +939,7 @@ export type ReviewDetail = ReviewCard & {
   supported_points: (ReviewResolvedTarget & { evidence: ReviewEvidence[] })[]
   context_limits: (ReviewResolvedTarget & { code: string; text: string })[]
   models_that_answered: { step_id: string; step_input_id: string; connection: string; requested_model: string; resolved_model: string | null; status: string }[]
-  stale_reasons: ({ code: string; claim_ref?: string; cell_id?: string; column_id?: string; source_version_ids?: string[]; targets?: ReviewTargetRef[]; target_ref?: ReviewTargetRef })[]
+  stale_reasons: ({ code: string; version?: number; kill_search_id?: string; status?: string; claim_ref?: string; cell_id?: string; column_id?: string; source_version_ids?: string[]; targets?: ReviewTargetRef[]; target_ref?: ReviewTargetRef })[]
 }
 export type ReviewApplyResult = { decision: ReviewDecision; revision: { id: string }; applied_matches_suggestion: boolean }
 
@@ -1016,7 +1023,7 @@ async function reportLatex(id: string, reportId: string): Promise<{ blob: Blob; 
 export const api = {
   previewReview: (id: string, body: ReviewRequest) => request<ReviewPreview>(`/api/researches/${id}/reviews/preview`, json('POST', body)),
   startReview: (id: string, body: string, key: string) => request<{ review: { id: string }; run: Run }>(`/api/researches/${id}/reviews`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
-  reviews: (id: string, kind: 'answer' | 'report', targetId: string) => request<ReviewCard[]>(`/api/researches/${id}/reviews?${new URLSearchParams({ target_kind: kind, target_id: targetId })}`),
+  reviews: (id: string, kind: ReviewTargetKind, targetId: string) => request<ReviewCard[]>(`/api/researches/${id}/reviews?${new URLSearchParams({ target_kind: kind, target_id: targetId })}`),
   review: (id: string, reviewId: string) => request<ReviewDetail>(`/api/researches/${id}/reviews/${reviewId}`),
   decideReview: (id: string, reviewId: string, findingId: string, body: string, key: string) => request<{ decision: ReviewDecision; no_change_made: boolean }>(`/api/researches/${id}/reviews/${reviewId}/findings/${findingId}/decisions`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),
   applyReview: (id: string, reviewId: string, findingId: string, body: string, key: string) => request<ReviewApplyResult>(`/api/researches/${id}/reviews/${reviewId}/findings/${findingId}/apply`, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body }),

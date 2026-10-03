@@ -154,12 +154,10 @@ def test_review_requests_reject_invalid_fields_before_writes(api, route, changes
 
 
 @pytest.mark.parametrize("route", ["preview", "start"])
-@pytest.mark.parametrize("case,code", [("candidate", "candidate_review_not_built"), ("invalid", "not_reviewable"), ("oversize", "nothing_reviewable")])
+@pytest.mark.parametrize("case,code", [("invalid", "not_reviewable"), ("oversize", "nothing_reviewable")])
 def test_nonreviewable_targets_refused(api, route, case, code):
     command = body(api, "answer")
-    if case == "candidate":
-        command |= {"target_kind": "candidate", "target_id": "candidate"}
-    elif case == "invalid":
+    if case == "invalid":
         api.conn.execute("UPDATE answers SET status = 'unverified_draft' WHERE id = ?", (api.answer_id,))
     else:
         api.conn.execute("UPDATE claims SET text = ? WHERE answer_id = ?", ("x" * 4001, api.answer_id))
@@ -167,8 +165,7 @@ def test_nonreviewable_targets_refused(api, route, case, code):
         command |= {"snapshot_sha256": "0" * 64, "preview_fingerprint": "0" * 64}
     response = api.client.post(api.url + ("/preview" if route == "preview" else ""), json=command, headers={"Idempotency-Key": "invalid"})
     assert response.status_code == 422, response.text
-    details = {"candidate": "Candidate review is not built yet (B8).",
-               "invalid": "answer: unverified_draft", "oversize": "No claim fits the review input bounds."}
+    details = {"invalid": "answer: unverified_draft", "oversize": "No claim fits the review input bounds."}
     expected = {"detail": details[case], "code": code}
     if case == "oversize":
         size = response.json()["not_reviewed"][0]["request_chars"]

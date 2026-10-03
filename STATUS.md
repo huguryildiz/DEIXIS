@@ -85,8 +85,9 @@ Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizl
 
 - ❌ Gerçek modelle hiç rapor tamamlanmadı (P16, üç deneme: D124, D126, D128)
 - ❌ Fikir zinciri gerçek korpusta ölçülmedi; keşif 99 işten 1'ini dahil etti (D141). Plan D205: huni modelsiz sayılacak, L9 yeni korpusta
+- 🟡 D141 hunisi: L9 NLP kopyasında modelsiz sayıldı (99 eser: 79 özet okundu, 1 dahil, 69 beklemede, bunların 25'i kuyrukta; `docs/product/p9-owed-measurements-results.md`); H9 Q1, H9b B ve yeni L9 korpusu bekliyor. Sol review pending (Codex kotası 10 Ekim'e kadar)
 - ❌ Özgünlük araması K6 ölçümü (D154). Plan D205: bugünkü sorgu biçimiyle, S6 sorgu tanılamasıyla
 - ❌ Dilim 4 gerçek model raporla ölçüm (D157). Plan D205: yalnız H9b rapor tamamlarsa
-- 🟡 Bölüm IV alıntı çapası: hedefli onarım var, gerçek modelde ölçülmedi (D129). Plan D205: H9b sayımları kapsıyor, ayrı koşu yok
+- ✅ Bölüm IV alıntı çapası onarımı gerçek modelde çalıştı, tek korpus/koşu sınırıyla (D129, 4 Ekim): H9b'de iki yama (A2 IV, B IV; RF2 şemasıyla API kabul etti, bölüm geçerli) ve beş tam onarım denemesi görüldü (biri iptalle kesildi, biri girdi-kimliği hatasıyla başarısız); maruz kalma etkinlik kanıtı değil, anlam desteği okunmadı, başarı oranı ölçülmedi. Sayım: `docs/product/p9-owed-measurements-results.md`
 - 🟡 Paralel yükte ara sıra düşen iki test; tek başına geçiyor
 - ❌ `TODO.md`'de slice 13 ve 31'den devreden maddeler

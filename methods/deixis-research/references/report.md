@@ -49,6 +49,11 @@ given to you as rows and cited cells, and you discuss it — you do not restate 
   the sentence honestly, keep the sentence plain and expect it to be recorded as an exception rather than
   distorting the claim. An unframed sentence means the section is not marked valid and the run stops for repair.
 
+For a cell-anchor patch, return only the requested patch: choose a numbered stored quote of that same cell
+or drop the anchor with `quote_number: null`. Rewrite a claim only as far as the chosen quotes support it.
+Remove a claim left without anchors with `removed: true`, `context` and `reason`; the application records
+the removal in `insufficient_evidence`. A located quote still does not establish support.
+
 ## Report plan (`report_plan`)
 
 Write `scope_statement` (one paragraph, in the question's language, describing what the report covers and

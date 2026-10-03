@@ -54,5 +54,5 @@ Do not list both the singular and the plural of a term; the search treats them
 as one. Each term is 1 to 4 words, with no quotation marks, parentheses or
 Boolean operators, and no term appears twice.
 
-Echo `step_input_id`, `scope_revision` and `skill_package_hash` exactly as they
-were given, and set `schema_version` to `deixis.search_query.v1`.
+Echo `step_input_id` and `scope_revision` exactly as given, following the
+envelope rule in [SKILL.md](../SKILL.md), and set `schema_version` to `deixis.search_query.v1`.

@@ -46,7 +46,8 @@ Report-section steps alone add a second SYNTHETIC claim from a filled cell's own
 the report UI acceptance case a cell citation whose later edit can be observed; other model tasks are unchanged.
 "[report-banned-word]" puts "research gap" in section IV's cell claim so assembly refuses a draft.
 "[report-empty-section]" returns section IV with no claim or insufficiency entry so the report run pauses.
-"[report-bad-anchor]" gives section IV a cell quote absent from all stored quotes, including on repair.
+"[report-bad-anchor]" gives IV an absent cell quote and an out-of-range repair choice.
+"[report-anchor-patch]" gives IV the same absent quote and chooses its first stored quote on repair.
 "[report-two-citations]" adds a same-source passage citation to each scripted cell claim.
 "[lineage]" serves six development-line works; "[lineage-reject]" adds a reverse mention and proposes it only
 in a second lineage run, after a selection change makes the target eligible again (synthetic directed-cycle refusal).
@@ -455,6 +456,14 @@ class ScriptedCodex:
         global RATE_LIMIT_MODE
         si = parse_step_input(message)
         question, task = si["question"]["text"], si["task_type"]
+        if output_schema.get("properties", {}).get("schema_version", {}).get("const") == "deixis.report_section_anchor_repair.v1":
+            pairs = json.loads(message.split("Cell anchor repair pairs:\n", 1)[1].split("\nFor each failing anchor", 1)[0])
+            patch = {"schema_version": "deixis.report_section_anchor_repair.v1",
+                     "step_input_id": si["step_input_id"], "scope_revision": si["scope_revision"],
+                     "anchors": [{"anchor_index": pair["anchor_index"],
+                                  "quote_number": len(pair["allowed_quotes"]) + 1 if "[report-bad-anchor]" in question else 1}
+                                 for pair in pairs], "claims": []}
+            return ModelStepResult("completed", raw_text=json.dumps(patch), resolved_model=requested_model)
         if task == "owner_review" and "[review-hold]" in question:
             for _ in range(600):
                 if self.data_dir is not None and (self.data_dir / "review-release").exists():
@@ -606,7 +615,7 @@ class ScriptedCodex:
                     "equation_origin": None, "gap_refs": [],
                 })
                 quote = next(e["quote"] for e in cell["evidence"] if e.get("quote"))
-                if section == "IV" and "[report-bad-anchor]" in question:
+                if section == "IV" and any(marker in question for marker in ("[report-bad-anchor]", "[report-anchor-patch]")):
                     quote = "SYNTHETIC missing anchor P19 nowhere in stored evidence."
                 output["citation_anchors"].append({"claim_key": claim_key, "passage_id": None,
                                                     "cell_id": cell["cell_id"], "quote": quote})

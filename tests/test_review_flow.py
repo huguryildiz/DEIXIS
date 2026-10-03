@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from deixis.domain import contracts
+from deixis.models import prompt
 from deixis.models.adapter import ModelStepResult
 from deixis.storage import db
 from deixis.workflow import flow as flow_module
@@ -32,14 +33,26 @@ def session_count(api, run_id):
     return api.conn.execute("SELECT COUNT(*) FROM model_sessions WHERE run_id = ?", (run_id,)).fetchone()[0]
 
 
+def transport_schema_saving(enforces_schema):
+    canonical = contracts.step_output_schema("owner_review")
+    wire = contracts.model_output_schema("owner_review")
+    if enforces_schema:
+        render = lambda schema: json.dumps(schema, separators=(",", ":"), ensure_ascii=False)
+    else:
+        render = lambda schema: prompt.schema_appendix("owner_review", schema)
+    return len(render(canonical)) - len(render(wire))
+
+
 @pytest.mark.parametrize("schema_mode", [True, False])
-def test_preview_figure_equals_first_send_full_size_in_both_modes(api, schema_mode):
+def test_preview_figure_conservatively_bounds_first_send_full_size_in_both_modes(api, schema_mode):
     api.adapter.enforces_schema = schema_mode
     opened, _, shown = start(api)
     turn(api)
     row = api.conn.execute("SELECT * FROM step_inputs WHERE run_id = ?", (opened["run"]["id"],)).fetchone()
     size = reviews.request_chars(row["base_instructions"], row["developer_instructions"], row["user_message"], json.loads(row["output_schema_json"]), schema_mode)
-    assert size == shown["characters_to_be_sent"]
+    # D198 deliberately retains the larger canonical schema for the preview estimate.
+    saving = transport_schema_saving(schema_mode)
+    assert saving > 0 and size + saving == shown["characters_to_be_sent"]
     assert json.loads(row["payload_json"])["review_input"]["owner_note"] is None
 
 
@@ -51,7 +64,7 @@ def test_full_request_and_repair_size_refused_before_session_start(api, monkeypa
     flow = api.app.state.worker.flow
     run_id = opened["run"]["id"]
     original = flow._model_step
-    limit = shown["characters_to_be_sent"] + (100 if repair else -1)
+    limit = shown["characters_to_be_sent"] - transport_schema_saving(schema_mode) + (100 if repair else -1)
     if repair:
         api.adapter.responder = lambda si: json.dumps({"notes": "x" * 30000})
 

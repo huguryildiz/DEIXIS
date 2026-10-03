@@ -5419,6 +5419,7 @@ class ResearchFlow:
 
         self.store.start_step(step["id"])
         repair_issues: list[dict[str, Any]] | None = None
+        output_text, invalid_raw, invalid_input = None, None, None
         max_repairs = schema_repairs(task_type)
         # `attempt` numbers every call this step sends; `repairs` counts only the schema repairs among them, so the
         # one resend after a turn timeout (slice 13e) takes nothing from the repairs the step is allowed.
@@ -5502,9 +5503,18 @@ class ResearchFlow:
                            "blocked_send_record": extra}} if attempt_record is not None else {}
                 self.store.finish_step(step["id"], "failed", error_code="step_input_invalid", error=[vars(i) for i in issues], **blocked)
                 halt("step_input_invalid", fail=True)
-            schema = contracts.step_output_schema(task_type)
+            anchor_context = []
+            patch_base, patch_base_input = output_text, invalid_input
+            first_anchor_issues = repair_issues
+            if repair_issues is not None and task_type == "report_section":
+                failed_input = self.store.step_input_payload(invalid_input)
+                anchor_context = contracts.report_section_anchor_repair_context(failed_input, patch_base, repair_issues)
+            anchor_patch = task_type == "report_section" and contracts.report_section_anchor_patch_eligible(
+                repair_issues or [], anchor_context)
+            schema = (contracts.report_section_anchor_patch_schema() if anchor_patch
+                      else contracts.model_output_schema(task_type))
             base = prompt.BASE_INSTRUCTIONS
-            sections = (phrasebank.REPORT_PHRASEBANK_SECTIONS[report_target["section_id"]]
+            sections = (phrasebank.REPORT_PHRASEBANK_SECTIONS[payload["report_target"]["section_id"]]
                         if task_type in ("report_section", "report_phrase_repair") else None)
             developer = prompt.developer_instructions(
                 self.deps.package, task_type, phrasebank.frames_language(payload), sections=sections,
@@ -5516,17 +5526,17 @@ class ResearchFlow:
             if repair_issues is None:
                 message = prompt.step_message(shown)
             else:  # issues name records by ID; the model knows them only by the handles it was shown
-                anchor_context = None
-                if task_type == "report_section":
-                    failed_input = self.store.step_input_payload(invalid_input)
-                    anchor_context = contracts.report_section_anchor_repair_context(failed_input, output_text, repair_issues)
+                shown_context = json.loads(json.dumps(anchor_context))
+                if shown_context:
                     handles = contracts.report_citation_handles(payload)
-                    for pair in anchor_context:
+                    for pair in shown_context:
                         pair["cell_id"] = handles[pair["cell_id"]]
-                        for quote in pair["allowed_quotes"]:
-                            quote["passage_id"] = handles[quote["passage_id"]]
-                message = prompt.repair_message(shown, contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues,
-                                                anchor_context)
+                shown_issues = contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues
+                if task_type == "report_section":
+                    message = prompt.repair_message(shown, shown_issues, shown_context,
+                                                    failed_output=invalid_raw, anchor_patch=anchor_patch)
+                else:
+                    message = prompt.repair_message(shown, shown_issues, None)
             self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema, selection_revision)
             measured_chars = None
             if max_request_chars is not None:
@@ -5591,11 +5601,25 @@ class ResearchFlow:
                                                **sent_output())
                 halt("model_mismatch", mismatch)
             output_text = result.raw_text or ""
-            if task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS:
+            patch_record = None
+            normalised_changes = []
+            if anchor_patch:
+                report = contracts.validate_report_section_anchor_patch(payload, patch_base, anchor_context, output_text)
+                if report.ok:
+                    output_text, patch_changes = contracts.apply_report_section_anchor_patch(
+                        payload, patch_base, anchor_context, report.result)
+                    patch_record = {"base_step_input_id": patch_base_input, "changes": patch_changes}
+                    report = contracts.validate_model_output(payload, output_text)
+            elif task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS:
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             # Field names from the alias table are put right before validation and the renames recorded (D86).
-            output_text, normalised_changes = contracts.normalise_output(task_type, output_text)
-            report = contracts.validate_model_output(payload, output_text)
+            if not anchor_patch:
+                output_text, normalised_changes = contracts.normalise_output(task_type, output_text)
+                output_text, stamps = contracts.stamp_package_hash(task_type, payload, output_text)
+                normalised_changes.extend(stamps)
+                report = contracts.validate_model_output(payload, output_text)
+                if task_type == "report_section" and repair_issues is not None:
+                    report.issues.extend(contracts.report_section_repair_issues(patch_base, output_text))
             salvage: list[contracts.Issue] = []
             if (not report.ok and task_type == "grounded_answer" and isinstance(output_text, dict)
                     and after_invalid_output(repairs, max_repairs) == "store_unverified_draft"):
@@ -5609,11 +5633,15 @@ class ResearchFlow:
             warnings = [vars(w) for w in salvage + report.warnings]
             recorded["validation_json"] = {"ok": report.ok, "issues": [vars(i) for i in report.issues], "warnings": warnings,
                                          "normalised": normalised_changes}
+            if patch_record is not None:
+                recorded["validation_json"]["anchor_patch"] = patch_record
             if report.ok:
                 if task_type == "grounded_answer":
                     report.result = contracts.name_sources_in_prose(payload, report.result)
                 output = {"output_type": report.output_type, "result": report.result,
                           "step_input_id": payload["step_input_id"], "resolved_model": result.resolved_model, "warnings": warnings}
+                if patch_record is not None:
+                    output["anchor_patch"] = patch_record
                 if extra:
                     output = output | extra
                 if attempt_record is not None:
@@ -5621,6 +5649,8 @@ class ResearchFlow:
                 self.store.complete_model_step(session, recorded, step["id"], "succeeded", output=output)
                 return output
             repair_issues = [vars(i) for i in report.issues]
+            if anchor_patch:
+                repair_issues = first_anchor_issues + repair_issues
             invalid_raw, invalid_input = result.raw_text, payload["step_input_id"]
             if after_invalid_output(repairs, max_repairs) == "store_unverified_draft":
                 provenance = sent_output()["output"] if attempt_record is not None else {"step_input_id": payload["step_input_id"]}

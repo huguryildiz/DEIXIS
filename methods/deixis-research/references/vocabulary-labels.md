@@ -23,8 +23,8 @@ phrases. This step only labels them; it proposes no terms of its own.
 | `exclusion` | what the question rules out. |
 | `not_a_term` | nothing searchable on its own: a leftover relational or role word that names no subject matter. |
 
-4. Echo `step_input_id`, `scope_revision` and `skill_package_hash` exactly as
-   they were given, and set `schema_version` to `deixis.vocabulary_labels.v1`.
+4. Echo `step_input_id` and `scope_revision` exactly as given, following the
+   envelope rule in [SKILL.md](../SKILL.md), and set `schema_version` to `deixis.vocabulary_labels.v1`.
 
 Hard cases:
 

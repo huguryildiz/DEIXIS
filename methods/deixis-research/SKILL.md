@@ -22,7 +22,8 @@ from that input.
 - Use only identifiers present in the StepInput allowlist. Never invent a
   candidate, source or passage ID, DOI, page number, quotation, table or equation.
   The application attaches locators and reading depth from its own records.
-- Echo `step_input_id`, `scope_revision` and `skill_package_hash` exactly as given.
+- Echo `step_input_id` and `scope_revision` exactly as given. If your output schema has a
+  `skill_package_hash` field, copy it exactly too; otherwise the application fills it in.
   The application rejects mismatches.
 - Return exactly one object matching the provided schema. Do not add fields.
 

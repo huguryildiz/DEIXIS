@@ -47,8 +47,8 @@ blocks.
    `question_elements`: its `role` (`population` or `comparator`), the
    question's own `words` that name it, copied exactly, and the `part` name.
    Give an empty list when the question names neither.
-9. Echo `step_input_id`, `scope_revision` and `skill_package_hash` exactly as
-   they were given, and set `schema_version` to
+9. Echo `step_input_id` and `scope_revision` exactly as given, following the
+   envelope rule in [SKILL.md](../SKILL.md), and set `schema_version` to
    `deixis.criterion_proposal.v2`.
 
 Hard cases:

@@ -289,5 +289,5 @@ def test_api_add_development_columns(tmp_path):
 
 
 def test_skill_package_hash_unchanged_by_l1():
-    # L1 left the package untouched at its own commit; P8 B1 adds the owner-review method.
-    assert load_skill_package().package_hash == "sha256:8353306cc05cf102609375f89e870c9c0c611d68b7ca528153f27ee612fce93c"
+    # D198 changes the envelope instructions while preserving the L1 column contract.
+    assert load_skill_package().package_hash == "sha256:1a7e67137173f49fc2acca70edc940a5f0589cf216cf20a2d8f5f606b3b93c4e"

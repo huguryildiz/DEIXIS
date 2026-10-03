@@ -83,15 +83,29 @@ If the claim is then left without support, remove it from claims only together w
 Never swap in a quote only to pass the check. Do not cite identifiers outside the allowlist."""
 
 
+REPORT_SECTION_ANCHOR_PATCH_GUIDANCE = """For each failing anchor, return only the patch matching this turn's schema.
+Pick the quote_number of a stored quote of the SAME cell that states what the claim says, or null to drop that anchor. Do not write quotes or target identifiers.
+A found quote does not prove support. Rewrite the claim with text to say no more than the chosen quotes state, or drop the anchor.
+The pairs show each claim's current anchors and which are failing. A claim left with no anchor must be removed with removed: true, text: null, and a context and reason explaining why, so its removal stays visible.
+For a kept claim use removed: false, context: null and reason: null; text: null keeps its text unchanged.
+Do not write identifiers or claims that are not asked for. Code applies your choices; it never chooses a quote or writes claim prose."""
+
+REPORT_SECTION_FULL_REPAIR_GUIDANCE = """Keep every claim's claim_key; change only what the issues require. A claim you remove must be named by its claim_key in an insufficient_evidence entry whose context starts with exactly <claim_key>: followed by a space and a non-empty explanation. Keep every insufficient_evidence entry of the failed output unchanged."""
+
+
 def repair_message(step_input: dict[str, Any], issues: list[dict[str, str]],
-                   anchor_context: list[dict[str, Any]] | None = None) -> str:
+                   anchor_context: list[dict[str, Any]] | None = None,
+                   failed_output: str | None = None, *, anchor_patch: bool = False) -> str:
     message = (
         step_message(step_input)
         + "\n\nA previous output for this StepInput failed validation with these issues. "
         "Return a corrected JSON object; do not add identifiers that are not in the allowlist.\n"
         + json.dumps(issues, ensure_ascii=False, indent=1)
     )
+    if failed_output is not None and step_input["task_type"] == "report_section" and not anchor_patch:
+        message += ("\n\nFailed output (as received):\n" + failed_output
+                    + "\n" + REPORT_SECTION_FULL_REPAIR_GUIDANCE)
     if anchor_context:
         message += ("\n\nCell anchor repair pairs:\n" + json.dumps(anchor_context, ensure_ascii=False, indent=1)
-                    + "\n" + REPORT_SECTION_ANCHOR_REPAIR_GUIDANCE)
+                    + "\n" + (REPORT_SECTION_ANCHOR_PATCH_GUIDANCE if anchor_patch else REPORT_SECTION_ANCHOR_REPAIR_GUIDANCE))
     return message

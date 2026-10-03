@@ -125,6 +125,62 @@
    "deixis_file": "references/review.md",
    "derived_from": [],
    "change": "Written for DEIXIS on 2026-10-03 (D180, D181), not upstream text. Loaded only for owner_review. Reads an immutable stored copy, permits empty findings, requires exact or normalized quotes for source support, records context limits and never applies suggested fixes. Not measured; tried against no model. B4 owns the behavior cases. 2026-10-03 (D185): candidate_context supplies owner conditions, prior-model matrix assessments, supplied passage quotes and unread counts; element and whole targets remain separate. Candidate wording has not been read by a real model (B8b)."
+  },
+  {
+   "deixis_file": "SKILL.md",
+   "derived_from": [],
+   "date": "2026-10-03",
+   "decision": "D198",
+   "change": "Echo step_input_id and scope_revision. Copy skill_package_hash only when the output schema includes it; otherwise the application stamps it. Canonical-schema behavior scripts still ask for the hash. No real-model measurement of the revised wording."
+  },
+  {
+   "deixis_file": "references/report.md",
+   "derived_from": [],
+   "date": "2026-10-03",
+   "decision": "D198",
+   "change": "Describe bounded cell-anchor patches: the model selects a numbered stored quote of the same cell or drops the anchor, may rewrite an affected claim, and must record removal of a claim left without anchors. Location does not prove support. Designed using H9 stored failures, not independently validated."
+  },
+  {
+   "deixis_file": "references/abstract-screening.md",
+   "derived_from": [],
+   "date": "2026-10-03",
+   "decision": "D198",
+   "change": "Echo the two short binding fields and refer to SKILL.md for conditional package-hash copying. No real-model measurement."
+  },
+  {
+   "deixis_file": "references/search-query.md",
+   "derived_from": [],
+   "date": "2026-10-03",
+   "decision": "D198",
+   "change": "Echo the two short binding fields and refer to SKILL.md for conditional package-hash copying. No real-model measurement."
+  },
+  {
+   "deixis_file": "references/term-suggestions.md",
+   "derived_from": [],
+   "date": "2026-10-03",
+   "decision": "D198",
+   "change": "Echo the two short binding fields and refer to SKILL.md for conditional package-hash copying. No real-model measurement."
+  },
+  {
+   "deixis_file": "references/vocabulary-labels.md",
+   "derived_from": [],
+   "date": "2026-10-03",
+   "decision": "D198",
+   "change": "Echo the two short binding fields and refer to SKILL.md for conditional package-hash copying. No real-model measurement."
+  },
+  {
+   "deixis_file": "references/criterion-proposal.md",
+   "derived_from": [],
+   "date": "2026-10-03",
+   "decision": "D198",
+   "change": "Echo the two short binding fields and refer to SKILL.md for conditional package-hash copying. No real-model measurement."
+  },
+  {
+   "deixis_file": "references/review.md",
+   "derived_from": [],
+   "date": "2026-10-03",
+   "decision": "D198",
+   "change": "Echo the two short binding fields and refer to SKILL.md for conditional package-hash copying. No real-model measurement; review remains a separate recorded assessment."
   }
  ],
  "phrasebank": {

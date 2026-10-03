@@ -49,8 +49,10 @@ def test_context_pairs_only_the_failing_anchor_with_its_own_cell_quotes_and_citi
     context = contracts.report_section_anchor_repair_context(si, draft, issues(si, draft))
     assert context == [{"anchor_index": 0, "claim_key": "IV.1",
                         "cell_id": si["report_target"]["cells"][0]["cell_id"], "quote": BAD_QUOTE,
-                        "allowed_quotes": si["report_target"]["cells"][0]["evidence"],
-                        "claims": [{"claim_key": "IV.1", "text": draft["claims"][0]["text"]}]}]
+                        "allowed_quotes": [{"quote_number": 1, "quote": CELL_QUOTE}],
+                        "claims": [{"claim_key": "IV.1", "text": draft["claims"][0]["text"],
+                                    "anchors": [{"anchor_index": 0, "target": "cell", "failing": True},
+                                                {"anchor_index": 1, "target": "cell", "failing": False}]}]}]
     assert si["report_target"]["cells"][1]["evidence"][0]["quote"] not in json.dumps(context)
     assert (si, draft) == before
     assert contracts.check_step_input(si) == []
@@ -114,7 +116,12 @@ def test_section_gets_exactly_one_targeted_repair_and_keeps_both_raw_outputs_wit
     def response(si):
         draft = json.loads(original(si))
         if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "IV":
-            draft["citation_anchors"][0]["quote"] = CELL_QUOTE if fix and raw else BAD_QUOTE
+            if raw:
+                draft = {"schema_version": "deixis.report_section_anchor_repair.v1",
+                         "step_input_id": si["step_input_id"], "scope_revision": si["scope_revision"],
+                         "anchors": [{"anchor_index": 0, "quote_number": 1 if fix else 999}], "claims": []}
+            else:
+                draft["citation_anchors"][0]["quote"] = BAD_QUOTE
             raw.append(json.dumps(draft))
             return raw[-1]
         return json.dumps(draft)
@@ -142,10 +149,10 @@ def test_section_gets_exactly_one_targeted_repair_and_keeps_both_raw_outputs_wit
     rows = list(store.conn.execute("SELECT payload_json, user_message FROM step_inputs WHERE step_id = ? ORDER BY attempt", (step["id"],)))
     assert len(rows) == 2
     payload, message = json.loads(rows[1][0]), rows[1][1]
-    assert prompt.REPORT_SECTION_ANCHOR_REPAIR_GUIDANCE in message
+    assert prompt.REPORT_SECTION_ANCHOR_PATCH_GUIDANCE in message
     pairs = json.loads(message.split("Cell anchor repair pairs:\n")[1].split("\nFor each failing anchor")[0])
     assert pairs[0]["cell_id"].startswith("cel_L")
-    assert pairs[0]["allowed_quotes"][0]["passage_id"].startswith("psg_P")
+    assert pairs[0]["allowed_quotes"][0] == {"quote_number": 1, "quote": CELL_QUOTE}
     assert pairs[0]["quote"] == BAD_QUOTE
     for identifier in contracts.report_citation_handles(payload):
         assert identifier not in message
@@ -183,20 +190,29 @@ def test_browser_fixture_bad_anchor_marker_fails_the_same_cell_check_in_both_scr
     adapter = ScriptedCodex()
     shown = contracts.with_citation_handles(si)
     message = prompt.step_message(shown)
-    for _ in range(2):
+    schema = contracts.model_output_schema("report_section")
+    first_issues = None
+    base_draft = None
+    for attempt in range(2):
         response = asyncio.run(adapter.run_step("base", "developer", message,
-                                               contracts.step_output_schema("report_section"), MODEL))
+                                               schema, MODEL))
+        if attempt:
+            patch_validation = contracts.validate_report_section_anchor_patch(si, base_draft, context, response.raw_text)
+            assert "anchor_patch_quote_number" in patch_validation.codes()
+            assert first_issues[0]["code"] == "anchor_not_in_cell_evidence"
+            break
         draft = contracts.resolve_citation_handles(si, response.raw_text)
         validation = contracts.validate_model_output(si, draft)
         assert "anchor_not_in_cell_evidence" in validation.codes()
         cell_anchor = next(a for a in draft["citation_anchors"] if a["cell_id"] is not None)
         assert cell_anchor["quote"] == BAD_QUOTE
         context = contracts.report_section_anchor_repair_context(si, draft, [vars(i) for i in validation.issues])
-        for pair in context:
+        first_issues, base_draft = [vars(i) for i in validation.issues], draft
+        shown_context = copy.deepcopy(context)
+        for pair in shown_context:
             pair["cell_id"] = contracts.report_citation_handles(si)[pair["cell_id"]]
-            for quote in pair["allowed_quotes"]:
-                quote["passage_id"] = contracts.report_citation_handles(si)[quote["passage_id"]]
-        message = prompt.repair_message(shown, contracts.issues_with_handles(si, [vars(i) for i in validation.issues]), context)
+        message = prompt.repair_message(shown, contracts.issues_with_handles(si, first_issues), shown_context, anchor_patch=True)
+        schema = contracts.report_section_anchor_patch_schema()
 
 
 @pytest.mark.parametrize("task", ["grounded_answer", "cell_extraction", "report_section"])
@@ -221,8 +237,15 @@ def test_model_step_non_anchor_repairs_keep_the_old_message_byte_for_byte(tmp_pa
     from fakes import parse_step_input
     shown = parse_step_input(rows[1][1])
     assert shown == contracts.with_citation_handles(json.loads(rows[1][0]))
-    problem = issues(first_payload, {"SYNTHETIC_invalid_shape": True})
-    assert rows[1][1] == old_repair_message(shown, contracts.issues_with_handles(first_payload, problem))
+    stamped, _ = contracts.stamp_package_hash(task, first_payload, {"SYNTHETIC_invalid_shape": True})
+    problem = issues(first_payload, stamped)
+    expected = old_repair_message(shown, contracts.issues_with_handles(first_payload, problem))
+    if task == "report_section":
+        assert rows[1][1].startswith(expected)
+        assert '{"SYNTHETIC_invalid_shape": true}' in rows[1][1]
+        assert prompt.REPORT_SECTION_FULL_REPAIR_GUIDANCE in rows[1][1]
+    else:
+        assert rows[1][1] == expected
 
 
 @pytest.mark.parametrize("kind,code", [("other_cell", "anchor_not_in_cell_evidence"),
@@ -242,6 +265,9 @@ def test_model_repair_cannot_publish_another_cells_quote_or_a_whole_passage(tmp_
             attempts += 1
             anchor = draft["citation_anchors"][0]
             anchor["quote"] = BAD_QUOTE
+            if attempts == 1:
+                # Mixed issues select a full-section repair, preserving the original rejection guard.
+                draft["section_id"] = "V"
             if attempts == 2:
                 if kind == "other_cell":
                     anchor["quote"] = "SYNTHETIC other cell result."

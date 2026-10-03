@@ -21,8 +21,8 @@ paper would write instead. You propose a term list. You never write a query.
 4. Do not propose a phrase that is already given, in `phrases` or in
    `suggestion_target.avoid`, and none that contains a phrase from `avoid`.
    The application keeps the `avoid` phrases out of its query deliberately.
-5. Echo `step_input_id`, `scope_revision` and `skill_package_hash` exactly as
-   they were given, and set `schema_version` to `deixis.term_suggestions.v1`.
+5. Echo `step_input_id` and `scope_revision` exactly as given, following the
+   envelope rule in [SKILL.md](../SKILL.md), and set `schema_version` to `deixis.term_suggestions.v1`.
 
 Hard cases:
 

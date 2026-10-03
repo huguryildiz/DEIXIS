@@ -48,6 +48,7 @@ SCHEMA_FILES = {
     "ClaimDecomposition": "claim-decomposition.schema.json",
     "KillSearchQuery": "kill-search-query.schema.json",
     "ClaimAssessment": "claim-assessment.schema.json",
+    "ReportSectionAnchorRepair": "report-section-anchor-repair.schema.json",
 }
 SCHEMA_VERSIONS = {
     "OwnerReview": "deixis.owner_review.v1",
@@ -70,6 +71,7 @@ SCHEMA_VERSIONS = {
     "ClaimDecomposition": "deixis.claim_decomposition.v1",
     "KillSearchQuery": "deixis.kill_search_query.v1",
     "ClaimAssessment": "deixis.claim_assessment.v1",
+    "ReportSectionAnchorRepair": "deixis.report_section_anchor_repair.v1",
 }
 # Model outputs each task may return. More than one output type is wrapped in an
 # object with one nullable property per type; exactly one must be non-null.
@@ -220,7 +222,10 @@ def _strip_meta(schema: dict[str, Any]) -> dict[str, Any]:
 
 def step_output_schema(task_type: str) -> dict[str, Any]:
     """Self-contained schema given to the model for one step (no external refs)."""
-    outputs = TASK_OUTPUTS[task_type]
+    return _adapter_schema(TASK_OUTPUTS[task_type])
+
+
+def _adapter_schema(outputs: tuple[str, ...]) -> dict[str, Any]:
     used: set[str] = set()
     if len(outputs) == 1:
         root = _inline_common_refs(_strip_meta(copy.deepcopy(load_schema(outputs[0]))), used)
@@ -242,6 +247,36 @@ def step_output_schema(task_type: str) -> dict[str, Any]:
     defs = _common_schema()["$defs"]
     root["$defs"] = {name: copy.deepcopy(defs[name]) for name in sorted(used)}
     return root
+
+
+def report_section_anchor_patch_schema() -> dict[str, Any]:
+    return _adapter_schema(("ReportSectionAnchorRepair",))
+
+
+def model_output_schema(task_type: str) -> dict[str, Any]:
+    """Transport omits the application-owned hash; canonical stored outputs retain it."""
+    schema = copy.deepcopy(step_output_schema(task_type))
+    objects = [schema] if len(TASK_OUTPUTS[task_type]) == 1 else [
+        option for field in schema["properties"].values() for option in field["anyOf"]
+        if option.get("type") == "object"]
+    for obj in objects:
+        obj["properties"].pop("skill_package_hash", None)
+        obj["required"] = [name for name in obj["required"] if name != "skill_package_hash"]
+    return schema
+
+
+def stamp_package_hash(task_type: str, step_input: dict[str, Any], draft: Any) -> tuple[Any, list[dict[str, Any]]]:
+    changes = []
+    if not isinstance(draft, dict):
+        return draft, changes
+    objects = [("", draft)] if len(TASK_OUTPUTS[task_type]) == 1 else [
+        (f"/{WRAPPER_KEYS[name]}", draft[WRAPPER_KEYS[name]]) for name in TASK_OUTPUTS[task_type]
+        if isinstance(draft.get(WRAPPER_KEYS[name]), dict)]
+    for path, obj in objects:
+        changes.append({"path": f"{path}/skill_package_hash", "stamped": "skill_package_hash",
+                        "model_value": obj.get("skill_package_hash")})
+        obj["skill_package_hash"] = step_input["skill_package_hash"]
+    return draft, changes
 
 
 def strict_compatibility_issues(schema: Any, path: str = "$") -> list[str]:
@@ -1617,6 +1652,10 @@ def report_section_anchor_repair_context(step_input: dict[str, Any], draft: Any,
              if cell["cell_id"] in step_input["allowlist"].get("cell_ids", [])}
     claims = draft.get("claims")
     claims = claims if isinstance(claims, list) else []
+    failing = {int(match[1]) for issue in issues
+               if issue.get("code") == "anchor_not_in_cell_evidence"
+               and isinstance(issue.get("path"), str)
+               and (match := re.fullmatch(r"/citation_anchors/(\d+)/quote", issue["path"]))}
     context = []
     for issue in issues:
         if issue.get("code") != "anchor_not_in_cell_evidence":
@@ -1635,14 +1674,166 @@ def report_section_anchor_repair_context(step_input: dict[str, Any], draft: Any,
         context.append({
             "anchor_index": index, "claim_key": anchor["claim_key"], "cell_id": cell["cell_id"],
             "quote": anchor["quote"],
-            "allowed_quotes": [{"passage_id": evidence["passage_id"], "quote": evidence["quote"]}
-                               for evidence in cell.get("evidence", []) if evidence.get("quote")],
-            "claims": [{"claim_key": claim["claim_key"], "text": claim["text"]}
+            "allowed_quotes": [{"quote_number": number, "quote": quote}
+                               for number, quote in enumerate(
+                                   [e["quote"] for e in cell.get("evidence", []) if e.get("quote")], 1)],
+            "claims": [{"claim_key": claim["claim_key"], "text": claim["text"],
+                        "anchors": [{"anchor_index": n, "target": "cell" if a.get("cell_id") is not None else "passage",
+                                     "failing": n in failing}
+                                    for n, a in enumerate(draft["citation_anchors"])
+                                    if isinstance(a, dict) and a.get("claim_key") == claim["claim_key"]]}
                        for claim in claims if isinstance(claim, dict)
                        and isinstance(claim.get("cell_ids"), list) and cell["cell_id"] in claim["cell_ids"]
                        and isinstance(claim.get("claim_key"), str) and isinstance(claim.get("text"), str)],
         })
     return context
+
+
+def report_section_anchor_patch_eligible(issues: list[dict[str, Any]], pairs: list[dict[str, Any]]) -> bool:
+    indices = []
+    for issue in issues:
+        if issue.get("code") != "anchor_not_in_cell_evidence" or not isinstance(issue.get("path"), str):
+            return False
+        match = re.fullmatch(r"/citation_anchors/(\d+)/quote", issue["path"])
+        if match is None:
+            return False
+        indices.append(int(match[1]))
+    return bool(indices) and len(set(indices)) == len(indices) == len(pairs) and (
+        sorted(indices) == sorted(pair["anchor_index"] for pair in pairs))
+
+
+def validate_report_section_anchor_patch(step_input: dict[str, Any], draft: dict[str, Any],
+                                         pairs: list[dict[str, Any]], raw: Any) -> ValidationReport:
+    """Validate model choices before constructing any merged section."""
+    report = ValidationReport()
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            report.issues.append(Issue("invalid_json", "$", str(exc)))
+            return report
+    for err in sorted(canonical_validator("ReportSectionAnchorRepair").iter_errors(raw),
+                      key=lambda e: list(map(str, e.absolute_path))):
+        path = "/" + "/".join(map(str, err.absolute_path))
+        report.issues.append(Issue("schema_invalid", path, err.message))
+        if re.fullmatch(r"/anchors/\d+/quote_number", path) and err.validator == "minimum":
+            report.issues.append(Issue("anchor_patch_quote_number", path, "quote numbers start at 1"))
+        if path == "/anchors" and err.validator == "minItems":
+            report.issues.append(Issue("anchor_patch_index", path, "must cover each failing anchor exactly once"))
+        if re.fullmatch(r"/claims/\d+/context", path) and err.validator == "maxLength":
+            report.issues.append(Issue("anchor_patch_removal", path, "context exceeds its bound"))
+    if report.issues:
+        return report
+    for name in ("step_input_id", "scope_revision"):
+        if raw[name] != step_input[name]:
+            report.issues.append(Issue("envelope_mismatch", f"/{name}", f"expected {step_input[name]!r}, got {raw[name]!r}"))
+    by_index = {pair["anchor_index"]: pair for pair in pairs}
+    indices = [item["anchor_index"] for item in raw["anchors"]]
+    if len(indices) != len(set(indices)) or set(indices) != set(by_index):
+        report.issues.append(Issue("anchor_patch_index", "/anchors", "must cover each failing anchor exactly once"))
+    for n, item in enumerate(raw["anchors"]):
+        pair = by_index.get(item["anchor_index"])
+        if item["quote_number"] is not None and (pair is None or not 1 <= item["quote_number"] <= len(pair["allowed_quotes"])):
+            report.issues.append(Issue("anchor_patch_quote_number", f"/anchors/{n}/quote_number", "quote number is outside this cell's stored quotes"))
+    affected = {draft["citation_anchors"][i]["claim_key"] for i in by_index}
+    keys = {claim["claim_key"] for claim in draft["claims"]}
+    seen = set()
+    for n, item in enumerate(raw["claims"]):
+        key = item["claim_key"]
+        if key not in affected or key not in keys or key in seen:
+            report.issues.append(Issue("anchor_patch_claim", f"/claims/{n}/claim_key", key))
+        seen.add(key)
+        if item["removed"]:
+            consistent = (item["text"] is None and item["context"] is not None and item["reason"] is not None
+                          and len(f"{key}: {item['context']}") <= 200)
+        else:
+            consistent = item["context"] is None and item["reason"] is None
+        if not consistent:
+            report.issues.append(Issue("anchor_patch_removal", f"/claims/{n}", "inconsistent removal fields or prefixed context exceeds 200 characters"))
+    dropped = {item["anchor_index"] for item in raw["anchors"] if item["quote_number"] is None}
+    removed = {item["claim_key"] for item in raw["claims"] if item["removed"]}
+    supported = {anchor["claim_key"] for i, anchor in enumerate(draft["citation_anchors"]) if i not in dropped}
+    for key in sorted(affected - supported - removed):
+        report.issues.append(Issue("anchor_patch_claim_unsupported", "/claims", key))
+    if report.ok:
+        report.result = raw
+    return report
+
+
+def apply_report_section_anchor_patch(step_input: dict[str, Any], draft: dict[str, Any],
+                                      pairs: list[dict[str, Any]], patch: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Apply a validated patch verbatim; selection and prose belong to the model."""
+    merged = copy.deepcopy(draft)
+    by_index = {pair["anchor_index"]: pair for pair in pairs}
+    changes = []
+    dropped = set()
+    dropped_cells = []
+    for item in patch["anchors"]:
+        i, number = int(item["anchor_index"]), item["quote_number"]
+        anchor = merged["citation_anchors"][i]
+        change = {"anchor_index": i, "old_quote": anchor["quote"]}
+        if number is None:
+            dropped.add(i)
+            dropped_cells.append((anchor["claim_key"], anchor["cell_id"]))
+            change["removed"] = True
+        else:
+            anchor["quote"] = by_index[i]["allowed_quotes"][int(number) - 1]["quote"]
+            change["new_quote"] = anchor["quote"]
+        changes.append(change)
+    merged["citation_anchors"] = [a for i, a in enumerate(merged["citation_anchors"]) if i not in dropped]
+    for key, cell in dropped_cells:
+        if not any(a["claim_key"] == key and a["cell_id"] == cell for a in merged["citation_anchors"]):
+            for claim in merged["claims"]:
+                if claim["claim_key"] == key:
+                    claim["cell_ids"] = [cid for cid in claim["cell_ids"] if cid != cell]
+    claims = {claim["claim_key"]: claim for claim in merged["claims"]}
+    for item in patch["claims"]:
+        key = item["claim_key"]
+        change = {"claim_key": key, "old_text": claims[key]["text"]}
+        if item["removed"]:
+            merged["claims"] = [c for c in merged["claims"] if c["claim_key"] != key]
+            merged["citation_anchors"] = [a for a in merged["citation_anchors"] if a["claim_key"] != key]
+            merged["insufficient_evidence"].append({"context": f"{key}: {item['context']}", "reason": item["reason"]})
+            change["removed"] = True
+        else:
+            if item["text"] is not None:
+                claims[key]["text"] = item["text"]
+            change["new_text"] = claims[key]["text"]
+        changes.append(change)
+    for name in ENVELOPE_FIELDS:
+        merged[name] = step_input[name]
+    return merged, changes
+
+
+def report_section_repair_issues(failed: Any, repaired: Any) -> list[Issue]:
+    """Check key coverage and kept evidence records, including readable parts of invalid drafts."""
+    def obj(value: Any) -> dict[str, Any]:
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                return {}
+        return value if isinstance(value, dict) else {}
+
+    def items(value: dict[str, Any], field: str) -> list[dict[str, Any]]:
+        rows = value.get(field)
+        return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+    failed, repaired = obj(failed), obj(repaired)
+    keys = lambda data: {r["claim_key"] for r in items(data, "claims") if isinstance(r.get("claim_key"), str)}
+    old_entries = [r for r in items(failed, "insufficient_evidence")
+                   if isinstance(r.get("context"), str) and isinstance(r.get("reason"), str)]
+    new_entries = items(repaired, "insufficient_evidence")
+    issues = []
+    for key in sorted(keys(failed) - keys(repaired)):
+        prefix = f"{key}: "
+        if not any(isinstance(r.get("context"), str) and r["context"].startswith(prefix)
+                   and r["context"][len(prefix):].strip() for r in new_entries):
+            issues.append(Issue("repair_dropped_claim", "/claims", key))
+    for entry in old_entries:
+        if not any(r.get("context") == entry["context"] and r.get("reason") == entry["reason"] for r in new_entries):
+            issues.append(Issue("repair_dropped_insufficient_evidence", "/insufficient_evidence", entry["context"]))
+    return issues
 
 
 def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]],

@@ -27,8 +27,8 @@ this step, and only a full text can include anything.
 5. Give one sentence of `rationale`.
 6. Return one `records` entry per given record, in the order the records were
    given, naming each by the `candidate_id` it was given under.
-7. Echo `step_input_id`, `scope_revision` and `skill_package_hash` exactly as they
-   were given, and set `schema_version` to `deixis.abstract_screening.v1`.
+7. Echo `step_input_id` and `scope_revision` exactly as given, following the
+   envelope rule in [SKILL.md](../SKILL.md), and set `schema_version` to `deixis.abstract_screening.v1`.
 
 Do not search, do not use anything you know about these papers from outside the
 given abstracts, and do not rank, score or compare the records.

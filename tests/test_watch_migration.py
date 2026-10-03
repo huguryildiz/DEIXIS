@@ -65,12 +65,13 @@ def test_runs_rebuild_preserves_every_row_trigger_index_and_foreign_key(tmp_path
             conn.close()
 
 
-def test_watch_run_kind_stage_and_six_tables(api):
+def test_watch_run_kind_stage_and_eight_tables(api):
     command = create(api)
     run = api.store.run(command["run_id"])
     assert run["kind"] == "watch_check" and run["stage"] == "discovery"
     tables = {r[0] for r in api.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"watches", "watch_checks", "watch_reads", "watch_seen", "watch_seen_alias", "watch_items"} <= tables
+    assert {"watches", "watch_checks", "watch_reads", "watch_seen", "watch_seen_alias", "watch_items",
+            "watch_schedule_changes", "watch_gaps"} <= tables
     for table in ("watch_checks", "watch_reads"):
         assert "WITHOUT ROWID" in api.conn.execute("SELECT sql FROM sqlite_master WHERE name=?", (table,)).fetchone()[0]
         with pytest.raises(sqlite3.OperationalError): api.conn.execute(f"SELECT rowid FROM {table}")

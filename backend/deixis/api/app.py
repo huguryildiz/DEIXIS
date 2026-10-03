@@ -703,6 +703,15 @@ def create_app(
             app.state.legacy_cancelled = worker.cancel_legacy_discovery()
             await reconcile_recovery()
 
+        from deixis.workflow.watch.scheduler import WatchScheduler
+        scheduler_stop = asyncio.Event()
+        scheduler_task = None
+
+        def start_watch_scheduler():
+            nonlocal scheduler_task
+            app.state.watch_scheduler = WatchScheduler(store, worker.wake)
+            scheduler_task = asyncio.create_task(app.state.watch_scheduler.run_forever(scheduler_stop))
+
         async def take_over_when_released() -> None:
             # A previous instance may still be shutting down and holding the lock; own the worker once it is released.
             while not worker.acquire():
@@ -712,12 +721,19 @@ def create_app(
             await reconcile_recovery()
             app.state.owner = True
             equations.start()
+            start_watch_scheduler()
             await worker.run_forever()
 
         task = asyncio.create_task(worker.run_forever() if owner else take_over_when_released()) if start_worker else None
+        if owner:
+            # Start-up person readings must enter the queue before the first automatic tick.
+            start_watch_scheduler()
         try:
             yield
         finally:
+            scheduler_stop.set()
+            if scheduler_task:
+                await scheduler_task
             if task:
                 await worker.stop()
                 if not app.state.owner:

@@ -397,7 +397,7 @@ def test_s12_0068_to_0069_preservation_new_contract(tmp_path, monkeypatch):
         retry(lib)
         before = all_rows(lib.conn)
         objects = list(lib.conn.execute("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL"))
-        monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
+        shutil.copyfile(real / "0069_recovery_purge_authorization.sql", old / "0069_recovery_purge_authorization.sql")
         assert db.migrate(lib.conn) == [69]
         after = all_rows(lib.conn)
         assert all(after[t] == rows for t, rows in before.items() if t != "schema_migrations")

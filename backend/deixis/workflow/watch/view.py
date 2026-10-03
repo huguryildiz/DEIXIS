@@ -16,9 +16,18 @@ def check_view(store, row):
     unknown = store.outcome_unknown(row["run_id"])
     state = policy.check_state(store.main.run(row["run_id"]), observed | {"outcome_unknown": unknown})
     undated = store.undated_titles(row["id"])
+    schedule = config.get("schedule")
+    gap = None
+    if schedule and schedule["gap_id"]:
+        saved = store.conn.execute("SELECT * FROM watch_gaps WHERE id=? AND watch_id=? AND research_id=?",
+                                  (schedule["gap_id"], row["watch_id"], row["research_id"])).fetchone()
+        if saved:
+            gap = {"from": saved["first_missed_due"], "to": saved["noticed_at"], "missed_periods": saved["missed_periods"]}
+            gap["notice"] = f"Not checked between {gap['from']} and {gap['to']}."
     return {key: row[key] for key in ("id", "watch_id", "research_id", "run_id", "trigger", "period_start",
         "requested_from", "requested_to", "state_version", "missed_periods", "completed_at", "created_at")} | state | {
-        "config_revision": config, "caps": config["caps"], "units": config["units"], "observed": observed,
+        "config_revision": config, "schedule": schedule, "gap": gap,
+        "caps": config["caps"], "units": config["units"], "observed": observed,
         "provider_status": statuses, "counts": json.loads(row["counts_json"]) if row["counts_json"] else None,
         "baseline_undated": {"titles": undated, "count": len(undated),
             "notice": "Joined the baseline without a known publication date; some may be newer than the cut."},
@@ -28,9 +37,16 @@ def check_view(store, row):
 def watch_view(store, row):
     reason = store.follows_old_scope(row)
     checks = store.checks(row["id"])
+    gaps = store.gaps(row["id"])
+    for gap in gaps:
+        linked = next((c for c in checks if json.loads(c["config_json"]).get("schedule", {}).get("gap_id") == gap["id"]), None)
+        gap.update(catch_up_check_id=linked["id"] if linked else None, catch_up_queued=linked is not None)
     return {key: row[key] for key in ("id", "research_id", "kind", "mode", "interval_days", "enabled",
         "protocol_record_id", "scope_revision", "state_version", "last_checked_at", "last_success_at", "next_due_at",
-        "created_at", "disabled_at")} | {"enabled": bool(row["enabled"]), "follows_old_scope": bool(reason),
+        "created_at", "disabled_at", "schedule_version")} | {
+        "catch_up": bool(row["catch_up"]) if row["catch_up"] is not None else None,
+        "waiting_reason": store.waiting_reason(row), "gaps": gaps,
+        "enabled": bool(row["enabled"]), "follows_old_scope": bool(reason),
         "follows_old_scope_reason": reason, "baseline": json.loads(row["baseline_json"]),
         "last_check": check_view(store, checks[-1]) if checks else None,
         "notice": "DEIXIS checks only while it is running."}

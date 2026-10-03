@@ -1,4 +1,4 @@
-"""Owner commands for manual follow-up; the application middleware enforces CSRF."""
+"""Owner commands for follow-up; the application middleware enforces CSRF."""
 
 from typing import Literal
 
@@ -16,7 +16,17 @@ class Preview(BaseModel):
 
 class Create(Preview):
     mode: Literal["manual", "interval"] = "manual"
+    interval_days: Literal[1, 7, 30] | None = None
+    catch_up: bool | None = Field(default=None, strict=True)
     expected_scope_revision: int = Field(ge=1, strict=True)
+
+
+class Schedule(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["manual", "interval"]
+    interval_days: Literal[1, 7, 30] | None = None
+    catch_up: bool | None = Field(default=None, strict=True)
+    expected_schedule_version: int = Field(ge=1, strict=True)
 
 
 class Expected(BaseModel):
@@ -49,7 +59,8 @@ def register_watch_routes(app):
 
     @app.post(root + "/watches", status_code=201)
     async def create(research_id: str, body: Create, request: Request, key: str = key_type):
-        return answer(request, research_id, store(request).create(research_id, body.model_dump(), key), True)
+        # Null schedule settings are equivalent to absence; retain B5 manual-command hashes after upgrade.
+        return answer(request, research_id, store(request).create(research_id, body.model_dump(exclude_none=True), key), True)
 
     @app.get(root + "/watches")
     async def listing(research_id: str, request: Request):
@@ -63,6 +74,10 @@ def register_watch_routes(app):
     @app.post(root + "/watches/{watch_id}/disable")
     async def disable(research_id: str, watch_id: str, body: Expected, request: Request, key: str = key_type):
         return answer(request, research_id, store(request).disable(research_id, watch_id, body.model_dump(), key))
+
+    @app.post(root + "/watches/{watch_id}/schedule")
+    async def schedule(research_id: str, watch_id: str, body: Schedule, request: Request, key: str = key_type):
+        return answer(request, research_id, store(request).schedule(research_id, watch_id, body.model_dump(), key))
 
     @app.post(root + "/watches/{watch_id}/rebind", status_code=201)
     async def rebind(research_id: str, watch_id: str, body: Expected, request: Request, key: str = key_type):

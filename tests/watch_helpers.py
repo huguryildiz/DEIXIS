@@ -46,7 +46,7 @@ def page(*records, cursor=None):
 
 
 @contextmanager
-def watch_api(tmp_path, *, queries=None, handler=None, legacy=False, headers=None):
+def watch_api(tmp_path, *, queries=None, handler=None, legacy=False, headers=None, start_worker=False):
     sent = []
     state = SimpleNamespace(payload=page(work()), status=200, handler=handler)
     async def serve(request):
@@ -63,7 +63,7 @@ def watch_api(tmp_path, *, queries=None, handler=None, legacy=False, headers=Non
     settings = Settings(data_dir=directory, port=8879, fulltext_fetch="off", citation_chaining="off")
     http = httpx.AsyncClient(transport=httpx.MockTransport(serve), headers=headers)
     app = create_app(settings, adapters={"fake": FakeAdapter(responder=no_model)}, http_client=http,
-                     start_worker=False, trusted_clients=("testclient",))
+                     start_worker=start_worker, trusted_clients=("testclient",))
     with TestClient(app, base_url="http://127.0.0.1:8879", raise_server_exceptions=True) as client:
         session(client)
         store = app.state.store

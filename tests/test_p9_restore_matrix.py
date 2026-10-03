@@ -715,6 +715,8 @@ EMPTY_BECAUSE = {
     "watch_seen": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
     "watch_seen_alias": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
     "watch_items": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
+    "watch_gaps": "the rich library builder starts no interval watch, so no scheduling gap is recorded",
+    "watch_schedule_changes": "the rich library builder changes no follow-up watch schedule",
 }
 
 

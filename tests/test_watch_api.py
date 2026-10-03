@@ -28,7 +28,7 @@ def post(api, path, body, key="SYNTHETIC-command"):
 def test_every_watch_route_has_a_coroutine_endpoint(api):
     routes = [route for route in api.app.routes
               if getattr(getattr(route, "endpoint", None), "__module__", None) == "deixis.api.watch_routes"]
-    assert len(routes) == 9
+    assert len(routes) == 10
     assert all(inspect.iscoroutinefunction(route.endpoint) for route in routes)
 
 
@@ -185,7 +185,7 @@ def test_route_refusals_revision_active_paused_old_scope_and_strict_bodies(api):
     assert response.status_code == 422
     for key in ("", "x" * 201):
         assert post(api, api.url, body, key).status_code == 422
-    assert post(api, api.url, body | {"mode": "interval"}).json()["code"] == "interval_not_built"
+    assert post(api, api.url, body | {"mode": "interval"}).json()["code"] == "schedule_invalid"
     assert post(api, api.url, body | {"expected_scope_revision": 2}).json()["code"] == "scope_changed"
     command = create(api)
     assert post(api, api.url, body | {"kind": "citing_works"}).json()["code"] == "run_active"
@@ -300,7 +300,7 @@ def two_checks(api):
     return first, second
 
 
-def test_backup_restore_six_tables_byte_equal_and_all_payload_hashes(api, tmp_path):
+def test_backup_restore_eight_tables_byte_equal_and_all_payload_hashes(api, tmp_path):
     two_checks(api)
     before = rows(api.conn, TABLES)
     folder = backup.create_backup(api.settings, tmp_path / "backups")
@@ -337,7 +337,7 @@ def test_backup_watch_payload_damage_refused(api, tmp_path, damage):
 
 
 @pytest.mark.parametrize("reference", ["source", "watch"])
-def test_purge_removes_six_tables_returns_watch_files_and_keeps_shared_payload(api, tmp_path, reference):
+def test_purge_removes_eight_tables_returns_watch_files_and_keeps_shared_payload(api, tmp_path, reference):
     two_checks(api)
     files = {r[0] for r in api.conn.execute("SELECT raw_payload_path FROM watch_reads")}
     other_rid = api.store.create_research("SYNTHETIC other", "academic", "standard", ["openalex"], "fake", "fake-model", "en")

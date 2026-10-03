@@ -1,6 +1,6 @@
 """Pure watch planning, version identities and observed coverage."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from deixis.domain.record_identity import ARXIV_DOI_PREFIX, classify_pair, notice_type
 
@@ -11,6 +11,9 @@ WATCH_MAX_REQUESTS = 80
 WATCH_MAX_RECORDS = 3000
 WATCH_RATE_LIMIT_RETRIES = 2
 WATCH_DEADLINE_SECONDS = 1800
+WATCH_TICK_SECONDS = 60
+WATCH_GAP_SECONDS = 300
+WATCH_CATCH_UP_RESEARCHES = 3
 PARTIAL_REASONS = frozenset({"provider_failed", "not_configured", "quota_deferred", "budget_deferred",
     "deadline_deferred", "outcome_unknown", "coverage_unknown", "coverage_not_reached", "baseline_incomplete",
     "rolled_over", "no_openalex_id", "skipped_not_searchable"})
@@ -165,3 +168,41 @@ def check_state(run, check):
 
 def deadline_passed(current, deadline):
     return datetime.fromisoformat(current) >= datetime.fromisoformat(deadline)
+
+
+def utc_now():
+    return datetime.now(timezone.utc)
+
+
+def timestamp(value):
+    """Use db.now's fixed precision for timestamps ordered as text in SQLite."""
+    return value.isoformat(timespec="milliseconds")
+
+
+def due_times(due_at, interval_days, tick, observed_until=None):
+    """Return the due times on this grid, optionally restricted to an observed gap."""
+    first = datetime.fromisoformat(due_at)
+    interval = timedelta(days=interval_days)
+    if observed_until is not None and first <= observed_until:
+        first += (int((observed_until - first) // interval) + 1) * interval
+    if first > tick:
+        return None
+    count = int((tick - first) // interval) + 1
+    last = first + (count - 1) * interval
+    return {"first_missed_due": timestamp(first), "last_missed_due": timestamp(last),
+            "missed_periods": count, "next_due_at": timestamp(last + interval)}
+
+
+def next_due(ts, interval_days):
+    return timestamp(datetime.fromisoformat(ts) + timedelta(days=interval_days))
+
+
+def schedule_block(watch, trigger, tick, gap=None):
+    passed = due_times(watch["next_due_at"], watch["interval_days"], datetime.fromisoformat(tick))
+    return {"trigger": trigger, "mode": watch["mode"], "interval_days": watch["interval_days"],
+        "catch_up": bool(watch["catch_up"]), "schedule_version": watch["schedule_version"],
+        "due_at": watch["next_due_at"], "due_times_passed": passed["missed_periods"] if passed else 0,
+        **{key: gap[key] if gap else None for key in
+           ("opening_id", "gap_id", "first_missed_due", "last_missed_due", "missed_periods")},
+        "tick_seconds": WATCH_TICK_SECONDS, "gap_seconds": WATCH_GAP_SECONDS,
+        "catch_up_researches": WATCH_CATCH_UP_RESEARCHES}

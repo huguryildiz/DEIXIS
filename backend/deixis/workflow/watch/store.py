@@ -12,7 +12,8 @@ from deixis.providers.contract import CONTRACT_ID
 from deixis.storage.db import dumps, new_id, now
 from . import check as policy
 
-TABLES = ("watches", "watch_checks", "watch_reads", "watch_seen", "watch_seen_alias", "watch_items")
+TABLES = ("watches", "watch_checks", "watch_reads", "watch_seen", "watch_seen_alias", "watch_items",
+          "watch_schedule_changes", "watch_gaps")
 
 
 class WatchRefusal(Exception):
@@ -169,6 +170,7 @@ class WatchStore:
                 ("watches", "idempotency_key", "request_hash", "create"),
                 ("watches", "disable_key", "disable_hash", "disable"),
                 ("watch_checks", "request_key", "request_hash", "check"),
+                ("watch_schedule_changes", "request_key", "request_hash", "schedule"),
                 ("watch_items", "dismiss_key", "dismiss_hash", "dismiss")):
             row = self.conn.execute(f"SELECT * FROM {table} WHERE {column}=?", (key,)).fetchone()
             if row:
@@ -179,6 +181,8 @@ class WatchStore:
                     return {"replayed": True, "item_id": row["id"]}
                 if action == "check":
                     return {"replayed": True, "watch_id": row["watch_id"], "check_id": row["id"], "run_id": row["run_id"]}
+                if action == "schedule":
+                    return {"replayed": True, "watch_id": row["watch_id"]}
                 result = {"replayed": True, "watch_id": row["id"]}
                 if action == "create":
                     first = self.conn.execute("SELECT id,run_id FROM watch_checks WHERE watch_id=?"
@@ -215,30 +219,31 @@ class WatchStore:
         self.main.update_run(run_id, event="run_failed", status="failed", pause_reason="adapter_revision_changed",
                              error_json={"code": "adapter_revision_changed"})
 
-    def _insert_watch(self, research_id, body, key, digest):
+    def _insert_watch(self, research_id, body, key, digest, ts):
         revision, protocol = self._scope(research_id, body["kind"])
-        if body["mode"] != "manual":
-            raise WatchRefusal("interval_not_built", "Interval checks are not built yet.", 422)
+        self._valid_schedule(body)
         if revision != body["expected_scope_revision"]:
             raise WatchRefusal("scope_changed", "The research scope changed. Read it before enabling follow-up.")
         if self.conn.execute("SELECT 1 FROM watches WHERE research_id=? AND kind=? AND enabled=1",
                              (research_id, body["kind"])).fetchone():
             raise WatchRefusal("watch_enabled", "This kind of follow-up is already enabled.")
         wid = new_id("wat")
-        self.conn.execute("INSERT INTO watches (id,research_id,kind,mode,enabled,protocol_record_id,scope_revision,"
-            "idempotency_key,request_hash,created_at) VALUES (?,?,?,'manual',1,?,?,?,?,?)",
-            (wid, research_id, body["kind"], protocol["id"] if body["kind"] == "protocol_queries" else None,
-             revision, key, digest, now()))
+        due = policy.next_due(ts, body["interval_days"]) if body["mode"] == "interval" else None
+        self.conn.execute("INSERT INTO watches (id,research_id,kind,mode,interval_days,catch_up,next_due_at,enabled,protocol_record_id,scope_revision,"
+            "idempotency_key,request_hash,created_at) VALUES (?,?,?,?,?,?,?,1,?,?,?,?,?)",
+            (wid, research_id, body["kind"], body["mode"], body.get("interval_days"), body.get("catch_up"), due,
+             protocol["id"] if body["kind"] == "protocol_queries" else None, revision, key, digest, ts))
         return self.watch(research_id, wid)
 
-    def _queue(self, watch, key=None, digest=None):
+    def _queue(self, watch, key=None, digest=None, *, ts=None, trigger="manual", period=None,
+               missed_periods=0, schedule=None):
         research_id = watch["research_id"]
         self._idle(research_id, watch)
         if not watch["enabled"]:
             raise WatchRefusal("watch_disabled", "This watch is disabled.")
         if self.follows_old_scope(watch):
             raise WatchRefusal("watch_follows_old_scope", "Rebind this watch to the current research scope first.")
-        ts, cid = now(), new_id("wch")
+        ts, cid = ts or now(), new_id("wch")
         baseline = json.loads(watch["baseline_json"])
         protocol = self.main.current_protocol(research_id, watch["scope_revision"])
         units = self.units(research_id, watch["kind"], protocol)
@@ -253,22 +258,26 @@ class WatchStore:
         units = policy.unit_plan(units, baseline, ts)
         for index, unit in enumerate(units):
             unit["index"] = index
-        deadline = (datetime.fromisoformat(ts) + timedelta(seconds=policy.WATCH_DEADLINE_SECONDS)).isoformat()
+        deadline = policy.timestamp(datetime.fromisoformat(ts) + timedelta(seconds=policy.WATCH_DEADLINE_SECONDS))
         limits = policy.caps()
         budget = {"max_provider_requests": limits["max_provider_requests"], "max_records": limits["max_records"]}
         config = {"version": 1, "kind": watch["kind"], "scope_revision": watch["scope_revision"],
             "protocol_record_id": watch["protocol_record_id"], "units": units, "skipped_units": skipped,
             "rolled_over": rolled_over, "rolled_over_units": rolled_over_units, "next_citing_position": next_position,
             "caps": limits, "budget": budget, "deadline_at": deadline}
-        period = "manual:" + ts
+        if watch["mode"] == "interval":
+            config["schedule"] = schedule or policy.schedule_block(watch, trigger, ts)
+        period = period or "manual:" + ts
         run = self.main.create_run(research_id, "watch_check", budget, f"watch:{watch['id']}:{period}",
             {"watch_id": watch["id"], "check_id": cid, "deadline_at": deadline, "request_hash": digest})
         starts = [u["requested_from"] for u in units if u["requested_from"]]
         self.conn.execute("INSERT INTO watch_checks (id,watch_id,research_id,run_id,trigger,period_start,requested_from,"
-            "requested_to,config_json,state_version,request_key,request_hash,created_at)"
-            " VALUES (?,?,?,?,'manual',?,?,?,?,?,?,?,?)",
-            (cid, watch["id"], research_id, run["id"], period, min(starts) if starts else None, ts,
-             dumps(config), watch["state_version"], key, digest, ts))
+            "requested_to,config_json,state_version,request_key,request_hash,created_at,missed_periods)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (cid, watch["id"], research_id, run["id"], trigger, period, min(starts) if starts else None, ts,
+             dumps(config), watch["state_version"], key, digest, ts, missed_periods))
+        if watch["mode"] == "interval":
+            self.conn.execute("UPDATE watches SET next_due_at=? WHERE id=?", (policy.next_due(ts, watch["interval_days"]), watch["id"]))
         return {"replayed": False, "watch_id": watch["id"], "check_id": cid, "run_id": run["id"]}
 
     def create(self, research_id, body, key):
@@ -278,8 +287,9 @@ class WatchStore:
             if replay:
                 return replay
             self._idle(research_id)
-            watch = self._insert_watch(research_id, body, key, digest)
-            return self._queue(watch, digest=digest)
+            ts = now()
+            watch = self._insert_watch(research_id, body, key, digest, ts)
+            return self._queue(watch, digest=digest, ts=ts)
 
     def check_now(self, research_id, watch_id, body, key):
         digest = command_hash("check", research_id, watch_id, body)
@@ -316,8 +326,86 @@ class WatchStore:
             self._idle(research_id, watch)
             self.conn.execute("UPDATE watches SET enabled=0,disabled_at=?,state_version=state_version+1 WHERE id=?", (now(), watch_id))
             revision = self.main.research(research_id)["current_scope_revision"]
-            new = self._insert_watch(research_id, {"kind": watch["kind"], "mode": "manual", "expected_scope_revision": revision}, key, digest)
-            return self._queue(new, digest=digest)
+            ts = now()
+            new = self._insert_watch(research_id, {"kind": watch["kind"], "mode": watch["mode"],
+                "interval_days": watch["interval_days"], "catch_up": watch["catch_up"],
+                "expected_scope_revision": revision}, key, digest, ts)
+            return self._queue(new, digest=digest, ts=ts)
+
+    def _valid_schedule(self, body):
+        mode, interval, catch_up = body["mode"], body.get("interval_days"), body.get("catch_up")
+        if (mode == "manual" and (interval is not None or catch_up is not None)) or (
+                mode == "interval" and (interval not in (1, 7, 30) or catch_up not in (True, False))):
+            raise WatchRefusal("schedule_invalid", "Choose both cadence and catch-up for interval mode; leave both empty for manual mode.", 422)
+
+    def schedule(self, research_id, watch_id, body, key):
+        digest = command_hash("schedule", research_id, watch_id, body)
+        with transaction(self.conn):
+            if replay := self._replay(key, digest):
+                return replay
+            watch = self.watch(research_id, watch_id)
+            if not watch["enabled"]:
+                raise WatchRefusal("watch_disabled", "This watch is disabled.")
+            if watch["schedule_version"] != body["expected_schedule_version"]:
+                raise WatchRefusal("schedule_changed", "The schedule changed. Read it before trying again.")
+            self._valid_schedule(body)
+            ts = now()
+            due = policy.next_due(ts, body["interval_days"]) if body["mode"] == "interval" else None
+            version = watch["schedule_version"] + 1
+            self.conn.execute("UPDATE watches SET mode=?,interval_days=?,catch_up=?,next_due_at=?,schedule_version=? WHERE id=?",
+                (body["mode"], body.get("interval_days"), body.get("catch_up"), due, version, watch_id))
+            self.conn.execute("INSERT INTO watch_schedule_changes VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (new_id("wsc"), watch_id, research_id, version, body["mode"], body.get("interval_days"),
+                 body.get("catch_up"), due, key, digest, ts))
+            return {"replayed": False, "watch_id": watch_id}
+
+    def scheduler_watches(self):
+        return [dict(row) for row in self.conn.execute("SELECT * FROM watches ORDER BY next_due_at,id")]
+
+    def visible(self, watch):
+        return self.conn.execute("SELECT 1 FROM researches WHERE id=? AND trashed_at IS NULL", (watch["research_id"],)).fetchone() is not None
+
+    def global_busy(self):
+        return self.conn.execute("SELECT 1 FROM runs WHERE status IN ('queued','running','pause_requested') LIMIT 1").fetchone() is not None
+
+    def waiting_reason(self, watch):
+        if self.follows_old_scope(watch):
+            return "watch_follows_old_scope"
+        # Unlike _idle, this answers a durable watch-specific reason even during unrelated work.
+        if self.conn.execute("SELECT 1 FROM watch_checks c JOIN runs r ON r.id=c.run_id WHERE c.watch_id=?"
+                " AND (r.status='paused' OR (r.status NOT IN ('completed','failed','cancelled') AND EXISTS"
+                " (SELECT 1 FROM run_steps s WHERE s.run_id=r.id AND s.status='outcome_unknown')))", (watch["id"],)).fetchone():
+            return "check_paused"
+        return None
+
+    def gaps(self, watch_id):
+        return [dict(row) for row in self.conn.execute("SELECT * FROM watch_gaps WHERE watch_id=? ORDER BY noticed_at DESC,id DESC LIMIT 5", (watch_id,))]
+
+    def record_gap(self, row):
+        self.conn.execute(f"INSERT INTO watch_gaps ({','.join(row)}) VALUES ({','.join('?' for _ in row)})", tuple(row.values()))
+
+    def queue_scheduled(self, watch_id, trigger, period_start, missed_periods, schedule,
+                        expected_schedule_version, expected_next_due_at, ts):
+        with transaction(self.conn):
+            replay = self.conn.execute("SELECT * FROM watch_checks WHERE watch_id=? AND period_start=?", (watch_id, period_start)).fetchone()
+            if replay:
+                return {"replayed": True, "watch_id": watch_id, "check_id": replay["id"], "run_id": replay["run_id"]}
+            row = self.conn.execute("SELECT * FROM watches WHERE id=?", (watch_id,)).fetchone()
+            watch = dict(row) if row else None
+            reason = "research_unavailable" if watch is None or not self.visible(watch) else (
+                "watch_disabled" if not watch["enabled"] else "manual_watch" if watch["mode"] != "interval" else
+                "schedule_changed" if watch["schedule_version"] != expected_schedule_version else
+                "next_due_changed" if watch["next_due_at"] != expected_next_due_at else None)
+            if reason is None and self.follows_old_scope(watch):
+                reason = "watch_follows_old_scope"
+            if reason:
+                return {"skipped": "stale", "reason": reason, "watch_id": watch_id}
+            if self.global_busy():
+                return {"skipped": "blocked", "reason": "run_active", "watch_id": watch_id}
+            if self.waiting_reason(watch) == "check_paused":
+                return {"skipped": "blocked", "reason": "check_paused", "watch_id": watch_id}
+            return self._queue(watch, ts=ts, trigger=trigger, period=period_start,
+                               missed_periods=missed_periods, schedule=schedule)
 
     def dismiss(self, research_id, item_id, body, key):
         digest = command_hash("dismiss", research_id, item_id, body)
@@ -570,6 +658,6 @@ def purge_watches(conn, research_id):
     paths = [r[0] for r in conn.execute("SELECT raw_payload_path FROM watch_reads WHERE research_id=? AND raw_payload_path IS NOT NULL", (research_id,))]
     conn.execute("UPDATE watch_items SET merged_into_item_id=NULL WHERE research_id=?", (research_id,))
     conn.execute("UPDATE watch_seen SET merged_into=NULL WHERE research_id=?", (research_id,))
-    for table in ("watch_items", "watch_seen_alias", "watch_seen", "watch_reads", "watch_checks", "watches"):
+    for table in ("watch_gaps", "watch_schedule_changes", "watch_items", "watch_seen_alias", "watch_seen", "watch_reads", "watch_checks", "watches"):
         conn.execute(f"DELETE FROM {table} WHERE research_id=?", (research_id,))
     return paths

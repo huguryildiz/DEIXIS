@@ -2,12 +2,13 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 · P10 öncesi ölçülmemiş beş borcun ölçüm planı donduruldu (D205; koşu yok, H9b bittikten sonra en çok 370 Luna oturumu); G1-F1 (D201): P7 çıkışı karşılandı (deterministik kanıtla); H9b RF2 sonrası sürecek
+**Son güncelleme:** 3 Ekim 2026 · P8 B6 (D187) main'e hazır: aralıklı yayın takibi DEIXIS açıkken kendiliğinden kontrol ediyor, kapalı kalınan süreyi söylüyor ve açılışta sınırlı bir telafi kontrolü yapıyor; P10 öncesi ölçülmemiş beş borcun ölçüm planı donduruldu (D205; koşu yok, H9b bittikten sonra en çok 370 Luna oturumu); G1-F1 (D201): P7 çıkışı karşılandı (deterministik kanıtla); H9b RF2 sonrası sürecek
 
 ## Şu an çalışanlar
 
 Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. Sol (gpt-6.1-sol) yazarsa Claude inceler, Claude yazarsa Sol inceler. Sahip onayı gereken kararlar Sol medium ile ortak verilir.
 
+- ✅ **P8 B6** (D187): yayın takibine aralık (günlük, haftalık, aylık) ve ayrı bir "açılışta telafi" ayarı geldi. DEIXIS açıkken dakikada bir bakılıyor; vakti gelen kontrol yalnız kütüphanede başka iş yokken sıraya giriyor, böylece sahibin işi önde kalıyor. Bilgisayar kapalı ya da uykudayken kaçan kontrol günleri kaydediliyor ("A ile B arasında kontrol edilmedi"); açılışta araştırma başına bir, en çok üç araştırmaya telafi kontrolü yapılıyor, gerisi kayıtla bir sonraki vakte kalıyor. Duraklatılmış bir kontrol asla iptal edilmiyor ya da yenisiyle değiştirilmiyor (göç 0070). Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 12.910 test geçti, gerçek süreç öldürüp yeniden başlatma testleri 4/4 geçti. Gerçek sağlayıcı çağrılmadı; ekranlar B7'de.
 - ✅ **P9 RF2, onarım şeması** (D204): H9b, RF'in çapa onarımında gönderdiği şemanın canlı API'de reddedildiğini gösterdi (`$ref` yanında başka anahtar). Şema düzeltildi, değer kümesi aynı. Modele gidebilen 41 şemanın hepsi artık daha sıkı bir çevrimdışı denetimden geçiyor; eski şema bu testte kırmızı. Sol yazdı, plan Sol medium 3 turda, kod Claude 1 turda hazır; 13.193 test geçti. Canlı kabul ölçülmedi: H9b ürün commit'ini yeniden sabitlemeli.
 - 🟡 **P10 öncesi ölçüm borçları planı** (D205, `docs/product/p9-owed-measurements-freeze.md`): beş borcun kuralları dondu, Sol high 2. turda “hazır”; koşu yok. H9b sonrası sıra D129 → D141 hunisi → dilim 4 → K6 → L9; en çok 370 Luna oturumu. D129 için ayrı koşu yok (H9b sayımları), D141 modelsiz sayılır, dilim 4 yalnız H9b rapor tamamlarsa. L9 H9b B'nin korpusunu paylaşmaz; yeni korpustaki bağımsızlık denetimi kayıtlı envanterlerle sınırlı. Kararlar Claude + Sol medium ortak.
 - ✅ **P7 G1-F1** (D201): Crossref, Semantic Scholar ve Scopus DOI sorgusu, OpenAlex kimlik sorgusu ve atıf eden işler artık bağlayıcıların kendi bildirdiği yetenekler üzerinden gidiyor (araştırmadaki özet sorguları, atıf zinciri ve yayın takibinin atıf okuması). İstekler önce ayrılıyor, yanıtla gerçek sayıya iniyor; gerçekten gönderilenler `lookup_sends` ve `chain_sends` olarak ayrı sayılıyor. Zincirde kimliksiz kayıt atılıp sayılıyor, sürümü değişmiş sayfadan devam reddediliyor, S2 özetine yansıyan anahtar artık saklanmıyor. Arama davranışı değişmedi. Sol yazdı, plan Sol medium 4 turda, kod Claude 2 turda hazır; 13.006 test geçti. **P7 çıkışı karşılandı**
@@ -60,7 +61,7 @@ Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizl
 | P4–P5 | İlk web dilimi, kütüphane, kanıt tablosu | ✅ |
 | P6 | Sentez ve rapor | ✅ beş dilim kapandı; gerçek model ölçümleri P9'a borç |
 | P7 | Bağlantı kapsamı | ✅ çıkış karşılandı (D201): D172, D173, G1 (D196, D201), P7-F2/F3 (D199); G10 canlı erişim gösterildi; canlı hata/kota biçimleri ölçülmedi, G12 yeniden üretilemedi |
-| P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181), B2 (D182), B3 (D183), B4 (D184, sentetik vakalar, tek koşu), B8a (D185, aday incelemesi), B5 (D186, modelsiz, sahte sağlayıcı); sırada B6, B7 ve B8b |
+| P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181), B2 (D182), B3 (D183), B4 (D184, sentetik vakalar, tek koşu), B8a (D185, aday incelemesi), B5 (D186, modelsiz, sahte sağlayıcı), B6 (D187, zamanlayıcı ve telafi, modelsiz); sırada B7 ve B8b |
 | P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, H6 düzeltmeleri bitti; RR-B kodu main'de (D170), matris çifti boş makinede bekliyor; H9 ölçüldü (D171): rapor tamamlanmadı, yalnız R1/R7/P19; H10 yok |
 | P10 | macOS / Windows paketi | ❌ |
 

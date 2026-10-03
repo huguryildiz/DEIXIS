@@ -177,7 +177,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
             return None, SearchOutcome("timeout", "after_send_unknown", description, access_mode, error=type(exc).__name__, retries=retries)
         except httpx.HTTPError as exc:
             return None, SearchOutcome("failed", "after_send_unknown", description, access_mode, error=type(exc).__name__, retries=retries)
-        rate = {h: response.headers[h] for h in (*rate_headers, "retry-after") if h in response.headers}
+        rate = {h: redact(response.headers[h], *secrets) for h in (*rate_headers, "retry-after") if h in response.headers}
         base = dict(request_description=description, access_mode=access_mode, http_status=response.status_code, rate_limit=rate,
                     retries=retries)
         try:
@@ -220,4 +220,4 @@ def _retry_wait(retry_after: str | None, retries: int, unstated_wait: float,
         wait = float(retry_after)
     except ValueError:
         return None
-    return wait if wait <= max_retry_wait else None
+    return wait if 0 <= wait < float("inf") and wait <= max_retry_wait else None

@@ -1,0 +1,2353 @@
+{
+  "provider_id": "semantic_scholar",
+  "synthetic": true,
+  "auth": {
+    "header": "x-api-key",
+    "prefix": ""
+  },
+  "container": {
+    "path": [
+      "data"
+    ],
+    "item_type": "object",
+    "format": "json"
+  },
+  "identity": "paperId",
+  "capabilities": {
+    "search": {
+      "positive": "positive",
+      "failure": "http_400"
+    },
+    "doi_lookup": "unsupported",
+    "id_lookup": "unsupported",
+    "citing_works": "unsupported"
+  },
+  "endpoints": [
+    {
+      "endpoint_id": null,
+      "body_file": "semantic_scholar-1.json",
+      "cases": [
+        {
+          "name": "positive",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "records": [
+              {
+                "provider_record_id": "synthetic1",
+                "doi": "10.9999/synthetic.1",
+                "abstract_origin": "provider_semantic_scholar",
+                "version_label": null,
+                "oa_pdf_url": null,
+                "oa_pdf_version": null,
+                "cited_by_count": null,
+                "reference_count": null
+              }
+            ]
+          },
+          "body_file": "semantic_scholar-1.json"
+        },
+        {
+          "name": "unpaged",
+          "group": 4,
+          "expected": {
+            "status": "completed"
+          },
+          "body_file": "semantic_scholar-1.json"
+        },
+        {
+          "name": "first_page",
+          "group": 4,
+          "expected": {
+            "status": "completed"
+          },
+          "body_file": "semantic_scholar-1.json",
+          "cursor": "*"
+        },
+        {
+          "name": "second_page",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body_file": "semantic_scholar-2.json",
+          "cursor": "1"
+        },
+        {
+          "name": "empty",
+          "group": 4,
+          "expected": {
+            "status": "zero_results",
+            "next_cursor": null
+          },
+          "body": {
+            "total": 2,
+            "data": [],
+            "next": null
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "short_page",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "cursor": "*",
+          "limit": 2,
+          "body": {
+            "total": 2,
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ]
+          }
+        },
+        {
+          "name": "identity_missing",
+          "group": 3,
+          "expected": {
+            "status": "parse_error",
+            "record_ids": []
+          },
+          "body": {
+            "total": 2,
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              },
+              {
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1
+          },
+          "limit": 2
+        },
+        {
+          "name": "identity_null",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              "None"
+            ]
+          },
+          "body": {
+            "total": 2,
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              },
+              {
+                "paperId": null,
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1
+          },
+          "limit": 2,
+          "ledger": "identity_semantic_scholar",
+          "characterization": true
+        },
+        {
+          "name": "identity_empty",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              ""
+            ]
+          },
+          "body": {
+            "total": 2,
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              },
+              {
+                "paperId": "",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1
+          },
+          "limit": 2,
+          "ledger": "identity_semantic_scholar",
+          "characterization": true
+        },
+        {
+          "name": "identity_number",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              "17"
+            ]
+          },
+          "body": {
+            "total": 2,
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              },
+              {
+                "paperId": 17,
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1
+          },
+          "limit": 2,
+          "ledger": "identity_semantic_scholar",
+          "characterization": true
+        },
+        {
+          "name": "identity_object",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              "{'SYNTHETIC': 'id'}"
+            ]
+          },
+          "body": {
+            "total": 2,
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              },
+              {
+                "paperId": {
+                  "SYNTHETIC": "id"
+                },
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1
+          },
+          "limit": 2,
+          "ledger": "identity_semantic_scholar",
+          "characterization": true
+        },
+        {
+          "name": "root_array",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": []
+        },
+        {
+          "name": "root_null",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": null
+        },
+        {
+          "name": "root_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": "SYNTHETIC"
+        },
+        {
+          "name": "root_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": 1
+        },
+        {
+          "name": "container_null",
+          "group": 5,
+          "expected": {
+            "status": "zero_results",
+            "record_count": 0
+          },
+          "body": {
+            "total": 2,
+            "data": null,
+            "next": 1
+          },
+          "ledger": "k",
+          "characterization": true
+        },
+        {
+          "name": "container_object",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "total": 2,
+            "data": {},
+            "next": 1
+          }
+        },
+        {
+          "name": "container_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "total": 2,
+            "data": "x",
+            "next": 1
+          }
+        },
+        {
+          "name": "container_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "total": 2,
+            "data": 1,
+            "next": 1
+          }
+        },
+        {
+          "name": "container_item_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "total": 2,
+            "data": [
+              1
+            ],
+            "next": 1
+          }
+        },
+        {
+          "name": "container_item_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "total": 2,
+            "data": [
+              "x"
+            ],
+            "next": 1
+          }
+        },
+        {
+          "name": "empty_object",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {},
+          "ledger": null
+        },
+        {
+          "name": "absent_container",
+          "group": 5,
+          "expected": {
+            "status": "zero_results",
+            "record_count": 0
+          },
+          "body": {
+            "total": 2,
+            "next": 1
+          },
+          "ledger": "k"
+        },
+        {
+          "name": "non_json_200",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": "<SYNTHETIC not json"
+        },
+        {
+          "name": "http_400",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 400,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_401",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 401,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_403",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 403,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_500",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 500,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_503",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 503,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "connect",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "connect",
+          "stage": "search",
+          "mode": "configured"
+        },
+        {
+          "name": "read_timeout",
+          "group": 5,
+          "expected": {
+            "status": "timeout",
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "read_timeout",
+          "stage": "search",
+          "mode": "configured"
+        },
+        {
+          "name": "rate_unstated",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": null,
+          "echo": true
+        },
+        {
+          "name": "rate_one",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "1",
+          "echo": true
+        },
+        {
+          "name": "rate_long",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "99",
+          "echo": true
+        },
+        {
+          "name": "rate_malformed",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "soon",
+          "echo": true
+        },
+        {
+          "name": "rate_negative",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "-5",
+          "echo": true
+        },
+        {
+          "name": "rate_nan",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "nan",
+          "echo": true
+        },
+        {
+          "name": "rate_inf",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "inf",
+          "echo": true
+        },
+        {
+          "name": "rate_minus_inf",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "-inf",
+          "echo": true
+        },
+        {
+          "name": "quota",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "quota_exhausted",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "quota": true,
+          "echo": true
+        },
+        {
+          "name": "http_400_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 400,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_401_keyless",
+          "group": 5,
+          "expected": {
+            "status": "auth_required",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 401,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_403_keyless",
+          "group": 5,
+          "expected": {
+            "status": "auth_required",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 403,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_500_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 500,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_503_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 503,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "connect_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "connect",
+          "stage": "search",
+          "mode": "keyless"
+        },
+        {
+          "name": "read_timeout_keyless",
+          "group": 5,
+          "expected": {
+            "status": "timeout",
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "read_timeout",
+          "stage": "search",
+          "mode": "keyless"
+        },
+        {
+          "name": "rate_unstated_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": null,
+          "echo": true
+        },
+        {
+          "name": "rate_one_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "1",
+          "echo": true
+        },
+        {
+          "name": "rate_long_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "99",
+          "echo": true
+        },
+        {
+          "name": "rate_malformed_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "soon",
+          "echo": true
+        },
+        {
+          "name": "rate_negative_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "-5",
+          "echo": true
+        },
+        {
+          "name": "rate_nan_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "nan",
+          "echo": true
+        },
+        {
+          "name": "rate_inf_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "inf",
+          "echo": true
+        },
+        {
+          "name": "rate_minus_inf_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "-inf",
+          "echo": true
+        },
+        {
+          "name": "quota_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "quota_exhausted",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "quota": true,
+          "echo": true
+        }
+      ],
+      "max_reachable": 1000,
+      "request_params": {
+        "first_page": [
+          [
+            "fields",
+            "paperId,externalIds,title,abstract,year,venue,publicationTypes,authors,url"
+          ],
+          [
+            "limit",
+            "1"
+          ],
+          [
+            "offset",
+            "0"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ]
+        ],
+        "next_page": [
+          [
+            "fields",
+            "paperId,externalIds,title,abstract,year,venue,publicationTypes,authors,url"
+          ],
+          [
+            "limit",
+            "1"
+          ],
+          [
+            "offset",
+            "1"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ]
+        ],
+        "unpaged": [
+          [
+            "fields",
+            "paperId,externalIds,title,abstract,year,venue,publicationTypes,authors,url"
+          ],
+          [
+            "limit",
+            "1"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ]
+        ]
+      }
+    },
+    {
+      "endpoint_id": "bulk",
+      "body_file": "semantic_scholar_bulk-1.json",
+      "cases": [
+        {
+          "name": "positive",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "records": [
+              {
+                "provider_record_id": "synthetic1",
+                "doi": "10.9999/synthetic.1",
+                "abstract_origin": "provider_semantic_scholar",
+                "version_label": null,
+                "oa_pdf_url": null,
+                "oa_pdf_version": null,
+                "cited_by_count": null,
+                "reference_count": null
+              }
+            ]
+          },
+          "body_file": "semantic_scholar_bulk-1.json"
+        },
+        {
+          "name": "unpaged",
+          "group": 4,
+          "expected": {
+            "status": "completed"
+          },
+          "body_file": "semantic_scholar_bulk-1.json"
+        },
+        {
+          "name": "first_page",
+          "group": 4,
+          "expected": {
+            "status": "completed"
+          },
+          "body_file": "semantic_scholar_bulk-1.json",
+          "cursor": "*"
+        },
+        {
+          "name": "second_page",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body_file": "semantic_scholar_bulk-2.json",
+          "cursor": "synthetic-token"
+        },
+        {
+          "name": "empty",
+          "group": 4,
+          "expected": {
+            "status": "zero_results",
+            "next_cursor": null
+          },
+          "body": {
+            "total": "2",
+            "data": [],
+            "next": null,
+            "token": null
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "short_page",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": "synthetic-token"
+          },
+          "body_file": "semantic_scholar_bulk-1.json",
+          "cursor": "*",
+          "limit": 2
+        },
+        {
+          "name": "token_null",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1,
+            "token": null
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "token_empty",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1,
+            "token": ""
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "token_number",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1,
+            "token": 17
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "token_object",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1,
+            "token": {
+              "SYNTHETIC": "token"
+            }
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "token_repeated",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": "*"
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1,
+            "token": "*"
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "token_absent",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "bulk_cut",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": "cut",
+            "provider_total": 2,
+            "record_count": 1
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              },
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1,
+            "token": "synthetic-token"
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "identity_missing",
+          "group": 3,
+          "expected": {
+            "status": "parse_error",
+            "record_ids": []
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              },
+              {
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1,
+            "token": "synthetic-token"
+          },
+          "limit": 2
+        },
+        {
+          "name": "identity_null",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              "None"
+            ]
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              },
+              {
+                "paperId": null,
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1,
+            "token": "synthetic-token"
+          },
+          "limit": 2,
+          "ledger": "identity_semantic_scholar",
+          "characterization": true
+        },
+        {
+          "name": "identity_empty",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              ""
+            ]
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              },
+              {
+                "paperId": "",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1,
+            "token": "synthetic-token"
+          },
+          "limit": 2,
+          "ledger": "identity_semantic_scholar",
+          "characterization": true
+        },
+        {
+          "name": "identity_number",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              "17"
+            ]
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              },
+              {
+                "paperId": 17,
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1,
+            "token": "synthetic-token"
+          },
+          "limit": 2,
+          "ledger": "identity_semantic_scholar",
+          "characterization": true
+        },
+        {
+          "name": "identity_object",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              "{'SYNTHETIC': 'id'}"
+            ]
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              {
+                "paperId": "synthetic1",
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              },
+              {
+                "paperId": {
+                  "SYNTHETIC": "id"
+                },
+                "title": "SYNTHETIC boundary page 1",
+                "externalIds": {
+                  "DOI": "10.9999/synthetic.1"
+                },
+                "abstract": "SYNTHETIC evidence",
+                "authors": [
+                  {
+                    "name": "Synthetic Author"
+                  }
+                ],
+                "year": 2021
+              }
+            ],
+            "next": 1,
+            "token": "synthetic-token"
+          },
+          "limit": 2,
+          "ledger": "identity_semantic_scholar",
+          "characterization": true
+        },
+        {
+          "name": "root_array",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": []
+        },
+        {
+          "name": "root_null",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": null
+        },
+        {
+          "name": "root_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": "SYNTHETIC"
+        },
+        {
+          "name": "root_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": 1
+        },
+        {
+          "name": "container_null",
+          "group": 5,
+          "expected": {
+            "status": "zero_results",
+            "record_count": 0
+          },
+          "body": {
+            "total": "2",
+            "data": null,
+            "next": 1,
+            "token": "synthetic-token"
+          },
+          "ledger": "k",
+          "characterization": true
+        },
+        {
+          "name": "container_object",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "total": "2",
+            "data": {},
+            "next": 1,
+            "token": "synthetic-token"
+          }
+        },
+        {
+          "name": "container_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "total": "2",
+            "data": "x",
+            "next": 1,
+            "token": "synthetic-token"
+          }
+        },
+        {
+          "name": "container_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "total": "2",
+            "data": 1,
+            "next": 1,
+            "token": "synthetic-token"
+          }
+        },
+        {
+          "name": "container_item_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              1
+            ],
+            "next": 1,
+            "token": "synthetic-token"
+          }
+        },
+        {
+          "name": "container_item_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "total": "2",
+            "data": [
+              "x"
+            ],
+            "next": 1,
+            "token": "synthetic-token"
+          }
+        },
+        {
+          "name": "empty_object",
+          "group": 5,
+          "expected": {
+            "status": "zero_results",
+            "record_count": 0
+          },
+          "body": {},
+          "ledger": "k"
+        },
+        {
+          "name": "absent_container",
+          "group": 5,
+          "expected": {
+            "status": "zero_results",
+            "record_count": 0
+          },
+          "body": {
+            "total": "2",
+            "next": 1,
+            "token": "synthetic-token"
+          },
+          "ledger": "k"
+        },
+        {
+          "name": "non_json_200",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": "<SYNTHETIC not json"
+        },
+        {
+          "name": "http_400",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 400,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_401",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 401,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_403",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 403,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_500",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 500,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_503",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 503,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "connect",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "connect",
+          "stage": "search",
+          "mode": "configured"
+        },
+        {
+          "name": "read_timeout",
+          "group": 5,
+          "expected": {
+            "status": "timeout",
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "read_timeout",
+          "stage": "search",
+          "mode": "configured"
+        },
+        {
+          "name": "rate_unstated",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": null,
+          "echo": true
+        },
+        {
+          "name": "rate_one",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "1",
+          "echo": true
+        },
+        {
+          "name": "rate_long",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "99",
+          "echo": true
+        },
+        {
+          "name": "rate_malformed",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "soon",
+          "echo": true
+        },
+        {
+          "name": "rate_negative",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "-5",
+          "echo": true
+        },
+        {
+          "name": "rate_nan",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "nan",
+          "echo": true
+        },
+        {
+          "name": "rate_inf",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "inf",
+          "echo": true
+        },
+        {
+          "name": "rate_minus_inf",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "-inf",
+          "echo": true
+        },
+        {
+          "name": "quota",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "quota_exhausted",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "quota": true,
+          "echo": true
+        },
+        {
+          "name": "http_400_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 400,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_401_keyless",
+          "group": 5,
+          "expected": {
+            "status": "auth_required",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 401,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_403_keyless",
+          "group": 5,
+          "expected": {
+            "status": "auth_required",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 403,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_500_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 500,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_503_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 503,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "connect_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "connect",
+          "stage": "search",
+          "mode": "keyless"
+        },
+        {
+          "name": "read_timeout_keyless",
+          "group": 5,
+          "expected": {
+            "status": "timeout",
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "read_timeout",
+          "stage": "search",
+          "mode": "keyless"
+        },
+        {
+          "name": "rate_unstated_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": null,
+          "echo": true
+        },
+        {
+          "name": "rate_one_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "1",
+          "echo": true
+        },
+        {
+          "name": "rate_long_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "99",
+          "echo": true
+        },
+        {
+          "name": "rate_malformed_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "soon",
+          "echo": true
+        },
+        {
+          "name": "rate_negative_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "-5",
+          "echo": true
+        },
+        {
+          "name": "rate_nan_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "nan",
+          "echo": true
+        },
+        {
+          "name": "rate_inf_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "inf",
+          "echo": true
+        },
+        {
+          "name": "rate_minus_inf_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "-inf",
+          "echo": true
+        },
+        {
+          "name": "quota_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "quota_exhausted",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "quota": true,
+          "echo": true
+        }
+      ],
+      "request_params": {
+        "first_page": [
+          [
+            "fields",
+            "paperId,externalIds,title,abstract,year,venue,publicationTypes,authors,url"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ],
+          [
+            "sort",
+            "citationCount:desc"
+          ]
+        ],
+        "kill_search": [
+          [
+            "fields",
+            "paperId,externalIds,title,abstract,year,venue,publicationTypes,authors,url"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ],
+          [
+            "sort",
+            "citationCount:desc"
+          ]
+        ],
+        "next_page": [
+          [
+            "fields",
+            "paperId,externalIds,title,abstract,year,venue,publicationTypes,authors,url"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ],
+          [
+            "sort",
+            "citationCount:desc"
+          ],
+          [
+            "token",
+            "synthetic-token"
+          ]
+        ]
+      }
+    }
+  ],
+  "identity_shapes": [
+    "missing",
+    "null",
+    "empty",
+    "number",
+    "object"
+  ],
+  "rate_header": "x-ratelimit-limit",
+  "failure_stages": [
+    "search"
+  ]
+}

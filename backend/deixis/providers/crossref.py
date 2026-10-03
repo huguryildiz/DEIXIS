@@ -93,12 +93,17 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         return outcome
     try:
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("Crossref root must be an object")
         message = payload["message"]
+        if "items" in message and (not isinstance(message["items"], list)
+                                   or any(not isinstance(i, dict) for i in message["items"])):
+            raise TypeError("Crossref message.items must be a list of objects")
         outcome.records = [record_from_item(i) for i in message["items"]]
         outcome.provider_total = message.get("total-results")
         if cursor is not None:
             outcome.next_cursor = next_offset(offset, len(outcome.records), rows, outcome.provider_total)
-    except (json.JSONDecodeError, KeyError, TypeError, IndexError) as exc:
+    except (json.JSONDecodeError, KeyError, TypeError, IndexError, AttributeError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome
     outcome.status = "zero_results" if not outcome.records else "completed"

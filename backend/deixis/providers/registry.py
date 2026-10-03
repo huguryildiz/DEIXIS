@@ -86,11 +86,11 @@ def _host(url: str) -> str:
 
 CONNECTORS = {c.provider_id: c for c in (
     Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",
-              sw_options={"reference_count": True, "references": True}, host=_host(openalex.WORKS_URL)),
+              sw_options={"reference_count": True, "references": True}, host=_host(openalex.WORKS_URL), adapter_revision=2),
     # Semantic Scholar's relevance search serves `offset + limit` up to 1,000 and refuses a deeper page. An sw query
     # goes to the bulk endpoint instead: up to 1,000 papers a call, continued by a token (D93).
     Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000,
-              host=_host(semantic_scholar.SEARCH_URL),
+              host=_host(semantic_scholar.SEARCH_URL), adapter_revision=2,
               sw_query={"endpoint": semantic_scholar.BULK_ENDPOINT, "sort": semantic_scholar.BULK_SORT},
               endpoints={semantic_scholar.BULK_ENDPOINT: Endpoint("cursor", semantic_scholar.BULK_MAX_RESULTS,
                                                                total="estimated", options=("sort",))},
@@ -98,27 +98,27 @@ CONNECTORS = {c.provider_id: c for c in (
                      "min_interval": pacing.SEMANTIC_SCHOLAR_PACER.interval_seconds,
                      "shared_gate": "SEMANTIC_SCHOLAR_PACER"}),
     Connector("crossref", crossref.search, crossref.MAX_RESULTS, searchable=False,  # verification only (D87)
-              host=_host(crossref.WORKS_URL)),
+              host=_host(crossref.WORKS_URL), adapter_revision=2),
     # arXiv asks for three seconds between requests and refused consecutive ones on 2026-09-15 (D18).
-    Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS, page_gap=3.0, host=_host(arxiv.QUERY_URL),
+    Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS, page_gap=3.0, host=_host(arxiv.QUERY_URL), adapter_revision=2,
               retry={"rate_limit_statuses": arxiv.RATE_LIMIT_STATUSES,
                      "unstated_wait": arxiv.UNSTATED_RATE_LIMIT_WAIT,
                      "max_retry_wait": arxiv.MAX_RATE_LIMIT_WAIT,
                      "min_interval": arxiv.MIN_INTERVAL_SECONDS}),
     Connector("biorxiv", biorxiv.search, biorxiv.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",  # searched through OpenAlex
-              host=_host(openalex.WORKS_URL), lineage="openalex"),
+              host=_host(openalex.WORKS_URL), lineage="openalex", adapter_revision=2),
     # ESearch followed by EFetch; both have their own bounded HTTP retries.
-    Connector("pubmed", pubmed.search, pubmed.MAX_RESULTS, "NCBI_API_KEY", host=_host(pubmed.BASE_URL), requests_per_search=2),
+    Connector("pubmed", pubmed.search, pubmed.MAX_RESULTS, "NCBI_API_KEY", host=_host(pubmed.BASE_URL), requests_per_search=2, adapter_revision=2),
     Connector("ieee_xplore", ieee_xplore.search, ieee_xplore.MAX_RESULTS, "IEEE_API_KEY", key_required=True,
-              host=_host(ieee_xplore.SEARCH_URL)),
+              host=_host(ieee_xplore.SEARCH_URL), adapter_revision=2),
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,
-              sw_searchable=False, host=_host(scopus.SEARCH_URL)),  # sw: last abstract source only (D91)
+              sw_searchable=False, host=_host(scopus.SEARCH_URL), adapter_revision=2),  # sw: last abstract source only (D91)
     # CORE and SerpApi are searched by a legacy research only: in the third D88 measurement neither brought a verified
     # work no other source brought, and SerpApi is paid (D93).
     Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True, sw_searchable=False,
-              host=_host(core.SEARCH_URL)),
+              host=_host(core.SEARCH_URL), adapter_revision=2),
     Connector("serpapi", serpapi.search, serpapi.MAX_RESULTS, "SERPAPI_API_KEY", key_required=True, supplementary=True,
-              paging="single_page", sw_searchable=False, host=_host(serpapi.SEARCH_URL), total="estimated",
+              paging="single_page", sw_searchable=False, host=_host(serpapi.SEARCH_URL), total="estimated", adapter_revision=2,
               retry={"timeout": 60.0}),  # serpapi.py:68 explicitly passes timeout=60.0 to send.
 )}
 

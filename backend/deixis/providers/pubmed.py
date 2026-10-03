@@ -119,6 +119,8 @@ def _record(node: ET.Element) -> ProviderRecord:
 
 def records_from_xml(value: str) -> list[ProviderRecord]:
     root = ET.fromstring(value)
+    if root.tag != "PubmedArticleSet":
+        raise ValueError("PubMed EFetch root must be PubmedArticleSet")
     return [_record(node) for node in root.findall("PubmedArticle")]
 
 
@@ -146,13 +148,18 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         return outcome
     try:
         search_payload = response.json()
+        if not isinstance(search_payload, dict):
+            raise TypeError("PubMed ESearch root must be an object")
         result = search_payload["esearchresult"]
+        if result.get("idlist") is not None and (not isinstance(result["idlist"], list)
+                                   or any(not isinstance(value, str) for value in result["idlist"])):
+            raise TypeError("PubMed esearchresult.idlist must be a list of strings")
         ids = [str(value) for value in result.get("idlist") or []]
         outcome.provider_total = int(result["count"])
         # Paging follows the identifiers the provider served, not the records efetch could be parsed into.
         if cursor is not None:
             outcome.next_cursor = next_offset(offset, len(ids), count, outcome.provider_total)
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome
     if not ids:
@@ -173,6 +180,7 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         outcome.http_status = fetch_outcome.http_status
         outcome.rate_limit = fetch_outcome.rate_limit
         outcome.error = fetch_outcome.error
+        outcome.error_kind = fetch_outcome.error_kind
         outcome.raw_payload = {"search": search_payload}
         return outcome
     try:

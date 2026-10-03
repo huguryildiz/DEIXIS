@@ -105,7 +105,7 @@ def connector(provider, calls):
         calls.append(provider)
         return common.SearchOutcome("rate_limited", "rejected_not_executed", "SYNTHETIC", "keyless",
                                     error_kind="quota_exhausted")
-    return SimpleNamespace(provider_id=provider, search=search, api_key=lambda: None, access_mode=lambda: "keyless")
+    return SimpleNamespace(provider_id=provider, search=search, api_key=lambda: None, access_mode=lambda: "keyless", key_required=False)
 
 
 def test_exhausted_provider_is_suppressed_only_in_its_run(quota_flow):

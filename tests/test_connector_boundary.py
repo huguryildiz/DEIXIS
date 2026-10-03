@@ -81,7 +81,7 @@ def test_search_request_hash_excludes_options_without_changing_equality():
     assert {request: "found"}[equivalent] == "found"
 
 
-@pytest.mark.parametrize("change", [{"contract_id": "unsupported"}, {"provider_id": "other"}, {"adapter_revision": 2}])
+@pytest.mark.parametrize("change", [{"contract_id": "unsupported"}, {"provider_id": "other"}, {"adapter_revision": registry.CONNECTORS["openalex"].adapter_revision + 1}])
 def test_constructor_refuses_incompatible_descriptor(change):
     connector = registry.CONNECTORS["openalex"]
     with pytest.raises(c.ContractViolation):
@@ -288,7 +288,7 @@ def test_lookup_unsupported_without_search_outcome(pid, lookup_request):
 def test_baseline_coverage():
     baseline.coverage(FROZEN["cases"])
     assert FROZEN["contract_id"] == c.CONTRACT_ID and FROZEN["query_rules_revision"] == c.QUERY_RULES_REVISION
-    assert FROZEN["base_commit"] == "1fb1743"
+    assert FROZEN["base_commit"] == "5990b02"
     assert baseline.SYNTHETIC_KEY not in baseline.BASELINE.read_text()
     assert {case["id"] for case in FROZEN["cases"]}.__len__() == len(FROZEN["cases"])
     for case in FROZEN["cases"]:
@@ -391,6 +391,7 @@ SCAN_ALLOWLIST = {
         "domain.limits.limit_kind owns G8 classification; dynamic vocabulary is baseline-checked",
     ("pubmed.py", "status", "fetch_outcome.status"): "EFetch copies the classified SearchOutcome status unchanged",
     ("pubmed.py", "delivery_class", "fetch_outcome.delivery_class"): "EFetch copies send's delivery class unchanged",
+    ("pubmed.py", "error_kind", "fetch_outcome.error_kind"): "EFetch copies the already-classified SearchOutcome.error_kind unchanged",
     ("zotero.py", "status", "status"): "ZoteroError.status is an integer HTTP status, not an adapter outcome",
 }
 VOCABULARIES = {"status": c.SEARCH_STATUSES, "delivery_class": c.DELIVERY_CLASSES, "error_kind": c.ERROR_KINDS,

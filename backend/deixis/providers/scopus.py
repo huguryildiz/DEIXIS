@@ -97,12 +97,17 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         return outcome
     try:
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("Scopus root must be an object")
         results = payload["search-results"]
+        if results.get("entry") is not None and (not isinstance(results["entry"], list)
+                                   or any(not isinstance(e, dict) for e in results["entry"])):
+            raise TypeError("Scopus search-results.entry must be a list of objects")
         outcome.records = [_record(e) for e in results.get("entry") or [] if "error" not in e]
         outcome.provider_total = int(results["opensearch:totalResults"])
         if cursor is not None:
             outcome.next_cursor = next_offset(offset, len(outcome.records), count, outcome.provider_total)
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome
     outcome.status = "zero_results" if not outcome.records else "completed"

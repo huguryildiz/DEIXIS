@@ -85,11 +85,16 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         return outcome
     try:
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("CORE root must be an object")
+        if "results" in payload and (not isinstance(payload["results"], list)
+                                     or any(not isinstance(w, dict) for w in payload["results"])):
+            raise TypeError("CORE results must be a list of objects")
         outcome.records = [_record(w) for w in payload["results"]]
         outcome.provider_total = payload["totalHits"]
         if cursor is not None:
             outcome.next_cursor = next_offset(offset, len(outcome.records), count, outcome.provider_total)
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome
     outcome.status = "zero_results" if not outcome.records else "completed"

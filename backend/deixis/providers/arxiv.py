@@ -97,6 +97,8 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         return outcome
     try:
         feed = ET.fromstring(response.content)
+        if feed.tag != "{http://www.w3.org/2005/Atom}feed":
+            raise ValueError("arXiv root must be the Atom feed")
         entries = feed.findall("a:entry", NS)
         total = feed.find("opensearch:totalResults", NS)
         outcome.records = [_record(e) for e in entries]

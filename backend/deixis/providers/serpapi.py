@@ -71,6 +71,11 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         return outcome
     try:
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("SerpApi root must be an object")
+        if payload.get("organic_results") is not None and (not isinstance(payload["organic_results"], list)
+                                             or any(not isinstance(r, dict) for r in payload["organic_results"])):
+            raise TypeError("SerpApi organic_results must be a list of objects")
         results = payload.get("organic_results") or []
         error = payload.get("error")
         outcome.records = [_record(r) for r in results]

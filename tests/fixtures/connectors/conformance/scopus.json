@@ -1,0 +1,818 @@
+{
+  "provider_id": "scopus",
+  "synthetic": true,
+  "auth": {
+    "header": "X-ELS-APIKey",
+    "prefix": ""
+  },
+  "container": {
+    "path": [
+      "search-results",
+      "entry"
+    ],
+    "item_type": "object",
+    "format": "json"
+  },
+  "identity": "dc:identifier",
+  "capabilities": {
+    "search": {
+      "positive": "positive",
+      "failure": "http_400"
+    },
+    "doi_lookup": "unsupported",
+    "id_lookup": "unsupported",
+    "citing_works": "unsupported"
+  },
+  "endpoints": [
+    {
+      "endpoint_id": null,
+      "body_file": "scopus-1.json",
+      "cases": [
+        {
+          "name": "positive",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "records": [
+              {
+                "provider_record_id": "synthetic1",
+                "doi": "10.9999/synthetic.1",
+                "abstract_origin": null,
+                "version_label": "publishedVersion",
+                "oa_pdf_url": null,
+                "oa_pdf_version": null,
+                "cited_by_count": null,
+                "reference_count": null
+              }
+            ]
+          },
+          "body_file": "scopus-1.json"
+        },
+        {
+          "name": "unpaged",
+          "group": 4,
+          "expected": {
+            "status": "completed"
+          },
+          "body_file": "scopus-1.json"
+        },
+        {
+          "name": "first_page",
+          "group": 4,
+          "expected": {
+            "status": "completed"
+          },
+          "body_file": "scopus-1.json",
+          "cursor": "*"
+        },
+        {
+          "name": "second_page",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body_file": "scopus-2.json",
+          "cursor": "1"
+        },
+        {
+          "name": "empty",
+          "group": 4,
+          "expected": {
+            "status": "zero_results",
+            "next_cursor": null
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": []
+            }
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "short_page",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body_file": "scopus-1.json",
+          "cursor": "*",
+          "limit": 2
+        },
+        {
+          "name": "counts_unknown",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "records": [
+              {
+                "provider_record_id": "synthetic1",
+                "doi": "10.9999/synthetic.1",
+                "abstract_origin": null,
+                "version_label": "publishedVersion",
+                "oa_pdf_url": null,
+                "oa_pdf_version": null,
+                "cited_by_count": null,
+                "reference_count": null
+              }
+            ]
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": [
+                {
+                  "dc:identifier": "SCOPUS_ID:synthetic1",
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1",
+                  "citedby-count": null
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "counts_zero",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "records": [
+              {
+                "provider_record_id": "synthetic1",
+                "doi": "10.9999/synthetic.1",
+                "abstract_origin": null,
+                "version_label": "publishedVersion",
+                "oa_pdf_url": null,
+                "oa_pdf_version": null,
+                "cited_by_count": null,
+                "reference_count": null
+              }
+            ]
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": [
+                {
+                  "dc:identifier": "SCOPUS_ID:synthetic1",
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1",
+                  "citedby-count": 0
+                }
+              ]
+            }
+          },
+          "ledger": "scopus_count_unmapped"
+        },
+        {
+          "name": "identity_missing",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              ""
+            ]
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": [
+                {
+                  "dc:identifier": "SCOPUS_ID:synthetic1",
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1"
+                },
+                {
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1"
+                }
+              ]
+            }
+          },
+          "limit": 2,
+          "ledger": "identity_scopus",
+          "characterization": true
+        },
+        {
+          "name": "identity_null",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              ""
+            ]
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": [
+                {
+                  "dc:identifier": "SCOPUS_ID:synthetic1",
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1"
+                },
+                {
+                  "dc:identifier": null,
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1"
+                }
+              ]
+            }
+          },
+          "limit": 2,
+          "ledger": "identity_scopus",
+          "characterization": true
+        },
+        {
+          "name": "identity_empty",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              ""
+            ]
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": [
+                {
+                  "dc:identifier": "SCOPUS_ID:synthetic1",
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1"
+                },
+                {
+                  "dc:identifier": "",
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1"
+                }
+              ]
+            }
+          },
+          "limit": 2,
+          "ledger": "identity_scopus",
+          "characterization": true
+        },
+        {
+          "name": "identity_number",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              "17"
+            ]
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": [
+                {
+                  "dc:identifier": "SCOPUS_ID:synthetic1",
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1"
+                },
+                {
+                  "dc:identifier": 17,
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1"
+                }
+              ]
+            }
+          },
+          "limit": 2,
+          "ledger": "identity_scopus",
+          "characterization": true
+        },
+        {
+          "name": "identity_object",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "synthetic1",
+              "{'SYNTHETIC': 'id'}"
+            ]
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": [
+                {
+                  "dc:identifier": "SCOPUS_ID:synthetic1",
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1"
+                },
+                {
+                  "dc:identifier": {
+                    "SYNTHETIC": "id"
+                  },
+                  "dc:title": "SYNTHETIC boundary page 1",
+                  "prism:doi": "10.9999/synthetic.1"
+                }
+              ]
+            }
+          },
+          "limit": 2,
+          "ledger": "identity_scopus",
+          "characterization": true
+        },
+        {
+          "name": "root_array",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": []
+        },
+        {
+          "name": "root_null",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": null
+        },
+        {
+          "name": "root_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": "SYNTHETIC"
+        },
+        {
+          "name": "root_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": 1
+        },
+        {
+          "name": "container_null",
+          "group": 5,
+          "expected": {
+            "status": "zero_results",
+            "record_count": 0
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": null
+            }
+          },
+          "ledger": "k",
+          "characterization": true
+        },
+        {
+          "name": "container_object",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": {}
+            }
+          }
+        },
+        {
+          "name": "container_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": "x"
+            }
+          }
+        },
+        {
+          "name": "container_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": 1
+            }
+          }
+        },
+        {
+          "name": "container_item_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": [
+                1
+              ]
+            }
+          }
+        },
+        {
+          "name": "container_item_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2",
+              "entry": [
+                "x"
+              ]
+            }
+          }
+        },
+        {
+          "name": "empty_object",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {},
+          "ledger": null
+        },
+        {
+          "name": "absent_container",
+          "group": 5,
+          "expected": {
+            "status": "zero_results",
+            "record_count": 0
+          },
+          "body": {
+            "search-results": {
+              "opensearch:totalResults": "2"
+            }
+          },
+          "ledger": "k"
+        },
+        {
+          "name": "non_json_200",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": "<SYNTHETIC not json"
+        },
+        {
+          "name": "http_400",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 400,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_401",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 401,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_403",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 403,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_500",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 500,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_503",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 503,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "connect",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "connect",
+          "stage": "search",
+          "mode": "configured"
+        },
+        {
+          "name": "read_timeout",
+          "group": 5,
+          "expected": {
+            "status": "timeout",
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "read_timeout",
+          "stage": "search",
+          "mode": "configured"
+        },
+        {
+          "name": "rate_unstated",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": null,
+          "echo": true
+        },
+        {
+          "name": "rate_one",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "1",
+          "echo": true
+        },
+        {
+          "name": "rate_long",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "99",
+          "echo": true
+        },
+        {
+          "name": "rate_malformed",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "soon",
+          "echo": true
+        },
+        {
+          "name": "rate_negative",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "-5",
+          "echo": true
+        },
+        {
+          "name": "rate_nan",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "nan",
+          "echo": true
+        },
+        {
+          "name": "rate_inf",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "inf",
+          "echo": true
+        },
+        {
+          "name": "rate_minus_inf",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "-inf",
+          "echo": true
+        },
+        {
+          "name": "quota",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "quota_exhausted",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "quota": true,
+          "echo": true
+        }
+      ],
+      "request_params": {
+        "first_page": [
+          [
+            "count",
+            "1"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ],
+          [
+            "sort",
+            "relevancy"
+          ],
+          [
+            "start",
+            "0"
+          ],
+          [
+            "view",
+            "STANDARD"
+          ]
+        ],
+        "next_page": [
+          [
+            "count",
+            "1"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ],
+          [
+            "sort",
+            "relevancy"
+          ],
+          [
+            "start",
+            "1"
+          ],
+          [
+            "view",
+            "STANDARD"
+          ]
+        ],
+        "unpaged": [
+          [
+            "count",
+            "1"
+          ],
+          [
+            "query",
+            "synthetic query"
+          ],
+          [
+            "sort",
+            "relevancy"
+          ],
+          [
+            "view",
+            "STANDARD"
+          ]
+        ]
+      }
+    }
+  ],
+  "identity_shapes": [
+    "missing",
+    "null",
+    "empty",
+    "number",
+    "object"
+  ],
+  "rate_header": "x-ratelimit-limit",
+  "failure_stages": [
+    "search"
+  ]
+}

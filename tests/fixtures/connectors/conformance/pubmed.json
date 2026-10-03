@@ -1,0 +1,1457 @@
+{
+  "provider_id": "pubmed",
+  "synthetic": true,
+  "auth": {
+    "param": "api_key"
+  },
+  "container": {
+    "path": [
+      "esearchresult",
+      "idlist"
+    ],
+    "item_type": "string",
+    "format": "json"
+  },
+  "identity": "PMID",
+  "capabilities": {
+    "search": {
+      "positive": "positive",
+      "failure": "http_400"
+    },
+    "doi_lookup": "unsupported",
+    "id_lookup": "unsupported",
+    "citing_works": "unsupported"
+  },
+  "endpoints": [
+    {
+      "endpoint_id": null,
+      "body_file": "pubmed-1.json",
+      "cases": [
+        {
+          "name": "positive",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "records": [
+              {
+                "provider_record_id": "900001",
+                "doi": null,
+                "abstract_origin": "provider_pubmed",
+                "version_label": "publishedVersion",
+                "oa_pdf_url": null,
+                "oa_pdf_version": null,
+                "cited_by_count": null,
+                "reference_count": null
+              }
+            ]
+          },
+          "body_file": "pubmed-1.json"
+        },
+        {
+          "name": "unpaged",
+          "group": 4,
+          "expected": {
+            "status": "completed"
+          },
+          "body_file": "pubmed-1.json"
+        },
+        {
+          "name": "first_page",
+          "group": 4,
+          "expected": {
+            "status": "completed"
+          },
+          "body_file": "pubmed-1.json",
+          "cursor": "*"
+        },
+        {
+          "name": "second_page",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body_file": "pubmed-2.json",
+          "cursor": "1",
+          "fetch_body_file": "pubmed_fetch-2.xml"
+        },
+        {
+          "name": "empty",
+          "group": 4,
+          "expected": {
+            "status": "zero_results",
+            "next_cursor": null
+          },
+          "body": {
+            "esearchresult": {
+              "count": "0",
+              "idlist": []
+            }
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "short_page",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body_file": "pubmed-1.json",
+          "cursor": "*",
+          "limit": 2
+        },
+        {
+          "name": "identity_missing",
+          "group": 3,
+          "expected": {
+            "status": "parse_error",
+            "record_ids": []
+          },
+          "fetch_body": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>900001</PMID><Article><ArticleTitle>SYNTHETIC boundary page 1</ArticleTitle><Abstract><AbstractText Label=\"RESULTS\">SYNTHETIC evidence</AbstractText></Abstract><AuthorList><Author><CollectiveName>Synthetic Group</CollectiveName></Author></AuthorList></Article></MedlineCitation></PubmedArticle><PubmedArticle><MedlineCitation><Article><ArticleTitle>SYNTHETIC boundary page 1</ArticleTitle><Abstract><AbstractText Label=\"RESULTS\">SYNTHETIC evidence</AbstractText></Abstract><AuthorList><Author><CollectiveName>Synthetic Group</CollectiveName></Author></AuthorList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+          "body_file": "pubmed-1.json",
+          "limit": 2
+        },
+        {
+          "name": "identity_null",
+          "group": 3,
+          "expected": {
+            "status": "parse_error",
+            "record_ids": []
+          },
+          "fetch_body": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>900001</PMID><Article><ArticleTitle>SYNTHETIC boundary page 1</ArticleTitle><Abstract><AbstractText Label=\"RESULTS\">SYNTHETIC evidence</AbstractText></Abstract><AuthorList><Author><CollectiveName>Synthetic Group</CollectiveName></Author></AuthorList></Article></MedlineCitation></PubmedArticle><PubmedArticle><MedlineCitation><PMID /><Article><ArticleTitle>SYNTHETIC boundary page 1</ArticleTitle><Abstract><AbstractText Label=\"RESULTS\">SYNTHETIC evidence</AbstractText></Abstract><AuthorList><Author><CollectiveName>Synthetic Group</CollectiveName></Author></AuthorList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+          "body_file": "pubmed-1.json",
+          "limit": 2
+        },
+        {
+          "name": "identity_empty",
+          "group": 3,
+          "expected": {
+            "status": "parse_error",
+            "record_ids": []
+          },
+          "fetch_body": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>900001</PMID><Article><ArticleTitle>SYNTHETIC boundary page 1</ArticleTitle><Abstract><AbstractText Label=\"RESULTS\">SYNTHETIC evidence</AbstractText></Abstract><AuthorList><Author><CollectiveName>Synthetic Group</CollectiveName></Author></AuthorList></Article></MedlineCitation></PubmedArticle><PubmedArticle><MedlineCitation><PMID /><Article><ArticleTitle>SYNTHETIC boundary page 1</ArticleTitle><Abstract><AbstractText Label=\"RESULTS\">SYNTHETIC evidence</AbstractText></Abstract><AuthorList><Author><CollectiveName>Synthetic Group</CollectiveName></Author></AuthorList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+          "body_file": "pubmed-1.json",
+          "limit": 2
+        },
+        {
+          "name": "root_array",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": []
+        },
+        {
+          "name": "root_null",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": null
+        },
+        {
+          "name": "root_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": "SYNTHETIC"
+        },
+        {
+          "name": "root_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": 1
+        },
+        {
+          "name": "container_null",
+          "group": 5,
+          "expected": {
+            "status": "zero_results",
+            "record_count": 0
+          },
+          "body": {
+            "esearchresult": {
+              "count": "2",
+              "idlist": null
+            }
+          },
+          "ledger": "k",
+          "characterization": true
+        },
+        {
+          "name": "container_object",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "esearchresult": {
+              "count": "2",
+              "idlist": {}
+            }
+          }
+        },
+        {
+          "name": "container_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "esearchresult": {
+              "count": "2",
+              "idlist": "x"
+            }
+          }
+        },
+        {
+          "name": "container_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "esearchresult": {
+              "count": "2",
+              "idlist": 1
+            }
+          }
+        },
+        {
+          "name": "container_item_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "esearchresult": {
+              "count": "2",
+              "idlist": [
+                1
+              ]
+            }
+          }
+        },
+        {
+          "name": "container_item_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "esearchresult": {
+              "count": "2",
+              "idlist": [
+                {}
+              ]
+            }
+          }
+        },
+        {
+          "name": "empty_object",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {},
+          "ledger": null
+        },
+        {
+          "name": "absent_container",
+          "group": 5,
+          "expected": {
+            "status": "zero_results",
+            "record_count": 0
+          },
+          "body": {
+            "esearchresult": {
+              "count": "2"
+            }
+          },
+          "ledger": "k"
+        },
+        {
+          "name": "non_json_200",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": "<SYNTHETIC not json"
+        },
+        {
+          "name": "foreign_xml_root",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body_file": "pubmed-1.json",
+          "fetch_body": "<html><body>SYNTHETIC</body></html>"
+        },
+        {
+          "name": "http_400",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 400,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_401",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 401,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_403",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 403,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_500",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 500,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_503",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 503,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "connect",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "connect",
+          "stage": "search",
+          "mode": "configured"
+        },
+        {
+          "name": "read_timeout",
+          "group": 5,
+          "expected": {
+            "status": "timeout",
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "read_timeout",
+          "stage": "search",
+          "mode": "configured"
+        },
+        {
+          "name": "rate_unstated",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": null,
+          "echo": true
+        },
+        {
+          "name": "rate_one",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "1",
+          "echo": true
+        },
+        {
+          "name": "rate_long",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "99",
+          "echo": true
+        },
+        {
+          "name": "rate_malformed",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "soon",
+          "echo": true
+        },
+        {
+          "name": "rate_negative",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "-5",
+          "echo": true
+        },
+        {
+          "name": "rate_nan",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "nan",
+          "echo": true
+        },
+        {
+          "name": "rate_inf",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "inf",
+          "echo": true
+        },
+        {
+          "name": "rate_minus_inf",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "-inf",
+          "echo": true
+        },
+        {
+          "name": "quota",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "quota_exhausted",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "quota": true,
+          "echo": true
+        },
+        {
+          "name": "http_400_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 400,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_401_keyless",
+          "group": 5,
+          "expected": {
+            "status": "auth_required",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 401,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_403_keyless",
+          "group": 5,
+          "expected": {
+            "status": "auth_required",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 403,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_500_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 500,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_503_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 503,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "connect_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "connect",
+          "stage": "search",
+          "mode": "keyless"
+        },
+        {
+          "name": "read_timeout_keyless",
+          "group": 5,
+          "expected": {
+            "status": "timeout",
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "read_timeout",
+          "stage": "search",
+          "mode": "keyless"
+        },
+        {
+          "name": "rate_unstated_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": null,
+          "echo": true
+        },
+        {
+          "name": "rate_one_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "1",
+          "echo": true
+        },
+        {
+          "name": "rate_long_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "99",
+          "echo": true
+        },
+        {
+          "name": "rate_malformed_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "soon",
+          "echo": true
+        },
+        {
+          "name": "rate_negative_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "-5",
+          "echo": true
+        },
+        {
+          "name": "rate_nan_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "nan",
+          "echo": true
+        },
+        {
+          "name": "rate_inf_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "inf",
+          "echo": true
+        },
+        {
+          "name": "rate_minus_inf_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "-inf",
+          "echo": true
+        },
+        {
+          "name": "quota_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "quota_exhausted",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "quota": true,
+          "echo": true
+        },
+        {
+          "name": "http_400_fetch",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 400,
+          "stage": "fetch",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_401_fetch",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 401,
+          "stage": "fetch",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_403_fetch",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 403,
+          "stage": "fetch",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_500_fetch",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 500,
+          "stage": "fetch",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_503_fetch",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 503,
+          "stage": "fetch",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "connect_fetch",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "connect",
+          "stage": "fetch",
+          "mode": "configured"
+        },
+        {
+          "name": "read_timeout_fetch",
+          "group": 5,
+          "expected": {
+            "status": "timeout",
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "read_timeout",
+          "stage": "fetch",
+          "mode": "configured"
+        },
+        {
+          "name": "rate_unstated_fetch",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "configured",
+          "retry_after": null,
+          "echo": true
+        },
+        {
+          "name": "rate_one_fetch",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "configured",
+          "retry_after": "1",
+          "echo": true
+        },
+        {
+          "name": "rate_long_fetch",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "configured",
+          "retry_after": "99",
+          "echo": true
+        },
+        {
+          "name": "rate_malformed_fetch",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "configured",
+          "retry_after": "soon",
+          "echo": true
+        },
+        {
+          "name": "rate_negative_fetch",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "configured",
+          "retry_after": "-5",
+          "echo": true
+        },
+        {
+          "name": "rate_nan_fetch",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "configured",
+          "retry_after": "nan",
+          "echo": true
+        },
+        {
+          "name": "rate_inf_fetch",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "configured",
+          "retry_after": "inf",
+          "echo": true
+        },
+        {
+          "name": "rate_minus_inf_fetch",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "configured",
+          "retry_after": "-inf",
+          "echo": true
+        },
+        {
+          "name": "quota_fetch",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "quota_exhausted",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "configured",
+          "quota": true,
+          "echo": true
+        },
+        {
+          "name": "http_400_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 400,
+          "stage": "fetch",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_401_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "auth_required",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 401,
+          "stage": "fetch",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_403_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "auth_required",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 403,
+          "stage": "fetch",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_500_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 500,
+          "stage": "fetch",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_503_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 503,
+          "stage": "fetch",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "connect_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "connect",
+          "stage": "fetch",
+          "mode": "keyless"
+        },
+        {
+          "name": "read_timeout_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "timeout",
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "read_timeout",
+          "stage": "fetch",
+          "mode": "keyless"
+        },
+        {
+          "name": "rate_unstated_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "keyless",
+          "retry_after": null,
+          "echo": true
+        },
+        {
+          "name": "rate_one_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "keyless",
+          "retry_after": "1",
+          "echo": true
+        },
+        {
+          "name": "rate_long_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "keyless",
+          "retry_after": "99",
+          "echo": true
+        },
+        {
+          "name": "rate_malformed_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "keyless",
+          "retry_after": "soon",
+          "echo": true
+        },
+        {
+          "name": "rate_negative_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "keyless",
+          "retry_after": "-5",
+          "echo": true
+        },
+        {
+          "name": "rate_nan_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "keyless",
+          "retry_after": "nan",
+          "echo": true
+        },
+        {
+          "name": "rate_inf_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "keyless",
+          "retry_after": "inf",
+          "echo": true
+        },
+        {
+          "name": "rate_minus_inf_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "keyless",
+          "retry_after": "-inf",
+          "echo": true
+        },
+        {
+          "name": "quota_fetch_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "quota_exhausted",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "fetch",
+          "mode": "keyless",
+          "quota": true,
+          "echo": true
+        }
+      ],
+      "fetch_body_file": "pubmed_fetch-1.xml",
+      "request_params": {
+        "first_page": [
+          [
+            "api_key",
+            "<key>"
+          ],
+          [
+            "db",
+            "pubmed"
+          ],
+          [
+            "email",
+            "synthetic@example.org"
+          ],
+          [
+            "retmax",
+            "1"
+          ],
+          [
+            "retmode",
+            "json"
+          ],
+          [
+            "retstart",
+            "0"
+          ],
+          [
+            "sort",
+            "relevance"
+          ],
+          [
+            "term",
+            "synthetic query"
+          ],
+          [
+            "tool",
+            "DEIXIS"
+          ]
+        ],
+        "next_page": [
+          [
+            "api_key",
+            "<key>"
+          ],
+          [
+            "db",
+            "pubmed"
+          ],
+          [
+            "email",
+            "synthetic@example.org"
+          ],
+          [
+            "retmax",
+            "1"
+          ],
+          [
+            "retmode",
+            "json"
+          ],
+          [
+            "retstart",
+            "1"
+          ],
+          [
+            "sort",
+            "relevance"
+          ],
+          [
+            "term",
+            "synthetic query"
+          ],
+          [
+            "tool",
+            "DEIXIS"
+          ]
+        ],
+        "unpaged": [
+          [
+            "api_key",
+            "<key>"
+          ],
+          [
+            "db",
+            "pubmed"
+          ],
+          [
+            "email",
+            "synthetic@example.org"
+          ],
+          [
+            "retmax",
+            "1"
+          ],
+          [
+            "retmode",
+            "json"
+          ],
+          [
+            "sort",
+            "relevance"
+          ],
+          [
+            "term",
+            "synthetic query"
+          ],
+          [
+            "tool",
+            "DEIXIS"
+          ]
+        ]
+      }
+    }
+  ],
+  "identity_shapes": [
+    "missing",
+    "null",
+    "empty"
+  ],
+  "rate_header": "x-ratelimit-limit",
+  "failure_stages": [
+    "search",
+    "fetch"
+  ],
+  "fetch_url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+}

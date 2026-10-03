@@ -1,0 +1,1533 @@
+{
+  "provider_id": "biorxiv",
+  "synthetic": true,
+  "auth": {
+    "header": "Authorization",
+    "prefix": "Bearer "
+  },
+  "container": {
+    "path": [
+      "results"
+    ],
+    "item_type": "object",
+    "format": "json"
+  },
+  "identity": "id",
+  "capabilities": {
+    "search": {
+      "positive": "positive",
+      "failure": "http_400"
+    },
+    "doi_lookup": "unsupported",
+    "id_lookup": "unsupported",
+    "citing_works": "unsupported"
+  },
+  "endpoints": [
+    {
+      "endpoint_id": null,
+      "body_file": "biorxiv-1.json",
+      "cases": [
+        {
+          "name": "positive",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "records": [
+              {
+                "provider_record_id": "W1",
+                "doi": "10.9999/synthetic.1",
+                "abstract_origin": "provider_openalex_inverted_index",
+                "version_label": "publishedVersion",
+                "oa_pdf_url": null,
+                "oa_pdf_version": null,
+                "cited_by_count": null,
+                "reference_count": 1
+              }
+            ]
+          },
+          "body_file": "biorxiv-1.json"
+        },
+        {
+          "name": "unpaged",
+          "group": 4,
+          "expected": {
+            "status": "completed"
+          },
+          "body_file": "biorxiv-1.json"
+        },
+        {
+          "name": "first_page",
+          "group": 4,
+          "expected": {
+            "status": "completed"
+          },
+          "body_file": "biorxiv-1.json",
+          "cursor": "*"
+        },
+        {
+          "name": "second_page",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body_file": "biorxiv-2.json",
+          "cursor": "synthetic-token"
+        },
+        {
+          "name": "empty",
+          "group": 4,
+          "expected": {
+            "status": "zero_results",
+            "next_cursor": null
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": null
+            },
+            "results": []
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "short_page",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": "synthetic-token"
+          },
+          "body_file": "biorxiv-1.json",
+          "cursor": "*",
+          "limit": 2
+        },
+        {
+          "name": "token_null",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": null
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              }
+            ]
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "token_empty",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": ""
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              }
+            ]
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "token_number",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": 17
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              }
+            ]
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "token_object",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": {
+                "SYNTHETIC": "token"
+              }
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              }
+            ]
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "token_repeated",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": "*"
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "*"
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              }
+            ]
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "token_absent",
+          "group": 4,
+          "expected": {
+            "status": "completed",
+            "next_cursor": null
+          },
+          "body": {
+            "meta": {
+              "count": 2
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              }
+            ]
+          },
+          "cursor": "*"
+        },
+        {
+          "name": "counts_unknown",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "records": [
+              {
+                "provider_record_id": "W1",
+                "doi": "10.9999/synthetic.1",
+                "abstract_origin": "provider_openalex_inverted_index",
+                "version_label": "publishedVersion",
+                "oa_pdf_url": null,
+                "oa_pdf_version": null,
+                "cited_by_count": null,
+                "reference_count": null
+              }
+            ]
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": null,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ],
+                "cited_by_count": null
+              }
+            ]
+          }
+        },
+        {
+          "name": "counts_zero",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "records": [
+              {
+                "provider_record_id": "W1",
+                "doi": "10.9999/synthetic.1",
+                "abstract_origin": "provider_openalex_inverted_index",
+                "version_label": "publishedVersion",
+                "oa_pdf_url": null,
+                "oa_pdf_version": null,
+                "cited_by_count": 0,
+                "reference_count": 0
+              }
+            ]
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 0,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ],
+                "cited_by_count": 0
+              }
+            ]
+          }
+        },
+        {
+          "name": "identity_missing",
+          "group": 3,
+          "expected": {
+            "status": "parse_error",
+            "record_ids": []
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              },
+              {
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              }
+            ]
+          },
+          "limit": 2
+        },
+        {
+          "name": "identity_null",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "W1",
+              "None"
+            ]
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              },
+              {
+                "id": null,
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              }
+            ]
+          },
+          "limit": 2,
+          "ledger": "identity_biorxiv",
+          "characterization": true
+        },
+        {
+          "name": "identity_empty",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "W1",
+              ""
+            ]
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              },
+              {
+                "id": "",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              }
+            ]
+          },
+          "limit": 2,
+          "ledger": "identity_biorxiv",
+          "characterization": true
+        },
+        {
+          "name": "identity_number",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "W1",
+              "17"
+            ]
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              },
+              {
+                "id": 17,
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              }
+            ]
+          },
+          "limit": 2,
+          "ledger": "identity_biorxiv",
+          "characterization": true
+        },
+        {
+          "name": "identity_object",
+          "group": 3,
+          "expected": {
+            "status": "completed",
+            "record_ids": [
+              "W1",
+              "{'SYNTHETIC': 'id'}"
+            ]
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": [
+              {
+                "id": "https://openalex.org/W1",
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              },
+              {
+                "id": {
+                  "SYNTHETIC": "id"
+                },
+                "display_name": "SYNTHETIC boundary page 1",
+                "doi": "https://doi.org/10.9999/synthetic.1",
+                "publication_year": 2021,
+                "primary_location": {
+                  "version": "publishedVersion",
+                  "landing_page_url": "https://example.org/1"
+                },
+                "abstract_inverted_index": {
+                  "SYNTHETIC": [
+                    0
+                  ],
+                  "evidence": [
+                    1
+                  ]
+                },
+                "referenced_works_count": 1,
+                "referenced_works": [
+                  "https://openalex.org/W9"
+                ]
+              }
+            ]
+          },
+          "limit": 2,
+          "ledger": "identity_biorxiv",
+          "characterization": true
+        },
+        {
+          "name": "root_array",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": []
+        },
+        {
+          "name": "root_null",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": null
+        },
+        {
+          "name": "root_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": "SYNTHETIC"
+        },
+        {
+          "name": "root_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": 1
+        },
+        {
+          "name": "container_null",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": null
+          },
+          "ledger": "k",
+          "characterization": true
+        },
+        {
+          "name": "container_object",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": {}
+          }
+        },
+        {
+          "name": "container_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": "x"
+          }
+        },
+        {
+          "name": "container_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": 1
+          }
+        },
+        {
+          "name": "container_item_number",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": [
+              1
+            ]
+          }
+        },
+        {
+          "name": "container_item_string",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            },
+            "results": [
+              "x"
+            ]
+          }
+        },
+        {
+          "name": "empty_object",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {},
+          "ledger": null
+        },
+        {
+          "name": "absent_container",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": {
+            "meta": {
+              "count": 2,
+              "next_cursor": "synthetic-token"
+            }
+          },
+          "ledger": null
+        },
+        {
+          "name": "non_json_200",
+          "group": 5,
+          "expected": {
+            "status": "parse_error",
+            "record_count": 0
+          },
+          "body": "<SYNTHETIC not json"
+        },
+        {
+          "name": "http_400",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 400,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_401",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 401,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_403",
+          "group": 5,
+          "expected": {
+            "status": "entitlement_missing",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 403,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_500",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 500,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "http_503",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 503,
+          "stage": "search",
+          "mode": "configured",
+          "echo": true
+        },
+        {
+          "name": "connect",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "connect",
+          "stage": "search",
+          "mode": "configured"
+        },
+        {
+          "name": "read_timeout",
+          "group": 5,
+          "expected": {
+            "status": "timeout",
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "read_timeout",
+          "stage": "search",
+          "mode": "configured"
+        },
+        {
+          "name": "rate_unstated",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": null,
+          "echo": true
+        },
+        {
+          "name": "rate_one",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "1",
+          "echo": true
+        },
+        {
+          "name": "rate_long",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "99",
+          "echo": true
+        },
+        {
+          "name": "rate_malformed",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "soon",
+          "echo": true
+        },
+        {
+          "name": "rate_negative",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "-5",
+          "echo": true
+        },
+        {
+          "name": "rate_nan",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "nan",
+          "echo": true
+        },
+        {
+          "name": "rate_inf",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "inf",
+          "echo": true
+        },
+        {
+          "name": "rate_minus_inf",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "retry_after": "-inf",
+          "echo": true
+        },
+        {
+          "name": "quota",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "quota_exhausted",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "configured",
+          "quota": true,
+          "echo": true
+        },
+        {
+          "name": "http_400_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 400,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 400,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_401_keyless",
+          "group": 5,
+          "expected": {
+            "status": "auth_required",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 401,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 401,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_403_keyless",
+          "group": 5,
+          "expected": {
+            "status": "auth_required",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 403,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 403,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_500_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 500,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 500,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "http_503_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "after_send_unknown",
+            "http_status": 503,
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 503,
+          "stage": "search",
+          "mode": "keyless",
+          "echo": true
+        },
+        {
+          "name": "connect_keyless",
+          "group": 5,
+          "expected": {
+            "status": "failed",
+            "delivery_class": "before_send",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "connect",
+          "stage": "search",
+          "mode": "keyless"
+        },
+        {
+          "name": "read_timeout_keyless",
+          "group": 5,
+          "expected": {
+            "status": "timeout",
+            "delivery_class": "after_send_unknown",
+            "http_status": null,
+            "record_count": 0,
+            "retries": 0
+          },
+          "exception": "read_timeout",
+          "stage": "search",
+          "mode": "keyless"
+        },
+        {
+          "name": "rate_unstated_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": null,
+          "echo": true
+        },
+        {
+          "name": "rate_one_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 2,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "1",
+          "echo": true
+        },
+        {
+          "name": "rate_long_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "99",
+          "echo": true
+        },
+        {
+          "name": "rate_malformed_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "soon",
+          "echo": true
+        },
+        {
+          "name": "rate_negative_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "-5",
+          "echo": true
+        },
+        {
+          "name": "rate_nan_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "nan",
+          "echo": true
+        },
+        {
+          "name": "rate_inf_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "inf",
+          "echo": true
+        },
+        {
+          "name": "rate_minus_inf_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "rate_limited",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "retry_after": "-inf",
+          "echo": true
+        },
+        {
+          "name": "quota_keyless",
+          "group": 5,
+          "expected": {
+            "status": "rate_limited",
+            "delivery_class": "rejected_not_executed",
+            "http_status": 429,
+            "error_kind": "quota_exhausted",
+            "retries": 0,
+            "record_count": 0
+          },
+          "http_status": 429,
+          "stage": "search",
+          "mode": "keyless",
+          "quota": true,
+          "echo": true
+        }
+      ],
+      "request_params": {
+        "first_page": [
+          [
+            "cursor",
+            "*"
+          ],
+          [
+            "filter",
+            "locations.source.id:S4306402567"
+          ],
+          [
+            "mailto",
+            "synthetic@example.org"
+          ],
+          [
+            "per_page",
+            "1"
+          ],
+          [
+            "search.title_and_abstract",
+            "synthetic query"
+          ],
+          [
+            "select",
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+          ]
+        ],
+        "next_page": [
+          [
+            "cursor",
+            "synthetic-token"
+          ],
+          [
+            "filter",
+            "locations.source.id:S4306402567"
+          ],
+          [
+            "mailto",
+            "synthetic@example.org"
+          ],
+          [
+            "per_page",
+            "1"
+          ],
+          [
+            "search.title_and_abstract",
+            "synthetic query"
+          ],
+          [
+            "select",
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+          ]
+        ],
+        "unpaged": [
+          [
+            "filter",
+            "locations.source.id:S4306402567"
+          ],
+          [
+            "mailto",
+            "synthetic@example.org"
+          ],
+          [
+            "per_page",
+            "1"
+          ],
+          [
+            "search.title_and_abstract",
+            "synthetic query"
+          ],
+          [
+            "select",
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+          ]
+        ]
+      }
+    }
+  ],
+  "identity_shapes": [
+    "missing",
+    "null",
+    "empty",
+    "number",
+    "object"
+  ],
+  "rate_header": "x-ratelimit-limit",
+  "failure_stages": [
+    "search"
+  ]
+}

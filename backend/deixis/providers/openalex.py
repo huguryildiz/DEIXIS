@@ -147,12 +147,18 @@ def _works_page(response: httpx.Response | None, outcome: SearchOutcome, cursor:
         return outcome
     try:
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("OpenAlex root must be an object")
+        if "results" in payload and (not isinstance(payload["results"], list)
+                                     or any(not isinstance(w, dict) for w in payload["results"])):
+            raise TypeError("OpenAlex results must be a list of objects")
         outcome.records = [_record(w) for w in payload["results"]]
         meta = payload.get("meta") or {}
         outcome.provider_total = meta.get("count")
         # `next_cursor` is returned only for a cursor read, and is null on the last page.
-        outcome.next_cursor = meta.get("next_cursor") if cursor is not None else None
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        token = meta.get("next_cursor")
+        outcome.next_cursor = token if cursor is not None and isinstance(token, str) and token else None
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome
     outcome.status = "zero_results" if not outcome.records else "completed"

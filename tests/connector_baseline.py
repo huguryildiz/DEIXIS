@@ -7,7 +7,7 @@ import argparse
 import asyncio
 import json
 import socket
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import patch
@@ -131,15 +131,30 @@ def recorded_outcome(outcome):
            if outcome.raw_payload is not None else None})
 
 
-def replay(case, through_facade=False):
-    """Run a complete sequence with its own fake clock and restored process-wide gates."""
-    requests, waits, results = [], [], []
-    remaining = list(case["script"])
+@contextmanager
+def fake_clock():
+    """Isolate provider pacing and retry waits without sleeping or changing replay behavior."""
+    waits = []
     now = [1000.0]
 
     async def sleep(seconds):
         waits.append(seconds)
         now[0] += seconds
+
+    with ExitStack() as stack:
+        for module in (common, arxiv, pacing):
+            stack.enter_context(patch.object(module.asyncio, "sleep", sleep))
+        stack.enter_context(patch.object(arxiv.time, "monotonic", lambda: now[0]))
+        stack.enter_context(patch.object(pacing.time, "monotonic", lambda: now[0]))
+        stack.enter_context(patch.object(arxiv, "_last_request", 0.0))
+        stack.enter_context(patch.object(pacing.SEMANTIC_SCHOLAR_PACER, "_last_finished", 0.0))
+        yield waits
+
+
+def replay(case, through_facade=False):
+    """Run a complete sequence with its own fake clock and restored process-wide gates."""
+    requests, results = [], []
+    remaining = list(case["script"])
 
     def transport(request):
         assert remaining, f"unscripted request: {request.url.copy_with(query=None)}"
@@ -177,12 +192,7 @@ def replay(case, through_facade=False):
         stack.enter_context(patch.object(socket, "getaddrinfo", deny_network))
         stack.enter_context(patch.object(httpx.AsyncHTTPTransport, "handle_async_request", deny_network))
         stack.enter_context(patch.object(httpx.HTTPTransport, "handle_request", deny_network))
-        for module in (common, arxiv, pacing):
-            stack.enter_context(patch.object(module.asyncio, "sleep", sleep))
-        stack.enter_context(patch.object(arxiv.time, "monotonic", lambda: now[0]))
-        stack.enter_context(patch.object(pacing.time, "monotonic", lambda: now[0]))
-        stack.enter_context(patch.object(arxiv, "_last_request", 0.0))
-        stack.enter_context(patch.object(pacing.SEMANTIC_SCHOLAR_PACER, "_last_finished", 0.0))
+        waits = stack.enter_context(fake_clock())
         asyncio.run(run())
     assert not remaining, f"unused scripted responses: {case['id']}"
     return {"requests": requests, "waits": waits, "results": results}
@@ -275,7 +285,7 @@ def capture():
                 issues.append({"provider_id": pid, "endpoint_id": e.endpoint_id, "text": text,
                                "issues": query_rules.query_issues(pid, text, e.endpoint_id)})
     return {"contract_id": contract.CONTRACT_ID, "query_rules_revision": contract.QUERY_RULES_REVISION,
-            "base_commit": "1fb1743", "descriptors": descriptors(), "cases": cases,
+            "base_commit": "5990b02", "descriptors": descriptors(), "cases": cases,
             "rendering": rendering, "query_issues": issues}
 
 

@@ -95,13 +95,18 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         return outcome
     try:
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("Semantic Scholar root must be an object")
+        if payload.get("data") is not None and (not isinstance(payload["data"], list)
+                                  or any(not isinstance(p, dict) for p in payload["data"])):
+            raise TypeError("Semantic Scholar data must be a list of objects")
         outcome.records = [_record(p) for p in payload.get("data") or []]
         outcome.provider_total = payload["total"]
         # The response names the next offset itself and leaves it out once the reachable window (offset + limit ≤ 1000)
         # or the result set is spent.
         nxt = payload.get("next")
         outcome.next_cursor = str(nxt) if cursor is not None and nxt is not None else None
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome
     outcome.status = "zero_results" if not outcome.records else "completed"
@@ -134,13 +139,18 @@ async def search_bulk(client: httpx.AsyncClient, query: str, limit: int, api_key
         return outcome
     try:
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("Semantic Scholar root must be an object")
+        if payload.get("data") is not None and (not isinstance(payload["data"], list)
+                                  or any(not isinstance(p, dict) for p in payload["data"])):
+            raise TypeError("Semantic Scholar data must be a list of objects")
         papers = payload.get("data") or []
         outcome.records = [_record(p) for p in papers[:limit]]
         total = payload.get("total")
         outcome.provider_total = int(total) if total is not None else None  # an estimate, sent as a string
         token = payload.get("token")
-        outcome.next_cursor = CUT if len(papers) > limit else (str(token) if token else None)
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        outcome.next_cursor = CUT if len(papers) > limit else (token if isinstance(token, str) and token else None)
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
         return outcome
     outcome.status = "zero_results" if not outcome.records else "completed"

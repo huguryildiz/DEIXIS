@@ -1,10 +1,10 @@
 {
   "contract_id": "deixis.scholarly_connector.v1",
   "query_rules_revision": "deixis.query_rules.r1",
-  "base_commit": "1fb1743",
+  "base_commit": "5990b02",
   "descriptors": [
     {
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "capabilities": [
         "search"
       ],
@@ -56,7 +56,7 @@
       "sw_searchable": true
     },
     {
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "capabilities": [
         "search"
       ],
@@ -123,7 +123,7 @@
       "sw_searchable": true
     },
     {
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "capabilities": [
         "search"
       ],
@@ -164,7 +164,7 @@
       "sw_searchable": true
     },
     {
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "capabilities": [
         "search"
       ],
@@ -206,7 +206,7 @@
       "sw_searchable": true
     },
     {
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "capabilities": [
         "search"
       ],
@@ -247,7 +247,7 @@
       "sw_searchable": true
     },
     {
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "capabilities": [
         "search"
       ],
@@ -288,7 +288,7 @@
       "sw_searchable": true
     },
     {
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "capabilities": [
         "search"
       ],
@@ -329,7 +329,7 @@
       "sw_searchable": true
     },
     {
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "capabilities": [
         "search"
       ],
@@ -370,7 +370,7 @@
       "sw_searchable": false
     },
     {
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "capabilities": [
         "search"
       ],
@@ -411,7 +411,7 @@
       "sw_searchable": false
     },
     {
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "capabilities": [
         "search"
       ],
@@ -458,7 +458,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "first_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "openalex",
@@ -594,7 +594,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "malformed_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "openalex",
@@ -671,7 +671,7 @@
             "outcome": {
               "access_mode": "api_key",
               "delivery_class": null,
-              "error": "list indices must be integers or slices, not str",
+              "error": "OpenAlex root must be an object",
               "error_kind": null,
               "http_status": 200,
               "next_cursor": null,
@@ -692,7 +692,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "next_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "openalex",
@@ -828,7 +828,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "non_json_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "openalex",
@@ -926,7 +926,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "quota_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "openalex",
@@ -1026,7 +1026,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "retry_then_success",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "openalex",
@@ -1212,7 +1212,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "unpaged",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "openalex",
@@ -1339,7 +1339,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "unpaged_keyless",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "openalex",
@@ -1462,7 +1462,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "first_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -1594,7 +1594,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "malformed_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -1664,9 +1664,20 @@
         "waits": [],
         "results": [
           {
-            "raised": {
-              "type": "AttributeError",
-              "message": "'list' object has no attribute 'get'"
+            "outcome": {
+              "access_mode": "api_key",
+              "delivery_class": null,
+              "error": "Semantic Scholar root must be an object",
+              "error_kind": null,
+              "http_status": 200,
+              "next_cursor": null,
+              "payload_sha256": null,
+              "provider_total": null,
+              "rate_limit": {},
+              "records": [],
+              "request_description": "GET https://api.semanticscholar.org/graph/v1/paper/search query='synthetic query' limit=1 access=api_key",
+              "retries": 0,
+              "status": "parse_error"
             }
           }
         ]
@@ -1677,7 +1688,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "next_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -1809,7 +1820,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "non_json_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -1903,7 +1914,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "quota_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -1999,7 +2010,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "retry_then_success",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -2179,7 +2190,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "unpaged",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -2304,7 +2315,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "unpaged_keyless",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -2425,7 +2436,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "bad_offset_-1",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -2457,7 +2468,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "bad_offset_x",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -2489,7 +2500,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": "bulk",
       "shape": "first_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -2619,7 +2630,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": "bulk",
       "shape": "kill_search",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -2747,7 +2758,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": "bulk",
       "shape": "malformed_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -2820,9 +2831,20 @@
         "waits": [],
         "results": [
           {
-            "raised": {
-              "type": "AttributeError",
-              "message": "'list' object has no attribute 'get'"
+            "outcome": {
+              "access_mode": "api_key",
+              "delivery_class": null,
+              "error": "Semantic Scholar root must be an object",
+              "error_kind": null,
+              "http_status": 200,
+              "next_cursor": null,
+              "payload_sha256": null,
+              "provider_total": null,
+              "rate_limit": {},
+              "records": [],
+              "request_description": "GET https://api.semanticscholar.org/graph/v1/paper/search/bulk query='synthetic query' sort=citationCount:desc access=api_key",
+              "retries": 0,
+              "status": "parse_error"
             }
           }
         ]
@@ -2833,7 +2855,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": "bulk",
       "shape": "next_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -2967,7 +2989,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": "bulk",
       "shape": "non_json_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -3064,7 +3086,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": "bulk",
       "shape": "quota_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -3162,7 +3184,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": "bulk",
       "shape": "retry_then_success",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -3344,7 +3366,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": "bulk",
       "shape": "unpaged_keyless",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -3468,7 +3490,7 @@
       "provider_id": "crossref",
       "endpoint_id": null,
       "shape": "first_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "crossref",
@@ -3602,7 +3624,7 @@
       "provider_id": "crossref",
       "endpoint_id": null,
       "shape": "malformed_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "crossref",
@@ -3679,7 +3701,7 @@
             "outcome": {
               "access_mode": "keyless",
               "delivery_class": null,
-              "error": "list indices must be integers or slices, not str",
+              "error": "Crossref root must be an object",
               "error_kind": null,
               "http_status": 200,
               "next_cursor": null,
@@ -3700,7 +3722,7 @@
       "provider_id": "crossref",
       "endpoint_id": null,
       "shape": "next_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "crossref",
@@ -3834,7 +3856,7 @@
       "provider_id": "crossref",
       "endpoint_id": null,
       "shape": "non_json_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "crossref",
@@ -3932,7 +3954,7 @@
       "provider_id": "crossref",
       "endpoint_id": null,
       "shape": "quota_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "crossref",
@@ -4032,7 +4054,7 @@
       "provider_id": "crossref",
       "endpoint_id": null,
       "shape": "retry_then_success",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "crossref",
@@ -4218,7 +4240,7 @@
       "provider_id": "crossref",
       "endpoint_id": null,
       "shape": "unpaged",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "crossref",
@@ -4345,7 +4367,7 @@
       "provider_id": "crossref",
       "endpoint_id": null,
       "shape": "unpaged_keyless",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "crossref",
@@ -4472,7 +4494,7 @@
       "provider_id": "crossref",
       "endpoint_id": null,
       "shape": "bad_offset_-1",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "crossref",
@@ -4504,7 +4526,7 @@
       "provider_id": "crossref",
       "endpoint_id": null,
       "shape": "bad_offset_x",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "crossref",
@@ -4536,7 +4558,7 @@
       "provider_id": "arxiv",
       "endpoint_id": null,
       "shape": "first_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "arxiv",
@@ -4669,7 +4691,7 @@
       "provider_id": "arxiv",
       "endpoint_id": null,
       "shape": "malformed_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "arxiv",
@@ -4767,7 +4789,7 @@
       "provider_id": "arxiv",
       "endpoint_id": null,
       "shape": "next_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "arxiv",
@@ -4900,7 +4922,7 @@
       "provider_id": "arxiv",
       "endpoint_id": null,
       "shape": "quota_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "arxiv",
@@ -5000,7 +5022,7 @@
       "provider_id": "arxiv",
       "endpoint_id": null,
       "shape": "retry_then_success",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "arxiv",
@@ -5189,7 +5211,7 @@
       "provider_id": "arxiv",
       "endpoint_id": null,
       "shape": "unpaged",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "arxiv",
@@ -5319,7 +5341,7 @@
       "provider_id": "arxiv",
       "endpoint_id": null,
       "shape": "unpaged_keyless",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "arxiv",
@@ -5449,7 +5471,7 @@
       "provider_id": "arxiv",
       "endpoint_id": null,
       "shape": "bad_offset_-1",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "arxiv",
@@ -5481,7 +5503,7 @@
       "provider_id": "arxiv",
       "endpoint_id": null,
       "shape": "bad_offset_x",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "arxiv",
@@ -5513,7 +5535,7 @@
       "provider_id": "biorxiv",
       "endpoint_id": null,
       "shape": "first_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "biorxiv",
@@ -5651,7 +5673,7 @@
       "provider_id": "biorxiv",
       "endpoint_id": null,
       "shape": "malformed_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "biorxiv",
@@ -5732,7 +5754,7 @@
             "outcome": {
               "access_mode": "api_key",
               "delivery_class": null,
-              "error": "list indices must be integers or slices, not str",
+              "error": "OpenAlex root must be an object",
               "error_kind": null,
               "http_status": 200,
               "next_cursor": null,
@@ -5753,7 +5775,7 @@
       "provider_id": "biorxiv",
       "endpoint_id": null,
       "shape": "next_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "biorxiv",
@@ -5891,7 +5913,7 @@
       "provider_id": "biorxiv",
       "endpoint_id": null,
       "shape": "non_json_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "biorxiv",
@@ -5993,7 +6015,7 @@
       "provider_id": "biorxiv",
       "endpoint_id": null,
       "shape": "quota_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "biorxiv",
@@ -6097,7 +6119,7 @@
       "provider_id": "biorxiv",
       "endpoint_id": null,
       "shape": "retry_then_success",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "biorxiv",
@@ -6291,7 +6313,7 @@
       "provider_id": "biorxiv",
       "endpoint_id": null,
       "shape": "unpaged",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "biorxiv",
@@ -6422,7 +6444,7 @@
       "provider_id": "biorxiv",
       "endpoint_id": null,
       "shape": "unpaged_keyless",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "biorxiv",
@@ -6549,7 +6571,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "efetch_malformed",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -6718,7 +6740,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "first_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -6925,7 +6947,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "malformed_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -7014,7 +7036,7 @@
             "outcome": {
               "access_mode": "api_key",
               "delivery_class": null,
-              "error": "list indices must be integers or slices, not str",
+              "error": "PubMed ESearch root must be an object",
               "error_kind": null,
               "http_status": 200,
               "next_cursor": null,
@@ -7035,7 +7057,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "next_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -7242,7 +7264,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "non_json_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -7352,7 +7374,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "quota_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -7464,7 +7486,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "retry_then_success",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -7735,7 +7757,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "unpaged",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -7935,7 +7957,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "unpaged_keyless",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -8127,7 +8149,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "bad_offset_-1",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -8159,7 +8181,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "bad_offset_x",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -8191,7 +8213,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "first_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -8324,7 +8346,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "malformed_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -8398,9 +8420,20 @@
         "waits": [],
         "results": [
           {
-            "raised": {
-              "type": "AttributeError",
-              "message": "'list' object has no attribute 'get'"
+            "outcome": {
+              "access_mode": "api_key",
+              "delivery_class": null,
+              "error": "IEEE root must be an object",
+              "error_kind": null,
+              "http_status": 200,
+              "next_cursor": null,
+              "payload_sha256": null,
+              "provider_total": null,
+              "rate_limit": {},
+              "records": [],
+              "request_description": "GET https://ieeexploreapi.ieee.org/api/v1/search/articles querytext='synthetic query' max_records=1 access=api_key",
+              "retries": 0,
+              "status": "parse_error"
             }
           }
         ]
@@ -8411,7 +8444,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "missing_key",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -8452,7 +8485,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "next_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -8585,7 +8618,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "non_json_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -8683,7 +8716,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "quota_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -8783,7 +8816,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "retry_then_success",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -8972,7 +9005,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "unpaged",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -9102,7 +9135,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "bad_offset_-1",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -9134,7 +9167,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "bad_offset_x",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -9166,7 +9199,7 @@
       "provider_id": "scopus",
       "endpoint_id": null,
       "shape": "first_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "scopus",
@@ -9302,7 +9335,7 @@
       "provider_id": "scopus",
       "endpoint_id": null,
       "shape": "malformed_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "scopus",
@@ -9379,7 +9412,7 @@
             "outcome": {
               "access_mode": "api_key",
               "delivery_class": null,
-              "error": "list indices must be integers or slices, not str",
+              "error": "Scopus root must be an object",
               "error_kind": null,
               "http_status": 200,
               "next_cursor": null,
@@ -9400,7 +9433,7 @@
       "provider_id": "scopus",
       "endpoint_id": null,
       "shape": "missing_key",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "scopus",
@@ -9441,7 +9474,7 @@
       "provider_id": "scopus",
       "endpoint_id": null,
       "shape": "next_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "scopus",
@@ -9577,7 +9610,7 @@
       "provider_id": "scopus",
       "endpoint_id": null,
       "shape": "non_json_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "scopus",
@@ -9675,7 +9708,7 @@
       "provider_id": "scopus",
       "endpoint_id": null,
       "shape": "quota_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "scopus",
@@ -9775,7 +9808,7 @@
       "provider_id": "scopus",
       "endpoint_id": null,
       "shape": "retry_then_success",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "scopus",
@@ -9963,7 +9996,7 @@
       "provider_id": "scopus",
       "endpoint_id": null,
       "shape": "unpaged",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "scopus",
@@ -10092,7 +10125,7 @@
       "provider_id": "scopus",
       "endpoint_id": null,
       "shape": "bad_offset_-1",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "scopus",
@@ -10124,7 +10157,7 @@
       "provider_id": "scopus",
       "endpoint_id": null,
       "shape": "bad_offset_x",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "scopus",
@@ -10156,7 +10189,7 @@
       "provider_id": "core",
       "endpoint_id": null,
       "shape": "first_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "core",
@@ -10283,7 +10316,7 @@
       "provider_id": "core",
       "endpoint_id": null,
       "shape": "malformed_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "core",
@@ -10352,7 +10385,7 @@
             "outcome": {
               "access_mode": "api_key",
               "delivery_class": null,
-              "error": "list indices must be integers or slices, not str",
+              "error": "CORE root must be an object",
               "error_kind": null,
               "http_status": 200,
               "next_cursor": null,
@@ -10373,7 +10406,7 @@
       "provider_id": "core",
       "endpoint_id": null,
       "shape": "missing_key",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "core",
@@ -10414,7 +10447,7 @@
       "provider_id": "core",
       "endpoint_id": null,
       "shape": "next_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "core",
@@ -10541,7 +10574,7 @@
       "provider_id": "core",
       "endpoint_id": null,
       "shape": "non_json_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "core",
@@ -10631,7 +10664,7 @@
       "provider_id": "core",
       "endpoint_id": null,
       "shape": "quota_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "core",
@@ -10723,7 +10756,7 @@
       "provider_id": "core",
       "endpoint_id": null,
       "shape": "retry_then_success",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "core",
@@ -10894,7 +10927,7 @@
       "provider_id": "core",
       "endpoint_id": null,
       "shape": "unpaged",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "core",
@@ -11014,7 +11047,7 @@
       "provider_id": "core",
       "endpoint_id": null,
       "shape": "bad_offset_-1",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "core",
@@ -11046,7 +11079,7 @@
       "provider_id": "core",
       "endpoint_id": null,
       "shape": "bad_offset_x",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "core",
@@ -11078,7 +11111,7 @@
       "provider_id": "serpapi",
       "endpoint_id": null,
       "shape": "first_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "serpapi",
@@ -11208,7 +11241,7 @@
       "provider_id": "serpapi",
       "endpoint_id": null,
       "shape": "malformed_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "serpapi",
@@ -11285,7 +11318,7 @@
             "outcome": {
               "access_mode": "api_key",
               "delivery_class": null,
-              "error": "'list' object has no attribute 'get'",
+              "error": "SerpApi root must be an object",
               "error_kind": null,
               "http_status": 200,
               "next_cursor": null,
@@ -11306,7 +11339,7 @@
       "provider_id": "serpapi",
       "endpoint_id": null,
       "shape": "missing_key",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "serpapi",
@@ -11347,7 +11380,7 @@
       "provider_id": "serpapi",
       "endpoint_id": null,
       "shape": "next_page",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "serpapi",
@@ -11477,7 +11510,7 @@
       "provider_id": "serpapi",
       "endpoint_id": null,
       "shape": "non_json_200",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "serpapi",
@@ -11575,7 +11608,7 @@
       "provider_id": "serpapi",
       "endpoint_id": null,
       "shape": "quota_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "serpapi",
@@ -11675,7 +11708,7 @@
       "provider_id": "serpapi",
       "endpoint_id": null,
       "shape": "retry_then_success",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "serpapi",
@@ -11861,7 +11894,7 @@
       "provider_id": "serpapi",
       "endpoint_id": null,
       "shape": "unpaged",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "serpapi",
@@ -11988,7 +12021,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "ieee_per_second",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -12179,7 +12212,7 @@
       "provider_id": "ieee_xplore",
       "endpoint_id": null,
       "shape": "ieee_per_day",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "ieee_xplore",
@@ -12283,7 +12316,7 @@
       "provider_id": "serpapi",
       "endpoint_id": null,
       "shape": "serpapi_exhausted",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "serpapi",
@@ -12383,7 +12416,7 @@
       "provider_id": "openalex",
       "endpoint_id": null,
       "shape": "openalex_zero_usd",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "openalex",
@@ -12487,7 +12520,7 @@
       "provider_id": "pubmed",
       "endpoint_id": null,
       "shape": "pubmed_efetch_quota",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "pubmed",
@@ -12638,7 +12671,7 @@
               "access_mode": "api_key",
               "delivery_class": "rejected_not_executed",
               "error": "{\"error\":\"SYNTHETIC daily quota exhausted\"}",
-              "error_kind": null,
+              "error_kind": "quota_exhausted",
               "http_status": 429,
               "next_cursor": null,
               "payload_sha256": "0da1713a0119a6af8cd28127b5d364e11f4e3fbd7170a904d614c7d232b80e07",
@@ -12658,7 +12691,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": "bulk",
       "shape": "cut_cursor",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -12691,7 +12724,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "unknown_endpoint",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",
@@ -12735,7 +12768,7 @@
       "provider_id": "arxiv",
       "endpoint_id": null,
       "shape": "spacing_sequence",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "arxiv",
@@ -12979,7 +13012,7 @@
       "provider_id": "semantic_scholar",
       "endpoint_id": null,
       "shape": "spacing_sequence",
-      "adapter_revision": 1,
+      "adapter_revision": 2,
       "calls": [
         {
           "provider_id": "semantic_scholar",

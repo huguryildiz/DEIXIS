@@ -2041,12 +2041,16 @@ class ResearchFlow:
         query_key = page.query_key if page else None
         attempts = 0
         while True:
+            key = connector.api_key()
+            if connector.key_required and not key:
+                return SearchOutcome("not_configured", "before_send",
+                                     f"{connector.provider_id} search not sent: access=not_configured", "not_configured")
             if connector.provider_id in self._quota_out.get(run_id, set()):
                 return SearchOutcome("rate_limited", "before_send", "Suppressed: provider quota exhausted in this run",
-                                     connector.access_mode(), error_kind="quota_exhausted")
+                                     "api_key" if key else "keyless", error_kind="quota_exhausted")
             self.store.add_usage(run_id, "provider_requests", query=query_key)
             # A paged read supplies the connector's search options.
-            outcome = await connector.search(self.deps.http, query["query_text"], limit, connector.api_key(),
+            outcome = await connector.search(self.deps.http, query["query_text"], limit, key,
                                              self.deps.settings.contact_email,
                                              **({"cursor": page.cursor, "max_rate_limit_retries": page.rate_limit_retries,
                                                  **connector.sw_options, **endpoint_options(query)} if page else {}))
@@ -2073,6 +2077,14 @@ class ResearchFlow:
         run_id, rid = run["id"], run["research_id"]
         settings = self.deps.settings
         provider = CONNECTORS[query["provider_id"]].provider_id
+        if outcome.status == "not_configured":
+            # No provider request existed: preserve a retryable step, without a retrieval row (D178).
+            self.store.finish_step(step["id"], "failed", output={"status": "not_configured", "result_count": 0},
+                                   error_code="not_configured",
+                                   error={"error": outcome.request_description, "http_status": None},
+                                   delivery_class="before_send", finished_at=finished_at)
+            return "provider_not_configured", {"provider": provider, "http_status": None,
+                                                "error_kind": None, "retry_after": None}
         payload_path = payload_digest = None
         if outcome.raw_payload is not None:
             settings.payloads_dir.mkdir(parents=True, exist_ok=True)
@@ -4656,14 +4668,18 @@ class ResearchFlow:
         reserve = transport["requests_per_search"] * (1 + transport["rate_limit_retries"])
         for attempt in range(transport["transient_attempts"]):
             self._candidate_send_gate(run)
+            key = connector.api_key()
+            if connector.key_required and not key:
+                return SearchOutcome("not_configured", "before_send",
+                                     f"{connector.provider_id} search not sent: access=not_configured", "not_configured")
             with transaction(self.store.conn):
                 used = self.store.run(run["id"])["usage"].get("provider_requests", 0)
                 if used + reserve > run["budget"]["max_provider_requests"]:
-                    return SearchOutcome("transport_budget", "before_send", "unsent: transport budget", connector.access_mode())
+                    return SearchOutcome("transport_budget", "before_send", "unsent: transport budget", "api_key" if key else "keyless")
                 # Conservatively charge the whole possible HTTP attempt, never refund it.
                 self.store.add_usage(run["id"], "provider_requests", reserve)
             outcome = await connector.search(self.deps.http, query["query_text"], KILL_RECORDS,
-                connector.api_key(), self.deps.settings.contact_email, **endpoint_options(query))
+                key, self.deps.settings.contact_email, **endpoint_options(query))
             if outcome.delivery_class != "before_send" or outcome.status != "failed" or attempt + 1 == transport["transient_attempts"]:
                 return outcome
             await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1))

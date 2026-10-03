@@ -2,6 +2,17 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D208 — P9 re-extraction R5: compatibility regression and closing record; H7 finding 2 is closed for the explicit text-retry workflow, with named limits and no must-fix item
+
+**Status:** accepted (record only, no code change). Written by Claude Sonnet 5.5; reviewed by gpt-6.1-sol high in 1 round (düzeltmeyle hazır: 3 medium, 2 low, all folded in; narrow verification by Sol medium: see the closing record's commit). The open-item classification was agreed with gpt-6.1-sol medium (read-only); the owner was not asked.
+**Date:** 2026-10-03, P9 batch R5.
+
+**Context:** R1 to R4 (D190, D191, D192, D195, D197, D203) built recovery for a failed or partial PDF text extraction and each recorded what it left undone. D176 asks R5 for one compatibility run and one honest closing record.
+
+**Decision:** [docs/product/p9-reextract-closing-record.md](product/p9-reextract-closing-record.md) holds the commands, counts, skips, warnings, old-code failure evidence and every open item. Measured on `dbec4fc`: full pytest 13,553 passed, 0 failed, 2 skipped (F09 production-limit tests, unchanged); the focused recovery and compatibility set (22 `test_reextract_*` files, the design's section 2.1 inventory and the seven P8 B1 review files) 2,009 passed; web build and lint pass (16 lint warnings); Playwright for reextract, a11y, acceptance, report, lineage, pdf-document, waiting-pdf and candidate-review 101 passed under the shared lock. The first run, on `c94e954`, found `e2e/report.spec.ts:403` red after RF3 (D206); that was not a recovery regression and `414185f` had already fixed it. H7 finding 2 is closed for the explicit API/CLI/web text retry; re-upload alone does not change stored text and a no-body same-profile POST still answers `unchanged`. T10 is accepted with two named gaps: the later D52 background reader is not executed and the fail-on-call test has no HTTP trap. No must-fix item remains in the re-extraction scope. Optional follow-ups: R5-F1 (T10 coverage), R5-F2 (candidate and lineage views get occurrence and freshness fields, now unblocked by P8 B8a; Zotero notes in Turkish), R5-F3 (reader lock or cache invalidation for viewer and figure routes).
+
+**Limits:** Synthetic records and a scripted model only; no real-library, provider or model evidence. Windows locking, power-loss durability and recovery of a real torn file are not shown. A restored file, a promoted extraction or a located anchor validates no claim. The 16 browser spec files not listed above were not run. The RR-B matrix pair, H10 and the owed measurements are separate work and stay open.
+
 ## D188 — P8 B7: follow-up has its own tab that shows what each check read, what is new to the research, and when DEIXIS was not checking
 
 **Status:** accepted, implemented. Writer: gpt-6.1-sol high. Binding task prompt `product/p8-b7-prompt.md`, reviewed by gpt-6.1-sol medium in four rounds, all findings folded into the prompt. The prompt author and Sol agreed the sidebar-count, separate-fixture and quiet-run choices; persistent acknowledgement was replaced by Sol's in-session acknowledgement, as recorded in the prompt's plan-review record. D188 was reserved by the coordinator.

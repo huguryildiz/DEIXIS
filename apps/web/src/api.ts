@@ -911,18 +911,7 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
     return request<T>(path, init, true)
   }
   if (!response.ok) {
-    let detail = response.statusText
-    let errors: string[] = []
-    let reason: string | null = null
-    try {
-      const body = await response.json()
-      // A refusal that names its cause with a `code` carries an English sentence that is also its i18n key (P9 H3).
-      if (typeof body.detail === 'string') detail = typeof body.code === 'string' ? t(body.detail) : body.detail
-      // A validation refusal answers with a list of faults rather than one sentence (slice 08a).
-      else if (Array.isArray(body.detail?.errors)) { errors = body.detail.errors.map(String); detail = errors.join(' · ') }
-      else if (typeof body.detail?.message === 'string') { detail = body.detail.message; reason = typeof body.detail.reason === 'string' ? body.detail.reason : null }
-    } catch { /* keep status text */ }
-    throw new ApiError(response.status, detail, errors, reason)
+    throw await responseError(response)
   }
   return response.json() as Promise<T>
 }
@@ -930,15 +919,24 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
 const json = (method: string, body: unknown, extra: Record<string, string> = {}): RequestInit =>
   ({ method, headers: { 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) })
 
-async function exportError(response: Response): Promise<ApiError> {
+async function responseError(response: Response): Promise<ApiError> {
   let detail = response.statusText
-  try { const body = await response.json(); if (typeof body.detail === 'string') detail = body.detail } catch { /* keep status text */ }
-  return new ApiError(response.status, detail)
+  let errors: string[] = []
+  let reason: string | null = null
+  try {
+    const body = await response.json()
+    // A refusal that names its cause with a `code` carries an English sentence that is also its i18n key (P9 H3).
+    if (typeof body.detail === 'string') detail = typeof body.code === 'string' ? t(body.detail) : body.detail
+    // A validation refusal answers with a list of faults rather than one sentence (slice 08a).
+    else if (Array.isArray(body.detail?.errors)) { errors = body.detail.errors.map(String); detail = errors.join(' · ') }
+    else if (typeof body.detail?.message === 'string') { detail = body.detail.message; reason = typeof body.detail.reason === 'string' ? body.detail.reason : null }
+  } catch { /* keep status text */ }
+  return new ApiError(response.status, detail, errors, reason)
 }
 
 async function reportMarkdown(id: string, reportId: string): Promise<{ text: string; filename: string }> {
   const response = await fetch(`/api/researches/${id}/reports/${reportId}/export?format=markdown`, { credentials: 'same-origin' })
-  if (!response.ok) throw await exportError(response)
+  if (!response.ok) throw await responseError(response)
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const filename = /^attachment;\s*filename="([a-zA-Z0-9._-]+)"$/.exec(disposition)?.[1] ?? 'report.md'
   return { text: await response.text(), filename }
@@ -947,7 +945,7 @@ async function reportMarkdown(id: string, reportId: string): Promise<{ text: str
 // The zip holds the .tex and the .bib. X-Deixis-Export-Notes is the total count of export notes, ASCII digits; the .tex lists at most 20.
 async function reportLatex(id: string, reportId: string): Promise<{ blob: Blob; filename: string; notes: number }> {
   const response = await fetch(`/api/researches/${id}/reports/${reportId}/export?format=latex`, { credentials: 'same-origin' })
-  if (!response.ok) throw await exportError(response)
+  if (!response.ok) throw await responseError(response)
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const filename = /^attachment;\s*filename="([a-zA-Z0-9._-]+)"$/.exec(disposition)?.[1] ?? 'report-latex.zip'
   const header = response.headers.get('X-Deixis-Export-Notes') ?? ''

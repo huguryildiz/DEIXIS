@@ -244,7 +244,7 @@ test('a research title is renamed in place and from its sidebar row', async ({ b
   } finally { await page.close(); await server.stop() }
 })
 
-async function startResearch(page: Page, server: FixtureServer, question: string, scope?: string) {
+async function startResearch(page: Page, server: FixtureServer, question: string, scope?: string, includeInUi = false) {
   await page.goto(server.url())
   await page.getByLabel('Research question').fill(question)
   if (scope) {
@@ -260,6 +260,24 @@ async function startResearch(page: Page, server: FixtureServer, question: string
   await page.waitForURL(/#\/research\//)
   if (question.includes('[rate-limit]') || question.includes('[model-down]')) return
   await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
+  if (includeInUi) {
+    await openTab(page, /Sources/)
+    const titles = [
+      'SYNTHETIC molecule release scheduling with bisection',
+      'SYNTHETIC relay budget allocation',
+      'SYNTHETIC molecule schedule letter',
+    ]
+    for (const title of titles) {
+      const source = row(page, title)
+      await source.getByRole('button', { name: 'Include', exact: true }).click()
+      await expect(source.getByRole('button', { name: 'Include', exact: true })).toBeDisabled()
+    }
+    await page.reload()
+    await openTab(page, /Sources/)
+    for (const title of titles) await expect(row(page, title).getByRole('button', { name: 'Include', exact: true })).toBeDisabled()
+    await openTab(page, /Answer/)
+    return
+  }
   const rid = page.url().match(/#\/research\/([^/]+)/)?.[1]
   if (!rid) throw new Error('research id missing from URL')
   const token = (await (await page.request.get(`${server.url()}api/session`)).json()).csrf_token
@@ -561,7 +579,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
   test.afterAll(async () => { await server.stop() })
 
   test('a table starts from the included sources, takes a column and a suggested column, and fills', async () => {
-    await startResearch(page, server, 'SYNTHETIC: What sample sizes do molecule release schedules use?')
+    await startResearch(page, server, 'SYNTHETIC: What sample sizes do molecule release schedules use?', undefined, true)
     await expect(page.getByText('Ran search & screening')).toBeVisible()
     await openTab(page, /Evidence/)
     await expect(page.getByText('No table yet.')).toBeVisible()

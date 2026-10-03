@@ -173,7 +173,7 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 
 **Durum: TASLAK. Sol review pending (Codex quota until 10 Oct); donmuş değil.** Bu bölüm ne Ek K ne Ek L1'dir; yalnız sabitlenebilir kısımları yazar. Konu ve `G` seçimi (Claude + Sol medium ortak kararı), altı iddia ve `N` kümeleri ile iki ekin Sol high incelemesi Codex kotası dönene kadar bekler. Hiçbir model koşusu başlatılmadı; hazırlık için sağlayıcıya **0** istek gönderildi (60'lık sınırdan 0 kullanıldı; seçim kararı olmadan sorgu atılmadı).
 
-**Sabitlenen ürün commit'i:** `b3fde0e` (origin/main, 4 Ekim 2026; ürün kodu `7188ec8` ile aynı, sonrası yalnız dondurma/belge). Ölçüm worktree'leri: `../DEIXIS-owed-k6`, `../DEIXIS-owed-l9` (henüz açılmadı; ilk koşudan önce bu commit'te ayrık açılır). Çalışma worktree'si bu hazırlık için `../DEIXIS-owed`.
+**Sabitlenen ürün commit'i:** `b3fde0e` (origin/main at drafting, 4 Ekim 2026; origin/main has since moved to `09aa2cf`, H9e result: re-pin at the real freeze; ürün kodu `7188ec8` ile aynı, sonrası yalnız dondurma/belge). Ölçüm worktree'leri: `../DEIXIS-owed-k6`, `../DEIXIS-owed-l9` (henüz açılmadı; ilk koşudan önce bu commit'te ayrık açılır). Çalışma worktree'si bu hazırlık için `../DEIXIS-owed`.
 
 **Kit ve dosya hash'leri (SHA-256, dosya baytı; taslak):**
 - `scripts/p9_owed/funnel_counts.py` `c18bbb1b8cc7aec0ac6499543791a1794af226face9c91759b3384a4cef2a106`

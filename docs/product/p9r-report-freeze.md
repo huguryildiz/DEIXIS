@@ -587,3 +587,117 @@ PYTHONPATH=backend:. .venv/bin/python scripts/p6_eval/measure_report.py snapshot
 ### B.7 Sonuç dili
 
 Her kol ayrı yazılır: A “geliştirme korpusunda yeniden ölçüm (bağımsız değil)”, B “yeni korpus, tek koşu”. İkisi de tek rapor modeline ve rapora hazır tablo koşuluna bağlıdır. Hata oranı, hız/maliyet karşılaştırması, D198'in nedensel etkisi veya genel rapor kalitesi yazılmaz. Sonuçlar `p9r-report-results.md`'ye tarihli H9b bölümü olarak eklenir; karar D202'ye yazılır.
+
+## Ek C — H9b: RF2 sonrası yeniden sabitleme, kol A2 ve kol B (3 Ekim 2026, koşudan önce dondu)
+
+**Dayanak.** Kol A (`682ba1f`) ilk yama isteğinde durdu: canlı API RF'in yama taşıma şemasını `invalid_json_schema` ile reddetti (`$ref` yanında başka anahtar). Düzeltme RF2'dir ([D204](../decisions.md), `7cc1168`). Koordinatör emri: yeniden sabitle, H9 verisinin taze ve doğrulanmış kopyasında A2'yi koş, sonra B; bütçe kalan 293 oturumdan; durdurma kuralları aynı. Açık noktalar Claude Opus 5.5 + `gpt-6.1-sol` medium tarafından salt okunur ortak kararla, sahip adına kararlaştırıldı (`evidence/decide3.md`, `evidence/decide3-out.md`; Sol dokuz önerinin dördünü olduğu gibi kabul etti, beşini değiştirdi; değişikliklerin hepsi buraya alındı). **Öncelik:** Ek C, Ek B ile çeliştiği her noktada onun yerine geçer. Çelişmeyen her kural (H9 §1-§7, Ek A, Ek B) aynen sürer: K05 canlı `codex-home` dar istisnası, port 8765 ön koşulu ve koordinatör kuralı, `env -i`, null keyring, `.env` yok, `codex`/`gpt-5.6-luna`/`medium`, izole veri dizini ve 8873, yürütücü dönüş kaydı ve 120 s kapanış penceresi, snapshot öncesi `snapshot_eligible` şartı, yazan ve inceleyen farklı şirketin modeli. Ek B'nin metni değişmez; tarihsel kayıttır.
+
+### C.1 Kol A'nın kaydı
+
+Kol A şöyle yazılır: “yama modeli çıktı vermeden önce ürünün taşıma şeması reddedildi; yedi uygulama oturumu harcandı.” POST 11:27:17Z, rapor koşusu `run_wFL8CbQfBndgdeikEA2c`, rapor `rpt_cutHS27r5ILqZZBEWwSe`; V. bölümün ilk çıktısında `anchor_not_in_cell_evidence` vardı, ürün yama yolunu seçti (girdi `sti_MSGsJTIMFoL76Fu0QX4n`, oturum `mss_ZCfs0bP64HWgkESpi3r7`), istek reddedildi; III'ün tam onarımı iptalle kesildi; IV onarımdan sonra geçerli. İptal 11:29:43Z, kapanış 11:29:49Z doğrulandı (terminal olay 1581). Sayılar korunur: R1 0/1, ilk denemede geçerli 0/3, R7 145,6 s ve 7 çağrı, `envelope_mismatch` 0/7, damga 5/5, `repair_dropped_*` 0, P19 a=[V], b=1, c=0, d=0. D198 için A'da yönlendirme ve reddedilen istek gözlendi; yama modeli çıktısı ve onarımın işe yaradığı gözlenmedi. A'nın veri dizini ve kapanış kanıtı olduğu gibi kalır, yeniden kullanılmaz.
+
+### C.2 Ürün ve donmuş değerler
+
+| Kayıt | Değer |
+|---|---|
+| Ürün | `7cc116803cf63949c89e8c6b264aee2ff544b168` (RF2, D204; ortak karar anında `origin/main`), bir kez sabitlenir. Aynı ayrık worktree `DEIXIS-h9b-run` bu commit'e ayrık olarak geçirildi; izlenmeyen `.local/` kanıtı yerinde kaldı. `uv.lock`, `pyproject.toml`, `methods/`, `apps/web/`, `scripts/p6_eval/` ve kit testi `682ba1f`'ten beri değişmedi; `uv sync --frozen --dry-run` “Would make no changes” dedi, `.venv` arm64. |
+| Bu commit'te RF2 dışında | D197 R3 (migration 0069, çıkarma girdisi gözlemleri, `passage_freshness`, rapor görünüm ve dışa aktarma değişiklikleri), D201 G1-F1 (arama dışı sorgular ve OpenAlex atıf zinciri bağlı yetenekler üzerinden; B'nin keşfini etkiler, rapor yolunu etkilemez), D205 (belge). A→A2 de H9→B de RF2'nin nedensel etkisini ayıramaz. |
+| Runtime `skill_package_hash` | `sha256:1a7e67137173f49fc2acca70edc940a5f0589cf216cf20a2d8f5f606b3b93c4e` (değişmedi) |
+| Şema manifesti (23 dosya) | `eb0becdee18e9fe49d1d819006cbf22b1b171c6bfb706b254c446631a0528366` (Ek B ile aynı yöntem; bir dosya değişti) |
+| Modele giden şemalar | `contracts.model_transport_schemas()`: tam 41 anahtar; sıralı anahtar listesinin `json.dumps` SHA-256'sı `1a76b85cc1be334dae09da00a8129dc3577e948ace098466205b57c620d182a0`; her biri için `strict_compatibility_issues` boş |
+| Yama taşıma şeması | `contracts.report_section_anchor_patch_schema()` (argümansız), kanonik JSON (`sort_keys`, ayırıcılar `(',', ':')`, `ensure_ascii=False`, UTF-8) SHA-256'sı `f30984c2f2680b294b47822ba3c01f0f8c16bf89d69f6e0c0f9b3134911a9739`. A'nın saklı reddedilmiş şemasından farkı yalnız `reason` alanı ve artık kullanılmayan `$defs.short_text`. |
+| Yöntem dosyaları | 17 dosya, `evidence/method-manifest.json` dosya dosya aynı (toplam `027153692672…b93b4`) |
+| Kit / kit testi | değişmedi: `db203420…251848` / `7f7d2f0d…bdf8` |
+| P19 sorgusu | değişmedi (`p19.sql`, `6d53789f…acd1`) |
+
+Yürütücü dosyaları (`DEIXIS-h9b-run/.local/p9r-h9b/`, izlenmez):
+
+- `gate_c.sh`: `gate_b.sh`'nin C sürümü. `H9B_FREEZE_COMMIT` ve `H9B_STAGE` (`a2`, `b-prep`, `b-post`) ister. Ürün pini `7cc1168`; dondurma belgesinde `## Ek C`, kararlarda `## D202`, `## D204` ve “Ek C”; aşağıdaki `h9b-c-files` bloğu (ve varsa Ek D'nin `h9b-d-files` bloğu) dosya dosya; tüm ağacın temizliği, RF imleri, paket hash'i, kit pinleri, yeni şema manifesti; ayrıca RF2: sözleşmedeki `reason` biçimi, 41 anahtar ve liste hash'i, boş denetim sonuçları, yama şeması hash'i. `682ba1f` atalık denetimi kalktı (yeni ürün onun torunudur). `b-post` aşamasında ayrıca C.6'daki B koruması çalışır.
+- `launch_c.sh`: `launch_b.sh` ile aynı; yalnız kollar `a2`/`b` ve ürün pini `7cc1168`. A2 için `a2/data/library.sqlite` var olmalı, B için `b/data` yok olmalı.
+- `c_checks.py` (yeni): bir zaman penceresinde (1) her yama girdisinin saklı taşıma şemasının kanonik hash'i, donmuş değere eşitliği ve C.4'ün kanıt basamakları; ayrıca her `report_section` girdisinin şeması okunabilir olmalı ve sürüm sabiti yama kimliği ya da `deixis.report_section_draft.v2` olmalıdır, değilse girdi “tanınmayan” diye listelenir ve bütünlük hatası sayılır (işareti silen bozulma da yakalanır); (2) hata kaydı (`error_json`, `error_code` ya da `failed`/`outcome_unknown` durumu) olan her adımın C.4'teki sabit kuralla sınıfı; (3) bayraklar `patch_schema_integrity_ok`, `b_report_veto`, `coordinator_classification_needed`. `mode=ro`, tek okuma işlemi.
+- `c_checks_cases.py` (yeni): `c_checks.py`'yi geçici SQLite dosyalarında on sentetik durumla sınar: başka kodlu ve başka mesajlı istek hatası (`400 Bad Request: response_format must be an object`), 300 karakterde kesilmiş mesaj, okunamayan hata metni, metinsiz yalnız `error_code` (`budget_exhausted`), zaman aşımı, uygulama doğrulaması, iptal olayıyla eşleşen ve eşleşmeyen kesinti (olay yok, olay adımdan sonra, başka koşunun olayı), donmuş değerden farklı, okunamayan ve işareti değiştirilmiş yama şeması, temiz bölüm taslağı girdisi, gönderilmemiş yama oturumu.
+- Değişmeyenler: `poll_b.py`, `poll_report_b.py` (kol adı argümandır; `a2` için `a2/data`, `report-polls-a2.jsonl`, `report-poll-a2.stop`; tavan 60 / 90), `api.py`, `h9b_counts.py`, `p19_count.py`, `p19.sql`, `logical_table.py`, `manifest.py`. `gate_b.sh` ve `launch_b.sh` C'de çağrılmaz (eski pini taşırlar).
+
+```h9b-c-files
+0fb48152a27084c0c1aed347934da712c0f0f0332e1c5f62d591cb7aa78fefd7  .local/p9r-h9b/gate_c.sh
+9d17d67676cabe6a508fa8a9559faf10adb61d78ccd901c83dcdb2ba13b21f27  .local/p9r-h9b/launch_c.sh
+841d46ce67479636e37fbf26ce81d17327b306ab343d390e2b6cd350e0217239  .local/p9r-h9b/poll_b.py
+c9d60768bbde2ef70ed3de52905b71f0cc79ec16e2efbfa05f3c418770181803  .local/p9r-h9b/poll_report_b.py
+7c9bc47913cf5ff4e6b8dc51c6aef2a37ea11e961b98f82a051ddc52cc56d28d  .local/p9r-h9b/api.py
+b44a93835b3b7bfd17bf4d5c10731304ab62a436e5729132ccf2bae80654a08e  .local/p9r-h9b/h9b_counts.py
+58219952459a2e2bedc25722b5d7e5e158e04cbbe02d9d6a205e401f63136993  .local/p9r-h9b/p19_count.py
+6d53789f7a1b898a4833bb993eaac222b29e5fa0cb209519fe020c3106e6acd1  .local/p9r-h9b/p19.sql
+e3307b794ff24f4a93fb2abca701dac2e34a7992491036b68df05a08cec4210f  .local/p9r-h9b/logical_table.py
+e1c375b4e8aecf61906472a0c60caa5932a3c0f2f5e201e2da0424a0cca97183  .local/p9r-h9b/manifest.py
+45b0b72f9a26bd0df2e187ba0ca517ebff4905149efc357a0052d36a2536dab7  .local/p9r-h9b/c_checks.py
+1f0011f7f4b286d42c31d5e488b6e994cc339c591cfd7daf41566344a96db4cf  .local/p9r-h9b/c_checks_cases.py
+a416e1b2cd3a54d11e68b8842936b754680eccb74d83fe9548617e8f7d9be1f7  .local/p9r-h9b/evidence/method-manifest.json
+f83d25b490fc1c29b6fc0799085a5e1ec93f8387c980ec9d2cf5eac138a7d939  .local/p9r-h9b/evidence/a2-source-manifest.json
+f83d25b490fc1c29b6fc0799085a5e1ec93f8387c980ec9d2cf5eac138a7d939  .local/p9r-h9b/evidence/a2-copy-manifest.json
+5ed7ef4ec5843dcd3451cdbadb5adbfd245c3bede4cac269ee4f731e0296d8d1  .local/p9r-h9b/evidence/a-logical-table-before.json
+5ed7ef4ec5843dcd3451cdbadb5adbfd245c3bede4cac269ee4f731e0296d8d1  .local/p9r-h9b/evidence/a2-logical-table-before.json
+706ae813cfc8bc9e34f0ab981f0ddc21d7d811c34003e8bad8471d72162f547d  .local/p9r-h9b/r9/a-pairs.json
+7e5a080f7b32a37f89caf65eeaf897a69647c1e7e230ffc5adafe50c4b10898b  .local/p9r-h9b/r9/a-pairs-provenance.json
+```
+
+**Kuru denetimler (modelsiz, `7cc1168` üzerinde):** dondurma belgesi denetimleri çıkarılmış `gate_c.sh` rc 0 (`evidence/gate-c-dry*.txt`, `evidence/gate_c_dry*.sh`; aşama denetimleri için bkz. C.6). Ön koşul testleri: Ek B listesi + `tests/test_strict_schema_rules.py`, `tests/test_migrations.py`, `tests/test_reextract_r3_views.py`, `tests/test_report_export.py`, `tests/test_capability_binding.py`, `tests/test_connector_dispatch.py`: 1.428 geçti, 6 uyarı (SWIG ve anyio kullanımdan kalkma uyarıları) ve kapanışta bir SWIG uyarısı daha (`evidence/preflight-tests-c-dry.txt`). Sayım betikleri kayıtlı kimlik ve kayıtlı sınırlarla yeniden koşuldu: H9 verisinde P19 satır hash'i `b325ed94…8422`, a=[IV, V], b=2, c=1, d=0, 52 oturumda 3 `envelope_mismatch` (Ek B ile aynı); A verisinde `p19.json`, rapor sayıları (`[11:27:17.437368Z, -)`) ve POST öncesi sayıları (`[11:26:00.131180Z, 11:27:17.437368Z)`) kayıtlı dosyalarla JSON olarak eşit (`evidence/c-dry-*.json`). `c_checks_cases.py`: 10 durum geçti. `c_checks.py` A verisinde (`[11:27:17.437368Z, -)`) 1 yama girdisi (hash `e638e01d…`, donmuş değere eşit değil, beklenen; basamaklar: kuruldu, uygulama denemesi var, gönderim doğrulandı, sağlayıcı kabulü yok), V için `confirmed_schema_rejection` (300 karakterde kesik), III için `cancel_interrupt` (`run_cancelled` olayı 11:29:43.153Z, adım 11:29:43.158Z'de bitti), `b_report_veto=true`; H9 verisinde 0 yama girdisi, 0 tanınmayan bölüm girdisi, 122 `non_model`, 2 `application_validation`, veto yok, sınıflandırma gerekmez (`evidence/c-checks-dry-*.json`).
+
+### C.3 Kol A2: H9 tablosu, taze kopya
+
+H9'un durdurulmuş veri dizini, açık dosyası olmadığı (`lsof +D` boş) ve hiçbir DEIXIS sunucusu çalışmadığı denetlendikten sonra, hedef yokken `cp -Rp` ile `DEIXIS-h9b-run/.local/p9r-h9b/a2/data` dizinine kopyalandı (`evidence/a2-copy-time.txt`). Yan dosyalar dahil 65 dosya, en büyük `nlink` 1, kaynak ve kopya manifesti `80764df489b155375c3a4e0ed91d4185c68f66df9ee60fdd69719e2a4a2ded1f` (Ek B'deki kaynakla bayt bayt aynı dosya). Kopyada, sunucu başlamadan, altı mantıksal hash `evidence/a-logical-table-before.json` ile bayt bayt aynı. Migration 0067-0069 yalnız kopyaya, ilk başlangıçta uygulanır. **POST kapısı:** Ek B'deki A kapısı aynen (`report_ready.ready=true`, aktif koşu 0, `started` oturum 0, H9'un duraklamış eski rapor koşusu tarihsel kayıt olarak muaf, hiç sürdürülmez veya iptal edilmez), ek olarak altı mantıksal hash başlangıçtan sonra ve POST'tan hemen önce yeniden alınır ve ikisi de `a-logical-table-before.json` ile aynı olmalıdır. Uyuşmazlık yürütücü takdiri olmadan `ölçülemedi` verir; tablo onarılmaz. **A2'nin ikinci kapısı:** korpus, tablo ve R9 kayıtları H9'unkilerdir (Ek A'da incelendi, Ek B ve burada hash'le dondu); bu yüzden Sol high'ın onayladığı ve push edilen Ek C A2'nin ikinci kapısıdır. R9 çiftleri açıkça `r9/a-pairs.json` dosyasıdır (`a2-pairs.json` yoktur). A2 geliştirme korpusudur, bağımsız kanıt değildir.
+
+### C.4 Canlı şema kapısı ve B'nin rapor POST'u
+
+D204'ün ilk kapısı A2'dir. Her yama girdisi için kanıt basamakları `c_checks.py` ile ayrı yazılır: **kuruldu** (girdi ve saklı şemanın hash'i); **uygulama denemesi** (oturum satırı var; oturum adaptör çağrısından önce açıldığı için gönderimi kanıtlamaz); **gönderim** (`confirmed`: oturum model çıktısı sakladı ya da adımın hatası sağlayıcının şema reddidir; `not_sent`: adımın teslim sınıfı `before_send`; başka her durumda `unknown`); **sağlayıcı kabulü** (saklı model çıktısı var); **doğrulandı ve uygulandı** (oturumun doğrulamasında `anchor_patch` var); **yayımlandı** (raporun bölüm satırı bu adımı gösteriyor ve `valid`). Bir red başarısızlığı kanıtlar; reddin olmaması tek başına kabulü kanıtlamaz. “Yama şeması canlı API'de kabul edildi” yalnız sağlayıcı kabulü basamağı doğruysa ve o girdinin şema hash'i donmuş değere eşitse yazılır.
+
+**Hata sınıfları** (sabit kural, `c_checks.py`): model dışı adım (`kind` `model` ile başlamıyor) `non_model`; hata metninde `invalid_json_schema` varsa `confirmed_schema_rejection`; `invalid_model_output` (uygulamanın aldığı bir çıktıyı reddetmesi) `application_validation`; saklı metni tam olarak `interrupted` olan `model_interrupted`, ancak aynı koşunun adımın bitişinden geç olmayan bir `run_cancelled` olayı varsa (koşunun kendi iptali) `cancel_interrupt`; başka her model adımı hatası (zaman aşımı, kota, bütçe, başka kodlu veya mesajlı istek hatası, okunamayan veya hiç saklanmamış metin, iptal olayıyla eşleşmeyen kesinti dahil) `model_error_needs_classification`. Adaptör hata metnini 300 karakterde keser (`backend/deixis/models/adapter.py`); A'nın saklı hatası da kesiktir ve tam hata metni ürün değiştirilmeden alınamaz. Ek C ürünü değiştirmez (Sol bunu bu ölçüm için kabul etti, belirsiz hatalar koordinatör kapısında kaldığı sürece); sınır sonuca yazılır ve tam hata yakalandığı iddia edilmez. `truncated` çözülen mesaj 300 karaktere ulaştıysa doğru, kısaysa yanlış, mesaj çözülemediyse veya sınıf `application_validation` ise boştur.
+
+- A2'de bir `confirmed_schema_rejection` ya da yama şeması bütünlük hatası (okunamayan yama şeması, donmuş değerden farklı hash veya tanınmayan `report_section` girdisi; `patch_schema_integrity_ok=false`), yama yoluna girilmiş olsun olmasın, **B'nin rapor POST'unu engeller** (`b_report_veto=true`). Red aynı zamanda §5'in durdurma kuralıyla A2'yi durdurur; bütünlük hatasında canlı kabul iddiası kurulmaz. Sonraki adıma koordinatör karar verir.
+- `model_error_needs_classification` sınıfında hata varsa B'nin POST'undan önce koordinatör sınıflandırır. Karar `evidence/a2/coordinator-classification.json` dosyasına `{"allow_b_report_post": true|false, "steps": {...}, "reason": "..."}` biçiminde, koordinatörün mesajı alıntılanarak yazılır ve Ek D'nin bloğunda donar.
+- Veto ve sınıflandırma gereği yoksa ve A2 yama yoluna hiç girmediyse “A2'de yama maruz kalmadı; canlı kabul doğrulanmadı” yazılır ve B sürer.
+- A2'nin başka her durması Ek B'nin kuralına bağlıdır: B yine koşar.
+
+A2'nin nihai denetimi, sunucunun ve alt süreçlerinin çıkışı doğrulandıktan sonra `c_checks.py <a2 kütüphanesi> <sunucu başlangıcı>` ile alınır ve `evidence/a2/c-checks-final.json` olur; yürütücü koşu sırasında bilgi için ara çıktılar da alabilir (`c-checks-*.json`), karar yalnız nihai dosyadan çıkar. B'de hazırlık `[ilk keşif koşusunun created_at değeri, POST)` ve rapor `[POST, -)` pencereleri kullanılır (`evidence/b/c-checks-*.json`).
+
+### C.5 Bütçe
+
+Defter: H9'un izni 360 oturumdu; H9 52, A 7 kullandı; 301 kaldı. Koordinatörün yetkilendirdiği tavan 293'tür (Ek B'nin 300'lük tahsisi eksi A'nın 7'si); Ek B'nin tahsis dışında bıraktığı 8 oturum bu tavanın dışında kalır ve kullanılmaz. Tahsis: A2 raporu 60 oturum / POST'tan 90 dk; B hazırlığı en çok 2 deneme, birlikte 165 oturum / 240 dk (her doldurma 60 / 60 içinde; saat B'nin ilk keşif koşusunun kuyruğa girdiği anda başlar); B raporu 60 / 90. Toplam 285; 293'e kadar kalan 8 oturum yalnız gözlenen tavan aşımı içindir. Kollar arasında ödünç, sayaç sıfırlama ve devralınan uygunluk kuralı dışında yeniden deneme yoktur. H9'un hazırlığı tek denemede 45 oturum kullandı. K03 kuyruk istekleri ve okurlar Ek B'deki gibi (deneme başına 1, B'de toplam 2, 30 dk; okur rapor başına 4 istek / 60 dk, toplam 8 / 120 dk).
+
+### C.6 Kol B ve Ek D
+
+Ek B'nin “Ek C” dediği B kaydı (korpus, tablo ve R9, Ek A.4/A.5 biçiminde) bundan sonra **Ek D** adını alır; içerik ve inceleme aynı: `gpt-6.1-sol` high en çok 3 tur, dar Sol medium doğrulaması serbest, koordinatör push eder, `gate_c.sh` B'nin POST'undan önce Ek D'nin push edilmiş hash'iyle yeniden geçer. Ek D kendi `h9b-d-files` bloğunu taşır; blok `evidence/a2/c-checks-final.json` dosyasını ve, sınıflandırma gerektiyse, `evidence/a2/coordinator-classification.json` dosyasını içermek zorundadır. **B'nin POST koruması** `gate_c.sh` içinde `H9B_STAGE=b-post` ile çalışır: Ek D bloğu yoksa, nihai A2 denetimi blokta değilse, `b_report_veto=true` veya `patch_schema_integrity_ok=false` ise, sınıflandırma gerekip koordinatör kararı blokta yoksa ya da `allow_b_report_post` doğru değilse, ya da A2 veri dosyaları nihai denetimden sonra değişmişse (değişiklik zamanı) kapı geçmez. Kuru aşama sınaması (belge yerel dosyadan okunarak, geçici sentetik Ek D bloklarıyla): `a2` geçti; Ek D'siz `b-post`, aşamasız çağrı, veto, bütünlük hatası, eksik sınıflandırma ve ret veren sınıflandırma kapıyı kapadı; temiz durum ve izin veren sınıflandırma geçti (`evidence/gate-c-dry-stages.txt`). Değişiklik zamanı kuralı sınanmadı. B'nin hazırlığı A2 bittikten sonra başlar (iki kol 8873'tedir ve aynı anda çalışmaz). B'nin keşfi D201'in bağlı yetenekleri üzerinden yürür; bu H9'un keşfinden farklıdır.
+
+### C.7 Kayıt ve D205 ile ilişki
+
+Ek C, D202'nin içinde tarihli bir ek paragrafla kaydedilir (yeni karar numarası yok) ve STATUS'a bir satır eklenir. B.5 sayımları değişmez; `c_checks.py` onlara eklenir. A2 ve B veri dizinleri sunucu durdurulup çıkışı doğrulandıktan sonra olduğu gibi bırakılır (temizlenmez, yeniden kullanılmaz); D205'in dilim 4 maddesi tamamlanan bir raporu buradan kopyalayabilir. D205 ayrı kapılıdır: H9b sonucu push edilip koordinatör kaynakları bırakmadan hiçbir D205 maddesi koşmaz.
+
+### C.8 Komutlar
+
+```sh
+cd /Users/huguryildiz/Documents/GitHub/DEIXIS-h9b-run
+H9B_STAGE=a2 H9B_FREEZE_COMMIT=<Ek C hash> zsh .local/p9r-h9b/gate_c.sh
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python .local/p9r-h9b/c_checks_cases.py
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend:. .venv/bin/python -m pytest -q -n 0 -p no:cacheprovider \
+  --basetemp=/tmp/p9-h9c-preflight-tests tests/test_report_anchor_repair.py tests/test_report_handles.py \
+  tests/test_report_failed_rows.py tests/test_report_api.py tests/test_p6_measure_report.py \
+  tests/test_report_path_fix.py tests/test_report_path_fix_contracts.py tests/test_strict_schema_rules.py \
+  tests/test_migrations.py tests/test_reextract_r3_views.py tests/test_report_export.py \
+  tests/test_capability_binding.py tests/test_connector_dispatch.py
+H9B_ARM=a2 H9B_FREEZE_COMMIT=<Ek C hash> nohup zsh .local/p9r-h9b/launch_c.sh > .local/p9r-h9b/evidence/server-a2.log 2>&1 &
+.venv/bin/python .local/p9r-h9b/logical_table.py .local/p9r-h9b/a2/data/library.sqlite tbl_pQukBcMTicxNo3QPGaf9   # başlangıç sonrası ve POST'tan hemen önce
+# rapor: POST /api/researches/res_5ZrJQgVQ5unqqCRpMbrr/reports {"table_id": "tbl_pQukBcMTicxNo3QPGaf9", "continue_with_failed": false}
+.venv/bin/python .local/p9r-h9b/poll_report_b.py a2 <sunucu PID> res_5ZrJQgVQ5unqqCRpMbrr <rapor koşusu> <POST zamanı>
+.venv/bin/python .local/p9r-h9b/h9b_counts.py .local/p9r-h9b/a2/data/library.sqlite <rapor> <sunucu başlangıcı> <POST zamanı>
+.venv/bin/python .local/p9r-h9b/h9b_counts.py .local/p9r-h9b/a2/data/library.sqlite <rapor> <POST zamanı>
+.venv/bin/python .local/p9r-h9b/p19_count.py .local/p9r-h9b/a2/data/library.sqlite <rapor>
+.venv/bin/python .local/p9r-h9b/c_checks.py .local/p9r-h9b/a2/data/library.sqlite <sunucu başlangıcı> > .local/p9r-h9b/evidence/a2/c-checks-final.json   # sunucu çıkışı doğrulandıktan sonra
+PYTHONPATH=backend:. .venv/bin/python scripts/p6_eval/measure_report.py snapshot --base http://127.0.0.1:8873 \
+  --research res_5ZrJQgVQ5unqqCRpMbrr --report <rapor> --db .local/p9r-h9b/a2/data/library.sqlite \
+  --out .local/p9r-h9b/evidence/a2/report --seed 20261003 --sample 30 --pairs .local/p9r-h9b/r9/a-pairs.json
+```
+
+B'nin komutları Ek B.6 ile aynıdır; `gate_b.sh`/`launch_b.sh` yerine `gate_c.sh`/`launch_c.sh`, `H9B_ARM=b`, hazırlık öncesi `H9B_STAGE=b-prep` ve Ek C hash'i, POST öncesi `H9B_STAGE=b-post` ve Ek D hash'i, R9 çiftleri Ek D'de donan `r9/b-pairs.json`. Sunucu her kolun işi bitince SIGTERM ile durdurulur; sunucunun ve kayıtlı `codex app-server` alt süreçlerinin çıkışı 120 s içinde ≤5 s aralıklı `ps` okumalarıyla doğrulanır.
+
+### C.9 Sonuç dili
+
+A “ürün şeması reddiyle durdu” diye ayrı yazılır. A2 “geliştirme korpusunda yeniden ölçüm (bağımsız değil)”, B “yeni korpus, tek koşu”. Her biri tek rapor modeline ve rapora hazır tablo koşuluna bağlıdır. Hata oranı, hız veya maliyet karşılaştırması, D198'in ya da RF2'nin nedensel etkisi, genel rapor kalitesi yazılmaz. Maruz kalma olmadan sıfır, etkinlik kanıtı değildir.

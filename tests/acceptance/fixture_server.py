@@ -762,6 +762,62 @@ def seed_stored_legacy(data_dir: Path) -> None:
     conn.close()
 
 
+def seed_reextract(data_dir: Path, *, write_pdfs_dir: Path | None = None) -> None:
+    """R4's legacy reads and damaged files; no model, provider or live library."""
+    import hashlib
+    import pymupdf
+    from deixis.documents import pdf
+
+    shared = "SYNTHETIC relay timing uses a bounded release window."
+    old1 = shared + "\nSYNTHETIC earlier reading."
+    new1 = shared + "\nSYNTHETIC current reading NEW1."
+    new2 = "SYNTHETIC current second page NEW2."
+    p1 = make_pdf(["SYNTHETIC failed read restored page one.", "SYNTHETIC failed read restored page two."])
+    p2 = make_pdf([new1, new2])
+    locked = pymupdf.open(stream=make_pdf(["SYNTHETIC locked page."]), filetype="pdf")
+    try:
+        p3 = locked.tobytes(encryption=pymupdf.PDF_ENCRYPT_AES_256, owner_pw="synthetic-owner", user_pw="synthetic-user")
+    finally:
+        locked.close()
+    if write_pdfs_dir is not None:
+        write_pdfs_dir.mkdir(parents=True, exist_ok=True)
+        (write_pdfs_dir / "P1.pdf").write_bytes(p1)
+        (write_pdfs_dir / "P2.pdf").write_bytes(p2)
+        return
+    data_dir.mkdir(parents=True, exist_ok=True)
+    papers = data_dir / "papers"
+    papers.mkdir(exist_ok=True)
+    conn = db.connect(data_dir / "library.sqlite")
+    try:
+        db.migrate(conn)
+        store = Store(conn)
+        store.recovery_dir = data_dir / "recovery"
+        rid = store.create_research("SYNTHETIC re-extraction research", "attached", "quick", [], "codex", MODEL, "en")
+        for number, (title, data) in enumerate(zip(("SYNTHETIC failed read", "SYNTHETIC partial legacy read", "SYNTHETIC locked PDF"), (p1, p2, p3)), 1):
+            svid = store.create_upload_source(title)
+            store.add_to_corpus(rid, svid, "user_upload", selection_state="included" if number == 2 else "pending", selection_origin="user")
+            sha = hashlib.sha256(data).hexdigest()
+            path = papers / (sha + ".pdf")
+            path.write_bytes(data[:12] if number < 3 else data)
+            if number == 1:
+                extraction = pdf.extract_pdf(path)
+                if extraction.status != "failed":
+                    extraction = pdf.Extraction(status="failed", page_count=0, error=pdf.ERROR_UNREADABLE)
+            elif number == 2:
+                extraction = pdf.Extraction(status="partial", page_count=2, pages=[pdf.PageText(1, "1", old1)])
+            else:
+                extraction = pdf.Extraction(status="no_text", page_count=1)
+            aid = store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", None, f"P{number}.pdf",
+                                            extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
+            if number == 1:
+                current = store._retry_baseline(aid)
+                operation = store.reserve_text_retry(aid, expected_extraction_id=current["id"], idempotency_key="synthetic_interrupted_r4",
+                                                      request_fingerprint="synthetic-r4-interruption", research_id=rid)
+                store.interrupt_text_retry(operation["operation_id"], "process_ended")
+    finally:
+        conn.close()
+
+
 class MemoryKeyring(KeyringBackend):
     """Keys live in this process only; the same backend `tests/conftest.py` installs for pytest."""
     priority = 1
@@ -789,8 +845,12 @@ def main() -> None:
     parser.add_argument("--write-hostile-pdf", type=Path, help="Write the untrusted-text PDF used by case G and exit")
     parser.add_argument("--write-replacement-pdf", type=Path, help="Write a SYNTHETIC PDF used to replace a source's file (D45) and exit")
     parser.add_argument("--write-waiting-pdf", type=Path, help="Write the SYNTHETIC publisher file case K drops and exit")
+    parser.add_argument("--write-reextract-pdfs", type=Path, help="Write SYNTHETIC R4 restoration PDFs and exit")
     args = parser.parse_args()
     keyring.set_keyring(MemoryKeyring())  # a browser run never reads or writes the system keychain (P9 H0a, plan 4 rule 5)
+    if args.write_reextract_pdfs:
+        seed_reextract(args.data_dir, write_pdfs_dir=args.write_reextract_pdfs)
+        return
     if args.write_hostile_pdf:
         args.write_hostile_pdf.write_bytes(make_pdf([HOSTILE_PDF_TEXT]))
         return
@@ -813,6 +873,8 @@ def main() -> None:
                         arxiv_source="auto" if ARXIV_SOURCE_MODE else "off")
     if os.environ.get("DEIXIS_FIXTURE_STORED_LEGACY") == "on":
         seed_stored_legacy(args.data_dir)
+    if os.environ.get("DEIXIS_FIXTURE_REEXTRACT") == "on":
+        seed_reextract(args.data_dir)
     handler, local_embedder = openalex, None
     if os.environ.get("DEIXIS_FIXTURE_BUILTIN_EMBEDDING") == "fake":
         handler, local_embedder = fake_builtin(args.data_dir)

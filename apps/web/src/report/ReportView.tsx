@@ -6,6 +6,7 @@ import { api, ApiError, type ReportClaim, type ReportDetail, type ReportLink, ty
 import { MathText } from '../MathText'
 import { failedRowReasonText, failedSectionReasonText, pauseReasonText, reportAssemblyDraftText, reportChangeLabels, reportChangeViaLabels, reportSupportLabels } from '../labels'
 import { Notice } from '../Notice'
+import { PassageFreshnessNotice } from './PassageFreshnessNotice'
 import { t, uiLocale } from '../i18n'
 import { useToast } from '../Toast'
 import './report.css'
@@ -301,6 +302,7 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
           report.evidence_changes.added_sources && t(report.evidence_changes.added_sources === 1 ? '{n} source added' : '{n} sources added', { n: report.evidence_changes.added_sources }),
           report.evidence_changes.revised_columns && t(report.evidence_changes.revised_columns === 1 ? '{n} column revised' : '{n} columns revised', { n: report.evidence_changes.revised_columns }),
         ].filter(Boolean).join(', ')}. {t('The report text was not changed. Passage text was not checked.')}</Notice>}
+        <PassageFreshnessNotice freshness={report.passage_freshness} />
         <div className="report-content evidence-report-content">{DISPLAY.map(id => {
           const section = report.sections.find(item => item.section_id === id)
           if (!section) return null

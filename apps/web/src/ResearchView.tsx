@@ -7,8 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Evidence, type Limitation, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
-import { accessParts, citedText, fetchReasonText, locatorText, pageLocator, pauseReasonText, providerName, queueAnsweredText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, stepLabel, verdictLabels, versionText, versionTones } from './labels'
+import { accessParts, citedText, fetchReasonText, fileRestoreNote, fileRestoreText, fileRestoreTone, locatorText, pageLocator, pauseReasonText, providerName, queueAnsweredText, recoveryDecisionText, recoveryReasonText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { PassageSheet } from './PassageSheet'
+import { TextRecovery } from './TextRecovery'
+import { TextRecoveryContext } from './TextRecoveryContext'
 import { Elapsed, EvidenceTab, TABLE_RUN_KINDS } from './EvidenceTable'
 import { MathText } from './MathText'
 import { Transcript } from './Transcript'
@@ -280,10 +282,16 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   }
   const selectSeed = (sourceId: string) => act(() => api.setSeed(id, sourceId, view.research.version), t('PDF selected for the next search.'))
   const startTitle = () => act(() => api.startRun(id, 'research_title', crypto.randomUUID()))
-  const upload = (list: FileList | null) => list && act(async () => { for (const file of Array.from(list)) await api.upload(id, file) }, t('PDF added and included. Its text was extracted page by page (no OCR).'))
+  const upload = (list: FileList | null) => list && act(async () => { for (const file of Array.from(list)) {
+    const next = await api.upload(id, file)
+    toast(next.file_restore ? fileRestoreTone(next.file_restore) : 'success', [t('PDF added and included. Its text was extracted page by page (no OCR).'), fileRestoreNote(next.file_restore)].filter(Boolean).join(' '))
+  } })
   const uploadToSource = (list: FileList | null) => list && attachTarget && act(async () => {
-    for (const file of Array.from(list)) await api.uploadToSource(id, attachTarget, file)
-  }, t('PDF attached to this source. Its text was extracted page by page (no OCR).'))
+    for (const file of Array.from(list)) {
+      const next = await api.uploadToSource(id, attachTarget, file)
+      toast(next.file_restore ? fileRestoreTone(next.file_restore) : 'success', [t('PDF attached to this source. Its text was extracted page by page (no OCR).'), fileRestoreNote(next.file_restore)].filter(Boolean).join(' '))
+    }
+  })
   const discoverPdf = async (source: Source) => {
     setPdfFinding(source.source_version_id)
     try { await api.discoverPdf(id, source.source_version_id); await load(); onChanged() }
@@ -315,7 +323,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (!replaceTarget) return
     const { source, assetId, file } = replaceTarget
     setReplaceTarget(null)
-    void act(() => api.replaceAsset(id, source.source_version_id, assetId, file), t('PDF replaced. Its text was extracted page by page (no OCR); earlier evidence still opens the previous file.'))
+    void act(async () => {
+      const next = await api.replaceAsset(id, source.source_version_id, assetId, file)
+      const fileOnly = next.file_restore && next.sources.find(item => item.source_version_id === source.source_version_id)?.access.assets.some(item => item.id === assetId)
+      toast(next.file_restore ? fileRestoreTone(next.file_restore) : 'success', fileOnly ? fileRestoreText(next.file_restore!)
+        : [t('PDF replaced. Its text was extracted page by page (no OCR); earlier evidence still opens the previous file.'), fileRestoreNote(next.file_restore)].filter(Boolean).join(' '))
+    })
   }
   const reextract = (source: Source, assetId: string) => act(async () => {
     const { reextraction } = await api.reextractAsset(id, source.source_version_id, assetId)
@@ -558,13 +571,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         {view.counts.removed > 0 && <p className="removed-summary"><ListMinus size={14} aria-hidden /><span>{t(view.counts.removed === 1 ? 'You removed {n} source from this research.' : 'You removed {n} sources from this research.', { n: view.counts.removed })}
           {view.counts.removed_found_again > 0 && ` ${t(view.counts.removed_found_again === 1 ? '{n} of them was found again by a later search and is not listed.' : '{n} of them were found again by a later search and are not listed.', { n: view.counts.removed_found_again })}`}</span>
           <a href="#/trash">{t('Show in Trash')}</a></p>}
-        <SourceList sources={view.sources} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
+        <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourceList sources={view.sources} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
           onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
           onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
           onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
           onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} onAttachCandidate={(source, candidateId) => { void attachPdfCandidate(source, candidateId) }} onOpenPdf={(_, assetId) => setPdfTarget({ assetId })}
           onRemoveAsset={removeSourcePdf} onReplaceAsset={chooseReplacement} onReextract={(source, assetId) => { void reextract(source, assetId) }} onRereadEquations={(source, assetId) => { void rereadEquations(source, assetId) }} pdfFinding={pdfFinding}
-          ocr={{ tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } }} />
+          ocr={{ tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } }} /></TextRecoveryContext.Provider>
         {picked.length > 0 && <SelectionBar researchId={id} count={picked.length} busy={busy} active={active} onStartTable={() => askTableStart(picked)} onAddToTable={table => { void addToTable(table, picked) }}
           onRemove={() => { void askRemoval(picked) }} onClear={() => setPicked([])} />}
         </section>
@@ -1106,7 +1119,8 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
         : t('Your reason: {reason}', { reason: s.user_reason ?? '' })}</p>}
       {s.origin === 'user' && s.state === 'excluded' && !s.user_reason && <ReasonForm busy={busy} focusOnOpen={askedReason} onSave={reason => { setAskedReason(null); onReason(reason); focusWhenLost(() => reasonNote.current) }} />}
       {finding && <PdfSearchStatus />}
-      {source.access.assets.map(asset => asset.rejected_extraction && <p key={asset.id} className="proposal"><ScanText size={13} aria-hidden />{t('A later text extraction ({version}) was not used: {reason}. The earlier text stays in use.', { version: asset.rejected_extraction.extraction_version, reason: asset.rejected_extraction.rejection_reason })}</p>)}
+      {source.access.assets.map(asset => asset.rejected_extraction && !asset.rejected_extraction.extraction_version.includes('+reextract-') && <p key={asset.id} className="proposal"><ScanText size={13} aria-hidden />{t('A later text extraction ({version}) was not used: {reason}. The earlier text stays in use.', { version: asset.rejected_extraction.extraction_version, reason: asset.rejected_extraction.rejection_reason })}</p>)}
+      {source.access.assets.map(asset => <TextRecovery key={asset.id} asset={asset} sourceId={source.source_version_id} />)}
       {[...ocrOffers.entries()].map(([assetId, offer]) => offer && <OcrNote key={assetId} offer={offer} />)}
       {source.access.replaced_assets.length > 0 && <p className="proposal"><Replace size={13} aria-hidden />{t(source.access.replaced_assets[0].original_filename ? 'Previous file {file} replaced on {date}. Evidence that cites it still opens it.' : 'Previous PDF replaced on {date}. Evidence that cites it still opens it.', { file: source.access.replaced_assets[0].original_filename ?? '', date: new Date(source.access.replaced_assets[0].removed_at).toLocaleDateString(uiLocale(), { dateStyle: 'medium' }) })}</p>}
       <div className="source-foot">
@@ -1258,6 +1272,17 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'pdf_discovery_recorded': return brand(String(p.provider), t('{provider} PDF lookup', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} candidates', { count: String(p.result_count) }), tone: 'neutral' }, ...errorChip])
     case 'asset_removed': return lucide(Trash2, t('PDF removed from a source'))
     case 'asset_replaced': return lucide(Replace, t('PDF replaced on a source'))
+    case 'asset_text_retried': {
+      const outcomes: Record<string, EventChip> = { promoted: { label: t('in use'), tone: 'ok' }, diagnosis_updated: { label: t('diagnosis'), tone: 'warn' }, rejected: { label: t('not used'), tone: 'warn' }, no_change: { label: t('no change'), tone: 'neutral' }, refused: { label: t('refused'), tone: 'warn' }, interrupted: { label: t('interrupted'), tone: 'warn' } }
+      return lucide(ScanText, t('PDF text retried'), [outcomes[String(p.lifecycle === 'interrupted' ? p.lifecycle : p.outcome)] ?? statusChip(p.lifecycle),
+        ...(p.reason || p.decision_code ? [{ label: p.reason ? recoveryReasonText(String(p.reason)) : recoveryDecisionText(String(p.decision_code)), tone: 'neutral' as const }] : [])])
+    }
+    case 'asset_file_restore_finished': return lucide(ShieldCheck, t('PDF file restore'), [
+      { label: t(p.lifecycle === 'interrupted' ? 'interrupted' : p.outcome === 'file_restored' ? 'file restored' : p.outcome === 'file_reused' ? 'file reused' : 'file refused'), tone: p.lifecycle === 'completed' && p.outcome === 'file_restored' ? 'ok' : 'warn' },
+      ...(p.reason ? [{ label: recoveryReasonText(String(p.reason)), tone: 'neutral' as const }] : []),
+      ...(p.retained ? [{ label: t('damaged bytes kept'), tone: 'neutral' as const }] : []),
+      ...(Array.isArray(p.affected_asset_ids) && p.affected_asset_ids.length > 1 ? [{ label: t('{n} PDF records share this file', { n: p.affected_asset_ids.length }), tone: 'neutral' as const }] : []),
+    ])
     case 'equations_failed': return lucide(Sigma, t('Reading a PDF’s equations failed'), [{ label: t('attempt {n}', { n: String(p.attempts) }), tone: 'warn' }])
     case 'asset_ocr_read': return lucide(ScanText, t('PDF pages read with OCR'), [p.outcome === 'current' ? { label: t('in use'), tone: 'ok' } : { label: t('not used'), tone: 'warn' }, { label: t('{k} of {n} pages with text', { k: String(p.pages_with_text), n: String(p.pages_read) }), tone: 'neutral' }, { label: ocrLanguagesText(Array.isArray(p.languages) ? p.languages.map(String) : []), tone: 'neutral' }])
     case 'asset_reextracted': return lucide(ScanText, t('PDF text extracted again'), [p.outcome === 'current' ? { label: t('in use'), tone: 'ok' } : { label: t('not used'), tone: 'warn' }, { label: String(p.extraction_version), tone: 'neutral' }])

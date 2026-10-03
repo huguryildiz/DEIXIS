@@ -141,7 +141,7 @@ export type Step = {
   // Only small counting/provenance outputs carry through this view; model prose remains in its own artifact view.
   output: { page_count?: number | null; passage_count?: number; model?: string; sources?: number; passages?: number; embedded?: number
     // A pdf_ocr run (D51): the pages without text it found, and whether the merged OCR text was taken into use.
-    image_pages?: number[]; blank_pages?: number[]; outcome?: 'current' | 'rejected' | 'unchanged'; rejection_reason?: string | null
+    image_pages?: number[]; blank_pages?: number[]; asset_id?: string; outcome?: 'current' | 'rejected' | 'unchanged' | 'file_busy'; rejection_reason?: string | null
     // Citation chaining (D95): what its summary counted, with the seeds it froze.
     seed_list?: { source_version_id: string; kind: 'code' | 'user' }[]; new_works?: number; read_by_model?: number
     requests?: { sent?: number; failed?: number; not_reached_seeds?: number }
@@ -361,6 +361,7 @@ export type SearchRun = {
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null } | null
 }
 export type Asset = {
+  text_recovery?: TextRecoveryCapability | null
   id: string; extraction_status: string; extraction_error?: string | null; extraction_version?: string | null; page_count: number | null; origin: string; byte_size: number; original_filename: string | null
   // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
   rendition?: boolean
@@ -392,7 +393,47 @@ export type EvidenceStatus = 'current' | 'pdf_removed' | 'pdf_replaced' | 'text_
 export type ReplacedAsset = { id: string; original_filename: string | null; removed_at: string; replaced_by_asset_id: string }
 export type AssetImpact = { asset_id: string; researches: { id: string; title: string }[]; cells: number; quotes: number }
 export type Reextraction = { asset_id: string; outcome: 'current' | 'rejected' | 'unchanged'; rejection_reason?: string | null }
+export type FileRestoreReceipt = {
+  operation_id: string; sha256: string; lifecycle: 'running' | 'completed' | 'interrupted'
+  outcome: 'file_restored' | 'file_reused' | 'file_refused' | null; reason: string | null
+  before_integrity: string | null; after_integrity: string | null; retained: boolean; created_at: string; finished_at: string | null
+}
+export type TextRetryOperation = {
+  operation_id: string; asset_id: string; lifecycle: 'running' | 'completed' | 'interrupted'
+  outcome: 'promoted' | 'diagnosis_updated' | 'rejected' | 'no_change' | 'refused' | null
+  reason: string | null; decision_code: string | null; input_observation_id: string | null; input_integrity: string | null
+  candidate_status: string | null; extraction_id: string | null; extraction_version: string | null; baseline_extraction_id: string | null
+  coverage: { old_text_pages: number[]; new_text_pages: number[]; missing_pages: number[] } | null
+  created_at: string; finished_at: string | null
+}
+export type TextRetryRequest = { mode: 'retry_failed_or_partial'; expected_current_extraction_id: string; idempotency_key: string }
+export type TextRecoveryCapability = {
+  current_extraction_id: string | null; status: string; extractor_profile: string | null; extraction_version: string | null
+  diagnostic_only: boolean; can_retry_text: boolean; reason: string | null; file_checked: boolean
+  latest_operation: TextRetryOperation | null; latest_file_restore: FileRestoreReceipt | null
+}
+export type RecoveryHistory = {
+  text_retries: { operation: TextRetryOperation; candidate: {
+    extraction_id: string; extraction_version: string; extractor_profile: string; status: string; error: string | null
+    page_count: number; outcome: string; decision_code: string | null; diagnostic_only: boolean
+  } | null }[]
+  file_restores: FileRestoreReceipt[]; text_retries_truncated: boolean; file_restores_truncated: boolean
+}
+export type ExtractionOccurrence = {
+  extraction_id: string | null; extraction_version: string | null; extractor_profile: string | null; outcome: string | null
+  is_current: boolean; current_extraction_id: string | null
+  input: { observation_id: string; integrity: string; observed_sha256: string | null } | null
+  input_relation: 'input_matched_expected_hash' | 'input_differed_from_expected_hash' | 'input_not_recorded'
+  retained_copy?: boolean; file_restored_after: boolean; latest_file_restore: FileRestoreReceipt | null
+}
+export type PassageFreshness = {
+  compared: 'passage_identity'; semantic_support: 'not_checked'; dependencies: string[]
+  affected: { passage_id: string; source_version_id: string; evidence_status: EvidenceStatus; passage_extraction_id: string | null; current_extraction_id: string | null; used_by: { kind: string; ref: string }[] }[]
+  unresolved: { passage_id: string | null; reason: 'passage_missing' | 'unreadable_record'; used_by: { kind: string; ref: string }[] }[]
+  file_restored_after: string[]
+}
 export type AssetText = {
+  occurrence: ExtractionOccurrence | null
   asset: Asset
   passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source'; equations_to_check?: number; source_equations?: string[] }[]
   source: Passage['source']
@@ -635,6 +676,7 @@ export type RemovedSource = {
 export type TrashedTemplate = { id: string; name: string; trashed_at: string; columns: number }
 export type Trash = { researches: TrashedResearch[]; tables: TrashedTable[]; sources: RemovedSource[]; templates: TrashedTemplate[] }
 export type Passage = {
+  occurrence: ExtractionOccurrence | null
   id: string; kind: Evidence['kind']; text: string; physical_page: number | null; printed_label: string | null
   abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source'; equations_to_check?: number
   // The equation numbers placed from the arXiv source in this passage (D104); empty outside a 'latex_source' passage.
@@ -802,6 +844,7 @@ export type ReportReview = { status: 'reviewed'; step_input_id: string; sections
   | { status: 'not_reviewed'; reason: string; detail: unknown; sections_reviewed: string[]; sections_not_reviewed: { section_id: string; reason: string }[]
     findings: []; notes: string; reverted: []; not_reverted: [] }
 export type ReportDetail = ReportSummary & { language: string; updated_at: string; sections: ReportSection[]; edited_after_version: number | null; has_human_edits: boolean; edit_check: EditCheck | null; review: ReportReview | null
+  passage_freshness: PassageFreshness
   missing_rows: { counts: { included: number; completed: number; failed: number; cells_missing: number; cells_total: number }
     failed_rows: { source_version_id: string; source_key: string | null; title: string; reason: string; missing_columns: { column_id: string; name: string; reason: string }[] }[] } | null
   evidence_changes: { any: boolean; changed_cells: number; removed_sources: number; added_sources: number; revised_columns: number; not_checked: string[] }
@@ -1054,14 +1097,14 @@ export const api = {
   upload: (id: string, file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return request<ResearchView & { uploaded_source_version_id: string }>(`/api/researches/${id}/uploads`, { method: 'POST', body: form })
+    return request<ResearchView & { uploaded_source_version_id: string; file_restore: FileRestoreReceipt | null }>(`/api/researches/${id}/uploads`, { method: 'POST', body: form })
   },
   setSeed: (id: string, sourceVersionId: string, expectedVersion: number) =>
     request<ResearchView>(`/api/researches/${id}/seed`, json('POST', { source_version_id: sourceVersionId, expected_version: expectedVersion })),
   uploadToSource: (id: string, sourceId: string, file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/uploads`, { method: 'POST', body: form })
+    return request<ResearchView & { file_restore: FileRestoreReceipt | null }>(`/api/researches/${id}/sources/${sourceId}/uploads`, { method: 'POST', body: form })
   },
   // Attaches PDFs from the user's Zotero library to included works that have no PDF text yet (D49).
   zoteroPdfs: (id: string, source: ZoteroSource) =>
@@ -1088,7 +1131,7 @@ export const api = {
     form.append('scope_revision', String(match.scope_revision))
     form.append('versions_digest', work.versions_digest)
     form.append('sha256', match.sha256)
-    return request<ResearchView & { attached: { source_version_id: string; asset_id: string; reading: AttachOutcome } }>(`/api/researches/${id}/waiting/uploads`, { method: 'POST', body: form })
+    return request<ResearchView & { file_restore: FileRestoreReceipt | null; attached: { source_version_id: string; asset_id: string; reading: AttachOutcome } }>(`/api/researches/${id}/waiting/uploads`, { method: 'POST', body: form })
   },
   // Asks for a person's file to be read again after a reading that did not decide it (slice 18b, decision 6).
   retryPersonReading: (id: string, requestId: string) => request<{ run: Run | null }>(`/api/researches/${id}/waiting/requests/${requestId}/retry`, { method: 'POST' }),
@@ -1112,10 +1155,16 @@ export const api = {
   replaceAsset: (id: string, sourceId: string, assetId: string, file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}`, { method: 'PUT', body: form })
+    return request<ResearchView & { file_restore: FileRestoreReceipt | null }>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}`, { method: 'PUT', body: form })
   },
   reextractAsset: (id: string, sourceId: string, assetId: string) =>
     request<ResearchView & { reextraction: Reextraction }>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/extractions`, { method: 'POST' }),
+  retryText: (id: string, sourceId: string, assetId: string, body: TextRetryRequest) =>
+    request<ResearchView & { recovery: TextRetryOperation & { replayed: boolean } }>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/extractions`, json('POST', body)),
+  textRecovery: (id: string, sourceId: string, assetId: string) =>
+    request<TextRecoveryCapability>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/text-retry`),
+  recoveryHistory: (id: string, sourceId: string, assetId: string) =>
+    request<RecoveryHistory>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/recovery-history`),
   discoverPdf: (id: string, sourceId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-discovery`, { method: 'POST' }),
   attachPdfCandidate: (id: string, sourceId: string, candidateId: string) =>
@@ -1149,7 +1198,7 @@ export const api = {
   // After the model could not write the query: search with the code's query alone (D92).
   chooseCodeQuery: (runId: string) => request<Run>(`/api/runs/${runId}/search-query-choice`, { method: 'POST' }),
   passage: (id: string, passageId: string) => request<Passage>(`/api/researches/${id}/passages/${passageId}`),
-  assetText: (id: string, assetId: string) => request<AssetText>(`/api/researches/${id}/assets/${assetId}/text`),
+  assetText: (id: string, assetId: string, extractionId?: string) => request<AssetText>(`/api/researches/${id}/assets/${assetId}/text${extractionId ? `?extraction_id=${encodeURIComponent(extractionId)}` : ''}`),
   assetFigures: (id: string, assetId: string) => request<{ figures: AssetFigure[] }>(`/api/researches/${id}/assets/${assetId}/figures`),
   events: (id: string, after = 0) => request<ActivityEvent[]>(`/api/researches/${id}/events?after=${after}`),
   connections: (refresh = false) => request<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`),

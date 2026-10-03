@@ -1,7 +1,101 @@
-import type { ApprovalBlock, Evidence, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, Verdict } from './api'
+import type { ApprovalBlock, Evidence, FileRestoreReceipt, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, TextRecoveryCapability, TextRetryOperation, Verdict } from './api'
 import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
+
+const recoveryReasons: Record<string, string> = {
+  run_active: 'a research using this source has an active run', baseline_changed: 'the stored text changed first',
+  membership_changed: 'this research no longer holds the source', asset_removed: 'the PDF record was removed',
+  asset_replaced: 'the PDF record was replaced', no_holding_research: 'no research holds this source',
+  process_ended: 'DEIXIS stopped before it finished', storage_full: 'the disk is full',
+  storage_unavailable: 'storage could not be written', cancelled: 'it was cancelled', unexpected_error: 'an unexpected error',
+  file_missing: 'the stored file was missing', file_mismatch: 'the stored file differed from its recorded hash',
+  input_not_verified: 'the bytes read could not be matched to the recorded hash',
+  retention_conflict: 'the damaged bytes could not be kept because their stored name holds another file',
+  file_not_regular: 'the stored entry is not a regular file',
+}
+const recoveryDecisions: Record<string, string> = {
+  candidate_failed: 'the new read failed', augmented_text_would_be_lost: 'the new read would drop OCR, Marker or arXiv source text',
+  status_worse: 'the new read is less complete', page_count_changed: 'the page count changed',
+  legacy_page_count_untrusted: 'the page count changed and the earlier input was not recorded',
+  text_page_lost: 'a page that had text would lose it', recovered_text: 'text was extracted from an earlier empty read',
+  recovered_from_corrupt_input: 'text was extracted after a read from damaged bytes', text_updated: 'stored text was updated',
+  password_diagnosed: 'the PDF requires a password; no text was extracted', no_text_diagnosed: 'no text was extracted',
+  no_change: 'no change', upgraded: 'extractor updated', fewer_text_pages: 'fewer pages have text',
+  ocr_found_no_text: 'OCR found no text', input_not_verified: 'the bytes read could not be matched to the recorded hash',
+}
+export const recoveryReasonText = (reason: string | null) => t(recoveryReasons[reason ?? ''] ?? (reason ?? '').replaceAll('_', ' '))
+export const recoveryDecisionText = (code: string | null) => t(recoveryDecisions[code ?? ''] ?? (code ?? '').replaceAll('_', ' '))
+export function textRecoveryReasonText(reason: string | null): string {
+  const reasons: Record<string, string> = {
+    operation_running: 'A text retry is already running for this PDF.',
+    run_active: 'A research using this source has an active run; retry when it ends.', pending: 'This PDF is still being read.',
+    file_missing: 'The stored PDF is missing; upload it again to restore it.', no_current_extraction: 'No extraction is stored for this PDF.',
+    already_current: 'This text already comes from the current extractor.',
+    password_protected: 'This PDF requires a password. Text was not recovered. Replace it with an unlocked copy.',
+  }
+  return t(reasons[reason ?? ''] ?? 'Text retry is unavailable.')
+}
+export function textRetryResultText(operation: TextRetryOperation, currentId: string | null, history = false): string {
+  const reason = recoveryReasonText(operation.reason)
+  if (operation.lifecycle === 'running') return t('Text retry is running…')
+  if (operation.lifecycle === 'interrupted') return history
+    ? t('Interrupted: {reason}; nothing was published.', { reason })
+    : `${t('Text retry was interrupted; no new extraction was published.')} ${reason}.`
+  switch (operation.outcome) {
+    case 'promoted':
+      if (history) return t('This extraction became current.')
+      if (operation.extraction_id !== currentId) return t('This extraction became current; a later extraction is in use now.')
+      return operation.candidate_status === 'succeeded'
+        ? t('Text extracted again. Future work uses this extraction; earlier evidence keeps its cited text.')
+        : `${t('Text extraction updated, but some pages still have no extracted text.')} ${operation.coverage ? t('Pages with text: {pages}.', { pages: operation.coverage.new_text_pages.join(', ') || t('none') }) : ''}`.trim()
+    case 'diagnosis_updated': return history
+      ? t('Diagnosis recorded: {reason}.', { reason: recoveryDecisionText(operation.decision_code) })
+      : t(operation.decision_code === 'password_diagnosed' ? 'This PDF requires a password. Text was not recovered. Replace it with an unlocked copy.' : 'PDF text checked again. No text was extracted.')
+    case 'rejected': return t(history ? 'Not used: {reason}.' : 'Earlier text stays in use: {reason}.', { reason: recoveryDecisionText(operation.decision_code) })
+    case 'no_change': return t('No change to stored text.')
+    case 'refused':
+      if (history) return t('Refused: {reason}.', { reason })
+      if (operation.reason === 'file_mismatch') return t('The stored PDF does not match its recorded hash. Upload the same PDF again to restore it, then retry.')
+      if (operation.reason === 'file_missing') return t('The stored PDF was missing when the retry looked for it. Upload the same PDF again to restore it, then retry.')
+      if (operation.reason === 'input_not_verified') return t("The bytes read could not be matched to the file's recorded hash, so no text was published.")
+      return t('Text retry refused: {reason}.', { reason })
+    default: return t('No recorded text retry result.')
+  }
+}
+export function fileRestoreText(receipt: FileRestoreReceipt, history = false): string {
+  const reason = recoveryReasonText(receipt.reason)
+  if (receipt.lifecycle === 'running') return t('File restore is running…')
+  if (receipt.lifecycle === 'interrupted') return history ? t('File restore did not finish: {reason}.', { reason })
+    : `${t('File restore did not finish; upload the PDF again.')} ${reason}.`
+  if (receipt.outcome === 'file_refused') return t('File not restored: {reason}.', { reason })
+  if (receipt.outcome === 'file_reused') return t(history ? 'File was already whole; nothing was rewritten.' : 'The stored file was already whole; nothing was rewritten.')
+  if (receipt.outcome === 'file_restored') return [t(history ? 'File restored; this operation did not retry text.' : 'File restored. Stored text has not been retried.'),
+    receipt.before_integrity === 'missing' ? t('The stored file was missing.') : receipt.before_integrity === 'mismatch'
+      ? t(receipt.retained ? history ? 'The stored file was damaged; its damaged bytes were kept.' : 'The stored file was damaged; its damaged bytes are kept.' : 'The stored file was damaged.') : ''].filter(Boolean).join(' ')
+  return t('No recorded file restore result.')
+}
+// A restore receipt describes file placement, not the attachment/replacement's text extraction.
+export function fileRestoreNote(receipt: FileRestoreReceipt | null | undefined): string {
+  if (!receipt || receipt.outcome === 'file_reused') return ''
+  if (receipt.lifecycle !== 'completed' || receipt.outcome !== 'file_restored') return fileRestoreText(receipt)
+  if (receipt.before_integrity === 'missing') return t('The stored copy of this file was missing and was restored first.')
+  if (receipt.before_integrity === 'mismatch') return t(receipt.retained
+    ? 'A damaged stored copy of this file was restored first; its damaged bytes are kept.'
+    : 'A damaged stored copy of this file was restored first.')
+  return t('The stored copy of this file was restored first.')
+}
+export function textRecoveryResultText(capability: TextRecoveryCapability): string {
+  const op = capability.latest_operation, file = capability.latest_file_restore
+  if (op?.lifecycle === 'running') return textRetryResultText(op, capability.current_extraction_id)
+  if (file && (file.lifecycle === 'running' || !op || file.created_at > op.created_at)) return fileRestoreText(file)
+  if (op) return [file?.lifecycle === 'completed' && file.outcome === 'file_restored' && file.finished_at && file.finished_at < op.created_at ? t('File restored.') : '',
+    textRetryResultText(op, capability.current_extraction_id)].filter(Boolean).join(' ')
+  return capability.reason === 'password_protected' ? textRecoveryReasonText(capability.reason) : ''
+}
+export const textRetryTone = (op: TextRetryOperation) => op.lifecycle === 'completed' && op.outcome === 'diagnosis_updated' && op.decision_code === 'password_diagnosed'
+  ? 'error' as const : op.lifecycle === 'completed' && op.outcome === 'promoted' && op.candidate_status === 'succeeded' ? 'success' as const : 'warning' as const
+export const fileRestoreTone = (file: FileRestoreReceipt) => file.lifecycle === 'completed' && file.outcome !== 'file_refused' ? 'success' as const : 'warning' as const
 
 export const scopeLabels: Record<SourceScope, string> = {
   academic: 'Academic search',
@@ -274,7 +368,7 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
 }
 
 // Why a PDF step gave no file, in plain words; the HTTP status stays in view for the record.
-const fetchReasons: Record<string, string> = { fetch_timeout: 'timed out', fetch_too_large: 'file too large', fetch_not_pdf: 'not a PDF', fetch_blocked_url: 'address not allowed', fetch_failed: 'connection failed', no_other_copy: 'no other open copy found' }
+const fetchReasons: Record<string, string> = { fetch_file_repair_refused: 'the stored file could not be repaired now', fetch_file_busy: 'the stored file was busy', fetch_timeout: 'timed out', fetch_too_large: 'file too large', fetch_not_pdf: 'not a PDF', fetch_blocked_url: 'address not allowed', fetch_failed: 'connection failed', no_other_copy: 'no other open copy found' }
 export function fetchReasonText(code: string | null | undefined, httpStatus?: number | null) {
   if (code !== 'fetch_http_error') return t(fetchReasons[code ?? ''] ?? 'connection failed')
   if (httpStatus === 401 || httpStatus === 403) return t('site blocked automatic download · HTTP {status}', { status: httpStatus })

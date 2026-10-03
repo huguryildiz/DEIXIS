@@ -26,6 +26,7 @@ from deixis.providers.registry import search_providers
 from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
 from deixis.workflow.evidence_deps import latest_completed_restore, passage_dependencies
 from deixis.workflow.report.passage_freshness import passage_freshness
+from deixis.workflow import recovery_view
 
 
 # What the transcript reports from a search plan; the rest of the stored output stays out of the view.
@@ -599,7 +600,9 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         # The PDF in use, whether its text comes from the current extractor, and a later extraction that was not taken (D45).
         # A math extraction (D52) or an arXiv source reading (D104) builds on the current extractor's text; its own
         # "nothing to read" or failed attempts are reported as the PDF's equation state, not as a rejected re-extraction.
-        assets = [dict(r) | {"current_extraction": (r["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION,
+        assets = [dict(r) | {"text_recovery": recovery_view.text_recovery(store, store.asset(r["id"]), svid, None)
+                             if store._extraction_has_recovery_metadata else None,
+                             "current_extraction": (r["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION,
                              "equations": equation_state(store, r["id"]), "ocr": ocr_state(store, r["id"]), "rejected_extraction": dict(rejected) if (rejected := conn.execute(
             "SELECT extraction_version, rejection_reason, created_at FROM asset_extractions WHERE asset_id = ? AND outcome = 'rejected'"
             " AND extraction_version NOT LIKE '%+marker-%' AND extraction_version NOT LIKE '%+arxiv-latex-%'"

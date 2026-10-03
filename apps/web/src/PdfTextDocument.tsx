@@ -100,22 +100,23 @@ export type CitationLabels = { marked: string; unmarked: string; mark: string }
 
 // With a citation, the document opens on the cited text: every located anchor is marked and the first is scrolled into view.
 // An anchor not found in its page's text leaves the page unmarked; the view then opens on that page and says so.
-export function PdfTextDocument({ researchId, assetId, passages, showNotes, sourceTitle = null, citation = null, rendition = false }: { researchId: string; assetId: string; passages: Passages; showNotes: boolean; sourceTitle?: string | null; rendition?: boolean; citation?: { page: number | null; texts: string[]; expected: boolean; labels?: CitationLabels } | null }) {
+export function PdfTextDocument({ researchId, assetId, passages, showNotes, sourceTitle = null, citation = null, rendition = false, comparison = false, suppressFigurePictures = false }: { researchId: string; assetId: string; passages: Passages; showNotes: boolean; sourceTitle?: string | null; rendition?: boolean; comparison?: boolean; suppressFigurePictures?: boolean; citation?: { page: number | null; texts: string[]; expected: boolean; labels?: CitationLabels } | null }) {
   const [figures, setFigures] = useState<AssetFigure[]>([])
   useEffect(() => {
+    if (suppressFigurePictures) return
     let cancelled = false
     api.assetFigures(researchId, assetId).then(value => { if (!cancelled) setFigures(value.figures) }).catch(() => undefined)
     return () => { cancelled = true }
-  }, [researchId, assetId])
-  const doc = useMemo(() => buildDocument(passages, figures, sourceTitle), [passages, figures, sourceTitle])
+  }, [researchId, assetId, suppressFigurePictures])
+  const doc = useMemo(() => buildDocument(passages, suppressFigurePictures ? [] : figures, sourceTitle, suppressFigurePictures), [passages, figures, sourceTitle, suppressFigurePictures])
   const marks = useMemo(() => {
-    if (!citation) return null
+    if (!citation || comparison) return null
     const found = locateAnchors(doc, citation.page, citation.texts)
     return citation.labels && !marksExactly(doc, found, citation.texts) ? { blocks: new Map(), first: null, located: 0 } : found
-  }, [doc, citation])
+  }, [doc, citation, comparison])
   const markLabel = citation?.labels?.mark ?? t(MARK_LABEL)
   const citedPage = citation ? doc.pages.find(p => p.head.physical_page === citation.page)?.head.id ?? null : null
-  const unmarked = Boolean(citation && (citation.texts.length ? marks!.located === 0 : citation.expected))
+  const unmarked = Boolean(!comparison && citation && (citation.texts.length ? marks!.located === 0 : citation.expected))
   const goToCitation = () => {
     const block = marks?.first ? document.getElementById(marks.first) : null
     const target = block ? block.querySelector('mark') ?? block : citedPage ? document.getElementById(citedPage) : null
@@ -131,10 +132,10 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
   return <>
     {citation && <div className={`pdf-text-citation${unmarked ? ' is-unmarked' : ''}`}>
       {unmarked ? <TriangleAlert size={14} aria-hidden /> : <Quote size={14} aria-hidden />}
-      <span>{citation.labels ? (unmarked ? citation.labels.unmarked : citation.labels.marked) : unmarked
+      <span>{comparison ? t('Current text · {locator} · not the cited extraction', { locator: pageLocator(citation.page ?? '?', rendition) }) : citation.labels ? (unmarked ? citation.labels.unmarked : citation.labels.marked) : unmarked
         ? t(citation.texts.length ? 'The cited text was not found in the text of {locator}, so it is not marked. Check the page in the PDF.' : 'This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.', { locator: pageLocator(citation.page ?? '?', rendition) })
         : t('Cited text · {locator}', { locator: pageLocator(citation.page ?? '?', rendition) })}</span>
-      {(marks?.first || citedPage) && <button type="button" onClick={goToCitation}>{t(marks?.first ? 'Go to cited text' : 'Go to cited page')}</button>}
+      {(marks?.first || citedPage) && <button type="button" onClick={goToCitation}>{t(comparison ? 'Go to page' : marks?.first ? 'Go to cited text' : 'Go to cited page')}</button>}
     </div>}
     {doc.headings.length >= 3 && <details className="pdf-text-contents">
       <summary>{t('Contents · {n} sections', { n: doc.headings.length })}</summary>
@@ -149,7 +150,9 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
           const inline = <InlineText text={block.text} doc={doc} selfId={block.id} marks={blockMarks} markLabel={markLabel} />
           const plainText = blockMarks ? <mark className="citation-highlight" aria-label={markLabel}>{block.text}</mark> : block.text
           const figure = block.kind === 'figure' ? figures.find(f => f.label === block.label) : undefined
-          return block.kind === 'figure' && figure ? <figure key={block.id} id={block.id} className="pdf-text-figure">
+          return block.kind === 'figure' && suppressFigurePictures ? <figure key={block.id} id={block.id} className="pdf-text-figure">
+            <figcaption>{inline}</figcaption><small>{t('Figure picture not shown: it would be cut from the current file, not the cited extraction.')}</small>
+          </figure> : block.kind === 'figure' && figure ? <figure key={block.id} id={block.id} className="pdf-text-figure">
             <img src={figureUrl(researchId, assetId, figure.label)} alt={block.text || t('Figure {n}', { n: figure.label })} loading="lazy" style={{ aspectRatio: `${figure.width} / ${figure.height}` }} />
             {block.text ? <figcaption>{inline}</figcaption> : <figcaption>{t('Figure {n}', { n: figure.label })}</figcaption>}
             <small>{t('Picture cut from PDF page {page}; it can miss part of the figure.', { page: figure.page })}</small>

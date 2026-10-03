@@ -3,7 +3,7 @@ import { Download, Pause, Play, ScanText, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api, type OcrTool, type PdfMatch, type ResearchView, type Source, type ZoteroSource } from './api'
 import { ConnectionIcon } from './connectionIcons'
-import { fetchReasonText, pdfFailureText } from './labels'
+import { fetchReasonText, fileRestoreNote, fileRestoreTone, pdfFailureText } from './labels'
 import { OCR_LABEL, ocrOffer } from './ocr'
 import { OcrNote } from './OcrNote'
 import { t } from './i18n'
@@ -178,8 +178,11 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
     if (!chosen.length) return
     setProposals(null)
     void act(async () => {
-      for (const p of chosen) { await api.uploadToSource(researchId, p.target, p.file); touch([p.target]) }
-    }, plural(chosen.length, '{n} PDF attached. Its text was extracted page by page (no OCR).', '{n} PDFs attached. Their text was extracted page by page (no OCR).'))
+      for (const p of chosen) {
+        const next = await api.uploadToSource(researchId, p.target, p.file); touch([p.target])
+        toast(next.file_restore ? fileRestoreTone(next.file_restore) : 'success', [t('PDF attached to this source. Its text was extracted page by page (no OCR).'), fileRestoreNote(next.file_restore)].filter(Boolean).join(' '))
+      }
+    })
   }
   const fromZotero = () => {
     const before = new Set(missing.map(r => r.source_version_id))

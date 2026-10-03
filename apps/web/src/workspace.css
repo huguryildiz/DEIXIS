@@ -1253,3 +1253,15 @@ button.chat-step-title svg{color:var(--muted)}
 .english-question form{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .english-question input{flex:1 1 280px;min-width:0;height:32px;padding:0 11px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface);color:var(--ink);font-family:inherit;font-size:13px}
 .english-question input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* Recovery describes recorded operations; identifiers disclose only on request. */
+.text-recovery { margin-block: 10px; color: var(--muted); font-size: 12px; }
+.text-recovery p { margin-block: 6px; overflow-wrap: anywhere; }
+.text-recovery-result { color: var(--ink); }
+.text-recovery-result.is-error { color: var(--error-ink); }
+.text-recovery-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.text-recovery-disclosure { display: inline-flex; align-items: center; gap: 4px; margin-block: 6px; color: var(--muted); }
+.text-recovery-history { padding-inline-start: 20px; }
+.text-recovery-history > li { padding-block: 8px; border-top: 1px solid var(--line); }
+.text-recovery-identifiers { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.text-recovery-identifiers div { margin-block: 6px; }
+.text-recovery-identifiers dd { margin-inline-start: 0; color: var(--ink); }

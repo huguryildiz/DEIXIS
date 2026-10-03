@@ -562,6 +562,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const idle = (state: PhaseState) => state === 'waiting' || state === 'skipped'
   const collapsed = active && !allSteps && phaseStates.some(idle)
   const waitingNext = collapsed ? order.filter((_, i) => phaseStates[i] === 'waiting').map(key => t((key === 'pdf' && attachedOnly ? attachedTitles(included.length) : titles[key])[2]).toLocaleLowerCase(uiLocale())) : []
+  const busyEquationPdfs = new Set(steps.filter(step => step.kind === 'read_equations' && step.output?.outcome === 'file_busy').map(step => step.output?.asset_id)).size
   return <section className={`chat-turn${active ? ' is-active' : ''}`}>
     <div className="chat-group">
       <button type="button" className="chat-toggle" data-run-id={run.id} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
@@ -572,6 +573,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         <time>{durationText(secondsBetween(started, clock))}</time>
       </button>
       {expanded && <>
+        {busyEquationPdfs > 0 && <p className="chat-report-line">{t(busyEquationPdfs === 1 ? 'PDF busy; equations of {n} PDF were not read in this run.' : 'PDF busy; equations of {n} PDFs were not read in this run.', { n: busyEquationPdfs })}</p>}
         {(run.kind === 'review' || (latest && active && !collapsed)) && <div className="chat-run-plan" role="note">
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />
           <div><p className="chat-run-plan-title">{run.kind === 'review' ? (ownerReview && run.target?.plan?.groups ? plural(run.target.plan.groups.length, 'A model you chose reads a stored copy of the {target} in {n} group. It changes nothing in the {target}.', 'A model you chose reads a stored copy of the {target} in {n} groups. It changes nothing in the {target}.', { target: t(ownerReview.kind === 'candidate' ? 'candidate' : ownerReview.kind === 'answer' ? 'answer' : 'report'), n: run.target.plan.groups.length }) : t('A model you chose reads a stored copy. It changes no target text.')) : run.kind === 'report' ? t('Write a sectioned report from the evidence table, one model step per section.') : run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'fulltext_fetch' ? t('Retrieve the open full text of the candidate works in rank order; nothing is included or excluded by this.') : run.kind === 'fulltext_adjudication' ? t('A model reads selected passages of each work twice; code checks every quote on the page and decides.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>

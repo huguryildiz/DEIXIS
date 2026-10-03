@@ -135,7 +135,7 @@ export const SUBSECTION = /^(?:[A-H]|\d+\.\d+(?:\.\d+)*)\.?\s/
 
 export const tableKey = (label: string) => `table:${label.toUpperCase()}`
 
-export function buildDocument(passages: Passages, figures: AssetFigure[], sourceTitle: string | null): Doc {
+export function buildDocument(passages: Passages, figures: AssetFigure[], sourceTitle: string | null, captionsOnly = false): Doc {
   const targets = new Map<string, string>(), references = new Map<string, string>(), headings: Block[] = []
   const placed = new Set<string>()
   let biographies = 0
@@ -149,7 +149,7 @@ export function buildDocument(passages: Passages, figures: AssetFigure[], source
         return
       }
       const figure = FIGURE_CAPTION.exec(text)
-      if (figure && !placed.has(figure[1]) && figures.some(f => f.label === figure[1])) {
+      if (figure && !placed.has(figure[1]) && (captionsOnly || figures.some(f => f.label === figure[1]))) {
         placed.add(figure[1])
         blocks.push({ id: `pdfx-fig-${figure[1]}`, kind: 'figure', text, label: figure[1] })
         targets.set(`figure:${figure[1]}`, `pdfx-fig-${figure[1]}`)

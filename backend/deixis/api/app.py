@@ -2243,37 +2243,20 @@ def create_app(
 
     @app.get("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/text-retry")
     async def text_retry_capability(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+        from deixis.workflow.recovery_view import text_recovery
+
         store = store_of(request)
         store.flush_text_retry_interruptions()
         asset = asset_in_use(store, research_id, source_version_id, asset_id)
-        current = store._retry_baseline(asset_id)
-        latest = store.conn.execute("SELECT id FROM asset_recovery_operations WHERE asset_id = ? AND kind = 'text_retry'"
-                                    " ORDER BY created_at DESC, id DESC LIMIT 1", (asset_id,)).fetchone()
-        reason = None
-        if current is None:
-            reason = "no_current_extraction"
-        elif current["status"] == "succeeded":
-            reason = "already_current"
-        elif current["status"] == "pending":
-            reason = "pending"
-        elif store.conn.execute("SELECT 1 FROM asset_recovery_operations WHERE asset_id = ? AND kind = 'text_retry'"
-                                " AND lifecycle = 'running'", (asset_id,)).fetchone():
-            reason = "operation_running"
-        elif store._asset_run_active(source_version_id):
-            reason = "run_active"
-        else:
-            try:
-                text_retry.precheck(settings.papers_dir, asset["storage_path"])
-            except text_retry.FileMissing:
-                reason = "file_missing"
-        return {"current_extraction_id": current["id"] if current else None,
-                "status": current["status"] if current else asset["extraction_status"],
-                "extractor_profile": current["extractor_profile"] if current else None,
-                "extraction_version": current["extraction_version"] if current else asset["extraction_version"],
-                "diagnostic_only": bool(current["diagnostic_only"]) if current else False,
-                "can_retry_text": reason is None, "reason": reason,
-                "latest_operation": store.text_retry_view(latest["id"]) if latest else None,
-                "latest_file_restore": store.latest_file_restore(asset["sha256"])}
+        return text_recovery(store, asset, source_version_id, settings.papers_dir)
+
+    @app.get("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/recovery-history")
+    async def asset_recovery_history(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
+        from deixis.workflow.recovery_view import recovery_history
+
+        store = store_of(request)
+        asset = asset_in_use(store, research_id, source_version_id, asset_id)
+        return recovery_history(store, asset)
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/equations", status_code=202)
     async def reread_equations(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:

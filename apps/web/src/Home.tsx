@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from './Toast'
 import { api, type Connections, type Effort, type EffortLimits, type ModelOption, type ModelRole, type RoleModelSetting, type SourceScope, type ZoteroSource } from './api'
-import { connectionName, isPlannedModel, reasoningLabel, scopeLabels } from './labels'
+import { connectionName, fileRestoreNote, fileRestoreTone, isPlannedModel, reasoningLabel, scopeLabels } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroPanel } from './ZoteroPanel'
 import { ConnectionIcon } from './connectionIcons'
@@ -274,6 +274,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
       step = 'Research saved, but DEIXIS could not attach the PDFs: {message}. You can retry from the research page.'
       for (const file of files) {
         const added = await api.upload(id, file)
+        if (added.file_restore) toast(fileRestoreTone(added.file_restore), [t('PDF added and included. Its text was extracted page by page (no OCR).'), fileRestoreNote(added.file_restore)].filter(Boolean).join(' '))
         uploaded.set(file.name, added.uploaded_source_version_id)
         latestView = added
       }

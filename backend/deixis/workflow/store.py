@@ -34,7 +34,7 @@ TEXT_RETRY_INTERRUPTIONS = ("storage_full", "storage_unavailable", "cancelled", 
 MIN_TITLE_KEY_CHARS = 12  # shorter normalized titles ("Introduction") say too little to suspect a duplicate
 ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions (D46)
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
-STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze",
+STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze", "read_equations",
                      "code:fulltext_plan", "code:fulltext_work", "code:fulltext_summary", "code:criterion_phrases",
                      "code:adjudication_plan", "code:adjudication_summary", "code:chain_summary")
 STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")

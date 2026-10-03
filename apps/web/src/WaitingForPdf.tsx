@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { BookOpen, CircleCheck, CircleDashed, CircleMinus, ExternalLink, FileSearch, Info, RotateCcw, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api, ApiError, type AttachOutcome, type PersonFile, type PersonFiles, type ResearchView, type WaitingMatch, type WaitingRow, type WaitingView, type WaitingWork } from './api'
-import { pageLocator, personFileStateText, personUnreadText, queueAnswerLabels, queueAnswerOfCode, versionText, versionTones, waitingReasonText } from './labels'
+import { fileRestoreNote, fileRestoreTone, pageLocator, personFileStateText, personUnreadText, queueAnswerLabels, queueAnswerOfCode, versionText, versionTones, waitingReasonText } from './labels'
 import { Notice } from './Notice'
 import { useToast } from './Toast'
 import { t } from './i18n'
@@ -88,11 +88,11 @@ export function WaitingForPdf({ researchId, view, busy, incoming, onIncomingTake
     if (!p.match || !work || !p.version) return
     update(p.key, { busy: true, refused: null })
     try {
-      const { attached, runs } = await api.attachWaiting(researchId, p.file, p.match, work, p.version)
+      const { attached, runs, file_restore } = await api.attachWaiting(researchId, p.file, p.match, work, p.version)
       drop(p.key)
       // The reading run the attach opened is announced by this toast, not by a second "started" one.
       const opened = attached.reading === 'requested' ? runs.find(r => r.kind === 'fulltext_adjudication' && r.status === 'queued') : undefined
-      toast('success', `${t('PDF attached to the version you chose. Its text was extracted page by page (no OCR).')} ${attachedText(attached.reading)}`)
+      toast(file_restore ? fileRestoreTone(file_restore) : 'success', [t('PDF attached to the version you chose. Its text was extracted page by page (no OCR).'), attachedText(attached.reading), fileRestoreNote(file_restore)].filter(Boolean).join(' '))
       await Promise.all([load(), onChanged(opened?.id)])
     } catch (e) {
       // A 409 says what moved since the match; the file stays here to be matched again or skipped.

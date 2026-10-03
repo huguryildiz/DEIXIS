@@ -1,0 +1,12 @@
+{
+  "totalHits": 2,
+  "results": [
+    {
+      "id": 2,
+      "title": "SYNTHETIC boundary page 2",
+      "doi": "10.9999/synthetic.2",
+      "abstract": "SYNTHETIC evidence",
+      "fullText": "SYNTHETIC omitted full text"
+    }
+  ]
+}

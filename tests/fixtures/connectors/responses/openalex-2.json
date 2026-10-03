@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "count": 2,
+    "next_cursor": null
+  },
+  "results": [
+    {
+      "id": "https://openalex.org/W2",
+      "display_name": "SYNTHETIC boundary page 2",
+      "doi": "https://doi.org/10.9999/synthetic.2",
+      "publication_year": 2021,
+      "primary_location": {
+        "version": "publishedVersion",
+        "landing_page_url": "https://example.org/2"
+      },
+      "abstract_inverted_index": {
+        "SYNTHETIC": [
+          0
+        ],
+        "evidence": [
+          1
+        ]
+      },
+      "referenced_works_count": 1,
+      "referenced_works": [
+        "https://openalex.org/W9"
+      ]
+    }
+  ]
+}

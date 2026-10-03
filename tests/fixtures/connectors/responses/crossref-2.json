@@ -1,0 +1,15 @@
+{
+  "message": {
+    "total-results": 2,
+    "items": [
+      {
+        "DOI": "10.9999/synthetic.2",
+        "title": [
+          "SYNTHETIC boundary page 2"
+        ],
+        "type": "journal-article",
+        "abstract": "<jats:p>SYNTHETIC evidence</jats:p>"
+      }
+    ]
+  }
+}

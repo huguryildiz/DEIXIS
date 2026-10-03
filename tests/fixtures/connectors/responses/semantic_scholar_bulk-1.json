@@ -1,0 +1,21 @@
+{
+  "total": "2",
+  "data": [
+    {
+      "paperId": "synthetic1",
+      "title": "SYNTHETIC boundary page 1",
+      "externalIds": {
+        "DOI": "10.9999/synthetic.1"
+      },
+      "abstract": "SYNTHETIC evidence",
+      "authors": [
+        {
+          "name": "Synthetic Author"
+        }
+      ],
+      "year": 2021
+    }
+  ],
+  "next": 1,
+  "token": "synthetic-token"
+}

@@ -1,0 +1,18 @@
+{
+  "total_records": 2,
+  "articles": [
+    {
+      "article_number": "synthetic2",
+      "title": "SYNTHETIC boundary page 2",
+      "doi": "10.9999/synthetic.2",
+      "abstract": "SYNTHETIC evidence",
+      "index_terms": {
+        "author_terms": {
+          "terms": [
+            "synthetic"
+          ]
+        }
+      }
+    }
+  ]
+}

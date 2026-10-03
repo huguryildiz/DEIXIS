@@ -1,0 +1,13 @@
+{
+  "search_information": {
+    "total_results": 2
+  },
+  "organic_results": [
+    {
+      "result_id": "synthetic1",
+      "title": "SYNTHETIC boundary page 1",
+      "snippet": "SYNTHETIC excerpt",
+      "link": "https://doi.org/10.9999/synthetic.1"
+    }
+  ]
+}

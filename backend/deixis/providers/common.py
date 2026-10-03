@@ -1,7 +1,8 @@
 """Shared record shape, outcome statuses and HTTP handling for scholarly search providers.
 
-Every adapter returns a SearchOutcome with the same status vocabulary (`completed`, `zero_results`, `auth_required`,
-`entitlement_missing`, `rate_limited`, `timeout`, `parse_error`, `failed`) and a secret-free request description.
+Every adapter returns a SearchOutcome with the same status vocabulary (`completed`, `zero_results`,
+`not_configured`, `auth_required`, `entitlement_missing`, `rate_limited`, `timeout`, `parse_error`, `failed`)
+and a secret-free request description.
 """
 
 from __future__ import annotations

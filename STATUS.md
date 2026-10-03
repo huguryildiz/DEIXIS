@@ -2,17 +2,18 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 05:30 · P8 B2 (D182) main'de
+**Son güncelleme:** 3 Ekim 2026 05:45 · P8 B2 (D182) ve P7 G1 B1 (D177) main'de
 
 ## Şu an çalışanlar
 
 Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. Sol (gpt-6.1-sol) yazarsa Claude inceler, Claude yazarsa Sol inceler. Sahip onayı gereken kararlar Sol medium ile ortak verilir.
 
+- ✅ **P7 G1 B1** (D177): iç bağlayıcı sözleşmesi (`contract.py`), facade ve 111 sentetik uyumluluk vakası; çalışma akışı değişmedi; Sol yazdı, Claude 2 turda hazır dedi; 9.231 test geçti. Bulunan iki kusur (PubMed EFetch `error_kind` kaybı, S2/IEEE yanlış kökte çöküş) B2'ye yazıldı.
 - 🟡 **P9 RR-B** (`../DEIXIS-rrb`): kod Sol, inceleme ve iki matris koşusu Claude.
 - ✅ **P8 B1** (D181): inceleme sözleşmesi, anlık görüntü, tablolar, bayatlama kuralı; Sol yazdı, Claude 2 turda hazır dedi; 8.839 test geçti.
 - ✅ **P7 G6–G8, G11, G12** (D173): kota ile hız sınırı ayrıldı, kotası biten sağlayıcıya koşu boyunca istek gitmiyor (devam ve yeniden denemede sıfırlanır); Sol yazdı, Claude 3 turda hazır.
 - ✅ **P8 B2** (D182): inceleme koşusu ve rotaları; önizleme, başlatma, gruplu çalıştırma, bulgu kararları, kabul edilen bulgunun mevcut düzenleyiciyle uygulanması (kanıt değiştiyse 409); Sol yazdı, Claude 2 turda hazır; 8.963 test geçti. Gerçek modelle inceleme B4'te.
-- 🟡 **Yeniden işleme R1** (`../DEIXIS-reextract-r1`, D190) ve **P7 G1 B1** (`../DEIXIS-g1-b1`, D177): Claude yönetiyor, kodu Sol yazıyor.
+- 🟡 **Yeniden işleme R1** (`../DEIXIS-reextract-r1`, D190): Claude yönetiyor, kodu Sol yazıyor.
 - ✅ **Küçük kalanlar** (D175): dışa aktarma hatasının Türkçesi, slice 31 test eksikleri.
 - ✅ **Onarılan dosyanın yeniden işlenmesi, tasarım** (D176); kodu R1–R5 partilerinde.
 - ✅ **P7 G10 canlı deneme** (3 Ekim 02:48): IEEE, Scopus, CORE, SerpApi birer arama, hepsi HTTP 200.

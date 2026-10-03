@@ -1,0 +1,12 @@
+{
+  "search-results": {
+    "opensearch:totalResults": "2",
+    "entry": [
+      {
+        "dc:identifier": "SCOPUS_ID:synthetic2",
+        "dc:title": "SYNTHETIC boundary page 2",
+        "prism:doi": "10.9999/synthetic.2"
+      }
+    ]
+  }
+}

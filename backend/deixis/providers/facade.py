@@ -1,0 +1,112 @@
+"""Compatibility boundary only; application dispatch still uses registry callables."""
+
+from inspect import signature
+
+from deixis.providers import registry, query_rules, query_compiler, contract
+
+UNBOUND_HELPERS = registry.UNBOUND_HELPERS
+
+
+def descriptor_for(connector: registry.Connector, order: int) -> contract.ConnectorDescriptor:
+    pid = connector.provider_id
+    defaults = signature(registry.common.send).parameters
+    policy = {name: defaults[name].default for name in ("rate_limit_statuses", "unstated_wait", "timeout")}
+    policy.update(max_retry_wait=registry.common.MAX_RETRY_WAIT_SECONDS,
+                  max_rate_limit_retries=registry.common.MAX_RATE_LIMIT_RETRIES,
+                  min_interval=0.0, shared_gate=None)
+    retry = contract.RetryPolicy(**(policy | connector.retry))
+
+    def options(names):
+        return tuple(contract.OptionDescriptor(name, "str" if name == "sort" else "bool", None) for name in names)
+
+    endpoints = (contract.EndpointDescriptor(None, connector.paging, connector.max_results,
+                 connector.max_reachable, connector.page_gap, connector.total, options(connector.sw_options), retry),)
+    endpoints += tuple(contract.EndpointDescriptor(eid, e.paging, e.max_results, e.max_reachable,
+                       connector.page_gap if e.page_gap is None else e.page_gap, e.total, options(e.options), retry)
+                       for eid, e in connector.endpoints.items())
+    return contract.ConnectorDescriptor(
+        pid, query_rules.NAMES[pid], order, contract.CONTRACT_ID, connector.adapter_revision,
+        connector.key_env, connector.key_required, connector.searchable, connector.sw_searchable,
+        connector.supplementary, connector.host, connector.lineage, connector.requests_per_search,
+        frozenset({"search"}), contract.QUERY_RULES_REVISION, endpoints,
+    )
+
+
+def context_for(connector: registry.Connector, http, contact_email: str | None) -> contract.ConnectorContext:
+    return contract.ConnectorContext(http, connector.api_key(), contact_email)
+
+
+def connectors() -> dict[str, "CompatibilityConnector"]:
+    return {pid: CompatibilityConnector(c, descriptor_for(c, order))
+            for order, (pid, c) in enumerate(registry.CONNECTORS.items())}
+
+
+class CompatibilityConnector:
+    def __init__(self, connector: registry.Connector, descriptor: contract.ConnectorDescriptor | None = None):
+        if descriptor is None:
+            order = list(registry.CONNECTORS).index(connector.provider_id)
+            descriptor = descriptor_for(connector, order)
+        if (descriptor.provider_id != connector.provider_id or descriptor.contract_id not in contract.SUPPORTED_CONTRACTS
+                or descriptor.adapter_revision != connector.adapter_revision):
+            raise contract.ContractViolation("incompatible connector descriptor")
+        self.connector = connector
+        self.descriptor = descriptor
+
+    def access(self, context: contract.ConnectorContext) -> contract.AccessState:
+        mode = "api_key" if context.api_key else "not_configured" if self.descriptor.key_required else "keyless"
+        return contract.AccessState(self.descriptor.provider_id, mode, self.descriptor.key_required)
+
+    def _endpoint(self, endpoint):
+        for declared in self.descriptor.endpoints:
+            if declared.endpoint_id == endpoint:
+                return declared
+        raise contract.ContractViolation(f"unknown endpoint: {endpoint!r}")
+
+    async def search(self, request: contract.SearchRequest, context: contract.ConnectorContext):
+        if type(request.limit) is not int or request.limit <= 0:
+            raise contract.ContractViolation("limit must be a positive integer")
+        if not isinstance(request.query_text, str):
+            raise contract.ContractViolation("query_text must be a string")
+        if request.cursor is not None and not isinstance(request.cursor, str):
+            raise contract.ContractViolation("cursor must be a string or None")
+        endpoint = self._endpoint(request.endpoint)
+        allowed = {option.name for option in endpoint.options}
+        if any(name not in allowed for name in request.options):
+            raise contract.ContractViolation("undeclared endpoint option")
+        kwargs = {}
+        for name in ("cursor", "max_rate_limit_retries", "endpoint"):
+            value = getattr(request, name)
+            if value is not None:
+                kwargs[name] = value
+        kwargs.update(request.options)
+        return await self.connector.search(context.http, request.query_text, request.limit, context.api_key,
+                                           context.contact_email, **kwargs)
+
+    async def lookup(self, request: contract.LookupRequest, context: contract.ConnectorContext):
+        request.validate()
+        operation = "doi_lookup" if request.doi is not None else "id_lookup"
+        return contract.LookupOutcome("unsupported", operation=operation)
+
+    def query_issues(self, text: str, endpoint: str | None = None) -> list[str]:
+        return query_rules.query_issues(self.descriptor.provider_id, text, endpoint)
+
+    def render_query(self, groups, endpoint: str | None = None) -> contract.QueryRendering | None:
+        pid = self.descriptor.provider_id
+        groups = [list(g) for g in groups]
+        fitted = query_compiler._fit_blocks(pid, groups, endpoint)
+        if fitted is None:
+            return None
+        # Recover occurrence positions using the compiler's prefix allocation, not values.
+        counts = [len(g) for g in groups]
+        while True:
+            kept = [g[:n] for g, n in zip(groups, counts)]
+            text = query_compiler._render(pid, kept[0], kept[1] if len(kept) > 1 else [], endpoint)
+            if len(text) <= query_compiler.MAX_QUERY_CHARS and not query_rules.query_issues(pid, text, endpoint):
+                used = query_compiler._rendered(pid, kept, endpoint)
+                retained = tuple(term for g, n in zip(groups, used) for term in g[:n])
+                dropped = tuple(term for g, n in zip(groups, used) for term in g[n:])
+                if (text, list(dropped)) != fitted:
+                    raise RuntimeError(f"query rendering mismatch for {pid}/{endpoint}: "
+                                       "recomputed text or dropped occurrences differ from _fit_blocks")
+                return contract.QueryRendering(text, retained, dropped, contract.QUERY_RULES_REVISION)
+            counts[max(range(len(counts)), key=lambda i: (counts[i], i))] -= 1

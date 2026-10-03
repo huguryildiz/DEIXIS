@@ -16,7 +16,8 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlsplit
 
-from deixis.providers import arxiv, biorxiv, core, crossref, ieee_xplore, openalex, pubmed, scopus, semantic_scholar, serpapi
+from deixis.providers import arxiv, biorxiv, core, crossref, ieee_xplore, openalex, pacing, pubmed, scopus, semantic_scholar, serpapi
+from deixis.providers import common
 from deixis.providers.common import SearchOutcome
 
 
@@ -27,6 +28,9 @@ class Endpoint:
     paging: str
     max_results: int
     max_reachable: int | None = None
+    total: str = "reported"
+    options: tuple[str, ...] = ()
+    page_gap: float | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +65,11 @@ class Connector:
     sw_query: dict[str, Any] = field(default_factory=dict)
     endpoints: dict[str, Endpoint] = field(default_factory=dict)
     requests_per_search: int = 1
+    adapter_revision: int = 1
+    lineage: str | None = None
+    total: str = "reported"
+    # Only overrides of common.send's defaults and local pacing metadata; descriptive in B1.
+    retry: dict[str, Any] = field(default_factory=dict)
 
     def api_key(self) -> str | None:
         return (os.environ.get(self.key_env) or None) if self.key_env else None
@@ -83,13 +92,21 @@ CONNECTORS = {c.provider_id: c for c in (
     Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000,
               host=_host(semantic_scholar.SEARCH_URL),
               sw_query={"endpoint": semantic_scholar.BULK_ENDPOINT, "sort": semantic_scholar.BULK_SORT},
-              endpoints={semantic_scholar.BULK_ENDPOINT: Endpoint("cursor", semantic_scholar.BULK_MAX_RESULTS)}),
+              endpoints={semantic_scholar.BULK_ENDPOINT: Endpoint("cursor", semantic_scholar.BULK_MAX_RESULTS,
+                                                               total="estimated", options=("sort",))},
+              retry={"unstated_wait": semantic_scholar.UNSTATED_RATE_LIMIT_WAIT,
+                     "min_interval": pacing.SEMANTIC_SCHOLAR_PACER.interval_seconds,
+                     "shared_gate": "SEMANTIC_SCHOLAR_PACER"}),
     Connector("crossref", crossref.search, crossref.MAX_RESULTS, searchable=False,  # verification only (D87)
               host=_host(crossref.WORKS_URL)),
     # arXiv asks for three seconds between requests and refused consecutive ones on 2026-09-15 (D18).
-    Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS, page_gap=3.0, host=_host(arxiv.QUERY_URL)),
+    Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS, page_gap=3.0, host=_host(arxiv.QUERY_URL),
+              retry={"rate_limit_statuses": arxiv.RATE_LIMIT_STATUSES,
+                     "unstated_wait": arxiv.UNSTATED_RATE_LIMIT_WAIT,
+                     "max_retry_wait": arxiv.MAX_RATE_LIMIT_WAIT,
+                     "min_interval": arxiv.MIN_INTERVAL_SECONDS}),
     Connector("biorxiv", biorxiv.search, biorxiv.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",  # searched through OpenAlex
-              host=_host(openalex.WORKS_URL)),
+              host=_host(openalex.WORKS_URL), lineage="openalex"),
     # ESearch followed by EFetch; both have their own bounded HTTP retries.
     Connector("pubmed", pubmed.search, pubmed.MAX_RESULTS, "NCBI_API_KEY", host=_host(pubmed.BASE_URL), requests_per_search=2),
     Connector("ieee_xplore", ieee_xplore.search, ieee_xplore.MAX_RESULTS, "IEEE_API_KEY", key_required=True,
@@ -101,8 +118,18 @@ CONNECTORS = {c.provider_id: c for c in (
     Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True, sw_searchable=False,
               host=_host(core.SEARCH_URL)),
     Connector("serpapi", serpapi.search, serpapi.MAX_RESULTS, "SERPAPI_API_KEY", key_required=True, supplementary=True,
-              paging="single_page", sw_searchable=False, host=_host(serpapi.SEARCH_URL)),
+              paging="single_page", sw_searchable=False, host=_host(serpapi.SEARCH_URL), total="estimated",
+              retry={"timeout": 60.0}),  # serpapi.py:68 explicitly passes timeout=60.0 to send.
 )}
+
+
+# Dotted names only: B4 binds these helpers; they are not B1 capabilities.
+UNBOUND_HELPERS = {
+    "crossref": ("lookup.crossref_work",),
+    "semantic_scholar": ("lookup.semantic_scholar_batch",),
+    "scopus": ("lookup.scopus_abstract",),
+    "openalex": ("openalex.works_by_ids", "openalex.citing_works"),
+}
 
 
 def _configured(searchable: bool | None = None) -> list[str]:

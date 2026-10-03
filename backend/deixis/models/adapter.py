@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 import shutil
 import subprocess
 import time
@@ -21,6 +20,7 @@ from typing import Any, Protocol
 
 from deixis.models.codex_isolation import isolation_overrides
 from deixis.models.codex_rpc import CodexAppServer, RpcError
+from deixis.domain.limits import limit_kind
 
 # Variables the Codex app-server needs to run and reach the network. Provider keys and other
 # settings loaded from .env are deliberately not passed on.
@@ -51,21 +51,19 @@ class ModelStepResult:
     # True when an adapter used a provider selector/alias exactly as requested
     # and separately reports the concrete model that answered.
     requested_model_verified: bool = False
+    error_kind: str | None = None
+    http_status: int | None = None
+    retry_after: str | None = None
 
-
-RATE_LIMIT_ERROR_RE = re.compile(
-    r"\b(429|rate.?limit(?:ed|ing|_error)?|too many requests|quota|resource_exhausted|resource has been exhausted)\b",
-    re.IGNORECASE,
-)
+    def __post_init__(self) -> None:
+        if self.status == "failed" and self.error_kind is None:
+            self.error_kind = limit_kind(self.error, status=self.http_status)
 
 
 def is_rate_limited(result: ModelStepResult) -> bool:
-    """Best-effort read of a failed call's free-text error as a provider rate limit or quota response.
-
-    No adapter reports a structured rate-limit status today (unlike providers/common.py's search retries). A miss
-    here only means the ordinary pause-on-failure path runs, which is always a correct (if less helpful) outcome.
-    """
-    return result.status == "failed" and bool(result.error) and bool(RATE_LIMIT_ERROR_RE.search(result.error))
+    """Only temporary/unknown rate limits qualify for the workflow's bounded resend."""
+    kind = getattr(result, "error_kind", None) or limit_kind(getattr(result, "error", None))
+    return result.status == "failed" and kind == "rate_limited"
 
 
 class ModelAdapter(Protocol):
@@ -187,7 +185,8 @@ class CodexAdapter:
                                          effort=reasoning_effort)
         except (RpcError, ConnectionError, TimeoutError, OSError) as exc:
             return ModelStepResult("failed", resolved_model=resolved, external_thread_id=thread_id,
-                                   error=str(exc)[:300], delivery_class="after_send_unknown")
+                                   error=str(exc)[:300], delivery_class="after_send_unknown",
+                                   error_kind=limit_kind(exc.error if isinstance(exc, RpcError) else str(exc)))
         finally:
             if active is not None:
                 self._active.discard(active)
@@ -202,6 +201,8 @@ class CodexAdapter:
             token_usage=turn.token_usage, tool_item_types=turn.tool_item_types,
             error=str(turn.error)[:300] if turn.error else (None if status == "completed" else turn.status),
             delivery_class=delivery,
+            error_kind=limit_kind(turn.error) if status == "failed" else None,
+            retry_after=turn.error.get("retryAfter") if isinstance(turn.error, dict) else None,
         )
 
     async def cancel(self) -> bool:

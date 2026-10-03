@@ -206,7 +206,7 @@ def test_turn_timeout_and_nonzero_exit_have_unknown_delivery(codex, turn_status)
 @pytest.mark.parametrize("message, limited", [
     ("SYNTHETIC HTTP 429: Too Many Requests", True),
     ("SYNTHETIC rate_limit_error", True),
-    ("SYNTHETIC quota exceeded", True),
+    ("SYNTHETIC quota exceeded", False),
     ("SYNTHETIC authentication failed", False),
 ])
 def test_failed_turn_error_text_reaches_rate_limit_classifier(codex, message, limited):

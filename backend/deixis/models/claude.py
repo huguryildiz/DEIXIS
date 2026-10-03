@@ -28,6 +28,7 @@ from claude_agent_sdk import (
 )
 
 from deixis.models.adapter import ModelStepResult
+from deixis.domain.limits import limit_kind
 
 
 def _model_matches(actual: str | None, expected: str) -> bool:
@@ -144,6 +145,7 @@ class ClaudeCodeAdapter:
             return [name for name in tool_types if not (structured_output_received and name == "StructuredOutput")]
 
         actual_model: str | None = None
+        assistant_error: str | None = None
         expected_model = requested_model
         session_id: str | None = None
         usage: dict[str, Any] | None = None
@@ -162,6 +164,8 @@ class ClaudeCodeAdapter:
                 async with asyncio.timeout(self.turn_timeout):
                     async for item in client.receive_response():
                         if isinstance(item, AssistantMessage):
+                            if item.error == "billing_error" or assistant_error != "billing_error":
+                                assistant_error = item.error or assistant_error
                             # Keep a mismatch even if a later message uses the expected model.
                             if actual_model is None or _model_matches(actual_model, expected_model):
                                 actual_model = item.model or actual_model
@@ -180,10 +184,12 @@ class ClaudeCodeAdapter:
                             elif item.result and not text_parts:
                                 text_parts = [item.result]
                             if item.is_error:
+                                error = "; ".join(item.errors or []) or item.result or item.subtype
+                                kind = limit_kind({"type": assistant_error}, status=item.api_error_status, text=error)
                                 return ModelStepResult(
                                     "failed", raw_text="".join(text_parts) or None, resolved_model=actual_model,
                                     external_thread_id=session_id, token_usage=usage, tool_item_types=external_tools(),
-                                    error="; ".join(item.errors or []) or item.result or item.subtype,
+                                    error=error, error_kind=kind, http_status=item.api_error_status,
                                     delivery_class="after_send_unknown",
                                     requested_model_verified=_model_matches(actual_model, expected_model),
                                 )

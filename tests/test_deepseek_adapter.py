@@ -125,7 +125,7 @@ def test_run_step_requires_model_without_sending_a_request(monkeypatch):
 
 @pytest.mark.parametrize("status,message,limited", [
     (401, "Authentication Fails", False),
-    (402, "Insufficient Balance", True),
+    (402, "Insufficient Balance", False),
     (429, "Too Many Requests", True),
     (500, "Internal Server Error", False),
     (503, "Service Unavailable", False),

@@ -1997,7 +1997,7 @@
   {
    "access_mode": "keyless",
    "delivery_class": "rejected_not_executed",
-   "error_json": "{\"error\": \"SYNTHETIC rate limit\", \"http_status\": 429, \"rate_limit\": {\"retry-after\": \"0\"}, \"rate_limit_retries\": 0}",
+   "error_json": "{\"error\": \"SYNTHETIC rate limit\", \"error_kind\": \"rate_limited\", \"http_status\": 429, \"rate_limit\": {\"retry-after\": \"0\"}, \"rate_limit_retries\": 0}",
    "id": "srn#38",
    "page_limit": 10,
    "page_number": 1,

@@ -266,7 +266,7 @@ def _reason_codes(store, run):
     return [(reason["section_id"], reason["code"]) for reason in store.run(run["id"])["error"]["reasons"]]
 
 
-def test_report_quota_retries_twice_then_completes(tmp_path, monkeypatch):
+def test_report_temporary_rate_limit_retries_twice_then_completes(tmp_path, monkeypatch):
     monkeypatch.setattr(flow_module, "RATE_LIMIT_BACKOFF_SECONDS", 0)
     flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
     attempts = 0
@@ -276,7 +276,7 @@ def test_report_quota_retries_twice_then_completes(tmp_path, monkeypatch):
         if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "III":
             attempts += 1
             if attempts <= 2:
-                return ModelStepResult("failed", error="rate_limit_error: quota exhausted")
+                return ModelStepResult("failed", error="rate_limit_error: temporary limit")
         return None
 
     adapter.fail = fail
@@ -295,8 +295,8 @@ def test_report_quota_exhaustion_records_reason_and_resumes_only_failed_section(
                                else None)
     with pytest.raises(RunStopped):
         asyncio.run(run_report(flow, run, scope))
-    assert _section_calls(adapter)["III"] == 3
-    assert flow.deps.limiter.limit == 1
+    assert _section_calls(adapter)["III"] == 1
+    assert flow.deps.limiter.limit == 3
     assert reports.section(report_id, "III")["status"] == "failed"
     assert reports.section(report_id, "III")["validation"]["issues"][0]["code"] == "model_call_failed"
     assert all(reports.section(report_id, section)["status"] == "valid" for section in ("IV", "V"))

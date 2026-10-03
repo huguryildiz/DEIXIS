@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from deixis.providers.pacing import SEMANTIC_SCHOLAR_PACER
+from deixis.domain.limits import limit_kind
 
 MAX_RATE_LIMIT_RETRIES = 2
 MAX_RETRY_WAIT_SECONDS = 10.0  # a longer provider wait pauses the run instead of blocking it
@@ -81,6 +82,7 @@ class SearchOutcome:
     raw_payload: dict[str, Any] | None = None
     retries: int = 0
     next_cursor: str | None = None  # what the next page is asked for with; None when the provider has no more
+    error_kind: str | None = None
 
 
 def page_offset(cursor: str | None) -> int:
@@ -177,13 +179,27 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
         rate = {h: response.headers[h] for h in (*rate_headers, "retry-after") if h in response.headers}
         base = dict(request_description=description, access_mode=access_mode, http_status=response.status_code, rate_limit=rate,
                     retries=retries)
-        if response.status_code in rate_limit_statuses:
+        try:
+            error_payload = response.json() if response.status_code != 200 else None
+        except ValueError:
+            error_payload = None
+        detail = response.headers.get("x-error-detail-header", "")
+        kind = (limit_kind(error_payload, status=response.status_code, text=f"{detail} {response.text}")
+                if response.status_code in {402, 403, 429, *rate_limit_statuses} else None)
+        if response.status_code == 429 and response.headers.get("x-ratelimit-remaining-usd") == "0":
+            kind = "quota_exhausted"
+        if kind == "quota_exhausted":
+            return None, SearchOutcome("rate_limited", "rejected_not_executed", **base, error_kind=kind,
+                                       error=redact(response.text[:300] or detail, *secrets))
+        ieee_temporary = response.status_code == 403 and "Over Queries Per Second" in detail
+        if response.status_code in rate_limit_statuses or ieee_temporary:
             wait = _retry_wait(response.headers.get("retry-after"), retries, unstated_wait, max_retry_wait)
             if retry_rate_limit and retries < max_rate_limit_retries and wait is not None:
                 retries += 1
                 await asyncio.sleep(wait)
                 continue
             return None, SearchOutcome("rate_limited", "rejected_not_executed", **base,
+                                       error_kind="rate_limited",
                                        error=redact(response.text[:300], *secrets)
                                        or f"{response.status_code} Too Many Requests")
         if response.status_code in (401, 403):

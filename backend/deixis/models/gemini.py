@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 
 from deixis.models.adapter import ModelStepResult
+from deixis.domain.limits import http_limit
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta"
 KEY_ENV = "GEMINI_API_KEY"
@@ -124,7 +125,7 @@ class GeminiAdapter:
         except httpx.HTTPError as exc:  # the request may have been processed without an answer arriving
             return ModelStepResult("failed", error=f"{type(exc).__name__}: {str(exc)[:250]}", delivery_class="after_send_unknown")
         if response.status_code != 200:
-            return ModelStepResult("failed", error=f"HTTP {response.status_code}: {error_message(response)}")
+            return ModelStepResult("failed", error=f"HTTP {response.status_code}: {error_message(response)}", **http_limit(response))
         data = response.json()
         candidate = (data.get("candidates") or [{}])[0]
         text = "".join(p.get("text", "") for p in (candidate.get("content") or {}).get("parts", []) if not p.get("thought"))

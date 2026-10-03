@@ -4,7 +4,8 @@ Probed live on 2026-09-14: `engine=google_scholar` returns at most 20 organic re
 `publication_info.summary` line ("authors - venue, year - host") and a snippet, but no DOI and no abstract. The snippet
 is a search-page excerpt, so it is kept in the raw payload only and never stored as an abstract. PDF links point to
 copies of unknown version and are not attached. An invalid key answers 401; the free plan allows 250 searches a month,
-so a 429 (searches exhausted) is not retried. The key travels as the `api_key` query parameter and is never recorded.
+so an exhausted-search response is not retried; temporary or unknown 429s use bounded retries. The key travels as
+the `api_key` query parameter and is never recorded.
 
 Paging: SerpApi pages Google Scholar results, but every page is a billed search and this is a supplementary source
 (D13), so one page is read and no next cursor is ever returned.
@@ -65,7 +66,7 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     params = {"engine": "google_scholar", "q": query, "num": count, "hl": "en", "api_key": api_key or ""}
     description = f"GET {SEARCH_URL} engine=google_scholar q={query!r} num={count} access=api_key"
     response, outcome = await send(client, SEARCH_URL, params, {}, description, "api_key", (), (api_key,), timeout=60.0,
-                                   retry_rate_limit=False, max_rate_limit_retries=max_rate_limit_retries)
+                                   max_rate_limit_retries=max_rate_limit_retries)
     if response is None:
         return outcome
     try:

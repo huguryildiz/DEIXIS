@@ -2,7 +2,7 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 04:10 · P8 B1 (D181), D175, D176 main'de
+**Son güncelleme:** 3 Ekim 2026 04:30 · P7 boşlukları (D173) main'de
 
 ## Şu an çalışanlar
 
@@ -10,7 +10,8 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 
 - 🟡 **P9 RR-B** (`../DEIXIS-rrb`): kod Sol, inceleme ve iki matris koşusu Claude.
 - ✅ **P8 B1** (D181): inceleme sözleşmesi, anlık görüntü, tablolar, bayatlama kuralı; Sol yazdı, Claude 2 turda hazır dedi; 8.839 test geçti.
-- 🟡 **P7 G6–G8, G11, G12** (`../DEIXIS-p7g`, D173): Claude 1. tur "düzeltmeyle hazır"; Sol düzeltiyor, G8'in koşu boyu kota korumasını da ekliyor.
+- ✅ **P7 G6–G8, G11, G12** (D173): kota ile hız sınırı ayrıldı, kotası biten sağlayıcıya koşu boyunca istek gitmiyor (devam ve yeniden denemede sıfırlanır); Sol yazdı, Claude 3 turda hazır.
+- 🟡 **P8 B2** (`../DEIXIS-p8b2`, D182) ve **yeniden işleme R1** (`../DEIXIS-reextract-r1`, D190): Claude yönetiyor, kodu Sol yazıyor.
 - ✅ **Küçük kalanlar** (D175): dışa aktarma hatasının Türkçesi, slice 31 test eksikleri.
 - ✅ **Onarılan dosyanın yeniden işlenmesi, tasarım** (D176); kodu R1–R5 partilerinde.
 - ✅ **P7 G10 canlı deneme** (3 Ekim 02:48): IEEE, Scopus, CORE, SerpApi birer arama, hepsi HTTP 200.
@@ -19,7 +20,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 ## Sıradaki
 
 1. RR-B kapanır → P9'un modelsiz kısmı kapanır
-2. B1, P7 boşlukları ve küçük kalanlar push edilir
+2. P7 G1 eklenti sözleşmesi kodlaması (B1–B5)
 3. H9: K01–K12 kararları Sol medium ile, sonra gerçek model rapor ölçümü (P19 ölçümü de içinde)
 4. P8 B2–B8 ve G1 kodlaması (B1–B5), sırayla
 5. Yeniden işleme kodu (B1'den sonra), H10
@@ -34,7 +35,7 @@ Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizl
 | P3 | Arama ve kaynak işleme | ✅ tek arama akışı (D119) |
 | P4–P5 | İlk web dilimi, kütüphane, kanıt tablosu | ✅ |
 | P6 | Sentez ve rapor | ✅ beş dilim kapandı; gerçek model ölçümleri P9'a borç |
-| P7 | Bağlantı kapsamı | 🟡 D172 kapandı; G10 canlı erişim gösterildi; G1 tasarımı D174; G6–G8, G11, G12 sürüyor |
+| P7 | Bağlantı kapsamı | 🟡 D172, D173 kapandı; G10 canlı erişim gösterildi; G1 tasarımı D174, kodu sırada |
 | P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181); sırada B2–B8 |
 | P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, H6 düzeltmeleri bitti; RR-B sürüyor; H9–H10 yok |
 | P10 | macOS / Windows paketi | ❌ |

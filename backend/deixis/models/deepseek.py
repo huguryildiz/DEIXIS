@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from deixis.models.adapter import ModelStepResult
+from deixis.domain.limits import http_limit
 
 API_URL = "https://api.deepseek.com"
 KEY_ENV = "DEEPSEEK_API_KEY"
@@ -114,7 +115,7 @@ class DeepSeekAdapter:
         if response.status_code != 200:
             # DeepSeek's exhausted balance is a quota failure for the shared text classifier.
             quota = " (quota)" if response.status_code == 402 else ""
-            return ModelStepResult("failed", error=f"HTTP {response.status_code}: {error_message(response)}{quota}")
+            return ModelStepResult("failed", error=f"HTTP {response.status_code}: {error_message(response)}{quota}", **http_limit(response))
         try:
             data = response.json()
         except ValueError:

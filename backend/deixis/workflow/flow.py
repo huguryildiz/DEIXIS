@@ -337,8 +337,11 @@ class ResearchFlow:
         self.deps = deps
         self.store = deps.store
         self._held: dict[str, _Held] = {}
+        self._quota_out: dict[str, set[str]] = {}
 
     async def execute(self, run_id: str) -> None:
+        # Resume and retry use the same flow and run ID; quota may have reset between executions.
+        self._quota_out.pop(run_id, None)
         try:
             await self._execute_run(run_id)
         finally:
@@ -554,7 +557,7 @@ class ResearchFlow:
         lookups.external_links(self.store, run)
         lookups.flag_and_decide(self.store, run, scope, words)
 
-    def _count_probe(self, scope: dict[str, Any]) -> Callable[[str], Awaitable[int | None]]:
+    def _count_probe(self, scope: dict[str, Any], run_id: str) -> Callable[[str], Awaitable[int | None]]:
         """The count request the vocabulary step probes with, or one that answers "unknown" without asking.
 
         OpenAlex is the count backbone (SW3.1). Out of scope or without the access it needs, no count is read and
@@ -567,6 +570,8 @@ class ResearchFlow:
             return unavailable
 
         async def probe(query: str) -> int | None:
+            if connector.provider_id in self._quota_out.get(run_id, set()):
+                return None
             return await openalex.count_works(self.deps.http, query, api_key=connector.api_key(),
                                               mailto=self.deps.settings.contact_email)
         return probe
@@ -591,7 +596,7 @@ class ResearchFlow:
             self._pause(run_id, "key_terms_needed", {"language": scope.get("language_hint") or "other"})
         extraction, labelling = await self._vocabulary_labels(run, scope, extraction)
         self.store.start_step(step["id"])
-        built = await vocabulary_rules.build_vocabulary(extraction, self._count_probe(scope))
+        built = await vocabulary_rules.build_vocabulary(extraction, self._count_probe(scope, run_id))
         built["labelling"] = labelling
         self._checkpoint(run_id, revision)
         queries = query_compiler.compile_block_queries(built, scope["providers"], budget["max_provider_requests"])
@@ -685,7 +690,7 @@ class ResearchFlow:
             if stored is not None and stored["attempt"] == attempt:
                 checked = stored["result"]
             else:
-                checked = await search_query_rules.check(answer["result"], self._count_probe(scope))
+                checked = await search_query_rules.check(answer["result"], self._count_probe(scope, run_id))
                 output["checked"] = {"attempt": attempt, "result": checked}
                 self.store.set_step_output(step["id"], output)
             if not checked["searchable"]:
@@ -980,7 +985,7 @@ class ResearchFlow:
             return
         rows = suggestion_rules.screen(vocabulary, output["result"]["terms"])
         self._checkpoint(run_id, revision)
-        probe = self._count_probe(scope)
+        probe = self._count_probe(scope, run_id)
         for row in rows:
             if row["dropped"]:
                 continue  # a phrase that cannot enter the query is not worth a request
@@ -1015,7 +1020,7 @@ class ResearchFlow:
                 return vocabulary, queries, [], skipped
             built = await search_query_rules.rebuild(
                 vocabulary, kept, code_query if vocabulary["code_query"]["searched"] else None,
-                self._count_probe(scope), suggestion_rules.model_phrases(proposals or []))
+                self._count_probe(scope, run["id"]), suggestion_rules.model_phrases(proposals or []))
             built, compiled = self._compiled(built, providers, run["budget"], routed=routed)
             return built, compiled, built["user_edits"], skipped
         if not kept:
@@ -1024,7 +1029,7 @@ class ResearchFlow:
         extraction = approval_rules.edited_extraction(
             vocabulary, kept, model_phrases=suggestion_rules.model_phrases(proposals))
         built = await vocabulary_rules.build_vocabulary(
-            extraction, self._count_probe(scope),
+            extraction, self._count_probe(scope, run["id"]),
             # The counts of this run's own probes and of the proposals it counted: an added name is not asked again.
             known={p["query"]: p["count"] for p in vocabulary["probes"]} | suggestion_rules.known_counts(proposals))
         # What the labelling runs said stays on record; the user's own operations are written beside it, and
@@ -2023,7 +2028,8 @@ class ResearchFlow:
     async def _send_search(self, run_id: str, connector: Connector, query: dict[str, Any], limit: int,
                            page: Page | None = None, stop: Callable[[], bool] | None = None) -> SearchOutcome | None:
         """Send one search request, with its bounded retries, counting each against the run and, for an sw page,
-        against the query's own count too (D89). Nothing but the counts is written here.
+        against the query's own count too (D89). Exhausted providers are remembered for this execution in memory;
+        later searches send nothing and consume no request allowance. Every resume or retry resets the guard.
 
         With `stop`, a stop asked during the wait before a network retry sends nothing more and returns None: the
         page is left unwritten and a resumed run asks for it again (second review of 13f, 2026-09-23). The 429 waits
@@ -2031,12 +2037,17 @@ class ResearchFlow:
         query_key = page.query_key if page else None
         attempts = 0
         while True:
+            if connector.provider_id in self._quota_out.get(run_id, set()):
+                return SearchOutcome("rate_limited", "before_send", "Suppressed: provider quota exhausted in this run",
+                                     connector.access_mode(), error_kind="quota_exhausted")
             self.store.add_usage(run_id, "provider_requests", query=query_key)
             # A paged read supplies the connector's search options.
             outcome = await connector.search(self.deps.http, query["query_text"], limit, connector.api_key(),
                                              self.deps.settings.contact_email,
                                              **({"cursor": page.cursor, "max_rate_limit_retries": page.rate_limit_retries,
                                                  **connector.sw_options, **endpoint_options(query)} if page else {}))
+            if outcome.error_kind == "quota_exhausted":
+                self._quota_out.setdefault(run_id, set()).add(connector.provider_id)
             if outcome.retries:
                 self.store.add_usage(run_id, "provider_requests", outcome.retries, query=query_key)
             if outcome.status == "failed" and outcome.delivery_class == "before_send" and attempts < MAX_TRANSIENT_NETWORK_RETRIES:
@@ -2070,6 +2081,7 @@ class ResearchFlow:
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
             result_count=len(outcome.records), provider_total=outcome.provider_total, page_limit=limit,
             error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit}
+                             | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {})
                              # How many 429s this effort was willing to wait out here: a skipped wait is on the row,
                              # never silent (D88).
                              | ({"rate_limit_retries": page.rate_limit_retries} if page else {})),
@@ -2100,6 +2112,7 @@ class ResearchFlow:
                                  delivery_class=outcome.delivery_class, first_rank=page.read_before if page else 0,
                                  finished_at=finished_at)
         return f"provider_{outcome.status}", {"provider": provider, "http_status": outcome.http_status,
+                                              "error_kind": outcome.error_kind,
                                               "retry_after": outcome.rate_limit.get("retry-after")}
 
     def _allowance_ended_searches(self, run_id: str) -> bool:
@@ -2316,7 +2329,7 @@ class ResearchFlow:
                 [expansion_rules.queried_form(term) for term in expansion_rules.queried_terms(vocabulary)],
                 [*vocabulary["claim_words"], *vocabulary["exclusion_words"]])
             self.store.start_step(step["id"])
-            result = await expansion_rules.expand(vocabulary, found, self._count_probe(scope))
+            result = await expansion_rules.expand(vocabulary, found, self._count_probe(scope, run_id))
             second = expansion_rules.second_round_vocabulary(vocabulary, result["terms"], own)
             # Where each accepted phrase went (D90); the protocol body keeps the compiled queries, not this.
             result["second_round"] = {key: second[key] for key in ("setting_synonyms", "task_additions", "setting_width")}

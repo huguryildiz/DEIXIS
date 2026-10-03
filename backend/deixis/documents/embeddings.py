@@ -232,7 +232,8 @@ async def embed_openai_compatible(client: httpx.AsyncClient, base_url: str, key:
         items = body.get("data") if isinstance(body, dict) else None
         if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
             raise EmbeddingError("bad_reply: the reply has no data")
-        if sorted(item.get("index") for item in items if isinstance(item.get("index"), int)) != list(range(len(chunk))):
+        if (len(items) != len(chunk) or any(type(item.get("index")) is not int for item in items)
+                or sorted(item["index"] for item in items) != list(range(len(chunk)))):
             raise EmbeddingError(f"bad_reply: the reply's indexes are not 0 to {len(chunk) - 1}")
         vectors += _checked([_vector(item.get("embedding")) for item in sorted(items, key=lambda d: d["index"])], len(chunk))
     return vectors

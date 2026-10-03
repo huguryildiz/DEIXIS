@@ -136,13 +136,6 @@ IDENTITY_KNOWN_MISMATCHES = {
     ("serpapi", None, "identity_object"): {"ledger": "identity_serpapi", "owner": "B4", "expected": {"status": "completed", "record_ids": ["synthetic1","{'SYNTHETIC': 'id'}"]}},
 }
 
-# Group 2d is a named B3a behavior change and gate, not passing B2 conformance.
-PENDING_B3A = {
-    ('openalex', None, 'reference_count'): {'ledger': 'option_types', 'section': '8.1 access/query, group 2d', 'owner': 'B3a', 'value_type': 'bool', 'invalid_value': 17, 'case': 'ContractViolation before send for reference_count with the wrong value type; zero requests'},
-    ('openalex', None, 'references'): {'ledger': 'option_types', 'section': '8.1 access/query, group 2d', 'owner': 'B3a', 'value_type': 'bool', 'invalid_value': 17, 'case': 'ContractViolation before send for references with the wrong value type; zero requests'},
-    ('semantic_scholar', 'bulk', 'sort'): {'ledger': 'option_types', 'section': '8.1 access/query, group 2d', 'owner': 'B3a', 'value_type': 'str', 'invalid_value': 17, 'case': 'ContractViolation before send for sort with the wrong value type; zero requests'},
-}
-
 PENDING_B4 = {
     "b4_merge_version": {"section": "8.1 records/integration", "owner": "B4", "case": "temp-store merge/version through facade"},
     "b4_resume_paging": {"section": "8.1 paging", "owner": "B4", "case": "resumed paging through facade"},
@@ -434,13 +427,7 @@ def test_pending_and_existing_evidence():
     ledger = (ROOT / "docs/product/connector-onboarding.md").read_text()
     rows = {line.split("|")[1].strip().split(".")[0]: line.split("|")[-2].strip()
             for line in ledger.splitlines() if line.startswith("| ")}
-    declared_options = {(pid, endpoint.endpoint_id, option.name): option.value_type
-                        for pid, f in facade.connectors().items()
-                        for endpoint in f.descriptor.endpoints for option in endpoint.options}
-    assert set(PENDING_B3A) == set(declared_options)
-    for name, entry in PENDING_B3A.items():
-        assert entry["value_type"] == declared_options[name]
-        assert rows[entry["ledger"]] == entry["owner"], name
+    assert rows["option_types"] == "B3a fixed (D179)"
     for name, entry in PENDING_B4.items():
         assert rows[name] == entry["owner"], name
     for name, entry in IDENTITY_KNOWN_MISMATCHES.items():

@@ -4,8 +4,9 @@ The B1 boundary is `deixis.scholarly_connector.v1` in
 [`contract.py`](../../backend/deixis/providers/contract.py). D174 Q1/Q2 restrict
 registration to reviewed adapters in the codebase. Packaged builds cannot add
 sources. No runtime import path, URL, key or API request can register code.
-The compatibility facade exists, but application dispatch still uses the old
-registry callables. G1 remains open; B1 is a synthetic behavior freeze.
+The compatibility facade validates request fields and declared option values
+before send (B3a, D179), but application dispatch still uses the old registry
+callables. G1 remains open; the equivalence evidence uses synthetic fixtures.
 
 ## Five onboarding gates
 
@@ -61,6 +62,19 @@ the historical default. Incompatible descriptor contracts/revisions raise
 `ContractViolation`; stored-operation
 revision enforcement belongs to B4, with no page-one restart or provider swap.
 
+B3a's bounded amendment exempts facade enforcement, before any send, of an
+input constraint already declared by the descriptor: option names, value types
+and values, and request field types. It also expressly adopts one facade rule
+not previously declared by a descriptor: `max_rate_limit_retries=None` means
+omission; otherwise it must be an exact nonnegative `int`. Previously `-1` was
+forwarded and `common.py:198` read it as no retries. These refusals do not require
+an `adapter_revision` bump only if registry callables stay unchanged and every
+still-accepted request produces identical requests and outcomes. Any change to
+what an accepted request sends or returns still requires the bump. B3a changes
+neither `CONTRACT_ID` nor `QUERY_RULES_REVISION`, and retains the byte-identical
+111-case freeze. gpt-6.1-sol medium accepted this alternative to bumping affected
+adapter revisions in plan review round 1 (D179).
+
 All B1 facades declare only `search`. Lookup returns `unsupported` without a
 request, answer or `SearchOutcome`. It is neither `failed` nor `zero_results`
 and is never persisted to `record_lookups`. Existing helper names are recorded
@@ -79,9 +93,12 @@ Library-default headers are normalized only for the HTTPX default user-agent:
 `python-httpx/<version>` replaces its installed version. Custom user-agents and
 all other headers retain their values, apart from synthetic-key redaction.
 The freeze requires `non_json_200` (`<SYNTHETIC not json`) at every JSON search
-endpoint, plus PubMed `efetch_malformed` after a successful ESearch. The only
-intentional direct/facade exception difference is an unknown S2 endpoint:
+endpoint, plus PubMed `efetch_malformed` after a successful ESearch. Within the
+111 frozen cases, the only intentional direct/facade exception difference is an unknown S2 endpoint:
 module `ValueError` versus pre-send `ContractViolation`.
+The facade separately refuses invalid limit, query and cursor types, unknown
+endpoints, undeclared options, and (B3a) invalid option value types/values and
+invalid `max_rate_limit_retries`, all before any request.
 
 ## Conformance mismatch ledger
 
@@ -96,7 +113,7 @@ B2 tree. B2 synthetic conformance does not verify provider documentation.
 | d. Raising local errors | `providers/common.py:88-98`, `semantic_scholar.py:80-81,121-122` raise `ValueError` for bad offsets, unknown endpoints and `CUT`. B1 preserves those paths; converting them requires a named behavior change. | Unscheduled |
 | e. Logical/transport accounting | `workflow/flow.py:2043,2052` counts one base send plus retries; `providers/pubmed.py:135,162` can send ESearch and EFetch, while `:158-160` returns empty results after one send. Kill-search reserves by declared cost (`flow.py:4656-4657`). | Q4 debt; target accounting batch not scheduled |
 | f. Flow-only outcomes | `workflow/flow.py:4655` creates `transport_budget`; quota suppression at `:2040-2042` creates `rate_limited/before_send` without sending. These are workflow outcomes outside the adapter's production paths; `transport_budget` is excluded from its vocabulary. | B4 provenance; accounting enforcement remains Q4 debt |
-| g. Descriptive retries | `providers/common.py:138-143`, `arxiv.py:91-95`, `semantic_scholar.py:93-95`, `serpapi.py:68-69` still set policy inside module calls. `RetryPolicy` describes them; it does not drive `send`. | B3a compatibility; policy-driven dispatch unscheduled |
+| g. Descriptive retries | B3a compatibility measured (D179): `tests/test_connector_facade.py:176,199,218` compare omitted retry allowances, retry statuses (including rejected 406) and all four HTTPX timeout fields for every provider/endpoint, direct and facade, including both PubMed requests. `providers/common.py:138-143`, `arxiv.py:91-95`, `semantic_scholar.py:93-95`, `serpapi.py:68-69` still set policy inside module calls. `RetryPolicy` describes them; it does not drive `send`. | B3a compatibility fixed (D179); policy-driven dispatch unscheduled |
 | h. Closed admission | `common.schema.json:36-39`, migrations `0048_record_lookups_scopus.sql:5-6` and `0055_europepmc_pdf_provider.sql:8,25` close schema/persistence lists; `workflow/routing.py:88` admits unknown searchable sources as `no_route`. Registry insertion alone is insufficient. | B4 integration; each future connector's onboarding |
 | i. Malformed 200 raises | B2 fixed: narrow object/list/item checks and bounded catches in each search parser (`providers/semantic_scholar.py:98,142`, `ieee_xplore.py:83`, `openalex.py:150`, `crossref.py:96`, `scopus.py:100`, `core.py:88`, `serpapi.py:77`, `pubmed.py:151`); XML root checks at `arxiv.py:100`, `pubmed.py:122`. Native malformed shapes return `parse_error`, without mapping or request changes. | B2 (D178) |
 | j. PubMed EFetch quota | B2 fixed: `providers/pubmed.py:183` copies `fetch_outcome.error_kind`; `tests/test_connector_contract.py::test_pubmed_efetch_quota_stops_later_searches` proves later dispatch sends nothing. Discovery's one-base-request accounting remains item e. | B2 (D178) |
@@ -115,7 +132,7 @@ B2 tree. B2 synthetic conformance does not verify provider documentation.
 | identity_serpapi | Missing/null result_id becomes `None` text; empty stays empty; number/object stringifies (`providers/serpapi.py:38`); five characterization cases. | B4 |
 | scopus_count_unmapped. Unmapped count | Scopus's STANDARD mapping does not read `citedby-count`; `ProviderRecord.cited_by_count=None` means unknown, including when the synthetic body supplies zero. Group 3's zero-preservation rule applies only where the adapter maps a count. The `counts_zero` case asserts None; adding the mapping is an enhancement, not a defect. No mapping change in B2. | Unscheduled enhancement |
 | pubmed_scan. Source-owned classification copy | Round 1 fixed: exactly one `SCAN_ALLOWLIST` entry in `tests/test_connector_boundary.py` permits `fetch_outcome.error_kind`, because EFetch copies the already-classified `SearchOutcome.error_kind` unchanged. Other unresolved expressions still fail closed. | B2 (D178) |
-| option_types. Deferred value-type validation | `providers/facade.py:72-83` forwards option values without validating `OptionDescriptor.value_type` (`contract.py:66-69`). Named B3a behavior change: validate value types before send and add the three regressions for integer 17 as OpenAlex reference_count/references and S2 bulk sort, requiring ContractViolation with zero requests. `PENDING_B3A` tracks these cases and checks the ledger; they are not run or claimed as passing B2 conformance. B3a cannot exit until this gate passes. Facade and contract remain unchanged in B2. | B3a |
+| option_types. Value-type validation | B3a fixed (D179): `providers/facade.py:94-104` validates exact option types, declared values and an exact nonnegative retry allowance before send. `tests/test_connector_facade.py:266` covers every declared option, explicitly including integer 17 for OpenAlex reference_count/references and S2 bulk sort, with ContractViolation and zero requests; exact str-subclass and synthetic enumerated-value cases are included. `PENDING_B3A` is closed; direct registry behavior stays unchanged. | B3a fixed (D179) |
 | pause_text. Missing configuration label | `apps/web/src/labels.ts:32-71` has no `provider_not_configured` pause text; the fallback displays the raw code. No web edit is authorized in B2. | Next web batch |
 | b4_merge_version | Section 8.1 records/integration: temp-store merge/version through the dispatched facade. Existing registry/store tests are separate evidence. | B4 |
 | b4_resume_paging | Section 8.1 paging: resumed paging through the dispatched facade. | B4 |

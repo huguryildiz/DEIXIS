@@ -1,4 +1,16 @@
-"""Compatibility boundary only; application dispatch still uses registry callables."""
+"""Compatibility boundary; application dispatch still uses registry callables.
+
+Change CONTRACT_ID for protocol methods, required fields or vocabulary, and
+QUERY_RULES_REVISION for rendering/rule output. Adapter request, mapping, cursor,
+retry/wait and capability semantics normally require an adapter_revision bump.
+Facade enforcement before send of descriptor-declared option names, value types
+and values or request field types is exempt, as is B3a's expressly adopted retry
+allowance rule: None means omission; otherwise an exact nonnegative int. This
+exemption requires unchanged registry callables and identical requests/outcomes
+for every still-accepted request. Changing what an accepted request sends or
+returns still requires the adapter_revision bump. An omitted endpoint retains
+the historical default; incompatible descriptors raise ContractViolation.
+"""
 
 from inspect import signature
 
@@ -41,6 +53,12 @@ def connectors() -> dict[str, "CompatibilityConnector"]:
             for order, (pid, c) in enumerate(registry.CONNECTORS.items())}
 
 
+def search_request(query_text: str, limit: int, **kwargs) -> contract.SearchRequest:
+    """Map registry-call keywords without validating or changing their values."""
+    fields = {name: kwargs.pop(name, None) for name in ("cursor", "max_rate_limit_retries", "endpoint")}
+    return contract.SearchRequest(query_text, limit, **fields, options=kwargs)
+
+
 class CompatibilityConnector:
     def __init__(self, connector: registry.Connector, descriptor: contract.ConnectorDescriptor | None = None):
         if descriptor is None:
@@ -70,9 +88,20 @@ class CompatibilityConnector:
         if request.cursor is not None and not isinstance(request.cursor, str):
             raise contract.ContractViolation("cursor must be a string or None")
         endpoint = self._endpoint(request.endpoint)
-        allowed = {option.name for option in endpoint.options}
+        allowed = {option.name: option for option in endpoint.options}
         if any(name not in allowed for name in request.options):
             raise contract.ContractViolation("undeclared endpoint option")
+        for name, value in request.options.items():
+            option = allowed[name]
+            valid_type = ((option.value_type == "bool" and type(value) is bool)
+                          or (option.value_type == "str" and type(value) is str))
+            if not valid_type:
+                raise contract.ContractViolation(f"{name} must be an exact {option.value_type}")
+            if option.values is not None and value not in option.values:
+                raise contract.ContractViolation(f"{name} must be one of its declared values")
+        if request.max_rate_limit_retries is not None and (
+                type(request.max_rate_limit_retries) is not int or request.max_rate_limit_retries < 0):
+            raise contract.ContractViolation("max_rate_limit_retries must be a nonnegative integer or None")
         kwargs = {}
         for name in ("cursor", "max_rate_limit_retries", "endpoint"):
             value = getattr(request, name)

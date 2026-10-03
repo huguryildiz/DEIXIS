@@ -172,10 +172,7 @@ def replay(case, through_facade=False):
                 kwargs = call["kwargs"]
                 try:
                     if through_facade:
-                        options = {k: v for k, v in kwargs.items() if k not in {"endpoint", "cursor", "max_rate_limit_retries"}}
-                        request = contract.SearchRequest(call["query_text"], call["limit"],
-                                  endpoint=kwargs.get("endpoint"), cursor=kwargs.get("cursor"),
-                                  max_rate_limit_retries=kwargs.get("max_rate_limit_retries"), options=options)
+                        request = facade.search_request(call["query_text"], call["limit"], **kwargs)
                         outcome = await facade.CompatibilityConnector(connector).search(
                             request, contract.ConnectorContext(client, key, CONTACT))
                     else:

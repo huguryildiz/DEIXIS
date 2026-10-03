@@ -79,4 +79,37 @@ R01 `ölçüldü, rapor tamamlanmadı`: tek koşu IV. bölümde geçersiz model 
 - **Sayımlar:** çıkarılan iddia 0; `repair_dropped_claim` ve `repair_dropped_insufficient_evidence` 0; `envelope_mismatch` 0/10; doğrulaması olan 9 yama dışı oturumun 9'u kodla damgalı; doğrulaması olmayan rapor oturumu 0. P19: a=[V, IV], b=2 (V tam onarım, IV yama), c=2, d=0. Adım hatası yok; şema reddi yok; B için veto yok.
 - **Ölçülemeyenler:** rapor tamamlanmadığı için R2-R6, R8, R9, R11 ve okur satırları ölçülmedi.
 
-A ve A2 birlikte şunu gösterir: RF'in yama şeması canlı API'de reddediliyordu, RF2'den sonra bir istekte kabul edildi ve yama bir bölümü geçerli yaptı. Rapor bu kez başka bir yerde, boş bölümde durdu; bu duruş için ürün tarafında düzeltme (RF3) koordinatör tarafından açıldı. Kol B'nin sonucu ayrı yazılacak.
+A ve A2 birlikte şunu gösterir: RF'in yama şeması canlı API'de reddediliyordu, RF2'den sonra bir istekte kabul edildi ve yama bir bölümü geçerli yaptı. Rapor bu kez başka bir yerde, boş bölümde durdu; bu duruş için ürün tarafında düzeltme (RF3) koordinatör tarafından açıldı. Kol B'nin sonucu aşağıda.
+
+## H9b (3 Ekim 2026): kol B
+
+**Dondurma:** Ek D (`ead0b79`). **Karar:** [D202](../decisions.md). Ürün `b90583b` (RF3 dahil), B'nin durmuş hazırlık verisinin doğrulanmış kopyası (`b2/data`). Korpus Q3 için yenidir: 10 satır, 9 eser (iki kayıt aynı PDF). Tek rapor modeli, tek koşu; hata oranı veya RF/RF2/RF3'ün nedensel etkisi değildir. Okumalar kayıtlı model okumasıdır, insan doğrulaması değildir.
+
+**Koşu:** rapor koşusu 14:45:00Z'de başladı, 14:49:11Z'de `completed` bitti (250,9 s, 20 çağrı); hiçbir durdurma kuralı tetiklenmedi. On model bölümünün onu da `valid`; H9 serisinde bütün bölümleri yazılan ilk rapor koşusu budur. Ama birleştirme kontrolü raporu reddetti ve rapor `draft` kaldı: VIII.5'te yasak sözcük ("araştırma boşluğu"), IV.8'in denklem kaynağı iddiada atıflı değil ve matematik taşımıyor, abstract.1, abstract.2 ve IX.3 "Bu çalışma" kalıbını kullanıyor. Bu yüzden R1c 0/1'dir. Koşunun bitmesi raporun kabul edildiği veya bilimsel olarak doğrulandığı anlamına gelmez. Okurlar, Sol medium ile ortak kararla (`evidence/decide6-out.md`) donmuş protokolün tamamlanan koşu yolundan çalıştı.
+
+- **Yama yolu ve sayımlar:** IV'ün ilk çıktısı yama yoluna girdi; şema donmuş değerle aynıydı (`f30984c2…`), API kabul etti, yama uygulandı, IV `valid`. Çıkarılan iddia 0; `envelope_mismatch` 0/20; doğrulaması olan 19 yama dışı oturumun 19'u kodla damgalı; adım hatası yok. P19: a=[IV], b=1, c=1, d=0, e boş.
+- **Okurlar:** ilk okur `claude-opus-5-5` medium (yürütücü, kör değil); ikinci okur `claude-sonnet-5-5` medium, boş dizinde tek istek (4 hakkın 1'i), dönen model aynı. Eşitlik denetimi geçti (51 birim). Donmuş komuta yalnız dönen model kimliğini kaydetmek için `--output-format json` eklendi; paket değişmedi.
+
+| Satır | Beklenti | B sonucu | Aralıkta mı |
+|---|---|---|---|
+| R1a | ilk denemede geçerli 7-10/10 | 3/10 | hayır |
+| R1b | onarımla geçerli ≥9/10 | 10/10 | evet |
+| R1c | 1/1 | 0/1 (birleştirme reddi) | hayır |
+| R2 | yanlış bağlı iddia 0-3; kısmen bağlı iddia ≤8 | 30 iddia, 42 bağ: yanlış bağlı 0; kısmen bağlı 21; okur anlaşmazlığı 2 | ilk koşul evet, ikinci hayır |
+| R3 | U ≤ max(1, ⌊0,10 N⌋) | N=5, U=4; anlaşmazlık 4 | hayır |
+| R4a | `body_refs`'siz iddia 0 | 0 | evet |
+| R4b | gövdeden güçlü ≤%10 | 2/11 (%18; D3 iki okur, D4 yalnız ilk okur) | hayır |
+| R5 | terim başına başka ad ≤1 | 7/5 = 1,4 (2, 3, 1, 0, 1) | hayır |
+| R6 | 0-6 denklem; ≥3 ise yarısı sayfayla örtüşür | 1 denklem birimi; okurlar ayrıştı (ilk: formül raporda yok, örtüşmez; ikinci: örtüşür) | yarı kuralı uygulanmaz |
+| R7 | 10-30 dk, 15-46 çağrı, 7-13 ardışık tur | 4,2 dk, 20 çağrı, 7 tur | süre hayır (kısa), diğerleri evet |
+| R8 | ilk uyumsuzluk %30-70; onarım sonrası kalıpsız ≤%25; geri alınan 0-2 | 19/35 (%54); 12/35 (%34); 0 | ikinci koşul hayır |
+| R9 | girdideki denklemlerin yarısı raporda | kit 7 çiftin kaynak anahtarını kaynak sürümüne eşleyemedi (aşağıda) | ölçülemedi |
+| R10 | yok | `p15_behavior_is_not_r10` | ölçülmedi |
+| R11 | kesilen kayıt 0; `insufficient_evidence` 0-3; eksik pasaj ≤2 | 117 hücre kesildi (IV 54, V 63); 3; 87 pasaj (IV 74, V 13) | birinci ve üçüncü hayır |
+
+- **En büyük kayıp girdi kesilmesi:** 10 kaynaklı tabloda IV 70 hücrenin 16'sını, V 7'sini gördü. IV'ün düzyazısı 10 kaynaktan yalnız ikisine ([2], [3]) atıf yapıyor; V altı kaynağa. Okurun eksik pasaj sayısı kendi kuralıyla sayıldı: bölümün kapsadığı sütunlardaki donmuş hücrelerin, bölüm girdisine hiç verilmemiş kanıt pasajları (tablo dışındaki pasajlar okunmadı).
+- **R3 ve R4b:** kitin sözlüğü Türkçe yokluk fiillerini ("belirtilmemiştir", "tanımlanmamıştır" vb.) bulmadı; beş birimin beşi ilk okurca eklendi. İlk okur hepsini hücreyle uyumlu saydı, ikinci okur özet düzeyindeki hücrelere dayanan dördünü yokluğu genişletiyor diye uygunsuz saydı; kural gereği biri ciddi derse ciddidir. R4b'de D3 "başka belirsizlik modelleri", D4 "enerji tüketimini iyileştirdi" ifadesi gövdede yok.
+- **R9 kit eşlemesi:** IV girdisinde Candelieri18b ve Rajabpour18'in donmuş Denklem hücreleri vardı. Kit çiftin `source_key` değerini raporun kaynak listesinden okuyor, sonra donmuş anlık görüntünün satırlarıyla üzerine yazıyor; o satırlarda `source_key` alanı yok, bu yüzden her çiftin `source_version_ids` listesi boş kaldı ve kit her çifti `no_input_equation` yazdı. Freeze §4.4 gereği kit değiştirilmez ve kit dışında puan verilmez; R9 ölçülemedi kalır. Bu bir kit hatasıdır, girdide denklem olmadığı anlamına gelmez.
+- **R2:** kısmen işaretlerinin çoğu, çok parçalı bir iddiaya tek parçayı taşıyan çapa alıntısından geliyor. Desteklemeyen bağ yok.
+
+Bütçe: A 7 + A2 10 + B hazırlık 70 + B rapor 20 = 107 / 293 oturum; okur isteği 1 / 4. D129'un çapa onarımı A2'de iki bölümde (V tam onarım, IV yama), B'de bir bölümde (IV yama) görüldü ve sayıldı. Onarılan iddiaların anlam desteği ayrıca okunmadı; B'nin R2 okuması tohumlu 30 iddialık örneklem üzerindedir. Sunucu durduruldu, 8765'e dokunulmadı; kanıt `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/b2/`.

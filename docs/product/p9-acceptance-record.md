@@ -92,7 +92,7 @@ Result words as in the plan: `geçti`, `geçmedi`, `ölçülmedi`, `desteklenmiy
 | X05 | zorunlu | S | geçti | geçti | geçti | 10 specs (10 passed) | D167: 597 focus records, 0 failures; nine focus drops to `body` fixed | Real user habits; the focus items in section 4. |
 | X06 | zorunlu | S | geçti | geçti | geçti | 3 specs (3 passed) | D167: reduced motion; 200% as a 640 x 450 layout at scale 2 | Chrome's own zoom; text-only zoom; 400% is recorded only. |
 | X07 | isteğe bağlı | E | ölçülmedi | ölçülmedi | ölçülmedi |  E row (VoiceOver), not run by the script; not measured in H6 | Not run (D167) | VoiceOver and every other screen reader. |
-| R01 | isteğe bağlı | M | ölçülmedi | ölçülmedi | ölçülmedi |  M row, H9 not run | Not run (H9) | Anything about a report on a real model. |
+| R01 | isteğe bağlı | M | ölçüldü, rapor tamamlanmadı | ölçüldü, rapor tamamlanmadı | ölçüldü, rapor tamamlanmadı | 1 real-model report run (H9, `gpt-5.6-luna` medium, 7-work fresh corpus): stopped at section IV, invalid output after one repair; R1 0/1, R7 178 s / 7 calls, P19 a2 b2 c1 d0 e0 | D171 result, `p9r-report-results.md` | R2-R6, R8, R9, R11 (run incomplete); R10; any report quality, rate or speed claim. |
 | R02 | isteğe bağlı | M | ölçülmedi | ölçülmedi | ölçülmedi |  M row, H10 not run | Not run (H10) | Whether the first send was charged. |
 | cleanup | zorunlu | G | geçti | geçti | geçti |  |  | Processes started by other chats in the same minutes may be flagged. |
 
@@ -168,7 +168,7 @@ Measured by `scripts/p9/capacity.py` (D166), against thresholds frozen before th
 
 ## 6. Not measured
 
-- The report on a real model on a fresh corpus (H9, row R01) and the repeat of a real model call after SIGKILL (H10, row R02): not run; both need a real model and the owner's decision (S10, S11).
+- The report on a real model on a fresh corpus (H9, row R01): run once (D171 result); the run stopped at section IV, so report quality rows R2-R11 were not measured. The repeat of a real model call after SIGKILL (H10, row R02): not run; it needs a real model and the owner's decision (S11).
 - I08, a second user installing from the README on a clean macOS account: not done, so **no second-user claim is made**. The only install evidence is this developer's machine.
 - VoiceOver (X07) and every other screen reader; reading order and label wording; cognitive accessibility.
 - Older macOS, Intel Macs, Linux and Windows are `desteklenmiyor` (plan section 2; Windows and macOS packages are P10). Windows has no memory limit on extraction at all.

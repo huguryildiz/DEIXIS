@@ -8,7 +8,8 @@ from deixis.domain.skill import load_skill_package
 from deixis.workflow.report.phrasing import flagged_sentences, repair_section
 from deixis.workflow.report.plan import freeze_plan
 from fakes import envelope
-from test_report_flow import report_flow
+from test_contracts import STEP_INPUTS
+from test_report_flow import _claim, report_flow
 
 
 PHRASEBANK_TEXT = load_skill_package().files[phrasebank.PHRASEBANK]
@@ -104,7 +105,14 @@ def _repair_case(tmp_path, original, replacement, *, repair_ready=True):
 
     adapter.responder = responder
     adapter.ready = repair_ready
-    draft = {"claims": [{"claim_key": "IV.1", "text": original}], "insufficient_evidence": []}
+    section_input = STEP_INPUTS["C_report_section_IV"]
+    passage = section_input["passages"][0]
+    draft = envelope(section_input, "deixis.report_section_draft.v2") | {
+        "section_id": "IV", "claims": [_claim("IV", passage_ids=[passage["passage_id"]]) | {"text": original}],
+        "citation_anchors": [{"claim_key": "IV.1", "passage_id": passage["passage_id"], "cell_id": None,
+                              "quote": passage["text"][:100]}],
+        "subsections": [], "gaps": [], "insufficient_evidence": [],
+    }
     flagged = [{
         "sentence_id": "IV.1#1",
         "text": original,
@@ -114,7 +122,7 @@ def _repair_case(tmp_path, original, replacement, *, repair_ready=True):
         "next_sentence": None,
     }]
     repaired, exceptions = asyncio.run(
-        repair_section(flow, run, scope, report_id, "IV", draft, flagged)
+        repair_section(flow, run, scope, report_id, "IV", draft, flagged, section_input)
     )
     rows = [dict(row) for row in store.conn.execute(
         "SELECT sentence_id, before, after, outcome FROM report_phrase_repairs WHERE report_id = ?",
@@ -127,7 +135,7 @@ def test_repair_section_with_no_flagged_sentences_makes_no_call():
     draft = {"claims": [], "insufficient_evidence": []}
 
     repaired, exceptions = asyncio.run(
-        repair_section(None, None, None, "rpt_unused", "IV", draft, [])
+        repair_section(None, None, None, "rpt_unused", "IV", draft, [], {})
     )
 
     assert repaired is draft

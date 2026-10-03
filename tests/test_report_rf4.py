@@ -254,7 +254,7 @@ def test_single_section_repair_sees_new_issues_and_is_bounded(tmp_path, still_ba
 
 
 @pytest.mark.parametrize("violation", ["own_work", "banned"])
-def test_phrase_repair_introducing_a_violation_fails_the_section(tmp_path, violation):
+def test_phrase_repair_introducing_a_violation_retains_the_valid_section(tmp_path, violation):
     flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path, unframed_section="IV")
     original = adapter.responder
     def respond(si):
@@ -263,13 +263,14 @@ def test_phrase_repair_introducing_a_violation_fails_the_section(tmp_path, viola
                 "repairs": [{"sentence_id": s["sentence_id"], "text": REPLAY["bad_texts"][violation]} for s in si["report_target"]["repair_request"]["sentences"]]})
         return original(si)
     adapter.responder = respond
-    with pytest.raises(RunStopped):
-        asyncio.run(run_report(flow, run, scope))
+    asyncio.run(run_report(flow, run, scope))
     section = reports.section(report_id, "IV")
-    assert section["status"] == "failed"
-    assert store.run(run["id"])["pause_reason"] == "section_failed"
+    assert section["status"] == "valid"
+    assert reports.report(report_id)["status"] == "valid"
+    assert section["draft"]["claims"][0]["text"] == "Fig weiro randomtext not a frame sentence at all zzq."
     expected = "own_work_phrase_in_claim" if violation == "own_work" else "banned_word"
-    assert expected in {i["code"] for i in section["validation"]["issues"]}
+    rejection = next(i for i in section["validation"]["issues"] if i["code"] == "phrase_repair_rejected")
+    assert expected in rejection["blocking_codes"]
     assert len([c for c in adapter.calls if c["task_type"] == "report_phrase_repair" and c["report_target"]["section_id"] == "IV"]) == 1
 
 

@@ -150,8 +150,9 @@ Do not touch neighboring sentences. If none of the three given frames can honest
 meaning, write the clearest plain sentence you can rather than distorting it — the application checks whether
 your rewrite still reads as valid and may keep the original if your rewrite changes what is claimed.
 All hard section rules still apply to the merged rewrite, including own-work wording, banned words, equation
-origins, citation anchors, derived support/depth, counts, candidate bases and word budgets. A violation fails
-the section without another repair loop; never introduce "this study" or "Bu çalışma" to fit a frame.
+origins, citation anchors, derived support/depth, counts, candidate bases and word budgets. Never introduce
+own-work phrases such as "this study" or "Bu çalışma", or any blocking-rule violation, to fit a frame.
+The application rejects an invalid rewrite and retains the valid original draft without another repair loop.
 
 ## Report review (`report_review`)
 

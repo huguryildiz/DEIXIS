@@ -1,0 +1,247 @@
+{
+  "evidence_kind": "SYNTHETIC replay of stored model text; not a real-model execution or scientific validation",
+  "origin": {
+    "decision": "D202 Ek E / H9c",
+    "product_commit": "2b185a8",
+    "run_id": "run_mWEug1ro09ZlJDBV5O5B",
+    "draft_step_input_id": "sti_NZdrNW9ZUEQ6e0Fm6fAm",
+    "phrase_step_input_id": "sti_NnPORL5Zm2NSTvz8RqJa",
+    "read_route": "arm c library.sqlite opened mode=ro&immutable=1"
+  },
+  "language_hint": "tr",
+  "section_budget": {
+    "max_claims": 40,
+    "max_words": 410,
+    "min_words": 246
+  },
+  "prior_summaries": [
+    {
+      "section_id": "III",
+      "claim_key": "III.5",
+      "support_type": "source_stated",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "III",
+      "claim_key": "III.6",
+      "support_type": "source_stated",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "III",
+      "claim_key": "III.7",
+      "support_type": "source_stated",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "III",
+      "claim_key": "III.9",
+      "support_type": "source_stated",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "III",
+      "claim_key": "III.10",
+      "support_type": "source_stated",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "III",
+      "claim_key": "III.11",
+      "support_type": "source_stated",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "III",
+      "claim_key": "III.12",
+      "support_type": "source_stated",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "III",
+      "claim_key": "III.13",
+      "support_type": "source_stated",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "III",
+      "claim_key": "III.14",
+      "support_type": "source_stated",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "IV",
+      "claim_key": "IV.4",
+      "support_type": "source_stated",
+      "reading_depth": "selected_sections"
+    },
+    {
+      "section_id": "IV",
+      "claim_key": "IV.10",
+      "support_type": "source_stated",
+      "reading_depth": "selected_sections"
+    },
+    {
+      "section_id": "V",
+      "claim_key": "V.1",
+      "support_type": "analyst_inference",
+      "reading_depth": "selected_sections"
+    },
+    {
+      "section_id": "V",
+      "claim_key": "V.2",
+      "support_type": "source_stated",
+      "reading_depth": "selected_sections"
+    },
+    {
+      "section_id": "V",
+      "claim_key": "V.3",
+      "support_type": "source_stated",
+      "reading_depth": "selected_sections"
+    },
+    {
+      "section_id": "V",
+      "claim_key": "V.4",
+      "support_type": "analyst_inference",
+      "reading_depth": "selected_sections"
+    },
+    {
+      "section_id": "V",
+      "claim_key": "V.5",
+      "support_type": "source_stated",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "V",
+      "claim_key": "V.6",
+      "support_type": "source_stated",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "V",
+      "claim_key": "V.7",
+      "support_type": "source_stated",
+      "reading_depth": "selected_sections"
+    },
+    {
+      "section_id": "V",
+      "claim_key": "V.8",
+      "support_type": "analyst_inference",
+      "reading_depth": "abstract"
+    },
+    {
+      "section_id": "VIII",
+      "claim_key": "VIII.2",
+      "support_type": "analyst_inference",
+      "reading_depth": "metadata"
+    },
+    {
+      "section_id": "VIII",
+      "claim_key": "VIII.3",
+      "support_type": "analyst_inference",
+      "reading_depth": "metadata"
+    }
+  ],
+  "draft": {
+    "schema_version": "deixis.report_section_draft.v2",
+    "section_id": "abstract",
+    "claims": [
+      {
+        "claim_key": "abstract.1",
+        "text": "Bir arada değerlendirildiğinde, verilen çalışmalar su dağıtım ağlarında pompa zamanlaması için Bayesçi optimizasyonu, sağlam model öngörülü kontrolü, karışık tamsayılı formülasyonları, sezgisel algoritmaları, parçacık sürüsü optimizasyonunu ve geometrik programlama tabanlı model öngörülü kontrolü kullanmıştır. Bu yaklaşımlar, hidrolik simülasyon, gevşetme ve sınır iyileştirme teknikleri veya ardışık optimizasyon süreçleriyle birlikte uygulanmıştır.",
+        "support_type": "analyst_inference",
+        "passage_ids": [],
+        "cell_ids": [],
+        "paragraph": 1,
+        "table_ref": null,
+        "equation_ref": null,
+        "body_refs": [
+          "III.5",
+          "III.6",
+          "V.6"
+        ],
+        "axis_id": null,
+        "count": null,
+        "equation_origin": null,
+        "gap_refs": []
+      },
+      {
+        "claim_key": "abstract.2",
+        "text": "Araştırma ayrıca, karar değişkenlerinin açma-kapama durumlarını, değişken pompa hızlarını, pompa ve vana zamanlamalarını, basma yüksekliklerini ve debileri kapsadığını göstermektedir. Temel amaç, pompalama veya güç tüketimiyle ilişkili enerji maliyetini azaltmaktır; bazı modeller güvenilirliği, pompa anahtarlamasını, kısıtların karşılanmasını ve basınca bağlı kaçakları da hedeflemektedir. Kısıtlar genel olarak talebin karşılanmasını, düğüm basınçlarını, hidrolik dengeyi, tank veya depo seviyelerini ve pompa işletim koşullarını içerirken, talep belirsizliği özellikle sağlam model öngörülü kontrolde sınırlı bozucularla ele alınmıştır.",
+        "support_type": "analyst_inference",
+        "passage_ids": [],
+        "cell_ids": [],
+        "paragraph": 2,
+        "table_ref": null,
+        "equation_ref": null,
+        "body_refs": [
+          "III.7",
+          "III.9",
+          "III.10",
+          "III.11",
+          "III.12",
+          "IV.4",
+          "IV.10"
+        ],
+        "axis_id": null,
+        "count": null,
+        "equation_origin": null,
+        "gap_refs": []
+      },
+      {
+        "claim_key": "abstract.3",
+        "text": "Değerlendirme koşulları bakımından, çalışmalar test fonksiyonlarını, literatür referans ağlarını, büyük ölçekli gerçek ağları ve farklı vaka çalışması ağlarını kullanmıştır. Karşılaştırmalar geleneksel model öngörülü kontrol, kural tabanlı kontrol, alternatif sezgisel algoritmalar, gevşetme tabanlı teknikler ve farklı pompa işletim senaryoları arasında yapılmıştır. Bulgular, bazı yöntemlerin enerji maliyetini veya anahtarlamayı azalttığını, bazılarının hidrolik hatayı ve çözüm süresini değerlendirdiğini, bazılarının ise asal ve ikili sınırları iyileştirdiğini göstermektedir. Bununla birlikte, değerlendirme ölçütleri ve koşulları çalışmalar arasında farklılaştığından sonuçların doğrudan karşılaştırılabilirliği sınırlıdır.",
+        "support_type": "analyst_inference",
+        "passage_ids": [],
+        "cell_ids": [],
+        "paragraph": 3,
+        "table_ref": null,
+        "equation_ref": null,
+        "body_refs": [
+          "III.13",
+          "III.14",
+          "V.1",
+          "V.2",
+          "V.3",
+          "V.4",
+          "V.5",
+          "V.6",
+          "V.7",
+          "V.8",
+          "VIII.2",
+          "VIII.3"
+        ],
+        "axis_id": null,
+        "count": null,
+        "equation_origin": null,
+        "gap_refs": []
+      }
+    ],
+    "citation_anchors": [],
+    "subsections": [],
+    "gaps": [],
+    "insufficient_evidence": []
+  },
+  "repairs": [
+    {
+      "sentence_id": "abstract.1#1",
+      "text": "Bir arada değerlendirildiğinde, verilen çalışmaların su dağıtım ağlarında pompa zamanlaması için Bayesçi optimizasyonu, sağlam model öngörülü kontrolü, karışık tamsayılı formülasyonları, sezgisel algoritmaları, parçacık sürüsü optimizasyonunu ve geometrik programlama tabanlı model öngörülü kontrolü kullandığını göstermiştir."
+    },
+    {
+      "sentence_id": "abstract.1#2",
+      "text": "Bu bulgular, bu yaklaşımların hidrolik simülasyon, gevşetme ve sınır iyileştirme teknikleri veya ardışık optimizasyon süreçleriyle birlikte uygulandığını düşündürmektedir."
+    },
+    {
+      "sentence_id": "abstract.2#2",
+      "text": "Bu çalışma, temel amacın pompalama veya güç tüketimiyle ilişkili enerji maliyetini azaltmak olduğunu; bazı modellerin güvenilirliği, pompa anahtarlamasını, kısıtların karşılanmasını ve basınca bağlı kaçakları da hedeflediğini belirlemiştir."
+    },
+    {
+      "sentence_id": "abstract.3#2",
+      "text": "Karşılaştırmaların incelenmesi, geleneksel model öngörülü kontrol, kural tabanlı kontrol, alternatif sezgisel algoritmalar, gevşetme tabanlı teknikler ve farklı pompa işletim senaryoları arasında yapıldığını göstermiştir."
+    },
+    {
+      "sentence_id": "abstract.3#4",
+      "text": "Bununla birlikte, değerlendirme ölçütleri ve koşullarının çalışmalar arasında farklılaştığını ve sonuçların doğrudan karşılaştırılabilirliğinin sınırlı olduğunu göstermiştir."
+    }
+  ]
+}

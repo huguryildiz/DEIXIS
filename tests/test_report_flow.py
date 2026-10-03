@@ -806,7 +806,7 @@ def test_an_unframed_section_is_repaired_and_the_report_completes(tmp_path):
     assert dict(repair) == {"section_id": "IV", "sentence_id": "IV.1#1", "outcome": "kept"}
 
 
-def test_viii_repair_that_restates_a_number_fails_full_revalidation(tmp_path):
+def test_viii_repair_that_restates_a_number_retains_the_valid_original(tmp_path):
     flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
     original_response = adapter.responder
 
@@ -826,26 +826,24 @@ def test_viii_repair_that_restates_a_number_fails_full_revalidation(tmp_path):
         return original_response(step_input)
 
     adapter.responder = scripted_response
-    with pytest.raises(RunStopped):
-        asyncio.run(run_report(flow, run, scope))
+    asyncio.run(run_report(flow, run, scope))
 
-    assert store.run(run["id"])["status"] == "paused"
-    assert store.run(run["id"])["pause_reason"] == "section_failed"
+    assert store.run(run["id"])["pause_reason"] is None
+    assert reports.report(report_id)["status"] == "valid"
     viii = reports.section(report_id, "VIII")
-    assert viii["status"] == "failed"
-    assert viii["validation"]["ok"] is False
+    assert viii["status"] == "valid"
+    assert viii["validation"]["ok"] is True
     issues = viii["validation"]["issues"]
-    assert {issue["code"] for issue in issues} == {"unframed_exception", "limitations_number_restated"}
-    assert [reason["code"] for reason in store.run(run["id"])["error"]["reasons"]] == [
-        issue["code"] for issue in issues[:1]
-    ]
-    assert any(issue.get("path") == "/claims/0/text" for issue in issues)
+    assert {issue["code"] for issue in issues} == {"unframed_exception", "phrase_repair_rejected"}
+    rejection = next(issue for issue in issues if issue["code"] == "phrase_repair_rejected")
+    assert rejection["blocking_codes"] == ["limitations_number_restated"]
+    assert rejection["issues"][0]["path"] == "/claims/0/text"
     assert any(call["task_type"] == "report_phrase_repair" and
                call["report_target"]["section_id"] == "VIII" for call in adapter.calls)
-    assert viii["draft"]["claims"][0]["text"] == "3 studies xqz unframed synthetic sentence."
+    assert viii["draft"]["claims"][0]["text"] == "Item 3 xqz unframed synthetic sentence."
     assert viii["draft"]["text"].startswith("1. Recall was not measured")
     assert viii["validation"]["numbers"]
-    assert not any(section["section_id"] == "VIII" and section["status"] == "valid"
+    assert any(section["section_id"] == "VIII" and section["status"] == "valid"
                    for section in reports.sections(report_id))
 
 

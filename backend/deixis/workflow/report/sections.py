@@ -229,7 +229,7 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
         section_id, [*draft["claims"], *draft["insufficient_evidence"]],
         flow.deps.package.files[phrasebank.PHRASEBANK], language,
     )
-    draft, exceptions = await repair_section(flow, run, scope, report_id, section_id, draft, flagged)
+    draft, exceptions = await repair_section(flow, run, scope, report_id, section_id, draft, flagged, payload)
     _report_checkpoint(flow, run)
     validation = revalidate_section(payload, draft)
     if numbers is not None:

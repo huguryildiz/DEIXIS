@@ -8,6 +8,7 @@ from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from deixis.domain import contracts, phrasebank
+from deixis.storage.db import transaction
 from deixis.workflow.flow import OptionalStepFailed, RunStopped
 from deixis.workflow.report.store import ReportStore
 
@@ -85,12 +86,27 @@ def _exception(item: dict[str, Any], after: str, detail: str) -> dict[str, Any]:
 
 async def repair_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, Any],
                          report_id: str, section_id: str, draft: dict[str, Any],
-                         flagged: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+                         flagged: list[dict[str, Any]],
+                         section_input: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Attempt one targeted phrase repair and record every kept rewrite or allowed exception."""
     if not flagged:
         return draft, []
 
     reports = ReportStore(flow.store)
+
+    def rejected(issues: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        codes = list(dict.fromkeys(issue["code"] for issue in issues))
+        exceptions = [_exception(item, item["text"], "phrase repair rejected; original sentence retained")
+                      for item in flagged]
+        exceptions.append({"code": "phrase_repair_rejected", "blocking_codes": codes, "issues": issues})
+        with transaction(flow.store.conn):
+            for item in flagged:
+                reports.save_phrase_repair(report_id, section_id, item["sentence_id"], item["text"],
+                                          item["text"], "unframed_exception")
+            reports._event(report_id, "report_phrase_repair_rejected", section_id=section_id,
+                           blocking_codes=codes, issues=issues)
+        return draft, exceptions
+
     report, snapshot = reports.report(report_id), reports.snapshot(report_id)
     target = {
         "report_id": report_id,
@@ -126,14 +142,7 @@ async def repair_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[st
 
     _report_checkpoint(flow, run)
     if output.get("invalid"):
-        exceptions = []
-        for item in flagged:
-            reports.save_phrase_repair(
-                report_id, section_id, item["sentence_id"], item["text"], item["text"],
-                "unframed_exception",
-            )
-            exceptions.append(_exception(item, item["text"], "repair output was structurally invalid"))
-        return draft, exceptions
+        return rejected(output["issues"])
 
     repaired = copy.deepcopy(draft)
     returned = {item["sentence_id"]: item["text"] for item in output["result"]["repairs"]}
@@ -141,25 +150,21 @@ async def repair_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[st
     language = phrasebank.frames_language(flow.store.step_input_payload(output["step_input_id"]))
     sections = phrasebank.REPORT_PHRASEBANK_SECTIONS[section_id]
     exceptions = []
+    records = []
     for item in flagged:
         replacement = returned.get(item["sentence_id"])
         location = _location(repaired, item["sentence_id"])
         if replacement is None or location is None:
             after = item["text"] if replacement is None else replacement
             detail = "the repair omitted this sentence" if replacement is None else "the sentence location no longer resolves"
-            reports.save_phrase_repair(
-                report_id, section_id, item["sentence_id"], item["text"], after, "unframed_exception",
-            )
+            records.append((item, after, "unframed_exception"))
             exceptions.append(_exception(item, after, detail))
             continue
 
         owner, field, order = location
         sentences = phrasebank.sentences(owner[field])
         if not 0 <= order < len(sentences):
-            reports.save_phrase_repair(
-                report_id, section_id, item["sentence_id"], item["text"], replacement,
-                "unframed_exception",
-            )
+            records.append((item, replacement, "unframed_exception"))
             exceptions.append(_exception(item, replacement, "the sentence order no longer resolves"))
             continue
         before_owner = owner[field]
@@ -171,19 +176,23 @@ async def repair_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[st
         )
         same_math = contracts._math_spans(before_owner) == contracts._math_spans(after_owner)
         if not (same_numbers and same_math):
-            reports.save_phrase_repair(
-                report_id, section_id, item["sentence_id"], item["text"], replacement,
-                "unframed_exception",
-            )
+            records.append((item, replacement, "unframed_exception"))
             exceptions.append(_exception(item, replacement, "the repair changed a number or math span"))
             continue
 
         owner[field] = after_owner
         remains_unframed = bool(phrasebank.unframed(replacement, phrasebank_text, language, sections=sections))
         outcome = "unframed_exception" if remains_unframed else "kept"
-        reports.save_phrase_repair(
-            report_id, section_id, item["sentence_id"], item["text"], replacement, outcome,
-        )
+        records.append((item, replacement, outcome))
         if remains_unframed:
             exceptions.append(_exception(item, replacement, "the repaired sentence still follows no assigned frame"))
+    # A warnings-only rewrite cannot replace a valid model draft with a blocking failure.
+    from deixis.workflow.report.sections import revalidate_section
+
+    validation = revalidate_section(section_input, repaired)
+    if not validation.ok:
+        return rejected([vars(issue) for issue in validation.issues])
+    with transaction(flow.store.conn):
+        for item, after, outcome in records:
+            reports.save_phrase_repair(report_id, section_id, item["sentence_id"], item["text"], after, outcome)
     return repaired, exceptions

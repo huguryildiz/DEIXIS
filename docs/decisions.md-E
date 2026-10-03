@@ -2,6 +2,7 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+<<<<<<< HEAD
 ## D208 — P9 re-extraction R5: compatibility regression and closing record; H7 finding 2 is closed for the explicit text-retry workflow, with named limits and no must-fix item
 
 **Status:** accepted (record only, no code change). Written by Claude Sonnet 5.5; reviewed by gpt-6.1-sol high in 1 round (düzeltmeyle hazır: 3 medium, 2 low, all folded in; narrow verification by Sol medium: see the closing record's commit). The open-item classification was agreed with gpt-6.1-sol medium (read-only); the owner was not asked.
@@ -51,6 +52,7 @@ The source row shows the latest recorded result (by recorded time: a later resto
 **Carried work:** R5 runs the compatibility closure. Candidate and lineage views still show no occurrence or freshness field. Zotero per-item notes stay English. Confirming a matched or acquired candidate returns no receipt in its response (recorded as an event and in history).
 
 **Limits:** Synthetic records and a scripted model only; no real library, model or provider. A restored file, a promoted extraction or a located anchor does not validate a claim; the input relation compares the recorded parser input with the recorded hash, never the file served now. The latest-restore lookup scans recovery operations per asset (no index). The full acceptance and a11y suites were not rerun in this batch. Windows is untested.
+=======
 ## D207 — P9 RF4: every report rule the final assembly enforces that the model can cause is now also a section validation issue, and the H9 kit keeps R9 source keys
 
 **Status:** accepted, implemented. Prompt `docs/product/p9-rf4-prompt.md` by Claude (orchestrator), reviewed by gpt-6.1-sol medium in 3 rounds (r1 and r2 düzeltmeyle hazır with 3 high + 3 medium and 2 high + 2 medium, r3 two medium file-scope and policy contradictions folded without a 4th round). Owner-level choices decided jointly with gpt-6.1-sol medium. Code by gpt-6.1-sol high, reviewed by Claude in 1 round (one test fixed: the arXiv origin test now gives its passage a math span).
@@ -81,7 +83,8 @@ No assembly-stage repair and no autonomous rewriting: model-proposed phrase repl
 
 **Verification:** `tests/test_report_rf4.py` with SYNTHETIC replay fixture `report-rf4-replay.json` and 12 R9 cases in `tests/test_p6_measure_report.py`; 70 of the new tests fail on the old code (checked by reverting the source patch), strict-schema test unchanged and green. Full pytest 13,606 passed 0 failed 2 skipped after the one test fix (13,605 passed 1 failed before it). No Playwright run: no UI text or pause reason changed.
 
-**Limits:** The Turkish own-work matcher blocked plural forms such as "Bu çalışmaların" that refer to the cited sources; before push the coordinator had gpt-6.1-sol high add a negative lookahead for -lar/-ler after the noun stem (24 matcher cases and 5 section-validation cases; English pattern unchanged; reviewed by Claude Opus 5.5). Math checks show recognized spans and balanced delimiters, not correctness. Not measured on a real model: whether `gpt-5.6-luna` now produces assembly-clean sections is for the next H9b-style run. Historical section inputs have no validation context; restoring such a section can be refused (existing valid state preserved). Old unmoved checks remain only as assertions.
+**Limits:** The unchanged Turkish own-work matcher also blocks plural "Bu çalışmaların" (false-positive risk, a repair rewrites it). Math checks show recognized spans and balanced delimiters, not correctness. Not measured on a real model: whether `gpt-5.6-luna` now produces assembly-clean sections is for the next H9b-style run. Historical section inputs have no validation context; restoring such a section can be refused (existing valid state preserved). Old unmoved checks remain only as assertions.
+>>>>>>> 0c1533d (P9 RF4 (D207): every report rule the model can cause that final assembly enforces is also a section validation issue (banned wording, equation origin by anchor with math, own-work wording, counts, gap bases, derived refs, budgets, duplicate keys) so the single repair sees it; complete section validation reruns after anchor patch and phrase repair and on review restoration (refused with rollback); validation context added to the report StepInput (capped, no citation rights); H9 kit R9 no longer overwrites known source keys (prospective, H9b not rescored); skill_package_hash 7389a1c7; synthetic replay tests, 13,606 passed; real-model effect not measured; STATUS.md updated)
 
 ## D200 — P9 X05: the run heading takes focus by run id, and the keyboard walk waits for real states instead of racing the report run and the toast timer
 

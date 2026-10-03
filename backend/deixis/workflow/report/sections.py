@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import TYPE_CHECKING, Any
 
 from deixis.domain import contracts, phrasebank
@@ -96,6 +97,39 @@ def _word_count(draft: dict[str, Any]) -> int:
     return sum(len(text.split()) for text in texts)
 
 
+def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, section_id: str) -> dict:
+    """The whole frozen count domain and VII basis records, separate from citation allowlists."""
+    accepted = []
+    if section_id == "VII":
+        for row in flow.store.conn.execute("SELECT gap_id, kind, text, basis_json FROM report_gaps WHERE report_id = ?", (report_id,)):
+            basis = json.loads(row["basis_json"])
+            accepted.append({name: row[name] for name in ("gap_id", "kind", "text")} |
+                            {name: basis[name] for name in ("basis_claim_keys", "basis_passage_ids", "basis_cell_ids")})
+    cell_ids = {cid for gap in accepted for cid in gap["basis_cell_ids"]}
+    basis_cells = [c for c in snapshot["cells"] if c["cell_id"] in cell_ids]
+    passage_ids = {pid for gap in accepted for pid in gap["basis_passage_ids"]}
+    passage_ids.update(e["passage_id"] for c in basis_cells for e in c["evidence"])
+    basis_passages = []
+    for pid in sorted(passage_ids):
+        row = flow.store.conn.execute("SELECT * FROM passages WHERE id = ?", (pid,)).fetchone()
+        if row is None:
+            raise ValueError(f"accepted VI basis passage missing: {pid}")
+        p = dict(row)
+        basis_passages.append({"passage_id": pid, "source_id": p["source_version_id"],
+            "reading_depth": "abstract" if p["kind"] == "abstract" else "selected_sections",
+            "locator": {"kind": p["kind"], "physical_page": p["physical_page"], "printed_label": p["printed_label"]},
+            "abstract_origin": p["abstract_origin"], "text_source": None if p["kind"] == "abstract" else p["text_source"], "text": p["text"]})
+    return {"source_ids": evidence_row_ids(snapshot), "column_ids": [c["column_id"] for c in snapshot["columns"]],
+            "cells": [{name: c[name] for name in ("cell_id", "source_version_id", "column_id", "state", "value", "reading_depth")} for c in snapshot["cells"]],
+            "accepted_gaps": accepted, "basis_cells": basis_cells, "basis_passages": basis_passages}
+
+
+def revalidate_section(payload: dict, draft: dict) -> contracts.ValidationReport:
+    """Only VIII's code-rendered text is outside the model contract; retain the original input envelope."""
+    model_draft = {key: value for key, value in draft.items() if key != "text"}
+    return contracts.validate_model_output(payload, model_draft)
+
+
 def _pause_detail(reports: ReportStore, report_id: str, section_ids: list[str],
                   max_issues: int) -> dict[str, Any]:
     reasons = []
@@ -137,6 +171,7 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
         "repair_request": None,
         "review_scope": None,
         "limitations_core": numbers,
+        "validation_context": None,
     }
     operation_key = f"report_section:{section_id}"
     step = flow.store.step(run["id"], operation_key, "model:report_section")
@@ -145,6 +180,18 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
         {"ok": False, "issues": [], "truncated": evidence["truncated"],
          **({"numbers": numbers} if numbers is not None else {})}, None,
     )
+    try:
+        target["validation_context"] = _validation_context(flow, report_id, snapshot, section_id)
+        oversized = len(json.dumps(target["validation_context"], ensure_ascii=False, sort_keys=True)) > contracts.MAX_REPORT_VALIDATION_CHARS
+        if oversized:
+            raise ValueError("frozen validation context exceeds 262144 characters; no truncation permitted")
+    except ValueError as exc:
+        code = "report_validation_context_too_large" if "exceeds" in str(exc) else "report_validation_context_invalid"
+        issues = [{"code": code, "path": "/report_target/validation_context", "message": str(exc)}]
+        flow.store.finish_step(step["id"], "failed", error_code=code, error=issues)
+        reports.save_section_draft(section_key, step["id"], "failed", None,
+                                  {"ok": False, "issues": issues, "truncated": evidence["truncated"]}, None)
+        return "failed"
 
     async def call() -> dict[str, Any]:
         source_ids = list(dict.fromkeys(
@@ -177,7 +224,6 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
 
     draft = output["result"]
     payload = flow.store.step_input_payload(output["step_input_id"])
-    empty = not draft["claims"] and not draft["insufficient_evidence"]
     language = phrasebank.frames_language(payload)
     flagged = flagged_sentences(
         section_id, [*draft["claims"], *draft["insufficient_evidence"]],
@@ -185,26 +231,20 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
     )
     draft, exceptions = await repair_section(flow, run, scope, report_id, section_id, draft, flagged)
     _report_checkpoint(flow, run)
-    limitations_issues = ([(i, issue) for i, claim in enumerate(draft["claims"])
-                           for issue in contracts.limitations_claim_issues(claim)]
-                          if section_id == "VIII" else [])
+    validation = revalidate_section(payload, draft)
     if numbers is not None:
         language = (reports.report(report_id)["language"] or scope.get("language_hint") or "en").lower()
         draft["text"] = review_methodology.render_limitations(numbers, language)
-    issues = ([{"code": "empty_section", "detail": "section has no claims or insufficient-evidence entries"}]
-              if empty else exceptions)
-    issues.extend({"code": issue.code, "detail": f"/claims/{i}{issue.path}: {issue.message}"}
-                  for i, issue in limitations_issues)
-    # Phrase exceptions are accepted; VIII claim violations require a rewritten section.
-    invalid = empty or bool(limitations_issues)
-    status = "draft" if invalid else "valid"
+    issues = [vars(issue) for issue in validation.issues] + exceptions
+    invalid = not validation.ok
+    status = "failed" if invalid else "valid"
     reports.save_claims(section_key, draft["claims"], _citation_links(payload, draft))
     reports.save_section_draft(
         section_key, step["id"], status, draft,
         {"ok": not invalid, "issues": issues, "truncated": evidence["truncated"],
          **({"numbers": numbers} if numbers is not None else {})}, _word_count(draft),
     )
-    if section_id == "VI":
+    if section_id == "VI" and not invalid:
         candidate_ids = {candidate["gap_id"] for candidate in gap_candidates}
         persisted = []
         for gap in draft["gaps"]:

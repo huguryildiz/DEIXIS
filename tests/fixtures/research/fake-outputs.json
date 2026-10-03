@@ -401,7 +401,7 @@
    "step_input": "C_report_section_VII",
    "expect_ok": false,
    "expect_codes": [
-    "unknown_gap_ref"
+    "unknown_gap_ref", "vii_claim_without_basis"
    ],
    "output": {
     "schema_version": "deixis.report_section_draft.v2",

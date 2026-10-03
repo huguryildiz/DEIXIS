@@ -169,6 +169,24 @@ def test_own_work_words_of_a_frame_may_become_the_supplied_passages(sentence, la
     assert phrasebank.unframed(sentence, TEXT, language) == []
 
 
+@pytest.mark.parametrize("phrase", [
+    "bu çalışmaların", "Bu çalışmaların", "bu araştırmalarda", "bu makaleler", "bu tezlerde",
+    "bu incelemeler", "mevcut çalışmalar", "şimdiki araştırmalar", "Bu makalelerde",
+    "Bu tezlerin", "mevcut incelemelerde", "şimdiki tezler",
+])
+def test_turkish_plural_nouns_do_not_name_the_writers_own_work(phrase):
+    assert phrasebank.own_work_phrases(f"{phrase} kapsamı sınırlıdır.", "tr") == []
+
+
+@pytest.mark.parametrize("phrase", [
+    "bu çalışma", "bu çalışmada", "bu çalışmanın", "Bu çalışmada", "Bu makalede",
+    "bu makalenin", "bu araştırmada", "Bu araştırmanın", "bu incelemede",
+    "mevcut tezde", "şimdiki tezin", "Bu tez",
+])
+def test_turkish_singular_nouns_with_other_suffixes_name_the_writers_own_work(phrase):
+    assert phrasebank.own_work_phrases(f"{phrase} kapsamı sınırlıdır.", "tr") == [phrase]
+
+
 @pytest.mark.parametrize("text, language", [
     ("This study uses a mixed-integer linear program for release scheduling.", "en"),
     ("Bu çalışma, salım-zamanı çizelgelemesi için karma tamsayılı doğrusal program kullanmaktadır.", "tr"),

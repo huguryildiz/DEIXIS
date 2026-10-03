@@ -156,6 +156,21 @@ def valid_response(si: dict[str, Any]) -> str:
             "future_work_column_id": column_ids[0] if column_ids else None,
         })
     if task == "report_section":
+        if si["report_target"]["section_id"] in {"abstract", "I", "IX"} and si["report_target"]["prior_summaries"]:
+            summary = si["report_target"]["prior_summaries"][0]
+            return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
+                "section_id": si["report_target"]["section_id"], "claims": [{
+                    "claim_key": f"{si['report_target']['section_id']}.1", "text": "This report has shown that the SYNTHETIC claim is bounded.",
+                    "support_type": summary["support_type"], "passage_ids": [], "cell_ids": [], "paragraph": 1,
+                    "table_ref": None, "equation_ref": None, "body_refs": [summary["claim_key"]], "axis_id": None,
+                    "count": None, "equation_origin": None, "gap_refs": [],
+                }], "citation_anchors": [], "subsections": [], "gaps": [], "insufficient_evidence": [],
+            })
+        if si["report_target"]["section_id"] == "VII":
+            return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
+                "section_id": "VII", "claims": [], "citation_anchors": [], "subsections": [], "gaps": [],
+                "insufficient_evidence": [{"context": "SYNTHETIC VII", "reason": "It is beyond the scope of this synthetic fixture to add a claim."}],
+            })
         if si["report_target"]["section_id"] == "VIII":
             return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
                 "section_id": "VIII", "claims": [{

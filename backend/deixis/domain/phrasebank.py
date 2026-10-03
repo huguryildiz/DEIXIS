@@ -39,7 +39,7 @@ _ELLIPSIS_SUFFIX = re.compile(r"(?:…|\.\.\.)['’][^\W\d_]+")
 _OWN_WORK = {
     "en": re.compile(r"\b(?:this|the present|the current)\s+(?:study|paper|research|investigation|thesis|dissertation|project)\b",
                      re.IGNORECASE),
-    "tr": re.compile(r"\b(?:bu|mevcut|şimdiki)\s+(?:çalışma|makale|araştırma|inceleme|tez)[^\W\d_]*", re.IGNORECASE),
+    "tr": re.compile(r"\b(?:bu|mevcut|şimdiki)\s+(?:çalışma|makale|araştırma|inceleme|tez)(?!l[ae]r)[^\W\d_]*", re.IGNORECASE),
 }
 _PLURAL_SOURCES = {
     "en": re.compile(r"\b(?:previous|prior|recent|earlier|several|many|numerous|most|other|a number of)\s+"

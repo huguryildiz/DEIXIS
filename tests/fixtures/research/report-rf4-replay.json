@@ -1,0 +1,23 @@
+{
+  "SYNTHETIC": "Minimal RF4 replay shapes; no real report text or model output.",
+  "question": {"text": "SYNTHETIC bounded report question", "language_hint": "en"},
+  "sources": [
+    {"source_id": "srv_SYNTHRF4001", "work_id": "wrk_SYNTHRF4001", "title": "SYNTHETIC source one", "year": 2026, "version_label": "uploaded", "access_level": "pdf_available"},
+    {"source_id": "srv_SYNTHRF4002", "work_id": "wrk_SYNTHRF4002", "title": "SYNTHETIC source two", "year": 2026, "version_label": "uploaded", "access_level": "abstract"}
+  ],
+  "passages": [
+    {"passage_id": "psg_SYNTHRF4001", "source_id": "srv_SYNTHRF4001", "reading_depth": "selected_sections", "locator": {"kind": "section", "physical_page": null, "printed_label": null}, "abstract_origin": null, "text_source": "text_layer", "text": "SYNTHETIC source expression $$x=1$$ is recorded here."},
+    {"passage_id": "psg_SYNTHRF4002", "source_id": "srv_SYNTHRF4001", "reading_depth": "selected_sections", "locator": {"kind": "section", "physical_page": null, "printed_label": null}, "abstract_origin": null, "text_source": "text_layer", "text": "SYNTHETIC source states a bounded verbal result."},
+    {"passage_id": "psg_SYNTHRF4003", "source_id": "srv_SYNTHRF4002", "reading_depth": "abstract", "locator": {"kind": "abstract", "physical_page": null, "printed_label": null}, "abstract_origin": "synthetic_fixture", "text_source": null, "text": "SYNTHETIC second source describes a bounded result."}
+  ],
+  "cells": [
+    {"cell_id": "cel_SYNTHRF4001", "cell_revision_id": "crv_SYNTHRF4001", "column_id": "col_SYNTHR0001", "source_version_id": "srv_SYNTHRF4001", "state": "value", "value": {"text": "SYNTHETIC bounded result"}, "reading_depth": "full_text", "evidence": [{"passage_id": "psg_SYNTHRF4002", "quote": "SYNTHETIC source states a bounded verbal result."}]},
+    {"cell_id": "cel_SYNTHRF4002", "cell_revision_id": "crv_SYNTHRF4002", "column_id": "col_SYNTHR0001", "source_version_id": "srv_SYNTHRF4002", "state": "value", "value": {"text": "SYNTHETIC bounded result"}, "reading_depth": "full_text", "evidence": [{"passage_id": "psg_SYNTHRF4003", "quote": "SYNTHETIC second source describes a bounded result."}]}
+  ],
+  "bad_texts": {
+    "banned": "These data must be interpreted with caution because SYNTHETIC research gaps remain.",
+    "own_work": "This study has shown that the SYNTHETIC result is bounded.",
+    "turkish_own_work": "Bu çalışma SYNTHETIC sonuçları inceler.",
+    "turkish_banned": "SYNTHETIC araştırma boşluğu değerlendirmesi."
+  }
+}

@@ -19,6 +19,32 @@ from test_report_api import create_table, fill_table, upload_and_include
 from test_report_flow import ReportAdapter
 
 
+@pytest.mark.parametrize("site", ["table_i", "frozen_snapshot"])
+@pytest.mark.parametrize("key", ["missing", None, ""])
+@pytest.mark.parametrize("origin", ["passage", "cell_quote"])
+def test_r9_missing_row_key_preserves_known_reference_key(site, key, origin):
+    """Red on old kit: a SYNTHETIC minimal packet retains R9 eligibility; H9b is not rescored."""
+    row = {"source_version_id": "s1"}
+    if key != "missing":
+        row["source_key"] = key
+    report = {"references": [{"source_version_id": "s1", "source_key": "A"}], "sections": []}
+    payload = {"report_target": {"section_id": "IV", "cells": []}, "passages": []}
+    if origin == "passage":
+        payload["passages"] = [{"passage_id": "p1", "source_id": "s1", "text": "$$x=1$$", "text_source": "text_layer"}]
+    else:
+        payload["report_target"]["cells"] = [{"cell_id": "c1", "source_version_id": "s1", "evidence": [{"passage_id": "p1", "quote": "$$x=1$$"}]}]
+    database = {"inputs": [{"id": "SYNTHETIC_input", "task_type": "report_section", "payload_json": json.dumps(payload)}],
+                "frozen_snapshot": {"rows": [], "columns": [], "cells": []}}
+    if site == "table_i":
+        report["table_i"] = {"rows": [row]}
+    else:
+        database["frozen_snapshot"]["rows"] = [row]
+    result = kit._formulation_pairs(report, database, [{"source_key": "A", "column_id": "col1"}], None)
+    assert result["value"][0]["source_version_ids"] == ["s1"]
+    assert result["value"][0]["status"] == "eligible"
+    assert result["denominator"] == 1
+
+
 class ReadClient:
     def __init__(self, client):
         self.client = client

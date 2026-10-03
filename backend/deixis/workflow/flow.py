@@ -5298,7 +5298,7 @@ class ResearchFlow:
         if extraction_target is not None:
             target["extraction_target"] = extraction_target
         if report_target is not None:
-            target["report_target"] = report_target
+            target["report_target"] = {"validation_context": None, **report_target}
         if vocabulary_target is not None:
             target["vocabulary_target"] = vocabulary_target
         if screening_target is not None:
@@ -5331,6 +5331,8 @@ class ResearchFlow:
             allowlist |= {"column_ids": list(dict.fromkeys(columns)),
                           "cell_ids": [cell["cell_id"] for cell in cells],
                           "gap_ids": [gap["gap_id"] for gap in gaps]}
+            if task_type == "report_section" and report.get("section_id") == "VII":
+                allowlist["gap_ids"] = [g["gap_id"] for g in (report.get("validation_context") or {}).get("accepted_gaps", [])]
         return review | target | {
             "step_input_id": new_id("sti"), "research_id": run["research_id"], "run_id": run["id"], "step_id": step_id,
             "task_type": task_type, "scope_revision": run["scope_revision"],
@@ -5408,7 +5410,7 @@ class ResearchFlow:
         stages' rule (D86): a call the budget no longer holds is closed and returned as invalid instead of pausing
         the run, because those stages count what the budget did not reach and a later run reads it."""
         if report_target is not None:
-            report_target = {"limitations_core": None, "review_sections": None, **report_target}
+            report_target = {"limitations_core": None, "review_sections": None, "validation_context": None, **report_target}
         run_id, rid = run["id"], run["research_id"]
         step = self.store.step(run_id, operation_key, f"model:{task_type}")
         if step["status"] == "succeeded":
@@ -5628,7 +5630,11 @@ class ResearchFlow:
                     output_text, patch_changes = contracts.apply_report_section_anchor_patch(
                         payload, patch_base, anchor_context, report.result)
                     patch_record = {"base_step_input_id": patch_base_input, "changes": patch_changes}
-                    report = contracts.validate_model_output(payload, output_text)
+                    # Repair envelopes name the new attempt; evidence and rules remain those of the original section.
+                    original_output = dict(output_text, step_input_id=failed_input["step_input_id"])
+                    report = contracts.validate_model_output(failed_input, original_output)
+                    if report.ok:
+                        report.result = output_text
             elif task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS:
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             # Field names from the alias table are put right before validation and the renames recorded (D86).

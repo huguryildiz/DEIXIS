@@ -1553,8 +1553,151 @@
     "report_target": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["report_id", "section_id", "columns", "plan", "cells", "gap_candidates", "prior_summaries", "repair_request", "review_scope", "review_sections", "limitations_core"],
+      "required": ["report_id", "section_id", "columns", "plan", "cells", "gap_candidates", "prior_summaries", "repair_request", "review_scope", "review_sections", "limitations_core", "validation_context"],
       "properties": {
+        "validation_context": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source_ids",
+                "column_ids",
+                "cells",
+                "accepted_gaps",
+                "basis_cells",
+                "basis_passages"
+              ],
+              "properties": {
+                "source_ids": {
+                  "type": "array",
+                  "maxItems": 10000,
+                  "items": {
+                    "$ref": "common.schema.json#/$defs/source_id"
+                  }
+                },
+                "column_ids": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "cells": {
+                  "type": "array",
+                  "maxItems": 10000,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "cell_id",
+                      "source_version_id",
+                      "column_id",
+                      "state",
+                      "value",
+                      "reading_depth"
+                    ],
+                    "properties": {
+                      "cell_id": {
+                        "type": "string"
+                      },
+                      "source_version_id": {
+                        "$ref": "common.schema.json#/$defs/source_id"
+                      },
+                      "column_id": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": [
+                          "object",
+                          "null"
+                        ]
+                      },
+                      "reading_depth": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "accepted_gaps": {
+                  "type": "array",
+                  "maxItems": 40,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "gap_id",
+                      "kind",
+                      "text",
+                      "basis_claim_keys",
+                      "basis_passage_ids",
+                      "basis_cell_ids"
+                    ],
+                    "properties": {
+                      "gap_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "stated_limitation",
+                          "conflicting_evidence",
+                          "corpus_absence"
+                        ]
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      "basis_claim_keys": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "basis_passage_ids": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "common.schema.json#/$defs/passage_id"
+                        }
+                      },
+                      "basis_cell_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                "basis_cells": {
+                  "type": "array",
+                  "maxItems": 10000,
+                  "items": {
+                    "$ref": "#/properties/report_target/properties/cells/items"
+                  }
+                },
+                "basis_passages": {
+                  "type": "array",
+                  "maxItems": 10000,
+                  "items": {
+                    "$ref": "#/properties/passages/items"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Frozen validation context only; never grants citation permissions. Serialized context cap: 262144 characters; exceeding it fails the section without truncation. VII includes accepted VI gaps and their basis evidence."
+        },
         "report_id": { "type": "string", "pattern": "^rpt_[0-9A-Za-z]{8,40}$" },
         "section_id": {
           "anyOf": [{ "type": "string", "enum": ["I", "III", "IV", "V", "VI", "VII", "VIII", "IX", "abstract", "index_terms"] }, { "type": "null" }]

@@ -41,12 +41,17 @@ def section():
     pid, sid = si["passages"][0]["passage_id"], si["sources"][0]["source_id"]
     cid, col = "cel_SYNTHCELL0001", si["allowlist"]["column_ids"][0]
     si["passages"][0]["text_source"] = "text_layer"
+    si["passages"][0]["text"] += " SYNTHETIC source math $$x=1$$."
     si["report_target"]["cells"] = [{
         "cell_id": cid, "cell_revision_id": "crv_SYNTHCELL0001", "column_id": col,
         "source_version_id": sid, "state": "value", "value": {"text": "SYNTHETIC"},
         "reading_depth": "abstract", "evidence": [{"passage_id": pid, "quote": si["passages"][0]["text"]}],
     }]
     si["allowlist"]["cell_ids"] = [cid]
+    si["report_target"]["validation_context"] = {"source_ids": si["allowlist"]["source_ids"].copy(),
+        "column_ids": si["allowlist"]["column_ids"].copy(),
+        "cells": [{name: c[name] for name in ("cell_id", "source_version_id", "column_id", "state", "value", "reading_depth")} for c in si["report_target"]["cells"]],
+        "accepted_gaps": [], "basis_cells": [], "basis_passages": []}
     draft["claims"][0] |= {"cell_ids": [cid], "count": {
         "numerator_source_ids": [sid], "denominator_source_ids": [sid], "column_id": col},
         "equation_origin": {"passage_id": pid, "text_source": "text_layer"}}
@@ -273,6 +278,8 @@ def test_section_source_membership_includes_sources_of_shown_cells():
     si, draft = section()
     extra = "srv_SYNTHCELLSOURCE01"
     si["report_target"]["cells"][0]["source_version_id"] = extra
+    si["report_target"]["validation_context"]["source_ids"].append(extra)
+    si["report_target"]["validation_context"]["cells"][0]["source_version_id"] = extra
     draft["claims"][0]["count"]["numerator_source_ids"] = [extra]
     draft["claims"][0]["count"]["denominator_source_ids"] = [extra]
     draft["gaps"][0]["nearest_match"]["source_id"] = extra
@@ -377,7 +384,9 @@ def test_all_section_output_fields_are_resolved_before_storing_the_succeeded_res
     flow, store, reports, adapter, run, scope, _ = report_flow(tmp_path, passage_kind="pdf_page")
     source_id = store.included_sources(run["research_id"])[0]
     passage = store.passages_for(source_id)[0]
+    passage["text"] += " SYNTHETIC source math $$x=1$$."
     target = report_target(source_id, passage["id"])
+    target["plan"]["limitations_column_id"] = target["columns"][0]["column_id"]
 
     def response(si):
         from fakes import envelope

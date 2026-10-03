@@ -135,6 +135,7 @@ def test_the_report_section_draft_is_v2_and_its_equation_origin_is_checked():
     claim = output["claims"][0]
     passages = {p["passage_id"]: p for p in step_input["passages"]}
     cited = claim["passage_ids"][0]
+    passages[cited]["text"] += " $$x=1$$"  # RF4: an equation origin must contain recognized math
     for source in ("latex_source", "marker", "ocr", "text_layer"):
         passages[cited]["text_source"] = source
         claim["equation_origin"] = {"passage_id": cited, "text_source": source}

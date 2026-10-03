@@ -19,14 +19,7 @@ _DERIVED_SECTIONS = {"abstract", "I", "IX"}
 _SUPPORT_ORDER = {"analyst_inference": 0, "source_stated": 1}
 _DEPTH_ORDER = {"metadata": 0, "abstract": 1, "selected_sections": 2, "full_text": 3}
 _CORPUS_KEYS = ("found", "unique", "screened", "included", "full_text")
-_BANNED = re.compile(
-    r"\b(?:gaps?|open problems?|open questions?"
-    r"|novel|novelty|first-ever|the first (?:study|work|paper|survey|review|attempt|to|time)"
-    r"|first of its kind|for the first time|araştırma boşluğ\w*"
-    r"|boşluk|boşluğ\w*"
-    r"|açık problem\w*|açık soru\w*|özgün\w*|yenilik\w*"
-    r"|ilk kez|ilk defa|bir ilk|ilk çalışma\w*)\b", re.IGNORECASE,
-)
+_BANNED = contracts.REPORT_BANNED
 
 
 def _issue(rule: str, section_id: str, detail: str) -> dict[str, Any]:
@@ -135,7 +128,7 @@ def _check_duplicate_claim_keys(store: Store, reports: ReportStore, report_id: s
     rows = store.conn.execute(
         "SELECT c.claim_key, GROUP_CONCAT(s.section_id) AS section_ids"
         " FROM report_claims c JOIN report_sections s ON s.id = c.report_section_id"
-        " WHERE s.report_id = ? GROUP BY c.claim_key HAVING COUNT(DISTINCT s.section_id) > 1",
+        " WHERE s.report_id = ? GROUP BY c.claim_key HAVING COUNT(*) > 1",
         (report_id,),
     )
     for row in rows:
@@ -236,23 +229,13 @@ def _check_derived_strength(store: Store, reports: ReportStore, report_id: str, 
         body_claims = [by_key[key] for key in ref_keys if key in by_key]
         if not body_claims:
             continue
-        weakest_support = min(body_claims, key=lambda item: _SUPPORT_ORDER[item["support_type"]])["support_type"]
-        if _SUPPORT_ORDER[claim["support_type"]] > _SUPPORT_ORDER[weakest_support]:
-            issues.append(_issue(
-                "derived_support_too_strong", claim["section_id"],
-                f"ERROR: {claim['claim_key']} uses {claim['support_type']} support, stronger than the weakest "
-                f"body_ref support ({weakest_support}).",
-            ))
-        body_depths = [depths[body["id"]] for body in body_claims if body["id"] in depths]
+        body = [dict(item, reading_depth=depths.get(item["id"])) for item in body_claims]
         derived_depth = depths.get(claim["id"])
-        if derived_depth and body_depths and (not current or len(body_depths) == len(ref_keys)):
-            weakest_depth = min(body_depths, key=_DEPTH_ORDER.__getitem__)
-            if _DEPTH_ORDER[derived_depth] > _DEPTH_ORDER[weakest_depth]:
-                issues.append(_issue(
-                    "derived_depth_too_deep", claim["section_id"],
-                    f"ERROR: {claim['claim_key']} has {derived_depth} depth, deeper than the weakest body_ref "
-                    f"depth ({weakest_depth}).",
-                ))
+        if current and (len(body) != len(ref_keys) or any(item["reading_depth"] is None for item in body)):
+            derived_depth = None
+        model_claim = dict(claim, body_refs=ref_keys)
+        issues.extend(_issue(i.code, claim["section_id"], f"ERROR: {claim['claim_key']} {i.message}.")
+                      for i in contracts.report_derived_issues(model_claim, body, derived_depth))
     return issues
 
 
@@ -325,41 +308,16 @@ def _check_corpus_counts(store: Store, reports: ReportStore, report_id: str) -> 
 
 def _check_count_fields(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     snapshot = reports.snapshot(report_id)
-    rows = set(evidence_row_ids(snapshot))
-    columns = {column["column_id"] for column in snapshot["columns"]}
-    cells = {(cell["source_version_id"], cell["column_id"]): cell for cell in snapshot["cells"]}
+    context = {"source_ids": evidence_row_ids(snapshot),
+               "column_ids": [c["column_id"] for c in snapshot["columns"]], "cells": snapshot["cells"]}
     issues = []
     for claim in _claims(store, report_id, current=current):
         if claim["count_json"] is None:
             continue
         count = _json_record(claim, "count_json", "report_claims", claim["claim_key"], claim["section_id"], issues)
-        if count is None:
-            continue
-        numerator, denominator, column = (count["numerator_source_ids"], count["denominator_source_ids"],
-                                           count["column_id"])
-        section = claim["section_id"]
-        def add(code: str, detail: str) -> None:
-            issues.append(_issue(code, section, f"ERROR: {claim['claim_key']} {detail}."))
-        if (len(set(numerator)) != len(numerator) or len(set(denominator)) != len(denominator)
-                or not set(numerator) <= set(denominator)):
-            add("count_members_invalid", "duplicate or non-subset count members")
-        if column not in columns or any(source not in rows or (source, column) not in cells
-                                        for source in set(numerator + denominator)) or any(
-            cells.get((source, column), {}).get("state") == "not_applicable" for source in denominator
-        ):
-            add("count_member_not_in_snapshot", "member, column, cell or applicability missing from snapshot")
-        members = [cells[(source, column)] for source in denominator if (source, column) in cells]
-        selected = [cells[(source, column)] for source in numerator if (source, column) in cells]
-        if len({cell["reading_depth"] for cell in members}) > 1:
-            add("count_depth_mixed", "denominator mixes reading depths")
-        if (len({cell["state"] for cell in selected}) > 1 or len({json.dumps(cell["value"], sort_keys=True)
-                                                               for cell in selected if cell["state"] == "value"}) > 1):
-            add("count_value_mixed", "numerator mixes states or values")
-        numbers = [int(match) if len(match) < 4000 else None for match in
-                   re.findall(r"\b\d+\b", contracts._without_math(claim["text"]))]
-        allowed = {len(numerator), len(denominator)}
-        if numbers and (any(number not in allowed for number in numbers) or not allowed <= set(numbers)):
-            add("count_number_mismatch", "text integers disagree with member counts")
+        if count is not None:
+            issues.extend(_issue(i.code, claim["section_id"], f"ERROR: {claim['claim_key']} {i.message}.")
+                          for i in contracts.report_count_issues(claim["text"], count, context))
     return issues
 
 
@@ -368,19 +326,8 @@ def _check_banned_words(store: Store, reports: ReportStore, report_id: str, *, c
     def scan(section: str, where: str, value: Any) -> None:
         if not isinstance(value, str):
             return
-        text = contracts._without_math(value)
-        for match in _BANNED.finditer(text):
-            prefix = text[:match.start()].lower()
-            preceding = re.search(r"(\w+)[\s-]+$", prefix)
-            if match.group().lower() in {"gap", "gaps"} and preceding and preceding.group(1) in {
-                "band", "energy", "spectral", "optical", "mass"
-            }:
-                continue
-            if match.group().lower().startswith(("boşluk", "boşluğ")) and preceding and preceding.group(1) in {
-                "bant", "enerji"
-            }:
-                continue
-            issues.append(_issue("banned_word", section, f"ERROR: {match.group()!r} in {where}."))
+        for word in contracts.report_banned_words(value):
+            issues.append(_issue("banned_word", section, f"ERROR: {word!r} in {where}."))
 
     for claim in _claims(store, report_id, current=current):
         if claim["section_id"] != "II":
@@ -476,10 +423,8 @@ def _check_gap_bases(store: Store, reports: ReportStore, report_id: str, *, curr
                                                              (claim["id"],)))
             has_future_cell = any(cells.get(row["cell_id"], {}).get("column_id") == plan.get("future_work_column_id")
                                   and row["cell_id"] in cells for row in cell_links if row["cell_id"])
-            if not valid_refs and not has_future_cell:
-                issues.append(_issue("vii_claim_without_basis", "VII", f"ERROR: {claim['claim_key']} lacks a basis."))
-            if claim["support_type"] == "analyst_inference" and not valid_refs:
-                issues.append(_issue("vii_inference_without_gap", "VII", f"ERROR: {claim['claim_key']} lacks a gap."))
+            issues.extend(_issue(i.code, "VII", f"ERROR: {claim['claim_key']} {i.message}.")
+                          for i in contracts.report_vii_issues(dict(claim, gap_refs=refs), gap_ids, has_future_cell))
     for gap in gaps:
         kind, gap_id = gap["kind"], gap["gap_id"]
         basis = (_json_record(gap, "basis_json", "report_gaps", gap_id, "VI", issues)
@@ -495,44 +440,22 @@ def _check_gap_bases(store: Store, reports: ReportStore, report_id: str, *, curr
             rule = "gap_absence_basis_invalid" if kind == "corpus_absence" else "gap_basis_missing"
             issues.append(_issue(rule, "VI", f"ERROR: {gap_id} has no usable VI step input."))
             continue
-        if kind == "stated_limitation":
-            if not passages and not cell_ids or any(cell_id not in cells for cell_id in cell_ids) or any(
-                store.conn.execute("SELECT 1 FROM passages WHERE id = ?", (passage_id,)).fetchone() is None
-                for passage_id in passages
-            ):
-                issues.append(_issue("gap_basis_missing", "VI", f"ERROR: {gap_id} has missing basis records."))
-            if any(cell_id not in input_cells or cells.get(cell_id, {}).get("column_id") != plan.get("limitations_column_id")
-                   for cell_id in cell_ids) or any(
-                passage_id not in input_passages or (
-                    (owner := store.conn.execute("SELECT source_version_id FROM passages WHERE id = ?",
-                                                (passage_id,)).fetchone()) is not None
-                    and owner["source_version_id"] not in sources)
-                for passage_id in passages
-            ):
-                issues.append(_issue("gap_basis_foreign", "VI", f"ERROR: {gap_id} basis is outside VI input or scope."))
-        else:
-            def invalid(detail: str) -> None:
-                issues.append(_issue("gap_absence_basis_invalid", "VI", f"ERROR: {gap_id} {detail}."))
-            if provenance["origin"] != "code":
-                invalid("origin is not code")
-            selected = [cells.get(cell_id) for cell_id in cell_ids]
-            columns = {cell["column_id"] for cell in selected if cell}
-            if (len(cell_ids) < 3 or len(set(cell_ids)) != len(cell_ids) or None in selected
-                    or len(columns) != 1):
-                invalid("basis needs three unique snapshot cells in one column")
-                continue
-            column = next(iter(columns))
-            applicable = {cell["cell_id"] for cell in snapshot["cells"] if cell["column_id"] == column
-                          and cell["reading_depth"] == "full_text" and cell["state"] != "not_applicable"}
-            if (set(cell_ids) != applicable or any(cell["reading_depth"] != "full_text"
-                                                    or cell["state"] != "not_found_in_inspected_scope"
-                                                    for cell in selected)):
-                invalid("basis does not equal all applicable full-text absence cells")
-            if not any(candidate["gap_id"] == gap_id and candidate["column_id"] == column
-                       and set(candidate["basis_cell_ids"]) == set(cell_ids) for candidate in candidates):
-                invalid("basis differs from stored code candidate")
+        if kind == "corpus_absence" and provenance["origin"] != "code":
+            issues.append(_issue("gap_absence_basis_invalid", "VI", f"ERROR: {gap_id} origin is not code."))
+        rule_target = dict(target, plan=plan, cells=[cells[cid] for cid in input_cells if cid in cells],
+                           validation_context={"cells": snapshot["cells"]})
+        supplied_passages = {pid: {} for pid in input_passages}
+        known_passages = {pid for pid in passages if store.conn.execute("SELECT 1 FROM passages WHERE id = ?", (pid,)).fetchone()}
+        model_gap = dict(gap, **{name: basis[name] for name in ("basis_claim_keys", "basis_passage_ids", "basis_cell_ids")})
+        issues.extend(_issue(i.code, "VI", f"ERROR: {gap_id} {i.message}.")
+                      for i in contracts.report_gap_issues(model_gap, rule_target, supplied_passages,
+                                                           known_cells=set(cells), known_passages=known_passages))
+        if kind == "stated_limitation" and any(
+            (owner := store.conn.execute("SELECT source_version_id FROM passages WHERE id = ?", (pid,)).fetchone()) is not None
+            and owner["source_version_id"] not in sources for pid in passages
+        ):
+            issues.append(_issue("gap_basis_foreign", "VI", f"ERROR: {gap_id} basis outside frozen corpus."))
     return issues
-
 
 def _check_equations(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     sections = {section["section_id"]: section for section in reports.sections(report_id)}
@@ -547,9 +470,8 @@ def _check_equations(store: Store, reports: ReportStore, report_id: str, *, curr
         if claim["section_id"] == "II":
             continue
         section, key, text = claim["section_id"], claim["claim_key"], claim["text"]
-        dollars = sum(1 for index, char in enumerate(text) if char == "$" and not contracts._is_escaped(text, index))
         spans = contracts._math_spans(text)
-        if dollars % 2 or any(not contracts._math_span_is_well_formed(span) for span in spans):
+        if contracts.math_not_well_formed(text):
             issues.append(_issue("math_not_well_formed", section, f"ERROR: {key} has malformed math."))
         equation = bool(claim["equation_ref"] or claim["equation_origin_json"] is not None
                         or any(span.startswith("$$") for span in spans))
@@ -568,13 +490,10 @@ def _check_equations(store: Store, reports: ReportStore, report_id: str, *, curr
                                      f"ERROR: step_inputs payload_json malformed for section {section}."))
                 malformed_sections.add(section)
             checked_payload_sections.add(section)
-        if origin["passage_id"] not in {link["passage_id"] for link in links_by_claim[claim["id"]]}:
-            issues.append(_issue("equation_origin_not_cited", section,
-                                 f"ERROR: {key} origin is not cited by this claim."))
-        allowed = set()
+        supplied = {}
         for link in links_by_claim[claim["id"]]:
             input_row = store.conn.execute("SELECT step_id, payload_json FROM step_inputs WHERE id = ?",
-                                           (link["step_input_id"],)).fetchone()
+                                          (link["step_input_id"],)).fetchone()
             if not input_row or not section_steps.get(section) or input_row["step_id"] != section_steps[section]:
                 continue
             try:
@@ -588,21 +507,20 @@ def _check_equations(store: Store, reports: ReportStore, report_id: str, *, curr
                     malformed_sections.add(section)
                 continue
             passages = payload.get("passages")
-            if (not isinstance(passages, list) or any(
-                not isinstance(passage, dict) or not isinstance(passage.get("passage_id"), str)
-                for passage in passages
-            )):
+            if not isinstance(passages, list) or any(not isinstance(p, dict) or not isinstance(p.get("passage_id"), str) for p in passages):
                 continue
-            allowed.update(passage["passage_id"] for passage in passages)
-        if origin["passage_id"] not in allowed:
-            issues.append(_issue("equation_origin_not_in_input", section, f"ERROR: {key} origin was not supplied."))
-        passage = store.conn.execute("SELECT text, text_source FROM passages WHERE id = ?",
-                                     (origin["passage_id"],)).fetchone()
-        if not passage or not contracts._math_spans(passage["text"]):
-            issues.append(_issue("equation_origin_without_math", section, f"ERROR: {key} origin has no math."))
-        if passage and origin["text_source"] != passage["text_source"]:
-            issues.append(_issue("equation_origin_mismatch", section,
-                                 f"ERROR: {key} origin text_source differs from stored passage."))
+            # Stored passage text is authoritative at assembly; ids must still belong to this section input.
+            for p in passages:
+                row = store.conn.execute("SELECT text, text_source FROM passages WHERE id = ?", (p["passage_id"],)).fetchone()
+                if row:
+                    supplied[p["passage_id"]] = dict(row)
+        equation_claim = {"text": text, "equation_ref": claim["equation_ref"], "equation_origin": origin}
+        origin_row = store.conn.execute("SELECT text, text_source FROM passages WHERE id = ?", (origin["passage_id"],)).fetchone()
+        issues.extend(_issue(i.code, section, f"ERROR: {key} {i.message}.")
+                      for i in contracts.report_equation_issues(equation_claim,
+                          {link["passage_id"] for link in links_by_claim[claim["id"]] if link["passage_id"]}, supplied,
+                          origin_record=dict(origin_row) if origin_row else None))
+        passage = store.conn.execute("SELECT text_source FROM passages WHERE id = ?", (origin["passage_id"],)).fetchone()
         if passage and passage["text_source"] in {"ocr", "marker"}:
             issues.append(_issue("equation_text_source_warning", section,
                                  f"WARNING: {key} equation came from {passage['text_source']} text."))
@@ -639,10 +557,10 @@ def _check_conflict_links(store: Store, reports: ReportStore, report_id: str) ->
         if gap["kind"] != "conflicting_evidence":
             continue
         basis = _json_record(gap, "basis_json", "report_gaps", gap["gap_id"], "VI", issues)
-        if basis is not None and (not basis["basis_claim_keys"] or any(
-            key not in v_keys for key in basis["basis_claim_keys"]
-        )):
-            issues.append(_issue("conflict_gap_without_v_claim", "VI", f"ERROR: {gap['gap_id']} lacks V claim basis."))
+        if basis is not None:
+            target = {"cells": [], "prior_summaries": [{"section_id": "V", "claim_key": key} for key in v_keys]}
+            issues.extend(_issue(i.code, "VI", f"ERROR: {gap['gap_id']} {i.message}.")
+                          for i in contracts.report_gap_issues(dict(gap, **basis), target, {}))
     return issues
 
 

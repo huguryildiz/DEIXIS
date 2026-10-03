@@ -527,6 +527,9 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
         issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
     elif report_target is not None:
+        context = report_target.get("validation_context")
+        if context is not None and len(json.dumps(context, ensure_ascii=False, sort_keys=True)) > MAX_REPORT_VALIDATION_CHARS:
+            issues.append(Issue("report_validation_context_too_large", "/report_target/validation_context", "frozen validation context exceeds 262144 characters; no truncation permitted"))
         review_sections = report_target["review_sections"]
         if (review_sections is not None) != (step_input["task_type"] == "report_review"):
             issues.append(Issue("review_sections_mismatch", "/report_target/review_sections", step_input["task_type"]))
@@ -573,7 +576,7 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
                 issues.append(Issue("gap_candidate_column_not_allowed", f"/report_target/gap_candidates/{i}/column_id",
                                     candidate["column_id"]))
             for j, cell_id in enumerate(candidate["basis_cell_ids"]):
-                if cell_id not in cell_ids or cell_id not in allow.get("cell_ids", []):
+                if cell_id not in {c["cell_id"] for c in (context or {}).get("cells", [])}:
                     issues.append(Issue("gap_basis_cell_missing", f"/report_target/gap_candidates/{i}/basis_cell_ids/{j}",
                                         cell_id))
         if step_input["task_type"] in ("report_section", "report_phrase_repair"):
@@ -1060,6 +1063,139 @@ def _phrasebank_text() -> str:
 
 MATH = re.compile(r"\$\$.+?\$\$|\$[^$\n]+\$", re.DOTALL)
 
+# Shared by section validation and final assembly; physical band/energy gaps are exempt.
+REPORT_BANNED = re.compile(
+    r"\b(?:gaps?|open problems?|open questions?"
+    r"|novel|novelty|first-ever|the first (?:study|work|paper|survey|review|attempt|to|time)"
+    r"|first of its kind|for the first time|araştırma boşluğ\w*"
+    r"|boşluk|boşluğ\w*|açık problem\w*|açık soru\w*|özgün\w*|yenilik\w*"
+    r"|ilk kez|ilk defa|bir ilk|ilk çalışma\w*)\b", re.IGNORECASE,
+)
+REPORT_DEPTH_ORDER = {"metadata": 0, "abstract": 1, "selected_sections": 2, "full_text": 3}
+REPORT_SUPPORT_ORDER = {"analyst_inference": 0, "source_stated": 1}
+MAX_REPORT_VALIDATION_CHARS = 262144
+
+
+def report_banned_words(value: str) -> list[str]:
+    text = _without_math(value)
+    result = []
+    for match in REPORT_BANNED.finditer(text):
+        preceding = re.search(r"(\w+)[\s-]+$", text[:match.start()].lower())
+        word = match.group().lower()
+        if preceding and ((word in {"gap", "gaps"} and preceding.group(1) in {
+            "band", "energy", "spectral", "optical", "mass"
+        }) or (word.startswith(("boşluk", "boşluğ")) and preceding.group(1) in {"bant", "enerji"})):
+            continue
+        result.append(match.group())
+    return result
+
+
+def report_count_issues(text: str, count: dict, context: dict) -> list[Issue]:
+    """Frozen validation records do not grant citation rights."""
+    issues = []
+    def add(code: str, message: str) -> None:
+        issues.append(Issue(code, "/count", message))
+    numerator, denominator, column = (count["numerator_source_ids"], count["denominator_source_ids"], count["column_id"])
+    cells = {(c["source_version_id"], c["column_id"]): c for c in context.get("cells", [])}
+    if len(set(numerator)) != len(numerator) or len(set(denominator)) != len(denominator) or not set(numerator) <= set(denominator):
+        add("count_members_invalid", "duplicate or non-subset count members")
+    if column not in context.get("column_ids", []) or any(
+        sid not in context.get("source_ids", []) or (sid, column) not in cells for sid in set(numerator + denominator)
+    ) or any(cells.get((sid, column), {}).get("state") == "not_applicable" for sid in denominator):
+        add("count_member_not_in_snapshot", "member, column, cell or applicability missing from snapshot")
+    members = [cells[(sid, column)] for sid in denominator if (sid, column) in cells]
+    selected = [cells[(sid, column)] for sid in numerator if (sid, column) in cells]
+    if len({c["reading_depth"] for c in members}) > 1:
+        add("count_depth_mixed", "denominator mixes reading depths")
+    if len({c["state"] for c in selected}) > 1 or len({json.dumps(c["value"], sort_keys=True) for c in selected if c["state"] == "value"}) > 1:
+        add("count_value_mixed", "numerator mixes states or values")
+    numbers = [int(n) if len(n) < 4000 else None for n in re.findall(r"\b\d+\b", _without_math(text))]
+    allowed = {len(numerator), len(denominator)}
+    if numbers and (any(n not in allowed for n in numbers) or not allowed <= set(numbers)):
+        add("count_number_mismatch", "text integers disagree with member counts")
+    return issues
+
+
+def report_equation_issues(claim: dict, cited_passages: set[str], passages: dict[str, dict], *, origin_record: dict | None = None) -> list[Issue]:
+    issues = []
+    spans = _math_spans(claim["text"])
+    if not (claim.get("equation_ref") or claim.get("equation_origin") is not None or any(s.startswith("$$") for s in spans)):
+        return issues
+    origin = claim.get("equation_origin")
+    if origin is None:
+        return [Issue("equation_origin_missing", "/equation_origin", "an equation requires its supplied passage origin")]
+    pid = origin["passage_id"]
+    if pid not in cited_passages:
+        issues.append(Issue("equation_origin_not_cited", "/equation_origin/passage_id", "origin is not cited by this claim"))
+    passage = passages.get(pid)
+    if passage is None:
+        issues.append(Issue("equation_origin_not_in_input", "/equation_origin/passage_id", "origin was not supplied"))
+    passage = origin_record if origin_record is not None else passage
+    if passage is None or not _math_spans(passage["text"]):
+        issues.append(Issue("equation_origin_without_math", "/equation_origin/passage_id", "origin has no recognized math span"))
+    if passage is not None and origin["text_source"] != passage.get("text_source"):
+        issues.append(Issue("equation_origin_mismatch", "/equation_origin/text_source", "text_source differs from the origin passage"))
+    return issues
+
+
+def report_derived_issues(claim: dict, body: list[dict], depth: str | None) -> list[Issue]:
+    issues = []
+    if not claim["body_refs"]:
+        issues.append(Issue("body_ref_missing", "/body_refs", "derived claim requires a body_ref"))
+    if not body:
+        return issues
+    support = min(REPORT_SUPPORT_ORDER[b["support_type"]] for b in body)
+    if REPORT_SUPPORT_ORDER[claim["support_type"]] > support:
+        issues.append(Issue("derived_support_too_strong", "/support_type", "support exceeds the weakest body_ref"))
+    depths = [REPORT_DEPTH_ORDER[b["reading_depth"]] for b in body if b.get("reading_depth") in REPORT_DEPTH_ORDER]
+    if depth in REPORT_DEPTH_ORDER and depths and REPORT_DEPTH_ORDER[depth] > min(depths):
+        issues.append(Issue("derived_depth_too_deep", "/body_refs", "citation depth exceeds the weakest body_ref"))
+    return issues
+
+
+def report_gap_issues(gap: dict, target: dict, passages: dict[str, dict], *, known_cells: set[str] | None = None,
+                      known_passages: set[str] | None = None) -> list[Issue]:
+    issues = []
+    def add(code: str, message: str) -> None:
+        issues.append(Issue(code, "", message))
+    cells = {c["cell_id"]: c for c in target["cells"]}
+    plan = target.get("plan") or {}
+    basis_cells, basis_passages = gap["basis_cell_ids"], gap["basis_passage_ids"]
+    if gap["kind"] == "stated_limitation":
+        if not basis_cells and not basis_passages or any(cid not in (known_cells if known_cells is not None else cells) for cid in basis_cells) or any(pid not in (known_passages if known_passages is not None else passages) for pid in basis_passages):
+            add("gap_basis_missing", "stated limitation needs supplied basis records")
+        if any(cid not in cells or cells[cid]["column_id"] != plan.get("limitations_column_id") for cid in basis_cells) or any(pid not in passages for pid in basis_passages):
+            add("gap_basis_foreign", "basis must belong to this section's limitations input")
+    elif gap["kind"] == "conflicting_evidence":
+        v_keys = {s["claim_key"] for s in target["prior_summaries"] if s["section_id"] == "V"}
+        if not gap["basis_claim_keys"] or any(k not in v_keys for k in gap["basis_claim_keys"]):
+            add("conflict_gap_without_v_claim", "conflict basis requires supplied V claim keys")
+    elif gap["kind"] == "corpus_absence":
+        context = target.get("validation_context") or {}
+        frozen = {c["cell_id"]: c for c in context.get("cells", [])}
+        selected = [frozen.get(cid) for cid in basis_cells]
+        columns = {c["column_id"] for c in selected if c}
+        if len(basis_cells) < 3 or len(set(basis_cells)) != len(basis_cells) or None in selected or len(columns) != 1:
+            add("gap_absence_basis_invalid", "basis needs three unique frozen cells in one column")
+        else:
+            column = next(iter(columns))
+            applicable = {c["cell_id"] for c in frozen.values() if c["column_id"] == column and c["reading_depth"] == "full_text" and c["state"] != "not_applicable"}
+            if set(basis_cells) != applicable or any(c["reading_depth"] != "full_text" or c["state"] != "not_found_in_inspected_scope" for c in selected):
+                add("gap_absence_basis_invalid", "basis must equal all applicable full-text absence cells")
+            if not any(c["gap_id"] == gap["gap_id"] and c["column_id"] == column and set(c["basis_cell_ids"]) == set(basis_cells) for c in target["gap_candidates"]):
+                add("gap_absence_basis_invalid", "basis differs from supplied code candidate")
+    return issues
+
+
+def report_vii_issues(claim: dict, gap_ids: set[str], future_cell: bool) -> list[Issue]:
+    issues = []
+    refs = [ref for ref in claim["gap_refs"] if ref in gap_ids]
+    if not refs and not future_cell:
+        issues.append(Issue("vii_claim_without_basis", "", "lacks a basis"))
+    if claim["support_type"] == "analyst_inference" and not refs:
+        issues.append(Issue("vii_inference_without_gap", "/gap_refs", "lacks a gap"))
+    return issues
+
 
 def _without_math(text: str) -> str:
     """LaTeX math reads as one slot word, so its symbols and periods neither count as frame words nor split sentences."""
@@ -1120,6 +1256,11 @@ def _math_span_is_well_formed(span: str) -> bool:
     return not environments
 
 
+def math_not_well_formed(text: str) -> bool:
+    dollars = sum(char == "$" and not _is_escaped(text, i) for i, char in enumerate(text))
+    return bool(dollars % 2 or any(not _math_span_is_well_formed(span) for span in _math_spans(text)))
+
+
 def has_number_or_math(text: str) -> bool:
     return bool(re.search(r"\d", text)) or bool(_math_spans(text))
 
@@ -1139,17 +1280,15 @@ def _rests_only_on_ocr(passages: list[dict[str, Any] | None]) -> bool:
 
 def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport,
                 fields: list[tuple[str, str]] | None = None) -> None:
-    """Warn about damaged LaTeX, equations supported only by abstract-level passages, and numbers or equations supported
-    only by OCR text of scanned pages (D51)."""
+    """Block malformed report math; ordinary answers and extraction-quality findings retain warnings (D51)."""
     if fields is None:
         fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
         fields += [(f"/limitations/{i}/text", lim["text"]) for i, lim in enumerate(draft["limitations"])]
         fields += [(f"/unanswered_aspects/{i}", text) for i, text in enumerate(draft["unanswered_aspects"])]
     for path, text in fields:
-        dollars = sum(char == "$" and not _is_escaped(text, i) for i, char in enumerate(text))
-        spans = _math_spans(text)
-        if dollars % 2 or any(not _math_span_is_well_formed(span) for span in spans):
-            report.warnings.append(Issue("math_not_well_formed", path,
+        if math_not_well_formed(text):
+            findings = report.issues if step_input["task_type"] == "report_section" else report.warnings
+            findings.append(Issue("math_not_well_formed", path,
                                          "math delimiters, braces or environments are not balanced"))
 
     passages = {p["passage_id"]: p for p in step_input["passages"]}
@@ -1168,14 +1307,18 @@ def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: V
                     fields: list[tuple[str, str]] | None = None) -> None:
     """Check the answer's prose against the Academic Phrasebank frames in the answer language.
 
-    Findings are warnings shown with the answer; they never reject it or ask for a repair (D19).
+    Frame findings remain warnings (D19). Reports block own-work wording and decidable plural-source violations.
     """
     requested_language = draft["answer_language"] if fields is None else phrasebank.frames_language(step_input)
     language = phrasebank.checked_language(requested_language)
+    is_report = step_input["task_type"] == "report_section"
     if language is None or not phrasebank.has_frames(_phrasebank_text(), language):
         report.warnings.append(Issue("phrasing_not_checked", "/answer_language",
                                      f"no phrasebank frames for {requested_language!r}"))
-        return
+        if not is_report:
+            return
+        # Assembly also falls back to English for lexical checks when frames are unavailable.
+        language = "en"
     if fields is None:
         fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
         fields += [(f"/limitations/{i}/text", lim["text"]) for i, lim in enumerate(draft["limitations"])]
@@ -1189,15 +1332,23 @@ def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: V
     # A claim reports what a cited source says; words naming the writer's own work would attribute it to this answer.
     for i, claim in enumerate(draft["claims"]):
         for phrase in phrasebank.own_work_phrases(_without_math(claim["text"]), language):
-            report.warnings.append(Issue("own_work_phrase_in_claim", f"/claims/{i}/text",
+            findings = report.issues if is_report else report.warnings
+            findings.append(Issue("own_work_phrase_in_claim", f"/claims/{i}/text",
                                          f"{phrase!r} names this answer's own work, not a cited source"))
     # "Previous studies" and the like say several sources state it; a claim whose passages come from one source may not.
     source_of = {p["passage_id"]: p["source_id"] for p in step_input["passages"]}
+    cells = {c["cell_id"]: c for c in (step_input.get("report_target") or {}).get("cells", [])}
     for i, claim in enumerate(draft["claims"]):
-        if len({source_of.get(pid) for pid in claim["passage_ids"]}) != 1:
+        sources = {source_of.get(pid) for pid in claim["passage_ids"]}
+        if is_report:
+            sources = {source_of.get(a["passage_id"]) if a["passage_id"] is not None
+                       else cells.get(a["cell_id"], {}).get("source_version_id")
+                       for a in draft["citation_anchors"] if a["claim_key"] == claim["claim_key"]}
+        if None in sources or len(sources) != 1:
             continue
         for phrase in phrasebank.plural_source_phrases(_without_math(claim["text"]), language):
-            report.warnings.append(Issue("plural_sources_for_one_source", f"/claims/{i}/text",
+            findings = report.issues if is_report else report.warnings
+            findings.append(Issue("plural_sources_for_one_source", f"/claims/{i}/text",
                                        f"{phrase!r} speaks of several sources, but this claim cites one source; "
                                        "use a frame for reporting what one source states"))
 
@@ -1982,10 +2133,28 @@ def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]]
              "srv_S": "unknown_source_id", "col_C": "unknown_column_id"}
     for owner, key, kind, path in _report_id_fields(draft, REPORT_SECTION_ID_FIELDS):
         identifier = owner[key]
-        if isinstance(identifier, str) and identifier not in allowed[kind]:
+        permitted = allowed[kind]
+        context = step_input["report_target"].get("validation_context") or {}
+        if "/count/" in path:
+            permitted = set(context.get("source_ids" if kind == "srv_S" else "column_ids", []))
+        if path.startswith("/gaps/") and "/basis_cell_ids/" in path and draft["gaps"][int(path.split("/")[2])]["kind"] == "corpus_absence":
+            permitted = {c["cell_id"] for c in context.get("cells", [])}
+        if isinstance(identifier, str) and identifier not in permitted:
             report.issues.append(Issue(codes[kind], path, identifier))
     if draft["section_id"] != step_input["report_target"]["section_id"]:
         report.issues.append(Issue("report_section_mismatch", "/section_id", draft["section_id"]))
+    target = step_input["report_target"]
+    section_id = target["section_id"]
+    passages = {p["passage_id"]: p for p in step_input["passages"] if p["passage_id"] in allow["passage_ids"]}
+    cells = {c["cell_id"]: c for c in target["cells"]}
+    prior = {s["claim_key"]: s for s in target["prior_summaries"]}
+    keys = set()
+    for field, text in _report_phrasing_fields(draft) + [(f"/subsections/{i}/heading", s["heading"]) for i, s in enumerate(draft["subsections"])] + [(f"/gaps/{i}/text", g["text"]) for i, g in enumerate(draft["gaps"])]:
+        report.issues.extend(Issue("banned_word", field, repr(word)) for word in report_banned_words(text))
+    words = sum(len(c["text"].split()) for c in draft["claims"]) + sum(len(e["reason"].split()) for e in draft["insufficient_evidence"])
+    maximum = (target.get("plan") or {}).get("section_budgets", {}).get(section_id, {}).get("max_words")
+    if maximum is not None and words > maximum:
+        report.issues.append(Issue("section_word_count_over_budget", "/claims", f"{words} words exceed budget {maximum}"))
     for i, anchor in enumerate(draft["citation_anchors"]):
         if (anchor["passage_id"] is None) == (anchor["cell_id"] is None):
             report.issues.append(Issue(
@@ -2004,23 +2173,43 @@ def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]]
                 report.issues.append(Issue("anchor_not_in_cell_evidence", f"/citation_anchors/{i}/quote",
                                            "the quote was not found in one stored cell evidence quote"))
     for i, claim in enumerate(draft["claims"]):
+        path = f"/claims/{i}"
+        key = claim["claim_key"]
+        if key in keys or key in prior:
+            report.issues.append(Issue("duplicate_claim_key", path + "/claim_key", key))
+        keys.add(key)
+        if key.rsplit(".", 1)[0] != section_id:
+            report.issues.append(Issue("claim_key_section_mismatch", path + "/claim_key", f"prefix must be {section_id}"))
+        anchors = [a for a in draft["citation_anchors"] if a["claim_key"] == key]
+        report.issues.extend(Issue(issue.code, path + issue.path, issue.message) for issue in report_equation_issues(
+            claim, {a["passage_id"] for a in anchors if a["passage_id"] is not None}, passages))
+        if section_id in {"abstract", "I", "IX"}:
+            for ref in claim["body_refs"]:
+                if ref not in prior or prior[ref]["section_id"] not in {"III", "IV", "V", "VI", "VII", "VIII"}:
+                    report.issues.append(Issue("body_ref_unknown", path + "/body_refs", ref))
+            depths = [cells[a["cell_id"]].get("reading_depth") if a["cell_id"] in cells else
+                      passages.get(a["passage_id"], {}).get("reading_depth") for a in anchors]
+            depths = [d for d in depths if d in REPORT_DEPTH_ORDER]
+            depth = min(depths, key=REPORT_DEPTH_ORDER.__getitem__) if depths else None
+            report.issues.extend(Issue(issue.code, path + issue.path, issue.message) for issue in report_derived_issues(
+                claim, [prior[r] for r in claim["body_refs"] if r in prior], depth))
+        if claim["count"] is not None:
+            report.issues.extend(Issue(issue.code, path + issue.path, issue.message) for issue in report_count_issues(
+                claim["text"], claim["count"], target.get("validation_context") or {}))
         if draft["section_id"] == "VIII":
             report.issues.extend(Issue(issue.code, f"/claims/{i}{issue.path}", issue.message)
                                  for issue in limitations_claim_issues(claim))
         for j, gap_id in enumerate(claim["gap_refs"]):
             if gap_id not in allow.get("gap_ids", set()):
                 report.issues.append(Issue("unknown_gap_ref", f"/claims/{i}/gap_refs/{j}", gap_id))
-        # An equation's origin (D104): a passage of the StepInput, cited by this same claim, whose text_source it repeats.
-        origin = claim.get("equation_origin")
-        if origin is not None:
-            passage = next((p for p in step_input.get("passages", []) if p["passage_id"] == origin["passage_id"]), None)
-            if passage is None or origin["passage_id"] not in allow["passage_ids"]:
-                continue
-            if origin["passage_id"] not in claim["passage_ids"]:
-                report.issues.append(Issue("equation_origin_not_cited", f"/claims/{i}/equation_origin/passage_id", origin["passage_id"]))
-            elif origin["text_source"] != passage.get("text_source"):
-                report.issues.append(Issue("equation_origin_mismatch", f"/claims/{i}/equation_origin/text_source",
-                                           f"passage text_source is {passage.get('text_source')!r}"))
+            elif section_id == "VI" and gap_id not in {g["gap_id"] for g in draft["gaps"]}:
+                report.issues.append(Issue("gap_ref_unknown", f"/claims/{i}/gap_refs/{j}", "referenced candidate must be present in this section's gaps"))
+        if section_id == "VII":
+            accepted = {g["gap_id"] for g in (target.get("validation_context") or {}).get("accepted_gaps", [])}
+            future = any(a["cell_id"] in cells and cells[a["cell_id"]]["column_id"] == (target.get("plan") or {}).get("future_work_column_id") for a in anchors)
+            report.issues.extend(Issue(issue.code, path + issue.path, issue.message) for issue in report_vii_issues(claim, accepted, future))
+    for i, gap in enumerate(draft["gaps"]):
+        report.issues.extend(Issue(issue.code, f"/gaps/{i}" + issue.path, issue.message) for issue in report_gap_issues(gap, target, passages))
 
 
 def _check_report_phrase_repair(step_input: dict[str, Any], draft: dict[str, Any],
@@ -2166,6 +2355,15 @@ REPORT_INPUT_ID_FIELDS = (
     ("report_target/review_sections/*/claims/*/citations/*/cell_id", "cel_L"),
     *((f"report_target/review_sections/*/claims/*/count/{path}", kind) for path, kind in REPORT_COUNT_ID_FIELDS),
     ("report_target/limitations_core/failed_rows/*/source_version_id", "srv_S"),
+    ("report_target/validation_context/source_ids/*", "srv_S"),
+    ("report_target/validation_context/column_ids/*", "col_C"),
+    *((f"report_target/validation_context/{array}/*/{field}", kind) for array in ("cells", "basis_cells")
+      for field, kind in (("cell_id", "cel_L"), ("column_id", "col_C"), ("source_version_id", "srv_S"))),
+    ("report_target/validation_context/basis_cells/*/evidence/*/passage_id", "psg_P"),
+    ("report_target/validation_context/basis_passages/*/passage_id", "psg_P"),
+    ("report_target/validation_context/basis_passages/*/source_id", "srv_S"),
+    ("report_target/validation_context/accepted_gaps/*/basis_passage_ids/*", "psg_P"),
+    ("report_target/validation_context/accepted_gaps/*/basis_cell_ids/*", "cel_L"),
 )
 
 REVIEW_INPUT_ID_FIELDS = (

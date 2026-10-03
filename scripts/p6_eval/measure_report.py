@@ -271,7 +271,9 @@ def _formulation_pairs(report: dict[str, Any], db: dict[str, Any] | None,
     refs = {r.get("source_version_id"): r.get("source_key") for r in report.get("references", [])}
     frozen = (db or {}).get("frozen_snapshot") or {}
     for table in (report.get("table_i") or {}, frozen):
-        refs.update({r.get("source_version_id"): r.get("source_key") for r in table.get("rows", [])})
+        refs.update({r["source_version_id"]: r["source_key"] for r in table.get("rows", [])
+                     if isinstance(r.get("source_version_id"), str) and r["source_version_id"].strip()
+                     and isinstance(r.get("source_key"), str) and r["source_key"].strip()})
     columns = {c["column_id"]: c for c in frozen.get("columns", [])}
     evidence = _section_input_evidence(db) if db is not None else []
     # A cell supplied without a quote is still a supplied cell. Passage availability

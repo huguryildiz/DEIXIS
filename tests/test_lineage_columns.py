@@ -290,4 +290,4 @@ def test_api_add_development_columns(tmp_path):
 
 def test_skill_package_hash_unchanged_by_l1():
     # D198 changes the envelope instructions while preserving the L1 column contract.
-    assert load_skill_package().package_hash == "sha256:031f5f09b272c4678861cd356624a0e40501961d465f55ea93a87fc6b0def16b"
+    assert load_skill_package().package_hash == "sha256:7389a1c722e396321ac5d8bacee9bb87cf71ac87b7be07c77a2235775a6f0dcb"

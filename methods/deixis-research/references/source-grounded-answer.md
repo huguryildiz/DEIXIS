@@ -51,6 +51,8 @@ access and scope limits are stated.
    (`f kl ij` for $f^{kl}_{ij}$); restore them only where the passage's own
    definitions make the reading unambiguous, and otherwise describe the
    expression in words.
+   Report sections additionally require balanced math and a supplied origin passage containing recognized
+   math, cited by this claim's own passage anchor, with matching `text_source`; a cell anchor alone is insufficient.
    A passage's `text_source` says how its text was obtained. `text_layer` is the
    PDF's own text. `marker` text was read from the page image by a model that
    writes equations as LaTeX; its equations are usually exact, but a symbol or
@@ -123,6 +125,8 @@ written with the Academic Phrasebank frames in
     "the supplied passages". For example, "The study is limited by the lack of
     information on …" becomes "This answer is limited by the lack of information
     on …".
+    In report claims, own-work wording is a blocking issue, including after phrase repair; use a supported
+    source-reporting frame or wording about the report. Ordinary answers retain their warning policy.
   - Access, scope and unanswered parts: frames about what could not be assessed
     or addressed, for example "It was not possible to assess X; therefore, it is
     unknown if …", "An issue that was not addressed in the supplied passages was

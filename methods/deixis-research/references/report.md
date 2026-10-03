@@ -29,6 +29,18 @@ given to you as rows and cited cells, and you discuss it — you do not restate 
 - Each citation anchor names either a passage or an evidence-table cell, never both and never neither. If both
   support a claim, write one anchor for the passage and one for the cell.
 - Apply [the shared mathematics and `text_source` rule](source-grounded-answer.md#grounded-answer) to equations.
+  An equation reference, origin or displayed expression requires an origin passage supplied to this section,
+  containing recognized math and cited by a passage anchor on this same claim; `passage_ids` alone is insufficient.
+  Copy its `text_source`. Malformed delimiters, braces or environments block a report section.
+- Section validation rejects blacklisted novelty or unanswered-aspect wording in claims, headings, candidate
+  text and insufficient-evidence reasons, and own-work wording such as "this study" or "Bu çalışma" in claims.
+  A claim anchored to exactly one source must use singular-source wording; cell anchors also identify sources.
+  Keep claim keys unique with this section's exact prefix, stay within its word budget, and keep derived
+  support and citation depth no stronger than the weakest supplied body summary.
+- `validation_context` supplies frozen count records and, for VII, accepted VI candidates and their basis
+  evidence. It grants no citation rights; cite only the selected records in the allowlist. Counts use this
+  frozen domain, with a uniform denominator depth and numerator state/value. A corpus-absence basis must
+  match the supplied code candidate and all applicable full-text absence cells. Conflicts require V keys.
 - `paragraph` groups claims that belong in one flowing paragraph of the finished report; number them in the
   order they should read, starting at 1.
 - Do not write a page, equation, table, figure or section number into claim text; use `table_ref`/`equation_ref`
@@ -51,7 +63,8 @@ given to you as rows and cited cells, and you discuss it — you do not restate 
   decision. The evidence rules outrank this requirement: never choose a frame that says more than the cited
   passage supports, and never change what a claim asserts to make a frame fit. If no supplied frame can carry
   the sentence honestly, keep the sentence plain and expect it to be recorded as an exception rather than
-  distorting the claim. An unframed sentence means the section is not marked valid and the run stops for repair.
+  distorting the claim. The application attempts one phrase repair and records accepted unframed exceptions.
+  Every hard section rule still applies after that repair.
 
 For a cell-anchor patch, return only the requested patch: choose a numbered stored quote of that same cell
 or drop the anchor with `quote_number: null`. Rewrite a claim only as far as the chosen quotes support it.
@@ -136,6 +149,9 @@ target implied by the sentence, every qualifier ("may", "some", "in the inspecte
 Do not touch neighboring sentences. If none of the three given frames can honestly carry the sentence's
 meaning, write the clearest plain sentence you can rather than distorting it — the application checks whether
 your rewrite still reads as valid and may keep the original if your rewrite changes what is claimed.
+All hard section rules still apply to the merged rewrite, including own-work wording, banned words, equation
+origins, citation anchors, derived support/depth, counts, candidate bases and word budgets. A violation fails
+the section without another repair loop; never introduce "this study" or "Bu çalışma" to fit a frame.
 
 ## Report review (`report_review`)
 

@@ -22,6 +22,9 @@ from test_report_step_input import report_flow
 
 
 REPLAY = json.loads((Path(__file__).parent / "fixtures/research/h9-report-replay.json").read_text())
+for _record in REPLAY["sections"].values():
+    _record["step_input"]["report_target"].setdefault("validation_context", None)
+    _record["repair_step_input"]["report_target"].setdefault("validation_context", None)
 OLD_HASH = "sha256:5ba2d214bd1122f9544aaa537226b6234123bf6be82b3e6e1c6d9ff99dcf75ff"
 
 
@@ -69,6 +72,8 @@ def run_step(tmp_path, task, template, handler, *, enforces_schema=True, allow_s
                   skill_package_hash=flow.deps.package.package_hash,
                   model={"connection": "fake", "requested_model": "fake-model"})
         si["task_type"] = task
+        if "report_target" in si:
+            si["report_target"].setdefault("validation_context", None)
         si["output_schema_versions"] = [contracts.SCHEMA_VERSIONS[n] for n in contracts.TASK_OUTPUTS[task]]
         return si
 
@@ -141,12 +146,18 @@ def test_e1_h9_miscopied_hash_succeeds_and_records_stamp(tmp_path, task, key):
 
 @pytest.mark.parametrize("section", ["IV", "V"])
 def test_h9_reduced_fixture_reproduces_exact_stored_issues(section):
-    """Guard: real stored outputs and reduced records reproduce complete stored issue objects."""
+    """Historical guard plus RF4: IV's repair also blocks own-work wording and malformed math."""
     record = REPLAY["sections"][section]
     for prefix in ("first", "repair"):
         si = record["step_input"] if prefix == "first" else record["repair_step_input"]
         assert contracts.check_step_input(si) == []
-        assert [vars(i) for i in contracts.validate_model_output(si, record[prefix + "_output"]).issues] == record[prefix + "_issues"]
+        expected = copy.deepcopy(record[prefix + "_issues"])
+        if section == "IV" and prefix == "repair":
+            expected += [
+                {"code": "own_work_phrase_in_claim", "path": "/claims/17/text", "message": "'Bu çalışmada' names this answer's own work, not a cited source"},
+                {"code": "math_not_well_formed", "path": "/claims/14/text", "message": "math delimiters, braces or environments are not balanced"},
+            ]
+        assert [vars(i) for i in contracts.validate_model_output(si, record[prefix + "_output"]).issues] == expected
 
 
 def test_a1_h9_iv_repairs_one_anchor_without_losing_other_content(tmp_path):
@@ -180,7 +191,7 @@ def test_a2_h9_iv_repair_retains_all_ambiguous_target_failures_after_stamp():
     draft, changes = contracts.stamp_package_hash("report_section", record["repair_step_input"], copy.deepcopy(record["repair_output"]))
     report = contracts.validate_model_output(record["repair_step_input"], draft)
     assert "envelope_mismatch" not in report.codes()
-    assert [i.code for i in report.issues] == ["citation_anchor_target_count"] * 21
+    assert [i.code for i in report.issues] == ["citation_anchor_target_count"] * 21 + ["own_work_phrase_in_claim", "math_not_well_formed"]
     assert changes[0]["model_value"] == REPLAY["hashes"]["report_section"]["model"]
 
 
@@ -390,5 +401,5 @@ def test_m1_package_hash_changed_and_integrity_passes():
     """New contract M1 paired with E1: changed runtime identity plus the existing package-integrity guard."""
     package_hash = skill.load_skill_package().package_hash
     assert package_hash != OLD_HASH
-    assert package_hash == "sha256:031f5f09b272c4678861cd356624a0e40501961d465f55ea93a87fc6b0def16b"
+    assert package_hash == "sha256:7389a1c722e396321ac5d8bacee9bb87cf71ac87b7be07c77a2235775a6f0dcb"
     assert skill.integrity_issues() == []

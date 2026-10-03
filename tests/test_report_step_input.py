@@ -87,6 +87,9 @@ def report_target(source_id, passage_id):
         "review_scope": None,
         "review_sections": None,
         "limitations_core": None,
+        "validation_context": {"source_ids": [source_id], "column_ids": [column_id],
+            "cells": [{name: c[name] for name in ("cell_id", "source_version_id", "column_id", "state", "value", "reading_depth")} for c in cells],
+            "accepted_gaps": [], "basis_cells": [], "basis_passages": []},
     }
 
 

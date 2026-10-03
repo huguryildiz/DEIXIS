@@ -580,14 +580,15 @@ class ReportStore:
         from deixis.domain import phrasebank
         from deixis.workflow.report import assembly
         from deixis.workflow.report.phrasing import _location
-        from deixis.workflow.report.sections import _word_count
+        from deixis.workflow.report.sections import _word_count, revalidate_section
 
         def errors() -> list[dict[str, Any]]:
             return [issue for issue in assembly.run_assembly_checks(self.store, self, report_id)
                     if not (issue["rule"].endswith("_warning") and issue["detail"].startswith("WARNING:"))]
 
         class WouldBreakAssembly(Exception):
-            pass
+            def __init__(self, issues: list[dict] | None = None):
+                self.issues = issues or []
 
         try:
             with transaction(self.conn):
@@ -638,6 +639,13 @@ class ReportStore:
                 except ValueError:
                     return "text_changed"
                 owner[field] = restored_draft
+                try:
+                    payload = self.store.step_input_payload(draft["step_input_id"])
+                except (KeyError, ValueError, NotFound):
+                    raise WouldBreakAssembly
+                validation = revalidate_section(payload, draft)
+                if not validation.ok:
+                    raise WouldBreakAssembly([vars(issue) for issue in validation.issues])
                 self.conn.execute("UPDATE report_claims SET text = ? WHERE id = ?",
                                   (restored_claim, claim["id"]))
                 self.conn.execute("UPDATE report_sections SET draft_json = ?, word_count = ?, updated_at = ? WHERE id = ?",
@@ -648,11 +656,14 @@ class ReportStore:
                     " VALUES (?, ?, ?, ?, ?, ?, 'reverted_exception', ?)",
                     (new_id("rpr"), report_id, section_id, sentence_id, row["after"], row["before"], now()),
                 )
-                if errors():
-                    raise WouldBreakAssembly
+                if restoration_issues := errors():
+                    raise WouldBreakAssembly(restoration_issues)
                 self._event(report_id, "report_repair_reverted", section_id=section_id, sentence_id=sentence_id)
                 return "reverted"
-        except WouldBreakAssembly:
+        except WouldBreakAssembly as exc:
+            # Refusal is recorded after rollback, preserving the valid section and report.
+            self._event(report_id, "report_repair_restoration_rejected", section_id=section_id, sentence_id=sentence_id,
+                        reason="would_break_assembly", issues=exc.issues)
             return "would_break_assembly"
 
     def finalize(self, report_id: str, status: str) -> int | None:

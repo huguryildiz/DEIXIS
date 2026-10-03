@@ -7,6 +7,7 @@ import pytest
 
 from deixis.workflow.report.export import to_markdown
 from deixis.workflow.report.sections import run_report
+from deixis.workflow.report import assembly
 from deixis.workflow.views import report_view
 from test_report_flow import report_flow
 
@@ -14,16 +15,16 @@ from test_report_flow import report_flow
 def assembly_draft(tmp_path):
     state = report_flow(tmp_path)
     flow, store, reports, adapter, run, scope, report_id = state
-    original = adapter.responder
-
-    def response(si):
-        draft = json.loads(original(si))
-        if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "IV":
-            draft["claims"][0]["text"] = "It has been reported that the SYNTHETIC formulation records a research gap."
-        return json.dumps(draft)
-
-    adapter.responder = response
-    asyncio.run(run_report(flow, run, scope))
+    # Preservation: inject a stored bad section at assembly, bypassing the new section-time rejection.
+    original = assembly.run_assembly_checks
+    def checks(store_arg, reports_arg, report_arg):
+        store_arg.conn.execute("UPDATE report_claims SET text = ? WHERE report_section_id = ?",
+            ("It has been reported that the SYNTHETIC formulation records a research gap.",
+             reports_arg.section(report_arg, "IV")["id"]))
+        return original(store_arg, reports_arg, report_arg)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(assembly, "run_assembly_checks", checks)
+        asyncio.run(run_report(flow, run, scope))
     assert reports.report(report_id)["status"] == "draft"
     return state
 

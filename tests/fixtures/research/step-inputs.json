@@ -450,6 +450,7 @@
    "repair_request": null,
    "review_scope": null,
    "review_sections": null,
+   "validation_context": null,
    "limitations_core": null
   }
  },
@@ -693,6 +694,7 @@
    "repair_request": null,
    "review_scope": null,
    "review_sections": null,
+   "validation_context": null,
    "limitations_core": null
   }
  },
@@ -931,6 +933,7 @@
    "cells": [],
    "gap_candidates": [],
    "prior_summaries": [],
+   "validation_context": null,
    "limitations_core": null,
    "repair_request": {
     "section_id": "IV",
@@ -1177,6 +1180,7 @@
      ]
     }
    ],
+   "validation_context": null,
    "limitations_core": null
   }
  },
@@ -1429,6 +1433,7 @@
    "repair_request": null,
    "review_scope": null,
    "review_sections": null,
+   "validation_context": null,
    "limitations_core": null
   }
  },

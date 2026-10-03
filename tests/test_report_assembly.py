@@ -1,4 +1,7 @@
-"""Synthetic structural checks over a stored report; no model is called."""
+"""Preservation tests: synthetic structural checks over stored reports; no model is called.
+
+RF4 keeps these final assertions while moving model-correctable rules earlier.
+"""
 
 import copy
 import json

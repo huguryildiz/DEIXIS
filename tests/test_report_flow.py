@@ -806,7 +806,7 @@ def test_an_unframed_section_is_repaired_and_the_report_completes(tmp_path):
     assert dict(repair) == {"section_id": "IV", "sentence_id": "IV.1#1", "outcome": "kept"}
 
 
-def test_viii_repair_that_restates_a_number_pauses_for_rewrite(tmp_path):
+def test_viii_repair_that_restates_a_number_fails_full_revalidation(tmp_path):
     flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
     original_response = adapter.responder
 
@@ -830,16 +830,16 @@ def test_viii_repair_that_restates_a_number_pauses_for_rewrite(tmp_path):
         asyncio.run(run_report(flow, run, scope))
 
     assert store.run(run["id"])["status"] == "paused"
-    assert store.run(run["id"])["pause_reason"] == "section_must_be_rewritten"
+    assert store.run(run["id"])["pause_reason"] == "section_failed"
     viii = reports.section(report_id, "VIII")
-    assert viii["status"] == "draft"
+    assert viii["status"] == "failed"
     assert viii["validation"]["ok"] is False
     issues = viii["validation"]["issues"]
     assert {issue["code"] for issue in issues} == {"unframed_exception", "limitations_number_restated"}
     assert [reason["code"] for reason in store.run(run["id"])["error"]["reasons"]] == [
-        issue["code"] for issue in issues[:3]
+        issue["code"] for issue in issues[:1]
     ]
-    assert any(issue["detail"].startswith("/claims/0/text:") for issue in issues)
+    assert any(issue.get("path") == "/claims/0/text" for issue in issues)
     assert any(call["task_type"] == "report_phrase_repair" and
                call["report_target"]["section_id"] == "VIII" for call in adapter.calls)
     assert viii["draft"]["claims"][0]["text"] == "3 studies xqz unframed synthetic sentence."

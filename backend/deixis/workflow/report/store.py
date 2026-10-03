@@ -640,8 +640,10 @@ class ReportStore:
                     return "text_changed"
                 owner[field] = restored_draft
                 try:
-                    payload = self.store.step_input_payload(draft["step_input_id"])
-                except (KeyError, ValueError, NotFound):
+                    # The original input belongs to the stored model step, not the draft's echoed envelope.
+                    output = self.store.step_output(section["step_id"])
+                    payload = self.store.step_input_payload(output["step_input_id"])
+                except (KeyError, TypeError, ValueError, NotFound):
                     raise WouldBreakAssembly
                 validation = revalidate_section(payload, draft)
                 if not validation.ok:

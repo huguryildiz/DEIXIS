@@ -1,0 +1,1064 @@
+{
+  "provenance": {
+    "snapshot_sha256": "d541dbb26e67356a954c61cba7dee2d9f3aeefa6cce43c6079723776b52e98d1",
+    "first_input_id": "sti_S8OQlZcwQDLcRsSzcR6U",
+    "repair_input_id": "sti_pO3RdQQpDOisRRb3QBQM",
+    "repair_output": "SYNTHETIC reconstruction: first-attempt claims and anchors from the repair user_message, with citation handles resolved using the stored first input. Repair session has no raw_output. Retains first-attempt content failures, not measured repair content.",
+    "reduction": "Validator-only projections of two stored inputs: envelope, question language, allowlists, referenced passages and cells with exact stored text/evidence, V word budget; prior summaries empty and validation context omitted (no body refs or counts in output). No complete StepInput schema claim."
+  },
+  "first_step_input": {
+    "step_input_id": "sti_S8OQlZcwQDLcRsSzcR6U",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:098f14114e12a515f7f32e3ccfe3bd3592e7e7c88d6a4d5bd13f4af6a9849da5",
+    "task_type": "report_section",
+    "question": {
+      "language_hint": "tr"
+    },
+    "allowlist": {
+      "candidate_ids": [],
+      "cell_ids": [
+        "cel_CQ2xYgx6QxhjPoy75TqZ",
+        "cel_aNwB4gl4Cg99r9C9U8m2",
+        "cel_1PZvZU3dZyGjCzP9QMz9",
+        "cel_KTG3RCWWMD2hY6DT6DL8",
+        "cel_N5DeHxBDOn2VTzbJMUZV",
+        "cel_ukq29zF6ViVoiHVm8S9b"
+      ],
+      "column_ids": [
+        "col_hWachhZGb7NSOHJ1thTl",
+        "col_iRiciRjMJ3RarW8CGKNP",
+        "col_ea12zw0wSsgEzgEn6HkQ",
+        "col_O1VR0Yqqq87Sxbtozqzd",
+        "col_osmP50jDI09dqSMMfRft",
+        "col_DoYlbgj6ZkcIOCvdcDty",
+        "col_BgeweWrYR8zdKFUTPUoK"
+      ],
+      "gap_ids": [],
+      "passage_ids": [
+        "psg_6ZU2flHlrfwIsKcrd6rS",
+        "psg_2uAjHiT1z1mA1muiYN7H",
+        "psg_oa0hQozqMlWvtbU7RDaA",
+        "psg_Yu6RCE2nHtMkPmjZsgxG",
+        "psg_NtMLLiGd6IrESAjuwVgF",
+        "psg_AaohIyNdoi7oU3rpLWop",
+        "psg_DfIDBZPaErJTudG5QGYl",
+        "psg_aczjDr4P2CSoojhKMV3e",
+        "psg_enxaVxNJDj6bE1PP9Msz",
+        "psg_ei2F9o5h1WcvrTS6Xc1I",
+        "psg_aBaG8RrnGyqRfi8tyaow",
+        "psg_QVB3lBdKvrIk3pePiejd",
+        "psg_5bB39tsGupminh7twlxH"
+      ],
+      "source_ids": [
+        "srv_EtW9BugJxdbJEJDwx2eW",
+        "srv_IN24K4El7eppuvOkaVSr",
+        "srv_LLQQyYvSoG9xaBUPvLeg",
+        "srv_S45jevZa9xm4SWeWYkME",
+        "srv_hPN36ocoC5svt7J261FA",
+        "srv_iscQmOBuPIJrbgx7n45H"
+      ]
+    },
+    "passages": [
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 6,
+          "printed_label": null
+        },
+        "passage_id": "psg_6ZU2flHlrfwIsKcrd6rS",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_EtW9BugJxdbJEJDwx2eW",
+        "text": "Optimization Study\n\nAfter setting the objective function and the constraints,\nto look for the effect of pump switch constraint and\nvariation of electricity tariff to the problem of optimal\npump scheduling; the trade-offs are made between them\nand the response of the algorithm is visualized. The tank\nvolume deficit and nodal pressure constraints are\nconsidered to be primary and kept active for all cases.\nThe trade-offs are made for following four cases;\n\n(a) Pump Switch Constraint is Passive & Electricy\nTariff is Constant.\n\n(b) Pump Switch Constraint is Passive & Electricy\nTariff is Varying.\n\n(c) Pump Switch Constraint is Active & Electricy Tariff\nis Constant.\n(d) Pump Switch Constraint is Active & Electricy Tariff\nis Varying.\n\nFor above mentioned four cases, the developed\nprogram is applied to the network 100 times. In each\nrun, generation number is selected to be 1000. After\nobtaining the whole outcomes, initially percentage of\napplicable results with respect to tank volume deficit\nconstraint\nis\nhandled.\nWhile\nconsidering\nthe\napplicability; first, the results which give positive or\nnegative tank volume periodicity violation lower than\n1 m3 (0.02%); then, the results with only positive\ntolerance are considered as appropriate. After obtaining\n\nJournal of Urban and Environmental Engineering (JUEE), v.10, n.1, p.135-143, 2016\n\nFig. 2 Daily demand curve of N8-3.\n\nNetwork\n\nFig.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 7,
+          "printed_label": null
+        },
+        "passage_id": "psg_2uAjHiT1z1mA1muiYN7H",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_EtW9BugJxdbJEJDwx2eW",
+        "text": "the\nfeasibility\ncriteria\nfor\npumping\nschedule\nalternatives;the outcomes are summarized according to\ntheir average and minimum energy consumptions,\naverage and minimum energy costs and average pump\nswitch numbers for both criteria. The summary of\nanalyses is shown in Table 3 in six merged columns.\nExcept first merged column, the left side indicates the\napplicable results of negative and positive tank volume\ndeficits, while right side shows only the results of\npositive deficits.\n\nThe first merged column of Table 3 indicates the\npercentage of accepted solutions (tank volume deficit\n\n<0.02%); and these values are shown in Fig. 4. Fig. 4,\nreflects the effects of pump switch constraint (PSC) and\nelectricity tariff (TAR). For first two cases, PCS is\npassive, and then it becomes active. As can be seen\nfrom the figure, by activating PSC in the objective\nfunction, the percentage of accepted solutions drops\nsignificantly. On the other hand; while the status of PSC\nremains the same (passive or active), the effect of TAR\nis controversial but less significant. As the TAR status,\nchange from constant to varying; this made the\npercentage of accepted results become higher.\n\nThe second and third merged columns of\nTable 3 show the average and minimum energy\nconsumptions of applicable pump schedules for already\nmentioned\nstudy\ncases.\nThe\naverage\nenergy\nconsumptions are visualized in Fig. 5.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 7,
+          "printed_label": null
+        },
+        "passage_id": "psg_oa0hQozqMlWvtbU7RDaA",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_EtW9BugJxdbJEJDwx2eW",
+        "text": "As can be seen\nfrom Fig. 5; introducing of both PSC and TAR to the\nproblem, makes the energy consumptions higher. While\nboth are passive or constant, the program gave out\nschedule\nalternatives\nresulting\nin\nlower\nenergy\nconsumptions. However, when these constraints are\nintroduced into the problem step by step, the schedules\nbecome more consuming. When the impact of these\nconstraints on energy consumptions is compared,\nvarying TAR is slightly more significant than active\nPSC.\n\nThe fourth and fifth merged columns of show the\naverage and minimum energy costs of accepted pump\nschedules for study cases. The average energy costs are\nvisualized in Fig. 6. Contrary to Fig. 5; in Fig. 6, the\naverage energy cost values are lower for case 2 and case\n4. As varying tariff is introduced to the objective\nfunction; it makes the energy costs significantly lower\nthan constant tariff case by running the pumps during\nhours with low energy price.\n\nOn the other hand, like Fig. 5; in Fig. 6, activating\nPSC increases the energy costs. When compared, the\neffect of TAR is notably higher than PSC on the energy\ncost objective. When the schedules summarized in Fig.\n6 are considered, although Case 2 give out lower energy\ncosts, Case 4 sound more preferable from the\noperational reliability point of view.\n\nJournal of Urban and Environmental Engineering (JUEE), v.10, n.1, p.135-143, 2016\n\nTable 3.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 8,
+          "printed_label": null
+        },
+        "passage_id": "psg_Yu6RCE2nHtMkPmjZsgxG",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_EtW9BugJxdbJEJDwx2eW",
+        "text": "Fig. 6 Average energy costs of study cases.\nThe last merged column of Table 3 shows the\naverage number of pump switches for accepted\nschedules; and these values are drawn in Fig. 7. This\nfigure clearly reflects the effect of PCS on the\noperational reliability of the pumping system. While\nPCS is passive it is obvious that the resultant pump\nschedules switches the pumps on and off excessively.\nWhen PSC is set to active, the pump runs get into\ngroups that the number of switches drop significantly.\nFor operational reliability point of view, the electricity\ntariff has also similar effect. As TAR is set to varying\nfrom constant, the number of pump switches drop. The\neffect of TAR is not that much prominent, when\ncompared with PSC, however both constraints push the\nalgorithm to result in more operationally reliable\nschedules. This phenomenon is the indication of energy\nprice periods on the pump run durations. While varying\ntariff is included in the objective function, the algorithm\ntend to run the pumps during hours of cheaper energy\nprice. As the cheap price hours are grouped, the\nalgorithm tend to group the pump runs also. This\nsituation reduces the number of pump switches and\nincreases operational reliability of the system. This\nphenomenon is a supportive concern for utilization of\nelectricity tariff, for the operational reliability point of\nview.\n\nFig.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": "provider_openalex_inverted_index",
+        "locator": {
+          "kind": "abstract",
+          "physical_page": null,
+          "printed_label": null
+        },
+        "passage_id": "psg_NtMLLiGd6IrESAjuwVgF",
+        "reading_depth": "abstract",
+        "source_id": "srv_IN24K4El7eppuvOkaVSr",
+        "text": "Optimal, network-driven control of water distribution networks (WDNs) is very difficult: valve and pump models form nontrivial, combinatorial logic; hydraulic models are nonconvex; water demand patterns are uncertain; and WDNs are naturally of large scale. Prior research on control of WDN addressed major research challenges, yet either i) adopted simplified hydraulic models, WDN topologies, and rudimentary valve/pump modeling or ii) used mixed-integer, nonconvex optimization to solve WDN control problems. The objective of this article is to develop tractable computational algorithms to manage WDN operation, while considering arbitrary topology, flow direction, an abundance of valve types, control objectives, hydraulic models, and operational constraints-all while only using convex, continuous optimization. Specifically, we propose new geometric programming (GP)-based model predictive control (MPC) algorithms, designed to solve the water flow equations and obtain WDN controls, i.e., pump/valve schedules alongside heads and flows. The proposed approach amounts to solving a series of convex optimization problems that graciously scale to large networks. The proposed approach is tested using a 126-node network with many valves and pumps and is shown to outperform traditional, rule-based control. The developed GP-based MPC algorithms, as well as the numerical test results, are all included on Github.",
+        "text_source": null
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 11,
+          "printed_label": "5343"
+        },
+        "passage_id": "psg_AaohIyNdoi7oU3rpLWop",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_LLQQyYvSoG9xaBUPvLeg",
+        "text": "the number of variables and constraints) is dictated by the number of time steps and component approximations chosen. To\ninvestigate the influence of the overall size of the problem on the computational effort the\nanalysis is performed on a range of simulation time steps. These are doubled three times\nfrom 6 to 48 representing four hour to half hour time-steps for the daily pump schedules. The\nobserved increase in computational effort as number of time steps are increased is exponential for all approximation methods and networks. However, the number of links and nodes\nof the network graph, does not have such a distinct effect. The number of integer variables\nand the number of possible configurations that are explored in the branch and bound algorithm increase, but as linked components have linked states, the the size of the network in\nterms of pipes and nodes has less influence on the computational effort.\n\nThe computational effort measured in CPU time taken to get to a solution with a 5 %\nbound on gap to global optimality, or in the optimality bound after 600 s, are shown in Fig. 3\nalong with the operating cost of the schedules found using a full hydraulic simulation. The\nformulations 1a, 2 and 3 are computationally the most expensive. These formulations are\nintractable for all but the smallest number of time steps and network sizes. The piecewise",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 12,
+          "printed_label": "5344"
+        },
+        "passage_id": "psg_DfIDBZPaErJTudG5QGYl",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_LLQQyYvSoG9xaBUPvLeg",
+        "text": "The small geometric mean errors of 1.74 %, 3.22 %, 3.99 % for approximations 1a ,2 and 3, respectively,\ndemonstrate this as well as the small spread in errors observed with the largest errors in\nflow rate of 3.2 %, 6.0 % and 6.2 %, respectively. For the piecewise linear approximations\nthe mean error ranges from 2.8 to 4 % with approximation 4 having the smallest error and\n\n1a 2\n3\n4\n5\n6 7a 8\n\n1a\n2\n3\n4\n5\n6\n7a\n8\n0\n\n1a 2\n3\n4\n5\n6 7a 8\n100\n\n1a 2\n3\n4\n5\n6 7a 8\n0\n\n1a 2\n3\n4\n5\n6 7a 8\n0\n\n1a\n2\n3\n4\n5\n6\n7a\n8\n0\n\nFig. 3 Results of the analysis of the Van Zyl network (a ... c) and B-town network (d ... f) using different\napproximations as detailed in Table 1",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 13,
+          "printed_label": "5345"
+        },
+        "passage_id": "psg_aczjDr4P2CSoojhKMV3e",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_LLQQyYvSoG9xaBUPvLeg",
+        "text": "approximation 7a the largest. The maximum error observed is 7 %. This indicates that the\nnumber of pieces in the pipe piecewise linear approximations dictates the size of the error\nin the hydraulic approximation. The error in demand estimate for 15 minute time steps is\napproximately 5–10 % (Herrera et al. 2010; Donkor et al. 2014). These results lead to the\nconclusion that a piecewise approximation with only a few pieces will often have sufficient\ndetail to provide a schedule with a hydraulic error of size similar to the error in the demand\nforecast while significantly reducing the computational effort.\n\nThe simple fixed head representation for the pump, approximation 8, gave results with\nthe smallest solve time. The results however have the largest hydraulic error, which may\nlead to schedules that are not repeatable in a real network. For example some flow rates\nthrough the pumps returned by the MIP solver for the 48 time steps on the Van Zyl network\nwere higher than those achievable in hydraulic simulation, leading to an infeasible solution.\n\n5.3 Objective Function\n\nThe objective function formulations are investigated by comparing formulations 1a and\n1b as well as 7a to 7d. The accuracy is given by (20), comparing the objective value of\nthe optimisation to the operating cost found by a full hydraulic simulation of the schedule.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": "provider_openalex_inverted_index",
+        "locator": {
+          "kind": "abstract",
+          "physical_page": null,
+          "printed_label": null
+        },
+        "passage_id": "psg_enxaVxNJDj6bE1PP9Msz",
+        "reading_depth": "abstract",
+        "source_id": "srv_S45jevZa9xm4SWeWYkME",
+        "text": "This paper proposes a Robust Model Predictive Control (RMPC) method for energy-efficient and reliable pump scheduling in Water Distribution Networks (WDNs), accounting for model uncertainties and demand forecast errors. Building on a previous robust control approach, this extended method uses a linear model with bounded disturbances and optimizes affine disturbance-based pump schedules over a receding horizon. The optimization complexity is reduced from ${\\mathcal{O}}\\left({{N^6}}\\right)$ to ${\\mathcal{O}}\\left({{N^3}}\\right)$ via a sparse reformulation. When applied to the Randers WDN in Denmark, the method surpasses traditional MPC variants in meeting constraints while maintaining comparable economic performance.",
+        "text_source": null
+      },
+      {
+        "abstract_origin": "provider_openalex_inverted_index",
+        "locator": {
+          "kind": "abstract",
+          "physical_page": null,
+          "printed_label": null
+        },
+        "passage_id": "psg_ei2F9o5h1WcvrTS6Xc1I",
+        "reading_depth": "abstract",
+        "source_id": "srv_hPN36ocoC5svt7J261FA",
+        "text": "The classic pump scheduling or optimal water flow (OWF) problem for water distribution networks (WDNs) minimizes the cost of power consumption for a given WDN over a fixed time horizon. In its exact form, the OWF is a computationally challenging mixed-integer nonlinear program (MINLP). It is complicated by nonlinear equality constraints that model network physics, discrete variables that model operational controls, and intertemporal constraints that model changes to storage devices. To address the computational challenges of the OWF, this paper develops tight polyhedral relaxations of the original MINLP, derives novel valid inequalities (or cuts) using duality theory, and implements novel optimization-based bound tightening and cut generation procedures. The efficacy of each new method is rigorously evaluated by measuring empirical improvements in OWF primal and dual bounds over 45 literature instances. The evaluation suggests that our relaxation improvements, model strengthening techniques, and a thoughtfully selected polyhedral relaxation partitioning scheme can substantially improve OWF primal and dual bounds, especially when compared with similar relaxation-based techniques that do not leverage these new methods. History: Accepted by David Alderson, Area Editor for Network Optimization: Algorithms & Applications. Funding: This work was supported by the U.S. Department of Energy (DOE) Advanced Grid Modeling project, Coordinated Planning and Operation of Water and Power Infrastructures for Increased Resilience and Reliability. Incorporation of the PolyhedralRelaxations Julia package was supported by Los Alamos National Laboratory’s Directed Research and Development program under the project Fast, Linear Programming-Based Algorithms with Solution Quality Guarantees for Nonlinear Optimal Control Problems [Grant 20220006ER]. All work at Los Alamos National Laboratory was conducted under the auspices of the National Nuclear Security Administration of the U.S. DOE, Contract No. 89233218CNA000001. This work was also authored in part by the National Renewable Energy Laboratory, operated by the Alliance for Sustainable Energy, LLC, for the U.S. DOE, Contract No. DE-AC36-08GO28308. Supplemental Material: The software that supports the findings of this study is available within the paper and its Supplemental Information ( https://pubsonline.informs.org/doi/suppl/10.1287/ijoc.2022.0233 ) as well as from the IJOC GitHub software repository ( https://github.com/INFORMSJoC/2022.0233 ). The complete IJOC Software and Data Repository is available at https://informsjoc.github.io/ .",
+        "text_source": null
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 8,
+          "printed_label": null
+        },
+        "passage_id": "psg_aBaG8RrnGyqRfi8tyaow",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_iscQmOBuPIJrbgx7n45H",
+        "text": "60\nP. Skworcow et al.: Pump schedules optimisation\n\nTable 1. Function of each valve in the original model and actions performed during the model reduction. (∗) not classified as a valve in the\ntotal valves count in the original model.\n\nType\nStatus\n# in\nAction\n# in\noriginal model\nreduced model\n\nPRV\npermanently closed\n3\nremoved\n0\nactive\n39\nretained\n39\nFCV\nactive\n1\nretained\n1\nTCV\nclose-open control rule\n1\nconverted to FCV\n0 (1)\nisolation valve\n51\nremoved\n0\nconstant opening\n220\nconverted to pipe\n0\nPipe∗\nclose-open control rule\n1\nconverted to FCV\n0 (1)\n\nTotal\n315\n39 (42)\n\nTable 2. Number of elements in the original and the reduced model.\n\nElements\nOriginal\nReduced\nPercentage of\nmodel\nmodel\nreduction\n\nJunctions\n12 363\n164\n99%\nReservoirs\n4\n2\n50%\nTanks\n10\n9\n10.0%\nPipes\n12 923\n336\n97.4%\nPumps\n13\n13\n0.0%\nValves\n315\n42\n86.7%\n\nhorizons (24 h and 7 days), with/without pressure dependent\nleakage and with different demand levels (scaled for different seasons). In all considered scenarios the initial tank level\nfor each tank was assumed to be as in the provided EPANET\nmodel. Pressure and flow constraints in different elements\nwere either provided by the water company or assumed and\nwere kept constant for all scenarios. In each case a GAMS\ncode was automatically generated and CONOPT managed to\nfind an optimal continuous solution. However, the automatic",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 8,
+          "printed_label": null
+        },
+        "passage_id": "psg_QVB3lBdKvrIk3pePiejd",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_iscQmOBuPIJrbgx7n45H",
+        "text": "discretisation required several trials with different thresholds\nmentioned in Sect. 4.1. The automatic discretisation algorithm particularly struggled for scenarios with pressure dependent leakage; for these scenarios the interactive discretisation approach was employed.\n\nSubsequently, it was decided to extend the boundaries of\nthe model and include an additional pump station and a tank.\nAfter the changes were made in the simplified EPANET\nmodel and in an additional file describing pump station constraints, the scheduler successfully generated and solved an\nupdated optimisation model without the need of any changes\nto the algorithm. Optimisation for 24 h horizon with 1 h timestep and for 7 days horizon with 2 h time-step took around\n5 min and 1 h, respectively, on a standard office PC.\nIt was observed that for all 24 h horizon scenarios it was\nnot possible to fully utilise the allowed capacity of the large\ntanks and their levels were far from the allowed limits. This\nwas due to the restriction that the final tank level must be\n\nFigure 3. Typical discrepancy in tank level in the original and simplified models.\n\nat least as the initial tank level. However, for scenarios with\n7 days horizon most tanks hit their upper or lower allowed\nlimits. An example schedule for the largest pump station and\nan example tank level trajectory for one 7 days scenario are\nillustrated in Fig.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 9,
+          "printed_label": null
+        },
+        "passage_id": "psg_5bB39tsGupminh7twlxH",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_iscQmOBuPIJrbgx7n45H",
+        "text": "P. Skworcow et al.: Pump schedules optimisation\n61\n\nFigure 4. Typical discrepancy in performance of a pump station in\nthe original and simplified models.\n\nFigure 5. An example schedule for the largest pump station.\n\noptimisation point of view. Therefore, maximising the level\nin that particular tank enabled small reduction in pumping\neffort on the downstream pumping station.\n\nNote that the current and optimised operations are not\ncompared, since the provided data considered only one day\nof operation and on that particular day the final tank levels were far from the initial ones for most tanks. However,\nthe costs for different scenarios were compared against each\nother. This allowed to formulate several conclusions useful\nfor the water company. For example, two scenarios named\nA and B considered identical constraints, demands, leakage\nand topology, but in scenario A a pump station in the middle of the network was fixed speed (as is at present in the\nphysical system) and in scenario B this pump station was\nequipped with variable speed drive, with the hydraulic and\npower curves for this pump station being identical in both\nscenarios A and B. It was found that in scenario B the pump\n\nFigure 6. An example tank level trajectory.\n\nstation still operated at 100 % speed for majority of time,\neven when the initial condition was given as 70 %, and the",
+        "text_source": "text_layer"
+      }
+    ],
+    "report_target": {
+      "section_id": "V",
+      "cells": [
+        {
+          "cell_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_EtW9BugJxdbJEJDwx2eW",
+          "reading_depth": "selected_sections",
+          "state": "value",
+          "value": {
+            "text": "Değerlendirme, sabit/değişken elektrik tarifesi ve pasif/aktif pompa anahtarlama kısıtlarının dört kombinasyonunda yapılmıştır; her durum 100 kez, nesil sayısı 1000 seçilerek çalıştırılmıştır. Sonuçlar kabul edilen programların yüzdesi, ortalama/en düşük enerji tüketimi ve maliyeti ile ortalama anahtarlama sayısı üzerinden karşılaştırılmıştır. Değişken tarife enerji maliyetini düşürmüş ve anahtarlama sayısını azaltmıştır; aktif anahtarlama kısıtı maliyet ve tüketimi artırmıştır."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_6ZU2flHlrfwIsKcrd6rS",
+              "quote": "The trade-offs are made for following four cases"
+            },
+            {
+              "passage_id": "psg_6ZU2flHlrfwIsKcrd6rS",
+              "quote": "For above mentioned four cases, the developed\nprogram is applied to the network 100 times. In each\nrun, generation number is selected to be 1000"
+            },
+            {
+              "passage_id": "psg_2uAjHiT1z1mA1muiYN7H",
+              "quote": "the outcomes are summarized according to\ntheir average and minimum energy consumptions,\naverage and minimum energy costs and average pump\nswitch numbers"
+            },
+            {
+              "passage_id": "psg_oa0hQozqMlWvtbU7RDaA",
+              "quote": "As varying tariff is introduced to the objective\nfunction; it makes the energy costs significantly lower\nthan constant tariff case by running the pumps during\nhours with low energy price"
+            },
+            {
+              "passage_id": "psg_Yu6RCE2nHtMkPmjZsgxG",
+              "quote": "As TAR is set to varying\nfrom constant, the number of pump switches drop"
+            }
+          ]
+        },
+        {
+          "cell_id": "cel_aNwB4gl4Cg99r9C9U8m2",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_IN24K4El7eppuvOkaVSr",
+          "reading_depth": "abstract",
+          "state": "value",
+          "value": {
+            "text": "126 düğümlü, çok sayıda vana ve pompa içeren bir ağda test edilmiş ve geleneksel kural tabanlı kontrolden daha iyi performans göstermiştir. Sayısal test sonuçları raporlanmıştır."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_NtMLLiGd6IrESAjuwVgF",
+              "quote": "The proposed approach is tested using a 126-node network with many valves and pumps"
+            },
+            {
+              "passage_id": "psg_NtMLLiGd6IrESAjuwVgF",
+              "quote": "is shown to outperform traditional, rule-based control"
+            }
+          ]
+        },
+        {
+          "cell_id": "cel_1PZvZU3dZyGjCzP9QMz9",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_LLQQyYvSoG9xaBUPvLeg",
+          "reading_depth": "selected_sections",
+          "state": "value",
+          "value": {
+            "text": "Değerlendirme; Van Zyl ve B-town/ticari ağlarında, 6–48 zaman adımıyla (4 saatten 30 dakikaya), farklı çevrim sayıları ve formülasyonlarla yapılır. Çözüm süresi, optimalite aralığı, tam hidrolik simülasyonla işletme maliyeti ve hidrolik hata karşılaştırılır. Parçalı doğrusal yaklaşımlarda hidrolik ortalama hata %2,8–4; maksimum hata %7'dir. Basit sabit-yük yaklaşımı en hızlıdır ancak en büyük hidrolik hatayı verir; küçük zaman adımları işletme maliyetini %5–10 iyileştirir."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_AaohIyNdoi7oU3rpLWop",
+              "quote": "These are doubled three times\nfrom 6 to 48 representing four hour to half hour time-steps for the daily pump schedules"
+            },
+            {
+              "passage_id": "psg_AaohIyNdoi7oU3rpLWop",
+              "quote": "The computational effort measured in CPU time taken to get to a solution with a 5 %\nbound on gap to global optimality, or in the optimality bound after 600 s"
+            },
+            {
+              "passage_id": "psg_DfIDBZPaErJTudG5QGYl",
+              "quote": "For the piecewise linear approximations\nthe mean error ranges from 2.8 to 4"
+            },
+            {
+              "passage_id": "psg_aczjDr4P2CSoojhKMV3e",
+              "quote": "The maximum error observed is 7"
+            },
+            {
+              "passage_id": "psg_aczjDr4P2CSoojhKMV3e",
+              "quote": "The simple fixed head representation for the pump, approximation 8, gave results with\nthe smallest solve time"
+            }
+          ]
+        },
+        {
+          "cell_id": "cel_KTG3RCWWMD2hY6DT6DL8",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_S45jevZa9xm4SWeWYkME",
+          "reading_depth": "abstract",
+          "state": "value",
+          "value": {
+            "text": "Değerlendirme Randers WDN'sinde, Danimarka'da yapılmış ve geleneksel MPC varyantlarıyla karşılaştırılmıştır. RMPC, kısıtları karşılamada bu yöntemleri aşmış; ekonomik performans benzer kalmıştır. Sayısal sonuçlar veya ayrıntılı değerlendirme koşulları belirtilmemiştir."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_enxaVxNJDj6bE1PP9Msz",
+              "quote": "When applied to the Randers WDN in Denmark, the method surpasses traditional MPC variants in meeting constraints while maintaining comparable economic performance"
+            }
+          ]
+        },
+        {
+          "cell_id": "cel_N5DeHxBDOn2VTzbJMUZV",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_hPN36ocoC5svt7J261FA",
+          "reading_depth": "abstract",
+          "state": "value",
+          "value": {
+            "text": "Yöntemler 45 literatür örneği üzerinde ampirik OWF asal ve ikili sınır iyileşmeleri ölçülerek değerlendirilmiştir. Yeni gevşetmelerin, model güçlendirme tekniklerinin ve polihedral gevşetme bölümleme şemasının, bu yöntemleri kullanmayan benzer gevşetme tabanlı tekniklere kıyasla asal ve ikili sınırları, özellikle de, önemli ölçüde iyileştirebildiği bildirilmiştir."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_ei2F9o5h1WcvrTS6Xc1I",
+              "quote": "The efficacy of each new method is rigorously evaluated by measuring empirical improvements in OWF primal and dual bounds over 45 literature instances"
+            },
+            {
+              "passage_id": "psg_ei2F9o5h1WcvrTS6Xc1I",
+              "quote": "The evaluation suggests that our relaxation improvements, model strengthening techniques, and a thoughtfully selected polyhedral relaxation partitioning scheme can substantially improve OWF primal and dual bounds, especially when compared with similar relaxation-based techniques that do not leverage these new methods"
+            }
+          ]
+        },
+        {
+          "cell_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_iscQmOBuPIJrbgx7n45H",
+          "reading_depth": "selected_sections",
+          "state": "value",
+          "value": {
+            "text": "Gerçek bir Birleşik Krallık WDN’sinde 24 saatlik ve 7 günlük ufuklar, farklı zaman adımları, tank/pompa kısıtları, basınca bağlı kaçak, talep seviyeleri ve topolojik değişiklikler denenmiştir. GAMS/CONOPT sürekli çözümler bulmuştur; 24 saatlik çözüm yaklaşık 5 dakika, 7 günlük çözüm yaklaşık 1 saat sürmüştür. Mevcut ve optimize edilmiş işletme doğrudan karşılaştırılmamış; senaryo maliyetleri karşılaştırılmıştır."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_aBaG8RrnGyqRfi8tyaow",
+              "quote": "horizons (24 h and 7 days), with/without pressure dependent\nleakage and with different demand levels (scaled for different seasons"
+            },
+            {
+              "passage_id": "psg_QVB3lBdKvrIk3pePiejd",
+              "quote": "Optimisation for 24 h horizon with 1 h timestep and for 7 days horizon with 2 h time-step took around\n5 min and 1 h, respectively, on a standard office PC"
+            },
+            {
+              "passage_id": "psg_5bB39tsGupminh7twlxH",
+              "quote": "Note that the current and optimised operations are not\ncompared"
+            },
+            {
+              "passage_id": "psg_5bB39tsGupminh7twlxH",
+              "quote": "the costs for different scenarios were compared against each\nother"
+            }
+          ]
+        }
+      ],
+      "prior_summaries": [],
+      "plan": {
+        "section_budgets": {
+          "V": {
+            "max_claims": 40,
+            "max_words": 821,
+            "min_words": 492
+          }
+        }
+      },
+      "validation_context": null
+    }
+  },
+  "repair_step_input": {
+    "step_input_id": "sti_pO3RdQQpDOisRRb3QBQM",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:098f14114e12a515f7f32e3ccfe3bd3592e7e7c88d6a4d5bd13f4af6a9849da5",
+    "task_type": "report_section",
+    "question": {
+      "language_hint": "tr"
+    },
+    "allowlist": {
+      "candidate_ids": [],
+      "cell_ids": [
+        "cel_CQ2xYgx6QxhjPoy75TqZ",
+        "cel_aNwB4gl4Cg99r9C9U8m2",
+        "cel_1PZvZU3dZyGjCzP9QMz9",
+        "cel_KTG3RCWWMD2hY6DT6DL8",
+        "cel_N5DeHxBDOn2VTzbJMUZV",
+        "cel_ukq29zF6ViVoiHVm8S9b"
+      ],
+      "column_ids": [
+        "col_hWachhZGb7NSOHJ1thTl",
+        "col_iRiciRjMJ3RarW8CGKNP",
+        "col_ea12zw0wSsgEzgEn6HkQ",
+        "col_O1VR0Yqqq87Sxbtozqzd",
+        "col_osmP50jDI09dqSMMfRft",
+        "col_DoYlbgj6ZkcIOCvdcDty",
+        "col_BgeweWrYR8zdKFUTPUoK"
+      ],
+      "gap_ids": [],
+      "passage_ids": [
+        "psg_6ZU2flHlrfwIsKcrd6rS",
+        "psg_2uAjHiT1z1mA1muiYN7H",
+        "psg_oa0hQozqMlWvtbU7RDaA",
+        "psg_Yu6RCE2nHtMkPmjZsgxG",
+        "psg_NtMLLiGd6IrESAjuwVgF",
+        "psg_AaohIyNdoi7oU3rpLWop",
+        "psg_DfIDBZPaErJTudG5QGYl",
+        "psg_aczjDr4P2CSoojhKMV3e",
+        "psg_enxaVxNJDj6bE1PP9Msz",
+        "psg_ei2F9o5h1WcvrTS6Xc1I",
+        "psg_aBaG8RrnGyqRfi8tyaow",
+        "psg_QVB3lBdKvrIk3pePiejd",
+        "psg_5bB39tsGupminh7twlxH"
+      ],
+      "source_ids": [
+        "srv_EtW9BugJxdbJEJDwx2eW",
+        "srv_IN24K4El7eppuvOkaVSr",
+        "srv_LLQQyYvSoG9xaBUPvLeg",
+        "srv_S45jevZa9xm4SWeWYkME",
+        "srv_hPN36ocoC5svt7J261FA",
+        "srv_iscQmOBuPIJrbgx7n45H"
+      ]
+    },
+    "passages": [
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 6,
+          "printed_label": null
+        },
+        "passage_id": "psg_6ZU2flHlrfwIsKcrd6rS",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_EtW9BugJxdbJEJDwx2eW",
+        "text": "Optimization Study\n\nAfter setting the objective function and the constraints,\nto look for the effect of pump switch constraint and\nvariation of electricity tariff to the problem of optimal\npump scheduling; the trade-offs are made between them\nand the response of the algorithm is visualized. The tank\nvolume deficit and nodal pressure constraints are\nconsidered to be primary and kept active for all cases.\nThe trade-offs are made for following four cases;\n\n(a) Pump Switch Constraint is Passive & Electricy\nTariff is Constant.\n\n(b) Pump Switch Constraint is Passive & Electricy\nTariff is Varying.\n\n(c) Pump Switch Constraint is Active & Electricy Tariff\nis Constant.\n(d) Pump Switch Constraint is Active & Electricy Tariff\nis Varying.\n\nFor above mentioned four cases, the developed\nprogram is applied to the network 100 times. In each\nrun, generation number is selected to be 1000. After\nobtaining the whole outcomes, initially percentage of\napplicable results with respect to tank volume deficit\nconstraint\nis\nhandled.\nWhile\nconsidering\nthe\napplicability; first, the results which give positive or\nnegative tank volume periodicity violation lower than\n1 m3 (0.02%); then, the results with only positive\ntolerance are considered as appropriate. After obtaining\n\nJournal of Urban and Environmental Engineering (JUEE), v.10, n.1, p.135-143, 2016\n\nFig. 2 Daily demand curve of N8-3.\n\nNetwork\n\nFig.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 7,
+          "printed_label": null
+        },
+        "passage_id": "psg_2uAjHiT1z1mA1muiYN7H",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_EtW9BugJxdbJEJDwx2eW",
+        "text": "the\nfeasibility\ncriteria\nfor\npumping\nschedule\nalternatives;the outcomes are summarized according to\ntheir average and minimum energy consumptions,\naverage and minimum energy costs and average pump\nswitch numbers for both criteria. The summary of\nanalyses is shown in Table 3 in six merged columns.\nExcept first merged column, the left side indicates the\napplicable results of negative and positive tank volume\ndeficits, while right side shows only the results of\npositive deficits.\n\nThe first merged column of Table 3 indicates the\npercentage of accepted solutions (tank volume deficit\n\n<0.02%); and these values are shown in Fig. 4. Fig. 4,\nreflects the effects of pump switch constraint (PSC) and\nelectricity tariff (TAR). For first two cases, PCS is\npassive, and then it becomes active. As can be seen\nfrom the figure, by activating PSC in the objective\nfunction, the percentage of accepted solutions drops\nsignificantly. On the other hand; while the status of PSC\nremains the same (passive or active), the effect of TAR\nis controversial but less significant. As the TAR status,\nchange from constant to varying; this made the\npercentage of accepted results become higher.\n\nThe second and third merged columns of\nTable 3 show the average and minimum energy\nconsumptions of applicable pump schedules for already\nmentioned\nstudy\ncases.\nThe\naverage\nenergy\nconsumptions are visualized in Fig. 5.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 7,
+          "printed_label": null
+        },
+        "passage_id": "psg_oa0hQozqMlWvtbU7RDaA",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_EtW9BugJxdbJEJDwx2eW",
+        "text": "As can be seen\nfrom Fig. 5; introducing of both PSC and TAR to the\nproblem, makes the energy consumptions higher. While\nboth are passive or constant, the program gave out\nschedule\nalternatives\nresulting\nin\nlower\nenergy\nconsumptions. However, when these constraints are\nintroduced into the problem step by step, the schedules\nbecome more consuming. When the impact of these\nconstraints on energy consumptions is compared,\nvarying TAR is slightly more significant than active\nPSC.\n\nThe fourth and fifth merged columns of show the\naverage and minimum energy costs of accepted pump\nschedules for study cases. The average energy costs are\nvisualized in Fig. 6. Contrary to Fig. 5; in Fig. 6, the\naverage energy cost values are lower for case 2 and case\n4. As varying tariff is introduced to the objective\nfunction; it makes the energy costs significantly lower\nthan constant tariff case by running the pumps during\nhours with low energy price.\n\nOn the other hand, like Fig. 5; in Fig. 6, activating\nPSC increases the energy costs. When compared, the\neffect of TAR is notably higher than PSC on the energy\ncost objective. When the schedules summarized in Fig.\n6 are considered, although Case 2 give out lower energy\ncosts, Case 4 sound more preferable from the\noperational reliability point of view.\n\nJournal of Urban and Environmental Engineering (JUEE), v.10, n.1, p.135-143, 2016\n\nTable 3.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 8,
+          "printed_label": null
+        },
+        "passage_id": "psg_Yu6RCE2nHtMkPmjZsgxG",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_EtW9BugJxdbJEJDwx2eW",
+        "text": "Fig. 6 Average energy costs of study cases.\nThe last merged column of Table 3 shows the\naverage number of pump switches for accepted\nschedules; and these values are drawn in Fig. 7. This\nfigure clearly reflects the effect of PCS on the\noperational reliability of the pumping system. While\nPCS is passive it is obvious that the resultant pump\nschedules switches the pumps on and off excessively.\nWhen PSC is set to active, the pump runs get into\ngroups that the number of switches drop significantly.\nFor operational reliability point of view, the electricity\ntariff has also similar effect. As TAR is set to varying\nfrom constant, the number of pump switches drop. The\neffect of TAR is not that much prominent, when\ncompared with PSC, however both constraints push the\nalgorithm to result in more operationally reliable\nschedules. This phenomenon is the indication of energy\nprice periods on the pump run durations. While varying\ntariff is included in the objective function, the algorithm\ntend to run the pumps during hours of cheaper energy\nprice. As the cheap price hours are grouped, the\nalgorithm tend to group the pump runs also. This\nsituation reduces the number of pump switches and\nincreases operational reliability of the system. This\nphenomenon is a supportive concern for utilization of\nelectricity tariff, for the operational reliability point of\nview.\n\nFig.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": "provider_openalex_inverted_index",
+        "locator": {
+          "kind": "abstract",
+          "physical_page": null,
+          "printed_label": null
+        },
+        "passage_id": "psg_NtMLLiGd6IrESAjuwVgF",
+        "reading_depth": "abstract",
+        "source_id": "srv_IN24K4El7eppuvOkaVSr",
+        "text": "Optimal, network-driven control of water distribution networks (WDNs) is very difficult: valve and pump models form nontrivial, combinatorial logic; hydraulic models are nonconvex; water demand patterns are uncertain; and WDNs are naturally of large scale. Prior research on control of WDN addressed major research challenges, yet either i) adopted simplified hydraulic models, WDN topologies, and rudimentary valve/pump modeling or ii) used mixed-integer, nonconvex optimization to solve WDN control problems. The objective of this article is to develop tractable computational algorithms to manage WDN operation, while considering arbitrary topology, flow direction, an abundance of valve types, control objectives, hydraulic models, and operational constraints-all while only using convex, continuous optimization. Specifically, we propose new geometric programming (GP)-based model predictive control (MPC) algorithms, designed to solve the water flow equations and obtain WDN controls, i.e., pump/valve schedules alongside heads and flows. The proposed approach amounts to solving a series of convex optimization problems that graciously scale to large networks. The proposed approach is tested using a 126-node network with many valves and pumps and is shown to outperform traditional, rule-based control. The developed GP-based MPC algorithms, as well as the numerical test results, are all included on Github.",
+        "text_source": null
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 11,
+          "printed_label": "5343"
+        },
+        "passage_id": "psg_AaohIyNdoi7oU3rpLWop",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_LLQQyYvSoG9xaBUPvLeg",
+        "text": "the number of variables and constraints) is dictated by the number of time steps and component approximations chosen. To\ninvestigate the influence of the overall size of the problem on the computational effort the\nanalysis is performed on a range of simulation time steps. These are doubled three times\nfrom 6 to 48 representing four hour to half hour time-steps for the daily pump schedules. The\nobserved increase in computational effort as number of time steps are increased is exponential for all approximation methods and networks. However, the number of links and nodes\nof the network graph, does not have such a distinct effect. The number of integer variables\nand the number of possible configurations that are explored in the branch and bound algorithm increase, but as linked components have linked states, the the size of the network in\nterms of pipes and nodes has less influence on the computational effort.\n\nThe computational effort measured in CPU time taken to get to a solution with a 5 %\nbound on gap to global optimality, or in the optimality bound after 600 s, are shown in Fig. 3\nalong with the operating cost of the schedules found using a full hydraulic simulation. The\nformulations 1a, 2 and 3 are computationally the most expensive. These formulations are\nintractable for all but the smallest number of time steps and network sizes. The piecewise",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 12,
+          "printed_label": "5344"
+        },
+        "passage_id": "psg_DfIDBZPaErJTudG5QGYl",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_LLQQyYvSoG9xaBUPvLeg",
+        "text": "The small geometric mean errors of 1.74 %, 3.22 %, 3.99 % for approximations 1a ,2 and 3, respectively,\ndemonstrate this as well as the small spread in errors observed with the largest errors in\nflow rate of 3.2 %, 6.0 % and 6.2 %, respectively. For the piecewise linear approximations\nthe mean error ranges from 2.8 to 4 % with approximation 4 having the smallest error and\n\n1a 2\n3\n4\n5\n6 7a 8\n\n1a\n2\n3\n4\n5\n6\n7a\n8\n0\n\n1a 2\n3\n4\n5\n6 7a 8\n100\n\n1a 2\n3\n4\n5\n6 7a 8\n0\n\n1a 2\n3\n4\n5\n6 7a 8\n0\n\n1a\n2\n3\n4\n5\n6\n7a\n8\n0\n\nFig. 3 Results of the analysis of the Van Zyl network (a ... c) and B-town network (d ... f) using different\napproximations as detailed in Table 1",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 13,
+          "printed_label": "5345"
+        },
+        "passage_id": "psg_aczjDr4P2CSoojhKMV3e",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_LLQQyYvSoG9xaBUPvLeg",
+        "text": "approximation 7a the largest. The maximum error observed is 7 %. This indicates that the\nnumber of pieces in the pipe piecewise linear approximations dictates the size of the error\nin the hydraulic approximation. The error in demand estimate for 15 minute time steps is\napproximately 5–10 % (Herrera et al. 2010; Donkor et al. 2014). These results lead to the\nconclusion that a piecewise approximation with only a few pieces will often have sufficient\ndetail to provide a schedule with a hydraulic error of size similar to the error in the demand\nforecast while significantly reducing the computational effort.\n\nThe simple fixed head representation for the pump, approximation 8, gave results with\nthe smallest solve time. The results however have the largest hydraulic error, which may\nlead to schedules that are not repeatable in a real network. For example some flow rates\nthrough the pumps returned by the MIP solver for the 48 time steps on the Van Zyl network\nwere higher than those achievable in hydraulic simulation, leading to an infeasible solution.\n\n5.3 Objective Function\n\nThe objective function formulations are investigated by comparing formulations 1a and\n1b as well as 7a to 7d. The accuracy is given by (20), comparing the objective value of\nthe optimisation to the operating cost found by a full hydraulic simulation of the schedule.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": "provider_openalex_inverted_index",
+        "locator": {
+          "kind": "abstract",
+          "physical_page": null,
+          "printed_label": null
+        },
+        "passage_id": "psg_enxaVxNJDj6bE1PP9Msz",
+        "reading_depth": "abstract",
+        "source_id": "srv_S45jevZa9xm4SWeWYkME",
+        "text": "This paper proposes a Robust Model Predictive Control (RMPC) method for energy-efficient and reliable pump scheduling in Water Distribution Networks (WDNs), accounting for model uncertainties and demand forecast errors. Building on a previous robust control approach, this extended method uses a linear model with bounded disturbances and optimizes affine disturbance-based pump schedules over a receding horizon. The optimization complexity is reduced from ${\\mathcal{O}}\\left({{N^6}}\\right)$ to ${\\mathcal{O}}\\left({{N^3}}\\right)$ via a sparse reformulation. When applied to the Randers WDN in Denmark, the method surpasses traditional MPC variants in meeting constraints while maintaining comparable economic performance.",
+        "text_source": null
+      },
+      {
+        "abstract_origin": "provider_openalex_inverted_index",
+        "locator": {
+          "kind": "abstract",
+          "physical_page": null,
+          "printed_label": null
+        },
+        "passage_id": "psg_ei2F9o5h1WcvrTS6Xc1I",
+        "reading_depth": "abstract",
+        "source_id": "srv_hPN36ocoC5svt7J261FA",
+        "text": "The classic pump scheduling or optimal water flow (OWF) problem for water distribution networks (WDNs) minimizes the cost of power consumption for a given WDN over a fixed time horizon. In its exact form, the OWF is a computationally challenging mixed-integer nonlinear program (MINLP). It is complicated by nonlinear equality constraints that model network physics, discrete variables that model operational controls, and intertemporal constraints that model changes to storage devices. To address the computational challenges of the OWF, this paper develops tight polyhedral relaxations of the original MINLP, derives novel valid inequalities (or cuts) using duality theory, and implements novel optimization-based bound tightening and cut generation procedures. The efficacy of each new method is rigorously evaluated by measuring empirical improvements in OWF primal and dual bounds over 45 literature instances. The evaluation suggests that our relaxation improvements, model strengthening techniques, and a thoughtfully selected polyhedral relaxation partitioning scheme can substantially improve OWF primal and dual bounds, especially when compared with similar relaxation-based techniques that do not leverage these new methods. History: Accepted by David Alderson, Area Editor for Network Optimization: Algorithms & Applications. Funding: This work was supported by the U.S. Department of Energy (DOE) Advanced Grid Modeling project, Coordinated Planning and Operation of Water and Power Infrastructures for Increased Resilience and Reliability. Incorporation of the PolyhedralRelaxations Julia package was supported by Los Alamos National Laboratory’s Directed Research and Development program under the project Fast, Linear Programming-Based Algorithms with Solution Quality Guarantees for Nonlinear Optimal Control Problems [Grant 20220006ER]. All work at Los Alamos National Laboratory was conducted under the auspices of the National Nuclear Security Administration of the U.S. DOE, Contract No. 89233218CNA000001. This work was also authored in part by the National Renewable Energy Laboratory, operated by the Alliance for Sustainable Energy, LLC, for the U.S. DOE, Contract No. DE-AC36-08GO28308. Supplemental Material: The software that supports the findings of this study is available within the paper and its Supplemental Information ( https://pubsonline.informs.org/doi/suppl/10.1287/ijoc.2022.0233 ) as well as from the IJOC GitHub software repository ( https://github.com/INFORMSJoC/2022.0233 ). The complete IJOC Software and Data Repository is available at https://informsjoc.github.io/ .",
+        "text_source": null
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 8,
+          "printed_label": null
+        },
+        "passage_id": "psg_aBaG8RrnGyqRfi8tyaow",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_iscQmOBuPIJrbgx7n45H",
+        "text": "60\nP. Skworcow et al.: Pump schedules optimisation\n\nTable 1. Function of each valve in the original model and actions performed during the model reduction. (∗) not classified as a valve in the\ntotal valves count in the original model.\n\nType\nStatus\n# in\nAction\n# in\noriginal model\nreduced model\n\nPRV\npermanently closed\n3\nremoved\n0\nactive\n39\nretained\n39\nFCV\nactive\n1\nretained\n1\nTCV\nclose-open control rule\n1\nconverted to FCV\n0 (1)\nisolation valve\n51\nremoved\n0\nconstant opening\n220\nconverted to pipe\n0\nPipe∗\nclose-open control rule\n1\nconverted to FCV\n0 (1)\n\nTotal\n315\n39 (42)\n\nTable 2. Number of elements in the original and the reduced model.\n\nElements\nOriginal\nReduced\nPercentage of\nmodel\nmodel\nreduction\n\nJunctions\n12 363\n164\n99%\nReservoirs\n4\n2\n50%\nTanks\n10\n9\n10.0%\nPipes\n12 923\n336\n97.4%\nPumps\n13\n13\n0.0%\nValves\n315\n42\n86.7%\n\nhorizons (24 h and 7 days), with/without pressure dependent\nleakage and with different demand levels (scaled for different seasons). In all considered scenarios the initial tank level\nfor each tank was assumed to be as in the provided EPANET\nmodel. Pressure and flow constraints in different elements\nwere either provided by the water company or assumed and\nwere kept constant for all scenarios. In each case a GAMS\ncode was automatically generated and CONOPT managed to\nfind an optimal continuous solution. However, the automatic",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 8,
+          "printed_label": null
+        },
+        "passage_id": "psg_QVB3lBdKvrIk3pePiejd",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_iscQmOBuPIJrbgx7n45H",
+        "text": "discretisation required several trials with different thresholds\nmentioned in Sect. 4.1. The automatic discretisation algorithm particularly struggled for scenarios with pressure dependent leakage; for these scenarios the interactive discretisation approach was employed.\n\nSubsequently, it was decided to extend the boundaries of\nthe model and include an additional pump station and a tank.\nAfter the changes were made in the simplified EPANET\nmodel and in an additional file describing pump station constraints, the scheduler successfully generated and solved an\nupdated optimisation model without the need of any changes\nto the algorithm. Optimisation for 24 h horizon with 1 h timestep and for 7 days horizon with 2 h time-step took around\n5 min and 1 h, respectively, on a standard office PC.\nIt was observed that for all 24 h horizon scenarios it was\nnot possible to fully utilise the allowed capacity of the large\ntanks and their levels were far from the allowed limits. This\nwas due to the restriction that the final tank level must be\n\nFigure 3. Typical discrepancy in tank level in the original and simplified models.\n\nat least as the initial tank level. However, for scenarios with\n7 days horizon most tanks hit their upper or lower allowed\nlimits. An example schedule for the largest pump station and\nan example tank level trajectory for one 7 days scenario are\nillustrated in Fig.",
+        "text_source": "text_layer"
+      },
+      {
+        "abstract_origin": null,
+        "locator": {
+          "kind": "pdf_page",
+          "physical_page": 9,
+          "printed_label": null
+        },
+        "passage_id": "psg_5bB39tsGupminh7twlxH",
+        "reading_depth": "selected_sections",
+        "source_id": "srv_iscQmOBuPIJrbgx7n45H",
+        "text": "P. Skworcow et al.: Pump schedules optimisation\n61\n\nFigure 4. Typical discrepancy in performance of a pump station in\nthe original and simplified models.\n\nFigure 5. An example schedule for the largest pump station.\n\noptimisation point of view. Therefore, maximising the level\nin that particular tank enabled small reduction in pumping\neffort on the downstream pumping station.\n\nNote that the current and optimised operations are not\ncompared, since the provided data considered only one day\nof operation and on that particular day the final tank levels were far from the initial ones for most tanks. However,\nthe costs for different scenarios were compared against each\nother. This allowed to formulate several conclusions useful\nfor the water company. For example, two scenarios named\nA and B considered identical constraints, demands, leakage\nand topology, but in scenario A a pump station in the middle of the network was fixed speed (as is at present in the\nphysical system) and in scenario B this pump station was\nequipped with variable speed drive, with the hydraulic and\npower curves for this pump station being identical in both\nscenarios A and B. It was found that in scenario B the pump\n\nFigure 6. An example tank level trajectory.\n\nstation still operated at 100 % speed for majority of time,\neven when the initial condition was given as 70 %, and the",
+        "text_source": "text_layer"
+      }
+    ],
+    "report_target": {
+      "section_id": "V",
+      "cells": [
+        {
+          "cell_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_EtW9BugJxdbJEJDwx2eW",
+          "reading_depth": "selected_sections",
+          "state": "value",
+          "value": {
+            "text": "Değerlendirme, sabit/değişken elektrik tarifesi ve pasif/aktif pompa anahtarlama kısıtlarının dört kombinasyonunda yapılmıştır; her durum 100 kez, nesil sayısı 1000 seçilerek çalıştırılmıştır. Sonuçlar kabul edilen programların yüzdesi, ortalama/en düşük enerji tüketimi ve maliyeti ile ortalama anahtarlama sayısı üzerinden karşılaştırılmıştır. Değişken tarife enerji maliyetini düşürmüş ve anahtarlama sayısını azaltmıştır; aktif anahtarlama kısıtı maliyet ve tüketimi artırmıştır."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_6ZU2flHlrfwIsKcrd6rS",
+              "quote": "The trade-offs are made for following four cases"
+            },
+            {
+              "passage_id": "psg_6ZU2flHlrfwIsKcrd6rS",
+              "quote": "For above mentioned four cases, the developed\nprogram is applied to the network 100 times. In each\nrun, generation number is selected to be 1000"
+            },
+            {
+              "passage_id": "psg_2uAjHiT1z1mA1muiYN7H",
+              "quote": "the outcomes are summarized according to\ntheir average and minimum energy consumptions,\naverage and minimum energy costs and average pump\nswitch numbers"
+            },
+            {
+              "passage_id": "psg_oa0hQozqMlWvtbU7RDaA",
+              "quote": "As varying tariff is introduced to the objective\nfunction; it makes the energy costs significantly lower\nthan constant tariff case by running the pumps during\nhours with low energy price"
+            },
+            {
+              "passage_id": "psg_Yu6RCE2nHtMkPmjZsgxG",
+              "quote": "As TAR is set to varying\nfrom constant, the number of pump switches drop"
+            }
+          ]
+        },
+        {
+          "cell_id": "cel_aNwB4gl4Cg99r9C9U8m2",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_IN24K4El7eppuvOkaVSr",
+          "reading_depth": "abstract",
+          "state": "value",
+          "value": {
+            "text": "126 düğümlü, çok sayıda vana ve pompa içeren bir ağda test edilmiş ve geleneksel kural tabanlı kontrolden daha iyi performans göstermiştir. Sayısal test sonuçları raporlanmıştır."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_NtMLLiGd6IrESAjuwVgF",
+              "quote": "The proposed approach is tested using a 126-node network with many valves and pumps"
+            },
+            {
+              "passage_id": "psg_NtMLLiGd6IrESAjuwVgF",
+              "quote": "is shown to outperform traditional, rule-based control"
+            }
+          ]
+        },
+        {
+          "cell_id": "cel_1PZvZU3dZyGjCzP9QMz9",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_LLQQyYvSoG9xaBUPvLeg",
+          "reading_depth": "selected_sections",
+          "state": "value",
+          "value": {
+            "text": "Değerlendirme; Van Zyl ve B-town/ticari ağlarında, 6–48 zaman adımıyla (4 saatten 30 dakikaya), farklı çevrim sayıları ve formülasyonlarla yapılır. Çözüm süresi, optimalite aralığı, tam hidrolik simülasyonla işletme maliyeti ve hidrolik hata karşılaştırılır. Parçalı doğrusal yaklaşımlarda hidrolik ortalama hata %2,8–4; maksimum hata %7'dir. Basit sabit-yük yaklaşımı en hızlıdır ancak en büyük hidrolik hatayı verir; küçük zaman adımları işletme maliyetini %5–10 iyileştirir."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_AaohIyNdoi7oU3rpLWop",
+              "quote": "These are doubled three times\nfrom 6 to 48 representing four hour to half hour time-steps for the daily pump schedules"
+            },
+            {
+              "passage_id": "psg_AaohIyNdoi7oU3rpLWop",
+              "quote": "The computational effort measured in CPU time taken to get to a solution with a 5 %\nbound on gap to global optimality, or in the optimality bound after 600 s"
+            },
+            {
+              "passage_id": "psg_DfIDBZPaErJTudG5QGYl",
+              "quote": "For the piecewise linear approximations\nthe mean error ranges from 2.8 to 4"
+            },
+            {
+              "passage_id": "psg_aczjDr4P2CSoojhKMV3e",
+              "quote": "The maximum error observed is 7"
+            },
+            {
+              "passage_id": "psg_aczjDr4P2CSoojhKMV3e",
+              "quote": "The simple fixed head representation for the pump, approximation 8, gave results with\nthe smallest solve time"
+            }
+          ]
+        },
+        {
+          "cell_id": "cel_KTG3RCWWMD2hY6DT6DL8",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_S45jevZa9xm4SWeWYkME",
+          "reading_depth": "abstract",
+          "state": "value",
+          "value": {
+            "text": "Değerlendirme Randers WDN'sinde, Danimarka'da yapılmış ve geleneksel MPC varyantlarıyla karşılaştırılmıştır. RMPC, kısıtları karşılamada bu yöntemleri aşmış; ekonomik performans benzer kalmıştır. Sayısal sonuçlar veya ayrıntılı değerlendirme koşulları belirtilmemiştir."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_enxaVxNJDj6bE1PP9Msz",
+              "quote": "When applied to the Randers WDN in Denmark, the method surpasses traditional MPC variants in meeting constraints while maintaining comparable economic performance"
+            }
+          ]
+        },
+        {
+          "cell_id": "cel_N5DeHxBDOn2VTzbJMUZV",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_hPN36ocoC5svt7J261FA",
+          "reading_depth": "abstract",
+          "state": "value",
+          "value": {
+            "text": "Yöntemler 45 literatür örneği üzerinde ampirik OWF asal ve ikili sınır iyileşmeleri ölçülerek değerlendirilmiştir. Yeni gevşetmelerin, model güçlendirme tekniklerinin ve polihedral gevşetme bölümleme şemasının, bu yöntemleri kullanmayan benzer gevşetme tabanlı tekniklere kıyasla asal ve ikili sınırları, özellikle de, önemli ölçüde iyileştirebildiği bildirilmiştir."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_ei2F9o5h1WcvrTS6Xc1I",
+              "quote": "The efficacy of each new method is rigorously evaluated by measuring empirical improvements in OWF primal and dual bounds over 45 literature instances"
+            },
+            {
+              "passage_id": "psg_ei2F9o5h1WcvrTS6Xc1I",
+              "quote": "The evaluation suggests that our relaxation improvements, model strengthening techniques, and a thoughtfully selected polyhedral relaxation partitioning scheme can substantially improve OWF primal and dual bounds, especially when compared with similar relaxation-based techniques that do not leverage these new methods"
+            }
+          ]
+        },
+        {
+          "cell_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+          "source_version_id": "srv_iscQmOBuPIJrbgx7n45H",
+          "reading_depth": "selected_sections",
+          "state": "value",
+          "value": {
+            "text": "Gerçek bir Birleşik Krallık WDN’sinde 24 saatlik ve 7 günlük ufuklar, farklı zaman adımları, tank/pompa kısıtları, basınca bağlı kaçak, talep seviyeleri ve topolojik değişiklikler denenmiştir. GAMS/CONOPT sürekli çözümler bulmuştur; 24 saatlik çözüm yaklaşık 5 dakika, 7 günlük çözüm yaklaşık 1 saat sürmüştür. Mevcut ve optimize edilmiş işletme doğrudan karşılaştırılmamış; senaryo maliyetleri karşılaştırılmıştır."
+          },
+          "evidence": [
+            {
+              "passage_id": "psg_aBaG8RrnGyqRfi8tyaow",
+              "quote": "horizons (24 h and 7 days), with/without pressure dependent\nleakage and with different demand levels (scaled for different seasons"
+            },
+            {
+              "passage_id": "psg_QVB3lBdKvrIk3pePiejd",
+              "quote": "Optimisation for 24 h horizon with 1 h timestep and for 7 days horizon with 2 h time-step took around\n5 min and 1 h, respectively, on a standard office PC"
+            },
+            {
+              "passage_id": "psg_5bB39tsGupminh7twlxH",
+              "quote": "Note that the current and optimised operations are not\ncompared"
+            },
+            {
+              "passage_id": "psg_5bB39tsGupminh7twlxH",
+              "quote": "the costs for different scenarios were compared against each\nother"
+            }
+          ]
+        }
+      ],
+      "prior_summaries": [],
+      "plan": {
+        "section_budgets": {
+          "V": {
+            "max_claims": 40,
+            "max_words": 821,
+            "min_words": 492
+          }
+        }
+      },
+      "validation_context": null
+    }
+  },
+  "synthetic_repair_output": {
+    "schema_version": "deixis.report_section_draft.v2",
+    "step_input_id": "sti_S8OQlZcwQDLcRsSzcR6U",
+    "scope_revision": 1,
+    "section_id": "V",
+    "claims": [
+      {
+        "claim_key": "V.1",
+        "text": "Değerlendirme koşulları bakımından kaynaklar arasında bir dizi önemli fark vardır. Bir çalışmada dört tarife ve pompa anahtarlama koşulu karşılaştırılmış, her koşul 100 kez ve her çalıştırma 1000 nesille yürütülmüştür; başka bir çalışmada ise 126 düğümlü bir ağda kural tabanlı kontrolle karşılaştırma yapılmıştır.",
+        "support_type": "source_stated",
+        "passage_ids": [],
+        "cell_ids": [
+          "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "cel_aNwB4gl4Cg99r9C9U8m2"
+        ],
+        "paragraph": 1,
+        "table_ref": null,
+        "equation_ref": null,
+        "body_refs": [],
+        "axis_id": null,
+        "count": null,
+        "equation_origin": null,
+        "gap_refs": []
+      },
+      {
+        "claim_key": "V.2",
+        "text": "Bir çalışmanın sonuçları kabul edilen çözüm yüzdesi, enerji tüketimi, enerji maliyeti ve pompa anahtarlama sayısı üzerinden özetlenmiştir. Aynı çalışmada değişken tarife, sabit tarifeye kıyasla enerji maliyetlerini düşürmüş; pompa anahtarlama kısıtının etkinleştirilmesi ise enerji maliyetlerini artırmıştır.",
+        "support_type": "source_stated",
+        "passage_ids": [],
+        "cell_ids": [
+          "cel_CQ2xYgx6QxhjPoy75TqZ"
+        ],
+        "paragraph": 2,
+        "table_ref": null,
+        "equation_ref": null,
+        "body_refs": [],
+        "axis_id": null,
+        "count": null,
+        "equation_origin": null,
+        "gap_refs": []
+      },
+      {
+        "claim_key": "V.3",
+        "text": "Buna karşılık, dal-sınır temelli çalışmada değerlendirme 6 ile 48 zaman adımı arasında, dört saatlikten yarım saatlik zaman adımlarına uzanan günlük pompa programlarıyla yapılmıştır. Bu değerlendirmede hesaplama çabası, küresel optimuma ilişkin yüzde beşlik aralık veya 600 saniye sonundaki optimalite sınırı ve tam hidrolik simülasyonla elde edilen işletme maliyeti kullanılarak incelenmiştir.",
+        "support_type": "source_stated",
+        "passage_ids": [],
+        "cell_ids": [
+          "cel_1PZvZU3dZyGjCzP9QMz9"
+        ],
+        "paragraph": 3,
+        "table_ref": null,
+        "equation_ref": null,
+        "body_refs": [],
+        "axis_id": null,
+        "count": null,
+        "equation_origin": null,
+        "gap_refs": []
+      },
+      {
+        "claim_key": "V.4",
+        "text": "Dal-sınır çalışmasındaki yaklaşık hidrolik hatalar, parçalı doğrusal yaklaşımlar için yüzde 2,8 ile 4 arasında değişmiş ve gözlenen en yüksek hata yüzde 7 olmuştur. Basit sabit basma yüksekliği yaklaşımı en kısa çözüm süresini vermiş, ancak en büyük hidrolik hatayı üretmiştir; bu nedenle bu sonuçlar diğer çalışmalardaki doğrudan performans üstünlükleriyle aynı koşullarda karşılaştırılamaz.",
+        "support_type": "analyst_inference",
+        "passage_ids": [],
+        "cell_ids": [
+          "cel_1PZvZU3dZyGjCzP9QMz9"
+        ],
+        "paragraph": 4,
+        "table_ref": null,
+        "equation_ref": null,
+        "body_refs": [],
+        "axis_id": null,
+        "count": null,
+        "equation_origin": null,
+        "gap_refs": []
+      },
+      {
+        "claim_key": "V.5",
+        "text": "Sağlam model öngörülü kontrolü değerlendirmesi, Randers su dağıtım ağında geleneksel model öngörülü kontrol varyantlarıyla yapılmıştır. Bu yaklaşım, kısıtları karşılama bakımından söz konusu varyantlardan daha iyi performans göstermiş, ekonomik performans ise karşılaştırılabilir kalmıştır; ancak sayısal sonuçlar ve ayrıntılı koşullar sağlanan metinde belirtilmemiştir.",
+        "support_type": "source_stated",
+        "passage_ids": [],
+        "cell_ids": [
+          "cel_KTG3RCWWMD2hY6DT6DL8"
+        ],
+        "paragraph": 5,
+        "table_ref": null,
+        "equation_ref": null,
+        "body_refs": [],
+        "axis_id": null,
+        "count": null,
+        "equation_origin": null,
+        "gap_refs": []
+      },
+      {
+        "claim_key": "V.6",
+        "text": "Polihedral gevşetmeler çalışması, 45 literatür örneğinde asal ve ikili sınır iyileşmelerini ölçmüştür. Sonuçlar, yeni gevşetmelerin, model güçlendirme tekniklerinin ve seçilmiş bölümleme şemasının, bu teknikleri kullanmayan benzer gevşetme temelli yöntemlere kıyasla sınırları önemli ölçüde iyileştirebildiğini göstermektedir.",
+        "support_type": "source_stated",
+        "passage_ids": [],
+        "cell_ids": [
+          "cel_N5DeHxBDOn2VTzbJMUZV"
+        ],
+        "paragraph": 6,
+        "table_ref": null,
+        "equation_ref": null,
+        "body_refs": [],
+        "axis_id": null,
+        "count": null,
+        "equation_origin": null,
+        "gap_refs": []
+      },
+      {
+        "claim_key": "V.7",
+        "text": "Büyük ölçekli Birleşik Krallık ağı çalışması, 24 saatlik ve yedi günlük ufukları, farklı zaman adımlarını, basınca bağlı kaçak seçeneklerini ve mevsimsel talep düzeylerini karşılaştırmıştır. 24 saatlik bir saatlik zaman adımı yaklaşık beş dakika, yedi günlük iki saatlik zaman adımı ise yaklaşık bir saat sürmüştür.",
+        "support_type": "source_stated",
+        "passage_ids": [],
+        "cell_ids": [
+          "cel_ukq29zF6ViVoiHVm8S9b"
+        ],
+        "paragraph": 7,
+        "table_ref": null,
+        "equation_ref": null,
+        "body_refs": [],
+        "axis_id": null,
+        "count": null,
+        "equation_origin": null,
+        "gap_refs": []
+      },
+      {
+        "claim_key": "V.8",
+        "text": "Bu değerlendirme, mevcut işletme ile optimize edilmiş işletmeyi doğrudan karşılaştırmaması bakımından farklıdır; bunun yerine farklı senaryoların maliyetleri karşılaştırılmıştır. Dolayısıyla kaynaklar arasındaki sonuçlar aynı ölçütü paylaşmamaktadır: bazıları enerji maliyeti veya anahtarlamayı, bazıları kısıt karşılama ve hidrolik hatayı, bazıları ise gevşetme sınırlarını değerlendirmiştir.",
+        "support_type": "analyst_inference",
+        "passage_ids": [],
+        "cell_ids": [
+          "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "cel_1PZvZU3dZyGjCzP9QMz9",
+          "cel_KTG3RCWWMD2hY6DT6DL8",
+          "cel_N5DeHxBDOn2VTzbJMUZV",
+          "cel_ukq29zF6ViVoiHVm8S9b"
+        ],
+        "paragraph": 8,
+        "table_ref": null,
+        "equation_ref": null,
+        "body_refs": [],
+        "axis_id": null,
+        "count": null,
+        "equation_origin": null,
+        "gap_refs": []
+      }
+    ],
+    "citation_anchors": [
+      {
+        "claim_key": "V.1",
+        "passage_id": null,
+        "cell_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+        "quote": "For above mentioned four cases, the developed\nprogram is applied to the network 100 times. In each\nrun, generation number is selected to be 1000"
+      },
+      {
+        "claim_key": "V.1",
+        "passage_id": null,
+        "cell_id": "cel_aNwB4gl4Cg99r9C9U8m2",
+        "quote": "The proposed approach is tested using a 126-node network with many valves and pumps"
+      },
+      {
+        "claim_key": "V.2",
+        "passage_id": null,
+        "cell_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+        "quote": "the outcomes are summarized according to\ntheir average and minimum energy consumptions,\naverage and minimum energy costs and average pump\nswitch numbers"
+      },
+      {
+        "claim_key": "V.3",
+        "passage_id": null,
+        "cell_id": "cel_1PZvZU3dZyGjCzP9QMz9",
+        "quote": "These are doubled three times\nfrom 6 to 48 representing four hour to half hour time-steps for the daily pump schedules"
+      },
+      {
+        "claim_key": "V.3",
+        "passage_id": null,
+        "cell_id": "cel_1PZvZU3dZyGjCzP9QMz9",
+        "quote": "The computational effort measured in CPU time taken to get to a solution with a 5 %\nbound on gap to global optimality, or in the optimality bound after 600 s"
+      },
+      {
+        "claim_key": "V.4",
+        "passage_id": null,
+        "cell_id": "cel_1PZvZU3dZyGjCzP9QMz9",
+        "quote": "For the piecewise linear approximations\nthe mean error ranges from 2.8 to 4 % with approximation 4 having the smallest error and"
+      },
+      {
+        "claim_key": "V.4",
+        "passage_id": null,
+        "cell_id": "cel_1PZvZU3dZyGjCzP9QMz9",
+        "quote": "The maximum error observed is 7 %."
+      },
+      {
+        "claim_key": "V.4",
+        "passage_id": null,
+        "cell_id": "cel_1PZvZU3dZyGjCzP9QMz9",
+        "quote": "The simple fixed head representation for the pump, approximation 8, gave results with\nthe smallest solve time"
+      },
+      {
+        "claim_key": "V.5",
+        "passage_id": null,
+        "cell_id": "cel_KTG3RCWWMD2hY6DT6DL8",
+        "quote": "When applied to the Randers WDN in Denmark, the method surpasses traditional MPC variants in meeting constraints while maintaining comparable economic performance"
+      },
+      {
+        "claim_key": "V.6",
+        "passage_id": null,
+        "cell_id": "cel_N5DeHxBDOn2VTzbJMUZV",
+        "quote": "The efficacy of each new method is rigorously evaluated by measuring empirical improvements in OWF primal and dual bounds over 45 literature instances"
+      },
+      {
+        "claim_key": "V.7",
+        "passage_id": null,
+        "cell_id": "cel_ukq29zF6ViVoiHVm8S9b",
+        "quote": "horizons (24 h and 7 days), with/without pressure dependent\nleakage and with different demand levels (scaled for different seasons"
+      },
+      {
+        "claim_key": "V.7",
+        "passage_id": null,
+        "cell_id": "cel_ukq29zF6ViVoiHVm8S9b",
+        "quote": "Optimisation for 24 h horizon with 1 h timestep and for 7 days horizon with 2 h time-step took around\n5 min and 1 h, respectively, on a standard office PC"
+      },
+      {
+        "claim_key": "V.8",
+        "passage_id": null,
+        "cell_id": "cel_ukq29zF6ViVoiHVm8S9b",
+        "quote": "Note that the current and optimised operations are not\ncompared"
+      },
+      {
+        "claim_key": "V.8",
+        "passage_id": null,
+        "cell_id": "cel_ukq29zF6ViVoiHVm8S9b",
+        "quote": "the costs for different scenarios were compared against each\nother"
+      },
+      {
+        "claim_key": "V.8",
+        "passage_id": null,
+        "cell_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+        "quote": "the outcomes are summarized according to\ntheir average and minimum energy consumptions,\naverage and minimum energy costs and average pump\nswitch numbers"
+      },
+      {
+        "claim_key": "V.8",
+        "passage_id": null,
+        "cell_id": "cel_1PZvZU3dZyGjCzP9QMz9",
+        "quote": "The maximum error observed is 7 %."
+      },
+      {
+        "claim_key": "V.8",
+        "passage_id": null,
+        "cell_id": "cel_KTG3RCWWMD2hY6DT6DL8",
+        "quote": "When applied to the Randers WDN in Denmark, the method surpasses traditional MPC variants in meeting constraints while maintaining comparable economic performance"
+      },
+      {
+        "claim_key": "V.8",
+        "passage_id": null,
+        "cell_id": "cel_N5DeHxBDOn2VTzbJMUZV",
+        "quote": "The efficacy of each new method is rigorously evaluated by measuring empirical improvements in OWF primal and dual bounds over 45 literature instances"
+      }
+    ],
+    "subsections": [],
+    "gaps": [],
+    "insufficient_evidence": []
+  },
+  "stored_repair_validation": {
+    "ok": false,
+    "issues": [
+      {
+        "code": "envelope_mismatch",
+        "message": "expected 'sti_pO3RdQQpDOisRRb3QBQM', got 'sti_S8OQlZcwQDLcRsSzcR6U'",
+        "path": "/step_input_id"
+      }
+    ],
+    "normalised": [
+      {
+        "model_value": null,
+        "path": "/skill_package_hash",
+        "stamped": "skill_package_hash"
+      }
+    ]
+  }
+}

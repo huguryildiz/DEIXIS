@@ -93,6 +93,7 @@ def test_resend_loop_without_owner_gate_uses_three_sessions_under_ceiling_one(re
         payload = si("report") | {"step_input_id": db.new_id("sti"), "research_id": api.rid, "run_id": run["id"], "step_id": step["id"]}
         api.store.insert_step_input(step["id"], api.rid, run["id"], 0, payload, "base", "developer", "message", {})
         api.adapter.fail = lambda si: ModelStepResult("failed", error="429 SYNTHETIC rate limit")
+        api.store.start_step(step["id"])  # RF6 (D211): a result is accepted only for a running step
         api.client.portal.call(lambda: api.app.state.worker.flow._call_adapter(run["id"], api.rid, step["id"],
             payload["step_input_id"], "fake", "review-model", api.adapter, "base", "developer",
             prompt.step_message(payload), {}, None, ModelCallLimiter(1), resend=None))

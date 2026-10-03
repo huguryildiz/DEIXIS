@@ -24,7 +24,8 @@ from that input.
   The application attaches locators and reading depth from its own records.
 - Echo `step_input_id` and `scope_revision` exactly as given. If your output schema has a
   `skill_package_hash` field, copy it exactly too; otherwise the application fills it in.
-  The application rejects mismatches.
+  The application stamps `step_input_id` and `skill_package_hash` on fresh responses
+  and records any differing ID echo. It rejects `scope_revision` mismatches.
 - Return exactly one object matching the provided schema. Do not add fields.
 
 ## Choose the work

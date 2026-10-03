@@ -288,6 +288,22 @@ def stamp_package_hash(task_type: str, step_input: dict[str, Any], draft: Any) -
     return draft, changes
 
 
+def stamp_step_input_id(task_type: str, step_input: dict[str, Any], draft: Any) -> tuple[Any, list[dict[str, Any]]]:
+    """Bind fresh adapter output to the code-owned input; never use on stored records."""
+    changes = []
+    if not isinstance(draft, dict):
+        return draft, changes
+    objects = [("", draft)] if len(TASK_OUTPUTS[task_type]) == 1 else [
+        (f"/{WRAPPER_KEYS[name]}", draft[WRAPPER_KEYS[name]]) for name in TASK_OUTPUTS[task_type]
+        if isinstance(draft.get(WRAPPER_KEYS[name]), dict)]
+    for path, obj in objects:
+        if obj.get("step_input_id") != step_input["step_input_id"]:
+            changes.append({"path": f"{path}/step_input_id", "stamped": "step_input_id",
+                            "model_value": obj.get("step_input_id")})
+        obj["step_input_id"] = step_input["step_input_id"]
+    return draft, changes
+
+
 _STRICT_KEYWORDS = frozenset("""
     type properties required additionalProperties items enum const anyOf $ref $defs
     description title pattern format minLength maxLength minimum maximum

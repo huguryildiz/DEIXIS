@@ -275,7 +275,7 @@ PATCH_FAILURES = [
     ("zero", "anchor_patch_quote_number"), ("beyond", "anchor_patch_quote_number"),
     ("removed_without_reason", "anchor_patch_removal"), ("kept_with_reason", "anchor_patch_removal"),
     ("unaffected_claim", "anchor_patch_claim"), ("unsupported", "anchor_patch_claim_unsupported"),
-    ("long_context", "anchor_patch_removal"), ("wrong_input", "envelope_mismatch"),
+    ("long_context", "anchor_patch_removal"),
     ("non_object", "schema_invalid"), ("duplicate_claim", "anchor_patch_claim"),
     ("removed_with_text", "anchor_patch_removal"), ("wrong_revision", "envelope_mismatch"),
 ]
@@ -299,8 +299,6 @@ def test_a6_invalid_patch_fails_closed_without_a_third_call(tmp_path, kind, code
             draft["anchors"][0]["quote_number"] = 0 if kind == "zero" else 999
         elif kind == "unsupported":
             draft["anchors"][0]["quote_number"] = None
-        elif kind == "wrong_input":
-            draft["step_input_id"] = "sti_WRONGINPUT01"
         elif kind == "wrong_revision":
             draft["scope_revision"] += 1
         elif kind == "non_object":
@@ -327,7 +325,7 @@ def test_a6_invalid_patch_fails_closed_without_a_third_call(tmp_path, kind, code
     assert "result" not in step["output"]
 
 
-@pytest.mark.parametrize("kind", ["wrong_input", "wrong_revision", "model", "tool"])
+@pytest.mark.parametrize("kind", ["wrong_revision", "model", "tool"])
 def test_e3_binding_and_isolation_remain_enforced(tmp_path, kind):
     """Guard E3: short binding errors repair once; model mismatch and tool use stop before consuming output."""
     def response(si, schema, message):
@@ -336,7 +334,7 @@ def test_e3_binding_and_isolation_remain_enforced(tmp_path, kind):
         if kind == "tool":
             return ModelStepResult("completed", raw_text=valid_response(si), resolved_model="fake-model", tool_item_types=["tool_call"])
         draft = json.loads(valid_response(si))
-        draft["step_input_id" if kind == "wrong_input" else "scope_revision"] = "sti_WRONGINPUT01" if kind == "wrong_input" else si["scope_revision"] + 1
+        draft["scope_revision"] = si["scope_revision"] + 1
         return draft
     if kind in ("model", "tool"):
         output, store, adapter, _, run = run_step(tmp_path, "report_section", STEP_INPUTS["C_report_section_IV"], response, allow_stop=True)
@@ -401,5 +399,5 @@ def test_m1_package_hash_changed_and_integrity_passes():
     """New contract M1 paired with E1: changed runtime identity plus the existing package-integrity guard."""
     package_hash = skill.load_skill_package().package_hash
     assert package_hash != OLD_HASH
-    assert package_hash == "sha256:098f14114e12a515f7f32e3ccfe3bd3592e7e7c88d6a4d5bd13f4af6a9849da5"
+    assert package_hash == "sha256:ccff02a169ea72690a594b3277c09c0975537f45ed20f9a6203a364d0c2b132c"
     assert skill.integrity_issues() == []

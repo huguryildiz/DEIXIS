@@ -238,6 +238,7 @@ def test_model_step_non_anchor_repairs_keep_the_old_message_byte_for_byte(tmp_pa
     shown = parse_step_input(rows[1][1])
     assert shown == contracts.with_citation_handles(json.loads(rows[1][0]))
     stamped, _ = contracts.stamp_package_hash(task, first_payload, {"SYNTHETIC_invalid_shape": True})
+    stamped, _ = contracts.stamp_step_input_id(task, first_payload, stamped)  # RF6 (D211)
     problem = issues(first_payload, stamped)
     expected = old_repair_message(shown, contracts.issues_with_handles(first_payload, problem))
     if task == "report_section":

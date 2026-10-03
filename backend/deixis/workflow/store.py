@@ -15,7 +15,7 @@ import re
 import sqlite3
 from uuid import uuid4
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from deixis.domain.canonical import sha256_hex
 from deixis.documents.jats import RENDITION_SQL
@@ -1186,7 +1186,7 @@ class Store:
             self._event(research_id, "model_call_started", {"step_id": step_id, "connection": connection, "requested_model": requested_model}, run_id)
         return msid
 
-    def finish_model_session(self, session_id: str, **fields: Any) -> None:
+    def finish_model_session(self, session_id: str, *, accept: Callable[[], bool] | None = None, **fields: Any) -> bool:
         encoded = {k: (dumps(v) if k.endswith("_json") and v is not None else v) for k, v in fields.items()}
         # Historical migration tests create a Store before migration 0037 exists.
         if fields.get("raw_output") is not None and any(
@@ -1194,10 +1194,13 @@ class Store:
             encoded["output_sha256"] = _output_digest(fields["raw_output"])
         encoded["finished_at"] = now()
         with transaction(self.conn):
-            self.conn.execute(
-                f"UPDATE model_sessions SET {', '.join(f'{k} = ?' for k in encoded)} WHERE id = ?",
-                (*encoded.values(), session_id),
-            )
+            accepted = accept is None or accept()
+            if accepted:
+                self.conn.execute(
+                    f"UPDATE model_sessions SET {', '.join(f'{k} = ?' for k in encoded)} WHERE id = ?",
+                    (*encoded.values(), session_id),
+                )
+        return accepted
 
     def model_session(self, step_input_id: str) -> dict[str, Any]:
         row = self.conn.execute(
@@ -1208,11 +1211,30 @@ class Store:
             raise NotFound(step_input_id)
         return dict(row)
 
-    def complete_model_step(self, session_id: str, session_fields: dict[str, Any], step_id: str, status: str, **step_fields: Any) -> None:
+    def model_attempt_active(self, session_id: str, research_id: str, run_id: str, step_id: str,
+                             step_input_id: str, step_attempt: int) -> bool:
+        """Retries may share an input, so both the latest session and step generation must match."""
+        return self.conn.execute(
+            "SELECT 1 FROM model_sessions m JOIN run_steps s ON s.id = m.step_id"
+            " JOIN step_inputs i ON i.id = m.step_input_id"
+            " WHERE m.id = ? AND m.research_id = ? AND m.run_id = ? AND m.step_id = ?"
+            " AND m.step_input_id = ? AND m.status = 'started' AND m.finished_at IS NULL"
+            " AND s.run_id = m.run_id AND s.status = 'running' AND s.attempt = ?"
+            " AND i.step_id = m.step_id AND i.run_id = m.run_id AND i.research_id = m.research_id"
+            " AND m.rowid = (SELECT MAX(rowid) FROM model_sessions WHERE step_id = s.id)"
+            " AND i.rowid = (SELECT MAX(rowid) FROM step_inputs WHERE step_id = s.id)",
+            (session_id, research_id, run_id, step_id, step_input_id, step_attempt),
+        ).fetchone() is not None
+
+    def complete_model_step(self, session_id: str, session_fields: dict[str, Any], step_id: str, status: str,
+                            *, accept: Callable[[], bool] | None = None, **step_fields: Any) -> bool:
         """Commit the model session result and the step outcome together, so recovery never finds one without the other."""
         with transaction(self.conn):
-            self.finish_model_session(session_id, **session_fields)
-            self.finish_step(step_id, status, **step_fields)
+            accepted = accept is None or accept()
+            if accepted:
+                self.finish_model_session(session_id, **session_fields)
+                self.finish_step(step_id, status, **step_fields)
+        return accepted
 
     # ---- sources ----------------------------------------------------------------------
     def find_source_by_identifier(self, scheme: str, value: str) -> str | None:

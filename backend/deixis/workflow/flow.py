@@ -5353,6 +5353,24 @@ class ResearchFlow:
             "created_at": now(),
         }
 
+    def _model_result_checkpoint(self, session: str, result: ModelStepResult, run_id: str, rid: str,
+                                 step_id: str, step_input_id: str, step_attempt: int) -> bool:
+        """Record discarded transport results without changing a closed or superseded step."""
+        fields = {"resolved_model": result.resolved_model, "external_thread_id": result.external_thread_id,
+                  "raw_output": result.raw_text, "token_usage_json": result.token_usage,
+                  "tool_item_types_json": result.tool_item_types}
+        with transaction(self.store.conn):
+            if not self.store.model_attempt_active(session, rid, run_id, step_id, step_input_id, step_attempt):
+                row = self.store.conn.execute("SELECT raw_output, validation_json, finished_at FROM model_sessions WHERE id = ?", (session,)).fetchone()
+                if row is not None:
+                    validation = json.loads(row["validation_json"]) if row["validation_json"] else {}
+                    validation.setdefault("discarded_results", []).append(fields | {"code": "model_attempt_inactive"})
+                    self.store.finish_model_session(session, **(fields if row["raw_output"] is None else {}),
+                                                    validation_json=validation)
+                    self.store.conn.execute("UPDATE model_sessions SET finished_at = ? WHERE id = ?", (row["finished_at"], session))
+                return False
+        return True
+
     async def _call_adapter(self, run_id: str, rid: str, step_id: str, step_input_id: str, connection: str,
                             requested_model: str | None, adapter: ModelAdapter, base: str, developer: str, message: str,
                             schema: dict[str, Any], reasoning_effort: str | None,
@@ -5367,8 +5385,11 @@ class ResearchFlow:
         """
         attempts = 0
         while True:
+            step_attempt = self.store.conn.execute("SELECT attempt FROM run_steps WHERE id = ?", (step_id,)).fetchone()[0]
             session = self.store.start_model_session(rid, run_id, step_id, step_input_id, connection, requested_model)
             result = await adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort)
+            if not self._model_result_checkpoint(session, result, run_id, rid, step_id, step_input_id, step_attempt):
+                raise RunStopped
             if (limiter is None or result.status == "completed" or attempts >= MAX_RATE_LIMIT_MODEL_RETRIES
                     or not is_rate_limited(result)):
                 return session, result
@@ -5454,7 +5475,7 @@ class ResearchFlow:
                 "SELECT si.attempt, si.id, m.raw_output, m.validation_json FROM step_inputs si"
                 " JOIN model_sessions m ON m.step_input_id = si.id WHERE si.step_id = ?"
                 " ORDER BY si.rowid, m.rowid", (step["id"],)).fetchall()
-            invalids = [r for r in previous if r["validation_json"] and not json.loads(r["validation_json"]).get("ok")]
+            invalids = [r for r in previous if r["validation_json"] and json.loads(r["validation_json"]).get("ok") is False]
             repairs = len({r["id"] for r in invalids})
             attempt = self.store.conn.execute(
                 "SELECT COALESCE(MAX(attempt), -1) FROM step_inputs WHERE step_id = ?", (step["id"],)).fetchone()[0]
@@ -5585,6 +5606,7 @@ class ResearchFlow:
                 attempt_records[payload["step_input_id"]] = extra
                 self.store.set_step_output(step["id"], sent_output()["output"])
             sent_extra, sent_input = extra, payload["step_input_id"]
+            step_attempt = self.store.conn.execute("SELECT attempt FROM run_steps WHERE id = ?", (step["id"],)).fetchone()[0]
             session, result = await self._call_adapter(
                 run_id, rid, step["id"], payload["step_input_id"], connection, requested_model, adapter, base, developer,
                 message, schema, reasoning_effort, limiter,
@@ -5592,17 +5614,28 @@ class ResearchFlow:
             )
             if session is None:
                 continue  # rate-limited, and a work of this input was decided since: the next attempt is built anew
+            if not self._model_result_checkpoint(session, result, run_id, rid, step["id"], payload["step_input_id"], step_attempt):
+                raise RunStopped
+
+            def complete(status: str, **fields: Any) -> None:
+                # No other writer may supersede the attempt between the last checkpoint and publication.
+                accepted = self.store.complete_model_step(session, recorded, step["id"], status,
+                    accept=lambda: self._model_result_checkpoint(session, result, run_id, rid, step["id"], payload["step_input_id"], step_attempt),
+                    **fields)
+                if accepted is False:
+                    raise RunStopped
+
             recorded: dict[str, Any] = {
                 "status": result.status, "resolved_model": result.resolved_model, "external_thread_id": result.external_thread_id,
                 "raw_output": result.raw_text, "token_usage_json": result.token_usage, "tool_item_types_json": result.tool_item_types,
             }
             if result.status == "isolation_violation" or result.tool_item_types:
-                self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_isolation_violation",
+                complete("failed", error_code="model_isolation_violation",
                                                error={"tool_item_types": result.tool_item_types, "error": result.error}, **sent_output())
                 halt("model_isolation_violation", {"tool_item_types": result.tool_item_types, "error": result.error})
             if result.status != "completed":
                 final = "outcome_unknown" if result.delivery_class == "after_send_unknown" else "failed"
-                self.store.complete_model_step(session, recorded, step["id"], final, error_code=f"model_{result.status}",
+                complete(final, error_code=f"model_{result.status}",
                                                error=result.error, delivery_class=result.delivery_class, **sent_output())
                 self._checkpoint(run_id)
                 if (task_type in TIMEOUT_RETRIED_TASKS and not timeout_resent and turn_timed_out(result)
@@ -5618,13 +5651,16 @@ class ResearchFlow:
             if not requested_model or (result.resolved_model != requested_model and not result.requested_model_verified):
                 # Output from any model other than the one chosen for this step's role is recorded but never used.
                 mismatch = {"requested_model": requested_model, "resolved_model": result.resolved_model}
-                self.store.complete_model_step(session, recorded, step["id"], "failed", error_code="model_mismatch", error=mismatch,
+                complete("failed", error_code="model_mismatch", error=mismatch,
                                                **sent_output())
                 halt("model_mismatch", mismatch)
             output_text = result.raw_text or ""
             patch_record = None
             normalised_changes = []
             if anchor_patch:
+                output_text = contracts.normalise_output(task_type, output_text)[0]
+                output_text, stamps = contracts.stamp_step_input_id(task_type, payload, output_text)
+                normalised_changes.extend(stamps)
                 report = contracts.validate_report_section_anchor_patch(payload, patch_base, anchor_context, output_text)
                 if report.ok:
                     output_text, patch_changes = contracts.apply_report_section_anchor_patch(
@@ -5641,6 +5677,8 @@ class ResearchFlow:
             if not anchor_patch:
                 output_text, normalised_changes = contracts.normalise_output(task_type, output_text)
                 output_text, stamps = contracts.stamp_package_hash(task_type, payload, output_text)
+                normalised_changes.extend(stamps)
+                output_text, stamps = contracts.stamp_step_input_id(task_type, payload, output_text)
                 normalised_changes.extend(stamps)
                 report = contracts.validate_model_output(payload, output_text)
                 if task_type == "report_section" and repair_issues is not None:
@@ -5671,7 +5709,7 @@ class ResearchFlow:
                     output = output | extra
                 if attempt_record is not None:
                     output = output | sent_output()["output"]
-                self.store.complete_model_step(session, recorded, step["id"], "succeeded", output=output)
+                complete("succeeded", output=output)
                 return output
             repair_issues = [vars(i) for i in report.issues]
             if anchor_patch:
@@ -5679,10 +5717,14 @@ class ResearchFlow:
             invalid_raw, invalid_input = result.raw_text, payload["step_input_id"]
             if after_invalid_output(repairs, max_repairs) == "store_unverified_draft":
                 provenance = sent_output()["output"] if attempt_record is not None else {"step_input_id": payload["step_input_id"]}
-                self.store.complete_model_step(session, recorded, step["id"], "failed",
+                complete("failed",
                                                output=provenance,
                                                error_code="invalid_model_output", error=repair_issues)
                 return {"invalid": True, "raw_output": result.raw_text, "issues": repair_issues,
                         "step_input_id": payload["step_input_id"]} | (provenance if attempt_record else {})
             repairs += 1
-            self.store.finish_model_session(session, **recorded)
+            accepted = self.store.finish_model_session(session,
+                accept=lambda: self._model_result_checkpoint(session, result, run_id, rid, step["id"], payload["step_input_id"], step_attempt),
+                **recorded)
+            if accepted is False:
+                raise RunStopped

@@ -390,7 +390,9 @@ def test_worker_recover_marks_the_half_sent_run_paused_and_resume_finishes_it(li
     assert publication(lib, run) is None
     lib.adapter.before = None
     assert resume(lib, run)["status"] == "completed"
-    assert len(lib.adapter.calls) == 1 and len(revisions(lib)) == 1
+    # RF6 (D211): the late result of the attempt recovery closed as outcome_unknown is recorded, not used,
+    # so the resumed step sends again (before RF6 that late result was stored and reused).
+    assert len(lib.adapter.calls) == 2 and len(revisions(lib)) == 1
 
 
 def test_crash_after_publication_does_not_publish_twice_or_call_the_model(lib):

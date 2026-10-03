@@ -11,6 +11,21 @@ def test_package_integrity():
     assert skill.integrity_issues() == []
 
 
+def test_owner_review_method_loading_hash_and_provenance():
+    package = skill.load_skill_package()
+    assert skill.RUNTIME_FILES["owner_review"] == ("SKILL.md", "references/review.md")
+    text = package.runtime_text("owner_review")
+    assert '<method-file path="references/review.md">' in text
+    assert "additional model assessment" in text and "empty `findings`" in text
+    assert package.package_hash != "sha256:8e1e4a8453a286ac9da8628dd095dd7796f3a49ae374d7930cb3ef06c546ee76"
+    assert skill.integrity_issues() == []
+    provenance = json.loads((SKILL_DIR / "provenance.json").read_text())
+    entry = next(e for e in provenance["adaptations"] if e["deixis_file"] == "references/review.md")
+    assert entry["derived_from"] == []
+    for marker in ("2026-10-03", "D180", "D181", "not upstream text", "Loaded only", "owner_review", "Not measured", "tried against no model"):
+        assert marker in entry["change"]
+
+
 def test_candidate_tasks_load_candidate_check_md_and_the_hash_moved():
     before = "sha256:371fcecb7977fec6cce031f101a68cba9e4688383118951fe663614f342b2e8c"
     package = skill.load_skill_package()

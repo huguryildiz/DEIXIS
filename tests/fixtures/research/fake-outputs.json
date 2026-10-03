@@ -3431,6 +3431,85 @@
      }
     ]
    }
+  },
+  {
+   "name": "owner_review_answer_empty",
+   "step_input": "R_owner_review_answer",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "step_input_id": "sti_SYNTHREVIEWanswer",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "schema_version": "deixis.owner_review.v1",
+    "findings": [],
+    "supported_points": [],
+    "context_limits": [],
+    "notes": "SYNTHETIC empty findings."
+   }
+  },
+  {
+   "name": "owner_review_unknown_ref",
+   "step_input": "R_owner_review_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "review_ref_unknown"
+   ],
+   "output": {
+    "step_input_id": "sti_SYNTHREVIEWanswer",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "schema_version": "deixis.owner_review.v1",
+    "findings": [],
+    "supported_points": [
+     {
+      "target_ref": {
+       "kind": "claim",
+       "ref": "c2"
+      },
+      "evidence": [
+       {
+        "passage_handle": "psg_SYNA1abs01",
+        "anchor": "We formulate release-time scheduling"
+       }
+      ]
+     }
+    ],
+    "context_limits": [],
+    "notes": "SYNTHETIC empty findings."
+   }
+  },
+  {
+   "name": "owner_review_report_empty",
+   "step_input": "R_owner_review_report",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "step_input_id": "sti_SYNTHREVIEWreport",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "schema_version": "deixis.owner_review.v1",
+    "findings": [],
+    "supported_points": [],
+    "context_limits": [],
+    "notes": "SYNTHETIC empty findings."
+   }
+  },
+  {
+   "name": "owner_review_candidate_empty",
+   "step_input": "R_owner_review_candidate",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "step_input_id": "sti_SYNTHREVIEWcandidate",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "schema_version": "deixis.owner_review.v1",
+    "findings": [],
+    "supported_points": [],
+    "context_limits": [],
+    "notes": "SYNTHETIC empty findings."
+   }
   }
  ]
 }

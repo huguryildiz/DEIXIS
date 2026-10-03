@@ -29,6 +29,349 @@
     "created_at"
   ],
   "properties": {
+    "review_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "review_snapshot_id",
+        "target_kind",
+        "focus",
+        "owner_note",
+        "group_index",
+        "group_count",
+        "claims",
+        "sections",
+        "elements",
+        "cells",
+        "columns",
+        "candidate_statement",
+        "passage_ids"
+      ],
+      "properties": {
+        "review_snapshot_id": {
+          "type": "string",
+          "maxLength": 44,
+          "pattern": "^rvs_[0-9A-Za-z]{8,40}$"
+        },
+        "target_kind": {
+          "type": "string",
+          "enum": [
+            "answer",
+            "report",
+            "candidate"
+          ],
+          "maxLength": 64
+        },
+        "focus": {
+          "type": "string",
+          "enum": [
+            "source_support",
+            "assumptions_and_consistency"
+          ],
+          "maxLength": 64
+        },
+        "owner_note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500
+        },
+        "group_index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "group_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "claims": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "claim_ref",
+              "section_ref",
+              "text",
+              "text_origin",
+              "support_type",
+              "citations"
+            ],
+            "properties": {
+              "claim_ref": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^(c[0-9]{1,3}|[A-Za-z_]+\\.[0-9]{1,3})$"
+              },
+              "section_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 16,
+                "pattern": "^(abstract|index_terms|I|II|III|IV|V|VI|VII|VIII|IX)$"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "text_origin": {
+                "type": "string",
+                "enum": [
+                  "model",
+                  "human_edit"
+                ],
+                "maxLength": 64
+              },
+              "support_type": {
+                "type": "string",
+                "enum": [
+                  "source_stated",
+                  "analyst_inference"
+                ],
+                "maxLength": 64
+              },
+              "citations": {
+                "type": "array",
+                "maxItems": 48,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "passage_id",
+                    "cell_id",
+                    "anchor_text"
+                  ],
+                  "properties": {
+                    "passage_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 44,
+                      "pattern": "^psg_[0-9A-Za-z]{8,40}$"
+                    },
+                    "cell_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 44,
+                      "pattern": "^cel_[0-9A-Za-z]{8,40}$"
+                    },
+                    "anchor_text": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 600
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "sections": {
+          "type": "array",
+          "maxItems": 11,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "section_ref",
+              "title",
+              "status"
+            ],
+            "properties": {
+              "section_ref": {
+                "type": "string",
+                "maxLength": 16,
+                "pattern": "^(abstract|index_terms|I|II|III|IV|V|VI|VII|VIII|IX)$"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 200
+              },
+              "status": {
+                "type": "string",
+                "maxLength": 64
+              }
+            }
+          }
+        },
+        "elements": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "element_ref",
+              "position",
+              "text",
+              "kind"
+            ],
+            "properties": {
+              "element_ref": {
+                "type": "string",
+                "maxLength": 4,
+                "pattern": "^e[0-9]{1,3}$"
+              },
+              "position": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "mechanism",
+                  "condition",
+                  "outcome",
+                  "parameter"
+                ],
+                "maxLength": 64
+              }
+            }
+          }
+        },
+        "cells": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cell_id",
+              "column_id",
+              "source_id",
+              "state",
+              "value_text",
+              "evidence"
+            ],
+            "properties": {
+              "cell_id": {
+                "type": "string",
+                "maxLength": 44,
+                "pattern": "^cel_[0-9A-Za-z]{8,40}$"
+              },
+              "column_id": {
+                "type": "string",
+                "maxLength": 44,
+                "pattern": "^col_[0-9A-Za-z]{8,40}$"
+              },
+              "source_id": {
+                "type": "string",
+                "maxLength": 44,
+                "pattern": "^srv_[0-9A-Za-z]{8,40}$"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "value",
+                  "unknown",
+                  "not_applicable",
+                  "not_found_in_inspected_scope",
+                  "inaccessible",
+                  "not_verified",
+                  "not_reported"
+                ],
+                "maxLength": 64
+              },
+              "value_text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 4000
+              },
+              "evidence": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "passage_id",
+                    "quote"
+                  ],
+                  "properties": {
+                    "passage_id": {
+                      "type": "string",
+                      "maxLength": 44,
+                      "pattern": "^psg_[0-9A-Za-z]{8,40}$"
+                    },
+                    "quote": {
+                      "type": "string",
+                      "maxLength": 600
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "columns": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "column_id",
+              "name",
+              "answer_format"
+            ],
+            "properties": {
+              "column_id": {
+                "type": "string",
+                "maxLength": 44,
+                "pattern": "^col_[0-9A-Za-z]{8,40}$"
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "answer_format": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "choice",
+                  "number_unit",
+                  "yes_no"
+                ],
+                "maxLength": 64
+              }
+            }
+          }
+        },
+        "candidate_statement": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 4000
+        },
+        "passage_ids": {
+          "type": "array",
+          "maxItems": 48,
+          "items": {
+            "type": "string",
+            "maxLength": 44,
+            "pattern": "^psg_[0-9A-Za-z]{8,40}$"
+          }
+        }
+      }
+    },
     "candidate_target": {
       "type": "object",
       "additionalProperties": false,
@@ -236,7 +579,8 @@
         "lineage_links",
         "claim_decomposition",
         "kill_search_query",
-        "claim_assessment"
+        "claim_assessment",
+        "owner_review"
       ]
     },
     "scope_revision": {
@@ -1145,6 +1489,33 @@
         "passage_ids"
       ],
       "properties": {
+        "claim_refs": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^(c[0-9]{1,3}|[A-Za-z_]+\\.[0-9]{1,3})$"
+          }
+        },
+        "section_refs": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 16,
+            "pattern": "^(abstract|index_terms|I|II|III|IV|V|VI|VII|VIII|IX)$"
+          }
+        },
+        "element_refs": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 4,
+            "pattern": "^e[0-9]{1,3}$"
+          }
+        },
         "element_ids": {"type": "array", "items": {"type": "string", "pattern": "^ele_[0-9A-Za-z]{8,40}$"}},
         "candidate_ids": {
           "type": "array",

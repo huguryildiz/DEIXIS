@@ -178,8 +178,13 @@ def test_migration_0063_applies_on_an_old_library_once_and_changes_no_rows(tmp_p
     before = {t: sorted((tuple(r) for r in conn.execute(f"SELECT * FROM {t}")), key=repr) for t in tables}
     assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'run_steps_operation'").fetchone()
 
-    assert db.migrate(conn) == [63]
-    assert db.migrate(conn) == []  # an applied migration is not run again
+    shutil.copy(real / "0063_view_lookup_indexes.sql", old / "0063_view_lookup_indexes.sql")
+    try:
+        db.MIGRATIONS_DIR = old
+        assert db.migrate(conn) == [63]
+        assert db.migrate(conn) == []  # an applied migration is not run again
+    finally:
+        db.MIGRATIONS_DIR = real
     after = {t: sorted((tuple(r) for r in conn.execute(f"SELECT * FROM {t}")), key=repr) for t in tables}
     migrations = {t: rows for t, rows in after.items() if t != "schema_migrations"}
     assert migrations == {t: rows for t, rows in before.items() if t != "schema_migrations"}

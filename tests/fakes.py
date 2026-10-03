@@ -21,6 +21,14 @@ def envelope(si: dict[str, Any], version: str) -> dict[str, Any]:
 
 def valid_response(si: dict[str, Any]) -> str:
     task = si["task_type"]
+    if task == "owner_review":
+        first = si["passages"][0] if si["passages"] else None
+        return json.dumps(envelope(si, "deixis.owner_review.v1") | {
+            "findings": [], "supported_points": [{"target_ref": {"kind": "whole", "ref": None},
+                "evidence": [{"passage_handle": first["passage_id"], "anchor": first["text"][:600]}]}] if first else [],
+            "context_limits": [] if first else [{"code": "passage_missing", "target_ref": {"kind": "whole", "ref": None},
+                "text": "SYNTHETIC: this group supplies no passage evidence."}], "notes": "SYNTHETIC scripted assessment.",
+        })
     if task == "claim_decomposition":
         return json.dumps(envelope(si, "deixis.claim_decomposition.v1") | {
             "claim_statement": "SYNTHETIC: buffering reduces delay under bounded arrivals.",

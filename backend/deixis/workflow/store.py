@@ -312,6 +312,8 @@ class Store:
             self.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (research_id,))
             from deixis.workflow.candidates.store import purge_candidates
             purge_candidates(self.conn, research_id)
+            from deixis.workflow.review.store import purge_owner_reviews
+            source_ids.extend(purge_owner_reviews(self.conn, research_id))
             self.conn.execute(
                 "DELETE FROM report_edit_checks WHERE report_id IN"
                 " (SELECT id FROM reports WHERE research_id = ?)", (research_id,),
@@ -367,6 +369,9 @@ class Store:
             self.conn.execute("DELETE FROM researches WHERE id = ?", (research_id,))
             self.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (research_id,))
             orphan_files: list[str] = []
+            source_ids = list(dict.fromkeys(source_ids))
+            # Remaining citations and snapshots protect evidence even without corpus membership.
+            cited = self.cited_source_versions(source_ids)
             for source_id in source_ids:
                 # A provider source may be shared by another research. Keep its evidence and files in that case.
                 shared = self.conn.execute(
@@ -375,7 +380,7 @@ class Store:
                     " UNION SELECT 1 FROM kill_search_hits WHERE source_version_id = ? LIMIT 1",
                     (source_id, source_id, source_id, source_id),
                 ).fetchone()
-                if shared:
+                if shared or source_id in cited:
                     continue
                 source = self.conn.execute("SELECT work_id, provider_payload_path FROM source_versions WHERE id = ?", (source_id,)).fetchone()
                 if source is None:
@@ -2367,7 +2372,8 @@ class Store:
             f" UNION SELECT source_version_id FROM claim_matrix_evidence WHERE source_version_id IN ({marks})",
             (*svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids),
         ).fetchall()
-        return {row[0] for row in rows}
+        from deixis.workflow.review.store import snapshot_referenced_source_versions
+        return {row[0] for row in rows} | snapshot_referenced_source_versions(self.conn, svids)
 
     def purge_sources(self, research_id: str, svids: list[str]) -> tuple[list[str], list[str], list[str]]:
         """Delete removed sources from this research for good; returns (purged, orphan files, orphan payloads) (D65).

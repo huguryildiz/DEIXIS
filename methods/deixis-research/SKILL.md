@@ -38,9 +38,15 @@ that matches `task_type`:
 | `report_section` | [Report](references/report.md) — Section instructions |
 | `report_phrase_repair` | [Report](references/report.md) — Phrase repair |
 | `report_review` | [Report](references/report.md) — Report review |
+| `owner_review` | [Owner review](references/review.md) |
 
 For `answer_review`, read [answer review](references/answer-review.md) instead:
 you review claims another step wrote and do not answer the question yourself.
+
+For `owner_review`, read [owner review](references/review.md): assess the stored
+copy supplied by the application. This is an additional model assessment.
+Return findings only when the supplied material warrants them; empty findings
+are valid. Suggestions never change the original text.
 
 For `vocabulary_labels`, read
 [vocabulary labels](references/vocabulary-labels.md): you sort a phrase list the

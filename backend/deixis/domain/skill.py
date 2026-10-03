@@ -18,6 +18,7 @@ from deixis.paths import SKILL_DIR
 
 # The answer and report section steps load the phrasebank; other steps do not write report prose.
 RUNTIME_FILES = {
+    "owner_review": ("SKILL.md", "references/review.md"),
     "grounded_answer": ("SKILL.md", "references/source-grounded-answer.md", PHRASEBANK),
     "answer_review": ("SKILL.md", "references/answer-review.md"),
     "cell_extraction": ("SKILL.md", "references/evidence-table.md"),

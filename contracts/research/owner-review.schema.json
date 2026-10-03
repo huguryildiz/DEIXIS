@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/owner-review.schema.json",
+  "title": "OwnerReview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "findings",
+    "supported_points",
+    "context_limits",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "deixis.owner_review.v1"
+    },
+    "step_input_id": {
+      "$ref": "common.schema.json#/$defs/step_input_id"
+    },
+    "scope_revision": {
+      "$ref": "common.schema.json#/$defs/scope_revision"
+    },
+    "skill_package_hash": {
+      "$ref": "common.schema.json#/$defs/skill_package_hash"
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "finding_handle",
+          "target_ref",
+          "kind",
+          "evidence",
+          "rationale",
+          "possible_impact",
+          "suggested_fix",
+          "uncertainty"
+        ],
+        "properties": {
+          "finding_handle": {
+            "type": "string",
+            "maxLength": 4,
+            "pattern": "^f[0-9]{1,3}$"
+          },
+          "target_ref": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "ref"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "claim",
+                  "section",
+                  "candidate_element",
+                  "whole"
+                ],
+                "maxLength": 64
+              },
+              "ref": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              }
+            }
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "unsupported",
+              "partially_supported",
+              "overstated",
+              "missing_context",
+              "inconsistent",
+              "assumption_unstated",
+              "other"
+            ],
+            "maxLength": 64
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "passage_handle",
+                "anchor"
+              ],
+              "properties": {
+                "passage_handle": {
+                  "type": "string",
+                  "maxLength": 44,
+                  "pattern": "^psg_[0-9A-Za-z]{8,40}$"
+                },
+                "anchor": {
+                  "type": "string",
+                  "minLength": 12,
+                  "maxLength": 600
+                }
+              }
+            }
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 1200
+          },
+          "possible_impact": {
+            "type": "string",
+            "maxLength": 600
+          },
+          "suggested_fix": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1500
+          },
+          "uncertainty": {
+            "type": "string",
+            "maxLength": 600
+          }
+        }
+      }
+    },
+    "supported_points": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target_ref",
+          "evidence"
+        ],
+        "properties": {
+          "target_ref": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "ref"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "claim",
+                  "section",
+                  "candidate_element",
+                  "whole"
+                ],
+                "maxLength": 64
+              },
+              "ref": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              }
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "passage_handle",
+                "anchor"
+              ],
+              "properties": {
+                "passage_handle": {
+                  "type": "string",
+                  "maxLength": 44,
+                  "pattern": "^psg_[0-9A-Za-z]{8,40}$"
+                },
+                "anchor": {
+                  "type": "string",
+                  "minLength": 12,
+                  "maxLength": 600
+                }
+              }
+            },
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "context_limits": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "target_ref",
+          "text"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "passage_missing",
+              "only_abstract",
+              "not_enough_context",
+              "outside_provided_scope"
+            ],
+            "maxLength": 64
+          },
+          "target_ref": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "ref"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "claim",
+                  "section",
+                  "candidate_element",
+                  "whole"
+                ],
+                "maxLength": 64
+              },
+              "ref": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              }
+            }
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 600
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 1200
+    }
+  }
+}

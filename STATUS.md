@@ -2,17 +2,17 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 03:20 · main'e D174 ve H9 taslağı girdi
+**Son güncelleme:** 3 Ekim 2026 04:10 · P8 B1 (D181), D175, D176 main'de
 
 ## Şu an çalışanlar
 
 Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. Sol (gpt-6.1-sol) yazarsa Claude inceler, Claude yazarsa Sol inceler. Sahip onayı gereken kararlar Sol medium ile ortak verilir.
 
 - 🟡 **P9 RR-B** (`../DEIXIS-rrb`): kod Sol, inceleme ve iki matris koşusu Claude.
-- 🟡 **P8 B1** (`../DEIXIS-p8b1`, D181): kod Sol high, Claude incelemesi sürüyor.
+- ✅ **P8 B1** (D181): inceleme sözleşmesi, anlık görüntü, tablolar, bayatlama kuralı; Sol yazdı, Claude 2 turda hazır dedi; 8.839 test geçti.
 - 🟡 **P7 G6–G8, G11, G12** (`../DEIXIS-p7g`, D173): Claude 1. tur "düzeltmeyle hazır"; Sol düzeltiyor, G8'in koşu boyu kota korumasını da ekliyor.
-- 🟡 **Küçük kalanlar** (`../DEIXIS-leftovers`, D175): dışa aktarma hatasının Türkçesi, slice 31 test eksikleri; Sol medium.
-- 🟡 **Onarılan dosyanın yeniden işlenmesi, tasarım** (`../DEIXIS-reextract`): Claude 1. tur "düzeltmeyle hazır", Sol düzeltiyor.
+- ✅ **Küçük kalanlar** (D175): dışa aktarma hatasının Türkçesi, slice 31 test eksikleri.
+- ✅ **Onarılan dosyanın yeniden işlenmesi, tasarım** (D176); kodu R1–R5 partilerinde.
 - ✅ **P7 G10 canlı deneme** (3 Ekim 02:48): IEEE, Scopus, CORE, SerpApi birer arama, hepsi HTTP 200.
 - ✅ **P7 G1 eklenti sözleşmesi tasarımı** (D174) ve **H9 dondurma taslağı** main'de.
 
@@ -35,7 +35,7 @@ Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizl
 | P4–P5 | İlk web dilimi, kütüphane, kanıt tablosu | ✅ |
 | P6 | Sentez ve rapor | ✅ beş dilim kapandı; gerçek model ölçümleri P9'a borç |
 | P7 | Bağlantı kapsamı | 🟡 D172 kapandı; G10 canlı erişim gösterildi; G1 tasarımı D174; G6–G8, G11, G12 sürüyor |
-| P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; B1 sürüyor; B5 P7'yi bekliyor |
+| P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181); sırada B2–B8 |
 | P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, H6 düzeltmeleri bitti; RR-B sürüyor; H9–H10 yok |
 | P10 | macOS / Windows paketi | ❌ |
 

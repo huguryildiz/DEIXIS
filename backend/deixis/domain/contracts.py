@@ -27,6 +27,7 @@ from deixis.workflow.criterion import (MAX_PHRASE_WORDS, PARTS_PER_PROPOSAL, PHR
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, InvalidTableInput, check_value, column_spec
 
 SCHEMA_FILES = {
+    "OwnerReview": "owner-review.schema.json",
     "GroundedAnswerDraft": "grounded-answer-draft.schema.json",
     "AnswerReview": "answer-review.schema.json",
     "EvidenceCellDraft": "evidence-cell-draft.schema.json",
@@ -49,6 +50,7 @@ SCHEMA_FILES = {
     "ClaimAssessment": "claim-assessment.schema.json",
 }
 SCHEMA_VERSIONS = {
+    "OwnerReview": "deixis.owner_review.v1",
     "GroundedAnswerDraft": "deixis.grounded_answer_draft.v3",
     "AnswerReview": "deixis.answer_review.v1",
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
@@ -72,6 +74,7 @@ SCHEMA_VERSIONS = {
 # Model outputs each task may return. More than one output type is wrapped in an
 # object with one nullable property per type; exactly one must be non-null.
 TASK_OUTPUTS = {
+    "owner_review": ("OwnerReview",),
     "grounded_answer": ("GroundedAnswerDraft",),
     "answer_review": ("AnswerReview",),
     "cell_extraction": ("EvidenceCellDraft",),
@@ -104,6 +107,7 @@ SCREENING_TARGET_TASKS = ("abstract_screening",)
 ADJUDICATION_TARGET_TASKS = ("fulltext_adjudication",)
 GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
 REPORT_TASKS = ("report_plan", "report_section", "report_phrase_repair", "report_review")
+REVIEW_TASKS = ("owner_review",)
 LINEAGE_TASKS = ("lineage_links",)
 CANDIDATE_TASKS = ("claim_decomposition", "kill_search_query", "claim_assessment")
 CANDIDATE_SUPPORT_RELATIONS = ("explicit_support", "reasoned_inference", "partial_match")
@@ -355,6 +359,7 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
         issues.append(Issue("adjudication_run_out_of_range", "/adjudication_target/run", str(adjudication_target["run"])))
     issues.extend(_check_lineage_target(step_input, records))
     issues.extend(_check_candidate_target(step_input, records))
+    issues.extend(_check_owner_review_input(step_input, records))
     report_target = step_input.get("report_target")
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
         issues.append(Issue("report_target_mismatch", "/report_target", step_input["task_type"]))
@@ -422,6 +427,124 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
         elif report_target["plan"] is not None:
             issues.append(Issue("report_plan_must_be_null", "/report_target/plan", step_input["task_type"]))
     return issues
+
+
+def _check_owner_review_input(si: dict[str, Any], records: dict[str, set[str]]) -> list[Issue]:
+    issues: list[Issue] = []
+    target = si.get("review_input")
+    if (target is not None) != (si["task_type"] in REVIEW_TASKS):
+        return [Issue("review_input_mismatch", "/review_input", si["task_type"])]
+    if target is None:
+        return issues
+
+    def reject(code: str, path: str, detail: Any) -> None:
+        issues.append(Issue(code, path, str(detail)))
+
+    allow = si["allowlist"]
+    if si["candidates"] or any(k.endswith("_target") for k in si):
+        reject("review_input_mismatch", "/review_input", "review carries no candidates or other target")
+    allowed_keys = {"candidate_ids", "source_ids", "passage_ids", "cell_ids", "claim_refs", "section_refs", "element_refs"}
+    if set(allow) - allowed_keys or allow["candidate_ids"]:
+        reject("review_allowlist_mismatch", "/allowlist", "only review record and ref lists are allowed")
+    for name, array, field in (("claim_refs", "claims", "claim_ref"), ("section_refs", "sections", "section_ref"),
+                                ("element_refs", "elements", "element_ref"), ("cell_ids", "cells", "cell_id")):
+        refs = [r[field] for r in target[array]]
+        if len(refs) != len(set(refs)):
+            reject("duplicate_review_ref", f"/review_input/{array}", name)
+        if sorted(allow.get(name, [])) != sorted(refs):
+            reject("review_allowlist_mismatch", f"/allowlist/{name}", refs)
+    pids = [p["passage_id"] for p in si["passages"]]
+    sids = [s["source_id"] for s in si["sources"]]
+    if sorted(allow["source_ids"]) != sorted(sids) or len(set(sids)) != len(sids):
+        reject("review_source_ids_mismatch", "/allowlist/source_ids", sids)
+    if (sorted(target["passage_ids"]) != sorted(pids) or sorted(allow["passage_ids"]) != sorted(pids)
+            or len(set(pids)) != len(pids)):
+        reject("review_passage_ids_mismatch", "/review_input/passage_ids", pids)
+    if len(pids) > 48:
+        reject("review_passage_count", "/passages", len(pids))
+    if target["group_index"] > target["group_count"]:
+        reject("review_group_out_of_range", "/review_input/group_index", target["group_index"])
+    if target["owner_note"] is not None and not target["owner_note"].strip():
+        reject("review_owner_note_blank", "/review_input/owner_note", "note must not be blank")
+    kind = target["target_kind"]
+    if (kind == "answer" and (target["sections"] or target["cells"] or target["columns"] or target["elements"]
+                             or target["candidate_statement"] is not None or any(c["section_ref"] is not None for c in target["claims"]))
+            or kind == "report" and (target["elements"] or target["candidate_statement"] is not None)
+            or kind == "candidate" and (target["claims"] or target["sections"] or target["cells"] or target["columns"])):
+        reject("review_target_shape_mismatch", "/review_input", kind)
+    cells = {c["cell_id"]: c for c in target["cells"]}
+    columns = [c["column_id"] for c in target["columns"]]
+    if len(columns) != len(set(columns)):
+        reject("duplicate_review_ref", "/review_input/columns", "column_id")
+    for i, cell in enumerate(target["cells"]):
+        path = f"/review_input/cells/{i}"
+        if cell["source_id"] not in records["source_ids"] or cell["source_id"] not in allow["source_ids"]:
+            reject("review_cell_source_missing", path + "/source_id", cell["source_id"])
+        if cell["column_id"] not in columns:
+            reject("review_cell_column_missing", path + "/column_id", cell["column_id"])
+        for j, evidence in enumerate(cell["evidence"]):
+            if evidence["passage_id"] not in records["passage_ids"] or evidence["passage_id"] not in allow["passage_ids"]:
+                reject("review_cell_passage_missing", path + f"/evidence/{j}", evidence["passage_id"])
+    for i, claim in enumerate(target["claims"]):
+        if kind == "report" and claim["section_ref"] not in allow.get("section_refs", []):
+            reject("review_claim_section_missing", f"/review_input/claims/{i}/section_ref", claim["section_ref"])
+        for j, citation in enumerate(claim["citations"]):
+            pid, cid = citation["passage_id"], citation["cell_id"]
+            path = f"/review_input/claims/{i}/citations/{j}"
+            if (pid is None) == (cid is None):
+                reject("review_citation_id_mismatch", path, "exactly one passage or cell")
+            if pid is not None and (pid not in records["passage_ids"] or pid not in allow["passage_ids"]):
+                reject("review_citation_passage_missing", path, pid)
+            if cid is not None and (cid not in cells or cid not in allow.get("cell_ids", [])):
+                reject("review_citation_cell_missing", path, cid)
+    return issues
+
+
+def _check_owner_review(si: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
+    target = si["review_input"]
+    allowed_kinds = {"answer": {"claim", "whole"}, "report": {"claim", "section", "whole"},
+                     "candidate": {"candidate_element", "whole"}}[target["target_kind"]]
+    ref_keys = {"claim": "claim_refs", "section": "section_refs", "candidate_element": "element_refs"}
+    passages = {p["passage_id"]: p for p in si["passages"]}
+
+    def issue(code: str, path: str, message: Any) -> None:
+        report.issues.append(Issue(code, path, str(message)))
+
+    handles: set[str] = set()
+    for name in ("findings", "supported_points", "context_limits"):
+        for i, item in enumerate(draft[name]):
+            path = f"/{name}/{i}"
+            ref = item["target_ref"]
+            kind, label = ref["kind"], ref["ref"]
+            if kind not in allowed_kinds:
+                issue("review_target_kind_mismatch", path + "/target_ref/kind", kind)
+            if (kind == "whole") != (label is None):
+                issue("review_ref_without_kind", path + "/target_ref/ref", label)
+            if kind != "whole" and label not in si["allowlist"].get(ref_keys.get(kind, ""), []):
+                issue("review_ref_unknown", path + "/target_ref/ref", label)
+            if name == "findings":
+                handle = item["finding_handle"]
+                if handle in handles:
+                    issue("duplicate_finding_handle", path + "/finding_handle", handle)
+                handles.add(handle)
+                if item["kind"] in {"unsupported", "partially_supported", "overstated"} and not item["evidence"]:
+                    issue("finding_without_evidence", path + "/evidence", item["kind"])
+            seen: set[tuple] = set()
+            for j, evidence in enumerate(item.get("evidence", [])):
+                epath = path + f"/evidence/{j}"
+                pid, quote = evidence["passage_handle"], evidence["anchor"]
+                key = (kind, label, pid, quote)
+                if name == "findings" and key in seen:
+                    issue("duplicate_review_evidence", epath, pid)
+                seen.add(key)
+                if pid not in si["allowlist"]["passage_ids"] or pid not in passages:
+                    issue("review_passage_not_allowed", epath + "/passage_handle", pid)
+                    continue
+                anchor = locate_anchor(quote, passages[pid]["text"])
+                if anchor is None:
+                    issue("review_anchor_not_in_passage", epath + "/anchor", quote)
+                elif anchor.kind not in {"exact", "normalized"}:
+                    issue("review_anchor_not_exact", epath + "/anchor", quote)
 
 
 def _lineage_records_by_id(records: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
@@ -590,7 +713,7 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         data = raw
 
     task_type = step_input["task_type"]
-    if task_type in CANDIDATE_TASKS:
+    if task_type in CANDIDATE_TASKS + REVIEW_TASKS:
         _check_utf8_text(data, report)
     validator = Draft202012Validator(step_output_schema(task_type))
     schema_errors = sorted(validator.iter_errors(data), key=lambda e: list(e.absolute_path))
@@ -623,7 +746,7 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
                 )
         _semantic_checks(step_input, output_type, result, report)
 
-    if task_type in CANDIDATE_TASKS:
+    if task_type in CANDIDATE_TASKS + REVIEW_TASKS:
         # Diagnostics may echo rejected keys or values, including from the best-effort pass.
         # Escape unencodable characters so storage and repair keep the invalid verdict.
         for issue in report.issues + report.warnings:
@@ -686,8 +809,9 @@ def _semantic_checks_best_effort(step_input: dict[str, Any], data: Any, report: 
         return path != "$" and not any(path == f or path.startswith(f + "/") or f.startswith(path + "/") for f in flagged)
 
     report.issues.extend(i for i in probe.issues if elsewhere(i.path) or (
-        step_input["task_type"] in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS
-        and i.code in {"unknown_passage_id", "unknown_cell_id", "unknown_source_id", "unknown_column_id", "unknown_element_ref"}))
+        step_input["task_type"] in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS + REVIEW_TASKS
+        and (i.code in {"unknown_passage_id", "unknown_cell_id", "unknown_source_id", "unknown_column_id", "unknown_element_ref"}
+             or step_input["task_type"] in REVIEW_TASKS)))
     report.warnings.extend(w for w in probe.warnings if elsewhere(w.path))
 
 
@@ -699,6 +823,8 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_math(step_input, result, report)
     elif output_type == "AnswerReview":
         _check_review(step_input, result, report)
+    elif output_type == "OwnerReview":
+        _check_owner_review(step_input, result, report)
     elif output_type == "EvidenceCellDraft":
         _check_cells(step_input, allow, result, report)
     elif output_type == "LineageLinksDraft":
@@ -1686,6 +1812,32 @@ REPORT_INPUT_ID_FIELDS = (
     ("report_target/limitations_core/failed_rows/*/source_version_id", "srv_S"),
 )
 
+REVIEW_INPUT_ID_FIELDS = (
+    ("passages/*/passage_id", "psg_P"), ("passages/*/source_id", "srv_S"),
+    ("sources/*/source_id", "srv_S"),
+    ("allowlist/passage_ids/*", "psg_P"), ("allowlist/source_ids/*", "srv_S"),
+    ("allowlist/cell_ids/*", "cel_L"), ("review_input/passage_ids/*", "psg_P"),
+    ("review_input/claims/*/citations/*/passage_id", "psg_P"),
+    ("review_input/claims/*/citations/*/cell_id", "cel_L"),
+    ("review_input/cells/*/cell_id", "cel_L"), ("review_input/cells/*/source_id", "srv_S"),
+    ("review_input/cells/*/evidence/*/passage_id", "psg_P"),
+)
+REVIEW_OUTPUT_ID_FIELDS = (
+    ("findings/*/evidence/*/passage_handle", "psg_P"),
+    ("supported_points/*/evidence/*/passage_handle", "psg_P"),
+)
+
+
+def review_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
+    """Only passages, sources and cells are D12 handles; target refs remain local labels."""
+    handles: dict[str, str] = {}
+    for rows, field, prefix in ((step_input["passages"], "passage_id", "psg_P"),
+                                (step_input["sources"], "source_id", "srv_S"),
+                                (step_input["review_input"]["cells"], "cell_id", "cel_L")):
+        for index, row in enumerate(rows, 1):
+            handles[row[field]] = f"{prefix}{index:07d}"
+    return handles
+
 
 def _report_id_fields(data: dict[str, Any], fields: tuple) -> Any:
     """Yield only declared ID slots, tolerating malformed values until schema validation."""
@@ -1799,6 +1951,8 @@ def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     """
     if step_input.get("task_type") in REPORT_TASKS:
         return report_citation_handles(step_input)
+    if step_input.get("task_type") in REVIEW_TASKS:
+        return review_citation_handles(step_input)
     if step_input.get("task_type") in LINEAGE_TASKS:
         return lineage_citation_handles(step_input)
     if step_input.get("task_type") in CANDIDATE_TASKS:
@@ -1815,6 +1969,11 @@ def citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
 def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
     handles = citation_handles(step_input)
     shown = copy.deepcopy(step_input)
+    if step_input.get("task_type") in REVIEW_TASKS:
+        for owner, key, _, _ in _report_id_fields(shown, REVIEW_INPUT_ID_FIELDS):
+            if isinstance(owner[key], str):
+                owner[key] = handles.get(owner[key], owner[key])
+        return shown
     if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS:
         fields = CANDIDATE_INPUT_ID_FIELDS if step_input["task_type"] in CANDIDATE_TASKS else (
             LINEAGE_INPUT_ID_FIELDS if step_input["task_type"] in LINEAGE_TASKS else REPORT_INPUT_ID_FIELDS)
@@ -1934,6 +2093,11 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
         return raw
     if not isinstance(data, dict):
         return raw
+    if step_input.get("task_type") in REVIEW_TASKS:
+        for owner, key, kind, _ in _report_id_fields(data, REVIEW_OUTPUT_ID_FIELDS):
+            if isinstance(owner[key], str) and owner[key].startswith(kind):
+                owner[key] = real(owner[key])
+        return data
     if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS:
         fields = CANDIDATE_OUTPUT_ID_FIELDS[step_input["task_type"]] if step_input["task_type"] in CANDIDATE_TASKS else (
             LINEAGE_OUTPUT_ID_FIELDS if step_input["task_type"] in LINEAGE_TASKS else (

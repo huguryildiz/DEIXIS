@@ -120,6 +120,11 @@
    "deixis_file": "references/candidate-check.md",
    "derived_from": [],
    "change": "Written for DEIXIS on 2026-10-01 (D143, D145), not upstream text. Loaded only for claim_decomposition, kill_search_query and claim_assessment. Not measured; the wording was tried against no model."
+  },
+  {
+   "deixis_file": "references/review.md",
+   "derived_from": [],
+   "change": "Written for DEIXIS on 2026-10-03 (D180, D181), not upstream text. Loaded only for owner_review. Reads an immutable stored copy, permits empty findings, requires exact or normalized quotes for source support, records context limits and never applies suggested fixes. Not measured; tried against no model. B4 owns the behavior cases."
   }
  ],
  "phrasebank": {

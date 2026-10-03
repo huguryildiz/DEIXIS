@@ -125,3 +125,16 @@ Bütçe: A 7 + A2 10 + B hazırlık 70 + B rapor 20 = 107 / 293 oturum; okur ist
 - **Satırlar:** R1a ilk denemede geçerli 1/10, R1b onarımla geçerli 9/10, R1c 0/1; R7 5,2 dk ve 24 çağrı. Rapor tamamlanmadığı için R2-R6, R8, R9, R11 ölçülemedi (`run_incomplete`); R10 ölçülmedi.
 
 Bütçe: 107 + 24 = 131 / 293 oturum; okur isteği yeni yok (ortak defterde 6 istek kalır). Sunucu durduruldu, 8765'e dokunulmadı; kanıt `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/c/`.
+
+## H9d (3 Ekim 2026): B raporu RF5 üzerinde
+
+**Dondurma:** Ek F (`7f6e634`). **Karar:** [D202](../decisions.md). Ürün `1f4903f` (RF5), B'nin hazırlanmış verisinin yeni doğrulanmış kopyası `d/data`; korpus B ve H9c ile aynıdır. Tek koşu; önceki koşularla karşılaştırma bir koşuya karşı bir koşudur, RF5'in nedensel etkisi değildir.
+
+**Koşu:** başlangıç kapısı ve POST öncesi denetim geçti (migration 70, kurtarılan iş 0). POST 20:25:19Z, `run_DeedBWVc3F85JARn17rT`, rapor `rpt_ENDUxE7H3AhZujTmZCJA`. Koşu V. bölümde durdu: oluşturmadan duraklamaya 169,3 s (olay 1504, 20:28:08.958Z), 9 çağrı; kitin R7 değeri 184,4 s, oluşturmadan iptale kadardır ve duraklamadan sonraki 15,1 s'yi içerir. III ve IV `valid`, V `failed`, sonraki bölümler başlamadı; rapor `in_progress` kaldı, birleştirmeye gelinmedi. Okur çalışmadı.
+
+- **Duruşun nedeni:** V'nin ilk çıktısında hücre kanıtında bulunmayan bir çapa vardı (`anchor_not_in_cell_evidence`), ürün tam onarım istedi. Onarım çıktısı, onarım girdisinin kimliği yerine ilk denemenin `step_input_id` değerini taşıyordu (`envelope_mismatch`: beklenen `sti_pO3R…`, gelen `sti_S8OQ…`). Kod paket hash'ini damgalıyor ama girdi kimliğini hâlâ model kopyalıyor; bu hatanın onarımı yok, bölüm başarısız oldu. Zaman aşımı değil, kural gereği sürdürülmedi.
+- **Sapma:** koşu 20:28:09Z civarında kendiliğinden `section_failed` ile duraklamıştı (terminal olay 1504). Yürütücü, yaklaşık 30 s önceki (20:27:54Z) "çalışıyor" okumasına dayanıp durumu yeniden denetlemeden 20:28:24Z'de iptal gönderdi; duraklamış koşu `cancelled` (`user_cancelled`, olay 1505) oldu. Bu, "duraklamış koşu iptal edilmez" kuralının ihlalidir. Duraklama ile iptal arasında yeni model oturumu başlamadı (iki okumada da 9 tamamlanmış, 0 başlamış); duruş nedeni ve oturum sayımları etkilenmedi; koşunun son durumu ve R7'nin süre değeri (15,1 s fazlası) değişti.
+- **Sayımlar:** POST öncesi 0 oturum; rapor 9 oturum, `envelope_mismatch` 1/9, paket hash'i 9/9 kodla damgalı, yama girdisi 0, çıkarılan iddia 0. P19: a=[V, IV], b=[V, IV] (ikisi de tam onarım), c=[IV], d boş; V `envelope_mismatch` ile ayrıca sayıldı. `c_checks`: bir `application_validation` adım hatası, şema reddi yok.
+- **Satırlar:** R1a 0/3 (yazılan bölümler), R1b 2/3, R1c 0/1; R7 184,4 s (oluşturmadan iptale; duraklamaya kadar 169,3 s) ve 9 çağrı. Rapor tamamlanmadığı için R2-R6, R8, R9, R11 ölçülemedi (`run_incomplete`); R10 ölçülmedi.
+
+Bütçe: 131 + 9 = 140 / 293 oturum; okur isteği yeni yok (ortak defterde 6 istek kalır). Sunucu durduruldu, 8765'e dokunulmadı; kanıt `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/d/`.

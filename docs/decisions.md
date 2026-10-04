@@ -2,6 +2,17 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D212 — P9 owed K6: the kill-search measurement ran once on six claims and the nearest works were never retrieved; the query shape is not shown to be the cause
+
+**Status:** accepted (measured, not pushed); kit written by gpt-6.1-sol medium, reviewed by Claude and, in a cross-vendor read-only round, by gpt-6.1-sol medium; run by Claude Opus 5.5 on the coordinator's go.
+**Date:** 2026-10-04
+
+**Context:** D154 left the K6 measurement open (K5 found OR-joined term blocks returning generic results). D205 froze one series of six Q2-domain claims (five with 1-2 nearest works, one with none) on the product as it stood (`7188ec8`).
+
+**Decision:** Record the result in `docs/product/p9-owed-measurements-results.md` (K6 section) as measured, with its deviations: one client_timeout pause on C1 resumed once by the operator after 15 minutes under the freeze's §1.5 rule although the kit itself refuses resumption; a kit refusal after C2's POST (C2's run completed untouched, C3-C6 ran through the unchanged kit function); the Sonnet reader altered one passage and its answers were transferred onto the original page. Results: six claims completed, 44 of 120 sessions, 34 minutes; S1 7/7 labelled works absent from the retained and stored records; no claim closed; S2 unmeasurable; S3 0/2; S4a 72/72; S4b 1 supports, 11 partial, 8 not supports of 20; S6 lexical diagnostic in the results file.
+
+**Limits:** One run, one model, six claims, small calibration sets with abstract-paraphrase claims; the 20-record window, multi-provider mix and OR structure were not separated, so S1 and S6 do not show that query shape caused the retrieval loss. S4b is a model reading. Provider-request counts are incomplete in the kit's S5. A query-compiler change is a separate decision and would need a new, independent claim set.
+
 ## D211 — P9 RF6: the code stamps `step_input_id` on every fresh model output, and a result is accepted only for the attempt that is still active
 
 **Status:** accepted (implemented). Decided by Claude and gpt-6.1-sol medium on the owner's behalf (3 Oct). Written by gpt-6.1-sol high from a Claude prompt (`docs/product/p9-rf6-prompt.md`, plan review by gpt-6.1-sol high, 2 rounds, hazır); code reviewed by Claude (1 round: Sol's first version also discarded results arriving after pause, cancel or scope change; sent back, fixed, hazır).

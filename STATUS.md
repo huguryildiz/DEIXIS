@@ -86,8 +86,8 @@ Hedef: P10'dan önceki her şey. Kaba tahmin yaklaşık 1 gün.
 - ✅ Gerçek modelle ilk rapor H9e'de tamamlandı (D202; P16'daki üç deneme D124, D126, D128 tamamlanmamıştı); kalite satırlarının çoğu aralık dışı
 - ❌ Fikir zinciri gerçek korpusta ölçülmedi; keşif 99 işten 1'ini dahil etti (D141). Plan D205: huni modelsiz sayılacak, L9 yeni korpusta
 - 🟡 D141 hunisi: L9 NLP, H9 Q1 ve H9b B kopyalarında modelsiz sayıldı; L9 NLP: (99 eser: 79 özet okundu, 1 dahil, 69 beklemede, bunların 25'i kuyrukta; `docs/product/p9-owed-measurements-results.md`); H9 Q1 (3.167 eser, 7 dahil) ve H9b B (1.867 eser, 10 dahil) de sayıldı; yeni L9 korpusu bekliyor
-- 🟡 Özgünlük araması K6 ölçümü (D154): 4 Ekim'de altı iddiayla bir kez koşuldu (44/120 oturum); sonuç metni Sol doğrulamasında, main'de değil
-- 🟡 Dilim 4 gerçek model raporla ölçüm (D157): H9e'nin kabul edilen raporunda ölçülecek (D205 Ek S, koordinatör + Sol medium); koşu sürüyor
+- 🟡 Özgünlük araması K6 ölçüldü (D212, 4 Ekim): altı iddia tamamlandı (C1-C5 `undecided`, C6 `narrowed`; 44 oturum, 34 dk); yedi `N` eserinin yedisi de sonuçta hiç yoktu, hiçbir iddia `closed` olmadı (yanlış `closed` 0/2); alıntıların 72/72'si metinde, okuyucuya göre 20 hücrenin 1'i destekliyor, 11'i kısmen. Tek koşu, tek model; S1/S6'dan sorgu biçimi nedeni çıkarılmaz. Sonuç: `docs/product/p9-owed-measurements-results.md`
+- ❌ Dilim 4 gerçek model raporla ölçüm (D157). Plan D205: yalnız H9b rapor tamamlarsa
 - ❌ R02: RF6 sonrası gerçek Codex çöküş kurtarması ölçülmedi (H10 koşulmadı, 4 Ekim kararı)
 - ✅ Bölüm IV alıntı çapası onarımı gerçek modelde çalıştı, iki korpus, kol başına bir koşu sınırıyla (D129, 4 Ekim): H9b ve H9e'de üç yama (A2 IV, B IV, H9e V; RF2 şemasıyla API kabul etti, bölüm geçerli; A'da şema reddi) ve dört tam onarım denemesi görüldü (üçü doğrulandı, biri girdi-kimliği hatasıyla başarısız); maruz kalma etkinlik kanıtı değil, anlam desteği okunmadı, başarı oranı ölçülmedi. Sayım: `docs/product/p9-owed-measurements-results.md`
 - 🟡 Paralel yükte ara sıra düşen iki test; tek başına geçiyor

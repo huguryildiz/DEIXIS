@@ -71,7 +71,7 @@ def test_copy_record_refusal_and_hash(tmp_path):
 
 def test_protected_library_cannot_be_execution_target():
     with pytest.raises(kit.MeasurementRefused, match="immutable"):
-        with kit.runtime_read(kit.PROTECTED):
+        with kit.runtime_read(kit.PROTECTED, Path("/tmp")):
             pytest.fail("opened protected fixture")
 
 
@@ -123,7 +123,7 @@ def marker(target="c1"):
     ([marker()],[marker("other")],(1,1),(1,1)),
     ([marker()],[marker()],(0,1),(0,1))])
 def test_r19_denominators(expected, observed, fp, fn):
-    plan = {"operations":[{"id":"A","api_call":{},"expected_stale_markers":expected}]}
+    plan = {"operations":[{"id":"A","api_call":{},"expected_stale_markers":expected,"invariants":[]}]}
     snapshot = {"operations":[{"id":"A","status":"measured", "observed_stale_markers":observed,
                                "invariants":{}, "cost":{}}]}
     scores = kit.score(plan, snapshot)["R19"]
@@ -141,7 +141,7 @@ def test_score_synthetic_snapshot(frozen):
         else:
             snapshot["operations"].append({"id":op["id"],"status":"measured",
                 "observed_stale_markers":copy.deepcopy(op["expected_stale_markers"]),
-                "invariants":{"active_citation_set":i != 0,"round_trip_equality":"ölçülemedi"},
+                "invariants":{k:(i != 0 if k == "active_citation_set" else True) for k in op["invariants"]},
                 "cost":{"wall_seconds":2,"new_sessions":0,"tokens":0}})
     result = kit.score(frozen, snapshot)
     assert result["R18"] == {"numerator":1,"denominator":17,"value":1/17}
@@ -161,7 +161,9 @@ def test_stop_cap_only_new_sessions():
     old = [session("old"+str(i)) for i in range(50)]
     ids = {s["id"] for s in old}
     assert kit.stop_reason(ids,old+[session("n"+str(i)) for i in range(9)],2,launching_model=True) is None
-    assert kit.stop_reason(ids,old+[session("n"+str(i)) for i in range(10)],2) == "10 new sessions cap"
+    assert kit.stop_reason(ids,old+[session("n"+str(i)) for i in range(10)],2) is None
+    assert kit.stop_reason(ids,old+[session("n"+str(i)) for i in range(10)],2,launching_model=True) == "10 new sessions cap"
+    assert kit.stop_reason(ids,old+[session("n"+str(i)) for i in range(11)],2) == "10 new sessions cap"
     assert kit.stop_reason(ids,old,3600) == "60 minute clock exhausted"
 
 
@@ -254,6 +256,10 @@ def test_execute_scripted_api_sequence(sequence_library, tmp_path):
         plan["operations"].append({"id":id,"kind":kind,"api_call":{"method":method,"path":path,"body":body},
                                     "expected_target_link_ids":baseline["effective"][target["id"]],
                                     "target_ids":{},"expected_stale_markers":[]})
+    plan['operations'].append(dict(id='E18',kind='backup_restore',api_call=None,requires=['C'],
+        expected_target_link_ids=baseline['effective'][target['id']], expected_stale_markers=[],
+        invariants=['active_citation_set','numbering','export','model_original_revision_bytes',
+                    'foreign_keys','round_trip_equality']))
     def handler(request):
         if request.url.path == "/api/session":
             return httpx.Response(200,json={"csrf_token":"synthetic"})
@@ -267,21 +273,25 @@ def test_execute_scripted_api_sequence(sequence_library, tmp_path):
         if request.url.path.endswith("/export"):
             return httpx.Response(200,text=export_markdown(lib["store"],rid,report)[0])
         return httpx.Response(200,json=report_view(lib["store"],rid,report))
+    ownership = []
     client=kit.Client("http://127.0.0.1:8873",tmp_path/"guard.jsonl",
-                      transport=httpx.MockTransport(handler),guard=lambda log:None)
+                      transport=httpx.MockTransport(handler),guard=lambda log:None,
+                      ownership=lambda:ownership.append('checked'))
     try:
         result=kit.execute(plan,lib["settings"].data_dir,client,tmp_path/"result.json")
     finally:
         client.http.close()
     assert result["stop_reason"] is None
     assert result["zero_started_verified"]
-    assert len(result["operations"]) == 3
+    assert len(result["operations"]) == 4
     for row in result["operations"]:
         assert row["status"] == "measured"
         assert all(v is True or v == "ölçülemedi" for v in row["invariants"].values())
         assert row["cost"]["new_sessions"] == row["cost"]["tokens"] == 0
     assert result["operations"][1]["view"]["edit_check"]["current"]
     assert not result["operations"][2]["view"]["edit_check"]["current"]
+    assert len(ownership) >= 1 + 3 * 4 + 1  # start, before mutation, audit reads, final snapshot
+    assert result['operations'][3]['invariants']['round_trip_equality'] is True
 
 
 def test_offline_plan_attests_pristine_copy_before_server_start(sequence_library,tmp_path):
@@ -301,9 +311,9 @@ def test_offline_plan_attests_pristine_copy_before_server_start(sequence_library
           "library_sqlite_sha256":hashlib.sha256((root/"library.sqlite").read_bytes()).hexdigest()}
     plan["base_sha256"]=kit.stored_snapshot(lib["store"].conn,plan)["base_sha256"]
     ops=tmp_path/"operations.json";ops.write_text(json.dumps(plan))
-    sha=hashlib.sha256(ops.read_bytes()).hexdigest();out=tmp_path/"attestation.json"
+    sha=hashlib.sha256(ops.read_bytes()).hexdigest();out=tmp_path/"output"
     assert kit.main(["plan","--operations",str(ops),"--sha256",sha,"--data-dir",str(root),"--out",str(out)]) == 0
-    attestation=json.loads(out.read_text())
+    attestation=json.loads((out/"plan.json").read_text())
     assert attestation["network_requests"] == 0
     assert attestation["data_dir"] == str(root)
     # Runtime locks change the manifest, but do not erase copy provenance.
@@ -311,3 +321,347 @@ def test_offline_plan_attests_pristine_copy_before_server_start(sequence_library
     assert kit.verify_copy(root,plan,pristine=False) == root
     with pytest.raises(kit.MeasurementRefused,match="bytes changed"):
         kit.verify_copy(root,plan,pristine=True)
+
+
+def test_cli_e18_real_offline_round_trip(sequence_library, tmp_path, monkeypatch):
+    lib = sequence_library
+    root = lib['settings'].data_dir
+    before = kit.stored_snapshot(lib['store'].conn, lib)
+    monkeypatch.setenv('DEIXIS_DATA_DIR', str(kit.LIVE))
+    monkeypatch.setenv('OPENAI_API_KEY', 'synthetic-must-not-inherit')
+    result = kit.round_trip(root, tmp_path / 'out')
+    assert result['round_trip_equality'] is True
+    assert set(result['report_tables']) == set(__import__('tests.test_report_edit_sequence', fromlist=['REPORT_TABLES']).REPORT_TABLES)
+    assert {'runs', 'step_inputs', 'source_versions', 'cell_revisions'} <= set(result['linked_tables'])
+    assert kit.stored_snapshot(lib['store'].conn, lib) == before
+    for command, data in zip(result['commands'], (root, Path(result['restore_target']))):
+        assert command['command'][:2] == ['/usr/bin/env', '-i']
+        assert set(command['env']) == {'PATH', 'HOME', 'PYTHONPATH', 'DEIXIS_DATA_DIR', 'DEIXIS_REPO_ROOT',
+                                      'PYTHON_KEYRING_BACKEND', 'PYTHONDONTWRITEBYTECODE'}
+        assert command['env']['DEIXIS_DATA_DIR'] == str(data.resolve())
+        assert not (Path(command['env']['DEIXIS_REPO_ROOT']) / '.env').exists()
+        assert command['returncode'] == 0
+    assert json.loads(Path(result['ledger']).read_text()) == result['commands']
+
+
+def test_nonempty_restore_target_refused(tmp_path):
+    out = tmp_path / 'out'; target = out / 'restored'; target.mkdir(parents=True)
+    (target / 'unrelated.txt').write_text('keep')
+    with pytest.raises(kit.MeasurementRefused, match='empty'):
+        kit.empty_restore_target(out, target, tmp_path / 'data')
+
+
+@pytest.mark.parametrize('path', [kit.LIVE, kit.LIVE / 'child', Path('/tmp/owner-backup/data'), Path.home()/'.local/share/deixis'])
+def test_live_default_and_owner_data_refused(path):
+    with pytest.raises(kit.MeasurementRefused):
+        kit.safe_data(path)
+
+
+def test_owner_backup_alias_is_refused_before_resolving(tmp_path):
+    target = tmp_path / 'safe'; target.mkdir()
+    alias = tmp_path / 'owner-backup'; alias.symlink_to(target,target_is_directory=True)
+    with pytest.raises(kit.MeasurementRefused,match='owner-backup'):
+        kit.safe_data(alias / 'data')
+
+
+@pytest.mark.parametrize('kind', ['escape', 'symlink', 'data', 'live', 'owner', 'source', 'record'])
+def test_output_and_guard_confinement(tmp_path, kind):
+    out = tmp_path / 'out'; out.mkdir(); data = tmp_path / 'data'; data.mkdir()
+    source = tmp_path / 'original'; source.mkdir(); record = tmp_path / 'copy.json'; record.write_text('{}')
+    path = out / 'guard.jsonl'
+    if kind == 'escape': path = tmp_path / 'guard.jsonl'
+    elif kind == 'symlink':
+        (out / 'link').symlink_to(source, target_is_directory=True); path = out / 'link/guard.jsonl'
+    elif kind == 'data': out = data / 'out'; path = out / 'guard.jsonl'
+    elif kind == 'live': out = kit.LIVE / 'out'; path = out / 'guard.jsonl'
+    elif kind == 'owner': out = tmp_path / 'owner-backup/out'; path = out / 'guard.jsonl'
+    elif kind == 'source': out = source / 'out'; path = out / 'guard.jsonl'
+    elif kind == 'record': out = record; path = record / 'guard.jsonl'
+    with pytest.raises(kit.MeasurementRefused):
+        kit.output_path(out, path, data, source, record)
+
+
+def test_runtime_sqlite_connects_only_private_copy(sequence_library, tmp_path, monkeypatch):
+    root = sequence_library['settings'].data_dir
+    out = tmp_path / 'out'
+    original = kit.sqlite3.connect; connections = []
+    def connect(database, **kwargs):
+        assert str(root.resolve()) not in database
+        assert str(out.resolve()) in database and database.endswith('?mode=ro')
+        connections.append(database)
+        return original(database, **kwargs)
+    before = manifest(root)
+    monkeypatch.setattr(kit.sqlite3, 'connect', connect)
+    with kit.runtime_read(root, out) as conn:
+        assert conn.execute('SELECT count(*) FROM reports').fetchone()[0] == 1
+    assert connections and manifest(root) == before
+
+
+def test_missing_frozen_invariant_is_unmeasured(frozen):
+    op = frozen['operations'][0]
+    record = dict(id=op['id'], status='measured', invariants={},
+                  observed_stale_markers=op['expected_stale_markers'], cost={})
+    result = kit.score(frozen, {'operations':[record]})
+    assert result['R18']['value'] == kit.UNMEASURED
+    assert result['R18']['denominator'] == 0
+    assert result['excluded'][0]['status'] == kit.UNMEASURED
+    assert result['excluded'][0]['missing_invariants'] == op['invariants']
+
+
+def test_cli_operation_with_complete_invariants_is_scored(frozen):
+    op = frozen['operations'][-1]
+    record = dict(id=op['id'],status='measured',invariants={k:True for k in op['invariants']},
+                  observed_stale_markers=op['expected_stale_markers'],cost={'new_sessions':0})
+    result = kit.score(frozen,{'operations':[record]})
+    assert result['R18'] == dict(numerator=0,denominator=1,value=0)
+    assert result['operations'][0]['id'] == 'E18'
+
+
+def test_export_rejects_consistently_wrong_view_and_text(sequence_library):
+    from deixis.workflow.views import report_view
+    from deixis.workflow.report.export import export_markdown
+    lib = sequence_library; plan = dict(lib, targets={})
+    view = report_view(lib['store'], lib['research_id'], lib['report_id'])
+    claim = next(c for c in kit.claims_of(view).values() if c['text'])
+    plan['targets'] = dict(claim_id=claim['id'], original_text='Frozen required text')
+    op = dict(id='E', kind='export', api_call={'body':{}}); plan['operations'] = [op]
+    state = kit.stored_snapshot(lib['store'].conn, plan); plan['base_sha256'] = state['base_sha256']
+    export = export_markdown(lib['store'],lib['research_id'],lib['report_id'])[0]
+    assert kit.invariants(plan,op,state,view,export)['export'] is False
+
+
+@pytest.mark.parametrize('problem', ['other-library', 'other-owner', 'error'])
+def test_listener_exclusive_ownership_and_record(tmp_path, monkeypatch, problem):
+    root = tmp_path / 'data'; root.mkdir(); log = tmp_path / 'guard.jsonl'
+    outputs = ['p123\n', f'p123\nn{root}/library.sqlite\n', 'p123\n']
+    if problem == 'other-library': outputs[1] += 'n/tmp/other/library.sqlite\n'
+    if problem == 'other-owner': outputs[2] += 'p456\n'
+    def run(*args, **kwargs):
+        return SimpleNamespace(returncode=2 if problem == 'error' else 0,
+                               stdout=outputs.pop(0), stderr='')
+    monkeypatch.setattr(kit.subprocess,'run',run)
+    with pytest.raises(kit.MeasurementRefused):
+        kit.server_owns_copy(root,'http://127.0.0.1:8873',log)
+    assert json.loads(log.read_text())['event'] == 'exclusive_ownership'
+
+
+@pytest.mark.parametrize('failure', ['http', 'db', 'safety', 'unprocessable'])
+def test_acceptance_skips_only_unprocessable(tmp_path, monkeypatch, failure):
+    from contextlib import contextmanager
+    @contextmanager
+    def read(root, out): yield None
+    baseline = dict(active_runs=[], sessions=[], base_sha256='base', scope_sha256='scope')
+    monkeypatch.setattr(kit,'runtime_read',read)
+    monkeypatch.setattr(kit,'stored_snapshot',lambda conn,plan:baseline)
+    view = dict(id='report', sections=[dict(claims=[dict(id='claim',edited=False,version=1)])])
+    plan = dict(file_sha256='synthetic', report_api_path='/api/report', targets={'claim_id':'claim'},
+                base_sha256='base', scope_sha256='scope', operations=[
+        dict(id='accept', kind='accept', cell_api_path='/api/cell', proposal_from='recheck',
+             api_call=dict(method='POST',path='/api/accept',body={'expected_version':'current'})),
+        dict(id='later',kind='export',api_call=None,reason='cannot be expressed')])
+    def handler(request):
+        if request.url.path == '/api/session': return httpx.Response(200,json={'csrf_token':'synthetic'})
+        if request.url.path == '/api/cell':
+            if failure == 'http': return httpx.Response(500)
+            if failure == 'db': raise kit.sqlite3.DatabaseError('synthetic database failure')
+            if failure == 'safety': raise kit.MeasurementRefused('synthetic safety refusal')
+            return httpx.Response(200,json={'version':1,'pending_proposal':None})
+        return httpx.Response(200,json={} if request.url.path == '/api/health' else view)
+    client = kit.Client('http://127.0.0.1:8873',tmp_path/'guard.jsonl',
+                        transport=httpx.MockTransport(handler),guard=lambda log:None)
+    try: result = kit.execute(plan,tmp_path/'data',client,tmp_path/'result.json')
+    finally: client.http.close()
+    assert (result['stop_reason'] is None) == (failure == 'unprocessable')
+    assert result['operations'][0]['status'] == (kit.UNTESTED if failure == 'unprocessable' else kit.UNMEASURED)
+
+
+def test_tenth_session_is_observed_before_cancellation(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    import sqlite3
+    conn = sqlite3.connect(':memory:'); conn.row_factory = sqlite3.Row
+    conn.execute('CREATE TABLE runs(id TEXT,status TEXT,error_json TEXT,pause_reason TEXT)')
+    conn.execute("INSERT INTO runs VALUES ('run','completed',NULL,NULL)")
+    @contextmanager
+    def read(root, out): yield conn
+    fresh = [session(str(i),token_usage_json='{"total":{"totalTokens":1}}') for i in range(10)]
+    states = iter([[],fresh[:9],fresh[:9],fresh,fresh,fresh])
+    monkeypatch.setattr(kit,'runtime_read',read)
+    monkeypatch.setattr(kit,'stored_snapshot',lambda c,p:dict(
+        active_runs=[],sessions=next(states),base_sha256='base',scope_sha256='scope'))
+    monkeypatch.setattr(kit,'invariants',lambda *args:{'observed':True})
+    op = dict(id='tenth',kind='recheck',api_call=dict(method='POST',path='/api/recheck'),
+              expected_stale_markers=[],invariants=['observed'])
+    plan = dict(file_sha256='synthetic',report_api_path='/api/report',base_sha256='base',
+                scope_sha256='scope',operations=[op])
+    mutations = []
+    def handler(request):
+        if request.url.path == '/api/session': return httpx.Response(200,json={'csrf_token':'synthetic'})
+        if request.method != 'GET': mutations.append(request.url.path)
+        if request.url.path == '/api/recheck': return httpx.Response(200,json={'id':'run'})
+        if request.url.path.endswith('/export'): return httpx.Response(200,text='synthetic')
+        return httpx.Response(200,json={'id':'report','sections':[]})
+    client = kit.Client('http://127.0.0.1:8873',tmp_path/'guard.jsonl',
+                        transport=httpx.MockTransport(handler),guard=lambda log:None)
+    try: result = kit.execute(plan,tmp_path/'data',client,tmp_path/'result.json')
+    finally: client.http.close(); conn.close()
+    assert result['stop_reason'] is None
+    assert mutations == ['/api/recheck']
+    assert result['operations'][0]['status'] == 'measured'
+    assert result['operations'][0]['cost']['session_ids'] == ['9']
+    assert kit.score(plan,result)['R18']['denominator'] == 1
+
+
+def test_private_read_refuses_changing_source(sequence_library, tmp_path, monkeypatch):
+    root = sequence_library['settings'].data_dir
+    original = kit.shutil.copyfile
+    def changing(source, target):
+        result = original(source,target)
+        if Path(source).name == 'library.sqlite':
+            Path(source).touch()
+        return result
+    monkeypatch.setattr(kit.shutil,'copyfile',changing)
+    with pytest.raises(kit.MeasurementRefused,match='changed during'):
+        with kit.runtime_read(root,tmp_path/'out'): pytest.fail('read changing source')
+
+
+@pytest.mark.parametrize('protection', ['keyring', 'bytecode'])
+def test_e18_subprocess_isolation(sequence_library, tmp_path, monkeypatch, protection):
+    original = kit.subprocess.run
+    seen = []
+    def run(command, **kwargs):
+        if protection == 'keyring':
+            assert 'PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring' in command
+        else:
+            assert 'PYTHONDONTWRITEBYTECODE=1' in command
+            assert command[command.index(kit.sys.executable) + 1] == '-B'
+        assert kwargs['env'] == {}
+        seen.append(command)
+        return original(command, **kwargs)
+    monkeypatch.setattr(kit.subprocess, 'run', run)
+    assert kit.round_trip(sequence_library['settings'].data_dir, tmp_path / 'out')['round_trip_equality']
+    assert len(seen) == 2
+
+
+def test_e18_timeout_records_termination(sequence_library, tmp_path, monkeypatch):
+    monkeypatch.setattr(kit.time, 'monotonic', lambda: 3599.25)
+    calls = []
+    def blocked(command, **kwargs):
+        calls.append(kwargs)
+        assert kwargs['timeout'] == pytest.approx(.75)
+        raise kit.subprocess.TimeoutExpired(command, kwargs['timeout'], output=b'partial', stderr=b'blocked')
+    monkeypatch.setattr(kit.subprocess, 'run', blocked)
+    out = tmp_path / 'out'
+    with pytest.raises(kit.MeasurementRefused, match='product CLI timeout'):
+        kit.round_trip(sequence_library['settings'].data_dir, out, deadline=3600)
+    commands = json.loads(next(out.glob('e18-*/commands.json')).read_text())
+    assert len(calls) == len(commands) == 1
+    assert commands[0]['status'] == 'timed_out'
+    assert commands[0]['termination'] == 'child killed and waited by subprocess.run'
+    assert commands[0]['stdout'] == 'partial'
+
+
+def test_e18_remaining_deadline_shrinks_for_restore(sequence_library, tmp_path, monkeypatch):
+    original = kit.subprocess.run
+    clock = iter([3590, 3599])
+    monkeypatch.setattr(kit.time, 'monotonic', lambda: next(clock))
+    timeouts = []
+    def run(command, **kwargs):
+        timeouts.append(kwargs['timeout'])
+        return original(command, **kwargs)
+    monkeypatch.setattr(kit.subprocess, 'run', run)
+    result = kit.round_trip(sequence_library['settings'].data_dir, tmp_path / 'out', deadline=3600)
+    assert result['round_trip_equality']
+    assert timeouts == [10, 1]
+
+
+def test_e18_timeout_reaps_actual_child(sequence_library, tmp_path, monkeypatch):
+    import os
+    original = kit.subprocess.run
+    def blocked(command, **kwargs):
+        # Exercise run()'s termination with a harmless child, never the product CLI.
+        assert kwargs['timeout'] > 0
+        kwargs['timeout'] = .5
+        return original([kit.sys.executable, '-B', '-c',
+                         'import os,time; print(os.getpid(),flush=True); time.sleep(30)'], **kwargs)
+    monkeypatch.setattr(kit.subprocess, 'run', blocked)
+    out = tmp_path / 'out'
+    with pytest.raises(kit.MeasurementRefused, match='product CLI timeout'):
+        kit.round_trip(sequence_library['settings'].data_dir, out)
+    record = json.loads(next(out.glob('e18-*/commands.json')).read_text())[0]
+    assert record['status'] == 'timed_out'
+    pid = int(record['stdout'].strip())
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+
+
+def test_e18_run_deadline_and_timeout_failure_record(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    @contextmanager
+    def read(root, out):
+        yield None
+    baseline = dict(active_runs=[], sessions=[], base_sha256='base', scope_sha256='scope')
+    monkeypatch.setattr(kit, 'runtime_read', read)
+    monkeypatch.setattr(kit, 'stored_snapshot', lambda *args: baseline)
+    monkeypatch.setattr(kit.time, 'monotonic', lambda: 123)
+    def timeout(root, out, *, deadline):
+        assert deadline == 123 + kit.MAX_SECONDS
+        raise kit.MeasurementRefused('60 minute clock exhausted: product CLI timeout')
+    monkeypatch.setattr(kit, 'round_trip', timeout)
+    plan = dict(file_sha256='synthetic', report_api_path='/api/report', base_sha256='base',
+                scope_sha256='scope', operations=[dict(id='E18', kind='backup_restore', api_call=None)])
+    client = kit.Client('http://127.0.0.1:8873', tmp_path / 'guard.jsonl',
+                        transport=httpx.MockTransport(lambda request: httpx.Response(200,
+                            json={'csrf_token': 'synthetic', 'sections': []})), guard=lambda log: None)
+    try:
+        result = kit.execute(plan, tmp_path / 'data', client, tmp_path / 'result.json')
+    finally:
+        client.http.close()
+    assert result['operations'][0]['status'] == kit.UNMEASURED
+    assert result['operations'][0]['reason'] == result['stop_reason']
+    assert 'product CLI timeout' in result['stop_reason']
+    assert result['final_verification']['status'] == 'recorded'
+    assert result['zero_started_verified'] is True
+
+
+@pytest.mark.parametrize('stage', ['initial', 'pre-operation', 'final'])
+@pytest.mark.parametrize('failure', ['ownership', 'database', 'changing-source'])
+def test_audit_read_failure_is_persisted(tmp_path, monkeypatch, stage, failure):
+    from contextlib import contextmanager
+    baseline = dict(active_runs=[], sessions=[], base_sha256='base', scope_sha256='scope')
+    count = 0
+    error = (kit.sqlite3.DatabaseError if failure == 'database' else kit.MeasurementRefused)
+    def fail():
+        raise error('synthetic ' + failure)
+    @contextmanager
+    def read(root, out):
+        if failure != 'ownership' and count >= (1 if stage == 'initial' else 2):
+            fail()
+        yield None
+    def ownership():
+        nonlocal count
+        count += 1
+        if failure == 'ownership' and count >= (1 if stage == 'initial' else 2):
+            fail()
+    monkeypatch.setattr(kit, 'runtime_read', read)
+    monkeypatch.setattr(kit, 'stored_snapshot', lambda *args: baseline)
+    plan = dict(file_sha256='synthetic', report_api_path='/api/report', base_sha256='base',
+                scope_sha256='scope', operations=[dict(id='audit', kind='export',
+                    api_call=dict(method='GET', path='/api/report') if stage == 'pre-operation' else None)])
+    def handler(request):
+        return httpx.Response(200, json={'csrf_token': 'synthetic', 'sections': []})
+    client = kit.Client('http://127.0.0.1:8873', tmp_path / 'guard.jsonl',
+                        transport=httpx.MockTransport(handler), guard=lambda log: None, ownership=ownership)
+    output = tmp_path / 'result.json'
+    try:
+        result = kit.execute(plan, tmp_path / 'data', client, output)
+    finally:
+        client.http.close()
+    assert json.loads(output.read_text()) == result
+    assert result['stop_reason'] == 'synthetic ' + failure
+    assert result['operations'][0]['id'] == 'audit'
+    if stage in {'initial', 'pre-operation'}:
+        assert result['operations'][0]['status'] == kit.UNMEASURED
+        assert result['operations'][0]['reason'] == result['stop_reason']
+    assert result['final_verification']['status'] == kit.UNMEASURED
+    assert result['final_verification']['reason'] == result['stop_reason']
+    assert result['zero_started_verified'] is False

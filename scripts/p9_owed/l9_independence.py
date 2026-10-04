@@ -25,6 +25,9 @@ if __package__ in (None, ""):
 
 from scripts.p9_owed import funnel_counts as copies
 from deixis.workflow.store import Store
+from deixis.config import default_data_dir
+
+REPO = Path(__file__).resolve().parents[2]
 
 REQUIRED_INVENTORIES = ("tracked-docs", "H9 Q1", "H9b B Q3", "L9 NLP")
 SCHEMES = ("doi", "arxiv", "openalex", "pmid")
@@ -41,6 +44,28 @@ def safe_path(path: Path) -> Path:
     if "owner-backup" in str(path.resolve()).casefold():
         raise Refused("owner-backup path refused")
     return path
+
+
+def confined_output(path, inputs, libraries):
+    """Protect original sources as well as copies, even on the stopped path."""
+    protected = [*inputs, REPO, Path.home() / 'Library/Application Support/DEIXIS',
+                 Path.home() / '.local/share/deixis', default_data_dir()]
+    protected.append(Path(git(REPO, 'rev-parse', '--absolute-git-dir').decode().strip()))
+    common = Path(git(REPO, 'rev-parse', '--git-common-dir').decode().strip())
+    protected.append(common if common.is_absolute() else REPO / common)
+    for library in libraries:
+        library = safe_path(Path(library))
+        record = safe_path(copies.copy_record_path(library.resolve()))
+        protected.extend([library, record])
+        if record.is_file():
+            body = json.loads(record.read_text())
+            if not isinstance(body, dict):
+                raise Refused('copy record must be an object')
+            for key in ('source', 'destination'):
+                if not isinstance(body.get(key), str):
+                    raise Refused(f'copy record missing {key}')
+                protected.append(safe_path(Path(body[key])))
+    return copies.outside(safe_path(path), *protected)
 
 
 def identity(scheme: str, value: str) -> str | None:
@@ -161,11 +186,14 @@ def inventory_body(label: str, corpora: str, provenance: dict, works: list[dict]
         "scope": "Every stored work and every source version, including versions outside active corpus memberships."}
 
 
-def build_inventory(path: Path, label: str, corpora: str) -> dict:
+def build_inventory(path: Path, label: str, corpora: str, measurement_commit: str) -> dict:
+    if re.fullmatch(r'[0-9a-f]{40}', measurement_commit) is None:
+        raise Refused('measurement commit must be a full Git commit id')
     if not label.strip() or not corpora.strip():
         raise Refused("label and covered corpora must be nonempty")
     with library_copy(path) as (conn, provenance):
         body = inventory_body(label, corpora, provenance, work_inventory(conn))
+        body['measurement_commit'] = measurement_commit
         body["provenance"]["researches"] = [dict(r) for r in conn.execute(
             "SELECT id FROM researches ORDER BY created_at, id")]
     return seal(body)
@@ -289,6 +317,7 @@ def build_doc_inventory(repo: Path, commit: str, calibrate_against: Path | None 
          "method": "recursive tracked Markdown regex scan of Git blobs; library identity normalization",
          "patterns": patterns, "research_id_pattern": r"\bres_[A-Za-z0-9]{20}\b"}, works)
     body.update({
+        'measurement_commit': revision,
         "source": f"tracked docs/*.md, README.md, STATUS.md at {revision[:7]}",
         "files": len(documents),
         "doi": [i.split(":", 1)[1] for i in identifiers if i.startswith("doi:")],
@@ -390,11 +419,36 @@ def validate_l9_doc_exclusions(inventory: dict) -> None:
         raise Refused("tracked-docs excluded path also appears in scanned evidence")
 
 
-def check(path: Path, inventory_paths: list[Path]) -> dict:
+def check(path: Path, inventory_paths: list[Path], measurement_commit: str,
+          expected_libraries: dict) -> dict:
     safe_path(path)
     inventories = load_inventories(inventory_paths)
     docs = next(i for i in inventories if reference_label(i["label"]) == "tracked-docs")
     validate_l9_doc_exclusions(docs)
+    if re.fullmatch(r'[0-9a-f]{40}', measurement_commit) is None:
+        raise Refused('measurement commit must be a full Git commit id')
+    if docs['provenance'].get('commit') != measurement_commit:
+        raise Refused('tracked-docs commit differs from measurement commit')
+    declarations = {}
+    if not isinstance(expected_libraries, dict) or set(expected_libraries) != set(REQUIRED_INVENTORIES[1:]):
+        raise Refused('expected reference libraries must declare all three labels')
+    for inventory in inventories:
+        label = reference_label(inventory['label'])
+        if inventory.get('measurement_commit') != measurement_commit:
+            raise Refused('inventory measurement commit mismatch: ' + label)
+        if label == 'tracked-docs':
+            continue
+        expected = expected_libraries[label]
+        if not isinstance(expected, dict) or not isinstance(expected.get('covered_corpora'), str):
+            raise Refused('invalid expected reference library declaration: ' + label)
+        recorded = inventory['provenance'].get('manifest_sha256')
+        if (not isinstance(recorded, str) or re.fullmatch(r'[0-9a-f]{64}', recorded) is None
+                or recorded != expected.get('manifest_sha256')):
+            raise Refused('reference library copy manifest mismatch: ' + label)
+        if inventory['covered_corpora'] != expected.get('covered_corpora'):
+            raise Refused('reference corpus text mismatch: ' + label)
+        declarations[label] = dict(expected=expected, recorded_manifest_sha256=recorded,
+                                   identity_check='operator declaration only; original library not read')
     owners = {}
     for inventory in inventories:
         for work in inventory["works"]:
@@ -422,6 +476,7 @@ def check(path: Path, inventory_paths: list[Path]) -> dict:
     overlap = sum(bool(w["matches"]) for w in included)
     unverified = sum(w["independence_unverified"] for w in included)
     return {"version": 1, "K0": "fail" if overlap else "unverified" if unverified or not included else "no_overlap_detected",
+        'measurement_commit': measurement_commit, 'reference_libraries': declarations,
         "status": "checked", "statement": "overlap detected" if overlap else NO_OVERLAP,
         "required_inventories": list(REQUIRED_INVENTORIES), "provenance": provenance,
         "exclude_path_prefixes": docs["exclude_path_prefixes"], "excluded_paths": docs["excluded_paths"],
@@ -439,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--library", type=Path, required=True)
     build.add_argument("--label", required=True)
     build.add_argument("--corpora", required=True)
+    build.add_argument('--measurement-commit', required=True)
     doc = commands.add_parser("build-doc-inventory")
     doc.add_argument("--repo", type=Path, required=True)
     doc.add_argument("--commit", required=True)
@@ -447,27 +503,50 @@ def main(argv: list[str] | None = None) -> int:
                      help="repeatable repository-relative lexical prefix; excluded Markdown blobs remain recorded")
     chk = commands.add_parser("check")
     chk.add_argument("--library", type=Path, required=True)
+    chk.add_argument('--measurement-commit', required=True)
+    chk.add_argument('--expected-libraries', type=Path, required=True,
+                     help='JSON label -> {covered_corpora, manifest_sha256}; operator-pinned reference identities')
     chk.add_argument("--inventories", required=True, help="comma-separated files; required labels: " + ", ".join(REQUIRED_INVENTORIES))
     for p in (build, doc, chk):
         p.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         inputs = ([safe_path(args.library), safe_path(copies.copy_record_path(args.library.resolve()))]
-                  if args.command != "build-doc-inventory" else [])
+                  if args.command != "build-doc-inventory" else [safe_path(args.repo)])
+        if args.command == 'build-doc-inventory':
+            git_dir = git(args.repo, 'rev-parse', '--absolute-git-dir').decode().strip()
+            inputs.append(safe_path(Path(git_dir)))
+            common = Path(git(args.repo, 'rev-parse', '--git-common-dir').decode().strip())
+            inputs.append(safe_path(common if common.is_absolute() else args.repo / common))
         if args.command == "build-doc-inventory" and args.calibrate_against is not None:
             inputs.append(safe_path(args.calibrate_against))
         if args.command == "check":
             paths = [safe_path(Path(p.strip())) for p in args.inventories.split(",") if p.strip()]
             inputs.extend(paths)
-        out = copies.outside(safe_path(args.out), *inputs)
+            inputs.append(safe_path(args.expected_libraries))
+        libraries = [] if args.command == 'build-doc-inventory' else [args.library]
+        if args.command == 'check':
+            for inventory in paths:
+                if not inventory.is_file():
+                    continue
+                body = json.loads(inventory.read_text())
+                if not isinstance(body, dict) or not isinstance(body.get('provenance', {}), dict):
+                    raise Refused('inventory provenance must be an object')
+                provenance = body.get('provenance', {})
+                if provenance.get('library_path'):
+                    libraries.append(Path(provenance['library_path']))
+                if provenance.get('copy_record_path'):
+                    inputs.append(safe_path(Path(provenance['copy_record_path'])))
+        out = confined_output(args.out, inputs, libraries)
         try:
             if args.command == "build-inventory":
-                result = build_inventory(args.library, args.label, args.corpora)
+                result = build_inventory(args.library, args.label, args.corpora, args.measurement_commit)
             elif args.command == "build-doc-inventory":
                 result = build_doc_inventory(args.repo, args.commit, args.calibrate_against,
                                              args.exclude_path_prefix)
             else:
-                result = check(args.library, paths)
+                result = check(args.library, paths, args.measurement_commit,
+                               json.loads(args.expected_libraries.read_text()))
         except (OSError, ValueError, KeyError, TypeError, sqlite3.DatabaseError, subprocess.CalledProcessError) as exc:
             result = {"status": "stopped", "reason": str(exc)}
         copies.write_json(out, result)

@@ -2700,7 +2700,7 @@
         "foreign_keys",
         "round_trip_equality"
       ],
-      "reason": "cannot be expressed: no backup/restore API routes; product CLI only (backend/deixis/__main__.py:372-400). New empty isolated target, twelve report tables, linked records and foreign-key equality remain untested by this API kit.",
+      "reason": "Product CLI round trip through env -i: isolated measurement backup, new empty restore target under --out, twelve report tables and all linked records compared row for row with foreign-key checks. No backup/restore API routes.",
       "round_trip_tables": [
         "reports",
         "report_sections",
@@ -2779,7 +2779,7 @@
       "gpt-5.6-luna",
       "medium"
     ],
-    "round_trip": "cannot be expressed through API; CLI-only case excluded, not a zero violation observation"
+    "round_trip": "E18 uses product CLI backup/restore through env -i; measured only with complete frozen invariants and recorded row-for-row equality"
   },
   "bindings": {
     "expected_version": "Read current target version before the request; never change frozen text, link ids or expectations.",

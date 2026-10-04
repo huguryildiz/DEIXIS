@@ -209,11 +209,11 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 |---|---|
 | `scripts/p9_owed/funnel_counts.py` | `ea3fc2ee9401a15134b3100904245cb9e95eb9de52f907338d0bb4cddb58de31` |
 | `scripts/p9_owed/prep_lookup.py` | `20c1785c95159a1d92b5845f13de2ab83e732f2b12c35094a87c066a6944bab6` |
-| `scripts/p9_owed/measure_edit.py` | `0dd552d374b7e14009de1d39c6d14b43a02772e07fb3508ae6d2c8b4ae88bf1b` |
-| `tests/test_p9_owed_measure_edit.py` | `db43e6eac5f75f32e52f74f9dab44cbd2c4217621c68f85a749a1c4201ed8648` |
-| `docs/product/p9-owed-s4-ek-e.json` | `73d80b986b3690d59cb4424ce0900856f7db2472d168794a004959f28acf32fa` |
-| `scripts/p9_owed/l9_independence.py` | `1885bc21d04982240707e8e3fa4b6c0f2c93c293beb0705e73577b28b0545011` |
-| `tests/test_p9_owed_l9_independence.py` | `5b40cacfcd993f7018ee5e8eb23f654d11c9315e6826473c6d884f4fcd4ce962` |
+| `scripts/p9_owed/measure_edit.py` | `9f1e5f551b5b78b6563fd0638275a49b0aca404c04490ee1fde25efce1594749` |
+| `tests/test_p9_owed_measure_edit.py` | `29bd0e0575ee2a1316fd75af07ec679d3a53eac530384bb86d0815eec4ee4277` |
+| `docs/product/p9-owed-s4-ek-e.json` | `e03d27fc5fed68b2632287aa97a52988de56d11a0e8f8ccf478b473ae9842aeb` |
+| `scripts/p9_owed/l9_independence.py` | `a8e7db7092f2c040dd143ada4e5a5c4701179d8d36b0b73ceacb59f86d669b6a` |
+| `tests/test_p9_owed_l9_independence.py` | `831dcce6bdda66115688e9fc43f5eb9851e31253067e96c051365ec043fc57ed` |
 | `scripts/p9_owed/measure_k6.py` | `597f8f3da34f84c297cfc56f4eb0d4366c7e1a15c680fe49ec7f3a28ef819bdc` |
 | `tests/test_p9_owed_measure_k6.py` | `8fed61ff3c3e16d0907a3ba27106252da7f535283238d9e8cc88fb6154834a1c` |
 | `scripts/p6_eval/measure_lineage.py` | `a335b3835d571bb3643969510634ab7728e762d1e1c81e5f3b785b023dc40751` |
@@ -227,6 +227,6 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 
 Runtime paket hash'i: `sha256:ccff02a169ea72690a594b3277c09c0975537f45ed20f9a6203a364d0c2b132c` (H9e'nin ölçtüğü paketle aynı önek `ccff02a1`).
 
-**Kitler (henüz yok, koşudan önce yazılır, Sol yazar / Claude inceler, hash'leri bu ekin güncellemesinde donar):** K6 ölçüm kiti YAZILDI (yukarıdaki tablo; Sol medium yazdı, Claude inceledi, 40 çevrimdışı test), `measure_edit.py` (dilim 4; YAZILDI, 38 çevrimdışı test, Ek E işlem listesi `docs/product/p9-owed-s4-ek-e.json` donduruldu: E01-E18, E18 yedekle-geri yükle ürünün CLI'siyle), L9 için envanter tabanlı K0 yolu YAZILDI (`l9_independence.py`, 57 çevrimdışı test; `measure_lineage.py` değişmedi). Belge envanteri yöntemi H9'un `old-corpus-inventory.json`'una karşı 87cee0b'de kalibre edildi (251 dosya, 53 DOI, 16 arXiv, 9 araştırma kimliği: birebir eşit); kitin kendi kendine gönderme kuralı: ölçüm commit'indeki izlenen belgelerden yalnız bu ekin kendisini taşıyan iki dosya (`p9-owed-measurements-freeze.md`, `-results.md`) dışlanır, dışlama envanterde blob kimlikleriyle kayıtlıdır ve kapı başka bir dışlama kümesini reddeder (Claude + Sol medium ortak kararı); bu dışlama kapsamı `not_audited` olarak yazılır. Dört envanter (belgeler, H9 Q1, H9b B Q3, L9 NLP) koşu öncesi ölçüm commit'inde üretilir ve hash'lenir; henüz üretilmedi (L9 keşfinden önce). Hazır olanlar: `funnel_counts.py` ve `prep_lookup.py` (Sol medium düzeltmelerinden sonra 99 test geçti).
+**Kitler (henüz yok, koşudan önce yazılır, Sol yazar / Claude inceler, hash'leri bu ekin güncellemesinde donar):** K6 ölçüm kiti YAZILDI (yukarıdaki tablo; Sol medium yazdı, Claude inceledi, 40 çevrimdışı test), `measure_edit.py` (dilim 4; YAZILDI, çevrimdışı testler (Sol medium 3 tur incelemesi: E18 ürün CLI'siyle gerçek, çıktı yolları kısıtlı, anahtarlık ve bayt kodu yalıtımı, zaman aşımı; hazır), Ek E işlem listesi `docs/product/p9-owed-s4-ek-e.json` donduruldu: E01-E18, E18 yedekle-geri yükle ürünün CLI'siyle), L9 için envanter tabanlı K0 yolu YAZILDI (`l9_independence.py`, çevrimdışı testler (Sol medium incelemesi: çıktı yolu koruması eklendi; hazır); `measure_lineage.py` değişmedi). Belge envanteri yöntemi H9'un `old-corpus-inventory.json`'una karşı 87cee0b'de kalibre edildi (251 dosya, 53 DOI, 16 arXiv, 9 araştırma kimliği: birebir eşit); kitin kendi kendine gönderme kuralı: ölçüm commit'indeki izlenen belgelerden yalnız bu ekin kendisini taşıyan iki dosya (`p9-owed-measurements-freeze.md`, `-results.md`) dışlanır, dışlama envanterde blob kimlikleriyle kayıtlıdır ve kapı başka bir dışlama kümesini reddeder (Claude + Sol medium ortak kararı); bu dışlama kapsamı `not_audited` olarak yazılır. Dört envanter (belgeler, H9 Q1, H9b B Q3, L9 NLP) koşu öncesi ölçüm commit'inde üretilir ve hash'lenir; henüz üretilmedi (L9 keşfinden önce). Hazır olanlar: `funnel_counts.py` ve `prep_lookup.py` (Sol medium düzeltmelerinden sonra 99 test geçti).
 
 **Hazırlık sağlayıcı istekleri:** toplam 13 / 60 (K6 9, L9 4; hepsi OpenAlex, anahtarsız, yeniden deneme yok); defter `.local/p9-owed/prep/ledger.jsonl`. Model oturumu 0; sunucu başlatılmadı; 8765'e dokunulmadı.

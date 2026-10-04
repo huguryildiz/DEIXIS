@@ -56,6 +56,46 @@ class Library:
         return self.path
 
 
+
+COMMIT = "a" * 40
+
+
+def build_inventory(path, label, corpora):
+    return kit.build_inventory(path, label, corpora, COMMIT)
+
+
+def expected_refs(paths):
+    return {kit.reference_label(i["label"]): {"covered_corpora": i["covered_corpora"],
+            "manifest_sha256": i["provenance"].get("manifest_sha256")}
+            for p in paths if p.is_file() for i in [json.loads(p.read_text())] if i["label"] != "tracked-docs"}
+
+
+def check_refs(path, paths):
+    commit = json.loads(paths[0].read_text())["provenance"]["commit"]
+    for p in paths[1:]:
+        i = json.loads(p.read_text()); i["measurement_commit"] = commit
+        copies.write_json(p, kit.seal(i))
+    return kit.check(path, paths, commit, expected_refs(paths))
+
+
+def main(args):
+    args = list(args)
+    if args[0] == "build-inventory":
+        args += ["--measurement-commit", COMMIT]
+    if args[0] == "check":
+        paths = [Path(p) for p in args[args.index("--inventories")+1].split(",")]
+        commit = (json.loads(paths[0].read_text())["provenance"].get("commit", COMMIT)
+                  if paths[0].is_file() else COMMIT)
+        expected = Path(args[args.index('--out')+1]).parent / "expected-libraries.json"
+        copies.write_json(expected, expected_refs(paths))
+        for p in paths[1:]:
+            if not p.is_file():
+                continue
+            i = json.loads(p.read_text()); i["measurement_commit"] = commit
+            copies.write_json(p, kit.seal(i))
+        args += ["--measurement-commit", commit, "--expected-libraries", str(expected)]
+    return kit.main(args)
+
 @pytest.fixture
 def lib(tmp_path):
     library = Library(tmp_path / "new")
@@ -66,7 +106,8 @@ def lib(tmp_path):
 def references(tmp_path, works=None):
     paths = []
     for label in kit.REQUIRED_INVENTORIES:
-        body = kit.inventory_body(label, "SYNTHETIC reference", {"synthetic": True}, works or [])
+        body = kit.inventory_body(label, "SYNTHETIC reference", {"synthetic": True,"commit":COMMIT,"manifest_sha256":"b"*64}, works or [])
+        body["measurement_commit"] = COMMIT
         if label == "tracked-docs":
             body["exclude_path_prefixes"] = list(kit.L9_DOC_EXCLUSIONS)
             body["excluded_paths"] = [{"path": p, "git_blob": "a" * 40,
@@ -97,11 +138,11 @@ def test_overlap_on_second_version_through_every_scheme(lib, tmp_path, scheme, n
     reference.source("reference-head", work="old-work")
     reference.source("reference-second", work="old-work", member=False)
     reference.identifier("reference-second", "doi" if scheme == "doi_field" else scheme, old)
-    inventory = kit.build_inventory(reference.seal(), "H9 Q1", "SYNTHETIC")
+    inventory = build_inventory(reference.seal(), "H9 Q1", "SYNTHETIC")
     paths = references(tmp_path)
     copies.write_json(paths[1], inventory)
     before = copies.manifest(path)
-    result = kit.check(path, paths)
+    result = check_refs(path, paths)
     assert result["K0"] == "fail"
     work = result["researches"][0]["included_works"][0]
     assert work["work_id"] == "w"
@@ -109,7 +150,7 @@ def test_overlap_on_second_version_through_every_scheme(lib, tmp_path, scheme, n
     assert work["matches"][0]["inventory"] == "H9 Q1"
     assert work["matches"][0]["source_version_id"] == "reference-second"
     assert copies.manifest(path) == before
-    assert kit.main(["check", "--library", str(path), "--inventories", ",".join(map(str, paths)),
+    assert main(["check", "--library", str(path), "--inventories", ",".join(map(str, paths)),
                      "--out", str(tmp_path / "fail.json")]) == 1
 
 
@@ -124,14 +165,14 @@ def test_inventory_accounts_for_missing_ids_unknown_schemes_and_uploads(lib, tmp
                      " VALUES ('a','unknown',?,1,'application/pdf','synthetic.pdf',?,'user_upload','pending','synthetic-v1')", ("a" * 64, db.now()))
     path = lib.seal()
     before = copies.manifest(path)
-    result = kit.build_inventory(path, "L9 NLP", "SYNTHETIC all works")
+    result = build_inventory(path, "L9 NLP", "SYNTHETIC all works")
     assert result["sha256"] == kit.seal(result)["sha256"]
     assert result["provenance"]["manifest_sha256"] == before["sha256"]
     assert result["accounting"] == {"works": 3, "source_versions": 3,
         "independence_unverified_works": 2, "independence_unverified_versions": 2,
         "not_audited_identifier_records": 2, "not_audited_upload_hash_records": 1}
     assert result["schemes_present"] == ["doi", "published_doi", "undocumented"]
-    checked = kit.check(path, references(tmp_path))
+    checked = check_refs(path, references(tmp_path))
     assert checked["K0"] == "unverified"
     assert checked["statement"] == kit.NO_OVERLAP
     assert checked["accounting"]["independence_unverified_works"] == 2
@@ -147,7 +188,7 @@ def test_no_overlap_retains_order_without_pdf_filter_or_limit(lib, tmp_path):
     # Equal selection timestamps exercise Store.included_sources' tie breaker.
     lib.conn.execute("UPDATE selections SET updated_at='2026-01-01T00:00:00Z'")
     expected = lib.store.included_works(lib.rid)
-    result = kit.check(lib.seal(), references(tmp_path))
+    result = check_refs(lib.seal(), references(tmp_path))
     assert result["K0"] == "no_overlap_detected"
     assert result["statement"] == "no overlap detected within recorded inventories"
     assert [w["head_source_version_id"] for w in result["researches"][0]["included_works"]] == expected
@@ -173,7 +214,7 @@ def test_missing_or_unusable_inventory_stops(lib, tmp_path, problem):
             body["covered_corpora"] = "tampered"
         copies.write_json(paths[0], body if problem == "tampered" else kit.seal(body))
     out = tmp_path / "stopped.json"
-    rc = kit.main(["check", "--library", str(path), "--inventories", ",".join(map(str, paths)), "--out", str(out)])
+    rc = main(["check", "--library", str(path), "--inventories", ",".join(map(str, paths)), "--out", str(out)])
     assert rc == 1
     result = json.loads(out.read_text())
     assert result["status"] == "stopped"
@@ -193,14 +234,14 @@ def test_copy_record_refusal(lib, tmp_path, mode):
         record["usable" if mode == "unusable" else "source"] = False if mode == "unusable" else "/never-read/owner-backup/data"
         copies.write_json(sidecar, record)
     with pytest.raises(kit.Refused):
-        kit.build_inventory(path, "L9 NLP", "SYNTHETIC")
+        build_inventory(path, "L9 NLP", "SYNTHETIC")
 
 
 def test_owner_backup_refusal_before_filesystem_access(tmp_path):
     for path in (Path("/does-not-exist/owner-backup/data"), Path("OWNER-BACKUP.json")):
         with pytest.raises(kit.Refused, match="owner-backup"):
             kit.safe_path(path)
-    assert kit.main(["check", "--library", "/owner-backup/data", "--inventories", "none",
+    assert main(["check", "--library", "/owner-backup/data", "--inventories", "none",
                      "--out", str(tmp_path / "out.json")]) == 1
 
 
@@ -214,7 +255,7 @@ def test_readonly_immutable_uri_and_no_writes(lib, tmp_path, monkeypatch):
         return real_connect(database, **kwargs)
     monkeypatch.setattr(sqlite3, "connect", connect)
     before = copies.manifest(path)
-    kit.build_inventory(path, "L9 NLP", "SYNTHETIC")
+    build_inventory(path, "L9 NLP", "SYNTHETIC")
     assert len(uris) == 1
     assert copies.manifest(path) == before
 
@@ -307,7 +348,7 @@ def test_doc_inventory_git_blobs_recursive_rules_and_calibration(doc_repo, tmp_p
     assert kit.load_inventories(paths)[0]["works"]
     assert all(not i.startswith(("res_", "pmid:")) for w in result["works"] for i in w["identifiers"])
     out = tmp_path / "docs.json"
-    assert kit.main(["build-doc-inventory", "--repo", str(repo), "--commit", revision,
+    assert main(["build-doc-inventory", "--repo", str(repo), "--commit", revision,
         "--calibrate-against", str(reference), "--out", str(out)]) == 0
     assert json.loads(out.read_text()) == result
 
@@ -329,7 +370,7 @@ def test_doc_inventory_calibration_difference_fails_closed(doc_repo, tmp_path, p
         expected["doi"].reverse()
     copies.write_json(path, expected)
     out = tmp_path / "diff.json"
-    assert kit.main(["build-doc-inventory", "--repo", str(repo), "--commit", revision,
+    assert main(["build-doc-inventory", "--repo", str(repo), "--commit", revision,
         "--calibrate-against", str(path), "--out", str(out)]) == 1
     result = json.loads(out.read_text())
     assert result["status"] == "method_unavailable"
@@ -351,7 +392,7 @@ def test_doc_inventory_calibration_input_cannot_be_overwritten(doc_repo, tmp_pat
     repo, revision = doc_repo
     reference, _ = doc_reference(tmp_path, revision)
     raw = reference.read_bytes()
-    assert kit.main(["build-doc-inventory", "--repo", str(repo), "--commit", revision,
+    assert main(["build-doc-inventory", "--repo", str(repo), "--commit", revision,
         "--calibrate-against", str(reference), "--out", str(reference)]) == 1
     assert reference.read_bytes() == raw
 
@@ -363,7 +404,7 @@ def test_doc_inventory_scanned_identifier_establishes_recorded_overlap(lib, doc_
                                                       exclude_path_prefixes=kit.L9_DOC_EXCLUSIONS))
     lib.source("head", included=True)
     lib.identifier("head", "published_doi", "https://doi.org/10.1234/ABC")
-    result = kit.check(lib.seal(), paths)
+    result = check_refs(lib.seal(), paths)
     assert result["K0"] == "fail"
     assert result["accounting"]["overlapping_works"] == 1
     matches = result["researches"][0]["included_works"][0]["matches"]
@@ -377,15 +418,15 @@ def test_output_cannot_modify_library_or_inventory(lib, tmp_path):
     path = lib.seal()
     paths = references(tmp_path)
     before = copies.manifest(path)
-    assert kit.main(["build-inventory", "--library", str(path), "--label", "L9 NLP", "--corpora", "SYNTHETIC",
+    assert main(["build-inventory", "--library", str(path), "--label", "L9 NLP", "--corpora", "SYNTHETIC",
                      "--out", str(path / "bad.json")]) == 1
     raw = paths[0].read_bytes()
-    assert kit.main(["check", "--library", str(path), "--inventories", ",".join(map(str, paths)),
+    assert main(["check", "--library", str(path), "--inventories", ",".join(map(str, paths)),
                      "--out", str(paths[0])]) == 1
     assert paths[0].read_bytes() == raw
     sidecar = copies.copy_record_path(path)
     record = sidecar.read_bytes()
-    assert kit.main(["build-inventory", "--library", str(path), "--label", "L9 NLP", "--corpora", "SYNTHETIC",
+    assert main(["build-inventory", "--library", str(path), "--label", "L9 NLP", "--corpora", "SYNTHETIC",
                      "--out", str(sidecar)]) == 1
     assert sidecar.read_bytes() == record
     assert copies.manifest(path) == before
@@ -400,7 +441,7 @@ def test_l9_self_reference_exclusions_are_recorded_and_visible(lib, doc_repo, tm
     args = ["build-doc-inventory", "--repo", str(repo), "--commit", revision, "--out", str(out)]
     for prefix in kit.L9_DOC_EXCLUSIONS:
         args.extend(["--exclude-path-prefix", prefix])
-    assert kit.main(args) == 0
+    assert main(args) == 0
     result = json.loads(out.read_text())
     assert result["files"] == full["files"] - 2
     assert result["openalex_work"] == ["W12345678"]
@@ -415,12 +456,12 @@ def test_l9_self_reference_exclusions_are_recorded_and_visible(lib, doc_repo, tm
     lib.source("g", included=True)
     lib.identifier("g", "openalex", "W22345678")
     library = lib.seal()
-    checked = kit.check(library, paths)
+    checked = check_refs(library, paths)
     assert checked["K0"] == "no_overlap_detected"
     assert checked["excluded_paths"] == result["excluded_paths"]
     assert checked["exclude_path_prefixes"] == list(kit.L9_DOC_EXCLUSIONS)
     output = tmp_path / "checked.json"
-    assert kit.main(["check", "--library", str(library), "--inventories", ",".join(map(str, paths)),
+    assert main(["check", "--library", str(library), "--inventories", ",".join(map(str, paths)),
                      "--out", str(output)]) == 0
     assert json.loads(output.read_text())["excluded_paths"] == result["excluded_paths"]
 
@@ -432,7 +473,7 @@ def test_g_reference_in_retained_document_still_fails_k0(lib, doc_repo, tmp_path
     copies.write_json(paths[0], body)
     lib.source("g", included=True)
     lib.identifier("g", "openalex", "W12345678")
-    result = kit.check(lib.seal(), paths)
+    result = check_refs(lib.seal(), paths)
     assert result["K0"] == "fail"
     assert {m["inventory"] for m in result["researches"][0]["included_works"][0]["matches"]} == {"tracked-docs"}
 
@@ -466,7 +507,7 @@ def test_l9_check_refuses_changed_exclusion_scope(lib, tmp_path, problem):
     # Reseal: scope enforcement must catch deliberate narrowing, not only bad hashes.
     copies.write_json(paths[0], kit.seal(body))
     out = tmp_path / "scope-stopped.json"
-    assert kit.main(["check", "--library", str(lib.path), "--inventories", ",".join(map(str, paths)),
+    assert main(["check", "--library", str(lib.path), "--inventories", ",".join(map(str, paths)),
                      "--out", str(out)]) == 1
     stopped = json.loads(out.read_text())
     assert stopped["status"] == "stopped"
@@ -503,13 +544,98 @@ def test_nonempty_wal_refused_without_writable_fallback(lib):
     (lib.path / "library.sqlite-wal").write_bytes(b"SYNTHETIC nonempty WAL")
     path = lib.seal()
     with pytest.raises(kit.Refused, match="nonempty WAL"):
-        kit.build_inventory(path, "L9 NLP", "SYNTHETIC")
+        build_inventory(path, "L9 NLP", "SYNTHETIC")
 
 
 def test_unknown_hash_mapping_never_qualifies_as_identity(lib):
     lib.source("hash-only")
     lib.identifier("hash-only", "sha256", "a" * 64)
-    result = kit.build_inventory(lib.seal(), "L9 NLP", "SYNTHETIC")
+    result = build_inventory(lib.seal(), "L9 NLP", "SYNTHETIC")
     assert result["accounting"]["independence_unverified_works"] == 1
     assert result["accounting"]["not_audited_identifier_records"] == 1
     assert result["works"][0]["identifiers"] == []
+
+
+@pytest.mark.parametrize('target', ['README.md', '.git/config', 'docs/new.json'])
+def test_doc_output_cannot_overwrite_repository(doc_repo, target):
+    repo, revision = doc_repo
+    path = repo / target
+    before = path.read_bytes() if path.exists() else None
+    assert kit.main(['build-doc-inventory','--repo',str(repo),'--commit',revision,'--out',str(path)]) == 1
+    assert (path.read_bytes() if path.exists() else None) == before
+
+
+@pytest.mark.parametrize('problem', ['docs-commit','inventory-commit','missing-hash','wrong-hash','wrong-corpus'])
+def test_measurement_identity_gate(lib, tmp_path, problem):
+    paths = references(tmp_path); expected = expected_refs(paths)
+    body = json.loads(paths[0 if problem == 'docs-commit' else 1].read_text())
+    if problem == 'docs-commit': body['provenance']['commit'] = 'c' * 40
+    elif problem == 'inventory-commit': body['measurement_commit'] = 'c' * 40
+    elif problem == 'missing-hash': del body['provenance']['manifest_sha256']
+    elif problem == 'wrong-hash': body['provenance']['manifest_sha256'] = 'c' * 64
+    else: body['covered_corpora'] = 'Mislabeled corpus'
+    copies.write_json(paths[0 if problem == 'docs-commit' else 1], kit.seal(body))
+    with pytest.raises(kit.Refused,match='commit|manifest|corpus'):
+        kit.check(lib.seal(), paths, COMMIT, expected)
+
+
+def test_check_records_three_reference_hashes(lib, tmp_path):
+    paths = references(tmp_path); lib.source('known',included=True); lib.identifier('known','doi','10.1234/new')
+    result = kit.check(lib.seal(),paths,COMMIT,expected_refs(paths))
+    assert result['measurement_commit'] == COMMIT
+    assert set(result['reference_libraries']) == set(kit.REQUIRED_INVENTORIES[1:])
+    assert all(r['recorded_manifest_sha256'] == 'b'*64 for r in result['reference_libraries'].values())
+
+
+def test_check_cli_requires_measurement_commit(tmp_path):
+    with pytest.raises(SystemExit) as error:
+        kit.main(['check','--library',str(tmp_path),'--inventories','none','--out',str(tmp_path/'out')])
+    assert error.value.code == 2
+
+
+@pytest.mark.parametrize('command,target', [
+    (command, target) for command in ['build-inventory', 'check']
+    for target in ['live', 'live-root', 'linux-default', 'configured-default',
+        'owner-backup', 'copy', 'copy-root', 'source', 'source-root', 'copy-record',
+        'tracked', 'git', 'source-alias', 'reference-copy', 'reference-source', 'reference-record']
+    if command == 'check' or not target.startswith('reference-')])
+def test_l9_output_refused_before_intercepted_write(lib, tmp_path, monkeypatch, command, target):
+    library = lib.seal()
+    record = copies.copy_record_path(library)
+    source = Path(json.loads(record.read_text())['source'])
+    reference = tmp_path / 'reference-copy'
+    reference.mkdir()
+    reference_source = tmp_path / 'reference-source'
+    reference_record = copies.copy_record_path(reference)
+    copies.write_json(reference_record, {'source': str(reference_source), 'destination': str(reference)})
+    inventory = tmp_path / 'inventory.json'
+    copies.write_json(inventory, {'provenance': {'library_path': str(reference),
+                                               'copy_record_path': str(reference_record)}})
+    expected = tmp_path / 'expected.json'
+    copies.write_json(expected, {})
+    configured = tmp_path / 'configured-live'
+    monkeypatch.setenv('DEIXIS_DATA_DIR', str(configured))
+    alias = tmp_path / 'source-alias'
+    alias.symlink_to(source, target_is_directory=True)
+    targets = {'live': Path.home() / 'Library/Application Support/DEIXIS/library.sqlite',
+        'live-root': Path.home() / 'Library/Application Support/DEIXIS',
+        'linux-default': Path.home() / '.local/share/deixis/library.sqlite',
+        'configured-default': configured / 'library.sqlite',
+        'owner-backup': tmp_path / 'owner-backup/library.sqlite',
+        'copy': library / 'library.sqlite', 'copy-root': library,
+        'source': source / 'library.sqlite', 'source-root': source, 'copy-record': record,
+        'tracked': kit.REPO / 'README.md', 'git': kit.REPO / '.git/config',
+        'source-alias': alias / 'bad.json', 'reference-copy': reference / 'bad.json',
+        'reference-source': reference_source / 'bad.json', 'reference-record': reference_record}
+    writes = []
+    monkeypatch.setattr(copies, 'write_json', lambda *args: writes.append(args))
+    monkeypatch.setattr(kit, 'build_inventory', lambda *args: {'status': 'recorded'})
+    monkeypatch.setattr(kit, 'check', lambda *args: {'status': 'checked'})
+    args = [command, '--library', str(library), '--measurement-commit', COMMIT,
+            '--out', str(targets[target])]
+    if command == 'check':
+        args += ['--inventories', str(inventory), '--expected-libraries', str(expected)]
+    else:
+        args += ['--label', 'L9 NLP', '--corpora', 'SYNTHETIC']
+    assert kit.main(args) == 1
+    assert writes == []

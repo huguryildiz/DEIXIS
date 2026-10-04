@@ -29,12 +29,12 @@ Dondurma: [p9-owed-measurements-freeze.md](p9-owed-measurements-freeze.md) ([D20
 | A2 | [V, IV] | V tam, IV yama | [V, IV] | boş | V (çıkarılan boş, görünür boş, taslak var) / IV boş-boş |
 | B | [IV] | IV yama | [IV] | boş | yok / IV boş-boş |
 | H9c | [V] | V tam | [V] | boş | V boş-boş, taslak var / yok |
-| H9d | [V, IV] | V tam, IV tam | [IV] | boş | V (taslak yok), IV / yok; V `envelope_mismatch` |
+| H9d | [V, IV] | V tam, IV tam | [IV] | boş | V (çıkarılan boş, görünür boş, taslak yok), IV (boş, boş, taslak var) / yok; V `envelope_mismatch` |
 | H9e | [V] | V yama | [V] | boş | yok / V boş-boş |
 
 Yama doğruladığı bölüm sayısı: 3 (A2 IV, B IV, H9e V), hepsi RF2'den sonraki şemayla; yama yolu 4 kez girildi (A'da şema reddi). Tam onarım 4 kez girildi (A2 V, H9c V, H9d V, H9d IV); üçü doğrulandı, biri (H9d V) girdi-kimliği hatasıyla başarısız. Yönlendirme D198'in tam uygunluk koşuluna göre kodda yapılır; bu okuma yönlendirmeyi yeniden sınamaz.
 
-**Sonuç.** Ölçüldü: RF2 şeması canlı API'de üç ayrı koşuda kabul edildi ve yama her seferinde bölümü geçerli yayımladı; tam onarım yolu A2 V, H9c V ve H9d IV'te bölümü geçerli bıraktı, H9d V'te onarım çıktısının girdi kimliği hatası yüzünden başarısız oldu (çapa değil; RF6/D211 bunu kodla damgalar). İki korpus (H9 tablosu: A, A2; Q3 B tablosu: B, H9c, H9d, H9e yeniden kullanır), tek model, her kol bir koşu. P19 a-e ve eksik/okunamayan kategorilerinin kol başına tam dökümü bu belgede yok; kaynak sayımlar `p9r-report-results.md` ve H9b kitinin kayıtlarındadır, burada yeniden üretilmedi. Maruz kalma etkinlik kanıtı değildir: onarılan iddiaların anlam desteği ayrıca okunmadı ve H9b hiçbir kolda D129'un nedensel yararını göstermez. H9'un kayıtlı gözlemleri tarihsel kalır. D129'un hedefli onarım yolu gerçek modelde çalıştırıldı; başarı oranı ölçülmedi.
+**Sonuç.** Ölçüldü: RF2 şeması canlı API'de üç ayrı koşuda kabul edildi ve yama her seferinde bölümü geçerli yayımladı; tam onarım yolu A2 V, H9c V ve H9d IV'te bölümü geçerli bıraktı, H9d V'te onarım çıktısının girdi kimliği hatası yüzünden başarısız oldu (çapa değil; RF6/D211 bunu kodla damgalar). İki korpus (H9 tablosu: A, A2; Q3 B tablosu: B, H9c, H9d, H9e yeniden kullanır), tek model, her kol bir koşu.  P19 a-e ve eksik/okunamayan kategorileri yukarıda kit çıktılarından kol başına verildi. Maruz kalma etkinlik kanıtı değildir: onarılan iddiaların anlam desteği ayrıca okunmadı ve H9b hiçbir kolda D129'un nedensel yararını göstermez. H9'un kayıtlı gözlemleri tarihsel kalır. D129'un hedefli onarım yolu gerçek modelde çalıştırıldı; başarı oranı ölçülmedi.
 
 ## D141: keşif hunisinin sayımı (4 Ekim 2026, modelsiz)
 

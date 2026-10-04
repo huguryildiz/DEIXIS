@@ -1860,7 +1860,8 @@ class ResearchFlow:
                     if (row := in_pool.get(svid) or ranking_rules._seed_row(svid, versions)) is not None]
         model, off_reason = self._ranking_embedding(run, scope)
         similarities = self.store.source_similarities(rid, revision, model) if model else {}
-        ranked = ranking_rules.rank_pool(pool, verified, query_words, blocks, model, similarities, off_reason)
+        ranked = ranking_rules.rank_pool(pool, verified, query_words, blocks, model, similarities, off_reason,
+                                         ranking_rules.joint_terms(self.store, scope, vocabulary))
         keep = set(chained) & set(in_pool)
         decisions.save_ranks(step["id"], rid, ranking_rules.rank_rows(ranked, keep))
         self.store.finish_step(step["id"], "succeeded", output={

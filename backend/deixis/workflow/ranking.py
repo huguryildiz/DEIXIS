@@ -19,6 +19,7 @@ depends on set iteration, row order or the hash seed (SW14.6).
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 from typing import Any
 
@@ -32,8 +33,12 @@ RESCUE_OUTSIDE_TOP = 200  # SW8.1
 RESCUE_EMBEDDING_TOP = 50  # SW8.1
 THRESHOLDS = {"bm25_k1": BM25_K1, "bm25_b": BM25_B, "graph_seeds": GRAPH_SEEDS,
               "rescue_outside_top": RESCUE_OUTSIDE_TOP, "rescue_embedding_top": RESCUE_EMBEDDING_TOP}
-CODE_SIGNALS = ("bm25", "blocks", "tfidf", "graph")
+CODE_SIGNALS = ("bm25", "blocks", "tfidf", "graph", "joint")
 SIGNALS = (*CODE_SIGNALS, "embedding")
+# A question asks for a comparison when it holds one of these words (D226). English only: a question in another
+# language is read through its saved English sentence, else the signal does not run.
+COMPARISON_WORDS = frozenset({"compare", "compared", "compares", "comparing", "comparison", "comparisons", "versus",
+                              "vs", "differ", "differs", "difference", "differences", "between", "than"})
 # The three rows a ranking stores beside the signals: the code-only order the rescue arm reads, the order of every
 # signal that ran, and the inspection order screening follows.
 ORDERS = ("fused_code", "fused", "inspection")
@@ -157,6 +162,89 @@ def graph_scores(pool: list[dict[str, Any]], seeds: list[dict[str, Any]]) -> dic
     return scores
 
 
+def comparison_question(*texts: str | None) -> bool:
+    """Whether any of these question texts holds a comparison word (D226)."""
+    return any(COMPARISON_WORDS & set(words(text)) for text in texts if text)
+
+
+def joint_terms(store: Any, scope: dict[str, Any], vocabulary: dict[str, Any]) -> list[str] | None:
+    """The approved vocabulary's own task terms the joint signal compares, or None when the question of this revision
+    (or its saved English sentence) asks for no comparison (D226). The code's query and the second round's phrases
+    are left out: they were not the terms the person approved."""
+    from deixis.workflow.expansion import TASK_BLOCK, queried_form, queried_terms
+
+    english = store.english_question(scope["research_id"], scope["revision"])
+    if not comparison_question(scope["question"], english["text"] if english else None):
+        return None
+    return [queried_form(term) for term in queried_terms(vocabulary, TASK_BLOCK)]
+
+
+def _hyphen_free(text: str) -> str:
+    return _padded(text).replace("-", " ")
+
+
+def joint_forms(task_terms: list[str]) -> list[str]:
+    """Each task term as the form the joint signal looks for: hyphens read as spaces, and the last word dropped when
+    another task term ends with the same word, so that "vector-based routing" beside "depth-based routing" is looked
+    for as "vector based" and also finds "vector based forwarding" (D226). Distinct forms only, in term order."""
+    split = [_hyphen_free(term).split() for term in task_terms]
+    forms: list[str] = []
+    for i, term in enumerate(split):
+        if not term:
+            continue
+        shared = len(term) > 1 and any(j != i and other and other[-1] == term[-1] for j, other in enumerate(split))
+        form = " " + " ".join(term[:-1] if shared else term)
+        if form not in forms:
+            forms.append(form)
+    return forms
+
+
+# A term spelled out and then abbreviated in parentheses, as in "Depth Based Routing (DBR)": up to six words before
+# the parenthesis, and an abbreviation of 2–6 capitals.
+_ABBREVIATION = re.compile(r"((?:[\w-]+\s+){0,5}[\w-]+)\s*\(([A-Z]{2,6})\)")
+
+
+def _abbreviations(abstract: str, forms: list[str]) -> dict[str, str]:
+    """The abbreviation the abstract defines for each form, only where its letters are the initials of the words
+    right before the parenthesis and those words hold the form: "Depth Based Routing (DBR)", not
+    "depth-based routing (VBF)" (D226). A form given two abbreviations gets none."""
+    found: dict[str, set[str]] = {}
+    for match in _ABBREVIATION.finditer(abstract):
+        short = match.group(2)
+        spelled = _hyphen_free(match.group(1)).split()[-len(short):]
+        if len(spelled) != len(short) or "".join(w[0] for w in spelled) != short.lower():
+            continue
+        tail = " " + " ".join(spelled) + " "
+        for form in forms:
+            if form in tail:
+                found.setdefault(form, set()).add(short)
+    return {form: next(iter(shorts)) for form, shorts in found.items() if len(shorts) == 1}
+
+
+def joint_scores(pool: list[dict[str, Any]], forms: list[str]) -> dict[str, tuple[int, float]]:
+    """Records naming two or more task terms together: how many their title names, then the terms' summed rarity (D226).
+
+    A form counts once per record, at a word start with hyphens read as spaces. The title names a form when it holds
+    the form or the abbreviation the abstract defines for it ("DBR and VBF" in a title whose abstract spells both out).
+    The rarity of a form is log(pool size / records holding it), so a term most records name adds little. A title
+    naming fewer than two counts 0, and so does a record naming fewer than two anywhere; such records share the tail.
+    """
+    count = len(pool) or 1
+    held: dict[str, set[str]] = {}
+    in_title: dict[str, int] = {}
+    for row in pool:
+        abstract = row["abstract"] or ""
+        whole = _hyphen_free(f"{row['title']} {abstract}")
+        held[row["id"]] = {form for form in forms if form in whole}
+        title, title_words = _hyphen_free(row["title"]), set(re.findall(r"[\w-]+", row["title"]))
+        named = {form for form in forms if form in title}
+        named |= {form for form, short in _abbreviations(abstract, forms).items() if short in title_words}
+        in_title[row["id"]] = len(named) if len(named) >= 2 else 0
+    frequency = Counter(form for found in held.values() for form in found)
+    return {rid: (in_title[rid], sum(math.log(count / frequency[form]) for form in sorted(found)) if len(found) >= 2 else 0.0)
+            for rid, found in held.items()}
+
+
 def availability(pool: list[dict[str, Any]], signal: str) -> dict[str, bool]:
     """Whether each record has the signal at all. The embedding's own availability is the stored similarity, which
     is not in the pool row, so `rank_records` builds that one.
@@ -164,7 +252,7 @@ def availability(pool: list[dict[str, Any]], signal: str) -> dict[str, bool]:
     BM25 and the blocks read the title, which every record has. TF-IDF needs an abstract and the graph needs a
     reference list that was read and is not empty (SW7.4).
     """
-    if signal in ("bm25", "blocks"):
+    if signal in ("bm25", "blocks", "joint"):
         return {row["id"]: True for row in pool}
     if signal == "tfidf":
         return {row["id"]: bool(row["abstract"]) for row in pool}
@@ -365,11 +453,13 @@ def pool_rows(store: Any, research_id: str, revision: int) -> tuple[dict[str, di
 
 def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_words: set[str],
               blocks: dict[str, list[str]], embedding_model: str | None,
-              similarities: dict[str, float], off_reason: str | None = None) -> dict[str, Any]:
+              similarities: dict[str, float], off_reason: str | None = None,
+              compared_terms: list[str] | None = None) -> dict[str, Any]:
     """The pure part of `rank_records`: every signal's ranks and the three orders, for these pool rows and seeds.
 
     No store is read and nothing is written, so the keyword ranking and the chain's ranking (D95), which runs this
-    over the pool and the chained works together, are one computation.
+    over the pool and the chained works together, are one computation. The joint signal runs only when
+    `compared_terms` (from `joint_terms`) holds two or more forms (D226); otherwise the orders are what they were.
     """
     in_pool = {row["id"]: row for row in pool}
     scores = {"bm25": bm25_scores(pool, query_words), "blocks": block_scores(pool, blocks)}
@@ -388,6 +478,13 @@ def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_
         scores["graph"] = graph_scores(pool, graph_seeds)
     else:
         reasons["graph"] = "no_seed_with_references"
+    forms = joint_forms(compared_terms or [])
+    if compared_terms is None:
+        reasons["joint"] = "not_a_comparison"
+    elif len(forms) < 2:
+        reasons["joint"] = "fewer_than_two_task_terms"
+    else:
+        scores["joint"] = joint_scores(pool, forms)
     scored = {row["id"]: similarities[row["id"]] for row in pool if row["id"] in similarities}
     if not embedding_model:
         # Off, or the built-in model with no English sentence for this question (`english_question_missing`, D103).
@@ -437,7 +534,8 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     verified = [row for svid in verified_seeds(store, research_id, scope)
                 if (row := in_pool.get(svid) or _seed_row(svid, versions)) is not None]
     similarities = store.source_similarities(research_id, revision, embedding_model) if embedding_model else {}
-    ranked = rank_pool(pool, verified, query_words, blocks, embedding_model, similarities, off_reason)
+    ranked = rank_pool(pool, verified, query_words, blocks, embedding_model, similarities, off_reason,
+                       joint_terms(store, scope, vocabulary))
     ranks, reasons, graph_seeds = ranked["ranks"], ranked["reasons"], ranked["graph_seeds"]
 
     step = store.step(run["id"], "ranking", "code:ranking")

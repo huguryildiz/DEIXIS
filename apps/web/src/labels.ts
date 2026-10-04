@@ -562,12 +562,15 @@ export const armKindLabels: Record<string, string> = { keyword: 'Keywords', expa
 export const queryOriginLabels: Record<string, string> = { model: 'the model’s query', code: 'the code’s query' }
 // The ranking signals (D79) and the two stored orders the signal table reads beside them.
 export const signalLabels: Record<string, string> = {
-  bm25: 'BM25', blocks: 'Concept blocks', tfidf: 'TF-IDF', graph: 'Citation graph', embedding: 'Embedding',
+  bm25: 'BM25', blocks: 'Concept blocks', tfidf: 'TF-IDF', graph: 'Citation graph', joint: 'Terms named together',
+  embedding: 'Embedding',
   fused: 'Fused order', inspection: 'Screening order',
 }
 const signalReasons: Record<string, string> = {
   no_verified_seeds: 'no work you confirmed to compare with',
   no_seed_with_references: 'no seed with a reference list',
+  not_a_comparison: 'the question asks for no comparison',
+  fewer_than_two_task_terms: 'fewer than two task terms',
   embedding_off: 'semantic search is off',
   no_stored_similarity: 'no similarity was stored',
   english_question_missing: 'no English sentence for the built-in model',

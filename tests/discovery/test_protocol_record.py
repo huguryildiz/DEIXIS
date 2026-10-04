@@ -131,7 +131,7 @@ def test_sw_protocol_carries_its_current_thresholds():
     assert body["thresholds"]["abstract_screening"]["batch"] == ABSTRACT_BATCH
     assert "formulation_score_threshold" not in body["thresholds"]
     assert body["verification_providers"] == []
-    assert [signal["signal"] for signal in body["signals"]] == ["bm25", "blocks", "tfidf", "graph", "embedding"]
+    assert [signal["signal"] for signal in body["signals"]] == ["bm25", "blocks", "tfidf", "graph", "joint", "embedding"]
 
 
 def test_an_sw_body_carries_the_chain_policy_its_budget_froze():

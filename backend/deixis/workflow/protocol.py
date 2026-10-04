@@ -195,6 +195,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "signals": [{"signal": "bm25"}, {"signal": "blocks"},
                      {"signal": "tfidf", "seeds": "verified"},
                      {"signal": "graph", "seeds": "verified_then_code"},
+                     {"signal": "joint", "runs": "comparison_question_with_two_task_terms"},
                      {"signal": "embedding", "model": embedding_model, "rescue": True}],
         "thresholds": {
             "screening_batch": SCREENING_BATCH,

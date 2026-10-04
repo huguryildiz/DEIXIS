@@ -23,7 +23,18 @@ Dondurma: [p9-owed-measurements-freeze.md](p9-owed-measurements-freeze.md) ([D20
 
 Çıkarılan iddia (`repair_dropped_*`) her koşuda 0. Yama doğruladığı bölüm sayısı: 3 (A2 IV, B IV, H9e V), hepsi RF2'den sonraki şemayla. Yönlendirme D198'in tam uygunluk koşuluna göre kodda yapılır; bu okuma yönlendirmeyi yeniden sınamaz.
 
-**P19 sayımları (kayıtlı olduğu gibi, `p9r-report-results.md`; tanımlar D202 Ek B.5):** A: a=[V], b=1, c=0, d=0. A2: a=[V, IV], b=2 (V tam, IV yama), c=2, d=0. B: a=[IV], b=1, c=1, d=0, e boş. H9c: a=[V], b=1, c=1, d=0. H9d: a=[V, IV], b=[V, IV] (ikisi tam onarım), c=[IV], d boş, `envelope_mismatch` V'te ayrıca. H9e: a=[V], b=[V] (yama), c=[V], d boş. Eksik/okunamayan kategorileri: bu kayıtlarda ayrıca bildirilmemiş (yok demek değildir; kaynakta yazılı olmayanı yeniden üretmedim). Yamanın (e) uyarlaması yalnız B ve H9e'de ayrı satır olarak yazıldı (B: boş).
+**P19 sayımları (kol başına; kaynak `p9r-report-results.md`, tanımlar D202 Ek B.5):**
+
+| Kol | a | b | c | d | e (yama uyarlaması) | eksik/okunamayan |
+|---|---|---|---|---|---|---|
+| A | [V] | 1 | 0 | 0 | kayıtlı değil | kayıtlı değil |
+| A2 | [V, IV] | 2 (V tam, IV yama) | 2 | 0 | kayıtlı değil | kayıtlı değil |
+| B | [IV] | 1 | 1 | 0 | boş | kayıtlı değil |
+| H9c | [V] | 1 | 1 | 0 | kayıtlı değil | kayıtlı değil |
+| H9d | [V, IV] | [V, IV] (ikisi tam) | [IV] | boş | kayıtlı değil (`envelope_mismatch` V'te ayrıca) | kayıtlı değil |
+| H9e | [V] | [V] (yama) | [V] | boş | kayıtlı değil | kayıtlı değil |
+
+“Kayıtlı değil”: okuduğum sonuç metninde ayrıca bildirilmemiş; yoksa demek değildir, kaynak kit kayıtlarından yeniden üretilmedi (bu okuma yeni sayım yapmaz). P19'un eksik/okunamayan kategorilerinin kol başına tam dökümü bu yüzden eksik kalır; kalem bu noktada tam kapalı değil, ölçülen kısım yukarıdaki satırlarla sınırlıdır.
 
 **Sonuç.** Ölçüldü: RF2 şeması canlı API'de üç ayrı koşuda kabul edildi ve yama bir bölümü geçerli yayımladı; tam onarım yolu (A III iptalle kesildi, sonuçsuz; A IV geçerli) A2 V, H9c V ve H9d IV'te bölümü geçerli bıraktı, H9d V'te onarım çıktısının girdi kimliği hatası yüzünden başarısız oldu (çapa değil; RF6/D211 bunu kodla damgalar). İki korpus (H9 tablosu: A, A2; Q3 B tablosu: B, H9c, H9d, H9e yeniden kullanır), tek model, her kol bir koşu. P19 a-e ve eksik/okunamayan kategorilerinin kol başına tam dökümü bu belgede yok; kaynak sayımlar `p9r-report-results.md` ve H9b kitinin kayıtlarındadır, burada yeniden üretilmedi. Maruz kalma etkinlik kanıtı değildir: onarılan iddiaların anlam desteği ayrıca okunmadı ve H9b hiçbir kolda D129'un nedensel yararını göstermez. H9'un kayıtlı gözlemleri tarihsel kalır. D129'un hedefli onarım yolu gerçek modelde çalıştırıldı; başarı oranı ölçülmedi.
 
@@ -58,4 +69,13 @@ Dondurma: [p9-owed-measurements-freeze.md](p9-owed-measurements-freeze.md) ([D20
 
 Ham çıktılar (izlenmeyen, `.local/p9-owed/d141/`): `h9q1-count.json` (SHA-256 `4dd4b961…`), `h9bb-count.json` (`713fd426…`), kopya kayıtları. Kaynak dizinlere yazılmadı; kopyalar düzeltilmiş kitle (kaynak önce/sonra/kopya manifestleri) yeniden alındı, sayımlar özdeş çıktı. H9 kopyasının kaynak manifesti, H9b'nin kayıtlı H9 kaynak manifestiyle (`evidence/a-source-manifest.json`) dosya dosya eşit (fark yok; kitin `--trusted-manifest` karşılaştırması, kopya kaydında). Farklar betimseldir; korpuslar arası toplam yazılmaz. Dört korpustan üçü sayıldı; yeni L9 korpusu bekliyor.
 
-**Hazırlık denemeleri (§4: her deneme ayrı satır).** H9 Q1: (1) `run_gColv…` keşif koşusu `paused` (2026-10-03 06:53Z), kütüphanede kalan, tamamlanmamış; (2) `run_inu6W7…` keşif `completed` (06:57Z), ardından `fulltext_adjudication` `completed` (07:03Z) ve `table_fill` `completed` (07:13Z); ayrıca `report` koşusu `paused` (07:40Z, H9'un durmuş rapor koşusu, hazırlık değil). Sayımlar kütüphanenin son durumunu bütün olarak verir; iki keşif koşusu arasında ayrım yapmaz. H9b B Q3: tek hazırlık, 13:23Z keşif `completed`, 13:33Z tam metin `completed`, 13:42Z doldurma `completed`.
+**Hazırlık denemeleri (§4: her deneme ayrı satır):**
+
+| Korpus | Deneme | Kayıt | Durum |
+|---|---|---|---|
+| H9 Q1 | 1 | `run_gColv…` keşif, 2026-10-03 06:53Z | `paused`, kütüphanede kalan tamamlanmamış deneme |
+| H9 Q1 | 2 | `run_inu6W7…` keşif 06:57Z; sonra `fulltext_adjudication` 07:03Z ve `table_fill` 07:13Z | hepsi `completed` |
+| H9 Q1 | (hazırlık değil) | `report` koşusu 07:40Z | `paused` (H9'un durmuş rapor koşusu) |
+| H9b B Q3 | 1 | keşif 13:23Z, tam metin 13:33Z, doldurma 13:42Z | hepsi `completed` |
+
+Yukarıdaki sayımlar kütüphanenin son durumunu bütün olarak verir; H9 Q1'in iki keşif koşusu arasında ayrım yapmaz.

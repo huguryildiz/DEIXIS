@@ -2,6 +2,12 @@
 
 Durable decisions, newest first. Each entry is short: status, what was decided, and the main limit. The full original text is in Git history at commit `d213395`. An entry does not turn an unimplemented proposal into a working feature. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D221 — PRISMA-S marks every planned query sent, not sent or delivery unknown; the frozen protocol stays as it was
+Status: accepted (Claude wrote, gpt-6.1-sol medium reviewed in four rounds) · Date: 2026-10-04
+Context: The protocol freezes the compiled queries before the first provider request (SW14.1), so a stopped run left queries in it that were never sent, and the PRISMA-S export did not say which.
+Decision: The frozen record is unchanged. `prisma_s._planned_queries` reads each planned query against the steps of the runs that froze that protocol hash, matched by index and by the stored search row's provider and query text. `sent` needs a recorded send; `not_sent` needs evidence on the query's own step (cancelled, pending, or failed before send with zero sends); everything else, including a query with no step at all, is `delivery_unknown`, because a cancel is written at once while a step is written only when its page returns. Item 8 is `incomplete` when any query is not sent, unknown, or sent without a stored search record. The JSON export and the Markdown carry the per-query table.
+Limits: No migration, so a request in flight during a crash stays `delivery_unknown` rather than proven either way. Tested with store-level synthetic rows, not by cancelling a real discovery run.
+
 ## D220 — Open-item fixes of 4 Oct: provisional title from the question, PDF request headers, capacity tests isolated, arXiv zero not reproduced
 Status: accepted (Claude wrote, gpt-6.1-sol medium reviewed) · Date: 2026-10-04
 Context: STATUS listed four small model-free items. The owner-level title choice was made jointly with Sol.

@@ -309,3 +309,115 @@ def test_effort_limits_come_from_the_rules_and_follow_a_changed_constant(tmp_pat
         "chain_abstracts": rules.CHAIN_ABSTRACT_READ["standard"],
         "passages": rules.TEST_EFFORT_BUDGETS["standard"].max_answer_passages}
     assert changed["efforts"]["quick"]["read"] == 123
+
+
+# ---- what the frozen protocol planned against what was sent -------------------------------------------------------
+
+
+def plan(lib, count=4, run=None, provider="openalex"):
+    """Freeze `count` planned queries and let `run` name the record the way the discovery run's freeze step does."""
+    planned = [{"provider_id": provider, "query_text": f"SYNTHETIC planned {n}"} for n in range(count)]
+    record = lib.store.freeze_protocol(lib.rid, 1, body(lib.field) | {"compiled_queries": planned}, reason="SYNTHETIC planned")
+    step = lib.store.step(run or lib.run, "protocol", "protocol:freeze")
+    lib.store.finish_step(step["id"], "succeeded", output={"protocol_hash": record["hash"]})
+    return planned
+
+
+def dispatches(lib):
+    return [(q["query_text"][-1], q["dispatch"]) for q in item(lib.export(), 8)["values"]["planned_queries"]]
+
+
+def test_a_planned_query_that_was_never_sent_is_marked_not_sent_and_an_unknown_delivery_is_marked_so(store):
+    """The protocol freezes every compiled query before the first request; a run stopped after that keeps them all."""
+    lib = Search(store)
+    planned = plan(lib)
+    lib.page("search:0", lib.records(1), query="SYNTHETIC planned 0", stop="exhausted")
+    unknown = store.step(lib.run, "search:1", "provider_search:openalex")
+    store.finish_step(unknown["id"], "outcome_unknown", error_code="timeout", delivery_class="after_send_unknown")
+    refused = store.step(lib.run, "search:2", "provider_search:openalex")
+    store.finish_step(refused["id"], "failed", error_code="not_configured", delivery_class="before_send")
+    # search:3 has no step of its own: a cancel is written at once while a request may still be on the network.
+    data = lib.export()
+    values = item(data, 8)["values"]
+    assert dispatches(lib) == [("0", "sent"), ("1", "delivery_unknown"), ("2", "not_sent"), ("3", "delivery_unknown")]
+    assert values["planned_dispatch"] == {"planned": 4, "sent": 1, "delivery_unknown": 2, "not_sent": 1,
+                                         "sent_without_record": 0}
+    assert "1 of 4 planned queries" in item(data, 8)["text"]
+    assert item(data, 8)["status"] == "incomplete"
+    assert "SYNTHETIC planned 3" in prisma_s.markdown(data) and "not_sent" in prisma_s.markdown(data)
+    # The frozen record itself is untouched.
+    assert [q["query_text"] for q in store.current_protocol(lib.rid, 1)["body"]["compiled_queries"]] == [
+        q["query_text"] for q in planned]
+
+
+def test_a_run_cancelled_before_its_first_send_leaves_item_8_incomplete_with_every_query_delivery_unknown(store):
+    lib = Search(store)
+    plan(lib, 2)
+    data = lib.export()
+    lib.store.update_run(lib.run, status="cancelled")
+    assert dispatches(lib) == [("0", "delivery_unknown"), ("1", "delivery_unknown")]
+    assert item(lib.export(), 8)["status"] == "incomplete" and "0 of 2 planned queries" in item(lib.export(), 8)["text"]
+
+
+def test_an_old_runs_search_does_not_mark_a_new_query_on_another_provider_as_sent(store):
+    lib = Search(store)
+    lib.page("search:0", lib.records(1), query="SYNTHETIC old", stop="exhausted")  # an earlier run, another plan
+    newer = lib.new_run("discovery")
+    plan(lib, 1, run=newer, provider="arxiv")
+    assert dispatches(lib) == [("0", "delivery_unknown")]  # the old run's step is another plan's
+    # A research whose protocol no run names cannot say anything about what was sent.
+    other = Search(store)
+    other.store.freeze_protocol(other.rid, 1, body(other.field) | {"compiled_queries": [
+        {"provider_id": "openalex", "query_text": "SYNTHETIC planned 0"}]}, reason="SYNTHETIC")
+    other.page("search:0", other.records(1), query="SYNTHETIC planned 0", stop="exhausted")
+    assert dispatches(other) == [("0", "delivery_unknown")]
+
+
+def test_a_retry_that_ended_before_send_after_an_earlier_attempt_was_sent_is_sent(store):
+    lib = Search(store)
+    plan(lib, 2)
+    for key, sends in (("search:0", 1), ("search:1", 0)):
+        step = store.step(lib.run, key, "provider_search:openalex")
+        store.finish_step(step["id"], "failed", error_code="not_configured", delivery_class="before_send",
+                          output={"transport": {"sends": sends, "attempts": 2, "dispatches": [{}]}})
+    assert dispatches(lib) == [("0", "sent"), ("1", "not_sent")]
+
+
+def test_a_run_cancelled_while_a_request_is_held_with_no_step_is_delivery_unknown(store):
+    lib = Search(store)
+    plan(lib, 1)
+    lib.store.update_run(lib.run, status="cancelled", pause_reason="user_cancelled")  # the response has not come back
+    assert dispatches(lib) == [("0", "delivery_unknown")]
+
+
+def test_a_failed_run_or_one_paused_by_a_restart_never_turns_a_missing_step_into_not_sent(store):
+    failed = Search(store)
+    plan(failed, 1)
+    failed.store.update_run(failed.run, status="failed", pause_reason="disk_full")  # the request may have gone out
+    assert dispatches(failed) == [("0", "delivery_unknown")]
+    restarted = Search(store)
+    plan(restarted, 1)
+    restarted.store.update_run(restarted.run, status="paused", pause_reason="backend_restarted")
+    restarted.store._event(restarted.rid, "run_paused", {"status": "paused", "pause_reason": "backend_restarted"},
+                           restarted.run)
+    restarted.store.update_run(restarted.run, status="cancelled", pause_reason=None)  # cancelled after the restart pause
+    assert dispatches(restarted) == [("0", "delivery_unknown")]
+
+
+def test_a_sent_query_without_its_search_record_makes_item_8_incomplete(store):
+    lib = Search(store)
+    plan(lib, 2)
+    lib.page("search:0", lib.records(1), query="SYNTHETIC planned 0", stop="exhausted")
+    gone = store.step(lib.run, "search:1", "provider_search:openalex")
+    store.finish_step(gone["id"], "failed", error_code="disk_full", delivery_class="after_send_unknown",
+                      output={"transport": {"sends": 1, "attempts": 1, "dispatches": [{}]}})
+    data = lib.export()
+    assert dispatches(lib) == [("0", "sent"), ("1", "sent")]
+    assert item(data, 8)["status"] == "incomplete" and "1 sent queries have no stored search record" in item(data, 8)["text"]
+    none = Search(store)
+    plan(none, 1)
+    step = store.step(none.run, "search:0", "provider_search:openalex")
+    store.finish_step(step["id"], "failed", error_code="disk_full", delivery_class="after_send_unknown",
+                      output={"transport": {"sends": 1, "attempts": 1, "dispatches": [{}]}})
+    assert item(none.export(), 8)["status"] == "incomplete"
+    assert "1 sent queries have no stored search record" in item(none.export(), 8)["text"]

@@ -162,6 +162,78 @@ def _groups(store: Store, research_id: str, revision: int) -> list[dict[str, Any
     return ordered
 
 
+def _planned_queries(store: Store, research_id: str, revision: int, latest: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The queries the latest frozen protocol planned, each marked by what the stored rows say happened to it.
+
+    The protocol is frozen before the first provider request and never edited, so it lists a query a stopped run never
+    sent. A step belongs to the protocol only through its run: the run whose `protocol` or `protocol_expansion` step
+    names the record's hash. A step is matched to a planned query by its index in that run and, when it wrote a
+    `search_runs` row, by that row's provider and query text too. With no such run nothing is known: every query is
+    `delivery_unknown`.
+    - `sent`: a matching step succeeded, or failed with a recorded transport send count above zero.
+    - `not_sent`: evidence on the query's own step only: it was skipped (`cancelled`), never started (`pending`), or
+      failed before sending (`before_send`, or zero recorded sends).
+    - `delivery_unknown`: everything else. A step is `outcome_unknown` or `running`; a failed step records neither a
+      send count nor a delivery class; or the query has no step of its own. A search step is written only when its
+      page returns, and a cancel is written at once, so a run's end (cancelled, paused, failed, restarted) never proves
+      a request was not on the network.
+    `recorded` says whether a `search_runs` row of the query's own exists; a sent query without one is a gap.
+    """
+    planned = (latest["body"].get("compiled_queries") if latest else None) or []
+    if not planned:
+        return []
+    linked = {row["run_id"]: dict(row) for row in store.conn.execute(
+        "SELECT DISTINCT s.run_id FROM run_steps s JOIN runs r ON r.id = s.run_id"
+        " WHERE r.research_id = ? AND r.scope_revision = ? AND s.operation_key IN ('protocol', 'protocol_expansion')"
+        " AND s.status = 'succeeded' AND json_extract(s.output_json, '$.protocol_hash') = ?",
+        (research_id, revision, latest["body_sha256"]))}
+    rows = [dict(row) for row in store.conn.execute(
+        "SELECT s.id, s.operation_key, s.status, s.delivery_class, s.output_json, sr.provider, sr.query_text"
+        f" FROM run_steps s LEFT JOIN search_runs sr ON sr.step_id = s.id WHERE s.run_id IN ({','.join('?' * len(linked))})"
+        " AND s.kind LIKE 'provider_search:%'", tuple(linked))] if linked else []
+    seen: dict[int, set[str]] = {}
+    recorded: set[int] = set()
+    for row in rows:
+        found = re.fullmatch(r"search:(\d+)(?::page:\d+)?", row["operation_key"])
+        if not found:
+            continue
+        index = int(found.group(1))
+        if index >= len(planned):
+            continue
+        want = planned[index]
+        if row["provider"] is not None and (row["provider"], row["query_text"]) != (want.get("provider_id"), want.get("query_text")):
+            continue  # another query's step: the index alone does not make it this one
+        sends = ((json.loads(row["output_json"] or "null") or {}).get("transport") or {}).get("sends")
+        status = row["status"]
+        if status == "succeeded":
+            mark = "sent" if row["provider"] is not None else "delivery_unknown"
+        elif status in ("outcome_unknown", "running"):
+            mark = "sent" if sends else "delivery_unknown"
+        elif status == "failed":
+            if sends:
+                mark = "sent"
+            elif sends == 0 or row["delivery_class"] == "before_send":
+                mark = "not_sent"
+            else:
+                mark = "delivery_unknown"
+        elif status in ("cancelled", "pending"):
+            mark = "not_sent"
+        else:
+            mark = "delivery_unknown"
+        seen.setdefault(index, set()).add(mark)
+        if row["provider"] is not None:
+            recorded.add(index)
+    result = []
+    for index, query in enumerate(planned):
+        marks = seen.get(index, set())
+        dispatch = ("sent" if "sent" in marks else "delivery_unknown" if "delivery_unknown" in marks
+                    else "not_sent" if marks else "delivery_unknown")
+        result.append({"index": index, "provider_id": query.get("provider_id"), "query_text": query.get("query_text"),
+                       "origin": query.get("origin"), "dispatch": dispatch,
+                       "recorded": index in recorded})
+    return result
+
+
 def _item(number: int, status: str, text: str, values: dict[str, Any] | None = None, trace: list[str] | None = None,
           aggregates: list[dict[str, Any]] | None = None, code_source: dict[str, Any] | None = None) -> dict[str, Any]:
     assert status in STATUSES
@@ -298,11 +370,22 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
 
     # 8 — full search strategies.
     approval = body.get("approval") or {}
+    planned = _planned_queries(store, research_id, revision, latest)
+    dispatch = Counter(q["dispatch"] for q in planned)
+    no_record = sum(q["dispatch"] == "sent" and not q["recorded"] for q in planned)
+    planned_values = {"planned_queries": planned, "planned_dispatch": {
+        "planned": len(planned), "sent": dispatch["sent"], "delivery_unknown": dispatch["delivery_unknown"],
+        "not_sent": dispatch["not_sent"], "sent_without_record": no_record}} if planned else {}
+    unsent = bool(dispatch["not_sent"] or dispatch["delivery_unknown"] or no_record)
+    gap = f" {no_record} sent queries have no stored search record." if no_record else ""
     if keyword:
-        items.append(_item(8, "reported",
+        items.append(_item(8, "incomplete" if unsent else "reported",
                            f"{len(keyword)} keyword query groups are listed verbatim in the search table with their "
-                           "provider, origin, round and request parameters.",
-                           {"query_groups": len(keyword), "chain_groups": len(chain),
+                           "provider, origin, round and request parameters."
+                           + (f" The frozen protocol planned {len(planned)} queries; {dispatch['sent']} of {len(planned)} "
+                              f"planned queries were sent, {dispatch['not_sent']} were not sent and "
+                              f"{dispatch['delivery_unknown']} have an unknown delivery." + gap if unsent else ""),
+                           planned_values | {"query_groups": len(keyword), "chain_groups": len(chain),
                             "rounds": sorted({g["round"] for g in keyword}),
                             "origins": dict(sorted(Counter(str(g["origin"]) for g in keyword).items())),
                             "approval": {key: approval.get(key) for key in (
@@ -310,8 +393,12 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
                             "model_term_suggestions": approval.get("suggestions"),
                             "concept_blocks": body.get("concept_blocks")}, protocol_trace))
     else:
-        items.append(_item(8, "not_recorded", "No keyword query was recorded for this question revision.",
-                           {}, protocol_trace))
+        items.append(_item(8, "incomplete" if unsent else "not_recorded",
+                           "No keyword query was recorded for this question revision."
+                           + (f" The frozen protocol planned {len(planned)} queries; {dispatch['sent']} of {len(planned)} "
+                              f"planned queries were sent, {dispatch['not_sent']} were not sent and "
+                              f"{dispatch['delivery_unknown']} have an unknown delivery." + gap if planned else ""),
+                           planned_values, protocol_trace))
 
     # 9 — limits: listed, never justified per research.
     read_limits = sorted({g["read_limit"] for g in keyword if g["read_limit"] is not None})
@@ -395,6 +482,7 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
         "statement": STATEMENT, "run_in_progress": running, "note": RUNNING_NOTE if running else None,
         "question": scope["question"], "effort": scope["effort"],
         "items": items,
+        "planned_queries": planned,
         "search_table": [{key: value for key, value in g.items() if key != "request_description"}
                          | {"request_description": g["request_description"]} for g in groups],
         "flow": {"counts": flow, "boxes": flow_rules.flow_boxes(ctx, flow)},
@@ -505,6 +593,11 @@ def markdown(data: dict[str, Any]) -> str:
         lines += ["", "Stored pages of each group:", ""]
         lines += [f"- Group {g['group']}: " + ", ".join(f"`search_runs:{sid}`" for sid in g["search_run_ids"])
                   for g in data["search_table"]]
+    if data["planned_queries"]:
+        lines += ["", "## Planned queries (frozen protocol) and what was sent", "",
+                  "| # | Provider | Origin | Query | Dispatch |", "|---|---|---|---|---|"]
+        lines += [f"| {q['index']} | {_cell(q['provider_id'])} | {_cell(q['origin'])} | {_cell(q['query_text'])} | "
+                  f"{q['dispatch']} |" for q in data["planned_queries"]]
     boxes = data["flow"]["boxes"]
     lines += ["", "## Flow counts", "", f"Every count below is marked `{boxes['flow_status']}`: the screening was "
               "done by code and model runs. The counts are not added up.", ""]

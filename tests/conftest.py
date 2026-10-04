@@ -48,7 +48,7 @@ def memory_keychain(monkeypatch):
 def pytest_configure(config):
     config.addinivalue_line("markers", "field_distribution: the test's own transport answers the routing request (D93)")
     config.addinivalue_line("markers", "process: starts and kills real processes (P9 H2); run with -m process -n 0")
-    config.addinivalue_line("markers", "arxiv_pacing: the test keeps arXiv's real three-second request gap")
+    config.addinivalue_line("markers", "provider_pacing: the test keeps the real arXiv and Semantic Scholar request gaps")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -62,13 +62,14 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(autouse=True)
-def no_arxiv_pacing(request, monkeypatch):
-    """arXiv's three-second gap between searches is real time; a test that is not about it does not wait it out."""
-    if request.node.get_closest_marker("arxiv_pacing"):
+def no_provider_pacing(request, monkeypatch):
+    """arXiv's 3 s and Semantic Scholar's 2 s request gaps are real time; a test not about them does not wait them out."""
+    if request.node.get_closest_marker("provider_pacing"):
         return
-    from deixis.providers import arxiv
+    from deixis.providers import arxiv, pacing
 
     monkeypatch.setattr(arxiv, "MIN_INTERVAL_SECONDS", 0.0)
+    monkeypatch.setattr(pacing.SEMANTIC_SCHOLAR_PACER, "interval_seconds", 0.0)
 
 
 @pytest.fixture(autouse=True)

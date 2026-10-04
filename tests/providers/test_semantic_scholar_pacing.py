@@ -4,11 +4,13 @@ import asyncio
 import time
 
 import httpx
+import pytest
 
 from deixis.providers import common
 from deixis.providers.pacing import SEMANTIC_SCHOLAR_PACER, SerialRequestPacer
 
 
+@pytest.mark.provider_pacing
 def test_default_semantic_scholar_interval_is_at_least_one_second():
     assert SEMANTIC_SCHOLAR_PACER.interval_seconds >= 1.0
 

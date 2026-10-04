@@ -398,6 +398,7 @@ CASES = [(pid, e.endpoint_id, FIXTURES[pid], case)
          for ep in FIXTURES[pid]["endpoints"] if ep["endpoint_id"] == e.endpoint_id for case in ep["cases"]]
 
 
+@pytest.mark.provider_pacing
 @pytest.mark.parametrize("provider_id,endpoint_id,fixture,case", CASES,
                          ids=[f"{p}/{e or 'default'}/g{c['group']}/{c['name']}" for p,e,f,c in CASES])
 def test_conformance_case(provider_id, endpoint_id, fixture, case):

@@ -2,6 +2,15 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D215 — P9 owed slice 4 rerun: five of eighteen operations measured on H9e's report with no invariant violated; the rest untested after an unusable model proposal
+
+**Status:** accepted (measured, not pushed); kit by gpt-6.1-sol medium, reviewed by Claude; run by Claude Opus 5.5 under Ek S2 (D214).
+**Date:** 2026-10-04
+
+**Decision:** Record the single permitted rerun (new verified copy, product `7188ec8`, combined budget 9 sessions / 3300 s) in `docs/product/p9-owed-measurements-results.md`. E01-E05 ran: R18 0 violations in 5 operations, R19 0/17 false positive and 0/17 false negative, 3 new sessions, 71.9 s. E06 (accepting the E05 cell proposal) was skipped because the product's `cell_recheck` proposal was not structurally valid; per freeze section 5 it was neither corrected nor regenerated, so E07-E17 and E18 are untested.
+
+**Limits:** Five operations of eighteen, one report, one corpus, a second run on the same corpus after an instrument defect (not a replication). Round-trip equality, source removal, edit check, second edit, acknowledgement, restore, export numbering, permanent-delete refusal and backup-restore are not measured; D157 stays partly open. Nothing here speaks to semantic support.
+
 ## D214 — P9 owed slice 4: one rerun on a new copy is allowed after the kit's ownership defect, under a combined budget
 
 **Status:** accepted (amendment Ek S2; not run, not pushed); decided jointly by Claude Opus 5.5 and gpt-6.1-sol medium (Sol agreed, with conditions); kit fix and budget check written by Sol, reviewed by Claude; coordinator recommended it.

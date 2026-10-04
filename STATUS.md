@@ -2,7 +2,7 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 3 Ekim 2026 · P8 B8b (D189) hazır: aday incelemesi gerçek modelle okundu, P8 kapanış kaydı yazıldı; P8 B7 (D188) main'e hazır: yayın takibi artık Takip sekmesinde görünüyor ve yönetiliyor; H9b kol B raporu bitti ama birleştirme kontrolünden geçmedi (D202, sonuçlar `p9r-report-results.md`); P8 B6 (D187) main'e hazır: aralıklı yayın takibi DEIXIS açıkken kendiliğinden kontrol ediyor, kapalı kalınan süreyi söylüyor ve açılışta sınırlı bir telafi kontrolü yapıyor; P10 öncesi ölçülmemiş beş borcun ölçüm planı donduruldu (D205; koşu yok, H9b bittikten sonra en çok 370 Luna oturumu); G1-F1 (D201): P7 çıkışı karşılandı (deterministik kanıtla); H9b RF2 sonrası sürecek
+**Son güncelleme:** 4 Ekim 2026 · P9 durumu: matris iki kez yeşil (D210) ve RF6 sonrası bir kez daha yeşil; H9 rapor zinciri kapandı, H9e ilk kabul edilen rapor (D202); H10 koşulmadı (D202 kararı, R02 sınırı); borç ölçümler sürüyor: K6 koşuldu (D212), dilim 4 koşuyor, L9 sırada
 
 ## Şu an çalışanlar
 
@@ -77,8 +77,8 @@ Hedef: P10'dan önceki her şey. Kaba tahmin 1–1,5 hafta; en büyük belirsizl
 | P4–P5 | İlk web dilimi, kütüphane, kanıt tablosu | ✅ |
 | P6 | Sentez ve rapor | ✅ beş dilim kapandı; gerçek model ölçümleri P9'a borç |
 | P7 | Bağlantı kapsamı | ✅ çıkış karşılandı (D201): D172, D173, G1 (D196, D201), P7-F2/F3 (D199); G10 canlı erişim gösterildi; canlı hata/kota biçimleri ölçülmedi, G12 yeniden üretilemedi |
-| P8 | Başka modelle inceleme, yayın takibi | 🟡 tasarım D180 + bölüm 15; ✅ B1 (D181), B2 (D182), B3 (D183), B4 (D184, sentetik vakalar, tek koşu), B8a (D185, aday incelemesi), B5 (D186, modelsiz, sahte sağlayıcı), B6 (D187, zamanlayıcı ve telafi, modelsiz), B7 (D188, takip ekranları); B8b (D189, gerçek model aday okuması, kapanış kaydı; çıkış koşullu karşılandı) |
-| P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, H6 düzeltmeleri bitti; RR-B kodu main'de (D170), matris çifti boş makinede bekliyor; H9 ölçüldü (D171): rapor tamamlanmadı, yalnız R1/R7/P19; H10 yok |
+| P8 | Başka modelle inceleme, yayın takibi | ✅ çıkış koşullu karşılandı (D189): B1–B8b bitti (D181–D189); matris satırları T14/T16 geçti; borç: gerçek hedeflerde inceleme kalitesi ölçülmedi |
+| P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, RR-B bitti; matris iki kez üst üste yeşil (D210, be07c4c), RF6 sonrası bir koşu yeşil (181b232); rapor düzeltmeleri RF2–RF6 (D206–D211); H9 zinciri kapandı: H9e rapor ilk kez tamamlandı ve kabul edildi, kalite satırlarının çoğu aralık dışı (D202); H10 koşulmadı, sınır R02; borç ölçümler (D205): D129 kapandı, D141 kısmen, K6 koşuldu (D212), dilim 4 ve L9 sırada; kalan: yeniden düzenlemeler, son matris çifti, çıkış kaydı |
 | P10 | macOS / Windows paketi | ❌ |
 
 ## Ölçülmemiş borçlar

@@ -8,7 +8,7 @@ Sizes below are current logical file bytes, recursively summed without following
 
 Many directories contain `OZET-SILINENLER.md`, `CACHE-OZET.md` or `PROVIDER-PAYLOADS-OZET.md`. These notes report earlier deletion and sometimes retain only the first 3,000 characters of selected JSON files. A preserved excerpt cannot reconstruct the full input, response, score or library. Their deletion counts are reported history, not evidence that this tidy task deleted anything.
 
-The requested `.local/archive/p9-evidence.tar.gz` is a **planned replacement target, absent at inspection**. Its contents, hash, integrity and recoverability are bilinmiyor. The expanded p9-evidence directory exists; this task neither created a tarball nor removed raw data. Any future tarball must be inventoried and verified before treating it as a substitute for the expanded evidence.
+On 4 Oct 2026 `.local/archive/p9-evidence.tar.gz` (833 MB, 71,323 entries, `gzip -t` and `tar tzf` clean) replaced the expanded p9-evidence folder (13 GB). All raw run directories listed below, plus `archive/early` and `archive/sw`, were moved to the macOS Trash as `~/.Trash/deixis-local-<name>-20261004` (recoverable until the Trash is emptied). This page and the tarball are what remain in `.local`.
 
 ## Directory groups
 

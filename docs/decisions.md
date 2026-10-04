@@ -2,6 +2,17 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D214 — P9 owed slice 4: one rerun on a new copy is allowed after the kit's ownership defect, under a combined budget
+
+**Status:** accepted (amendment Ek S2; not run, not pushed); decided jointly by Claude Opus 5.5 and gpt-6.1-sol medium (Sol agreed, with conditions); kit fix and budget check written by Sol, reviewed by Claude; coordinator recommended it.
+**Date:** 2026-10-04
+
+**Context:** D213: the slice 4 measurement stopped after E02 because the ownership check refused the server's own Codex child. Freeze 1.6 forbids re-running a stopped measurement on the same corpus.
+
+**Decision:** Fix the kit so descendants of the listener count as owned (ancestry proven by `ps`, fail closed otherwise), add `--prior-sessions` / `--prior-seconds` so the rerun runs inside the original budget minus what the first attempt used, and allow ONE rerun on a new verified copy of `e/data` (Ek S2 in the freeze document). The old exec-data, record and the unscored E03 are kept and not reused; the two runs' denominators are not merged.
+
+**Limits:** Same report, same corpus: a recovery measurement after an instrument defect, not a replication. Prior consumption is operator-supplied. The amendment takes effect only after the coordinator pushes it and gives the go.
+
 ## D213 — P9 owed slice 4: the real-report edit sequence stopped after two operations because the kit's ownership check treated the server's own Codex child as a foreign process
 
 **Status:** accepted (measured, stopped; not pushed); kit by gpt-6.1-sol medium, reviewed by Claude and by Sol medium; run by Claude Opus 5.5 on the coordinator's go.

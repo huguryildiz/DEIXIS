@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -437,12 +438,157 @@ def test_listener_exclusive_ownership_and_record(tmp_path, monkeypatch, problem)
     if problem == 'other-library': outputs[1] += 'n/tmp/other/library.sqlite\n'
     if problem == 'other-owner': outputs[2] += 'p456\n'
     def run(*args, **kwargs):
+        if args[0][0] == 'ps':
+            return SimpleNamespace(returncode=0, stdout='456 1\n', stderr='')
         return SimpleNamespace(returncode=2 if problem == 'error' else 0,
                                stdout=outputs.pop(0), stderr='')
     monkeypatch.setattr(kit.subprocess,'run',run)
     with pytest.raises(kit.MeasurementRefused):
         kit.server_owns_copy(root,'http://127.0.0.1:8873',log)
     assert json.loads(log.read_text())['event'] == 'exclusive_ownership'
+
+
+@pytest.fixture
+def process_tree(tmp_path, monkeypatch):
+    """Real file holders and ancestry; only the socket listener is synthetic."""
+    try:
+        probe = subprocess.run(['ps', '-o', 'pid=,ppid=', '-p', str(kit.os.getpid())],
+                               capture_output=True, text=True)
+    except PermissionError as exc:
+        pytest.skip(f'real ps unavailable under filesystem/process sandbox: {exc}')
+    assert probe.returncode == 0 and not probe.stderr.strip()
+    root = tmp_path / 'data'; root.mkdir()
+    (root / 'library.sqlite').write_text('synthetic database')
+    (root / 'held.txt').write_text('synthetic holder')
+    script = tmp_path / 'holder.py'
+    script.write_text('''import os, subprocess, sys
+depth = int(sys.argv[1])
+child = None
+with open(sys.argv[2]):
+    try:
+        if depth:
+            child = subprocess.Popen([sys.executable, '-B', __file__, str(depth-1), sys.argv[3], sys.argv[3]],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            print(child.stdout.readline().strip(), flush=True)
+        else:
+            print(os.getpid(), flush=True)
+        sys.stdin.readline()
+    finally:
+        if child:
+            child.communicate('\\n', timeout=5)
+''')
+    processes = []
+    original = kit.subprocess.run
+    def start(depth):
+        proc = subprocess.Popen([kit.sys.executable, '-B', str(script), str(depth),
+                                 str(root / 'library.sqlite' if depth else root / 'held.txt'),
+                                 str(root / 'held.txt')],
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        processes.append(proc)
+        holder = int(proc.stdout.readline().strip())
+        return proc, holder
+    def listener(pid):
+        def run(command, **kwargs):
+            if command == ['lsof', '-nP', '-F', 'pn', '-iTCP:8873', '-sTCP:LISTEN']:
+                return SimpleNamespace(returncode=0, stdout=f'p{pid}\n', stderr='')
+            return original(command, **kwargs)
+        monkeypatch.setattr(kit.subprocess, 'run', run)
+    yield root, start, listener
+    for proc in reversed(processes):
+        proc.communicate('\n', timeout=10)
+        assert proc.returncode == 0
+
+
+@pytest.mark.parametrize('depth', [1, 2])
+def test_listener_real_descendant_file_holder(process_tree, tmp_path, depth):
+    root, start, listener = process_tree
+    proc, holder = start(depth)
+    listener(proc.pid)
+    log = tmp_path / 'guard.jsonl'
+    kit.server_owns_copy(root, 'http://127.0.0.1:8873', log)
+    record = json.loads(log.read_text())
+    assert record['exclusive'] is True
+    descendant = next(d for d in record['descendants'] if d['pid'] == holder)
+    assert descendant['ancestry'][-1] == proc.pid
+    assert 'holder.py' in descendant['command']
+    assert len(descendant['ancestry']) == depth + 1
+
+
+def test_listener_real_unrelated_file_holder(process_tree, tmp_path):
+    root, start, listener = process_tree
+    proc, _ = start(1)
+    unrelated, _ = start(0)
+    listener(proc.pid)
+    log = tmp_path / 'guard.jsonl'
+    with pytest.raises(kit.MeasurementRefused, match='other process owners'):
+        kit.server_owns_copy(root, 'http://127.0.0.1:8873', log)
+    record = json.loads(log.read_text())
+    assert record['exclusive'] is False
+    assert unrelated.pid not in [d['pid'] for d in record['descendants']]
+
+
+@pytest.mark.parametrize('failure', ['exit', 'oserror', 'stderr', 'missing', 'malformed', 'cycle', 'root'])
+def test_listener_ancestry_failure_refuses(tmp_path, monkeypatch, failure):
+    root = tmp_path / 'data'; root.mkdir(); log = tmp_path / 'guard.jsonl'
+    outputs = iter(['p123\n', f'p123\nn{root}/library.sqlite\n', 'p123\np456\n'])
+    def run(command, **kwargs):
+        if command[0] == 'lsof':
+            return SimpleNamespace(returncode=0, stdout=next(outputs), stderr='')
+        assert command[:3] == ['ps', '-o', 'pid=,ppid=']
+        if failure == 'oserror':
+            raise OSError('synthetic ps failure')
+        return SimpleNamespace(returncode=1 if failure == 'exit' else 0,
+                               stdout={'missing':'', 'malformed':'456 invalid\n',
+                                       'cycle':'456 456\n', 'root':'456 0\n'}.get(failure, '456 123\n'),
+                               stderr='synthetic error' if failure == 'stderr' else '')
+    monkeypatch.setattr(kit.subprocess, 'run', run)
+    with pytest.raises(kit.MeasurementRefused):
+        kit.server_owns_copy(root, 'http://127.0.0.1:8873', log)
+    record = json.loads(log.read_text())
+    assert record['exclusive'] is False
+    assert record['records'][-1]['command'][0] == 'ps'
+
+
+@pytest.mark.parametrize('depth', [1, 2])
+def test_listener_descendant_ancestry_and_command_record(tmp_path, monkeypatch, depth):
+    root = tmp_path / 'data'; root.mkdir(); log = tmp_path / 'guard.jsonl'
+    listings = iter(['p123\n', f'p123\nn{root}/library.sqlite\n', 'p123\np456\n'])
+    def run(command, **kwargs):
+        if command[0] == 'lsof':
+            return SimpleNamespace(returncode=0, stdout=next(listings), stderr='')
+        pid = command[-1]
+        if command[2] == 'pid=,command=':
+            assert pid == '456'
+            output = '456 codex app-server\n'
+        else:
+            assert command[2] == 'pid=,ppid='
+            output = f'{pid} {789 if pid == "456" and depth == 2 else 123}\n'
+        return SimpleNamespace(returncode=0, stdout=output, stderr='')
+    monkeypatch.setattr(kit.subprocess, 'run', run)
+    kit.server_owns_copy(root, 'http://127.0.0.1:8873', log)
+    record = json.loads(log.read_text())
+    assert record['exclusive'] is True
+    assert record['holder_pids'] == [123, 456]
+    assert record['descendants'] == [dict(pid=456, command='codex app-server',
+                                         ancestry=[456, *([789] if depth == 2 else []), 123])]
+
+
+@pytest.mark.parametrize('output,code,stderr', [('', 0, ''), ('789 wrong-pid', 0, ''),
+                                               ('456 codex app-server', 1, ''),
+                                               ('456 codex app-server', 0, 'error')])
+def test_listener_descendant_command_failure_refuses(tmp_path, monkeypatch, output, code, stderr):
+    root = tmp_path / 'data'; root.mkdir(); log = tmp_path / 'guard.jsonl'
+    listings = iter(['p123\n', f'p123\nn{root}/library.sqlite\n', 'p123\np456\n'])
+    def run(command, **kwargs):
+        if command[0] == 'lsof':
+            return SimpleNamespace(returncode=0, stdout=next(listings), stderr='')
+        if command[2] == 'pid=,ppid=':
+            return SimpleNamespace(returncode=0, stdout='456 123', stderr='')
+        return SimpleNamespace(returncode=code, stdout=output, stderr=stderr)
+    monkeypatch.setattr(kit.subprocess, 'run', run)
+    with pytest.raises(kit.MeasurementRefused):
+        kit.server_owns_copy(root, 'http://127.0.0.1:8873', log)
+    assert json.loads(log.read_text())['exclusive'] is False
 
 
 @pytest.mark.parametrize('listing_index,returncode,empty_stdout,stderr,allowed', [
@@ -516,7 +662,8 @@ def test_acceptance_skips_only_unprocessable(tmp_path, monkeypatch, failure):
     assert result['operations'][0]['status'] == (kit.UNTESTED if failure == 'unprocessable' else kit.UNMEASURED)
 
 
-def test_tenth_session_is_observed_before_cancellation(tmp_path, monkeypatch):
+@pytest.mark.parametrize('prior_sessions', [0, 1, 9])
+def test_last_allowed_session_is_observed_before_cancellation(tmp_path, monkeypatch, prior_sessions):
     from contextlib import contextmanager
     import sqlite3
     conn = sqlite3.connect(':memory:'); conn.row_factory = sqlite3.Row
@@ -524,16 +671,17 @@ def test_tenth_session_is_observed_before_cancellation(tmp_path, monkeypatch):
     conn.execute("INSERT INTO runs VALUES ('run','completed',NULL,NULL)")
     @contextmanager
     def read(root, out): yield conn
-    fresh = [session(str(i),token_usage_json='{"total":{"totalTokens":1}}') for i in range(10)]
-    states = iter([[],fresh[:9],fresh[:9],fresh,fresh,fresh])
+    cap = 10 - prior_sessions
+    fresh = [session(str(i),token_usage_json='{"total":{"totalTokens":1}}') for i in range(cap)]
+    states = iter([[],fresh[:-1],fresh[:-1],fresh,fresh,fresh,fresh])
     monkeypatch.setattr(kit,'runtime_read',read)
     monkeypatch.setattr(kit,'stored_snapshot',lambda c,p:dict(
         active_runs=[],sessions=next(states),base_sha256='base',scope_sha256='scope'))
     monkeypatch.setattr(kit,'invariants',lambda *args:{'observed':True})
-    op = dict(id='tenth',kind='recheck',api_call=dict(method='POST',path='/api/recheck'),
+    op = dict(id='last',kind='recheck',api_call=dict(method='POST',path='/api/recheck'),
               expected_stale_markers=[],invariants=['observed'])
     plan = dict(file_sha256='synthetic',report_api_path='/api/report',base_sha256='base',
-                scope_sha256='scope',operations=[op])
+                scope_sha256='scope',operations=[op, dict(op, id='over-cap')])
     mutations = []
     def handler(request):
         if request.url.path == '/api/session': return httpx.Response(200,json={'csrf_token':'synthetic'})
@@ -543,12 +691,19 @@ def test_tenth_session_is_observed_before_cancellation(tmp_path, monkeypatch):
         return httpx.Response(200,json={'id':'report','sections':[]})
     client = kit.Client('http://127.0.0.1:8873',tmp_path/'guard.jsonl',
                         transport=httpx.MockTransport(handler),guard=lambda log:None)
-    try: result = kit.execute(plan,tmp_path/'data',client,tmp_path/'result.json')
+    output = tmp_path / 'run.json'
+    try: result = kit.execute(plan,tmp_path/'data',client,output, prior_sessions=prior_sessions)
     finally: client.http.close(); conn.close()
-    assert result['stop_reason'] is None
+    assert result['stop_reason'] == f'{cap} new sessions cap'
     assert mutations == ['/api/recheck']
     assert result['operations'][0]['status'] == 'measured'
-    assert result['operations'][0]['cost']['session_ids'] == ['9']
+    assert result['operations'][0]['cost']['session_ids'] == [str(cap - 1)]
+    assert result['operations'][1]['status'] == kit.UNTESTED
+    assert result['operations'][1]['reason'] == result['stop_reason']
+    assert json.loads(output.read_text())['prior_sessions'] == prior_sessions
+    assert result['max_sessions'] == cap
+    assert result['prior_seconds'] == 0
+    assert result['max_seconds'] == 3600
     assert kit.score(plan,result)['R18']['denominator'] == 1
 
 
@@ -635,7 +790,8 @@ def test_e18_timeout_reaps_actual_child(sequence_library, tmp_path, monkeypatch)
         os.kill(pid, 0)
 
 
-def test_e18_run_deadline_and_timeout_failure_record(tmp_path, monkeypatch):
+@pytest.mark.parametrize('prior_seconds', [0, 120.5, 3599])
+def test_e18_run_deadline_and_timeout_failure_record(tmp_path, monkeypatch, prior_seconds):
     from contextlib import contextmanager
     @contextmanager
     def read(root, out):
@@ -645,7 +801,7 @@ def test_e18_run_deadline_and_timeout_failure_record(tmp_path, monkeypatch):
     monkeypatch.setattr(kit, 'stored_snapshot', lambda *args: baseline)
     monkeypatch.setattr(kit.time, 'monotonic', lambda: 123)
     def timeout(root, out, *, deadline):
-        assert deadline == 123 + kit.MAX_SECONDS
+        assert deadline == 123 + kit.MAX_SECONDS - prior_seconds
         raise kit.MeasurementRefused('60 minute clock exhausted: product CLI timeout')
     monkeypatch.setattr(kit, 'round_trip', timeout)
     plan = dict(file_sha256='synthetic', report_api_path='/api/report', base_sha256='base',
@@ -654,7 +810,8 @@ def test_e18_run_deadline_and_timeout_failure_record(tmp_path, monkeypatch):
                         transport=httpx.MockTransport(lambda request: httpx.Response(200,
                             json={'csrf_token': 'synthetic', 'sections': []})), guard=lambda log: None)
     try:
-        result = kit.execute(plan, tmp_path / 'data', client, tmp_path / 'result.json')
+        result = kit.execute(plan, tmp_path / 'data', client, tmp_path / 'run.json',
+                             prior_seconds=prior_seconds)
     finally:
         client.http.close()
     assert result['operations'][0]['status'] == kit.UNMEASURED
@@ -662,6 +819,75 @@ def test_e18_run_deadline_and_timeout_failure_record(tmp_path, monkeypatch):
     assert 'product CLI timeout' in result['stop_reason']
     assert result['final_verification']['status'] == 'recorded'
     assert result['zero_started_verified'] is True
+    assert result['prior_seconds'] == prior_seconds
+    assert result['max_seconds'] == 3600 - prior_seconds
+
+
+def test_reduced_clock_boundary():
+    assert kit.stop_reason(set(), [], 299.5, max_seconds=300) is None
+    assert kit.stop_reason(set(), [], 300, max_seconds=300) == '60 minute clock exhausted'
+
+
+def test_reduced_clock_stops_sequence(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    @contextmanager
+    def read(root, out): yield None
+    baseline = dict(active_runs=[], sessions=[], base_sha256='base', scope_sha256='scope')
+    monkeypatch.setattr(kit, 'runtime_read', read)
+    monkeypatch.setattr(kit, 'stored_snapshot', lambda *args: baseline)
+    monkeypatch.setattr(kit, 'invariants', lambda *args: {})
+    clock = [100.0]
+    monkeypatch.setattr(kit.time, 'monotonic', lambda: clock[0])
+    mutations = []
+    def handler(request):
+        if request.url.path == '/api/session':
+            return httpx.Response(200, json={'csrf_token': 'synthetic'})
+        if request.method == 'POST':
+            mutations.append(request.url.path)
+            clock[0] += 1
+        if request.url.path.endswith('/export'):
+            return httpx.Response(200, text='synthetic')
+        return httpx.Response(200, json={'sections': []})
+    op = dict(id='first', kind='check', api_call=dict(method='POST', path='/api/check'))
+    plan = dict(file_sha256='synthetic', report_api_path='/api/report', base_sha256='base',
+                scope_sha256='scope', operations=[op, dict(op, id='later')])
+    client = kit.Client('http://127.0.0.1:8873', tmp_path / 'guard.jsonl',
+                        transport=httpx.MockTransport(handler), guard=lambda log: None)
+    output = tmp_path / 'run.json'
+    try:
+        result = kit.execute(plan, tmp_path / 'data', client, output, prior_seconds=3599)
+    finally:
+        client.http.close()
+    assert mutations == ['/api/check']
+    assert result['stop_reason'] == '60 minute clock exhausted'
+    assert result['total_wall_seconds'] == 1
+    assert result['operations'][1]['status'] == kit.UNMEASURED
+    assert json.loads(output.read_text())['max_seconds'] == 1
+
+
+def test_reduced_cap_counts_overflow_and_excludes_historical_sessions():
+    old = session('historical')
+    fresh = [session(str(i)) for i in range(10)]
+    assert kit.stop_reason({'historical'}, [old, *fresh[:8]], 0,
+                           max_sessions=9, launching_model=True) is None
+    assert kit.stop_reason({'historical'}, [old, *fresh[:9]], 0, max_sessions=9) is None
+    assert kit.stop_reason({'historical'}, [old, *fresh[:9]], 0,
+                           max_sessions=9, launching_model=True) == '9 new sessions cap'
+    assert kit.stop_reason({'historical'}, [old, *fresh], 0, max_sessions=9) == '9 new sessions cap'
+
+
+@pytest.mark.parametrize('option,value', [('--prior-sessions', '10'), ('--prior-sessions', '11'),
+    ('--prior-sessions', '-1'), ('--prior-seconds', '3600'), ('--prior-seconds', '3601'),
+    ('--prior-seconds', '-1'), ('--prior-seconds', 'nan'), ('--prior-seconds', 'inf')])
+def test_run_refuses_invalid_prior_budget_before_preparation(tmp_path, monkeypatch, capsys, option, value):
+    def unexpected(*args, **kwargs):
+        pytest.fail('invalid budget reached preparation')
+    monkeypatch.setattr(kit, 'load_plan', unexpected)
+    assert kit.main(['run', '--operations', str(tmp_path / 'ops.json'), '--sha256', 'synthetic',
+        '--out', str(tmp_path / 'out'), '--data-dir', str(tmp_path / 'data'),
+        '--guard-log', str(tmp_path / 'guard.jsonl'), '--baseline', str(tmp_path / 'baseline.json'),
+        '--baseline-sha256', 'synthetic', option, value]) == 1
+    assert 'prior' in capsys.readouterr().err
 
 
 @pytest.mark.parametrize('stage', ['initial', 'pre-operation', 'final'])

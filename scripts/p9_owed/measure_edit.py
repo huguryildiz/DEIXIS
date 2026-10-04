@@ -11,6 +11,7 @@ import argparse
 from contextlib import contextmanager
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -144,7 +145,8 @@ def port_guard(log: Path):
 
 
 def server_owns_copy(root: Path, url: str, log: Path):
-    records = []
+    records, descendants = [], []
+    holders = set()
     established, pid = False, None
     def listing(args):
         command = ["lsof", "-nP", "-F", "pn", *args]
@@ -155,12 +157,46 @@ def server_owns_copy(root: Path, url: str, log: Path):
             raise MeasurementRefused('lsof ownership check unavailable') from exc
         records.append(dict(command=command, returncode=result.returncode,
                             stdout=result.stdout, stderr=result.stderr))
-        # +D can list holders with status 1; their PIDs must still match the listener.
+        # +D can list holders with status 1; ownership still requires ancestry proof.
         directory_holders = (args[:1] == ['+D'] and result.returncode == 1
                              and bool(result.stdout.strip()))
         if (result.returncode != 0 and not directory_holders) or result.stderr.strip():
             raise MeasurementRefused("cannot establish server/copy ownership with lsof")
         return result.stdout.splitlines()
+
+    def process_listing(holder, fields):
+        command = ['ps', '-o', fields, '-p', str(holder)]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True)
+        except OSError as exc:
+            records.append(dict(command=command, returncode=None, stdout='', stderr=str(exc)))
+            raise MeasurementRefused('ps ancestry check unavailable') from exc
+        records.append(dict(command=command, returncode=result.returncode,
+                            stdout=result.stdout, stderr=result.stderr))
+        if result.returncode != 0 or result.stderr.strip():
+            raise MeasurementRefused('cannot establish process ancestry with ps')
+        return result.stdout.strip()
+
+    def owned_descendant(holder):
+        ancestry = [int(holder)]
+        while ancestry[-1] != int(pid):
+            current = ancestry[-1]
+            if current <= 1:
+                raise MeasurementRefused('measurement data directory has other process owners')
+            row = process_listing(current, 'pid=,ppid=')
+            match = re.fullmatch(r'(\d+)\s+(\d+)', row)
+            if match is None or int(match[1]) != current:
+                raise MeasurementRefused('cannot establish process ancestry with ps')
+            parent = int(match[2])
+            if parent in ancestry or len(ancestry) >= 128:
+                raise MeasurementRefused('cyclic or excessive process ancestry')
+            ancestry.append(parent)
+        row = process_listing(holder, 'pid=,command=')
+        match = re.fullmatch(r'(\d+)\s+(.+)', row)
+        if match is None or int(match[1]) != int(holder):
+            raise MeasurementRefused('cannot establish descendant command with ps')
+        descendants.append(dict(pid=int(holder), command=match[2], ancestry=ancestry))
+
     try:
         listeners = {l[1:] for l in listing([f"-iTCP:{urlsplit(url).port}", "-sTCP:LISTEN"]) if re.fullmatch(r'p\d+', l)}
         if len(listeners) != 1:
@@ -172,13 +208,16 @@ def server_owns_copy(root: Path, url: str, log: Path):
         if root / 'library.sqlite' not in databases or any(not p.is_relative_to(root) for p in databases):
             raise MeasurementRefused('API listener does not exclusively own measurement data directory')
         holders = {l[1:] for l in listing(['+D', str(root)]) if re.fullmatch(r'p\d+', l)}
-        if holders != listeners:
-            raise MeasurementRefused('measurement data directory has other process owners')
+        if not listeners.issubset(holders):
+            raise MeasurementRefused('measurement directory listener ownership disappeared')
+        for holder in sorted(holders - listeners, key=int):
+            owned_descendant(holder)
         established = True
     finally:
         with log.open('a', encoding='utf-8') as stream:
             stream.write(json.dumps(dict(event='exclusive_ownership', time_ns=time.time_ns(),
                                          measurement_data_dir=str(root), listener_pid=pid,
+                                         holder_pids=sorted(map(int, holders)), descendants=descendants,
                                          exclusive=established, records=records)) + '\n')
 
 
@@ -326,12 +365,21 @@ def score(plan, snapshot):
             "zero_started_verified": snapshot.get("zero_started_verified", False)}
 
 
-def stop_reason(baseline_ids, sessions, elapsed, *, launching_model=False, terminal_failures=True):
+def remaining_budget(prior_sessions, prior_seconds):
+    if not 0 <= prior_sessions < MAX_SESSIONS:
+        raise MeasurementRefused('prior sessions must be nonnegative and less than 10')
+    if not math.isfinite(prior_seconds) or not 0 <= prior_seconds < MAX_SECONDS:
+        raise MeasurementRefused('prior seconds must be finite, nonnegative and less than 3600')
+    return MAX_SESSIONS - prior_sessions, MAX_SECONDS - prior_seconds
+
+
+def stop_reason(baseline_ids, sessions, elapsed, *, launching_model=False, terminal_failures=True,
+                max_sessions=MAX_SESSIONS, max_seconds=MAX_SECONDS):
     fresh = [s for s in sessions if s["id"] not in baseline_ids]
-    if elapsed >= MAX_SECONDS:
+    if elapsed >= max_seconds:
         return "60 minute clock exhausted"
-    if len(fresh) > MAX_SESSIONS or (launching_model and len(fresh) == MAX_SESSIONS):
-        return "10 new sessions cap"
+    if len(fresh) > max_sessions or (launching_model and len(fresh) == max_sessions):
+        return f"{max_sessions} new sessions cap"
     for s in fresh:
         if s["kind"] != "cell_recheck":
             return "forbidden model step"
@@ -564,14 +612,20 @@ def round_trip(root, out, *, deadline=None):
                 commands=commands, ledger=str(ledger), restore_target=str(target))
 
 
-def execute(plan, root, client, output):
+def execute(plan, root, client, output, *, prior_sessions=0, prior_seconds=0):
     """Write evidence after each operation; never retry a proposal or repair it."""
+    max_sessions, max_seconds = remaining_budget(prior_sessions, prior_seconds)
     output_path(output.parent, output, *protected_inputs(root))
     output_path(output.parent, client.log, output, *protected_inputs(root))
     report_path = plan["report_api_path"]
     result = {"version": 1, "plan_sha256": plan["file_sha256"], "operations": [],
-              "zero_started_verified": False, "stop_reason": None}
+              "zero_started_verified": False, "stop_reason": None,
+              "prior_sessions": prior_sessions, "prior_seconds": prior_seconds,
+              "max_sessions": max_sessions, "max_seconds": max_seconds}
     started, resumed = None, False
+    def check_budget(sessions, elapsed, **kwargs):
+        return stop_reason(ids, sessions, elapsed, max_sessions=max_sessions,
+                           max_seconds=max_seconds, **kwargs)
     def read():
         if client.ownership:
             client.ownership()
@@ -612,7 +666,7 @@ def execute(plan, root, client, output):
         else:
             try:
                 before = read()
-                reason = stop_reason(ids, before["sessions"], 0 if started is None else time.monotonic()-started,
+                reason = check_budget(before["sessions"], 0 if started is None else time.monotonic()-started,
                                      launching_model=op["kind"] == "recheck", terminal_failures=False)
                 scope_changed = before["scope_sha256"] != plan["scope_sha256"]
             except (MeasurementRefused, httpx.HTTPError, OSError, ValueError, KeyError, sqlite3.DatabaseError) as exc:
@@ -667,7 +721,7 @@ def execute(plan, root, client, output):
                                                                  "corpus_memberships", "selections", "cell_revisions")})
                     if started is None:
                         started = time.monotonic()
-                    reason = stop_reason(ids, read()["sessions"], time.monotonic()-started,
+                    reason = check_budget(read()["sessions"], time.monotonic()-started,
                                          launching_model=op["kind"] == "recheck", terminal_failures=False)
                     if reason:
                         raise MeasurementRefused(reason)
@@ -676,7 +730,7 @@ def execute(plan, root, client, output):
                         if client.ownership:
                             client.ownership()
                         row['cli_round_trip'] = round_trip(root, output.parent,
-                                                          deadline=started + MAX_SECONDS)
+                                                          deadline=started + max_seconds)
                     response = client.call(method, path, body, key="d157:"+op["id"],
                                            expected_status=call.get("expected_status", 200))
                     if op["kind"] == "recheck":
@@ -685,7 +739,7 @@ def execute(plan, root, client, output):
                         proposal_runs[op["id"]] = run_id
                         while True:
                             state = read()
-                            reason = stop_reason(ids, state["sessions"], time.monotonic()-started, terminal_failures=False)
+                            reason = check_budget(state["sessions"], time.monotonic()-started, terminal_failures=False)
                             if reason:
                                 raise MeasurementRefused(reason)
                             with runtime_read(root, output.parent) as conn:
@@ -702,7 +756,7 @@ def execute(plan, root, client, output):
                                     row["resume"] = {"reason": "all terminal roots client_timeout", "wait_seconds": 600}
                                     while time.monotonic() < wake:
                                         state = read()
-                                        reason = stop_reason(ids, state["sessions"], time.monotonic()-started,
+                                        reason = check_budget(state["sessions"], time.monotonic()-started,
                                                              launching_model=True, terminal_failures=False)
                                         if reason:
                                             raise MeasurementRefused(reason)
@@ -719,7 +773,7 @@ def execute(plan, root, client, output):
                     if op["kind"] in ("edit", "restore_revision"):
                         revisions[op["id"]] = claims_of(view)[plan["targets"]["claim_id"]]["revisions"][-1]["id"]
                     export = client.call("GET", report_path+"/export").text
-                    reason = stop_reason(ids, after["sessions"], time.monotonic()-started, terminal_failures=False)
+                    reason = check_budget(after["sessions"], time.monotonic()-started, terminal_failures=False)
                     cost = costs(before, after, time.monotonic()-tick)
                     if cost["missing_token_sessions"]:
                         reason = reason or "unreadable token counters"
@@ -767,7 +821,7 @@ def execute(plan, root, client, output):
         result["zero_started_verified"] = not any(s["status"] == "started" for s in final["sessions"])
         result["final"] = final
         result['final_verification'] = {'status': 'recorded', 'zero_started_verified': result['zero_started_verified']}
-        reason = stop_reason(ids, final["sessions"], result["total_wall_seconds"], terminal_failures=False)
+        reason = check_budget(final["sessions"], result["total_wall_seconds"], terminal_failures=False)
         result["stop_reason"] = result["stop_reason"] or reason
         if not result["zero_started_verified"]:
             result["stop_reason"] = result["stop_reason"] or "started sessions remain; operator must stop and verify exit"
@@ -792,6 +846,8 @@ def main(argv=None):
             p.add_argument("--base-url", default="http://127.0.0.1:8873")
             p.add_argument("--guard-log", type=Path, required=True)
         if command == "run":
+            p.add_argument("--prior-sessions", type=int, default=0)
+            p.add_argument("--prior-seconds", type=float, default=0)
             p.add_argument("--operator-go", action="store_true", help="attest frozen reviews and coordinator go")
             p.add_argument("--baseline", type=Path, required=True, help="offline plan output for this execution copy before server startup")
             p.add_argument("--baseline-sha256", required=True)
@@ -799,6 +855,8 @@ def main(argv=None):
             p.add_argument("--snapshot", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == 'run':
+            remaining_budget(args.prior_sessions, args.prior_seconds)
         plan = load_plan(args.operations, args.sha256)
         plan["file_sha256"] = args.sha256
         root = verify_copy(args.data_dir, plan, pristine=args.command == 'plan')
@@ -860,7 +918,8 @@ def main(argv=None):
         client = Client(url, log, ownership=ownership)
         try:
             if args.command == "run":
-                result = execute(plan, root, client, out)
+                result = execute(plan, root, client, out,
+                                 prior_sessions=args.prior_sessions, prior_seconds=args.prior_seconds)
                 return 1 if result["stop_reason"] else 0
             client.session()
             ownership()

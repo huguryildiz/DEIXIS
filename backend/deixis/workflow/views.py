@@ -145,6 +145,8 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
                                    if output["proposal"]["vocabulary"]["block_assignment"] == "search_query" else None),
         "approved": _approval_side(approved["vocabulary"], approved["criterion"], approved["queries"]) if approved else None,
         "skipped_edits": output.get("skipped_edits") or [],
+        # What made the run stop for the person, or an empty list (`approval.inflating_terms`).
+        "warnings": output.get("warnings") or [],
         "suggestions": _suggestions_side(store, run_id, step, output),
         # Which sources the queries were compiled for and why (D93): the approved routing once a correction routed
         # again, else the proposal's. None for a card shown before routing existed.

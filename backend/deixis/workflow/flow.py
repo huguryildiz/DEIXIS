@@ -738,7 +738,7 @@ class ResearchFlow:
         """A vocabulary that cannot be searched stops an unattended run here. A run that asks for the approval takes
         it to the user instead: removing or adding a term is how it becomes searchable, and `_approval` checks what
         the user approved before anything is frozen."""
-        if self.deps.settings.protocol_approval == "ask":
+        if self.deps.settings.protocol_approval in ("ask", "warn"):
             return built, queries
         return self._searchable(run_id, built, queries)
 
@@ -850,8 +850,10 @@ class ResearchFlow:
                      "key_terms": scope.get("key_terms")}
         # The newest approval this research closed for the same question, steering and key terms. It is both what a
         # correction is reapplied from and what a re-asked card takes its suggestions back from.
+        # A run that went on because nothing was wrong (`no_warning`) asked nobody: it is no approval to take back.
         earlier = next((row for row in self.store.approvals_of(rid)
-                        if row["output"]["asked_for"] == asked_for), None)
+                        if row["output"]["asked_for"] == asked_for
+                        and (row["output"].get("approval") or {}).get("approved_by") != "no_warning"), None)
         output = step["output"]
         if output is None:
             failures = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("failures", [])
@@ -869,6 +871,16 @@ class ResearchFlow:
                                                  "from_step_id": earlier["id"]}
             # Written before the run can stop, and never started: a step that is still `pending` is not half-finished
             # work the worker's recovery has to guess about.
+            self.store.set_step_output(step["id"], output)
+
+        if "warnings" not in output and self.deps.settings.protocol_approval != "as_proposed":
+            # Read once and stored, with every count it asked (a card stored before the check existed has neither):
+            # a resumed run reads them back and probes nothing again, and each count is written as it arrives.
+            def save(checks: list[dict[str, Any]]) -> None:
+                self.store.set_step_output(step["id"], output | {"warning_checks": checks})
+            found, checks = await approval_rules.inflating_terms(
+                output["proposal"]["vocabulary"], self._count_probe(scope, run_id), output.get("warning_checks"), save)
+            output = output | {"warnings": found, "warning_checks": checks}
             self.store.set_step_output(step["id"], output)
 
         requests = output.get("suggestion_requests") or 0
@@ -896,6 +908,10 @@ class ResearchFlow:
             # A run nobody attends: the proposal is approved as it stands and the protocol says so by name, so a body
             # approved by a setting is never read as a body a user approved.
             edits, source, by = {"terms": [], "criterion": None, "note": None}, "setting", "setting"
+        elif self.deps.settings.protocol_approval == "warn" and not output.get("warnings"):
+            # Nothing the application can see is wrong with the proposal, so the run does not stop. The protocol says
+            # that nobody was asked, so this body is never read as one a person approved.
+            edits, source, by = {"terms": [], "criterion": None, "note": None}, "no_warning", "no_warning"
         else:
             self._pause(run_id, "protocol_approval_needed", {"proposal_hash": output["proposal_hash"]})
 
@@ -924,6 +940,8 @@ class ResearchFlow:
             "proposal_hash": output["proposal_hash"], "term_edits": len(kept),
             "criterion_edited": edits.get("criterion") is not None,
             "exclusion_word_in_question": approval_rules.exclusion_words_in_question(scope["question"], agreed),
+            **({"asked": False, "reason": "no_warning"} if source == "no_warning" else {}),
+            **({"warnings": output["warnings"]} if output.get("warnings") else {}),
             **({"note": edits["note"]} if edits.get("note") else {}),
             **({"earlier_approval_step_id": earlier["id"]} if source == "earlier" else {}),
             # Only a run that asked, or one that carried an earlier answer, says anything about suggestions here:

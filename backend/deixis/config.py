@@ -26,10 +26,12 @@ class Settings:
     port: int = 8765
     model_concurrency: int = 6
     query_strategy: str = "legacy"
-    # Whether an sw discovery run stops for the user before it freezes its protocol (SW2.6, slice 08a). `ask` is the
-    # product's behavior; `as_proposed` approves the proposal without stopping, for a measurement or a test that
-    # needs a run nobody attends, and says so in the protocol body rather than looking like a user's approval.
-    protocol_approval: str = "ask"
+    # Whether an sw discovery run stops for the user before it freezes its protocol (SW2.6, slice 08a). `warn` is the
+    # product's behavior: the run goes on and freezes unless the proposal has a warning (`approval.inflating_terms`).
+    # `ask` always stops, for a person who wants to review every search; `as_proposed` approves the proposal without
+    # stopping, for a measurement or a test that needs a run nobody attends, and says so in the protocol body rather
+    # than looking like a user's approval.
+    protocol_approval: str = "warn"
     # Whether a completed `sw` discovery run is followed by a full-text retrieval run (D83, slice 10). `auto` is the
     # product's behavior; `off` leaves the corpus where the discovery run left it, for a measurement or a test that
     # needs no second run.
@@ -117,9 +119,9 @@ def load_settings() -> Settings:
         raise ValueError("DEIXIS_QUERY_STRATEGY must be legacy or compact_openalex_v1")
     if "DEIXIS_SEARCH_WORKFLOW" in os.environ:
         warnings.warn("DEIXIS_SEARCH_WORKFLOW is ignored; new researches use sw", UserWarning, stacklevel=2)
-    protocol_approval = os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "ask")
-    if protocol_approval not in ("ask", "as_proposed"):
-        raise ValueError("DEIXIS_PROTOCOL_APPROVAL must be ask or as_proposed")
+    protocol_approval = os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "warn")
+    if protocol_approval not in ("warn", "ask", "as_proposed"):
+        raise ValueError("DEIXIS_PROTOCOL_APPROVAL must be warn, ask or as_proposed")
     fulltext_fetch = os.environ.get("DEIXIS_FULLTEXT_FETCH", "auto")
     if fulltext_fetch not in ("auto", "off"):
         raise ValueError("DEIXIS_FULLTEXT_FETCH must be auto or off")

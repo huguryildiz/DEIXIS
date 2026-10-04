@@ -32,6 +32,14 @@ MAX_EXCLUSION_WORD_CHARS = 40
 EDIT_BLOCKS = tuple(label for label in LABELS if label != "not_a_term")
 OPERATIONS = ("remove", "move", "add")
 SIDE_LISTS = {"claim": "claim_words", "exclusion": "exclusion_words", "outcome": "outcome_terms"}
+# The default approval mode (`warn`) stops the run only when the proposal has a warning. The one warning so far: a
+# term that shares its block with another and, taken out, cuts the matches of the gate query by at least this factor.
+# The live case was one broad term next to a specific one, which took 535 matches to 18,369 (a factor of 34); 10 sits
+# well below that and well above the ordinary spread between a specific phrase and its broader neighbour.
+INFLATION_FACTOR = 10
+# Below this many matches nothing is inflated enough to matter to a reader, whatever the factor.
+INFLATION_MIN_MATCHES = 1_000
+INFLATION_WARNING = "term_inflates_matches"
 
 
 # ---- what the proposal holds ------------------------------------------------------------
@@ -301,3 +309,41 @@ def exclusion_words_in_question(question: str, criterion: dict[str, Any] | None)
     asked = norm(question)
     return sorted(word for word in (criterion or {}).get("exclusion_title_words", [])
                   if all(re.search(rf"\b{re.escape(part)}\b", asked) for part in word.split()))
+
+
+async def inflating_terms(vocabulary: dict[str, Any], probe: Any, done: list[dict[str, Any]] | None = None,
+                          save: Any = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Terms that alone inflate the gate query's matches, and every count request the check made.
+
+    Read from the vocabulary's `gate_count` and one count request per searched term whose block holds another
+    searched term (a block's only term cannot be taken out; the query would have no such block). Returns
+    `(warnings, checks)`: a warning carries the count the query has without the term; a check is one row per term
+    asked, `matches_without_term` being None where the request failed. `done` is the checks an earlier attempt wrote:
+    a term in it is not asked again, and `save(checks)` is called after each request so a crash between requests
+    keeps the finished ones. A count that is unknown, or a removal that leaves the matches within `INFLATION_FACTOR`,
+    gives no warning: the check never invents a count.
+    """
+    from deixis.workflow.routing import gate_query  # imported here: routing reads the vocabulary module this one feeds
+
+    total = vocabulary.get("gate_count")
+    checks = list(done or [])
+    if not total or total < INFLATION_MIN_MATCHES:
+        return [], checks
+    searched = [t for t in vocabulary["terms"] if not t["dropped"] and t["block"] in ("setting", "task")]
+    warnings: list[dict[str, Any]] = []
+    for term in searched:
+        if sum(1 for other in searched if other["block"] == term["block"]) < 2:
+            continue
+        row = next((c for c in checks if c["phrase"] == term["phrase"] and c["block"] == term["block"]), None)
+        if row is None:
+            rest = {"terms": [t for t in vocabulary["terms"] if t is not term]}
+            row = {"phrase": term["phrase"], "block": term["block"], "matches": total,
+                   "matches_without_term": await probe(gate_query(rest))}
+            checks.append(row)
+            if save is not None:
+                save(checks)
+        without = row["matches_without_term"]
+        if without is not None and total >= INFLATION_FACTOR * max(without, 1):
+            warnings.append({"warning": INFLATION_WARNING, "phrase": term["phrase"], "block": term["block"],
+                             "matches": total, "matches_without_term": without})
+    return warnings, checks

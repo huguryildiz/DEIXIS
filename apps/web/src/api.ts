@@ -306,10 +306,12 @@ export type ProtocolEdits = {
 export type RunApproval = {
   // waiting: the card is editable. submitted: the correction was sent and is being applied. approved: it is frozen.
   status: 'waiting' | 'submitted' | 'approved'
-  approved_by: 'user' | 'setting' | 'earlier_approval' | null; edited: boolean | null; proposal_hash: string
+  approved_by: 'user' | 'setting' | 'earlier_approval' | 'no_warning' | null; edited: boolean | null; proposal_hash: string
   proposal: ApprovalSide; approved: ApprovalSide | null
   // Operations of an earlier approval this run could not apply, because the phrase is no longer in the proposal.
   skipped_edits: { op: string; phrase: string; block?: string; reason?: string }[]
+  // Why the run stopped for the person: a term that alone inflates the matches, with the count without it.
+  warnings?: { warning: string; phrase: string; block: string; matches: number; matches_without_term: number }[]
   // Other names the user asked a model for, and what came of it (D82).
   suggestions: ApprovalSuggestions
   // Which sources the queries were compiled for and why (D93); null for a card shown before routing existed.

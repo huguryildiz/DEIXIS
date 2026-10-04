@@ -413,8 +413,9 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
 
     # 10 — search filters.
     items.append(_item(10, "not_performed",
-                       "DEIXIS has no published search filter; the queries are compiled from the approved "
-                       "vocabulary.",
+                       "DEIXIS has no published search filter; the queries are compiled from the "
+                       + ("vocabulary, which no person reviewed because the application raised no warning."
+                          if approval.get("approved_by") == "no_warning" else "approved vocabulary."),
                        {"query_compiler": body.get("code_version")},
                        code_source=_code_source("filters", compiler_versions=[
                            query_compiler.VERSION, query_compiler.COMPACT_VERSION, query_compiler.BLOCKS_VERSION])))

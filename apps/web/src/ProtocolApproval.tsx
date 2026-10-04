@@ -172,6 +172,7 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
 
     {written && <Notice tone="info">{t('A model wrote these search terms from the question. The counts, the backups and the warnings are the application’s own checks; the query built from the question’s words is offered below.')}</Notice>}
     {proposal.search_query?.status === 'failed' && <Notice tone="attention">{t('The model could not write the search query. You chose the query DEIXIS built from the question’s words.')}</Notice>}
+    {(approval.warnings ?? []).map(warning => <Notice key={warning.phrase} tone="attention">{t('“{phrase}”: {n} matches with this term, {without} without it. You can remove it below, or approve as it is.', { phrase: warning.phrase, n: warning.matches.toLocaleString(uiLocale()), without: warning.matches_without_term.toLocaleString(uiLocale()) })}</Notice>)}
     {proposal.too_broad && <Notice tone="attention">{t('Every term that would be searched is too frequent to stand alone. You can still approve; the run will stop again and say so.')}</Notice>}
     {!proposal.terms.some(term => !term.dropped) && <Notice tone="attention">{t('No term is left to build a provider query from. Add one below, or move one back into the setting or task block.')}</Notice>}
 
@@ -624,7 +625,7 @@ function ApprovedSummary({ approval }: { approval: RunApproval }) {
     <button type="button" className="approval-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
       {open ? <ChevronDown size={15} aria-hidden /> : <ChevronRight size={15} aria-hidden />}
       <span>{approvedByText(approval.approved_by)}</span>
-      <small>{approval.edited ? t('corrected before searching') : t('approved as proposed')}</small>
+      <small>{approval.edited ? t('corrected before searching') : approval.approved_by === 'no_warning' ? t('not reviewed, no warning') : t('approved as proposed')}</small>
     </button>
     {open && <div className="approval-diff">
       <DiffList title={t('Removed terms')} rows={gone} />
@@ -646,7 +647,7 @@ function ApprovedSummary({ approval }: { approval: RunApproval }) {
         <p className="approval-readonly"><small>{t('Approved')}</small> {approved?.criterion?.criterion ?? t('none')}</p>
       </div>}
       {!gone.length && !fresh.length && !movedRows.length && !criterionChanged
-        && <p className="approval-hint">{t('The proposal was approved without a change.')}</p>}
+        && <p className="approval-hint">{approval.approved_by === 'no_warning' ? t('The search went on without asking because no term inflated the matches.') : t('The proposal was approved without a change.')}</p>}
       {approval.skipped_edits.length > 0 && <div className="approval-diff-group">
         <strong>{t('Not applied to this run')}</strong>
         <p className="approval-hint">{t('These corrections named a phrase this run’s proposal no longer holds; they stay on record.')}</p>

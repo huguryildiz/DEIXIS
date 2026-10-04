@@ -655,3 +655,118 @@ def test_a_vocabulary_stored_before_compiled_was_written_reads_it_from_its_store
     assert search_query.code_terms(search_query.settled(old, model_only)) == []
     both = search_query.compile_queries(built, ["openalex"], 4)
     assert search_query.code_terms(search_query.settled(old, both))
+
+
+# ---- the approval stops only for a warning (default `warn` mode) -------------------------------------------------
+
+GATE = '("narrow setting" OR "broad setting") AND ("synthetic task")'
+WITHOUT_BROAD = '("narrow setting") AND ("synthetic task")'
+WITHOUT_NARROW = '("broad setting") AND ("synthetic task")'
+
+
+def two_setting_terms(si):
+    if si["task_type"] != "search_query":
+        return valid_response(si)
+    return json.dumps(envelope(si, "deixis.search_query.v1") | answer(["narrow setting", "broad setting"], ["synthetic task"]))
+
+
+def test_a_term_that_multiplies_the_matches_is_found_with_the_count_without_it():
+    from deixis.workflow import approval
+
+    async def run(table):
+        count, asked = counter(table)
+        vocabulary = {"gate_count": table.get(GATE), "terms": [
+            {"phrase": p, "block": b, "dropped": None, "root": p, "in_query": "phrase"}
+            for p, b in (("narrow setting", "setting"), ("broad setting", "setting"), ("synthetic task", "task"))]}
+        return (await approval.inflating_terms(vocabulary, count))[0], asked
+
+    found, asked = asyncio.run(run({GATE: 18_369, WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_000}))
+    assert [(w["phrase"], w["matches"], w["matches_without_term"]) for w in found] == [("broad setting", 18_369, 535)]
+    assert len(asked) == 2  # one request per term that shares its block; the task term stands alone and is not asked
+    # Below the factor, below the floor, and a block's only term: no warning.
+    assert asyncio.run(run({GATE: 5_000, WITHOUT_BROAD: 535, WITHOUT_NARROW: 4_900}))[0] == []
+    assert asyncio.run(run({GATE: 900, WITHOUT_BROAD: 5, WITHOUT_NARROW: 5}))[0] == []
+
+
+def test_without_a_warning_the_run_freezes_its_protocol_and_says_nobody_was_asked(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch, OpenAlex({GATE: 600}), FakeAdapter(two_setting_terms), approval="warn")
+    rid, run_id = start(client)
+    _, run = wait(client, rid, run_id)
+    assert run["status"] == "completed", run
+    stored = step_output(client, run_id, "protocol_approval")
+    assert stored["warnings"] == [] and stored["approval"]["asked"] is False
+    assert stored["approval"]["reason"] == "no_warning" and stored["approval"]["approved_by"] == "no_warning"
+    approval = protocol_body(client, rid)["approval"]
+    assert (approval["mode"], approval["approved_by"], approval["edited"]) == ("warn", "no_warning", False)
+    assert approval["asked"] is False and approval["reason"] == "no_warning"
+
+
+def test_a_term_that_inflates_the_matches_stops_the_run_with_the_warning_and_the_count_without_it(tmp_path, monkeypatch):
+    openalex = OpenAlex({GATE: 18_369, WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_500})
+    client = client_for(tmp_path, monkeypatch, openalex, FakeAdapter(two_setting_terms), approval="warn")
+    rid, run_id = start(client)
+    _, run = wait(client, rid, run_id)
+    assert (run["status"], run["pause_reason"]) == ("paused", "protocol_approval_needed")
+    card = next(r for r in client.get(f"/api/researches/{rid}").json()["runs"] if r["id"] == run_id)["approval"]
+    assert card["status"] == "waiting"
+    assert [(w["warning"], w["phrase"], w["matches"], w["matches_without_term"]) for w in card["warnings"]] == [
+        ("term_inflates_matches", "broad setting", 18_369, 535)]
+    # The person can still edit on the card: removing the term closes the approval, which then says it was asked.
+    response = client.post(f"/api/runs/{run_id}/protocol-approval",
+                           json={"terms": [{"op": "remove", "phrase": "broad setting"}]})
+    assert response.status_code == 200, response.text
+    _, run = wait(client, rid, run_id, ("completed", "failed"))
+    approval = protocol_body(client, rid)["approval"]
+    assert run["status"] == "completed" and approval["approved_by"] == "user" and "asked" not in approval
+    assert approval["warnings"][0]["phrase"] == "broad setting"
+
+
+def set_stored(client, run_id, key, change):
+    store = client.app.state.store
+    row = store.conn.execute("SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = ?",
+                             (run_id, key)).fetchone()
+    store.set_step_output(row["id"], change(json.loads(row["output_json"])))
+
+
+def test_a_run_that_went_on_without_a_warning_is_not_an_earlier_approval_for_a_later_run(tmp_path, monkeypatch):
+    openalex = OpenAlex({GATE: 600})
+    client = client_for(tmp_path, monkeypatch, openalex, FakeAdapter(two_setting_terms), approval="warn")
+    rid, first = start(client)
+    wait(client, rid, first)
+    assert step_output(client, first, "protocol_approval")["approval"]["approved_by"] == "no_warning"
+    # The second run of the question reads the query the first run stored; it now holds a term that inflates.
+    openalex.table |= {WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_500}
+
+    def inflate(output):
+        output["vocabulary"]["gate_count"] = 18_369
+        return output
+    set_stored(client, first, "search_query", inflate)
+    second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+    _, run = wait(client, rid, second)
+    assert (run["status"], run["pause_reason"]) == ("paused", "protocol_approval_needed")
+    assert step_output(client, second, "protocol_approval")["warnings"][0]["phrase"] == "broad setting"
+
+
+def test_a_card_stored_before_the_check_existed_is_checked_once_and_not_closed_as_no_warning(tmp_path, monkeypatch):
+    openalex = OpenAlex({GATE: 18_369, WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_500})
+    client = client_for(tmp_path, monkeypatch, openalex, FakeAdapter(two_setting_terms), approval="warn")
+    rid, run_id = start(client)
+    wait(client, rid, run_id)
+    stored = step_output(client, run_id, "protocol_approval")
+    # Every count the check asked is kept, the ones that produced no warning too.
+    assert {c["phrase"]: c["matches_without_term"] for c in stored["warning_checks"]} == {
+        "narrow setting": 17_500, "broad setting": 535}
+
+    def old_card(output):
+        output.pop("warnings"), output.pop("warning_checks")
+        return output
+    set_stored(client, run_id, "protocol_approval", old_card)
+    # The route refuses to resume past an approval; a restarted worker queues the run the way the store does.
+    client.app.state.store.resume_run(run_id)
+    client.app.state.worker.wake()
+    deadline = time.time() + 15
+    while "warnings" not in (step_output(client, run_id, "protocol_approval") or {}) and time.time() < deadline:
+        time.sleep(0.05)
+    _, run = wait(client, rid, run_id)
+    assert (run["status"], run["pause_reason"]) == ("paused", "protocol_approval_needed")
+    assert step_output(client, run_id, "protocol_approval")["warnings"][0]["phrase"] == "broad setting"

@@ -46,7 +46,10 @@ blocks.
    the intervention group follows, does not meet it. List each such part in
    `question_elements`: its `role` (`population` or `comparator`), the
    question's own `words` that name it, copied exactly, and the `part` name.
-   Give an empty list when the question names neither.
+   Give an empty list when the question names neither. Apply the comparison
+   distinction under Hard cases before you assign roles: for a comparison
+   across the literature, list neither alternative nor their combined part as
+   `comparator`; keep any `population` entry the question requires.
 9. Echo `step_input_id` and `scope_revision` exactly as given, following the
    envelope rule in [SKILL.md](../SKILL.md), and set `schema_version` to
    `deixis.criterion_proposal.v2`.
@@ -64,6 +67,20 @@ Hard cases:
 - What the question asks to be compared across papers, reported or varied
   describes the answer it wants, not a condition of inclusion, so it is not a
   part.
+- When the question seeks a comparison across the literature of named
+  methods or alternatives, rather than a comparison within each study, treat
+  the alternatives as one thing sought. A question asking how depth-based and
+  vector-based routing protocols compare in packet delivery and energy does not
+  require every paper to study both. Give them one part whose `definition`
+  accepts a paper that studies at least one named alternative and reports what
+  the question asks to compare; its phrases cover each alternative. Do not
+  infer this reading from "versus" or "compare" alone. When the question asks
+  for the effect of an intervention against a stated control (a placebo, no
+  intervention, usual care or a named active treatment), keep rule 8's
+  separate comparator part. Keep it too whenever the question or the user's
+  steering requires the alternatives to be compared within the same study.
+  These study-level requirements take precedence over the across-literature
+  reading.
 - A system, network, material or device the question is about is setting, not
   a population, even when the question says "in".
 - A comparator named as no treatment, usual care or an unrestricted

@@ -2,6 +2,12 @@
 
 Durable decisions, newest first. Each entry is short: status, what was decided, and the main limit. The full original text is in Git history at commit `d213395`. An entry does not turn an unimplemented proposal into a working feature. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D228 — A comparison across the literature is one thing sought, not a comparator
+Status: accepted (Claude wrote, gpt-6.1-sol medium reviewed; Sol's wording adopted) · Date: 2026-10-05
+Context: On the DBR/VBF question the criterion proposal made VBF a comparator part (rule 8), so papers on one protocol alone failed the criterion and the owner settled 24 of them by hand.
+Decision: `criterion-proposal.md` gains a hard case: when the question compares named alternatives across the literature, they are one thing sought with one part that accepts a paper studying at least one of them and reporting what is asked; neither is listed as `comparator`. "Versus" or "compare" alone does not trigger it; an intervention against a stated control, or a question or steering that requires the comparison within one study, keeps rule 8's comparator part. The skill package hash changes.
+Limits: Instruction text only; no real-model case was run, so whether the model applies it is unmeasured.
+
 ## D227 — The search approval opens only on a term-inflation warning
 Status: accepted (Claude subagent wrote, gpt-6.1-sol medium reviewed in two rounds; owner delegated the step 4 choices, decided with Sol) · Date: 2026-10-05
 Context: Elicit convergence plan step 4. The owner found the approval card confusing; on the DBR/VBF run the model put "sensor networks" alone beside "underwater acoustic" and the matches went from 535 to 18,369 without a warning. Steps 2 and 3 have not passed the benchmark: the end-to-end run is made after step 4, because step 4 removes most of the screens a person must answer (a named deviation from the plan's order).

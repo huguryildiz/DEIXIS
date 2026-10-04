@@ -9,9 +9,9 @@ Accepted product decisions from the 14 September 2026 conversation are recorded 
 
 **Context:** D205 Ek S approved measuring slice 4 (R18, R19, R21) on H9e's accepted report copy (`rpt_Rmd2soa3YuCZBBSyQJCF`, product `7188ec8`).
 
-**Decision:** Record the stopped run in `docs/product/p9-owed-measurements-results.md` (slice 4 section). E01 and E02 were measured with no R18 invariant violated; E03 started the product's `cell_recheck` run (completed, one session) but the kit's exclusive-ownership check counted the server's `codex app-server` child as a foreign holder and stopped, so E03 to E18 are unmeasurable. An earlier attempt was refused before any operation by an `lsof +D` exit-code quirk, fixed narrowly before the second attempt. Under freeze 1.6 the same corpus is not re-run; that needs an explicit coordinator decision.
+**Decision:** Record the stopped run in `docs/product/p9-owed-measurements-results.md` (slice 4 section). E01 and E02 were measured with no R18 invariant violated; E03 started the product's `cell_recheck` run (completed, one session) but the kit's exclusive-ownership check counted a `codex app-server` child (PPID the API listener, per the operator's later `ps`) as a foreign holder and stopped, so E03 to E18 are unmeasurable. An earlier attempt was refused before any operation by an `lsof +D` exit-code quirk, fixed narrowly before the second attempt. Under freeze 1.6 the same corpus is not re-run; that needs an explicit coordinator decision.
 
-**Limits:** Two operations of an eighteen-operation list, one report, one corpus; R19 has no measured denominator; nothing here says the edit/stale behavior is right or wrong beyond E01-E02's invariants; the debt D157 stays open.
+**Limits:** Two operations of an eighteen-operation list, one report, one corpus; R19 has a measured denominator only for E01-E02 (0/6 false positive and 0/6 false negative); nothing here says the edit/stale behavior is right or wrong beyond E01-E02's invariants; the debt D157 stays open.
 
 ## D212 — P9 owed K6: the kill-search measurement ran once on six claims and the nearest works were never retrieved; the query shape is not shown to be the cause
 

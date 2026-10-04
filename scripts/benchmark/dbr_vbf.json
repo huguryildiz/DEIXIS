@@ -1,0 +1,15 @@
+{
+  "name": "dbr_vbf",
+  "question": "How do depth-based and vector-based routing protocols for underwater acoustic sensor networks compare in packet delivery ratio and energy consumption?",
+  "reference": "Elicit 'Draft report' run, 5 Oct 2026 (six cited papers)",
+  "expected_direction": "In direct comparisons DBR uses less energy and delivers more packets than VBF (Maulana 2019: 33.6% more energy efficient, 19.8% better PDR; Hakim 2018 same direction). Caveat: VBF suits dense networks, HH-VBF was designed for sparse ones.",
+  "direction_terms": [["dbr", "depth-based", "depth based"], ["vbf", "vector-based", "vector based"]],
+  "papers": [
+    {"key": "maulana2019", "doi": "10.1109/icimcis48181.2019.8985348", "title": "Analysis of VBF and DBR Performance in Environmental Monitoring System Using Aquasim at NS-3", "anchor": true},
+    {"key": "hakim2018", "doi": "10.20895/infotel.v10i4.394", "title": "Energy Consumption Analysis of DBR and VBF Protocols in Underwater Sensor Networks Using Aqua-Sim at NS-2", "anchor": true},
+    {"key": "memon2018", "doi": null, "title": "Performance Comparison of Routing Protocols for Underwater Sensor Networks", "anchor": false},
+    {"key": "xie2010", "doi": "10.1155/2010/195910", "title": "Efficient Vector-Based Forwarding for Underwater Sensor Networks", "anchor": false},
+    {"key": "yan2008", "doi": "10.1007/978-3-540-79549-0_7", "title": "DBR: Depth-Based Routing for Underwater Sensor Networks", "anchor": false},
+    {"key": "nicolaou2007", "doi": "10.1109/oceanse.2007.4302470", "title": "Improving the Robustness of Location-Based Routing for Underwater Sensor Networks", "anchor": false}
+  ]
+}

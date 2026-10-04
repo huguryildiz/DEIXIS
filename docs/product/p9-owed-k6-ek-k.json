@@ -1,0 +1,288 @@
+{
+ "kind": "K6 Ek K draft (Claude + gpt-6.1-sol medium decision, 4 Oct 2026)",
+ "question": "Mobil robotların engelden kaçınan yörünge planlamasında model öngörülü kontrol nasıl formüle edilmiştir? Dinamik modeli, karar değişkenlerini, amaç fonksiyonunu, engel ve hareket kısıtlarını ve değerlendirme koşullarını karşılaştırın.",
+ "language": "tr",
+ "s4b_seed": 20261002,
+ "claims": [
+  {
+   "key": "C1",
+   "claim_statement": "Integrating a control barrier function into a Lyapunov-based stabilizing MPC for a differential-drive mobile robot yields both closed-loop stability and safety among static and moving obstacles.",
+   "elements": [
+    {
+     "text": "A stabilizing MPC built with Lyapunov stability theory on the robot's kinematic model",
+     "kind": "mechanism"
+    },
+    {
+     "text": "A control barrier function constraint integrated into that MPC",
+     "kind": "mechanism"
+    },
+    {
+     "text": "Both stability and safety are obtained for the closed loop",
+     "kind": "outcome"
+    },
+    {
+     "text": "The workspace contains static and moving obstacles",
+     "kind": "condition"
+    }
+   ],
+   "conditions": [
+    "differential-drive wheeled mobile robot with non-holonomic kinematics"
+   ],
+   "nearest_simple_explanation": "A plain MPC with a distance-based collision penalty already avoids obstacles without any barrier function.",
+   "critical_assumption": "The barrier constraint stays feasible together with the Lyapunov-based stabilizing terms at every step.",
+   "validation_plan": "Find a report that combines a Lyapunov-based stabilizing MPC with a CBF for a differential-drive robot and states stability and safety with moving obstacles.",
+   "payload_sha256": "9cd3e7382c2cfaa8c93140d4b70e7985f405dfc577eb78262fdf055fcbff91a6",
+   "N": [
+    {
+     "openalex_id": "W4416799054",
+     "doi": "10.1109/ica65945.2025.11253619",
+     "title": "Model Predictive Control with Safety Guarantee for Moving Obstacle Avoidance of Mobile Robots",
+     "year": 2025,
+     "first_author_surname": "Gunarso",
+     "provider_abstract_sha256": "367ccc1e184893d94ae66c355ad6d3aa7ae92565b484f84faa5c8e96fc7549f0",
+     "supplied_text_sha256": "367ccc1e184893d94ae66c355ad6d3aa7ae92565b484f84faa5c8e96fc7549f0",
+     "supplied_text_chars": 820,
+     "expected_relation": "whole claim"
+    },
+    {
+     "openalex_id": "W4383108357",
+     "doi": "10.1109/icra48891.2023.10160857",
+     "title": "Dynamic Control Barrier Function-based Model Predictive Control to Safety-Critical Obstacle-Avoidance of Mobile Robot",
+     "year": 2023,
+     "first_author_surname": "Jian",
+     "provider_abstract_sha256": "a1cd2a3e635f28f417e26cb1077877e20c9d2c64a561ed87a9ee75a175e3dd65",
+     "supplied_text_sha256": "a1cd2a3e635f28f417e26cb1077877e20c9d2c64a561ed87a9ee75a175e3dd65",
+     "supplied_text_chars": 1201,
+     "expected_relation": "some elements"
+    }
+   ],
+   "nearest_work_unknown": false
+  },
+  {
+   "key": "C2",
+   "claim_statement": "Supplying deep-learning multimodal predictions of dynamic-obstacle positions to a nonlinear MPC enables collision-free trajectory tracking for a mobile robot and outperforms non-deep-learning methods in complex scenarios.",
+   "elements": [
+    {
+     "text": "Deep-learning multimodal prediction of several plausible future positions of dynamic obstacles",
+     "kind": "mechanism"
+    },
+    {
+     "text": "The predictions are used by a nonlinear MPC solver",
+     "kind": "mechanism"
+    },
+    {
+     "text": "Collision-free trajectory tracking is achieved",
+     "kind": "outcome"
+    },
+    {
+     "text": "The approach outperforms non-deep-learning methods",
+     "kind": "outcome"
+    },
+    {
+     "text": "Complex scenarios with stochastic dynamic obstacles",
+     "kind": "condition"
+    }
+   ],
+   "conditions": [
+    "mobile robot among dynamic obstacles"
+   ],
+   "nearest_simple_explanation": "A constant-velocity obstacle prediction inside the same MPC already avoids most dynamic obstacles.",
+   "critical_assumption": "The learned predictor generalizes to the obstacle motion seen at run time.",
+   "validation_plan": "Find a report that couples a learned multimodal obstacle predictor to an NMPC and compares it with non-learning predictors.",
+   "payload_sha256": "773f892980efeb36d3fe9d47e2c615cb0c6c13106b2bed6636b8d83e766eaf8b",
+   "N": [
+    {
+     "openalex_id": "W4384519478",
+     "doi": "10.1109/lra.2023.3296333",
+     "title": "Prescient Collision-Free Navigation of Mobile Robots With Iterative Multimodal Motion Prediction of Dynamic Obstacles",
+     "year": 2023,
+     "first_author_surname": "Zhang",
+     "provider_abstract_sha256": "f10204c4a57a0eb9a1ffece6fb7d6bb70f13ff727d75f7153faa828b7197f400",
+     "supplied_text_sha256": "f10204c4a57a0eb9a1ffece6fb7d6bb70f13ff727d75f7153faa828b7197f400",
+     "supplied_text_chars": 887,
+     "expected_relation": "whole claim"
+    },
+    {
+     "openalex_id": "W3204442505",
+     "doi": "10.1109/case49439.2021.9551463",
+     "title": "Motion Prediction Based on Multiple Futures for Dynamic Obstacle Avoidance of Mobile Robots",
+     "year": 2021,
+     "first_author_surname": "Zhang",
+     "provider_abstract_sha256": "3ac9e9c63fc20a1d7e92d65e4b580f71afb104c32e7cf516d01a5c5d5c114b38",
+     "supplied_text_sha256": "3ac9e9c63fc20a1d7e92d65e4b580f71afb104c32e7cf516d01a5c5d5c114b38",
+     "supplied_text_chars": 1301,
+     "expected_relation": "some elements"
+    }
+   ],
+   "nearest_work_unknown": false
+  },
+  {
+   "key": "C3",
+   "claim_statement": "A scenario-tree prediction of dynamic-obstacle trajectories in a multi-stage NMPC avoids collisions with dynamic obstacles, is less conservative than a nominal NMPC with the predicted scenarios added as constraints, costs more computation, and both strategies run in real time.",
+   "elements": [
+    {
+     "text": "Scenario-tree prediction of the dynamic obstacle's trajectories",
+     "kind": "mechanism"
+    },
+    {
+     "text": "Multi-stage NMPC with recourse in the robot's predicted controls",
+     "kind": "mechanism"
+    },
+    {
+     "text": "Less conservative than nominal NMPC with scenario constraints",
+     "kind": "outcome"
+    },
+    {
+     "text": "Higher computational effort than the nominal strategy",
+     "kind": "outcome"
+    },
+    {
+     "text": "Both strategies are applicable in real time",
+     "kind": "condition"
+    }
+   ],
+   "conditions": [
+    "mobile robot, dynamic obstacles"
+   ],
+   "nearest_simple_explanation": "Adding one worst-case obstacle prediction as a constraint to a nominal NMPC is enough.",
+   "critical_assumption": "The scenario set covers the obstacle's actual motion.",
+   "validation_plan": "Find a report that compares multi-stage scenario-tree NMPC with nominal NMPC with scenario constraints for mobile robots.",
+   "payload_sha256": "41d2f474f501d9cf9a7df9843ad3a75ab19dc1e10a86162d28a65334facfab7d",
+   "N": [
+    {
+     "openalex_id": "W2896154143",
+     "doi": "10.1109/mmar.2018.8485841",
+     "title": "Robust NMPC Schemes for the Control of Mobile Robots in the Presence of Dynamic Obstacles",
+     "year": 2018,
+     "first_author_surname": "Subramanian",
+     "provider_abstract_sha256": "95cee198de7bdf806c907ef12c12dbd815bf85c077810c5ec0cbf9e04523c0f4",
+     "supplied_text_sha256": "95cee198de7bdf806c907ef12c12dbd815bf85c077810c5ec0cbf9e04523c0f4",
+     "supplied_text_chars": 1140,
+     "expected_relation": "whole claim"
+    }
+   ],
+   "nearest_work_unknown": false
+  },
+  {
+   "key": "C4",
+   "claim_statement": "A nonlinear MPC for a mobile robot with a SINDy-identified prediction model and a control barrier function safety constraint is input-to-state stable with respect to the prediction error and solves within a 10 ms control period on a Husky A200.",
+   "elements": [
+    {
+     "text": "Prediction model identified from noisy data with sparse identification of nonlinear dynamics",
+     "kind": "mechanism"
+    },
+    {
+     "text": "Control barrier function safety constraint inside the NMPC",
+     "kind": "mechanism"
+    },
+    {
+     "text": "Input-to-state stability with respect to the prediction error",
+     "kind": "outcome"
+    },
+    {
+     "text": "Solve time within a 10 ms control period",
+     "kind": "parameter"
+    },
+    {
+     "text": "Tests on a Husky A200 robot",
+     "kind": "condition"
+    }
+   ],
+   "conditions": [
+    "measurement noise present"
+   ],
+   "nearest_simple_explanation": "A first-principles kinematic model with the same constraint would behave identically.",
+   "critical_assumption": "The identified model's error stays bounded during operation.",
+   "validation_plan": "Find a report with SINDy-based NMPC plus CBF, an ISS result, and a reported per-step solve time.",
+   "payload_sha256": "b519004f0b26df3ebe32c090e796024607ac15706161ca29ac146fab9d31f2dc",
+   "N": [
+    {
+     "openalex_id": "W4394862912",
+     "doi": "10.1109/tiv.2024.3389111",
+     "title": "Model-Free Safety Critical Model Predictive Control for Mobile Robot in Dynamic Environments",
+     "year": 2024,
+     "first_author_surname": "Nguyen",
+     "provider_abstract_sha256": "c664d5592462004a5c28958bf298ed6207a6288bc7901bb8797d63688397eaf5",
+     "supplied_text_sha256": "c664d5592462004a5c28958bf298ed6207a6288bc7901bb8797d63688397eaf5",
+     "supplied_text_chars": 1383,
+     "expected_relation": "some elements"
+    }
+   ],
+   "nearest_work_unknown": false
+  },
+  {
+   "key": "C5",
+   "claim_statement": "A priority-based distributed MPC that orders networked differential-drive robots by urgency and solves non-convex collision constraints by sequential convex programming avoids collisions without losing prediction consistency, validated on at least 10 physical robots.",
+   "elements": [
+    {
+     "text": "Priority queue by an urgency value, converted to a topological order",
+     "kind": "mechanism"
+    },
+    {
+     "text": "Sequential convex programming of the non-convex collision constraints",
+     "kind": "mechanism"
+    },
+    {
+     "text": "Collision avoidance without loss of prediction consistency",
+     "kind": "outcome"
+    },
+    {
+     "text": "Validation on at least 10 physical robots",
+     "kind": "parameter"
+    }
+   ],
+   "conditions": [
+    "networked differential-drive mobile robots"
+   ],
+   "nearest_simple_explanation": "Fixed-priority distributed MPC already prevents collisions.",
+   "critical_assumption": "Communication delays are small compared with the sampling period.",
+   "validation_plan": "Find a report of urgency-ordered distributed MPC with SCP and physical-robot validation with robot counts.",
+   "payload_sha256": "429044a3c33c663fef7f5dd7f92b7888053491579db02a1d174c2438c28d248b",
+   "N": [
+    {
+     "openalex_id": "W4206270771",
+     "doi": "10.1109/access.2021.3134696",
+     "title": "Distributed Non-Convex Model Predictive Control for Non-Cooperative Collision Avoidance of Networked Differential Drive Mobile Robots",
+     "year": 2021,
+     "first_author_surname": "Mao",
+     "provider_abstract_sha256": "80a6d894a88201a3a91fe2764f781a206ed50351574497cd71e72688b8f483ca",
+     "supplied_text_sha256": "80a6d894a88201a3a91fe2764f781a206ed50351574497cd71e72688b8f483ca",
+     "supplied_text_chars": 1074,
+     "expected_relation": "some elements"
+    }
+   ],
+   "nearest_work_unknown": false
+  },
+  {
+   "key": "C6",
+   "claim_statement": "An MPC for a differential-drive robot that builds obstacle constraints from the signed distance field of an occupancy map and adapts its horizon online from the measured closing speed to the nearest obstacle keeps at least 0.3 m clearance and cuts mean solve time by at least 30% against a fixed horizon.",
+   "elements": [
+    {
+     "text": "Obstacle constraints taken from a signed distance field of an occupancy map",
+     "kind": "mechanism"
+    },
+    {
+     "text": "Horizon length adapted online from the measured closing speed to the nearest obstacle",
+     "kind": "mechanism"
+    },
+    {
+     "text": "Minimum clearance of at least 0.3 m is kept",
+     "kind": "outcome"
+    },
+    {
+     "text": "Mean solve time is at least 30% lower than with a fixed horizon",
+     "kind": "outcome"
+    }
+   ],
+   "conditions": [
+    "differential-drive robot with an occupancy map"
+   ],
+   "nearest_simple_explanation": "A shorter fixed horizon gives the same solve-time saving.",
+   "critical_assumption": "The adapted horizon never becomes too short to see an approaching obstacle.",
+   "validation_plan": "Find a report with SDF obstacle constraints and an online-adapted horizon with clearance and solve-time numbers.",
+   "payload_sha256": "4be8a6b0b3689ae973cacbf4691f500a0860df4e90407de02d92d1eb8dbc2438",
+   "N": [],
+   "nearest_work_unknown": true
+  }
+ ]
+}

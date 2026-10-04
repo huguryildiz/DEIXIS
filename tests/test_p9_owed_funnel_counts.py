@@ -100,6 +100,13 @@ class Library:
 
     def seal(self):
         self.conn.close()
+        destination = self.path.with_name(self.path.name + "-copy")
+        # The source is a closed synthetic database; no real library is read.
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(kit, "library_idle", lambda src: {"synthetic": True})
+            record = kit.copy_library(self.path, destination)
+        assert record["usable"], record
+        self.path = destination
 
 
 @pytest.fixture
@@ -211,6 +218,10 @@ def test_nonempty_wal_fails_closed_instead_of_ignoring_committed_data(library, t
     for name in ("library.sqlite", "library.sqlite-wal", "library.sqlite-shm"):
         shutil.copyfile(library.path / name, target / name)
     before = kit.manifest(target)
+    kit.write_json(kit.copy_record_path(target), {
+        "usable": True, "source": str(library.path), "destination": str(target.resolve()),
+        "source_manifest": before, "copy_manifest": before,
+    })
     result = kit.count(target, label="wal", product_commit="abc", prep_rule="copied uncheckpointed WAL")
     assert result["status"] == kit.UNMEASURED and "WAL" in result["reason"]
     assert "researches" not in result
@@ -327,7 +338,9 @@ def test_copy_uses_cp_and_matches_manifest(monkeypatch, tmp_path):
     monkeypatch.setattr(kit.subprocess, "run", run)
     dst = tmp_path / "dst"
     record = kit.copy_library(src, dst)
-    assert record["usable"] and record["source_manifest"] == record["copy_manifest"]
+    assert record["usable"]
+    assert record["source_manifest"] == record["source_after_manifest"] == record["copy_manifest"]
+    assert all(record[key]["sha256"] for key in ("source_manifest", "source_after_manifest", "copy_manifest"))
     assert record == json.loads(kit.copy_record_path(dst).read_text())
     assert [args[0] for args in seen] == ["lsof", "cp"]
     assert seen[1][:2] == ["cp", "-Rp"]
@@ -374,11 +387,12 @@ def test_outputs_and_copy_cannot_escape_rules(monkeypatch, tmp_path):
     assert kit.main(["manifest", str(src), str(src / "out.json")]) == 1
     with pytest.raises(kit.MeasurementRefused):
         kit.copy_library(src, src / "nested-destination")
-    monkeypatch.setattr(kit.subprocess, "run", idle_result)
+    monkeypatch.setattr(kit, "library_idle", lambda src: {"synthetic": True})
     trusted = tmp_path / "trusted.json"
-    trusted.write_text('{}')
+    trusted.write_text(json.dumps({"version": 1, "files": [], "sha256": "old"}))
     record = kit.copy_library(src, tmp_path / "dst", trusted_manifest=trusted)
-    assert not record["usable"] and record["trusted_manifest_equal"] is False
+    assert record["usable"] and record["trusted_manifest_equal"] is False
+    assert record["trusted_manifest_differences"][0]["path"] == "library.sqlite"
 
 
 def test_count_cli_writes_json_and_markdown_without_modifying_data(library, tmp_path):
@@ -521,3 +535,86 @@ def test_entire_count_has_one_read_transaction_and_no_writes(library, monkeypatc
     assert len(uris) == 1 and "mode=ro" in uris[0]
     assert trace.count("BEGIN") == trace.count("ROLLBACK") == 1
     assert not any(query.lstrip().split()[0] in {"INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "COMMIT"} for query in trace)
+
+
+def test_count_refuses_original_without_copy_record(library, monkeypatch, tmp_path):
+    library.source("source")
+    library.conn.close()
+    before = kit.manifest(library.path)
+    monkeypatch.setattr(kit, "open_readonly", lambda _: pytest.fail("original database opened"))
+    out = tmp_path / "refused.json"
+    assert kit.main(["count", str(library.path), "--label", "original", "--product-commit", "abc",
+                     "--prep-rule", "test", "--out", str(out)]) == 1
+    result = json.loads(out.read_text())
+    assert result["status"] == kit.UNMEASURED and "copy record is missing" in result["reason"]
+    assert "researches" not in result and kit.manifest(library.path) == before
+
+
+@pytest.mark.parametrize("defect", ["malformed", "nonobject", "usable", "destination", "source",
+                                   "source_manifest", "source_after_manifest", "copy_manifest", "changed_directory"])
+def test_count_refuses_invalid_copy_evidence(library, monkeypatch, defect):
+    library.source("source")
+    library.seal()
+    path = kit.copy_record_path(library.path)
+    record = json.loads(path.read_text())
+    if defect == "malformed":
+        path.write_text("{")
+    elif defect == "nonobject":
+        path.write_text("[]")
+    elif defect == "changed_directory":
+        (library.path / "added").write_text("SYNTHETIC mutation")
+    else:
+        record[defect] = {"usable": False, "destination": "wrong", "source": str(library.path)}.get(defect, {})
+        kit.write_json(path, record)
+    monkeypatch.setattr(kit, "open_readonly", lambda _: pytest.fail("unverified database opened"))
+    result = kit.count(library.path, label="invalid", product_commit="abc", prep_rule="test")
+    assert result["status"] == kit.UNMEASURED and "researches" not in result
+
+
+def test_source_changed_after_cp_makes_copy_unusable(monkeypatch, tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "library.sqlite").write_text("SYNTHETIC before")
+    real_run = subprocess.run
+
+    def run(argv, **kwargs):
+        if argv[0] == "lsof":
+            return idle_result(argv)
+        result = real_run(argv, **kwargs)
+        (src / "library.sqlite").write_text("SYNTHETIC after")
+        return result
+
+    monkeypatch.setattr(kit.subprocess, "run", run)
+    dst = tmp_path / "dst"
+    record = kit.copy_library(src, dst)
+    assert record["source_manifest"] == record["copy_manifest"]
+    assert record["source_after_manifest"] != record["source_manifest"]
+    assert not record["usable"] and not record["manifests_equal"]
+    assert json.loads(kit.copy_record_path(dst).read_text()) == record
+
+
+@pytest.mark.parametrize("different", [False, True])
+def test_trusted_manifest_comparison_is_recorded_without_blocking_copy(monkeypatch, tmp_path, different):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "library.sqlite").write_text("SYNTHETIC old")
+    (src / "removed").write_text("SYNTHETIC removed")
+    trusted = kit.manifest(src)
+    path = tmp_path / "trusted.json"
+    kit.write_json(path, trusted)
+    if different:
+        (src / "library.sqlite").write_text("SYNTHETIC new")
+        (src / "removed").unlink()
+        (src / "added").write_text("SYNTHETIC added")
+    monkeypatch.setattr(kit, "library_idle", lambda _: {"synthetic": True})
+    dst = tmp_path / "dst"
+    record = kit.copy_library(src, dst, trusted_manifest=path)
+    assert record["usable"] and record["trusted_manifest_equal"] is (not different)
+    assert record["trusted_manifest"] == trusted
+    differences = record["trusted_manifest_differences"]
+    assert [row["path"] for row in differences] == (["added", "library.sqlite", "removed"] if different else [])
+    if different:
+        assert differences[0]["trusted"] is None and differences[0]["source"] is not None
+        assert differences[1]["trusted"]["sha256"] != differences[1]["source"]["sha256"]
+        assert differences[2]["source"] is None and differences[2]["trusted"] is not None
+    assert json.loads(kit.copy_record_path(dst).read_text()) == record

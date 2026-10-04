@@ -23,6 +23,7 @@ import re
 import sys
 from types import FunctionType
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import httpx
 
@@ -81,12 +82,28 @@ def read_ledger(path: Path) -> list[dict]:
     if not path.exists():
         return []
     rows = []
+    admissions = {}
+    outcomes = set()
     with path.open(encoding="utf-8") as stream:
         for line in stream:
             try:
                 row = json.loads(line)
-                if row["item"] not in ITEMS or row["counted_attempts"] != 1:
+                if (not isinstance(row, dict) or row["item"] not in ITEMS
+                        or row.get("event") not in {None, "admitted", "outcome"}
+                        or row["counted_attempts"] != (0 if row.get("event") == "outcome" else 1)):
                     raise ValueError
+                if row.get("event") is not None:
+                    request_id = row["request_id"]
+                    if not isinstance(request_id, str) or not request_id:
+                        raise ValueError
+                    if row["event"] == "admitted":
+                        if request_id in admissions or row["outcome"] != "admitted":
+                            raise ValueError
+                        admissions[request_id] = row["item"]
+                    else:
+                        if admissions.get(request_id) != row["item"] or request_id in outcomes:
+                            raise ValueError
+                        outcomes.add(request_id)
             except (ValueError, KeyError, TypeError):
                 raise PrepError("ledger_unreadable: refusing to send") from None
             rows.append(row)
@@ -107,10 +124,23 @@ def ledger_lock(path: Path):
 
 
 def admit(rows: list[dict], item: str, cap: int, global_cap: int, planned: int = 1):
-    if len(rows) + planned > global_cap:
+    # Historical single-line outcomes also consume one slot. New outcome lines
+    # settle an admission and never consume a second slot.
+    used = [row for row in rows if row.get("event") != "outcome"]
+    if len(used) + planned > global_cap:
         raise PrepError("global_cap_exceeded: nothing sent")
-    if sum(row["item"] == item for row in rows) + planned > cap:
+    if sum(row["item"] == item for row in used) + planned > cap:
         raise PrepError("item_cap_exceeded: nothing sent")
+
+
+def append_ledger(path: Path, entry: dict):
+    try:
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+    except OSError:
+        raise PrepError("ledger_append_failed: refusing further sends") from None
 
 
 class OneRequestTransport(httpx.AsyncBaseTransport):
@@ -145,8 +175,13 @@ async def perform_lookup(args, *, transport: httpx.AsyncBaseTransport | None = N
     """Transport injection is for offline tests; caller owns this HTTP client."""
     with ledger_lock(args.ledger):
         admit(read_ledger(args.ledger), args.item, args.cap, args.global_cap)
+        admission = {"utc_time": datetime.now(timezone.utc).isoformat(), "item": args.item,
+                     "command": args.command, "request_id": uuid4().hex,
+                     "event": "admitted", "outcome": "admitted", "counted_attempts": 1}
+        append_ledger(args.ledger, admission)
         guard = OneRequestTransport(transport if transport is not None else httpx.AsyncHTTPTransport(retries=0))
         status = "interrupted"
+        error = None
         try:
             async with httpx.AsyncClient(
                 transport=guard, headers={"User-Agent": USER_AGENT},
@@ -169,22 +204,22 @@ async def perform_lookup(args, *, transport: httpx.AsyncBaseTransport | None = N
                     records = ([crossref.record_from_item(outcome.raw_payload)]
                                if outcome.status == "completed" and outcome.raw_payload is not None else [])
                 status = outcome.status
-                return {"item": args.item, "command": args.command, "provider": provider,
+                result = {"item": args.item, "command": args.command, "provider": provider,
                         "outcome": status, "http_status": guard.http_status,
                         "records": [record_view(r, provider) for r in records]}
         except Exception as exc:
             # Do not print provider response bodies, credentials or exception text.
             status = "error_" + type(exc).__name__
-            raise PrepError(status) from None
-        finally:
-            if guard.attempts:
-                entry = {"utc_time": datetime.now(timezone.utc).isoformat(), "item": args.item,
-                         "command": args.command, "url": guard.url, "http_status": guard.http_status,
-                         "outcome": status, "counted_attempts": guard.attempts}
-                with args.ledger.open("a", encoding="utf-8") as stream:
-                    stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
-                    stream.flush()
-                    os.fsync(stream.fileno())
+            error = PrepError(status)
+        # Process termination/cancellation can leave only the durable admission;
+        # it still consumes the allowance, even when no outcome was recorded.
+        entry = dict(admission, utc_time=datetime.now(timezone.utc).isoformat(),
+                     event="outcome", url=guard.url, http_status=guard.http_status,
+                     outcome=status, counted_attempts=0, sent_attempts=guard.attempts)
+        append_ledger(args.ledger, entry)
+        if error is not None:
+            raise error from None
+        return result
 
 
 def supplied_text(record: dict) -> dict:
@@ -325,8 +360,14 @@ def main(argv=None, *, transport=None) -> int:
         elif args.command == "ledger-summary":
             with ledger_lock(args.ledger):
                 rows = read_ledger(args.ledger)
-            counts = Counter(row["item"] for row in rows)
-            print(json.dumps({"total_requests": len(rows), "by_item": {item: counts[item] for item in ITEMS}}))
+            admitted = [row for row in rows if row.get("event") != "outcome"]
+            # Completed means an outcome was durably recorded, including errors;
+            # it does not imply provider success or that a request was sent.
+            completed = [row for row in rows if row.get("event") != "admitted"]
+            counts = Counter(row["item"] for row in admitted)
+            print(json.dumps({"total_requests": len(admitted), "admitted_requests": len(admitted),
+                              "completed_requests": len(completed),
+                              "by_item": {item: counts[item] for item in ITEMS}}))
         else:
             value = json.loads(args.record.read_text(encoding="utf-8"))
             if args.command == "supplied-text":

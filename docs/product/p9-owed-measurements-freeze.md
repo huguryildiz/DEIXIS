@@ -169,24 +169,58 @@ Metni dondurulandan farklı gelen eser §13'ün kuralıyla değerlendirmeden ç�
 
 Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donmuş bir kapı ya da durdurma kuralıyla durdu; kota yüzünden bekliyor. Bunlar eşit tamamlanma kanıtı değildir. Sonuçlar `docs/product/p9-owed-measurements-results.md` dosyasına kalem başına tarihli bölüm olarak, kararlar kalem başına ayrı D kaydı olarak yazılır. STATUS yalnız kaydedilmiş sonucun desteklediği alt borç için değişir; kısmi ölçümler ve engellenmiş ön koşullar görünür kalır. P10, açık kalan ölçüm borçlarıyla ancak bu borçları ve sonuçlarını adıyla sayan açık bir koordinatör kararıyla ilerleyebilir; “bekliyor” P10 için kendiliğinden geçiş değildir. Bu plan H8 matris çiftini, `TODO.md` borçlarını (slice 31 dahil), paralel yükte düşen testleri ve D171'in çelişkili durum cümlesini kapatmaz; sonuncusu ayrı bir düzeltme ister.
 
-## Ek (taslak, 4 Ekim 2026): K6 ve L9 2. dondurma noktası, hazırlık durumu
+## Ek K (4 Ekim 2026): K6 kill-search, 2. dondurma noktası
 
-**Durum: TASLAK. Sol review pending (Codex quota until 10 Oct); donmuş değil.** Bu bölüm ne Ek K ne Ek L1'dir; yalnız sabitlenebilir kısımları yazar. Konu ve `G` seçimi (Claude + Sol medium ortak kararı), altı iddia ve `N` kümeleri ile iki ekin Sol high incelemesi Codex kotası dönene kadar bekler. Hiçbir model koşusu başlatılmadı; hazırlık için sağlayıcıya **0** istek gönderildi (60'lık sınırdan 0 kullanıldı; seçim kararı olmadan sorgu atılmadı).
+**Durum:** koşudan önce dondurulacak; `gpt-6.1-sol` medium incelemesi (en çok 3 tur) ve koordinatör push'u sonrası geçerli. Kararı Claude Opus 5.5 ve `gpt-6.1-sol` medium ortak verdi (4 Ekim 2026, sahip adına; sahip tek tek onaylamadı). Bu ek §6'nın kurallarını değiştirmez.
 
-**Sabitlenen ürün commit'i:** `b3fde0e` (origin/main at drafting, 4 Ekim 2026; origin/main has since moved to `09aa2cf`, H9e result: re-pin at the real freeze; ürün kodu `7188ec8` ile aynı, sonrası yalnız dondurma/belge). Ölçüm worktree'leri: `../DEIXIS-owed-k6`, `../DEIXIS-owed-l9` (henüz açılmadı; ilk koşudan önce bu commit'te ayrık açılır). Çalışma worktree'si bu hazırlık için `../DEIXIS-owed`.
+**Sabitlenen ürün commit'i:** `7188ec8` (RF6; H9e'de ölçülen kod, paket hash'i `ccff02a1…`). K6 bu commit'te kendi ayrık worktree'sinde (`../DEIXIS-owed-k6`) koşar; origin/main'in sonraki commit'leri yalnız belge ve ölçüm kitidir ve ürün kodunu değiştirmemelidir (koşu öncesi `git diff 7188ec8 HEAD -- backend methods contracts` boş olmalı; boş değilse ek yeniden dondurulur).
 
-**Kit ve dosya hash'leri (SHA-256, dosya baytı; taslak):**
-- `scripts/p9_owed/funnel_counts.py` `c18bbb1b8cc7aec0ac6499543791a1794af226face9c91759b3384a4cef2a106`
-- `scripts/p9_owed/prep_lookup.py` `7a5d4d71e3d1dc5cd41eb4050a6cccf95be4fe45e83d709ab0ed6326e1a31c36`
-- `scripts/p6_eval/measure_lineage.py` `a335b3835d571bb3643969510634ab7728e762d1e1c81e5f3b785b023dc40751`
-- `scripts/p6_eval/measure_fill.py` `8db4e90616eff3712c0d5a1ba1581358982ebf048b2456332afd9ee21512e7ad`
-- `scripts/p6_eval/measure_report.py` `80662aa18fb6e24ae507799754bf36fdc463c466d7201e857aa4537600fbcff9`
-- `backend/deixis/providers/query_compiler.py` `d47afa94809553357700cf2acaa59241a3c2c7c3b5c001311330bfd71a725aea`
-- `backend/deixis/workflow/candidates/terms.py` `1337ad58619f06fd04ea1272d60aa08674982e94259af1e5313e6d568e0c0527`
-- `methods/deixis-research/references/candidate-check.md` `7e4222f3932a2905897a79d744addd4f4ce8a74efa880b51f2fd180d46401ffe`
+**Donmuş girdiler:** `docs/product/p9-owed-k6-ek-k.json` (SHA-256 aşağıda): soru ve dil (Q2 alanının H9 metni, Türkçe); altı iddianın tam sürüm-1 yükü (önerme, 4-5 öğe, koşullar, kritik varsayım, en yakın basit açıklama, doğrulama planı; yük başına SHA-256); `N` kümeleri ve beklenen ilişki (Claude'un etiketi, Sol medium'un yaptığı düzeltmeyle): C1 {W4416799054 bütün iddia, W4383108357 bazı öğeler}; C2 {W4384519478 bütün iddia, W3204442505 bazı öğeler}; C3 {W2896154143 bütün iddia}; C4 {W4394862912 bazı öğeler: özette 10 ms süresi yok}; C5 {W4206270771 bazı öğeler: özette fiziksel robot sayısı yok}; C6 boş (“yakın iş bilinmiyor”, Claude'un etiketi; bu iddiadan oran üretilmez). Her `N` eseri için OpenAlex kimliği, DOI, sağlayıcı özetinin SHA-256'sı ve modele verilecek bütün metnin SHA-256'sı JSON'da. C4 ve C5'teki “10 ms” ve “en az 10 fiziksel robot” sınanacak sahip yazımı önermelerdir; doğrulanmış sonuç ya da çürütülmüş iddia değildir. S4b tohumu `20261002`; S6'nın sözcük normalizasyonu (`title_tokens` kuralı: NFKD, ASCII, casefold, `[^\W_]+`) ve öbek eşleme algoritması (terim, bir bloktaki bir terimin başlık+özet belirteç dizisinde ardışık geçmesi) K6 ölçüm kitinde yazılır (kit henüz yok; aşağıdaki tablo).
 
-Runtime paket hash'i (Sol'un 4 Ekim okuması, kod tarafından yeniden hesaplanmalı): `sha256:ccff02a169ea72690a594b3277c09c0975537f45ed20f9a6203a364d0c2b132c`. Not: K6 için dondurma §6'nın üç dosyası K5'ten (`3091b0f`) beri yalnız `query_compiler.py`'de D193 (`98f651f`) değişikliği gördü.
+**Kayıtlı sınırlar:** (1) Kümeler küçük bir kalibrasyon kümesidir: özetlerin doğrudan paraphrase'ı olan iddialar ve eklenmiş sayısal şartlar işi kolaylaştırır; zor en-yakın-eser ayrımı bu koşuyla kanıtlanmaz. (2) Beklenen etiketler özet metnine göre yazıldı; modele verilen metin kesilirse (özet üst sınırı 2.500 karakter; hepsi altında) etiket yeniden gözden geçirilmez, eser §6'nın metin-farkı kuralıyla dışlanır. (3) Gizli anahtar (beklenen etiketler) uygulama modeline ve okuyucuya verilmez. (4) Sağlayıcı özetleri 4 Ekim 2026'da OpenAlex'ten alındı; koşuda gelen metin farklıysa §6 dışlama kuralı.
 
-**Hazır kit:** `scripts/p9_owed/prep_lookup.py` (OpenAlex arama, kimlik toplu sorgusu, Crossref DOI; her çağrı en çok bir HTTP isteği, yeniden deneme yok; K6 ve L9 için ortak defter `--global-cap 60`; modelsiz `supplied-text` ve kimlik eşleme yardımcıları). Sol yazdı (kotası bitmeden), Claude inceledi: testleri geçiyor. Eksik: kitin Sol'dan ikinci bir inceleme turu.
+**Hazırlık sağlayıcı istekleri:** K6 için 9 (5 arama, 3 arama, 1 toplu kimlik); L9 için 4 (aşağı); birlikte 13 / 60; deftere yazılı (`.local/p9-owed/prep/ledger.jsonl`). Yeniden deneme yok.
 
-**Açık, Sol medium kararı bekleyen sahip-düzeyi seçimler:** (1) K6'nın altı iddiası ve `N` kümeleri (Q2 alanı); (2) L9'un taze konusu, üç geliştirme sütunu için seçim kuralları ve `G` (2-4 eser, kimlikleri Crossref/OpenAlex'te doğrulanmış). Claude'un önerisi (karar değil): L9 konusu için açık erişimli, dilim-2/H9/K6 dışında bir arXiv ağırlıklı alan; `G` adayı olarak difüzyon modelleri çizgisi (DDPM, DDIM, geliştirilmiş DDPM) soyut cümleleriyle desteklenebilir, doğrulanmadı.
+**Kit hash'leri ve dosya pinleri:** aşağıdaki tabloya bakın (ortak).
+
+## Ek L1 (4 Ekim 2026): L9 gelişim çizgileri, keşiften önce dondurulacak girdiler
+
+**Durum:** `gpt-6.1-sol` medium incelemesi ve push sonrası geçerli; Claude + Sol medium ortak kararı (4 Ekim 2026). Ek L2 (lineage isteğinden önce) ayrıdır ve henüz yok.
+
+**Konu ve soru:** görüntü üretiminde difüzyon modelleri (tamamen yeni; dilim 2, H9, H9b, K5 ve K6 korpuslarının dışında). Soru (İngilizce): *“How did denoising diffusion generative models develop after the original denoising diffusion probabilistic model, in sampling speed, likelihood and sample quality?”* Üç geliştirme sütunu: dilim 2'nin metni, `docs/product/p6-slice2-chain-of-ideas.md:280-284`, kelimesi kelimesine. Seçim kuralları §7'deki gibi; elle ekleme/çıkarma/sıralama yok.
+
+**`G` (`docs/product/p9-owed-l9-ek-l1.json`, SHA-256 aşağıda):** üç eser, iki yönlü çift. ddpm (Ho 2020, OpenAlex W3036167779), ddim (Song 2020, W3092442149), iddpm (Nichol 2021, W3122887982); çiftler ddpm→ddim ve ddpm→iddpm; ddim→iddpm bilerek yok. Her çift, sonraki eserin kendi özet cümlesiyle desteklenir (JSON'da alıntı). Kimlikler 4 Ekim 2026'da OpenAlex'ten doğrulandı (Crossref kullanılmadı: arXiv DOI'leri DataCite'tadır); 4 istek. Sol medium'un düzeltmesiyle skor tabanlı SDE eseri (W3110257065) ve ddpm→sde çifti `G`'den çıkarıldı: özeti belirli bir selefi adlandırmıyor, girişi okunmadı. Eşleme kuralı §7'deki gibi (normalize başlığın başı, ilk yazar soyadı belirtecinin yazarda geçmesi, izinli yıllar); `ddpm` için izinli yıllar 2020-2021, `ddim` 2020-2021, `iddpm` 2021; başlık başları birbirini kapsamaz (kontrol edildi).
+
+**Kayıtlı sağlayıcı kusuru:** OpenAlex'in ddpm kaydındaki özet alanı alakasız bir depo metni (DiffuCpG) taşıyor; kayıt olduğu gibi tutulur, onarılmaz, ddpm için kanıt sayılmaz; ürün bu kaydı aynen alırsa sonuçta “sağlayıcı kusuru” olarak yazılır. Bir OpenAlex yinelenen kaydı (“Ho 2024”) yıl kuralıyla eşleşmez.
+
+**Sınırlar:** Konu tanıtım içeriği modelce iyi bilinen bir çizgidir; bellekten yanıt riski ölçülmez (K0 bağımsızlığı korpus örtüşmesini ölçer, model bilgisini değil). K1 (≥6 PDF metinli satır) henüz doğrulanmadı; dört (burada üç) `G` eseri tek başına yetmez. Konu, `G` ve kurallar koşu başladıktan sonra değişmez; bir kapı tutmazsa §7'nin kuralı geçerlidir (ikinci konu yok).
+
+## Ek S (4 Ekim 2026): dilim 4 / D157 için H9e raporunun kullanılması, koordinatör değişikliği önerisi
+
+**Karar (Claude + `gpt-6.1-sol` medium):** dilim 4 H9e'nin kabul edilmiş raporunda (`rpt_Rmd2soa3YuCZBBSyQJCF`; ürün `7188ec8`) ölçülür; borç adlandırılmış borç olarak ertelenmez. Gerekçe: §5 “B tamamladıysa B” der; H9e B'nin kendi korpusunda (Q3, `e/data` = `b/data`'nın doğrulanmış kopyası) tamamlanan tek rapordur ve ürün kodu RF6 sonrasıdır. §5'in B'yi adlandırması H9b'nin üç B koşusunu varsaydı; H9e Ek G ile eklendi, bu yüzden açık bir koordinatör değişikliği gerekir: **bu ek, koordinatör push edip onaylamadan geçerli değildir** (sahip kuralı: koordinatör iznini bu ekle birlikte alır; “go” ayrıca verilir).
+
+**Ek kapılar (§5'in üstüne):** (1) Ön koşul: H9e sonucu push edilmiş (`09aa2cf`) ✓, H9 zinciri kapalı ✓. (2) Ortam: `e/data` bayt kopyası (§1.10), H9e'nin son snapshot ve okurları bitmiş olarak; ürün worktree'si `7188ec8`'de ayrık. (3) Kit `measure_edit.py` henüz **yok**: Sol yazar, Claude inceler; deterministik testleri ölçümden önce geçer; hash'leri bu ekin sonraki bir güncellemesinde donar. (4) Ek E (belirleyici işlem listesi ve başlangıç hash'leri) rapor oluştuktan sonra, ilk düzenlemeden önce donar; kuralları §5 aynen. (5) En çok 10 yeni oturum / 60 dk, yalnız `cell_recheck`; R20 ve bölüm yeniden yazma ölçülmez. (6) Koşu K6/L9 gibi koordinatörün “go”'sunu bekler; K6, L9 ve dilim 4 aynı anda koşmaz.
+
+**Sınır:** hâlâ tek rapor, tek korpus; kod davranışının gerçek rapordaki sınaması, anlam desteği iddiası değil.
+
+## Ortak hash'ler ve hazırlık durumu (4 Ekim 2026)
+
+| Dosya | SHA-256 |
+|---|---|
+| `scripts/p9_owed/funnel_counts.py` | `e1864ae92fe2bb8089d519f50556f417ba73837d6285c358f2f4aef52c158745` |
+| `scripts/p9_owed/prep_lookup.py` | `20c1785c95159a1d92b5845f13de2ab83e732f2b12c35094a87c066a6944bab6` |
+| `scripts/p6_eval/measure_lineage.py` | `a335b3835d571bb3643969510634ab7728e762d1e1c81e5f3b785b023dc40751` |
+| `scripts/p6_eval/measure_fill.py` | `8db4e90616eff3712c0d5a1ba1581358982ebf048b2456332afd9ee21512e7ad` |
+| `scripts/p6_eval/measure_report.py` | `80662aa18fb6e24ae507799754bf36fdc463c466d7201e857aa4537600fbcff9` |
+| `backend/deixis/providers/query_compiler.py` | `d47afa94809553357700cf2acaa59241a3c2c7c3b5c001311330bfd71a725aea` |
+| `backend/deixis/workflow/candidates/terms.py` | `1337ad58619f06fd04ea1272d60aa08674982e94259af1e5313e6d568e0c0527` |
+| `methods/deixis-research/references/candidate-check.md` | `7e4222f3932a2905897a79d744addd4f4ce8a74efa880b51f2fd180d46401ffe` |
+| `docs/product/p9-owed-k6-ek-k.json` | `5bc88f47cdb5b3e6634a89c16083833dda5b2bff4a67dbe0fdc7d3977eb89b12` |
+| `docs/product/p9-owed-l9-ek-l1.json` | `b2940985779b60a72f2caafd80bbb0d306e0833d9b595baaf44d4885c8066aba` |
+
+Runtime paket hash'i: `sha256:ccff02a169ea72690a594b3277c09c0975537f45ed20f9a6203a364d0c2b132c` (H9e'nin ölçtüğü paketle aynı önek `ccff02a1`).
+
+**Kitler (henüz yok, koşudan önce yazılır, Sol yazar / Claude inceler, hash'leri bu ekin güncellemesinde donar):** K6 ölçüm kiti (S1-S6; iddia oluşturma, kill-search, matris ve alıntı yeri sayımı), `measure_edit.py` (dilim 4), L9 için `measure_lineage.py`'ye envanter tabanlı `independence` yolu ve K0 envanterleri. Hazır olanlar: `funnel_counts.py` ve `prep_lookup.py` (Sol medium düzeltmelerinden sonra 93 test geçti).
+
+**Hazırlık sağlayıcı istekleri:** toplam 13 / 60 (K6 9, L9 4; hepsi OpenAlex, anahtarsız, yeniden deneme yok); defter `.local/p9-owed/prep/ledger.jsonl`. Model oturumu 0; sunucu başlatılmadı; 8765'e dokunulmadı.
+

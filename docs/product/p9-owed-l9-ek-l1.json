@@ -1,0 +1,85 @@
+{
+ "kind": "L9 Ek L1 draft (Claude + gpt-6.1-sol medium decision, 4 Oct 2026)",
+ "question": "How did denoising diffusion generative models develop after the original denoising diffusion probabilistic model, in sampling speed, likelihood and sample quality?",
+ "language": "en",
+ "columns": [
+  {
+   "role": "problem_addressed"
+  },
+  {
+   "role": "established_or_changed"
+  },
+  {
+   "role": "uncertainty_left"
+  }
+ ],
+ "columns_text_source": "docs/product/p6-slice2-chain-of-ideas.md:280-284",
+ "G": {
+  "works": [
+   {
+    "key": "ddpm",
+    "openalex_id": "W3036167779",
+    "doi": "10.48550/arxiv.2006.11239",
+    "title": "Denoising Diffusion Probabilistic Models",
+    "first_author": "Ho, Jonathan",
+    "year": 2020,
+    "match": "denoising diffusion probabilistic models",
+    "first_author_surname": "ho",
+    "years": [
+     2020,
+     2021
+    ],
+    "provider_abstract_sha256": "32321d7b1a4e3cac46cbc2845090e9dc00c14650ec92679e2c74e7ee08a3e19b",
+    "provider_abstract_fault": "OpenAlex abstract is an unrelated DiffuCpG repository text; recorded, never repaired"
+   },
+   {
+    "key": "ddim",
+    "openalex_id": "W3092442149",
+    "doi": "10.48550/arxiv.2010.02502",
+    "title": "Denoising Diffusion Implicit Models",
+    "first_author": "Jiaming Song",
+    "year": 2020,
+    "match": "denoising diffusion implicit models",
+    "first_author_surname": "song",
+    "years": [
+     2020,
+     2021
+    ],
+    "provider_abstract_sha256": "6a175e159d1540d25a04e3ac7b9642f46c2c82aba58ff549cde9f1991bc5c104",
+    "provider_abstract_fault": null
+   },
+   {
+    "key": "iddpm",
+    "openalex_id": "W3122887982",
+    "doi": "10.48550/arxiv.2102.09672",
+    "title": "Improved Denoising Diffusion Probabilistic Models",
+    "first_author": "Alex Nichol",
+    "year": 2021,
+    "match": "improved denoising diffusion probabilistic models",
+    "first_author_surname": "nichol",
+    "years": [
+     2021
+    ],
+    "provider_abstract_sha256": "99bd21fc5542c738894f8350076c24afcd01b007dc165ead686abdfc0645d1c9",
+    "provider_abstract_fault": null
+   }
+  ],
+  "pairs": [
+   [
+    "ddpm",
+    "ddim"
+   ],
+   [
+    "ddpm",
+    "iddpm"
+   ]
+  ],
+  "pair_support": {
+   "ddpm->ddim": "DDIM abstract: DDIMs are 'a more efficient class of iterative implicit probabilistic models with the same training procedure as DDPMs' (sampling acceleration).",
+   "ddpm->iddpm": "Improved DDPM abstract: 'with a few simple modifications, DDPMs can also achieve competitive log-likelihoods while maintaining high sample quality'."
+  },
+  "excluded_provisional": "Score-based SDE (W3110257065) and the pair ddpm->sde were dropped: its abstract names a broader prior approach, not uniquely DDPM; its introduction was not read (no PDF fetched within the provider-request rule). No ddim->iddpm pair."
+ },
+ "verification": "OpenAlex records fetched 4 Oct 2026 via prep_lookup.py (request ledger .local/p9-owed/prep/ledger.jsonl); Crossref not used because arXiv DOIs are DataCite.",
+ "identity_rule": "normalized title must start with `match` tokens; year in `years`; frozen surname a token of the first-author name; tutmayan satır identity_unverified (scripts/p6_eval/measure_lineage.py title_tokens)"
+}

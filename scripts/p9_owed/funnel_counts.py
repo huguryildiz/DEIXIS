@@ -163,20 +163,28 @@ def copy_library(src: Path, dst: Path, *, trusted_manifest: Path | None = None) 
         record["source_manifest"] = manifest(src)
         if trusted_manifest is not None:
             trusted = json.loads(outside(trusted_manifest, src, dst).read_text(encoding="utf-8"))
+            record["trusted_manifest"] = trusted
             record["trusted_manifest_equal"] = trusted == record["source_manifest"]
-            if not record["trusted_manifest_equal"]:
-                raise MeasurementRefused("source differs from trusted manifest")
+            trusted_files = {row["path"]: row for row in trusted["files"]}
+            source_files = {row["path"]: row for row in record["source_manifest"]["files"]}
+            record["trusted_manifest_differences"] = [
+                {"path": path, "trusted": trusted_files.get(path), "source": source_files.get(path)}
+                for path in sorted(trusted_files.keys() | source_files.keys())
+                if trusted_files.get(path) != source_files.get(path)
+            ]
         dst.parent.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(["cp", "-Rp", str(src), str(dst)], capture_output=True, text=True, check=False)
         record["cp"] = {"returncode": result.returncode, "stderr": result.stderr}
         if result.returncode:
             raise MeasurementRefused("cp -Rp failed")
+        record["source_after_manifest"] = manifest(src)
         record["copy_manifest"] = manifest(dst)
-        record["manifests_equal"] = record["source_manifest"] == record["copy_manifest"]
+        record["manifests_equal"] = (
+            record["source_manifest"] == record["source_after_manifest"] == record["copy_manifest"])
         if not record["manifests_equal"]:
-            raise MeasurementRefused("source and copy manifests differ; copy unusable")
+            raise MeasurementRefused("source-before, source-after and copy manifests differ; copy unusable")
         record.update(usable=True, status="measured")
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         record["reason"] = str(exc)
     write_json(record_path, record)
     return record
@@ -479,13 +487,18 @@ def count(data_dir: Path, *, label: str, product_commit: str, prep_rule: str,
             result["missing"].append({"quantity": "frozen_G", "reason": str(exc)})
     try:
         root = checked_dir(data_dir)
-        record_path = copy_record_path(root)
-        if record_path.exists():
-            record = json.loads(record_path.read_text(encoding="utf-8"))
-            if (record.get("usable") is not True or record.get("destination") != str(root)
-                    or record.get("source_manifest") != record.get("copy_manifest")
-                    or manifest(root) != record.get("copy_manifest")):
-                raise MeasurementRefused("copy record/manifest does not establish a usable copy")
+        record_path = outside(copy_record_path(root), root)
+        if not record_path.is_file():
+            raise MeasurementRefused("copy record is missing; original libraries cannot be counted")
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        if (not isinstance(record, dict) or record.get("usable") is not True
+                or record.get("destination") != str(root)
+                or record.get("source") == str(root)
+                or record.get("source_manifest") != record.get("copy_manifest")
+                or ("source_after_manifest" in record
+                    and record["source_after_manifest"] != record.get("copy_manifest"))
+                or manifest(root) != record.get("copy_manifest")):
+            raise MeasurementRefused("copy record/manifest does not establish a usable copy")
         with open_readonly(root) as conn:
             researches = [dict(row) for row in conn.execute("SELECT * FROM researches ORDER BY created_at, id")]
             result["researches"] = [research_counts(conn, research, chain) for research in researches]

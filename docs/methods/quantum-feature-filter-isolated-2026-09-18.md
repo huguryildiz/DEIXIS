@@ -23,7 +23,7 @@ The live DEIXIS library and port `8765` are out of scope. Keep raw provider payl
 ## Commands
 
 ```sh
-uv run python scripts/isolated_feature_query_arm.py prepare --source-plan .local/quantum-query-branches-2026-09-18-plan-b/plan.json --plan-dir .local/quantum-feature-filter-2026-09-18-plan
+uv run python scripts/isolated_feature_query_arm.py prepare --source-plan .local/archive/early/quantum-query-branches-2026-09-18-plan-b/plan.json --plan-dir .local/quantum-feature-filter-2026-09-18-plan
 uv run python scripts/isolated_feature_query_arm.py run --plan .local/quantum-feature-filter-2026-09-18-plan/plan.json --output-dir .local/quantum-feature-filter-2026-09-18-run --env-file .env
 ```
 

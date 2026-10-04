@@ -1,7 +1,7 @@
 """Isolated development probe for docs/product/search-adaptation-experiment-2026-09-17.md.
 
 Run from the repository root with `uv run python scripts/search_adaptation_probe.py`.
-Writes only to ignored .local/search-adaptation-2026-09-17-v2. No application DB or server is used.
+Writes only to ignored .local/archive/early/search-adaptation-2026-09-17-v2. No application DB or server is used.
 """
 
 from __future__ import annotations
@@ -30,9 +30,9 @@ from deixis.providers.openalex import search_works
 from deixis.providers.registry import CONNECTORS
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / ".local/depth-measure-2026-09-17"
-DEST = ROOT / ".local/search-adaptation-2026-09-17-v2"
-PROTOCOL = ROOT / "docs/product/search-adaptation-experiment-2026-09-17.md"
+SOURCE = ROOT / ".local/archive/early/depth-measure-2026-09-17"
+DEST = ROOT / ".local/archive/early/search-adaptation-2026-09-17-v2"
+PROTOCOL = ROOT / "docs/archive/search-2026-09/search-adaptation-experiment-2026-09-17.md"
 LABELS = {"S1a": "kurt2017", "S2": "uwsn-kconn2022", "S3": "irs2021"}
 MODEL = "gpt-5.6-luna"
 EFFORT = "medium"

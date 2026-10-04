@@ -1,7 +1,7 @@
 """Run the frozen external-question OpenAlex comparison outside the DEIXIS library.
 
 `uv run python scripts/search_method_holdout.py` writes an immutable ignored run
-to .local/search-method-holdout-2026-09-17/. It refuses an existing output dir.
+to .local/archive/early/search-method-holdout-2026-09-17/. It refuses an existing output dir.
 """
 
 from __future__ import annotations
@@ -26,9 +26,9 @@ from deixis.providers.query_compiler import compile_queries
 from deixis.providers.registry import CONNECTORS
 
 ROOT = Path(__file__).resolve().parents[1]
-DEST = ROOT / ".local/search-method-holdout-2026-09-17"
+DEST = ROOT / ".local/archive/early/search-method-holdout-2026-09-17"
 CASES = ROOT / "scripts/search_method_cases_2026-09-17.json"
-PROTOCOL = ROOT / "docs/product/search-method-holdout-protocol-2026-09-17.md"
+PROTOCOL = ROOT / "docs/archive/search-2026-09/search-method-holdout-protocol-2026-09-17.md"
 PROVIDERS = ["openalex", "semantic_scholar", "crossref", "arxiv"]
 MODEL = "gpt-5.6-luna"
 EFFORT = "medium"
@@ -187,7 +187,7 @@ async def main() -> None:
         "provider": "openalex", "model": MODEL, "effort": EFFORT, "seed": SEED,
         "dataset": "princeton-nlp/LitSearch", "indices": [c["litsearch_index"] for c in cases],
     })
-    auth_source = ROOT / ".local/depth-measure-2026-09-17/data-deep/codex-home/auth.json"
+    auth_source = ROOT / ".local/archive/early/depth-measure-2026-09-17/data-deep/codex-home/auth.json"
     if not auth_source.is_file():
         raise RuntimeError("Isolated Codex authentication unavailable")
     home = DEST / "codex-home"

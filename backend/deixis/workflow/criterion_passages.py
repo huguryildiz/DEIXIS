@@ -7,7 +7,7 @@ stored phrases, computed per retrieval, so a later slice can derive it again.
 
 Phrases are written by a model or a user and are never compiled as regular expressions: every word goes through
 `re.escape`, and the only regular-expression parts of a pattern are the two boundaries and the English plural. The
-pattern and the score pair are the ones measured in `.local/generalized-criterion-2026-09-20/run.py`.
+pattern and the score pair are the ones measured in `.local/archive/early/generalized-criterion-2026-09-20/run.py`.
 
 Pure: no clock, no randomness, no store, and the order of the phrases as they arrive never reaches the result (SW14.6).
 """

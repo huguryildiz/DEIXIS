@@ -3,7 +3,7 @@
 Two halves: the contract one proposal must satisfy, and `consensus`, which is the whole of the "one run is never
 used" rule. The questions and proposals here are SYNTHETIC and from more than one field, so no test can be made to
 pass by putting a topic word into the product. Passing shows workflow behavior, not the quality of a criterion:
-that was measured once in `.local/sw-criterion-prompt-fix-2026-09-21/` and is measured again in slice 24.
+that was measured once in `.local/archive/sw/sw-criterion-prompt-fix-2026-09-21/` and is measured again in slice 24.
 """
 
 import json

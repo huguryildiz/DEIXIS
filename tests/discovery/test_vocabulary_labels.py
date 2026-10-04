@@ -7,7 +7,7 @@ visible end to end.
 
 Questions and records here are SYNTHETIC and each question is from a different field, so no test can be made to pass
 by adding a topic word to the product. Passing shows workflow behavior, not labelling quality: that was measured once
-in `.local/sw-block-labelling-2026-09-21/` and is measured again in slice 24.
+in `.local/archive/sw/sw-block-labelling-2026-09-21/` and is measured again in slice 24.
 """
 
 import json

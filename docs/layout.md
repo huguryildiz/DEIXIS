@@ -12,6 +12,7 @@ DEIXIS/
 │   ├── decisions.md            post-handoff durable decisions
 │   ├── product/                product decisions and API/data drafts
 │   ├── methods/                method design and illustrative domain example
+│   ├── archive/                closed work: sw/ (SW track, D114), search-2026-09/ (16–18 Sep search experiments)
 │   └── desktop/                dated handoff, reference index, private screenshots
 ├── backend/deixis/              local API, worker, persistence, providers, model adapters
 ├── apps/web/                   first-slice React UI served by the backend
@@ -21,11 +22,12 @@ DEIXIS/
 ├── tests/                      deterministic tests, synthetic fixtures, prepared model-behavior cases,
 │                               acceptance/ fixture server for the browser run in apps/web/e2e
 ├── scripts/                    isolated probes and real-model case runners
-├── .local/                     ignored probe and model-run evidence
+├── .local/                     ignored probe and model-run evidence; closed runs under archive/sw and archive/early
 └── local-reference/            ignored private transfer package and provenance
 ```
 
-- `docs/product/` owns current product-facing design. Keep accepted requirements separate from proposed dependencies, schemas, and implementation details.
+- `docs/product/` owns current product-facing design. Keep accepted requirements separate from proposed dependencies, schemas, and implementation details. Task prompts for agents are deleted once their work closes; git history keeps them.
+- `docs/archive/` holds design and result notes of closed tracks; nothing new is specified there.
 - `docs/methods/` owns method design and bounded examples. Research source records keep their stated reading and verification limits.
 - `docs/desktop/` is the dated conversation handoff; new specifications do not go there. `screenshots/` remains private and ignored.
 - `local-reference/` retains the private source snapshot and transfer hashes. Do not move, publish, or treat its reports as verified findings.

@@ -10,7 +10,7 @@ Paging (Academic Graph API docs, relevance search, read 2026-09-21): `offset` an
 `offset + limit` may not exceed 1,000; the response names the next `offset` in `next` and leaves it out at the end.
 Reading past 1,000 needs the bulk endpoint.
 
-Bulk search (`/paper/search/bulk`, API description read 2026-09-23, `.local/sw-s2-bulk-probe-2026-09-23/swagger.json`):
+Bulk search (`/paper/search/bulk`, API description read 2026-09-23, `.local/archive/sw/sw-s2-bulk-probe-2026-09-23/swagger.json`):
 the query is matched against title and abstract with `+` for AND, `|` for OR, `"` for a phrase and `( )` for
 precedence; up to 1,000 papers come in one call and a `token` in the answer asks for the next batch; `total` is an
 estimate. It does not order by relevance: `sort` is `paperId` (the default), `publicationDate` or `citationCount`, so

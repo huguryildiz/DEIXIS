@@ -61,8 +61,8 @@ Depo belgelerinden çıkarılan dışlama envanteri aşağıdadır. Bu konu list
 | Dışlanan konu/korpus | Depodaki dayanak |
 |---|---|
 | Kablosuz/su altı sensör ağları, veri paketi boyutu; `res_IXBsnzhYZsKByEdTpSJo`, `res_jAMb1nXLwfrRdC3D8Miq`; Kurt 2017 kaynakları ve önceki WSN geliştirme kaynakları | D124-D129; P16 beklenti/sonuç dosyaları; [L9 beklentilerinin dışlama listesi](p6-slice2-expectations.md) |
-| SW izi: kuantum ağlarında uçtan uca dolanıklık dağıtımının matematiksel optimizasyonu | [SW ölçüm protokolü](sw-slice24-measurement-campaign.md), Sorular q1; plan §7 kural 2 |
-| SW izi: fazla kilolu/obez yetişkinlerde zaman kısıtlı beslenme ve vücut ağırlığı, randomize çalışmalar | Aynı protokol, q-tre; [SW sonuçları](sw-slice24-results.md), [son tıp ölçümü](sw-slice30-results.md) |
+| SW izi: kuantum ağlarında uçtan uca dolanıklık dağıtımının matematiksel optimizasyonu | [SW ölçüm protokolü](../archive/sw/sw-slice24-measurement-campaign.md), Sorular q1; plan §7 kural 2 |
+| SW izi: fazla kilolu/obez yetişkinlerde zaman kısıtlı beslenme ve vücut ağırlığı, randomize çalışmalar | Aynı protokol, q-tre; [SW sonuçları](../archive/sw/sw-slice24-results.md), [son tıp ölçümü](../archive/sw/sw-slice30-results.md) |
 | Moleküler haberleşmede yöneylem araştırması/optimizasyon, beş satırlık alternatif tablo | P16 beklentileri, yol A; D57'nin `res_ZQM2gRxSIqCj6hnTj58q` geliştirme kaydı (`decisions.md`) |
 | NLP'de önceden eğitilmiş dil temsillerinin gelişimi, ELMo/BERT/ALBERT/RoBERTa zinciri | D141; [L9 beklentileri](p6-slice2-expectations.md) ve [sonuçları](p6-slice2-results.md). D124-D129 dışına eklenmiştir: artık gözlenmiş ve yanmış korpustur. |
 

@@ -14,8 +14,8 @@ from deixis.providers.query_compiler import compile_queries
 from deixis.providers.registry import CONNECTORS, available_providers
 
 ROOT = Path(__file__).resolve().parents[1]
-DEST = ROOT / ".local/elicit-consensus-deixis-comparison-2026-09-17-v2"
-PROTOCOL = ROOT / "docs/product/elicit-consensus-deixis-comparison-2026-09-17.md"
+DEST = ROOT / ".local/archive/early/elicit-consensus-deixis-comparison-2026-09-17-v2"
+PROTOCOL = ROOT / "docs/archive/search-2026-09/elicit-consensus-deixis-comparison-2026-09-17.md"
 CASES = ROOT / "scripts/elicit_consensus_deixis_comparison_cases_2026-09-17.json"
 MODEL, EFFORT = "gpt-5.6-luna", "medium"
 SCHEMA = {"type": "object", "additionalProperties": False, "properties": {
@@ -47,7 +47,7 @@ async def main() -> None:
     write(DEST / "manifest.json", {"protocol_sha256": sha(PROTOCOL), "cases_sha256": sha(CASES),
         "runner_sha256": sha(Path(__file__)), "source_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "model": MODEL, "effort": EFFORT, "providers": providers})
-    auth_source = ROOT / ".local/depth-measure-2026-09-17/data-deep/codex-home/auth.json"
+    auth_source = ROOT / ".local/archive/early/depth-measure-2026-09-17/data-deep/codex-home/auth.json"
     if not auth_source.is_file():
         raise SystemExit("Isolated Codex authentication unavailable")
     home = DEST / "codex-home"; home.mkdir(mode=0o700); shutil.copyfile(auth_source, home / "auth.json"); os.chmod(home / "auth.json", 0o600)

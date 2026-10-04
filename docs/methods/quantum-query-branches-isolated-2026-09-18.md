@@ -21,7 +21,7 @@ Only after both arms finish, inspect the six reused control DOIs and Elicit's in
 ## Commands
 
 ```sh
-uv run python scripts/isolated_query_branches.py prepare --baseline-plan .local/quantum-hybrid-500-1000-2026-09-18-run-b/frozen-plan.json --model gemini-3.5-flash --reasoning-effort medium --plan-dir .local/quantum-query-branches-plan --env-file .env
+uv run python scripts/isolated_query_branches.py prepare --baseline-plan .local/archive/early/quantum-hybrid-500-1000-2026-09-18-run-b/frozen-plan.json --model gemini-3.5-flash --reasoning-effort medium --plan-dir .local/quantum-query-branches-plan --env-file .env
 uv run python scripts/isolated_query_branches.py run --plan .local/quantum-query-branches-plan/plan.json --output-dir .local/quantum-query-branches-run --env-file .env
 ```
 

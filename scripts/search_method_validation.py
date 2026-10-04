@@ -23,8 +23,8 @@ from search_compact_development import EFFORT, MODEL, SCHEMA, valid_terms
 from search_method_holdout import REVIEW_SCHEMA
 
 ROOT = Path(__file__).resolve().parents[1]
-DEST = ROOT / ".local/search-method-validation-2026-09-17"
-PROTOCOL = ROOT / "docs/product/search-method-validation-2026-09-17.md"
+DEST = ROOT / ".local/archive/early/search-method-validation-2026-09-17"
+PROTOCOL = ROOT / "docs/archive/search-2026-09/search-method-validation-2026-09-17.md"
 CASES = ROOT / "scripts/search_method_validation_cases_2026-09-17.json"
 INSTRUCTION = (
     "Propose search vocabulary for OpenAlex title and abstract, using only the question. "
@@ -117,7 +117,7 @@ async def main() -> None:
         "source_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "model": MODEL, "effort": EFFORT, "providers": ["openalex", "semantic_scholar"],
     })
-    auth_source = ROOT / ".local/depth-measure-2026-09-17/data-deep/codex-home/auth.json"
+    auth_source = ROOT / ".local/archive/early/depth-measure-2026-09-17/data-deep/codex-home/auth.json"
     home = DEST / "codex-home"
     home.mkdir(mode=0o700)
     shutil.copyfile(auth_source, home / "auth.json")

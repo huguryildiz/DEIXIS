@@ -8,7 +8,7 @@ Worktree: `/Users/huguryildiz/Documents/GitHub/DEIXIS-p8b1`, detached at `3bbc59
 `PYTHONPATH=backend:. UV_CACHE_DIR=/tmp/deixis-uv-cache .venv/bin/python -m pytest ...`.
 
 **No git state-changing commands** (no add, commit, stash, checkout, reset, branch, worktree). Leave every change uncommitted. No real-model call, no
-provider call, no network. Do not touch `../DEIXIS*` worktrees, `TODO.md`, `.vscode/`, `scripts/local_index.py`, `docs/product/sw-status.md`, the live
+provider call, no network. Do not touch `../DEIXIS*` worktrees, `TODO.md`, `.vscode/`, `scripts/local_index.py`, `docs/archive/sw/sw-status.md`, the live
 service on port 8765, or the live data directory. **Do not edit** (other sessions own them): `backend/deixis/storage/db.py`,
 `backend/deixis/api/app.py`, `backend/deixis/__main__.py`, `backend/deixis/documents/pdf.py`,
 `backend/deixis/documents/arxiv_source.py`, `scripts/p9/*`, `tests/process/*`, anything under `backend/deixis/models/` and

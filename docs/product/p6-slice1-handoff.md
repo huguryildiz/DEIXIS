@@ -240,7 +240,7 @@ eksenin çoğu gerçekten boş. Yani kısalık bir hata değil, **kanıtın ger�
 Kalıp durumu `report_phrase_repairs.outcome` ve `validation_json.issues` içinde duruyor. Bu koşuda onarım
 III'te 5 cümleyi `kept` yaptı, 9 cümle `unframed_exception` kaldı.
 
-**Çıktılar:** `.local/p6-p5-2026-09-18/` — `rapor.md` (1. koşu), `rapor-2-...md` (2. koşu),
+**Çıktılar:** `.local/archive/early/p6-p5-2026-09-18/` — `rapor.md` (1. koşu), `rapor-2-...md` (2. koşu),
 `rapor-4-dokuz-bolum.md` (bu koşu).
 
 **P9 / P9.5 — rapor koşusunun kendi bütçesi.** ✅ `e09005a`, `d47a928`, `28f78a9`. Rapor koşusu artık
@@ -265,7 +265,7 @@ için burada duruyor.
 
 `run_7VisN9hwiE5uI6T5Zu80`, rapor `rpt_PFJ9dkcKJl0j3rhKgErn`, `gpt-5.6-luna`, kopya kütüphane, 8799.
 **Koşu `completed`, rapor `valid`, `report_version` 1, 11 bölümün 11'i yazıldı, montaj denetimleri geçti.**
-24 model çağrısı (tavan 50). Çıktı: `.local/p6-p5-2026-09-18/rapor-7-TAM.md`.
+24 model çağrısı (tavan 50). Çıktı: `.local/archive/early/p6-p5-2026-09-18/rapor-7-TAM.md`.
 
 Bölüm kelime sayıları: abstract 66, I 61, II 203 (kod), III 99, IV 86, V 87, VI 13, VII 12, VIII 16, IX 79,
 index_terms 15 — **toplam 737 kelime**. Plandaki alt sınırların çok altında (III için 244, IV için 313).

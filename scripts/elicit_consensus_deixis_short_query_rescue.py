@@ -12,8 +12,8 @@ from deixis.providers.common import normalize_doi
 from deixis.providers.registry import CONNECTORS
 
 ROOT = Path(__file__).resolve().parents[1]
-DEST = ROOT / ".local/elicit-consensus-deixis-short-query-rescue-2026-09-17"
-PROTOCOL = ROOT / "docs/product/elicit-consensus-deixis-short-query-rescue-2026-09-17.md"
+DEST = ROOT / ".local/archive/early/elicit-consensus-deixis-short-query-rescue-2026-09-17"
+PROTOCOL = ROOT / "docs/archive/search-2026-09/elicit-consensus-deixis-short-query-rescue-2026-09-17.md"
 CASES = ROOT / "scripts/elicit_consensus_deixis_comparison_cases_2026-09-17.json"
 QUERIES = ["algae communication", "algal signalling", "molecular communication algae", "algae resource allocation"]
 

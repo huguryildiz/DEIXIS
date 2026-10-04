@@ -18,10 +18,10 @@ from deixis.providers.query_compiler import _fit
 from deixis.providers.registry import CONNECTORS
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / ".local/search-compact-development-2026-09-17"
-DEST = ROOT / ".local/search-provider-complement-2026-09-17"
+SOURCE = ROOT / ".local/archive/early/search-compact-development-2026-09-17"
+DEST = ROOT / ".local/archive/early/search-provider-complement-2026-09-17"
 CASES = ROOT / "scripts/search_method_cases_2026-09-17.json"
-PROTOCOL = ROOT / "docs/product/search-provider-complement-development-2026-09-17.md"
+PROTOCOL = ROOT / "docs/archive/search-2026-09/search-provider-complement-development-2026-09-17.md"
 
 
 def gold_hits(dois: set[str], gold: list[dict]) -> list[str]:

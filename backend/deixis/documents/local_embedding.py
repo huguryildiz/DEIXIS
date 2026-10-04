@@ -62,7 +62,7 @@ class ModelFile:
     sha256: str
 
 
-# Byte counts and digests as the plan's measurement recorded them (.local/sw-slice21-plan-2026-09-25/download.json).
+# Byte counts and digests as the plan's measurement recorded them (.local/archive/sw/sw-slice21-plan-2026-09-25/download.json).
 MODEL_FILES: tuple[ModelFile, ...] = (
     ModelFile("model_optimized.onnx", 66_465_124, "51f1bd0addd6e859e42c2c8021a5e5461385bb676a649f4b269aa445449f2431"),
     ModelFile("tokenizer.json", 711_396, "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66"),

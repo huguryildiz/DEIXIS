@@ -3,7 +3,7 @@
 The live library is opened read-only and copied with SQLite's backup API into a scratch directory; the copy is migrated to
 0053, checked, migrated to 0054 and checked again (the plan's number 16 checks: rowid/id/text_sha256/text_source equality,
 an FTS query and `integrity-check`, `foreign_key_check`, the DDL difference and the trigger SQL). Source files already
-downloaded by the plan (`.local/sw-slice22-plan-2026-09-25/src/`) are copied into the scratch data directory's
+downloaded by the plan (`.local/archive/sw/sw-slice22-plan-2026-09-25/src/`) are copied into the scratch data directory's
 `arxiv-sources/` and registered as downloaded rows; nothing is fetched. Then, for every stored arXiv PDF (one PDF per arXiv
 version), the product's code decides eligibility, inspects and matches the source in its child process and places the
 matches in a text-layer extraction, without writing any extraction. Counted apart: number lines, candidates that pass the
@@ -36,7 +36,7 @@ from deixis.storage import db
 
 REPO = Path(__file__).resolve().parents[1]
 LIVE = Path.home() / "Library/Application Support/DEIXIS"
-PLAN = REPO / ".local/sw-slice22-plan-2026-09-25"
+PLAN = REPO / ".local/archive/sw/sw-slice22-plan-2026-09-25"
 
 
 def backup(live: Path, copy: Path) -> None:

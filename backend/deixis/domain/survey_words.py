@@ -3,7 +3,7 @@
 Data only, so the rule and the lists it reads are reviewed apart. The lists are field-independent: no word of a
 subject enters them, and the research whose own question uses one of these words drops it for that research
 (`survey.title_words`). They are the lists the SW5 probe measured on one topic
-(`.local/quantum-source-comparison-2026-09-18/survey_metadata.py`), not a wider guess.
+(`.local/archive/early/quantum-source-comparison-2026-09-18/survey_metadata.py`), not a wider guess.
 """
 
 from __future__ import annotations

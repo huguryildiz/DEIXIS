@@ -8,7 +8,7 @@ was not measured. No count removes a term for being large: the one-million rule 
 apply to what the model wrote.
 
 The model's terms become the proposal's vocabulary and the code's own query (slice 13g) is searched beside it, as
-the second measurement's "model + code" arm did (`.local/sw-model-query-experiment-2026-09-24/`). The code vocabulary
+the second measurement's "model + code" arm did (`.local/archive/sw/sw-model-query-experiment-2026-09-24/`). The code vocabulary
 is kept whole under `code_query`, so the ranking, the abstract stage's code rules and the protocol can read the terms
 of both queries, while the second round and the approval card's corrections read the model's alone.
 """

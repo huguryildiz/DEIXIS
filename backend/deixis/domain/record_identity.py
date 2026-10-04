@@ -2,7 +2,7 @@
 
 `classify_pair` is pure: it reads no database, calls no model and asks no embedding, so the same two records always
 give the same verdict and a stored link can be re-derived from what was stored. The thresholds and the kind lists come
-from one measurement on one topic (`.local/quantum-dedup-2026-09-18/`); they are repository and notice names, never
+from one measurement on one topic (`.local/archive/early/quantum-dedup-2026-09-18/`); they are repository and notice names, never
 words of a subject.
 
 Only a preprint with its published record, or two preprints, may merge into one work. Two published records never do:

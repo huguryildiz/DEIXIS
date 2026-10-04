@@ -20,8 +20,8 @@ from deixis.providers.registry import CONNECTORS
 from search_method_holdout import gold_score
 
 ROOT = Path(__file__).resolve().parents[1]
-DEST = ROOT / ".local/search-compact-development-2026-09-17"
-PROTOCOL = ROOT / "docs/product/search-compact-development-2026-09-17.md"
+DEST = ROOT / ".local/archive/early/search-compact-development-2026-09-17"
+PROTOCOL = ROOT / "docs/archive/search-2026-09/search-compact-development-2026-09-17.md"
 CASES = ROOT / "scripts/search_method_cases_2026-09-17.json"
 MODEL = "gpt-5.6-luna"
 EFFORT = "medium"
@@ -54,7 +54,7 @@ async def main() -> None:
         "source_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "model": MODEL, "effort": EFFORT, "provider": "openalex",
     })
-    auth_source = ROOT / ".local/depth-measure-2026-09-17/data-deep/codex-home/auth.json"
+    auth_source = ROOT / ".local/archive/early/depth-measure-2026-09-17/data-deep/codex-home/auth.json"
     home = DEST / "codex-home"
     home.mkdir(mode=0o700)
     shutil.copyfile(auth_source, home / "auth.json")

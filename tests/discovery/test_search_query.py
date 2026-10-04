@@ -3,7 +3,7 @@
 Every question, term and count here is SYNTHETIC and from more than one field, OpenAlex is mocked and the model is
 the fake adapter, so passing shows workflow behavior: which call is made, what is counted, what is searched and what
 is recorded. It says nothing about whether a model writes a good query; that was measured on three questions with
-one model (`.local/sw-model-query-experiment-2026-09-24/result.md`) and nowhere else.
+one model (`.local/archive/sw/sw-model-query-experiment-2026-09-24/result.md`) and nowhere else.
 """
 
 import asyncio

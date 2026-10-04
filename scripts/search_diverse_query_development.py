@@ -19,9 +19,9 @@ from deixis.providers.common import normalize_doi
 from deixis.providers.registry import CONNECTORS
 
 ROOT = Path(__file__).resolve().parents[1]
-DEST = ROOT / ".local/search-diverse-query-development-2026-09-17"
-BASELINE = ROOT / ".local/search-method-validation-2026-09-17"
-PROTOCOL = ROOT / "docs/product/search-diverse-query-development-2026-09-17.md"
+DEST = ROOT / ".local/archive/early/search-diverse-query-development-2026-09-17"
+BASELINE = ROOT / ".local/archive/early/search-method-validation-2026-09-17"
+PROTOCOL = ROOT / "docs/archive/search-2026-09/search-diverse-query-development-2026-09-17.md"
 CASES = ROOT / "scripts/search_method_validation_cases_2026-09-17.json"
 MODEL, EFFORT = "gpt-5.6-luna", "medium"
 SCHEMA = {"type": "object", "additionalProperties": False,
@@ -63,7 +63,7 @@ async def main() -> None:
         "source_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "model": MODEL, "effort": EFFORT, "provider": "semantic_scholar",
     })
-    auth_source = ROOT / ".local/depth-measure-2026-09-17/data-deep/codex-home/auth.json"
+    auth_source = ROOT / ".local/archive/early/depth-measure-2026-09-17/data-deep/codex-home/auth.json"
     home = DEST / "codex-home"
     home.mkdir(mode=0o700)
     shutil.copyfile(auth_source, home / "auth.json")

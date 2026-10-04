@@ -62,7 +62,7 @@ def select_seeds(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list
 
 
 def existing_terms() -> set[str]:
-    source = json.loads((previous.ROOT / ".local/quantum-feature-filter-2026-09-18-plan-c/plan.json").read_text())
+    source = json.loads((previous.ROOT / ".local/archive/early/quantum-feature-filter-2026-09-18-plan-c/plan.json").read_text())
     terms = {item["term"] for arm in source["arms"].values() for query in arm
              for group in query.get("groups", []) for item in group}
     terms.update(item["term"] for item in earlier.literal_candidates(previous.QUESTION))

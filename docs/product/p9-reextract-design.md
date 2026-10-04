@@ -4,7 +4,7 @@
 
 The proposed recovery has two explicit outcomes: restoring the file's expected bytes, and publishing a new text extraction. A same-hash upload can do the first without doing the second. The user then requests one bounded local extraction attempt. Each attempt has its own identity even when its extractor profile is unchanged. Promotion preserves every earlier passage and evidence link, and records which extraction future work will use. A password diagnosis can replace an obsolete empty-text diagnosis without claiming that text was recovered.
 
-Requirement sources: [D165 and D169](../decisions.md), particularly D165's Limits and D169's "Not fixed" list; [the H7 item ledger](p9-h7-prompt.md); D45 and D47's retained-passage rule. Organization follows [the P8 design note](p8-review-watch-design.md). Repository authority comes from [AGENTS.md](../../AGENTS.md), [the documentation map](../README.md) and [layout](../layout.md). File-and-line references below describe this base, not a running service.
+Requirement sources: [D165 and D169](../decisions.md), particularly D165's Limits and D169's "Not fixed" list; the H7 item ledger; D45 and D47's retained-passage rule. Organization follows [the P8 design note](p8-review-watch-design.md). Repository authority comes from [AGENTS.md](../../AGENTS.md), [the documentation map](../README.md) and [layout](../layout.md). File-and-line references below describe this base, not a running service.
 
 ## 1. Scope and non-scope
 

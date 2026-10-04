@@ -4,7 +4,7 @@ The model names the concepts and the providers; this module writes every query s
 paired query requires one full core synonym AND one term of another concept family. Every
 query passes `query_rules.query_issues` and the 300-character limit before it is returned; terms are trimmed from the
 end of a group until it does. With a core depth, OpenAlex first gets the core group alone, read deeper than the other
-queries: a model-free probe found most known works beyond a query's first 25 results (docs/product/search-recall-depth-2026-09-17.md).
+queries: a model-free probe found most known works beyond a query's first 25 results (docs/archive/search-2026-09/search-recall-depth-2026-09-17.md).
 The opt-in compact OpenAlex strategy keeps the deep core query but replaces each paired OpenAlex query with a short
 core-phrase plus family-word probe. It was measured on reused controls only; the legacy strategy remains default.
 """

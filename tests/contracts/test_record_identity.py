@@ -2,7 +2,7 @@
 
 All records here are SYNTHETIC. Passing these tests shows that the rule table of slice 03 is implemented as written;
 it says nothing about how well the thresholds separate real versions from sibling papers, which was measured on one
-topic only (`.local/quantum-dedup-2026-09-18/`) and is not measured inside the product.
+topic only (`.local/archive/early/quantum-dedup-2026-09-18/`) and is not measured inside the product.
 """
 
 import pytest

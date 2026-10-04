@@ -8,7 +8,7 @@ four points, asks no settled work again and fetches the same set.
 
 Records, titles and abstracts are SYNTHETIC and from two fields, every transport is mocked and the model is scripted.
 Passing shows the run follows the slice, not that it is faster on a real library: how much earlier a real fetch
-ends was replayed on stored libraries (`.local/sw-slice17a-plan-2026-09-24/`), not measured here.
+ends was replayed on stored libraries (`.local/archive/sw/sw-slice17a-plan-2026-09-24/`), not measured here.
 """
 
 import asyncio

@@ -1,4 +1,4 @@
-# Held-out known set for the search-depth measurement (docs/product/search-recall-depth-2026-09-17.md §5, S3), frozen before any run.
+# Held-out known set for the search-depth measurement (docs/archive/search-2026-09/search-recall-depth-2026-09-17.md §5, S3), frozen before any run.
 # Chosen as a popular topic: OpenAlex search.title_and_abstract for "intelligent reflecting surface" OR "reconfigurable
 # intelligent surface" matched 20,856 works on 2026-09-17 (S1's core query 261, S2's 2,426).
 # Source: Wu, Zhang, Zheng, You, Zhang, "Intelligent Reflecting Surface-Aided Wireless Communications: A Tutorial",

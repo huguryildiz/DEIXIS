@@ -27,8 +27,8 @@ from deixis.storage import db
 from deixis.workflow import links, store as store_module
 from deixis.workflow.store import Store
 
-ROUND = Path(".local/quantum-rank-fusion-2026-09-18/round.json")
-OUT = Path(".local/sw-paging-timing-2026-09-21/timing.json")
+ROUND = Path(".local/archive/early/quantum-rank-fusion-2026-09-18/round.json")
+OUT = Path(".local/archive/sw/sw-paging-timing-2026-09-21/timing.json")
 WORDS = ("release scheduling diffusion channel packet size energy budget molecular relay receiver decoding"
          " estimation throughput latency quantum repeater entanglement purification network routing").split()
 

@@ -6,7 +6,7 @@ and decides no selection (SW5.4). Only the title signal takes a record off the s
 by the caller, not here.
 
 The word lists and the 150-reference threshold were chosen on one topic against an earlier model's labels
-(`.local/quantum-source-comparison-2026-09-18/`), so they measure agreement with that judgement, not accuracy.
+(`.local/archive/early/quantum-source-comparison-2026-09-18/`), so they measure agreement with that judgement, not accuracy.
 """
 
 from __future__ import annotations

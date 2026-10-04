@@ -5,7 +5,7 @@ what it decides is which candidate the screening batches read first. No model is
 the four code signals are computed from what the search already stored, and the embedding signal is read from the
 similarities `_source_similarity` wrote.
 
-The signals are the ones measured in `.local/quantum-rank-fusion-2026-09-18/fuse.py` on one topic with 20 positives,
+The signals are the ones measured in `.local/archive/early/quantum-rank-fusion-2026-09-18/fuse.py` on one topic with 20 positives,
 with four named deviations (D79): the product's own word splitter, a block score kept as a pair instead of a
 weighted sum, matching at a word start, and a record without an abstract scored by BM25 on its title while only
 TF-IDF counts it as missing. That measurement showed fusion is not worse than BM25 alone and protects against one

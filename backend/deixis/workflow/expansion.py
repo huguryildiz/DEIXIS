@@ -8,7 +8,7 @@ that could not be read is not evidence, so the phrase is refused: unlike the que
 data has nothing but these counts behind it.
 
 The thresholds come from one probe on one topic that learned from *verified* positives
-(`.local/quantum-source-comparison-2026-09-18/expand_from_data.py`); the product learns from all candidates of the
+(`.local/archive/early/quantum-source-comparison-2026-09-18/expand_from_data.py`); the product learns from all candidates of the
 first round and has never been measured in that condition (slice 24).
 
 The counts are read once. The step stores them, so a resumed run reuses the numbers of the first run rather than

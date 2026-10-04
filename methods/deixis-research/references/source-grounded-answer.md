@@ -80,7 +80,9 @@ access and scope limits are stated.
    when that explanation is your reading of the passages rather than their
    statement, make it an `analyst_inference` claim.
 9. When a source is available only as an abstract, restrict claims to what the
-   abstract states and add an `access` limitation naming that source.
+   abstract states and add an `access` limitation naming that source. When you
+   report a number from an abstract, say in the claim that it comes from the
+   abstract.
 10. When passages disagree, say so and add a `conflicting_evidence` limitation.
 11. Put parts of the question the passages do not answer in `unanswered_aspects`.
    An empty claim list with a clear statement of what is missing is a valid answer.

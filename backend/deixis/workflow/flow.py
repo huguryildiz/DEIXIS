@@ -81,6 +81,7 @@ NO_INCLUDABLE_SOURCE = "no_includable_source"
 MAX_ABSTRACT_CHARS = 2500
 MAX_PASSAGES_PER_SOURCE = 6  # passages one included source may contribute to an answer step
 PDF_PAGES_PER_SOURCE = 2  # PDF passages a source adds to its abstract when the included sources outnumber the passage limit
+ABSTRACT_ROOM_DIVISOR = 4  # an answer gives at most limit // 4 passages to candidates read from their abstracts (D225)
 MAX_SMALL_PDF_CHARS = 60_000  # bounded full extracted text for a single attached PDF
 MAX_SMALL_PDF_PAGES = 12
 # Passages of its one source a cell extraction call reads. A source within MAX_CELL_PASSAGES and MAX_SMALL_PDF_CHARS is
@@ -2510,11 +2511,14 @@ class ResearchFlow:
 
         self._checkpoint(run_id)
         self.store.update_run(run_id, stage="answer")
-        semantic = await self._semantic_ranking(run, scope, included)
+        # Candidates the full-text stage never reached, or found no open text for, give their abstracts (D225).
+        extra = self._abstract_sources(run, heads) if scope.get("search_workflow") == "sw" else []
+        semantic = await self._semantic_ranking(run, scope, included + extra)
         # An sw research fills part of the input from the cue phrases its criterion was approved with (D84); a
         # legacy research passes nothing and keeps the hand-written formulation quota it had.
         patterns = self._criterion_phrases(run, scope) if scope.get("search_workflow") == "sw" else None
-        passages = self._retrieve(rid, scope, included, run["budget"]["max_answer_passages"], semantic, patterns)
+        passages = self._retrieve(rid, scope, included + extra, run["budget"]["max_answer_passages"], semantic, patterns,
+                                  abstract_only=set(extra))
         if not passages:
             self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
                                    {"ok": True, "issues": [], "note": "No accessible passages for the included sources."},
@@ -2562,6 +2566,59 @@ class ResearchFlow:
             "flow": flow, "included": len(heads),
             # Included works whose only text is the person's file not read yet: they give the answer nothing (D100).
             "included_without_answer_text": sum(1 for head in heads if self.store.answer_version(rid, head) is None)})
+
+    def _abstract_sources(self, run: dict[str, Any], heads: list[str]) -> list[str]:
+        """Works an sw answer reads from their abstracts alone, best ranked first, frozen in a code step (D225).
+
+        A work counts when the abstract stage kept it as a candidate and the full-text stage either never decided it
+        or found no open text for it (`no_fulltext`), under this question revision; its selection is still pending
+        (nothing excluded it, no person decided it) and it has an abstract and no PDF text. The pool is the run's `max_candidates` best ranked such works; `_retrieve` gives a quarter
+        of the answer input to the best of them by the answer's own source order. A resumed run keeps the list its
+        first pass stored, less any work a person has decided since.
+        """
+        rid, revision = run["research_id"], run["scope_revision"]
+        pending = {r[0] for r in self.store.conn.execute(
+            "SELECT source_version_id FROM selections WHERE research_id = ? AND state = 'pending' AND origin != 'user'",
+            (rid,))}
+        def without_text(head: str) -> bool:
+            return not any(self.store.has_pdf_text(v) for v in [head, *self.store.work_versions(rid, head)])
+
+        step = self.store.step(run["id"], "answer_abstract_sources", "code:answer_abstract_sources")
+        if step["status"] == "succeeded":
+            # A person who decided one of them since the list was stored has the last word (AGENTS.md, User Authority),
+            # and a work whose PDF text arrived since is no longer abstract-only.
+            return [svid for svid in step["output"]["sources"] if svid in pending and without_text(svid)]
+        self.store.start_step(step["id"])
+        decisions = DecisionStore(self.store)
+        limit = run["budget"]["max_candidates"]
+        facts = decisions.facts(rid)
+        work_heads = facts["heads"]
+        head_of = {svid: work_heads[wid] for svid, wid in
+                   self.store.work_ids(decisions.latest_ranking(rid, revision) or []).items()
+                   if wid in work_heads}
+        taken, sources, reasons = set(heads), [], Counter()
+        for svid in decisions.latest_ranking(rid, run["scope_revision"]) or []:
+            head = head_of.get(svid)
+            if head is None or head in taken or len(sources) >= limit:
+                continue
+            taken.add(head)
+            outcome = decisions.work_outcome(rid, self.store.source(head)["work_id"], facts)
+            kept = (outcome.get("stage") == "abstract" and outcome.get("outcome") == "candidate"
+                    or outcome.get("stage") == "fulltext" and outcome.get("outcome") == "unresolved"
+                    and outcome.get("reason_code") == "no_fulltext")
+            # Decided under this question revision: an older revision's candidate was screened against another question.
+            kept = kept and self.store.conn.execute(
+                "SELECT 1 FROM stage_decisions WHERE research_id = ? AND source_version_id = ? AND stage = ?"
+                " AND superseded_at IS NULL AND scope_revision = ?",
+                (rid, outcome["source_version_id"], outcome["stage"], revision)).fetchone() is not None
+            # A work with PDF text in any version is not abstract-only.
+            if (kept and head in pending and without_text(head)
+                    and any(p["kind"] == "abstract" for p in self.store.passages_for(head))):
+                sources.append(head)
+                reasons[f"{outcome['stage']}/{outcome['reason_code']}"] += 1
+        self.store.finish_step(step["id"], "succeeded", output={"sources": sources, "limit": limit,
+                                                                "by_decision": dict(reasons)})
+        return sources
 
     def _criterion_phrases(self, run: dict[str, Any], scope: dict[str, Any]) -> list[tuple[str, re.Pattern[str]]]:
         """The approved cue phrases this answer run orders criterion passages with, compiled (D84, SW12.3).
@@ -4326,13 +4383,26 @@ class ResearchFlow:
 
     def _retrieve(self, research_id: str, scope: dict[str, Any], included: list[str], limit: int,
                   semantic: list[dict[str, Any]] | None = None,
-                  patterns: list[tuple[str, re.Pattern[str]]] | None = None) -> list[dict[str, Any]]:
+                  patterns: list[tuple[str, re.Pattern[str]]] | None = None,
+                  abstract_only: set[str] = frozenset()) -> list[dict[str, Any]]:
         """Passages for the answer step. `patterns` is given by an sw run alone and may be empty (D84).
 
         Without it the selection is what it was before slice 11: the hand-written formulation quota. With it, part
         of the room is filled from the criterion order instead, and an empty list means the whole input comes from
         the topic order — an sw research never falls back to the topic-specific formulation list.
+
+        A source in `abstract_only` gives its abstract and nothing else, from a room of its own: at most a quarter of
+        the limit, in the answer's source order among those sources; the other sources share the rest as before (D225).
         """
+        if abstract_only:
+            main = [svid for svid in included if svid not in abstract_only]
+            extra = [svid for svid in included if svid in abstract_only]
+            room = min(len(extra), limit // ABSTRACT_ROOM_DIVISOR)
+            in_main = set(main)
+            selected = self._retrieve(research_id, scope, main, limit - room,
+                                      None if semantic is None else [p for p in semantic if p["source_version_id"] in in_main],
+                                      patterns) if main else []
+            return selected + self._abstract_passages(research_id, scope, extra, room, semantic)
         # A short attached document can fit in the answer input in its entirety. Do not discard relevant later pages
         # merely because the multi-source six-passage cap was reached; keep that cap for larger or mixed corpora.
         if len(included) == 1 and scope.get("source_scope") in ("attached", "attached_and_academic"):
@@ -4449,6 +4519,23 @@ class ResearchFlow:
                 selected[p["id"]] = p
                 taken[p["source_version_id"]] = taken.get(p["source_version_id"], 0) + 1
         return list(selected.values())
+
+    def _abstract_passages(self, research_id: str, scope: dict[str, Any], sources: list[str], room: int,
+                           semantic: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        """The abstracts of `room` of these sources, best matching the question first (D225)."""
+        abstracts = {svid: next((p for p in self.store.passages_for(svid) if p["kind"] == "abstract"), None) for svid in sources}
+        texts = {svid: " ".join([self.store.source(svid)["title"], abstracts[svid]["text"] if abstracts[svid] else ""])
+                 for svid in sources}
+        semantic_rank = None
+        if semantic is not None:
+            semantic_rank = {}
+            for p in semantic:
+                if p["source_version_id"] in abstracts:
+                    semantic_rank.setdefault(p["source_version_id"], len(semantic_rank))
+        # Relevance alone orders them: none was chosen by a person, and how many providers indexed a paper says
+        # little about whether its abstract answers the question (measured on the DBR/VBF benchmark, D225).
+        order = answer_source_order(sources, {}, texts, self._topic_terms(research_id, scope), semantic_rank)
+        return [abstracts[svid] for svid in order if abstracts[svid]][:room]
 
     @staticmethod
     def _two_quota_pages(topic: list[dict[str, Any]], criterion: list[dict[str, Any]]) -> list[dict[str, Any]]:

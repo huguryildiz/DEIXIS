@@ -2,6 +2,12 @@
 
 Durable decisions, newest first. Each entry is short: status, what was decided, and the main limit. The full original text is in Git history at commit `d213395`. An entry does not turn an unimplemented proposal into a working feature. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D225 — Candidates without full text give their abstracts to an sw answer
+Status: accepted (Claude wrote, gpt-6-sol medium reviewed in three rounds) · Date: 2026-10-05
+Context: On the DBR/VBF benchmark question (`res_qqOHHl3hGsZWrihkkwBW`) the answer read only the 26 included works. The two direct DBR–VBF comparisons a reference tool answered from were abstract-stage candidates the full-text cap (~112) never tried, so the answer said no direct comparison was in the passages.
+Decision: An sw answer run stores `code:answer_abstract_sources`: up to `max_candidates` works in the latest ranking order whose outcome under this question revision is an abstract `candidate` with no full-text decision, or full-text `unresolved/no_fulltext`; selection still pending and not the person's; an abstract and no PDF text in any version. A resumed run reuses the list, less works a person decided or that got PDF text since. `_retrieve` gives them `max_answer_passages // 4` places, abstracts only, ordered by relevance alone (BM25 plus semantic rank; provider count and user choice are left out); included works share the rest as before. `max_answer_passages` is unchanged. The method package asks that a number taken from an abstract say so.
+Limits: One question, one answer run on a library copy (Sol answer model, Gemini embeddings): 24 sources and 48 passages went in, Maulana 2019 entered and was cited with its 33.6 % / 19.8 % figures, Hakim 2018 was in the 250-work pool but not among the 12 abstracts (lexical place 73: its abstract names the protocols only as DBR and VBF). Benchmark gate (a) still fails. The cited claim did not itself say "abstract"; the access limitation did. An sw answer with no included work still ends `no_evidence` (D106).
+
 ## D224 — Scopus abstracts are asked 25 DOIs per request
 Status: accepted (Claude wrote, gpt-6.1-sol medium reviewed in three rounds) · Date: 2026-10-04
 Context: D91 asked Scopus one DOI per request. Live check on 4 Oct over the university VPN with the configured key: one `view=COMPLETE` query of 25 DOIs joined with `OR` answered 200 in 0.8 s, 22 entries, each naming an asked DOI and each with an abstract; five single-DOI requests gave the same abstract presence.

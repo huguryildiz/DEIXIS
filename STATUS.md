@@ -6,7 +6,7 @@
 
 **P9 kapandı, P10’a hazır** ([D218](docs/decisions.md#d218--p9-exit)). Son matris çifti `0af3216` üzerinde iki kez geçti: pytest 14.265 toplandı, 0 başarısız, 23 atlandı; süreç 45/45; tarayıcı 212/212. Bu, tek macOS arm64 makinede sentetik kayıt ve betikli model kanıtıdır; kapasite satırları paralel yük altında koştu. H9e ilk kabul edilen gerçek model raporunu tamamladı; kalite koşullarının çoğu aralık dışında. D217 ölçüm kümesini kapattı, bütün borçları kapatmadı.
 
-Kural (sahip, 3 Ekim): yazan ve inceleyen farklı şirketin modeli; Sol yazarsa Claude, Claude yazarsa Sol inceler. Sahip adına kararlar Sol medium ile ortak verilir. D218’in üst durum satırı inceleme yapıldığını söylerken son sınır paragrafı inceleme kaydını bekliyor; bu belge çelişkiyi çözmüyor.
+Kural (sahip, 3 Ekim): yazan ve inceleyen farklı şirketin modeli; Sol yazarsa Claude, Claude yazarsa Sol inceler. Sahip adına kararlar Sol medium ile ortak verilir.
 
 ## Sıradaki
 

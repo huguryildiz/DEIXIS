@@ -155,7 +155,10 @@ def server_owns_copy(root: Path, url: str, log: Path):
             raise MeasurementRefused('lsof ownership check unavailable') from exc
         records.append(dict(command=command, returncode=result.returncode,
                             stdout=result.stdout, stderr=result.stderr))
-        if result.returncode != 0 or result.stderr.strip():
+        # +D can list holders with status 1; their PIDs must still match the listener.
+        directory_holders = (args[:1] == ['+D'] and result.returncode == 1
+                             and bool(result.stdout.strip()))
+        if (result.returncode != 0 and not directory_holders) or result.stderr.strip():
             raise MeasurementRefused("cannot establish server/copy ownership with lsof")
         return result.stdout.splitlines()
     try:

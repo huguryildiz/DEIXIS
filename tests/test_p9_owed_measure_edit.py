@@ -445,6 +445,47 @@ def test_listener_exclusive_ownership_and_record(tmp_path, monkeypatch, problem)
     assert json.loads(log.read_text())['event'] == 'exclusive_ownership'
 
 
+@pytest.mark.parametrize('listing_index,returncode,empty_stdout,stderr,allowed', [
+    (2, 0, False, '', True),
+    (2, 1, False, '', True),
+    (2, 1, True, '', False),
+    (2, 2, False, '', False),
+    (2, 1, False, 'lsof error', False),
+    (0, 1, False, '', False),
+    (1, 1, False, '', False),
+    (0, 0, False, 'lsof error', False),
+    (1, 0, False, 'lsof error', False),
+])
+def test_ownership_lsof_status_by_listing(tmp_path, monkeypatch, listing_index,
+                                         returncode, empty_stdout, stderr, allowed):
+    root = tmp_path / 'data'; root.mkdir(); log = tmp_path / 'guard.jsonl'
+    commands = [
+        ['lsof', '-nP', '-F', 'pn', '-iTCP:8873', '-sTCP:LISTEN'],
+        ['lsof', '-nP', '-F', 'pn', '-p', '123'],
+        ['lsof', '-nP', '-F', 'pn', '+D', str(root)],
+    ]
+    outputs = ['p123\n', f'p123\nn{root}/library.sqlite\n',
+               f'p123\nn{root}/library.sqlite\n']
+    calls = []
+    def run(command, **kwargs):
+        index = len(calls)
+        assert command == commands[index]
+        calls.append(command)
+        return SimpleNamespace(
+            returncode=returncode if index == listing_index else 0,
+            stdout='' if index == listing_index and empty_stdout else outputs[index],
+            stderr=stderr if index == listing_index else '')
+    monkeypatch.setattr(kit.subprocess, 'run', run)
+    if allowed:
+        kit.server_owns_copy(root, 'http://127.0.0.1:8873', log)
+    else:
+        with pytest.raises(kit.MeasurementRefused):
+            kit.server_owns_copy(root, 'http://127.0.0.1:8873', log)
+    record = json.loads(log.read_text())
+    assert record['exclusive'] is allowed
+    assert record['records'][listing_index]['returncode'] == returncode
+
+
 @pytest.mark.parametrize('failure', ['http', 'db', 'safety', 'unprocessable'])
 def test_acceptance_skips_only_unprocessable(tmp_path, monkeypatch, failure):
     from contextlib import contextmanager

@@ -12,7 +12,7 @@ from deixis.storage import db
 from deixis.workflow.review.snapshot import build_snapshot
 from deixis.workflow.review.stale import REASONS, stale_reasons, claim_text_changed
 from deixis.workflow.review.store import NotFound
-from tests.review_helpers import report_with_sections, review_lib, snapshot, make_answer
+from tests.review.review_helpers import report_with_sections, review_lib, snapshot, make_answer
 from tests.report.test_report_claim_links import edit
 
 
@@ -262,7 +262,7 @@ def test_model_skill_and_provider_metadata_do_not_add_reasons(review_lib, monkey
     lib = review_lib; saved = snapshot(lib)
     monkeypatch.setattr(skill, "package_hash", lambda: "sha256:" + "e" * 64)
     lib["conn"].execute("UPDATE source_versions SET title = 'SYNTHETIC new provider title', landing_url = 'https://synthetic.invalid'")
-    from tests.review_helpers import step_payload
+    from tests.review.review_helpers import step_payload
     payload = step_payload(lib, saved, model={"connection": "fake", "requested_model": "SYNTHETIC-other-model"})
     assert lib["store"].step_input_payload(payload["step_input_id"])["model"]["requested_model"] == "SYNTHETIC-other-model"
     assert stale_reasons(lib["reader"], saved) == []

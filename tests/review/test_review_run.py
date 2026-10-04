@@ -12,7 +12,7 @@ from deixis.workflow.flow import CAPABILITIES
 from deixis.workflow.report.review import REVIEW_BUDGET_TOKENS
 from deixis.workflow.review import run as reviews
 from deixis.workflow.review.snapshot import build_snapshot
-from tests.review_helpers import report_with_sections, review_lib, si
+from tests.review.review_helpers import report_with_sections, review_lib, si
 
 
 def content(lib, kind="report"):
@@ -43,7 +43,7 @@ def test_review_envelope_all_fixture_targets_and_capability_copy(kind):
              "cells": [], "columns": part["columns"], "sources": fixture["sources"], "passages": fixture["passages"],
              "elements": part["elements"], "candidate_statement": part["candidate_statement"]}
     if kind == "candidate":
-        from tests.review_candidate_helpers import candidate_context_fixture
+        from tests.review.review_candidate_helpers import candidate_context_fixture
         context = candidate_context_fixture(fixture)
         saved.update({k: context[k] for k in ("candidate_version", "conditions", "critical_assumption", "nearest_simple_explanation")})
         saved.update(kill_search=context["kill_search"], candidate_status=context["status"], matrix=context["matrix"])

@@ -5,7 +5,7 @@ import hashlib
 import json
 
 from deixis.providers.common import ProviderRecord
-from tests.reextract_r2a_helpers import head
+from tests.reextract.reextract_r2a_helpers import head
 
 
 def tear(lib):

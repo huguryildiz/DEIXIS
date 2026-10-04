@@ -8,7 +8,7 @@ import pytest
 from deixis.workflow.watch.scheduler import WatchScheduler
 from deixis.workflow.worker import Worker
 from deixis.workflow.flow import ResearchFlow
-from tests.watch_helpers import watch_offline, watch_api
+from tests.watch.watch_helpers import watch_offline, watch_api
 from tests.watch.test_watch_scheduler import Clock, loop
 
 

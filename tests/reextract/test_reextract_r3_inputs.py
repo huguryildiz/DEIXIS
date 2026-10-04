@@ -12,11 +12,11 @@ from deixis.documents import acquisition, pdf
 from deixis.storage import db
 from deixis.workflow.store import Store
 from tests.helpers import make_pdf
-from tests.reextract_r2a_helpers import api_library, child_lock, head, store_library, url
-from tests.reextract_r2b_helpers import source
+from tests.reextract.reextract_r2a_helpers import api_library, child_lock, head, store_library, url
+from tests.reextract.reextract_r2b_helpers import source
 from tests.reextract.test_reextract_r2b_writers import call_writer, configure
-from tests.reextract_r3_helpers import no_external_calls
-from tests.review_helpers import all_rows
+from tests.reextract.reextract_r3_helpers import no_external_calls
+from tests.review.review_helpers import all_rows
 
 
 WRITERS = ["upload_new", "upload_existing", "waiting", "zotero_import", "zotero_pdfs", "acquisition", "confirmed", "run_fetch", "replace"]
@@ -196,7 +196,7 @@ def test_s7_torn_upgrade_red_on_old(tmp_path, monkeypatch):
 def test_s7_cli_upgrade_continues_and_dry_run_new_contract(tmp_path, monkeypatch, capsys):
     """Paired with S7; CLI outcome and observation writes follow the same verified read."""
     from deixis.__main__ import reextract
-    from tests.reextract_r2a_helpers import seed
+    from tests.reextract.reextract_r2a_helpers import seed
     with api_library(tmp_path, "partial", version="legacy-profile", raise_errors=True) as lib:
         other = seed(lib.store, lib.settings, "partial", version="legacy-profile", data=make_pdf(["SYNTHETIC whole second input"]))
         before = all_rows(lib.conn)

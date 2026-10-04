@@ -13,8 +13,8 @@ from deixis.workflow import flow as flow_module
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.report.store import ReportStore
 from tests.fakes import FakeAdapter
-from tests.review_helpers import report_with_sections, review_lib, stored_review, snapshot, review_run, step_payload, all_rows
-from tests.review_run_helpers import review_api, body
+from tests.review.review_helpers import report_with_sections, review_lib, stored_review, snapshot, review_run, step_payload, all_rows
+from tests.review.review_run_helpers import review_api, body
 
 
 def test_review_stage_is_claim_check_not_extraction(review_lib):
@@ -55,7 +55,7 @@ def test_full_request_limit_refuses_a_message_that_alone_fits(review_lib, tmp_pa
         run = api.store.create_run(api.rid, "review", {"max_model_calls": 6, "max_provider_requests": 0}, None)
         api.store.update_run(run["id"], status="running")
         # A B1 full contract fixture supplies a builder independently of run.py.
-        from tests.review_helpers import si
+        from tests.review.review_helpers import si
         from deixis.workflow.review.snapshot import review_step_input_parts
         payload = si("report")
         payload.update(review_step_input_parts(saved["id"], saved["content"], focus="source_support", owner_note=None))
@@ -85,7 +85,7 @@ def test_full_request_limit_refuses_a_message_that_alone_fits(review_lib, tmp_pa
 
 def test_resend_loop_without_owner_gate_uses_three_sessions_under_ceiling_one(review_lib, tmp_path, monkeypatch):
     """Diagnostic control: B2's guard is necessary; the shared loop is unchanged."""
-    from tests.review_helpers import si
+    from tests.review.review_helpers import si
     monkeypatch.setattr(flow_module, "RATE_LIMIT_BACKOFF_SECONDS", 0)
     with review_api(review_lib, tmp_path) as api:
         run = api.store.create_run(api.rid, "review", {"max_model_calls": 1, "max_provider_requests": 0}, None)

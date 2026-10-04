@@ -9,7 +9,7 @@ import pytest
 
 from deixis.storage import db
 from deixis.workflow.store import Store
-from tests.watch_helpers import api, watch_offline, create, now_check, turn, rows
+from tests.watch.watch_helpers import api, watch_offline, create, now_check, turn, rows
 
 
 def objects(conn):
@@ -36,7 +36,7 @@ def test_runs_rebuild_preserves_every_row_trigger_index_and_foreign_key(tmp_path
         conn = lib["conn"]
         dependencies(lib)
         # Populate the owner-review trigger and its run/snapshot dependency too.
-        from tests.review_helpers import stored_review
+        from tests.review.review_helpers import stored_review
         from deixis.workflow.review.snapshot import ReviewReader
         from deixis.workflow.review.store import ReviewStore
         lib["reader"] = ReviewReader(lib["store"], lib["reports"])

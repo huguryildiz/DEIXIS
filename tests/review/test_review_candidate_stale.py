@@ -6,7 +6,7 @@ import pytest
 
 from deixis.workflow.candidates.store import CandidateStore
 from deixis.workflow.review.stale import stale_reasons
-from tests.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, snapshot, search, add_version
+from tests.review.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, snapshot, search, add_version
 
 
 def test_newer_candidate_version(candidate_lib):

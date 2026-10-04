@@ -10,7 +10,7 @@ from deixis.domain.canonical import canonical_json, sha256_hex
 from deixis.storage import db
 from deixis.workflow.review.snapshot import build_snapshot, review_step_input_parts, DuplicateReviewRef, NotReviewable, ReviewInputTooLarge
 from deixis.workflow.review.store import NotFound, resolve_finding, applied_matches_suggestion
-from tests.review_helpers import report_with_sections, review_lib, snapshot, step_payload, make_answer, finding
+from tests.review.review_helpers import report_with_sections, review_lib, snapshot, step_payload, make_answer, finding
 from tests.report.test_report_claim_links import edit, claim
 
 

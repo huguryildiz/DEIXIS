@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 
 from deixis.storage import db
-from tests.review_helpers import report_with_sections, review_lib, stored_review, all_rows
+from tests.review.review_helpers import report_with_sections, review_lib, stored_review, all_rows
 
 
 def test_decision_request_migration_keeps_old_rows_and_exact_other_triggers(tmp_path, monkeypatch):

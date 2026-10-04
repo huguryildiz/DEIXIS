@@ -9,7 +9,7 @@ from jsonschema import Draft202012Validator
 
 from deixis.domain import contracts
 from tests.fakes import valid_response
-from tests.review_helpers import si, output, finding
+from tests.review.review_helpers import si, output, finding
 
 
 def codes(step_input, result):
@@ -240,12 +240,12 @@ def test_each_step_input_rejection(case, code):
 
 
 def si_base_candidate_target():
-    from tests.review_helpers import INPUTS
+    from tests.review.review_helpers import INPUTS
     return next(v["candidate_target"] for v in INPUTS.values() if isinstance(v, dict) and "candidate_target" in v)
 
 
 def si_base_candidates():
-    from tests.review_helpers import INPUTS
+    from tests.review.review_helpers import INPUTS
     return next(v["candidates"] for v in INPUTS.values() if isinstance(v, dict) and v.get("candidates"))
 
 

@@ -6,9 +6,9 @@ import time
 import pytest
 
 from tests.fakes import FakeAdapter
-from tests.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, candidate_body, candidate_response
-from tests.review_helpers import all_rows
-from tests.review_run_helpers import review_api, start, terminal, control
+from tests.review.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, candidate_body, candidate_response
+from tests.review.review_helpers import all_rows
+from tests.review.review_run_helpers import review_api, start, terminal, control
 from tests.review.test_review_lifecycle_guards import permitted, hashes, WRITE_ACTIONS
 
 CANDIDATE_TABLES = {"research_candidates", "candidate_versions", "claim_elements", "kill_searches",

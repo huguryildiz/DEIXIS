@@ -1,6 +1,6 @@
 """SYNTHETIC counts: surviving records, not notices, checks or watch state."""
 
-from tests.watch_helpers import api, watch_offline, create, now_check, turn, page, work
+from tests.watch.watch_helpers import api, watch_offline, create, now_check, turn, page, work
 
 
 def counts(api):

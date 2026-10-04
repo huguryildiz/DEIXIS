@@ -5,8 +5,8 @@ import pytest
 from deixis.storage import db
 from deixis.workflow.review.store import ReviewStore
 from deixis.workflow.tables import TableStore
-from tests.review_helpers import report_with_sections, review_lib
-from tests.review_run_helpers import review_api, body, start, read
+from tests.review.review_helpers import report_with_sections, review_lib
+from tests.review.review_run_helpers import review_api, body, start, read
 
 
 @pytest.mark.parametrize("kind", ["answer", "report"])

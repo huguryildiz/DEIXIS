@@ -9,7 +9,7 @@ import pytest
 
 from deixis.storage import db
 from deixis.workflow.review.store import ReviewStore, TARGET_KINDS, FOCUSES, DECISIONS, purge_owner_reviews, snapshot_referenced_source_versions
-from tests.review_helpers import make_answer, all_rows, review_run
+from tests.review.review_helpers import make_answer, all_rows, review_run
 from tests.report.test_report_assembly import report_with_sections
 from tests.report.test_report_edit_check import finish
 

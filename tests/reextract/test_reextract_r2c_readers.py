@@ -14,11 +14,11 @@ import pytest
 from deixis.documents import arxiv_source, math_reader, pdf
 from deixis.workflow import equations, file_restore, text_retry
 from deixis.workflow.store import RunInProgress
-from tests.reextract_r2a_helpers import api_library, body, counts, head, seed, store_library, url
-from tests.reextract_r2b_helpers import tear
+from tests.reextract.reextract_r2a_helpers import api_library, body, counts, head, seed, store_library, url
+from tests.reextract.reextract_r2b_helpers import tear
 from tests.documents.test_equations import FakeReader
 from tests.documents.test_arxiv_source_route import NoMarker, FakeFetch, arxiv_pdf
-from tests.reextract_r2c_helpers import ROOT, child_lock
+from tests.reextract.reextract_r2c_helpers import ROOT, child_lock
 
 
 def probe(lib):

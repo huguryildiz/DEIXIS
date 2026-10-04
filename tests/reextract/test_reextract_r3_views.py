@@ -12,10 +12,10 @@ from deixis.workflow.report.export import to_markdown
 from deixis.workflow.report.latex import to_latex
 from deixis.workflow.views import passage_view, report_view
 from tests.helpers import make_pdf
-from tests.reextract_r2a_helpers import api_library, body, head, seed, store_library, url
-from tests.reextract_r2b_helpers import tear, write
-from tests.reextract_r3_helpers import no_external_calls, old_dependency, retry, rich
-from tests.review_helpers import all_rows, review_lib
+from tests.reextract.reextract_r2a_helpers import api_library, body, head, seed, store_library, url
+from tests.reextract.reextract_r2b_helpers import tear, write
+from tests.reextract.reextract_r3_helpers import no_external_calls, old_dependency, retry, rich
+from tests.review.review_helpers import all_rows, review_lib
 from tests.report.test_report_assembly import report_with_sections
 
 

@@ -114,7 +114,7 @@ with file_lock(Path(sys.argv[1]), sys.argv[2]):
     sys.stdin.readline()
 """
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "backend")
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2] / "backend")
     child = subprocess.Popen([sys.executable, "-c", code, str(lib.settings.recovery_dir), lib.sha],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     try:

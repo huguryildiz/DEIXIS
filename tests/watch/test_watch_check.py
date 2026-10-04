@@ -10,7 +10,7 @@ from deixis.providers import common, registry
 from deixis.storage import db
 from deixis.workflow.watch import check as policy
 from test_connector_contract import dispatch_flow
-from tests.watch_helpers import api, watch_offline, watch_api, create, now_check, turn, read, control, work, page, add_included
+from tests.watch.watch_helpers import api, watch_offline, watch_api, create, now_check, turn, read, control, work, page, add_included
 
 
 def test_baseline_and_second_check_announce_only_new_identities(api):
@@ -231,7 +231,7 @@ def test_success_boundary_does_not_move_on_failed_or_deferred_unit(api, monkeypa
 
 
 def test_citing_units_all_versions_work_order_dedup_and_missing_id(api):
-    from tests.watch_helpers import record
+    from tests.watch.watch_helpers import record
     head = add_included(api, "W9", doi="10.1000/work")
     api.store.upsert_provider_source("openalex", registry.openalex._record(work("W8", doi="10.1000/work")), None)
     # A distinct included work with no OpenAlex mapping is visibly skipped.

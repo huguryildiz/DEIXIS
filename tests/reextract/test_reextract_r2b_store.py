@@ -19,8 +19,8 @@ try:
 except ImportError:
     file_restore = None  # The scheduler reproduction must reach its behavioral assertion on 19d0a48.
 from deixis.workflow.store import Store, RecoveryConflict
-from tests.reextract_r2a_helpers import store_library, api_library, child_lock, head, protected
-from tests.reextract_r2b_helpers import tear, write, receipt, research
+from tests.reextract.reextract_r2a_helpers import store_library, api_library, child_lock, head, protected
+from tests.reextract.reextract_r2b_helpers import tear, write, receipt, research
 
 
 def no_temporary(lib):

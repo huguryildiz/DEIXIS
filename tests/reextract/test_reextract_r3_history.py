@@ -15,11 +15,11 @@ from deixis.config import Settings
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import backup, db
 from deixis.workflow.store import Store
-from tests.reextract_r2a_helpers import api_library, child_lock, seed, sharing, store_library
-from tests.reextract_r2b_helpers import tear, write
-from tests.reextract_r2c_helpers import child, release_child, startup
-from tests.reextract_r3_helpers import no_external_calls, retry, rich
-from tests.review_helpers import all_rows
+from tests.reextract.reextract_r2a_helpers import api_library, child_lock, seed, sharing, store_library
+from tests.reextract.reextract_r2b_helpers import tear, write
+from tests.reextract.reextract_r2c_helpers import child, release_child, startup
+from tests.reextract.reextract_r3_helpers import no_external_calls, retry, rich
+from tests.review.review_helpers import all_rows
 
 
 HISTORY = ("asset_file_observations", "asset_recovery_operations", "asset_extractions", "passages",

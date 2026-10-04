@@ -15,11 +15,11 @@ from deixis.workflow.review.stale import stale_reasons
 from deixis.workflow.tables import TableStore
 from deixis.workflow.views import research_view
 from tests.helpers import make_pdf
-from tests.reextract_r2a_helpers import child_lock, head, seed, store_library
-from tests.reextract_r2b_helpers import tear, write
-from tests.reextract_r2c_helpers import child
-from tests.reextract_r3_helpers import no_external_calls, retry, rich, verified_child
-from tests.review_helpers import all_rows
+from tests.reextract.reextract_r2a_helpers import child_lock, head, seed, store_library
+from tests.reextract.reextract_r2b_helpers import tear, write
+from tests.reextract.reextract_r2c_helpers import child
+from tests.reextract.reextract_r3_helpers import no_external_calls, retry, rich, verified_child
+from tests.review.review_helpers import all_rows
 
 
 def protected_rows(conn, before, *, changed_asset=None, changed_head=None):

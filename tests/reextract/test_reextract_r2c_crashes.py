@@ -8,9 +8,9 @@ import pytest
 from deixis import __main__ as cli
 from deixis.documents import pdf
 from deixis.workflow.worker import Worker
-from tests.reextract_r2a_helpers import api_library, body, counts, head, protected, sharing, store_library, url
-from tests.reextract_r2b_helpers import tear
-from tests.reextract_r2c_helpers import child, events, forbid_calls, startup
+from tests.reextract.reextract_r2a_helpers import api_library, body, counts, head, protected, sharing, store_library, url
+from tests.reextract.reextract_r2b_helpers import tear
+from tests.reextract.reextract_r2c_helpers import child, events, forbid_calls, startup
 
 
 def test_r1_crashed_text_retry_fresh_post_promotes_red_on_old(tmp_path, monkeypatch):

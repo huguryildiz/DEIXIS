@@ -12,7 +12,7 @@ import pytest
 from deixis.storage import db
 from deixis.workflow.store import Store
 from tests.process.p9_harness import (ServerProc, harness, wait_for, wait_run, rows, count, integrity_check, foreign_key_check)
-from tests.watch_helpers import page, work
+from tests.watch.watch_helpers import page, work
 
 pytestmark = pytest.mark.process
 DRIVER = Path(__file__).with_name("watch_driver.py")

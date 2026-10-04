@@ -6,8 +6,8 @@ import json
 import pytest
 
 from deixis.domain import contracts
-from tests.review_helpers import si
-from tests.review_candidate_helpers import candidate_response, candidate_context_fixture
+from tests.review.review_helpers import si
+from tests.review.review_candidate_helpers import candidate_response, candidate_context_fixture
 
 
 def payload():

@@ -15,8 +15,8 @@ from deixis.workflow import flow as flow_module
 from deixis.workflow.review import run as reviews
 from deixis.workflow.review.store import ReviewStore, resolve_finding
 from tests.fakes import FakeAdapter, valid_response
-from tests.review_helpers import report_with_sections, review_lib
-from tests.review_run_helpers import review_api, body, start, read, turn, control, two_groups, finding_response
+from tests.review.review_helpers import report_with_sections, review_lib
+from tests.review.review_run_helpers import review_api, body, start, read, turn, control, two_groups, finding_response
 
 
 class Crash(BaseException):

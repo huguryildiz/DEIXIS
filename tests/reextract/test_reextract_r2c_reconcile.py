@@ -15,9 +15,9 @@ from deixis.documents import pdf
 from deixis.storage import db
 from deixis.workflow import file_restore, text_retry
 from deixis.workflow.worker import Worker
-from tests.reextract_r2a_helpers import api_library, body, counts, head, protected, seed, sharing, store_library, url
-from tests.reextract_r2b_helpers import tear
-from tests.reextract_r2c_helpers import ROOT, child, events, forbid_calls, release_child, startup
+from tests.reextract.reextract_r2a_helpers import api_library, body, counts, head, protected, seed, sharing, store_library, url
+from tests.reextract.reextract_r2b_helpers import tear
+from tests.reextract.reextract_r2c_helpers import ROOT, child, events, forbid_calls, release_child, startup
 from tests.reextract.test_reextract_r2a_store import reserve, record
 from tests.reextract.test_reextract_r2b_store import CommitFailure
 

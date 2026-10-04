@@ -9,8 +9,8 @@ import pytest
 from deixis.storage import db
 from deixis.workflow import person_reading
 from tests.fakes import FakeAdapter
-from tests.review_helpers import report_with_sections, review_lib, all_rows
-from tests.review_run_helpers import review_api, start, read, control, terminal, two_groups, finding_response
+from tests.review.review_helpers import report_with_sections, review_lib, all_rows
+from tests.review.review_run_helpers import review_api, start, read, control, terminal, two_groups, finding_response
 
 ALLOWED = {"runs", "run_steps", "step_inputs", "model_sessions", "events",
            "owner_review_snapshots", "owner_reviews", "owner_review_findings", "owner_review_decisions", "sqlite_sequence"}

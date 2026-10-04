@@ -9,8 +9,8 @@ from deixis.storage import db
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.review.store import ReviewStore
 from tests.fakes import FakeAdapter
-from tests.review_helpers import report_with_sections, review_lib, all_rows
-from tests.review_run_helpers import review_api, body, preview, start, read, turn, control
+from tests.review.review_helpers import report_with_sections, review_lib, all_rows
+from tests.review.review_run_helpers import review_api, body, preview, start, read, turn, control
 
 
 @pytest.fixture

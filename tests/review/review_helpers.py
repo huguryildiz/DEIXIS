@@ -14,7 +14,7 @@ from deixis.workflow.review.store import ReviewStore, resolve_finding
 from tests.report.test_report_assembly import report_with_sections
 from tests.report.test_report_edit_check import finish
 
-INPUTS = json.loads((Path(__file__).parent / "fixtures/research/step-inputs.json").read_text())
+INPUTS = json.loads((Path(__file__).parent.parent / "fixtures/research/step-inputs.json").read_text())
 
 
 def si(kind="answer"):

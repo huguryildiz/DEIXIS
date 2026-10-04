@@ -7,7 +7,7 @@ import pytest
 from deixis.domain.skill import SkillPackage
 from deixis.workflow.flow import CAPABILITIES
 from deixis.workflow.review import run
-from tests.review_helpers import si
+from tests.review.review_helpers import si
 
 
 @pytest.mark.parametrize("kind", ["answer", "report"])

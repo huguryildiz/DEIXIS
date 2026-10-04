@@ -13,7 +13,7 @@ from deixis.workflow.watch import check as policy
 from deixis.workflow.watch.run import observations
 from deixis.workflow.watch.store import TABLES, WatchStore
 from deixis.workflow.watch.store import command_hash
-from tests.watch_helpers import api, watch_offline, turn, now_check, rows, record, page, work
+from tests.watch.watch_helpers import api, watch_offline, turn, now_check, rows, record, page, work
 from tests.watch.test_watch_migration import objects
 from tests.watch.test_watch_scheduler import baseline, loop, schedule, Clock
 from deixis.workflow.watch.scheduler import WatchScheduler

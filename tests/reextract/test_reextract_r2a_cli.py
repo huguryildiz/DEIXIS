@@ -19,8 +19,8 @@ try:
 except ImportError:
     text_retry = None  # The unchanged library-wide selection guard also runs on R1.
 from deixis.workflow.store import Store
-from tests.reextract_r2a_helpers import store_library, api_library, seed, head, body, url, counts, child_lock
-from tests.reextract_r2a_helpers import PUBLIC_RETRY_FIELDS
+from tests.reextract.reextract_r2a_helpers import store_library, api_library, seed, head, body, url, counts, child_lock
+from tests.reextract.reextract_r2a_helpers import PUBLIC_RETRY_FIELDS
 
 
 def invoke(lib, monkeypatch, dry=False):

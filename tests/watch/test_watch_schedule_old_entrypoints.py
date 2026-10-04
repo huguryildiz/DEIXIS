@@ -7,7 +7,7 @@ import importlib
 import pytest
 
 from deixis.storage import db
-from tests.watch_helpers import watch_offline, watch_api, create, turn, now_check, rows
+from tests.watch.watch_helpers import watch_offline, watch_api, create, turn, now_check, rows
 
 
 def interval_by_sql(api, started=False):

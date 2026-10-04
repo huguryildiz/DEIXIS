@@ -9,8 +9,8 @@ from deixis.documents import acquisition, pdf
 from deixis.documents.fetch import FetchResult
 from deixis.providers import zotero
 from deixis.workflow import waiting
-from tests.reextract_r2a_helpers import api_library, head, child_lock
-from tests.reextract_r2b_helpers import tear, retained, receipt, research, source
+from tests.reextract.reextract_r2a_helpers import api_library, head, child_lock
+from tests.reextract.reextract_r2b_helpers import tear, retained, receipt, research, source
 
 
 def candidate(provider="openalex", status="match"):

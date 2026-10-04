@@ -12,7 +12,7 @@ from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
 from deixis.storage.backup import create_backup, restore_backup
 from deixis.workflow.review.store import SnapshotDependencyUnreadable, snapshot_referenced_source_versions
-from tests.review_helpers import report_with_sections, review_lib, stored_review, snapshot, make_answer, rows, all_rows
+from tests.review.review_helpers import report_with_sections, review_lib, stored_review, snapshot, make_answer, rows, all_rows
 from tests.review.test_review_store import TABLES
 from tests.review.test_review_stale import asset_evidence
 

@@ -13,7 +13,7 @@ from deixis.workflow import recovery
 from deixis.workflow.store import Store
 from tests.reextract.test_reextract_r1_store import lib, setup, extraction, chunk, observe, reserve, head, complete
 from tests.documents.test_source_versions import raw_asset
-from tests.review_helpers import all_rows
+from tests.review.review_helpers import all_rows
 
 ROOT = Path(__file__).resolve().parents[2]
 PROTECTED_PASSAGE_COLUMNS = ("text", "source_version_id", "kind", "physical_page", "asset_id", "printed_label",
@@ -95,7 +95,7 @@ def test_migration_preserves_old_rows_profiles_fts_and_schema(tmp_path, monkeypa
         # All four B1 tables and B2's decision request fields hold records before R1.
         from tests.report.test_report_assembly import report_with_sections
         from tests.report.test_report_edit_check import finish
-        from tests.review_helpers import stored_review
+        from tests.review.review_helpers import stored_review
         from deixis.workflow.review.reader import ReviewReader
         from deixis.workflow.review.store import ReviewStore
         fixture = report_with_sections.__wrapped__(tmp_path / "review")

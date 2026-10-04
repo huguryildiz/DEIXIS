@@ -8,7 +8,7 @@ import pytest
 from deixis.providers import openalex
 from deixis.storage import db
 from deixis.workflow.watch import check as policy
-from tests.watch_helpers import api, watch_offline, create, now_check, turn, read, page, work, record, add_included
+from tests.watch.watch_helpers import api, watch_offline, create, now_check, turn, read, page, work, record, add_included
 
 
 @pytest.mark.parametrize("value,expected", [("2026-02-28", "2026-02-28"), ("2026-02-30", None),

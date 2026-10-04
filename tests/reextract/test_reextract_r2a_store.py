@@ -19,7 +19,7 @@ except ImportError:
     text_retry = None
     TEXT_RETRY_REFUSALS = ("asset_removed", "no_holding_research", "membership_changed", "asset_replaced",
                           "baseline_changed", "run_active", "input_not_verified", "file_missing", "file_mismatch")
-from tests.reextract_r2a_helpers import store_library, seed, head, protected, counts, sharing, child_lock
+from tests.reextract.reextract_r2a_helpers import store_library, seed, head, protected, counts, sharing, child_lock
 
 
 def reserve(lib, key="store_request", rid=True):
@@ -312,7 +312,7 @@ def test_serializer_failure_after_commit_keeps_result_and_replay(tmp_path, monke
 
 @pytest.mark.parametrize("flush", ["execute", "capability", "queue"])
 def test_pending_interruption_flush_keeps_original_error_and_only_ends_running(tmp_path, monkeypatch, flush):
-    from tests.reextract_r2a_helpers import api_library, body, url
+    from tests.reextract.reextract_r2a_helpers import api_library, body, url
     with api_library(tmp_path) as lib:
         interrupt, calls = lib.store.interrupt_text_retry, []
         def ending(*args):

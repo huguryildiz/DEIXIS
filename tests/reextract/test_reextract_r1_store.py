@@ -74,7 +74,7 @@ def protected(lib):
 
 
 def cited_answer(lib, passage_id):
-    from tests.review_helpers import make_answer
+    from tests.review.review_helpers import make_answer
     answer = make_answer({"store": lib.store, "rid": lib.rid, "source_id": lib.svid, "section_passage": passage_id})
     text = lib.store.passage(passage_id)["text"]
     lib.conn.execute("UPDATE evidence_links SET anchor_text = ? WHERE passage_id = ?", (text, passage_id))

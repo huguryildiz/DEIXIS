@@ -18,13 +18,13 @@ from deixis.workflow.review.snapshot import build_snapshot
 from deixis.workflow.review.store import ReviewStore, resolve_finding
 from deixis.workflow.tables import TableStore
 from tests.report.test_report_assembly import COLUMN, _claim
-from tests.reextract_r2a_helpers import head
-from tests.review_helpers import finding, step_payload, review_run
+from tests.reextract.reextract_r2a_helpers import head
+from tests.review.review_helpers import finding, step_payload, review_run
 
 
 @pytest.fixture(autouse=True)
 def no_external_calls(monkeypatch):
-    from tests.reextract_r2c_helpers import forbid_calls
+    from tests.reextract.reextract_r2c_helpers import forbid_calls
 
     forbid_calls(monkeypatch, parser=False)
 
@@ -139,11 +139,11 @@ def rich(lib, *, reviews=True):
 @contextmanager
 def verified_child(lib, mode, *, parked=False):
     """Kill or park an actual attachment/CLI upgrade in its private-copy parser."""
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     env = dict(os.environ, PYTHONPATH=str(root / "backend") + os.pathsep + str(root),
                DEIXIS_DATA_DIR=str(lib.settings.data_dir))
     process = subprocess.Popen([sys.executable, "-c",
-        "from tests.reextract_r3_helpers import verified_child_main; verified_child_main()",
+        "from tests.reextract.reextract_r3_helpers import verified_child_main; verified_child_main()",
         mode, lib.svid, str(parked)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, text=True, env=env)
     try:
@@ -165,7 +165,7 @@ def verified_child_main():
     from deixis.config import load_settings
     from deixis.documents import acquisition, pdf
     from deixis.workflow.store import Store
-    from tests.reextract_r2c_helpers import forbid_calls
+    from tests.reextract.reextract_r2c_helpers import forbid_calls
 
     mode, svid, parked = sys.argv[1:]
     settings = load_settings()

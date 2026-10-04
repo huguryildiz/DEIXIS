@@ -21,8 +21,8 @@ from deixis.storage import db
 from deixis.workflow import file_restore, text_retry
 from deixis.workflow.store import Store
 from tests.helpers import make_pdf
-from tests.reextract_r2a_helpers import api_library, store_library, child_lock
-from tests.reextract_r2b_helpers import tear, write
+from tests.reextract.reextract_r2a_helpers import api_library, store_library, child_lock
+from tests.reextract.reextract_r2b_helpers import tear, write
 
 
 async def wait_thread(event):

@@ -6,8 +6,8 @@ import pytest
 
 from deixis.workflow.candidates.store import CandidateStore
 from tests.fakes import FakeAdapter
-from tests.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, candidate_body, candidate_response, add_version
-from tests.review_run_helpers import review_api, start, read, turn, control
+from tests.review.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, candidate_body, candidate_response, add_version
+from tests.review.review_run_helpers import review_api, start, read, turn, control
 
 
 def test_candidate_preview_start_read_decide_apply_and_reopen_version_one(candidate_lib, tmp_path):
@@ -61,7 +61,7 @@ def test_candidate_unknown_handle_exhausts_bounded_repair_and_records_source_id(
 
 
 def test_candidate_empty_source_group_failure_records_null_source(candidate_lib, tmp_path):
-    from tests.review_candidate_helpers import search
+    from tests.review.review_candidate_helpers import search
     search(candidate_lib, assessed=False)
     with review_api(candidate_lib, tmp_path, adapter=FakeAdapter(responder=lambda si: "SYNTHETIC invalid")) as api:
         opened, _, _ = start(api, candidate_body(candidate_lib)); turn(api)

@@ -5,7 +5,7 @@ import copy
 import pytest
 
 from deixis.workflow.review.snapshot import ReviewInputTooLarge, review_step_input_parts
-from tests.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, snapshot
+from tests.review.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, snapshot
 from tests.review.test_review_run import plan, envelope
 
 

@@ -7,8 +7,8 @@ import pytest
 from deixis.documents import pdf, math_reader, ocr
 from deixis.workflow import equations
 from tests.helpers import make_pdf
-from tests.reextract_r2a_helpers import api_library, body, url, head, sharing, child_lock
-from tests.reextract_r2b_helpers import tear, retained, receipt, research
+from tests.reextract.reextract_r2a_helpers import api_library, body, url, head, sharing, child_lock
+from tests.reextract.reextract_r2b_helpers import tear, retained, receipt, research
 
 
 @pytest.mark.parametrize("route", ["upload", "source"])

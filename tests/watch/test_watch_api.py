@@ -14,7 +14,7 @@ from deixis.config import Settings
 from deixis.providers import registry
 from deixis.storage import backup, db
 from deixis.workflow.watch.store import WatchRefusal, WatchStore, TABLES
-from tests.watch_helpers import api, watch_offline, watch_api, create, now_check, turn, read, control, page, work, rows, hashes, add_included
+from tests.watch.watch_helpers import api, watch_offline, watch_api, create, now_check, turn, read, control, page, work, rows, hashes, add_included
 
 
 def version_body(api, wid):

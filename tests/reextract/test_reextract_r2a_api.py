@@ -21,8 +21,8 @@ try:
 except ImportError:
     text_retry = None  # T1/T3 must reach their behavioral assertions on the R1 base.
 from deixis.workflow.store import Store, RecoveryConflict
-from tests.reextract_r2a_helpers import api_library, body, counts, head, protected, seed, sharing, url, child_lock
-from tests.reextract_r2a_helpers import PUBLIC_RETRY_FIELDS
+from tests.reextract.reextract_r2a_helpers import api_library, body, counts, head, protected, seed, sharing, url, child_lock
+from tests.reextract.reextract_r2a_helpers import PUBLIC_RETRY_FIELDS
 
 
 def assert_event_agreement(lib, result):

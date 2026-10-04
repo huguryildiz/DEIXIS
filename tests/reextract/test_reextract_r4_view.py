@@ -8,7 +8,7 @@ from deixis.documents import pdf
 from deixis.storage import db
 from deixis.workflow import text_retry
 from deixis.workflow.store import Store
-from tests.reextract_r2a_helpers import PUBLIC_RETRY_FIELDS, api_library, body, counts, head, seed, url
+from tests.reextract.reextract_r2a_helpers import PUBLIC_RETRY_FIELDS, api_library, body, counts, head, seed, url
 
 
 def projected(lib):

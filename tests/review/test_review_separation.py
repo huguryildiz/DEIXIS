@@ -8,7 +8,7 @@ from pathlib import Path
 from deixis.workflow.review.reader import ReviewReader
 from deixis.workflow.review.snapshot import build_snapshot
 from deixis.workflow.review.stale import stale_reasons
-from tests.review_helpers import report_with_sections, review_lib, all_rows
+from tests.review.review_helpers import report_with_sections, review_lib, all_rows
 
 
 def test_review_package_import_and_write_boundary():

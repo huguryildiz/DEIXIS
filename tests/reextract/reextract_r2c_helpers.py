@@ -17,7 +17,7 @@ from deixis.api.app import create_app
 from deixis.documents import math_reader, ocr, pdf
 from deixis.workflow import equations, text_retry
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def forbid_calls(monkeypatch, *, parser=True):
@@ -41,7 +41,7 @@ def forbid_calls(monkeypatch, *, parser=True):
 def child(lib, mode, boundary="parser", *, parked=False):
     env = dict(os.environ, PYTHONPATH=str(ROOT / "backend") + os.pathsep + str(ROOT),
                DEIXIS_DATA_DIR=str(lib.settings.data_dir))
-    code = "from tests.reextract_r2c_helpers import child_main; child_main()"
+    code = "from tests.reextract.reextract_r2c_helpers import child_main; child_main()"
     process = subprocess.Popen([sys.executable, "-c", code, mode, boundary, lib.aid, lib.eid, lib.rid, lib.svid],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     try:

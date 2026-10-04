@@ -673,8 +673,8 @@ def rich_library(tmp_path: Path):
         assert client.delete(f"/api/researches/{other}").status_code == 200
         time.sleep(0.5)  # background answer review and any other idle writes settle
         # Recovery evidence is part of the rich round trip, including retained bytes.
-        from tests.reextract_r2a_helpers import seed
-        from tests.reextract_r2b_helpers import tear, write
+        from tests.reextract.reextract_r2a_helpers import seed
+        from tests.reextract.reextract_r2b_helpers import tear, write
         recovery = seed(store, settings, "partial")
         tear(recovery)
         write(recovery)

@@ -10,7 +10,7 @@ one is built, the next free number). **Migration:** none (the limits are constan
 comment change; under A2 or A3 two constants, two tests and a live acceptance. **Plan:** Opus 5.5 · high. **Scope:** the
 two `standard` full-text limits only.
 
-**Measurement:** `.local/archive/sw/sw-slice29-fetch-limit-replay-2026-09-28/` (`protocol.md`, frozen before any number;
+**Measurement:** [.local/archive/sw/sw-slice29-fetch-limit-replay-2026-09-28/](../local-runs.md#run-archive-sw-sw-slice29-fetch-limit-replay-2026-09-28) (`protocol.md`, frozen before any number;
 `replay.py`; `out.json`; `result.md`). It reads slice 24a's and slice 27's stored `sw` libraries with `immutable=1` URIs:
 quantum `standard` r1, r2, embedding and `detailed` (24a, `65a7ec8`); medicine `standard` r1, r2, embedding and
 `detailed` from slice 27 (`142dfa1`) and from 24a. No model call, no provider request, no network; port 8765 and the live
@@ -146,7 +146,7 @@ Answers A–D (or says "önerildiği gibi"). The answers go into row 29 of `sw-s
 **Under A1 (and B1, D1):**
 
 1. `rules.py`: a dated comment above `FULLTEXT_WORK_LIMIT`: "2026-09-28 (D111, slice 29): `standard` kept at 100 / 50; a
-   model-free replay (`.local/archive/sw/sw-slice29-fetch-limit-replay-2026-09-28`) reaches 75% of the quantum gain only at 300, at
+   model-free replay ([.local/archive/sw/sw-slice29-fetch-limit-replay-2026-09-28](../local-runs.md#run-archive-sw-sw-slice29-fetch-limit-replay-2026-09-28)) reaches 75% of the quantum gain only at 300, at
    about +17 min per run; medicine's loss is PDFs." No value changes.
 2. D111 at the top of `docs/decisions.md` (Status / Date / Context / Decision / Limits): the replay, the frozen rule and
    its result, the 300 / 50 row, the medicine finding, the time target note. Limits: two questions, three runs each, time
@@ -169,11 +169,11 @@ Answers A–D (or says "önerildiği gibi"). The answers go into row 29 of `sw-s
 
 ## Live acceptance (A2 or A3 only)
 
-- Environment: slice 27's campaign (`.local/archive/sw/sw-slice27-remeasure-2026-09-27-043237/drive.py`, `measure.py`): own
+- Environment: slice 27's campaign ([.local/archive/sw/sw-slice27-remeasure-2026-09-27-043237/drive.py](../local-runs.md#run-archive-sw-sw-slice27-remeasure-2026-09-27-043237), `measure.py`): own
   server and empty data directory per research, `DEIXIS_SEARCH_WORKFLOW=sw`, `DEIXIS_FULLTEXT_FETCH=auto`,
   `DEIXIS_FULLTEXT_ADJUDICATION=auto`, `DEIXIS_SEARCH_QUERY=model`, embedding off, protocol approval `as_proposed`,
   nobody answers the queue. Model: connection `codex`, `gpt-5.6-luna`, effort `medium`, every role (the model of slices
-  24a, 27 and 28). Folder `.local/sw-slice29-acceptance-<date>/`; the expectations above go into its `protocol.md`
+  24a, 27 and 28). Folder [.local/sw-slice29-acceptance-<date>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree); the expectations above go into its `protocol.md`
   before the first request.
 - Runs: quantum `standard` and medicine `standard`, each to the answer (C1); under C2 quantum twice.
 - **Caps (model sessions, repairs and re-sends included):** A2: quantum 200, medicine 220; A3: quantum 360, medicine 360.

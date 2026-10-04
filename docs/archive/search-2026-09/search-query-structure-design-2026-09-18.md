@@ -2,7 +2,7 @@
 
 **Status:** proposal; no code implemented and no default changed. **Date:** 2026-09-18.
 
-This is a design and protocol record, not an accepted decision. It builds on the accepted record instead of reopening it: [D11](decisions.md) fixes the OpenAlex query topology, [D60](decisions.md) fixes the deep core read, [D64](decisions.md) owns the opt-in compact variant, and [D66](decisions.md) owns retrying failed searches. The critique and the candidate strategies are in `docs/archive/search-2026-09/search-strategy-critical-review-2026-09-18.md`; how other projects and the literature handle the same problem is in `docs/archive/search-2026-09/search-strategy-external-scan-2026-09-18.md`; this file answers one narrower question: **how should the query a provider receives be structured.**
+This is a design and protocol record, not an accepted decision. It builds on the accepted record instead of reopening it: [D11](../../decisions.md) fixes the OpenAlex query topology, [D60](../../decisions.md) fixes the deep core read, [D64](../../decisions.md) owns the opt-in compact variant, and [D66](../../decisions.md) owns retrying failed searches. The critique and the candidate strategies are in `docs/archive/search-2026-09/search-strategy-critical-review-2026-09-18.md`; how other projects and the literature handle the same problem is in `docs/archive/search-2026-09/search-strategy-external-scan-2026-09-18.md`; this file answers one narrower question: **how should the query a provider receives be structured.**
 
 ## 1. Design in one sentence
 
@@ -18,7 +18,7 @@ Three axes stay separate, because conflating them is what produced the recorded 
 
 ## 2. What this design deliberately does not relitigate
 
-- **D11's topology stands.** Broad boolean queries placed 1 of 22 known works, focused two-part queries 5 each, so the design keeps exactly two required parts with a quoted multiword anchor, and the earlier "drop the required anchor" idea is *not* proposed as a default. The loose three-to-four unquoted-word form appears only as a separately measured arm (section 7), because the only evidence for it — the rescue's five of six — came from a probe that bypassed the shape validator (`.local/archive/early/quantum-entanglement-search-2026-09-17/rescue.py`).
+- **D11's topology stands.** Broad boolean queries placed 1 of 22 known works, focused two-part queries 5 each, so the design keeps exactly two required parts with a quoted multiword anchor, and the earlier "drop the required anchor" idea is *not* proposed as a default. The loose three-to-four unquoted-word form appears only as a separately measured arm (section 7), because the only evidence for it — the rescue's five of six — came from a probe that bypassed the shape validator ([.local/archive/early/quantum-entanglement-search-2026-09-17/rescue.py](../local-runs.md#run-archive-early-quantum-entanglement-search-2026-09-17)).
 - **D60's depth stays on the core-only query.** Its measured gains are real (S1 6/8 → 11/11, S2 4 → 7) and moving the 100-row read elsewhere would trade them away unmeasured. What this design does change is *which vocabulary the core query is built from* (R1), because D60's own recorded miss is a popular-topic question where a narrow core phrase kept the deep read from helping (S3 0 → 2 against a frozen expectation of at least +3).
 - **D64 and D66 are not duplicated.** `compact_openalex_v1` remains the existing opt-in experiment; failed searches use D66's `retry_failed` rather than a new retry mechanism.
 

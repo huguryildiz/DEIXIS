@@ -1,9 +1,9 @@
 # SW dilim 17a — Tam metin getirme keşifle üst üste
 
-**Tarih:** 24 Eylül 2026. **Durum:** uygulandı (D98, kabul `.local/archive/sw/sw-slice17a-acceptance-2026-09-24/result.md`); plan hazır; Sol · medium'un ikinci görüşü, onay turu ve üç sözleşme denetimi işlendi, son denetimde "uygulamaya hazır, bulgu yok" (`sol-contract4.md`); prompt: sw-slice17a-prompt.md. **Ana dosya:**
+**Tarih:** 24 Eylül 2026. **Durum:** uygulandı (D98, kabul [.local/archive/sw/sw-slice17a-acceptance-2026-09-24/result.md](../local-runs.md#run-archive-sw-sw-slice17a-acceptance-2026-09-24)); plan hazır; Sol · medium'un ikinci görüşü, onay turu ve üç sözleşme denetimi işlendi, son denetimde "uygulamaya hazır, bulgu yok" (`sol-contract4.md`); prompt: sw-slice17a-prompt.md. **Ana dosya:**
 [sw-status.md](sw-status.md). **Karar:** D98. **Önkoşul:** 15 (kapandı, D95), 17 (son
 denetim yapılmadı, `80caa75`). **Tür:** Kur. **Plan:** Opus 5.5 · high, 24 Eylül 2026. **Ölçüm:**
-`.local/archive/sw/sw-slice17a-plan-2026-09-24/` (`overlap.py`, `overlap.json`, `safe_set.py`, `safe_set.json`). **İkinci görüş:**
+[.local/archive/sw/sw-slice17a-plan-2026-09-24/](../local-runs.md#run-archive-sw-sw-slice17a-plan-2026-09-24) (`overlap.py`, `overlap.json`, `safe_set.py`, `safe_set.json`). **İkinci görüş:**
 `gpt-5.6-sol` · medium, salt okunur (`sol-medium.md`): karar 1, 3, 5, 6'yı değişiklikle kabul etti, 2 ve 4'e itiraz etti;
 dokuz bulgusunun hepsi aşağıya işlendi ("Ortak kararlar"). Onay turunda (`sol-approval.md`) Sol karar 1, 3, 4, 5, 6,
 8'i onayladı; 2 ve 7'yi değişiklikle onayladı ve tek eksik olarak iki kararı birleştiren kalıcı sözleşmeyi istedi. O

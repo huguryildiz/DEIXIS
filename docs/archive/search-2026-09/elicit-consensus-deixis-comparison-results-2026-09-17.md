@@ -23,7 +23,7 @@ The seven controls were DOI-identified papers cited in, or central to, the two
 external reports. They are an incomplete known-work set, not a gold standard.
 The 50 returned records were unique by DOI in this run. The full raw payloads,
 queries, statuses, and hashes are retained in the ignored run directory:
-`.local/archive/early/elicit-consensus-deixis-comparison-2026-09-17-v2/`.
+[.local/archive/early/elicit-consensus-deixis-comparison-2026-09-17-v2/](../local-runs.md#run-archive-early-elicit-consensus-deixis-comparison-2026-09-17-v2).
 
 ## Comparison with the external reports
 
@@ -89,4 +89,4 @@ passage validation was performed, so the result supports a query-recall
 hypothesis, not a validated search-policy change.
 
 The rescue protocol and raw results are in
-`.local/archive/early/elicit-consensus-deixis-short-query-rescue-2026-09-17/`.
+[.local/archive/early/elicit-consensus-deixis-short-query-rescue-2026-09-17/](../local-runs.md#run-archive-early-elicit-consensus-deixis-short-query-rescue-2026-09-17).

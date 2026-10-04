@@ -1,6 +1,6 @@
 # Search adaptation: three-question development result
 
-**Status:** exploratory development evidence, not a product decision. The scored run is in ignored `.local/archive/early/search-adaptation-2026-09-17-v2/`; the earlier `.local/archive/early/search-adaptation-2026-09-17/` run is invalid because its A query came from an OpenAlex-only recompile. The [frozen protocol](search-adaptation-experiment-2026-09-17.md) records that correction. The scored run's manifest hashes the protocol, script, frozen plan database, and source revision; the saved protocol and script hashes still match.
+**Status:** exploratory development evidence, not a product decision. The scored run is in ignored [.local/archive/early/search-adaptation-2026-09-17-v2/](../local-runs.md#run-archive-early-search-adaptation-2026-09-17-v2); the earlier [.local/archive/early/search-adaptation-2026-09-17/](../local-runs.md#run-archive-early-search-adaptation-2026-09-17) run is invalid because its A query came from an OpenAlex-only recompile. The [frozen protocol](search-adaptation-experiment-2026-09-17.md) records that correction. The scored run's manifest hashes the protocol, script, frozen plan database, and source revision; the saved protocol and script hashes still match.
 
 ## Result
 

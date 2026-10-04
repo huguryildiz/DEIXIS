@@ -17,7 +17,7 @@ The query-structure design that follows from this review is recorded separately 
 
 ### A.1 Request-by-request record of the real run
 
-From `.local/archive/early/quantum-entanglement-search-2026-09-17/application-run/summary.json`:
+From [.local/archive/early/quantum-entanglement-search-2026-09-17/application-run/summary.json](../local-runs.md#run-archive-early-quantum-entanglement-search-2026-09-17):
 
 | # | Provider | Query shape | Limit | Returned | Provider total |
 |---|---|---|---|---|---|
@@ -32,7 +32,7 @@ From `.local/archive/early/quantum-entanglement-search-2026-09-17/application-ru
 
 The totals sum to 161 = 100 + 1 + 25 + 0 + 1 + 25 + 0 + 9.
 
-What this shows: the budget was spent on provider breadth (eight requests, seven providers) while half the requests returned almost nothing, and roughly 62% of the 149 unique works came from a single request. A direct lookup of the six controls proved 6/6 are in the provider indexes, so this is a query-formulation and ranking observation, not an index gap. The run's stored `library.sqlite` under `.local/archive/early/quantum-entanglement-search-2026-09-17/application-run/data/` additionally shows that **the 100-row OpenAlex deep read contained none of them**, while the same provider served five of the six under the short-query rescue later that day (the sixth was missed by both providers).
+What this shows: the budget was spent on provider breadth (eight requests, seven providers) while half the requests returned almost nothing, and roughly 62% of the 149 unique works came from a single request. A direct lookup of the six controls proved 6/6 are in the provider indexes, so this is a query-formulation and ranking observation, not an index gap. The run's stored `library.sqlite` under [.local/archive/early/quantum-entanglement-search-2026-09-17/application-run/data/](../local-runs.md#run-archive-early-quantum-entanglement-search-2026-09-17) additionally shows that **the 100-row OpenAlex deep read contained none of them**, while the same provider served five of the six under the short-query rescue later that day (the sixth was missed by both providers).
 
 What this does not show: that these eight queries are the best or worst possible. It is one question, one day, one model. "The required narrow core phrase caused the dead intersections" is a hypothesis, not an established cause, because query formulation was not varied independently of provider and depth.
 
@@ -124,7 +124,7 @@ The plan also changes the provider mix (seven providers to three). That is a sep
 
 The shape rules (`backend/deixis/providers/query_rules.py`) reject three or more unquoted words in a row and more than two required parts for OpenAlex-style queries, so the loose three-to-four-word form used above is **not sendable today**: the compiler builds every query to pass those checks (D44) and would have to change for this plan to run inside the product.
 
-The rescue that produced the five-of-six result called the connector directly (`.local/archive/early/quantum-entanglement-search-2026-09-17/rescue.py`), so it bypassed the validator entirely and is a probe result, not a product-executable form. The rules' own live probe points the other way at the other end of the range: six unquoted required words returned four works and none of 22 user-known papers. The two observations bound OpenAlex's behaviour but the boundary between them is untested, so the anchor form must be measured under the frozen protocol before any code change is justified.
+The rescue that produced the five-of-six result called the connector directly ([.local/archive/early/quantum-entanglement-search-2026-09-17/rescue.py](../local-runs.md#run-archive-early-quantum-entanglement-search-2026-09-17)), so it bypassed the validator entirely and is a probe result, not a product-executable form. The rules' own live probe points the other way at the other end of the range: six unquoted required words returned four works and none of 22 user-known papers. The two observations bound OpenAlex's behaviour but the boundary between them is untested, so the anchor form must be measured under the frozen protocol before any code change is justified.
 
 ## D. Frozen evaluation to run before any default change
 
@@ -170,7 +170,7 @@ Requested K, returned count, provider total and failed-request count stay visibl
 
 Fixed rule: 406 is never counted as zero results and no provider is silently substituted. The current behaviour is correct and stays: `backend/deixis/providers/arxiv.py` routes the response through `send()` to `status="failed"`, `delivery="rejected_not_executed"`.
 
-**Measured scope, added 2026-09-18 (read-only, live library):** the 406 is recorded **only** in the standalone probe `.local/archive/early/elicit-consensus-deixis-comparison-2026-09-17-v2/Q5-arxiv-search.json`. The application's own arXiv calls in `search_runs` contain **no 406** — they failed as `ReadTimeout` (8 calls, one day, keyless) or completed. So step 0 of this diagnostic is to establish **which calling path produces 406** before ablating parameters: a probe-path rejection is not yet evidence that the application path would be rejected, and vice versa.
+**Measured scope, added 2026-09-18 (read-only, live library):** the 406 is recorded **only** in the standalone probe [.local/archive/early/elicit-consensus-deixis-comparison-2026-09-17-v2/Q5-arxiv-search.json](../local-runs.md#run-archive-early-elicit-consensus-deixis-comparison-2026-09-17-v2). The application's own arXiv calls in `search_runs` contain **no 406** — they failed as `ReadTimeout` (8 calls, one day, keyless) or completed. So step 0 of this diagnostic is to establish **which calling path produces 406** before ablating parameters: a probe-path rejection is not yet evidence that the application path would be rejected, and vice versa.
 
 1. **Preserve the evidence.** For every request: full URL and parameters, timestamp, body (possibly empty), all response headers (especially `via`, `x-cache`, `server`, `age`), egress IP, HTTP version, and a body hash. This is what makes "which layer rejected it" discussable later.
 2. **Reproducibility.** Repeat the same request three times from the same network, at least three seconds apart. Does the 406 reproduce, or is it intermittent?
@@ -183,8 +183,8 @@ Expectation management: fixing arXiv does not explain the 1/6 result. In the sam
 
 ## Evidence sources
 
-- `.local/archive/early/quantum-entanglement-search-2026-09-17/result.md`, `application-run/summary.json`, `application-run/data/library.sqlite`, `rescue-run/score.json`, `rescue-protocol.md`, `holdout-design.md`, `arxiv-406-diagnostic.md`
-- `.local/archive/early/elicit-query-intents-2026-09-17/run2/RESULT.md`
+- [.local/archive/early/quantum-entanglement-search-2026-09-17/result.md](../local-runs.md#run-archive-early-quantum-entanglement-search-2026-09-17), `application-run/summary.json`, `application-run/data/library.sqlite`, `rescue-run/score.json`, `rescue-protocol.md`, `holdout-design.md`, `arxiv-406-diagnostic.md`
+- [.local/archive/early/elicit-query-intents-2026-09-17/run2/RESULT.md](../local-runs.md#run-archive-early-elicit-query-intents-2026-09-17)
 - `docs/archive/search-2026-09/search-strategy-review-2026-09-16.md`, `search-recall-depth-2026-09-17.md`, `search-method-validation-results-2026-09-17.md`, `search-diverse-query-development-results-2026-09-17.md`, `search-adaptation-development-results-2026-09-17.md`, `elicit-consensus-deixis-comparison-results-2026-09-17.md`
 - `backend/deixis/providers/query_compiler.py`, `backend/deixis/providers/query_rules.py`, `backend/deixis/providers/arxiv.py`, `backend/deixis/providers/openalex.py`, `backend/deixis/providers/semantic_scholar.py`, `backend/deixis/domain/rules.py`, `backend/deixis/workflow/flow.py`
 

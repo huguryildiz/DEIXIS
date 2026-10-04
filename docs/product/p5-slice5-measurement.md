@@ -11,9 +11,9 @@
 | Ölçüm | Ne bulundu | Sınırı |
 |---|---|---|
 | P4 kapanışı (D34, 15 Eylül) | Kurt 2017 sorusu, 18 bilinen eser: 9'u bulundu ve dahil edildi, 6'sı alıntılandı. Yanıt 3: 15 iddia, 13 destekli, 2 kısmen; yanlış atıf yok. | Tek soru, tek çalışma, Claude'un incelemesi. D44 öncesi arama. |
-| İzole Luna değerlendirmesi (`.local/archive/early/kurt-deixis-eval-2026-09-16`) | 128 tekil kayıt, 89 dahil; bilinen doğrudan 4 eserden 3'ü bulundu, 2'si alıntılandı. 48 pasajlık girdi özetlerle doldu, PDF sayfası girmedi. | Bilinen küme katmanları "geçici", insan etiketi değil. |
+| İzole Luna değerlendirmesi ([.local/archive/early/kurt-deixis-eval-2026-09-16](../archive/local-runs.md#run-archive-early-kurt-deixis-eval-2026-09-16)) | 128 tekil kayıt, 89 dahil; bilinen doğrudan 4 eserden 3'ü bulundu, 2'si alıntılandı. 48 pasajlık girdi özetlerle doldu, PDF sayfası girmedi. | Bilinen küme katmanları "geçici", insan etiketi değil. |
 | Tablo denemesi (D43, 16 Eylül) | 23 hücre adımının 19'u geçerli; 152 geçerli model hücresi. Rastgele 12 hücrede 10 doğru, 2 kısmen, 0 yanlış (iki denemede de). | Claude'un okuması; 24 hücre kalite farkı gösteremez. Sütunlar modelin önerisi. |
-| Pasaj seçimi tekrar oynatması (`.local/archive/early/passage-selection-2026-09-16`) | Çeşitlilik varyantı PDF'li kaynak sayısını 7'den 9'a çıkardı. | Alıntılanan pasajlar etiket değil; model çağrısı yok. |
+| Pasaj seçimi tekrar oynatması ([.local/archive/early/passage-selection-2026-09-16](../archive/local-runs.md#run-archive-early-passage-selection-2026-09-16)) | Çeşitlilik varyantı PDF'li kaynak sayısını 7'den 9'a çıkardı. | Alıntılanan pasajlar etiket değil; model çağrısı yok. |
 | D44 (sorgu derleme) | Yalnız sentetik testler. | Canlı geri çağırma ölçülmedi. |
 | D52 (Marker) | 50 denklemde 48 doğru, 1 küçük hata, 1 yanlış; metin katmanı denetimi 29 denklemde 2 gerçek hatayı yakaladı. | Yanıt ve hücrede denklem aktarımı ölçülmedi. |
 
@@ -67,7 +67,7 @@ Dilim 1 kararı 5, bütün sayfalar verilse bile modelin `not_reported` yazması
 ## 5. Araç
 
 - `scripts/p4_eval/measure.py` genişletilir ya da yanına `scripts/p5_eval/` gelir: bilinen küme ve cevap sayfası dosyası (katmanlı), tablo hücresi inceleme sayfası (hücre, değer, alıntı, sayfa bağlantısı, doğru/kısmen/yanlış/"yayında gerçekten yok" işaretleri), PDF edinme yolu tablosu, verilen pasajların cevap sayfalarıyla kesişimi ve `compare` ile çalışmaları yan yana koyma.
-- Araç modelsiz testlerle gelir (sentetik görünüm JSON'u). Çalışma çıktıları ve etiketler `.local/p5-measure-<tarih>/` altında kalır, depoya girmez; sonuç özeti karar kaydına yazılır.
+- Araç modelsiz testlerle gelir (sentetik görünüm JSON'u). Çalışma çıktıları ve etiketler [.local/p5-measure-<tarih>/](../archive/local-runs.md#historical-paths-absent-from-the-inspected-tree) altında kalır, depoya girmez; sonuç özeti karar kaydına yazılır.
 
 ## 6. Önceden yazılacak beklentiler (taslak)
 
@@ -170,7 +170,7 @@ Sahip sütunları onayladı, ikinci soruyu Claude'un hazırlamasını ve ölçü
 
 ## 12. Sonuç (kısa)
 
-Ayrıntı ve sınırlar D55'te; çıktılar ve işaretlenmiş inceleme sayfaları `.local/archive/early/p5-measure-2026-09-17/` altında. Bütün değerlendirmeler Claude'un.
+Ayrıntı ve sınırlar D55'te; çıktılar ve işaretlenmiş inceleme sayfaları [.local/archive/early/p5-measure-2026-09-17/](../archive/local-runs.md#run-archive-early-p5-measure-2026-09-17) altında. Bütün değerlendirmeler Claude'un.
 
 - **İyi giden:** yanlış atıf yok (S1 17 iddia, S2 16 iddia); rastgele 40 tablo değerinde yanlış yok; PDF sayfasıyla karşılaştırılan 9 sayı/denklem hücresi karakter karakter uyuşuyor; hücre adımlarının 85/86'sı geçerli.
 - **Kötü giden:** 52 kaynak dahil edilince yanıtlar hiç PDF sayfası kullanmadı (D34'teki sorun sürüyor); tutulmuş S2'de k-bağlantılılık eserlerinin yalnız 4/15'i, su altı bağlam eserlerinin 0/7'si bulundu; S1'de üç yanıttan ikisi alıntısı eksik atıf yüzünden geçersiz kaldı.

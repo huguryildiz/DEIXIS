@@ -7,7 +7,7 @@ sw-slice16-plan-prompt.md. **Ana dosya:** [sw-status.md](sw-status.md). **Karar:
 (dilim yazar). **Önkoşul:** 12 (kapandı, D85); 15 kapandı (D95). **Tür:** Kur. **Uygulayan:** Opus · high.
 **İnceleme:** tam (karar sessizce kanıtı bozabilir: kullanıcının kararı seçimlere, okuma planına ve özet okumasına
 dokunur). **Plan:** Opus 5.5 · high, 24 Eylül 2026 (prompt Fable · high diyordu; bu oturum Opus'ta koştu).
-**Ölçüm:** `.local/archive/sw/sw-slice16-queue-measure-2026-09-24/` (`protocol.md`, `result.md`, `table.md`, betikler).
+**Ölçüm:** [.local/archive/sw/sw-slice16-queue-measure-2026-09-24/](../local-runs.md#run-archive-sw-sw-slice16-queue-measure-2026-09-24) (`protocol.md`, `result.md`, `table.md`, betikler).
 **İkinci görüş:** `gpt-6-sol` · high, salt okunur (`sol-review.md`; testleri koşamadı). Sol yedi kararın ikisine
 katıldı, beşine itiraz etti. İtirazların hepsi aşağıya işlendi (karar 1, 3, 4, 5, 7 ve Task 2, 4); sıra kararında
 (5) Sol'un önerisi alındı. Sahip "`gpt-6-sol` · medium onaylarsa OK" dedi (24 Eylül 2026). Medium incelemesi
@@ -328,7 +328,7 @@ Karar 7'deki dört uç nokta ve `research_view.counts`. Pydantic gövdeleri `Sel
 
 - Karar, geri alma, revizyon ve eşzamanlılık yolları bu kabulde değil, Task 4'ün adıyla sayılan testlerinde sınanır
   (Sol'un bulgusu: saklı kütüphanelerin yeniden oynatması yalnız sınıflandırmayı sınar).
-- **Yeniden oynatma, modelsiz (zorunlu).** `.local/sw-slice16-acceptance-<tarih>/`. `queue_rows`, dilim 15 kabulünün
+- **Yeniden oynatma, modelsiz (zorunlu).** [.local/sw-slice16-acceptance-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree). `queue_rows`, dilim 15 kabulünün
   11 kütüphanesinde salt okunur bağlantıyla çalıştırılır. Satır sayısı ve neden dağılımı bu planın ölçümüyle birebir
   aynı olmalı (`counts.json`: kuantum `quick` 21 / 8, `standard` 40 / 15 / 30, `detailed` 100 / 90; paket 4 / 1 / 3 /
   3). Fark dilimi düşürür, çünkü görünüm aynı kararları okuyor.

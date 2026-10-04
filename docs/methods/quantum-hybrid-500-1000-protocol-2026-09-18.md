@@ -1,5 +1,7 @@
 # Isolated quantum search: 500 initial slots, conditional 1000 ceiling
 
+Local run provenance and raw-data limits are recorded in the [local run catalogue](../archive/local-runs.md). Local paths in commands, directory-layout examples and historical locator labels are retained as written; they are not proof that those artifacts still exist. The planned P9 raw-evidence target is `.local/archive/p9-evidence.tar.gz`, which was absent at the 4 October 2026 inspection.
+
 **Status:** prospective development protocol and executable trial profile; no new search result is claimed here. This profile does not change the DEIXIS product default. The earlier quantum/Elicit examples informed its design, so this question is not an independent holdout.
 
 ## Question and scope

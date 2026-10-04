@@ -45,4 +45,4 @@ Değişecek: `backend/deixis/workflow/flow.py` (`_fulltext_fetch`, `_discovery`'
 
 ## Ölçülmedi
 
-Duvar saati kazancı (ağ olmadan ölçülemez; 13ö tekrarı ölçer); konak kilidinin gerçek yayıncılarda yeterli nezaket olup olmadığı (403 / 429 oranı ölçümde karşılaştırılır: 22 Eylül koşusundaki oranlar `.local/archive/sw/sw-measure-2026-09-22/` verisinden okunur); `FULLTEXT_FETCH_PARALLEL = 4`'ün doğru sayı olup olmadığı; arXiv 406'nın yeniden denemeyle geçip geçmediği.
+Duvar saati kazancı (ağ olmadan ölçülemez; 13ö tekrarı ölçer); konak kilidinin gerçek yayıncılarda yeterli nezaket olup olmadığı (403 / 429 oranı ölçümde karşılaştırılır: 22 Eylül koşusundaki oranlar [.local/archive/sw/sw-measure-2026-09-22/](../local-runs.md#run-archive-sw-sw-measure-2026-09-22) verisinden okunur); `FULLTEXT_FETCH_PARALLEL = 4`'ün doğru sayı olup olmadığı; arXiv 406'nın yeniden denemeyle geçip geçmediği.

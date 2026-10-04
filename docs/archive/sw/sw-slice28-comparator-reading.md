@@ -11,15 +11,15 @@ JSON contract, not a table). **Prerequisite:** slice 26 closed (`142dfa1`), slic
 build. **Implementer:** Opus · high. **Review:** full (Sol · high, with the rule above): the slice changes when code
 includes a work. **Plan:** Opus 5.5 · high. **Scope:** the comparator part of the full-text reading (new SW27) only.
 
-**Measurement:** `.local/archive/sw/sw-slice28-plan-2026-09-27/`: `comparator_check.py` → `comparator-check.json`,
+**Measurement:** [.local/archive/sw/sw-slice28-plan-2026-09-27/](../local-runs.md#run-archive-sw-sw-slice28-plan-2026-09-27): `comparator_check.py` → `comparator-check.json`,
 `comparator-check.txt` (replay and the rejected quote check); `includes_reading.py` → `includes-reading.json`,
 `includes-reading.txt` (this session's comparator reading of every slice 27 include, from `includes-27-raw.txt`);
 `absent_paths.py` → `absent-paths.json`, `absent-paths.txt`; `definition_check.py` → `definition-check.json`,
 `definition-check.txt` (a screen, not the gate, Sol r2); `definition-gate-calibration.json` (the frozen rule and six
 calibration definitions of the criterion gate, Sol r2); `target_roles.py` → `target-roles.json`,
 `target-roles.txt`. All read stored libraries with `immutable=1` URIs: slice 24a's ten `sw` libraries
-(`.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/data-*-sw-*`) and slice 27's five
-(`.local/archive/sw/sw-slice27-remeasure-2026-09-27-043237/data-qtre-sw-*`). No model call, no provider request, no network.
+([.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/data-*-sw-*](../local-runs.md#run-archive-sw-sw-slice24-campaign-2026-09-26-134050)) and slice 27's five
+([.local/archive/sw/sw-slice27-remeasure-2026-09-27-043237/data-qtre-sw-*](../local-runs.md#run-archive-sw-sw-slice27-remeasure-2026-09-27-043237)). No model call, no provider request, no network.
 Port 8765 and the live library were not touched. One M1 Pro, Python 3.12 arm64 through `uv`.
 
 **Goal:** Slice 27 (D108) failed gate 4 on medicine: 3 serious errors in 10 sampled includes, all three a trial whose
@@ -215,7 +215,7 @@ isocaloric edge stays included.
    question-element checks and the contract `criterion_proposal.v2` do not change; a stored criterion is not rewritten.
    Runtime file: `skill_package_hash` changes (once for both files).
 
-5. **Acceptance** (scripts and outputs under `.local/sw-slice28-acceptance-<YYYY-MM-DD>/`).
+5. **Acceptance** (scripts and outputs under [.local/sw-slice28-acceptance-<YYYY-MM-DD>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree)).
    1. Full pytest (the known single failure apart: `tests/test_documents.py::test_extraction_is_stopped_when_it_exceeds_the_memory_limit`),
       `npm run build`, `npm run lint` (warnings not above 17), the full Playwright suite, `git diff --check`; highest
       migration `0055`; `uv.lock` unchanged; the new `skill_package_hash` in the final message.
@@ -241,7 +241,7 @@ isocaloric edge stays included.
         TRIM `10.1002/oby.70270`. Quantum control (copy of slice 24a `q1-sw-standard-r1`): `10.1038/s41598-024-70114-1`.
       - **Criterion, 6 calls:** three `criterion_proposal` calls for the medicine question and three for the quantum
         question (slice 24a's wording) with the new method text, each consensus through `criterion.consensus`, as slice
-        25a's dry run did (`.local/archive/sw/sw-slice25-acceptance-2026-09-26/dry-run/run.py`).
+        25a's dry run did ([.local/archive/sw/sw-slice25-acceptance-2026-09-26/dry-run/run.py](../local-runs.md#run-archive-sw-sw-slice25-acceptance-2026-09-26)).
       - **Stop rules.** Each of the four controls is compared with its stored decision per part and combined; the stored
         state of all four is `all_parts_verified` (both runs `present` with a verified quote on every part). Any
         deviation stops: a combined code other than `all_parts_verified`, any part other than `present` in either run,
@@ -406,7 +406,7 @@ isocaloric trials stay included; the second reader's agreement with this session
 ## Sol r1–r2 findings and what changed
 
 Sol (`gpt-6-sol` · high), plan round 1, 27 September 2026: "hazır değil", two high findings, one medium
-(`.local/archive/sw/sw-slice28-plan-2026-09-27/sol-plan-answer-r1.md`).
+([.local/archive/sw/sw-slice28-plan-2026-09-27/sol-plan-answer-r1.md](../local-runs.md#run-archive-sw-sw-slice28-plan-2026-09-27)).
 
 - **High 1 — the guard let the comparator decide an exclusion.** It fired only when the comparator was a run's only
   `absent` part; with another part `absent` in both runs, a comparator moving `present` → `absent` still turned
@@ -426,7 +426,7 @@ Sol (`gpt-6-sol` · high), plan round 1, 27 September 2026: "hazır değil", two
   not exclude it on this criterion; a person still can.
 - **Medium — the prompt's precondition** (plan not yet committed): kept; the plan is committed before the build.
 
-Sol, plan round 2, 27 September 2026 (the last plan round; `.local/archive/sw/sw-slice28-plan-2026-09-27/sol-plan-answer-r2.md`):
+Sol, plan round 2, 27 September 2026 (the last plan round; [.local/archive/sw/sw-slice28-plan-2026-09-27/sol-plan-answer-r2.md](../local-runs.md#run-archive-sw-sw-slice28-plan-2026-09-27)):
 all r1 findings closed, one new high.
 
 - **High — the criterion gate could miss the widening it targets.** `definition_check.py` checks only that the

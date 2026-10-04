@@ -412,6 +412,6 @@ Denetlenecek plan ve ilgili mevcut belgeler değişmez bir girdi paketi olarak h
 
 İstenen çıktı: `ready`, `ready_with_changes` veya `not_ready`; önem derecesi ve plan bölümüne bağlı somut bulgular; neden ve en küçük düzeltme; doğrulanmamış dış iddialar. Ana ajan her bulguyu kaynak/planla karşılaştırır; kabul edilen, kısmen kabul edilen ve gerekçeyle uygulanmayan maddeleri kayıt altına alır. Fable sonucu otomatik onay değildir.
 
-Ham çıktı ve tam girdi `.local/plan-review-2026-09-14/` altında kalır; kısa denetim raporu ve disposition bu ürün belgelerine eklenir. Sonraki düzeltmelerin Fable tarafından ayrıca yeniden incelenip incelenmediği açık yazılır. Kullanıcı sonsuz inceleme döngüsü istemediğinden tek kapsamlı denetim esas alınır; yalnız kritik bulgunun çözümünü anlamak için gerekirse sınırlı takip yapılır.
+Ham çıktı ve tam girdi [.local/plan-review-2026-09-14/](../archive/local-runs.md#historical-paths-absent-from-the-inspected-tree) altında kalır; kısa denetim raporu ve disposition bu ürün belgelerine eklenir. Sonraki düzeltmelerin Fable tarafından ayrıca yeniden incelenip incelenmediği açık yazılır. Kullanıcı sonsuz inceleme döngüsü istemediğinden tek kapsamlı denetim esas alınır; yalnız kritik bulgunun çözümünü anlamak için gerekirse sınırlı takip yapılır.
 
 **Bu plan sonrası ilk uygulama işi:** P1'de minimal `deixis-research` skill'ini, sürümlü çıktı sözleşmesini ve sentetik test girdilerini yazmak; ardından P2'de yerel backend ve Codex adaptörünü kurmak. Mevcut tur plan ve denetim teslimiyle kapanır; çalışan uygulama varmış gibi raporlanmaz.

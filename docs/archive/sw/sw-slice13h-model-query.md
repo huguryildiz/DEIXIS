@@ -1,8 +1,10 @@
 # SW dilim 13h — Arama sorgusunu model yazar, kodun sorgusu yanında aranır
 
+Local run provenance and raw-data limits are recorded in the [local run catalogue](../local-runs.md). Local paths in commands, directory-layout examples and historical locator labels are retained as written; they are not proof that those artifacts still exist. The planned P9 raw-evidence target is `.local/archive/p9-evidence.tar.gz`, which was absent at the 4 October 2026 inspection.
+
 **Tarih:** 23 Eylül 2026. **Durum:** uygulandı, inceleme bekliyor. **Ana dosya:** [sw-status.md](sw-status.md). **Karar:** D92 (dilim
-yazar). **Önkoşul:** 13g (uygulandı), iki model sorgusu ölçümü (`.local/archive/sw/sw-model-query-experiment-2026-09-23/`,
-`.local/archive/sw/sw-model-query-experiment-2026-09-24/result.md`). **Tür:** Kur. **Uygulayan:** Opus · high. **İnceleme:** tam
+yazar). **Önkoşul:** 13g (uygulandı), iki model sorgusu ölçümü ([.local/archive/sw/sw-model-query-experiment-2026-09-23/](../local-runs.md#run-archive-sw-sw-model-query-experiment-2026-09-23),
+[.local/archive/sw/sw-model-query-experiment-2026-09-24/result.md](../local-runs.md#run-archive-sw-sw-model-query-experiment-2026-09-24)). **Tür:** Kur. **Uygulayan:** Opus · high. **İnceleme:** tam
 (Fable); sorgu neyin bulunacağını belirler, kanıtın en başıdır. **Plan:** Opus, 23 Eylül 2026. Dilim 14 (kaynak
 yönlendirme) ayrı iş olarak kalıyor.
 
@@ -143,7 +145,7 @@ açık bir seçenek olarak yanında durur.
 ## Task 6: canlı kabul ölçümü ve kapanış
 
 - Ürünün koduyla, 8765 açılmadan, 13g kabulünün düzeni (`accept.py` gibi, ayrı veri dizini ve `Settings`) yeni bir
-  klasöre kurulur (`.local/sw-slice13h-acceptance-<tarih>/`). Deneyin üç sorusu ve doğru cevap listeleri
+  klasöre kurulur ([.local/sw-slice13h-acceptance-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree)). Deneyin üç sorusu ve doğru cevap listeleri
   (`sw-vocabulary-experiment-2026-09-23/common.py`) kullanılır. Model `gpt-5.6-luna` · medium, efor `detailed`. Her
   soru **üç ayrı kapsam revizyonunda** koşulur (ürün tek çağrı yapar; üç revizyon bir çağrının ne kadar
   kaçırabileceğini gösterir). Onay `as_proposed`, kod sorgusu açık.

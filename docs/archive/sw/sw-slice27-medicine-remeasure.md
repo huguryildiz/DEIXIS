@@ -6,7 +6,7 @@
 D108 (highest today D107). **Migration:** none (highest stays `0055`). **Prerequisite:** 25a closed (`1627b8e`), 26
 closed (`142dfa1`), 25b stopped before any research (row 25). **Type:** measure; no product file changes.
 **Implementer:** Fable · high, as 25b (a long-running script may go to a Sonnet background agent). **Review:** the result
-goes to the owner, as 25b's did. **Plan:** Opus 5.5 · high. **Pre-work:** `.local/archive/sw/sw-slice27-plan-2026-09-27/`
+goes to the owner, as 25b's did. **Plan:** Opus 5.5 · high. **Pre-work:** [.local/archive/sw/sw-slice27-plan-2026-09-27/](../local-runs.md#run-archive-sw-sw-slice27-plan-2026-09-27)
 (read-only PubMed requests, no model call, no server).
 
 ## What this is
@@ -20,7 +20,7 @@ document and D108, and the default goes to the owner (change 6).
 25b stopped on 2026-09-26 before any research: the frozen reference rule (slice 25 decision 8) read only two
 included-studies tables in 30 candidates and gave |R| = 7 < 10 (decision 8.7). Four eligible reviews had no open table
 (two OUP 403, the Cochrane review's PMC copy embargoed and its site 403, one ScienceDirect 403). Its folder is
-`.local/archive/sw/sw-slice25-remeasure-2026-09-26-224554/`. Since then slice 26 (`142dfa1`, D107) changed `backend`, `methods`,
+[.local/archive/sw/sw-slice25-remeasure-2026-09-26-224554/](../local-runs.md#run-archive-sw-sw-slice25-remeasure-2026-09-26-224554). Since then slice 26 (`142dfa1`, D107) changed `backend`, `methods`,
 `contracts` and `apps/web`, so 25b's "no diff since the 25a commit" check can no longer hold, and the decision number 25b
 would have written (D107) is taken.
 
@@ -84,7 +84,7 @@ words, and the results document repeats it next to every number that depends on 
    owner may switch the default in 24b on this evidence, within the stated limits; this run does not switch it. D105,
    D106 and D107 are not edited.
 4. **Quantum stays from slice 24 (F1).** Every quantum number the gates use is read from
-   `.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/`, measured on `65a7ec8` (hash `sha256:1700eb6e…`). The medicine
+   [.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/](../local-runs.md#run-archive-sw-sw-slice24-campaign-2026-09-26-134050), measured on `65a7ec8` (hash `sha256:1700eb6e…`). The medicine
    numbers will come from `142dfa1`. Two code versions therefore meet in one gate verdict. What is known about the gap:
    - *Measured on stored quantum data, code side:* slice 25a's criterion consensus reproduced all 10 stored 24a criteria
      byte for byte (quantum included), and its dry run gave quantum `required_roles = []` in 2 of 2 consensus results.
@@ -102,8 +102,8 @@ words, and the results document repeats it next to every number that depends on 
    `search-workflow-review-2026-09-18.md` (SW18's status line) and, after the gates, D108 in `decisions.md`. The question byte for
    byte; the 7 medicine researches in slice 24's order, one at a time, 2 minutes apart, ports 8858–8864; server
    environment and stop rules of slice 24's `protocol.md`; Codex `gpt-5.6-luna` · medium in every role; nobody approves,
-   edits, answers the queue or adds a PDF. The run folder is `.local/sw-slice27-remeasure-<YYYY-MM-DD>-<HHMMSS>/` with
-   the marker `.local/sw-slice27-active`, written only after `protocol.md`; resume and restart follow slice 24 decision 13
+   edits, answers the queue or adds a PDF. The run folder is [.local/sw-slice27-remeasure-<YYYY-MM-DD>-<HHMMSS>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree) with
+   the marker [.local/sw-slice27-active](../local-runs.md#historical-paths-absent-from-the-inspected-tree), written only after `protocol.md`; resume and restart follow slice 24 decision 13
    with this folder and marker. The scripts `measure25.py`, `gates25.py`, `post25.py` and `gates25_selftest.py` are
    written, self-tested and frozen as slice 25 decision 9 describes (25b never wrote them). Their diffs against 24a's
    `measure.py`, `gates.py` and `post.py` are frozen beside them. Also unchanged: the analyst sample and second reading
@@ -125,7 +125,7 @@ words, and the results document repeats it next to every number that depends on 
 
 ## Pre-work (plan time, measured)
 
-Scripts and outputs in `.local/archive/sw/sw-slice27-plan-2026-09-27/`: `rank25_rows.py`, `rank25_rows_fix.py`,
+Scripts and outputs in [.local/archive/sw/sw-slice27-plan-2026-09-27/](../local-runs.md#run-archive-sw-sw-slice27-plan-2026-09-27): `rank25_rows.py`, `rank25_rows_fix.py`,
 `rank25_rows_doi.py` → `rank25-rows-resolved.json`; `rank25_decisions.py` → `rank25-decisions.json`, `r-estimate.json`;
 every step in `ledger.jsonl`. There were 40 read-only requests to NCBI E-utilities (esearch, esummary, efetch), all HTTP
 200. They went to one host, with at least 1.05 s between request starts and the product's User-Agent, and each is logged

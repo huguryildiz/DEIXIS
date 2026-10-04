@@ -1,7 +1,7 @@
 # Dilim 24a — ölçüm kampanyasının sonucu
 
 **Tarih:** 2026-09-26. **Plan:** [sw-slice24-measurement-campaign.md](sw-slice24-measurement-campaign.md), commit `65a7ec8`.
-**Kampanya klasörü (git dışı):** `.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/` (defter `ledger.jsonl`, protokol
+**Kampanya klasörü (git dışı):** [.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/](../local-runs.md#run-archive-sw-sw-slice24-campaign-2026-09-26-134050) (defter `ledger.jsonl`, protokol
 `protocol.md`, ölçüm `measure/`, kapılar `gates.json`, analist okuması `analyst-reading.jsonl`, G1 `g1/`).
 **Makine ve model:** bir Apple M1 Pro; her model çağrısı Codex bağlantısında `gpt-5.6-luna`, efor `medium`. Başka model
 çağrılmadı, sessiz geri dönüş olmadı (1.230 oturumun hepsi `gpt-5.6-luna->gpt-5.6-luna`).

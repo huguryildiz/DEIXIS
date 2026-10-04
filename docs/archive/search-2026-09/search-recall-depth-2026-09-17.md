@@ -19,7 +19,7 @@ D55'te iki sorunun her biri 8 sorguyla 103 ve 127 tekil kayıt verdi. S2'de Open
 
 ## 2. Yoklama (modelsiz, 17 Eylül 2026)
 
-Betikler ve çıktılar `.local/archive/early/recall-probe-2026-09-17/` altında, depoya girmedi. Yalnız OpenAlex, DEIXIS'in kullandığı `search.title_and_abstract` parametresiyle; bilinen kümeler `scripts/p4_eval/sets/` altındaki dondurulmuş dosyalar (hedef makalenin kendisi sayılmadı).
+Betikler ve çıktılar [.local/archive/early/recall-probe-2026-09-17/](../local-runs.md#run-archive-early-recall-probe-2026-09-17) altında, depoya girmedi. Yalnız OpenAlex, DEIXIS'in kullandığı `search.title_and_abstract` parametresiyle; bilinen kümeler `scripts/p4_eval/sets/` altındaki dondurulmuş dosyalar (hedef makalenin kendisi sayılmadı).
 
 **Derinliğe göre bulunan bilinen eser:**
 
@@ -118,4 +118,4 @@ Sonuç D60'ta. GPT 5.6 Sol (high) incelemesinden sonra sahibin onayıyla (`ok`) 
 
 *Aynı plan, iki derleyici (model yok, yalnız arama).* Sekiz saklı planın her biri derin sorgusuz ve derin sorgulu derlenip arandı; aynı istekler bir kez gönderildi. Bilinen eser, derinsiz → derin: S1 planları 6 → 9, 7 → 11, 6 → 11, 6 → 11; S2 planları 4 → 8, 3 → 9; S3 planları 0 → 0, 2 → 2. Plan sabitken de S1 ve S2'deki kazanç derinlikten geliyor; S3'te dar çekirdekle derinlik hiçbir şey eklemiyor. Bir IEEE isteği zaman aşımına uğradı (S3, eski plan).
 
-*Plan kapısı: geçmedi.* Yeni metinle S3'te çekirdek 5/5 teknolojinin adı, iki görev 5/5 ayrı kavramda (eski metin: 0/5). S1'de çekirdek 5/5 paket boyutu. Ama S2'de çekirdek yalnız 2/5 k-bağlantılılık; 3/5'te `wireless sensor network` / `underwater wireless sensor network` oldu (eski metin 5/5 k-bağlantılılık) ve bir plan geçersizdi. Model S2'deki birden çok yöntemi (yerleşim, topoloji kontrolü, tespit, onarım) "tek teknoloji içinde birden çok görev" diye okudu. Önceden yazılan kurala göre yöntem metni commit'lenmedi, geri alındı (metin `.local/archive/early/depth-measure-2026-09-17/gate/rejected-method-text.md`) ve uçtan uca ölçüm yapılmadı.
+*Plan kapısı: geçmedi.* Yeni metinle S3'te çekirdek 5/5 teknolojinin adı, iki görev 5/5 ayrı kavramda (eski metin: 0/5). S1'de çekirdek 5/5 paket boyutu. Ama S2'de çekirdek yalnız 2/5 k-bağlantılılık; 3/5'te `wireless sensor network` / `underwater wireless sensor network` oldu (eski metin 5/5 k-bağlantılılık) ve bir plan geçersizdi. Model S2'deki birden çok yöntemi (yerleşim, topoloji kontrolü, tespit, onarım) "tek teknoloji içinde birden çok görev" diye okudu. Önceden yazılan kurala göre yöntem metni commit'lenmedi, geri alındı (metin [.local/archive/early/depth-measure-2026-09-17/gate/rejected-method-text.md](../local-runs.md#run-archive-early-depth-measure-2026-09-17)) ve uçtan uca ölçüm yapılmadı.

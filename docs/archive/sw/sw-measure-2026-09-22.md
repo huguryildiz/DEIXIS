@@ -1,6 +1,6 @@
 # SW ölçüm adımı (13ö) — D88 ölçümü, sonuç (22 Eylül 2026)
 
-**Tarih:** 22 Eylül 2026. **Durum:** koşuldu; 13e'den sonra aynı ayarlarla yeniden koşuldu (en altta). **Ana dosya:** [sw-status.md](sw-status.md). **Karar:** D88. **Koşan:** Opus (kampanya betiği `.local/archive/sw/sw-measure-2026-09-22/campaign.py`, izlenmez). **Ham veri:** `.local/archive/sw/sw-measure-2026-09-22/` (dondurulmuş beklentiler `protocol.md`, `protocol-luna.md`; efor başına ayrı `DEIXIS_DATA_DIR`), izlenmez. Bu dosya o klasördeki `result.md`'nin kopyasıdır; arXiv bulgusu incelemeden sonra düzeltildi.
+**Tarih:** 22 Eylül 2026. **Durum:** koşuldu; 13e'den sonra aynı ayarlarla yeniden koşuldu (en altta). **Ana dosya:** [sw-status.md](sw-status.md). **Karar:** D88. **Koşan:** Opus (kampanya betiği [.local/archive/sw/sw-measure-2026-09-22/campaign.py](../local-runs.md#run-archive-sw-sw-measure-2026-09-22), izlenmez). **Ham veri:** [.local/archive/sw/sw-measure-2026-09-22/](../local-runs.md#run-archive-sw-sw-measure-2026-09-22) (dondurulmuş beklentiler `protocol.md`, `protocol-luna.md`; efor başına ayrı `DEIXIS_DATA_DIR`), izlenmez. Bu dosya o klasördeki `result.md`'nin kopyasıdır; arXiv bulgusu incelemeden sonra düzeltildi.
 
 Dondurulmuş beklentiler: `protocol.md` (DeepSeek kampanyası), `protocol-luna.md` (Luna kampanyası). Depo commit'i `7df0102`, `skill_package_hash` `sha256:b35b4f49…`, gömme `off`, protokol önerisi her koşuda olduğu gibi onaylandı, eforlar art arda koştu.
 
@@ -47,7 +47,7 @@ Tek konu, efor başına tek koşu; dağılım ölçülmedi. Üç efor art arda a
 
 ## Yeniden ölçüm (13e sonrası, 22 Eylül 2026)
 
-**Koşu:** 22 Eylül 2026 18:44–20:05 UTC, commit `8fa06b4` (13e `20b6e77` + inceleme), `skill_package_hash` `sha256:b35b4f49…` (değişmedi), `codex` / `gpt-5.6-luna` · medium, gömme `off`, protokol olduğu gibi onaylandı, üç efor art arda. Betik ilk kampanyanınkiyle aynı, dondurulmuş beklenti `.local/archive/sw/sw-measure-2026-09-22b/protocol.md`, ham veri aynı klasörde (izlenmez). Sabitler ayarlanmadı. İlk deneme 18:38'de başladı, editör kapanınca `quick`'in okuma aşamasında kesildi; dosyaları `aborted-1/`'de, sayılmadı, `quick` baştan koşuldu.
+**Koşu:** 22 Eylül 2026 18:44–20:05 UTC, commit `8fa06b4` (13e `20b6e77` + inceleme), `skill_package_hash` `sha256:b35b4f49…` (değişmedi), `codex` / `gpt-5.6-luna` · medium, gömme `off`, protokol olduğu gibi onaylandı, üç efor art arda. Betik ilk kampanyanınkiyle aynı, dondurulmuş beklenti [.local/archive/sw/sw-measure-2026-09-22b/protocol.md](../local-runs.md#run-archive-sw-sw-measure-2026-09-22b), ham veri aynı klasörde (izlenmez). Sabitler ayarlanmadı. İlk deneme 18:38'de başladı, editör kapanınca `quick`'in okuma aşamasında kesildi; dosyaları `aborted-1/`'de, sayılmadı, `quick` baştan koşuldu.
 
 ### Süreler
 
@@ -104,7 +104,7 @@ Tek konu, efor başına tek koşu; dağılım ölçülmedi. İki kampanyanın to
 
 ## Üçüncü ölçüm (13f + 13g + 13h sonrası, 23 Eylül 2026)
 
-**Koşu:** 23 Eylül 2026 01:37–02:42 UTC, commit `3ecb1ed`, `skill_package_hash` `sha256:7d4e238c…`, `codex` / `gpt-5.6-luna` · medium, `DEIXIS_SEARCH_QUERY=model`, gömme `off`, protokol olduğu gibi onaylandı, üç efor art arda. Dondurulmuş beklenti `.local/archive/sw/sw-measure-2026-09-24/protocol.md`'de, ham veri ve okuma betikleri (`quality.py`, `stages.py`, `summary.py`, `s2share.py`) aynı klasörde (izlenmez). Sabitler ayarlanmadı. Üç koşu da `completed`, üç yanıt da `structurally_valid`, hiçbir koşu duraklamadı.
+**Koşu:** 23 Eylül 2026 01:37–02:42 UTC, commit `3ecb1ed`, `skill_package_hash` `sha256:7d4e238c…`, `codex` / `gpt-5.6-luna` · medium, `DEIXIS_SEARCH_QUERY=model`, gömme `off`, protokol olduğu gibi onaylandı, üç efor art arda. Dondurulmuş beklenti [.local/archive/sw/sw-measure-2026-09-24/protocol.md](../local-runs.md#run-archive-sw-sw-measure-2026-09-24)'de, ham veri ve okuma betikleri (`quality.py`, `stages.py`, `summary.py`, `s2share.py`) aynı klasörde (izlenmez). Sabitler ayarlanmadı. Üç koşu da `completed`, üç yanıt da `structurally_valid`, hiçbir koşu duraklamadı.
 
 ### Kısaca
 
@@ -220,7 +220,7 @@ Başarısız model oturumu yok; 13e'nin okuma yeniden gönderimi bu kez tetiklen
 
 ### Semantic Scholar (sahip kararı, 23 Eylül 2026)
 
-`s2share.py` her sağlayıcının saklanan sayfalarını okudu. Semantic Scholar'ın getirdiği doğrulanmış eserlerin neredeyse hepsini başka bir sağlayıcı da getirdi: yalnız onun getirdiği 3 eser vardı (`quick` g009, `detailed` g030 ve g126) ve hiçbiri özet aşamasını geçmedi. Buna karşılık `detailed`'da aramanın süresini o belirledi: 24 sayfa adımı, 44 istek, sayfa başına ortanca ~19 sn (öbür sağlayıcılarda 2–7 sn). Sağlayıcı başına 300 kayıtlık bir okuma sınırı önerildi; sahip önce Semantic Scholar'ın Scopus gibi (D91) sw aramasından çıkmasına karar verdi. Ardından bulk uç noktası denendi (`.local/archive/sw/sw-s2-bulk-probe-2026-09-23/result.md`): aynı ilk tur blok sorguları mantıksal sözdizimiyle efor başına 2–3 istek ve 4–6 sn'de 20 / 21 / 20 doğrulanmış eser getirdi (bugünkü ilgi aramasıyla 6 / 8 / 19); `standard` ve `detailed`'da OpenAlex'in bulmadığı eser yoktu, `quick`'te havuza 4 eser ekledi. **Sahip kararı:** Semantic Scholar bütün sw aramalarında bulk uç noktasıyla aranır. Bulk ilgiye göre sıralamadığı için 1.000'i aşan sorgunun kesim sırası dilimde karara bağlanır. Kod değişmedi; kararı ve kaydını (D93) dilim 14 yazar (planında Semantic Scholar toplu araması zaten var), kabul koşulu paket sorusunda da kayıp olmadığını göstermektir. Sıralama bulgusu dilim 14a'ya gitti.
+`s2share.py` her sağlayıcının saklanan sayfalarını okudu. Semantic Scholar'ın getirdiği doğrulanmış eserlerin neredeyse hepsini başka bir sağlayıcı da getirdi: yalnız onun getirdiği 3 eser vardı (`quick` g009, `detailed` g030 ve g126) ve hiçbiri özet aşamasını geçmedi. Buna karşılık `detailed`'da aramanın süresini o belirledi: 24 sayfa adımı, 44 istek, sayfa başına ortanca ~19 sn (öbür sağlayıcılarda 2–7 sn). Sağlayıcı başına 300 kayıtlık bir okuma sınırı önerildi; sahip önce Semantic Scholar'ın Scopus gibi (D91) sw aramasından çıkmasına karar verdi. Ardından bulk uç noktası denendi ([.local/archive/sw/sw-s2-bulk-probe-2026-09-23/result.md](../local-runs.md#run-archive-sw-sw-s2-bulk-probe-2026-09-23)): aynı ilk tur blok sorguları mantıksal sözdizimiyle efor başına 2–3 istek ve 4–6 sn'de 20 / 21 / 20 doğrulanmış eser getirdi (bugünkü ilgi aramasıyla 6 / 8 / 19); `standard` ve `detailed`'da OpenAlex'in bulmadığı eser yoktu, `quick`'te havuza 4 eser ekledi. **Sahip kararı:** Semantic Scholar bütün sw aramalarında bulk uç noktasıyla aranır. Bulk ilgiye göre sıralamadığı için 1.000'i aşan sorgunun kesim sırası dilimde karara bağlanır. Kod değişmedi; kararı ve kaydını (D93) dilim 14 yazar (planında Semantic Scholar toplu araması zaten var), kabul koşulu paket sorusunda da kayıp olmadığını göstermektir. Sıralama bulgusu dilim 14a'ya gitti.
 
 ### Önceki koşudan taşınanlar
 

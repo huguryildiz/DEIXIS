@@ -4,7 +4,7 @@
 (plandaki "Frozen expectations" o commit'le dondu). **Prompt:** sw-slice30-resume-prompt.md
 (sürdürme). **Sınanan kod:** `a04eaa0` (D109 ve SW19/SW20 dahil), `skill_package_hash`
 `sha256:1122205caf88fe87b4baad10dc529df93e391150b9b6ea0502e018a380baa2d8`. **Kuantum yarısı:** dilim 24'ün klasöründen,
-`65a7ec8`. **Karar:** D114. **Klasör:** `.local/archive/sw/sw-slice30-medicine-final-2026-09-28/` (`protocol.md`, `ledger.jsonl`,
+`65a7ec8`. **Karar:** D114. **Klasör:** [.local/archive/sw/sw-slice30-medicine-final-2026-09-28/](../local-runs.md#run-archive-sw-sw-slice30-medicine-final-2026-09-28) (`protocol.md`, `ledger.jsonl`,
 `runs.json`, `gates.json`, `gate2-one-unit.json`, `analyst-reading.jsonl`, `analyst/`). **Makine ve model:** bir M1 Pro,
 Python 3.12 arm64; her araştırmanın her rolünde Codex `gpt-5.6-luna` · medium. Her sayı tek koşudur.
 

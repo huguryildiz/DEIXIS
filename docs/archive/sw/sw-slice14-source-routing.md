@@ -15,7 +15,7 @@ kurar.
 
 ## Elimizdeki sayılar
 
-1. **Hangi kaynak ne getirdi** (üçüncü D88 ölçümü, `.local/archive/sw/sw-measure-2026-09-24/`; ham sayfalardan `bysource.py`
+1. **Hangi kaynak ne getirdi** (üçüncü D88 ölçümü, [.local/archive/sw/sw-measure-2026-09-24/](../local-runs.md#run-archive-sw-sw-measure-2026-09-24); ham sayfalardan `bysource.py`
    ile okundu). 31 doğrulanmış kuantum eserinden havuzda 19 / 25 / 30 vardı. Yalnız bir kaynağın bulduğu eserler:
    - `quick`: OpenAlex 12, S2 1.
    - `standard`: OpenAlex 5, IEEE 2 (g096, g052).
@@ -23,10 +23,10 @@ kurar.
 
    PubMed, CORE ve SerpApi doğrulanmış eser getirdi (en çok 8, 3 ve 5), ama hiçbiri yalnız kendisinin bulduğu bir
    eser getirmedi. arXiv üç eforda da sıfır kayıt döndü (406 sorunu, TODO'da).
-2. **S2 bulk denemesi** (`.local/archive/sw/sw-s2-bulk-probe-2026-09-23/`). İlk turun sorguları efor başına 2–3 istekte ve
+2. **S2 bulk denemesi** ([.local/archive/sw/sw-s2-bulk-probe-2026-09-23/](../local-runs.md#run-archive-sw-sw-s2-bulk-probe-2026-09-23)). İlk turun sorguları efor başına 2–3 istekte ve
    4–6 sn'de 20 / 21 / 20 doğrulanmış eser getirdi. Bugünkü S2 araması 6 / 8 / 19 getiriyor ve `detailed`'da 8,7
    dakika sürüyor. `quick`'te bulk, OpenAlex'in 400 kayıtlık okumasının kaçırdığı 4 eseri havuza ekledi.
-3. **Alan dağılımı denemesi** (`.local/archive/sw/sw-slice14-fields-probe-2026-09-23/`). Modelin kapı sorgusu için soru başına
+3. **Alan dağılımı denemesi** ([.local/archive/sw/sw-slice14-fields-probe-2026-09-23/](../local-runs.md#run-archive-sw-sw-slice14-fields-probe-2026-09-23)). Modelin kapı sorgusu için soru başına
    bir OpenAlex isteği gönderildi (`group_by=primary_topic.field.id`):
 
    | soru | kayıt | alanlar (payı en büyük olanlar) |
@@ -86,7 +86,7 @@ kurar.
 - Üçüncü ölçümün altı ilk tur sorgusunu (üç efor × model/kod, OpenAlex metni bulk sözdizimine çevrilmiş) üç sırayla
   gönder: `paperId`, `citationCount:desc`, `publicationDate:desc`. Her birinde 31 doğrulanmış eserden kaçının ilk
   400 ve ilk 1.000 kayıtta olduğunu say. Toplam en çok 18 istek, D67 aralığıyla. Klasör:
-  `.local/sw-slice14-bulk-sort-<tarih>/`.
+  [.local/sw-slice14-bulk-sort-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree).
 - **Önceden sabitlenen kural:** altı sorgunun toplamında ilk 400 kayıtta en çok doğrulanmış eseri tutan sıra seçilir.
   Eşitlikte varsayılan sıra (`paperId`) kalır. Sonuç D93'e yazılır. Tek konudur; D93'ün Limits bölümü bunu söyler.
 
@@ -158,7 +158,7 @@ kurar.
 ## Task 6: canlı kabul ve kapanış
 
 - Ürünün koduyla, 8765 açılmadan, 13h kabulünün düzeninde bir klasör kurulur:
-  `.local/sw-slice14-acceptance-<tarih>/`. Model `gpt-5.6-luna` · medium. Onay `as_proposed`. Koşu keşif bitince
+  [.local/sw-slice14-acceptance-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree). Model `gpt-5.6-luna` · medium. Onay `as_proposed`. Koşu keşif bitince
   durur; getirme ve yanıt yoktur.
 - **Kabul:**
   - Kuantum sorusu üç eforda koşulur. Havuzdaki doğrulanmış eser sayısı üçüncü ölçümün 19 / 25 / 30'unun altına

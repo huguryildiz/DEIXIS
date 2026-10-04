@@ -61,7 +61,7 @@ R2-R6, R8, R9, R11: `ölçülemedi: run_incomplete`. Okurlar (K09) başlatılmad
 
 ## Süreç kapanışı ve izolasyon
 
-İzole sunucu (PID 38083, port 8873) 07:51Z'de SIGTERM ile durduruldu. Sunucu ve kayıtlı `codex app-server` alt süreci (38865) 5 s içinde çıktı. Gözlemciler durma dosyalarıyla kapandı. Sunucu yeniden başlatılmadı. Port 8765 hiç kullanılmadı ve her denetimde boştu (06:52Z, 07:16Z, 07:40Z, 07:50Z). `~/Library/Application Support/DEIXIS` altında yalnız `codex-home` kullanıldı, o da yalnız adaptör tarafından (K05 istisnası). Ölçüm worktree'si temiz, `87cee0b`'de; kit ve kit testi hash'leri değişmedi. Ham kanıt `DEIXIS-h9run/.local/p9r-h9/` altında izlenmeden duruyor.
+İzole sunucu (PID 38083, port 8873) 07:51Z'de SIGTERM ile durduruldu. Sunucu ve kayıtlı `codex app-server` alt süreci (38865) 5 s içinde çıktı. Gözlemciler durma dosyalarıyla kapandı. Sunucu yeniden başlatılmadı. Port 8765 hiç kullanılmadı ve her denetimde boştu (06:52Z, 07:16Z, 07:40Z, 07:50Z). `~/Library/Application Support/DEIXIS` altında yalnız `codex-home` kullanıldı, o da yalnız adaptör tarafından (K05 istisnası). Ölçüm worktree'si temiz, `87cee0b`'de; kit ve kit testi hash'leri değişmedi. Ham kanıt [DEIXIS-h9run/.local/p9r-h9/](../archive/local-runs.md#run-archive-p9-evidence-deixis-h9run) altında izlenmeden duruyor.
 
 ## R01
 
@@ -112,7 +112,7 @@ A ve A2 birlikte şunu gösterir: RF'in yama şeması canlı API'de reddediliyor
 - **R9 kit eşlemesi:** IV girdisinde Candelieri18b ve Rajabpour18'in donmuş Denklem hücreleri vardı. Kit çiftin `source_key` değerini raporun kaynak listesinden okuyor, sonra donmuş anlık görüntünün satırlarıyla üzerine yazıyor; o satırlarda `source_key` alanı yok, bu yüzden her çiftin `source_version_ids` listesi boş kaldı ve kit her çifti `no_input_equation` yazdı. Freeze §4.4 gereği kit değiştirilmez ve kit dışında puan verilmez; R9 ölçülemedi kalır. Bu bir kit hatasıdır, girdide denklem olmadığı anlamına gelmez.
 - **R2:** kısmen işaretlerinin çoğu, çok parçalı bir iddiaya tek parçayı taşıyan çapa alıntısından geliyor. Desteklemeyen bağ yok.
 
-Bütçe: A 7 + A2 10 + B hazırlık 70 + B rapor 20 = 107 / 293 oturum; okur isteği 2 / 4, 6 dk 11 s (ilk okurun 5 dk 38 s'lik okuması dahil; ilk kayıt yalnız ikinci okuru saymıştı, Ek E'de düzeltildi). D129'un çapa onarımı A2'de iki bölümde (V tam onarım, IV yama), B'de bir bölümde (IV yama) görüldü ve sayıldı. Onarılan iddiaların anlam desteği ayrıca okunmadı; B'nin R2 okuması tohumlu 30 iddialık örneklem üzerindedir. Sunucu durduruldu, 8765'e dokunulmadı; kanıt `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/b2/`.
+Bütçe: A 7 + A2 10 + B hazırlık 70 + B rapor 20 = 107 / 293 oturum; okur isteği 2 / 4, 6 dk 11 s (ilk okurun 5 dk 38 s'lik okuması dahil; ilk kayıt yalnız ikinci okuru saymıştı, Ek E'de düzeltildi). D129'un çapa onarımı A2'de iki bölümde (V tam onarım, IV yama), B'de bir bölümde (IV yama) görüldü ve sayıldı. Onarılan iddiaların anlam desteği ayrıca okunmadı; B'nin R2 okuması tohumlu 30 iddialık örneklem üzerindedir. Sunucu durduruldu, 8765'e dokunulmadı; kanıt [../DEIXIS-h9b-run/.local/p9r-h9b/evidence/b2/](../archive/local-runs.md#run-archive-p9-evidence-deixis-h9b-run).
 
 ## H9c (3 Ekim 2026): B raporu RF4 üzerinde
 
@@ -124,7 +124,7 @@ Bütçe: A 7 + A2 10 + B hazırlık 70 + B rapor 20 = 107 / 293 oturum; okur ist
 - **Sayımlar:** POST öncesi 0 oturum; rapor 24 oturum, `envelope_mismatch` 0/24, 24/24 kodla damgalı; yama girdisi 0; çıkarılan iddia 0. P19: a=[V], b=1 (V tam onarım), c=1, d=0. Adım hatası yok, şema reddi yok.
 - **Satırlar:** R1a ilk denemede geçerli 1/10, R1b onarımla geçerli 9/10, R1c 0/1; R7 5,2 dk ve 24 çağrı. Rapor tamamlanmadığı için R2-R6, R8, R9, R11 ölçülemedi (`run_incomplete`); R10 ölçülmedi.
 
-Bütçe: 107 + 24 = 131 / 293 oturum; okur isteği yeni yok (ortak defterde 6 istek kalır). Sunucu durduruldu, 8765'e dokunulmadı; kanıt `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/c/`.
+Bütçe: 107 + 24 = 131 / 293 oturum; okur isteği yeni yok (ortak defterde 6 istek kalır). Sunucu durduruldu, 8765'e dokunulmadı; kanıt [../DEIXIS-h9b-run/.local/p9r-h9b/evidence/c/](../archive/local-runs.md#run-archive-p9-evidence-deixis-h9b-run).
 
 ## H9d (3 Ekim 2026): B raporu RF5 üzerinde
 
@@ -137,7 +137,7 @@ Bütçe: 107 + 24 = 131 / 293 oturum; okur isteği yeni yok (ortak defterde 6 is
 - **Sayımlar:** POST öncesi 0 oturum; rapor 9 oturum, `envelope_mismatch` 1/9, paket hash'i 9/9 kodla damgalı, yama girdisi 0, çıkarılan iddia 0. P19: a=[V, IV], b=[V, IV] (ikisi de tam onarım), c=[IV], d boş; V `envelope_mismatch` ile ayrıca sayıldı. `c_checks`: bir `application_validation` adım hatası, şema reddi yok.
 - **Satırlar:** R1a 0/3 (yazılan bölümler), R1b 2/3, R1c 0/1; R7 184,4 s (oluşturmadan iptale; duraklamaya kadar 169,3 s) ve 9 çağrı. Rapor tamamlanmadığı için R2-R6, R8, R9, R11 ölçülemedi (`run_incomplete`); R10 ölçülmedi.
 
-Bütçe: 131 + 9 = 140 / 293 oturum; okur isteği yeni yok (ortak defterde 6 istek kalır). Sunucu durduruldu, 8765'e dokunulmadı; kanıt `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/d/`.
+Bütçe: 131 + 9 = 140 / 293 oturum; okur isteği yeni yok (ortak defterde 6 istek kalır). Sunucu durduruldu, 8765'e dokunulmadı; kanıt [../DEIXIS-h9b-run/.local/p9r-h9b/evidence/d/](../archive/local-runs.md#run-archive-p9-evidence-deixis-h9b-run).
 
 ## H9e (3-4 Ekim 2026): B raporu RF6 üzerinde, zincirin son koşusu
 
@@ -172,6 +172,6 @@ Bütçe: 131 + 9 = 140 / 293 oturum; okur isteği yeni yok (ortak defterde 6 ist
 - **R3:** kitin sözlüğü Türkçe yokluk fiillerini yine bulmadı; IV'teki üç yokluk cümlesi ilk okurca eklendi (M2-M4), iki okur da hücreyle uyumlu saydı.
 - **R9:** kit bu kez 7 çiftin hepsini kaynak sürümüne eşledi. IV girdisinde Candelieri18b ve Rajabpour18'in donmuş Denklem hücreleri vardı, ama formül satır içi matematikle (`\(…\)`) yazılmıştı; kit, birleştirmeyle aynı ayrıştırıcıyla yalnız `$$` blok matematiğini girdi denklemi sayıyor. Uygun çift kalmadı, payda 0, satır ölçülemedi. Bu bir kit kuralıdır, girdide formül olmadığı anlamına gelmez.
 
-Bütçe: 140 + 23 = 163 / 293 oturum. Sunucu 22:10:47Z'de durduruldu, 8765'e dokunulmadı; kanıt `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/e/`.
+Bütçe: 140 + 23 = 163 / 293 oturum. Sunucu 22:10:47Z'de durduruldu, 8765'e dokunulmadı; kanıt [../DEIXIS-h9b-run/.local/p9r-h9b/evidence/e/](../archive/local-runs.md#run-archive-p9-evidence-deixis-h9b-run).
 
 **Zincir kapanışı (Ek G):** H9e zincirin tek ve son koşusuydu; H9 rapor ölçüm zinciri burada Ek G gereği kapanır, P10 öncesi H9f yok. Yalnız raporu tamamlama ön koşulu kapandı (R1c 1/1). D205 kararına devreden borçlar: aralık dışı kalite satırları R1a, R2, R4b, R5, R7 süresi, R8 ve R11 (girdi kesilmesi ve eksik pasaj); ölçülemeyen R6 ve R9; ölçülmeyen R10. D157'nin R18, R19 ve R21 ölçümleri yapılmadı ve borç olarak kalır. D205 dondurması B'nin raporunu, o yoksa A2'ninkini adlandırıyor; H9e raporunu (`rpt_Rmd2soa3YuCZBBSyQJCF`) bu ölçümlerde kullanmak açık bir koordinatör değişikliği ve maddeye özgü dondurma kapıları ister.

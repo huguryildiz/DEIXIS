@@ -32,7 +32,7 @@ henüz uygulanmış değil. Bu aktarım bunları uygulamaz.
 - [Kullanıcının alan örneği: baseline ve evidence matrix](../methods/domain-example.md)
 - [Kaynaklar ve aktarılan dosyaların dizini](reference-index.md)
 - [Değersiz ortam değişkeni örneği](../product/providers.env.example)
-- [Yerel referans paketi](../../local-reference/2026-09-14/README.md)
+- Yerel referans paketi: `local-reference/2026-09-14/README.md` (özel, bu checkout'ta yok)
 
 `local-reference/` Finder'da görünür, ancak Git tarafından yok sayılır.
 Ekran görüntülerindeki hesap/masaüstü
@@ -355,8 +355,9 @@ bulgular içeren ayrı rapor döndürür. Yeni dış arama isteğe bağlıdır; 
 içerik ve bütçe görünür olmalıdır. Rapor ana çalışmayı otomatik değiştirmez;
 kullanıcı bulguları geri besleyip revizyon isteyebilir. Farklı model görüşü
 bilimsel doğrulama sayılmaz. Ayrıntılı akış [yöntem belgesindedir](../methods/research-methods.md#isteğe-bağlı-başka-modelle-inceleme);
-etkileşimli [UI demosu](../../prototypes/shadcn-ui/README.md#optional-model-review-prototype)
-eklendi. Demo model seçimi, ayrı örnek rapor ve bulgu geri aktarımı çalışır;
+etkileşimli UI demosu (`prototypes/shadcn-ui/README.md#optional-model-review-prototype`,
+[D10](../decisions.md#d10--remove-the-browser-only-ui-prototype) ile kaldırıldı)
+eklendi. Tarihsel demoda model seçimi, ayrı örnek rapor ve bulgu geri aktarımı çalışır;
 gerçek model çağrısı, kaynak değerlendirmesi ve kalıcı inceleme geçmişi yoktur.
 
 ## Sıradaki anlamlı çalışma

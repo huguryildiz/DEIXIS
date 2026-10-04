@@ -2,7 +2,7 @@
 
 **Tarih:** 23 Eylül 2026. **Durum:** dosya hazır. **Ana dosya:** [sw-status.md](sw-status.md). **Kararlar:** D90
 (sorgu kurma kuralları ve `detailed` okuma sınırı), D91 (Scopus aramadan çıkar, VPN'de son özet kaynağı). **Önkoşul:**
-13f (uygulandı), sözcük deneyi (koşuldu, `.local/archive/sw/sw-vocabulary-experiment-2026-09-23/result.md`). **Tür:** Kur.
+13f (uygulandı), sözcük deneyi (koşuldu, [.local/archive/sw/sw-vocabulary-experiment-2026-09-23/result.md](../local-runs.md#run-archive-sw-sw-vocabulary-experiment-2026-09-23)). **Tür:** Kur.
 **Uygulayan:** Opus · high. **İnceleme:** tam (Fable); arama sorgusu neyin bulunacağını belirler, kanıtın en başıdır.
 **Plan:** Opus, 23 Eylül 2026 (13f sohbeti).
 
@@ -113,9 +113,9 @@ Soru İngilizce bir tanıma sorusuysa (`extract`'ın bugün işlediği biçim) v
 
 ## Task 5: canlı kabul ölçümü ve kapanış
 
-- Sözcük deneyinin betikleriyle (`.local/archive/sw/sw-vocabulary-experiment-2026-09-23/`, `common.py`, `arm_a.py`,
+- Sözcük deneyinin betikleriyle ([.local/archive/sw/sw-vocabulary-experiment-2026-09-23/](../local-runs.md#run-archive-sw-sw-vocabulary-experiment-2026-09-23), `common.py`, `arm_a.py`,
   `score.py`) yeni kuralın A kolu üç soruda yeniden koşulur, sonuç yeni bir klasöre
-  (`.local/archive/sw/sw-slice13g-acceptance-2026-09-23/`): terimler, derlenen OpenAlex sorguları, sayım, ilk 1.000 / 2.000
+  ([.local/archive/sw/sw-slice13g-acceptance-2026-09-23/](../local-runs.md#run-archive-sw-sw-slice13g-acceptance-2026-09-23)): terimler, derlenen OpenAlex sorguları, sayım, ilk 1.000 / 2.000
   içindeki doğru eserler.
 - **Kabul:** ilk ve ikinci turun birleşiminde (ilk 2.000'er kayıt) kuantumda **en az 19**, paket sorusunda **en az
   4** doğru eser (deneyin C kolunun sonucu); her iki soruda ikinci turun OpenAlex sayımı bugünkünden küçük; sepsis
@@ -141,7 +141,7 @@ Soru İngilizce bir tanıma sorusuysa (`extract`'ın bugün işlediği biçim) v
 ## Bundan sonra (sıra)
 
 1. **Üçüncü ölçüm (13ö'nün üçüncü koşusu):** 13f + 13g birlikte, aynı konu, `gpt-5.6-luna` · medium, üç efor,
-   `.local/archive/sw/sw-measure-2026-09-22b/campaign.py` yeni bir klasörde. Süre (hedef 10 / 15 / 20 dk) ve kalite: kuantum
+   [.local/archive/sw/sw-measure-2026-09-22b/campaign.py](../local-runs.md#run-archive-sw-sw-measure-2026-09-22b) yeni bir klasörde. Süre (hedef 10 / 15 / 20 dk) ve kalite: kuantum
    konusunun 31 doğrulanmış eserinden kaçı dahil edildi, kaçı okundu, kaçı havuzdaydı.
 2. **Kesme deneyi** (sw-read-limit-cut-prompt.md): yalnız üçüncü ölçümde süre hâlâ
    hedefin üstündeyse, ölçümün yeni havuzlarıyla.

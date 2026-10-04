@@ -10,7 +10,7 @@ bulguları" … "Sol r8 bulguları"). r9 "hazır" (r8'in iki bulgusu kapandı, y
 **Önkoşul:** 10 (D83), kapandı; D52 / D62'nin Marker yolu, D45'in yeniden çıkarım kuralı ve D48 / D100'ün sürüm seçimi
 bu dilimin girdisidir. **Tür:** Kur (ölçülmedi): eşlemenin bir ön-örneği saklı veride ölçüldü ve bir örneklemi sayfa
 görüntüsünden okundu; ürün yolu ölçülmedi. **Uygulayan:** Opus · high. **İnceleme:** toplu (Sol · high). **Plan:**
-Opus 5.5 · high. **Ölçüm:** `.local/archive/sw/sw-slice22-plan-2026-09-25/`. r1: `inventory.py` → `inventory.json`,
+Opus 5.5 · high. **Ölçüm:** [.local/archive/sw/sw-slice22-plan-2026-09-25/](../local-runs.md#run-archive-sw-sw-slice22-plan-2026-09-25). r1: `inventory.py` → `inventory.json`,
 `fetch_sources.py` → `fetch.json` ve `fetch-export-host-406.json`, `src/` 53 kaynak dosyası, `match_equations.py` →
 `match-recall0.9-m0.2.json` (ana), `-guard.json`, `-pagetext.json`, `match-f10.8-m0.1.json`, `classify_disagreements.py`,
 `macro_check.py` → `macro-check.json`, `export_groups.py` + `katex_check.cjs` / `katex_check2.cjs` → `katex-check*.json`,
@@ -709,11 +709,11 @@ sonra D1'den D3'e değişti. Seçenekler kayıt için aşağıda duruyor.
    sentetik arXiv PDF'i: kaynak satırı "Equations from the arXiv source (v2)", pasaj görünümünde parçanın numaralarını
    söyleyen uyarı ve KaTeX'le çizilmiş denklem, alıntı çipinde rozet. Mevcut A–N değişmeden geçer. Ekran görüntüsüyle
    masaüstü ve telefon genişliği.
-9. **Kabul** (`.local/sw-slice22-acceptance-<tarih>/`; model yok). (a) Canlı kütüphanenin SQLite yedek API'siyle alınmış,
+9. **Kabul** ([.local/sw-slice22-acceptance-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree); model yok). (a) Canlı kütüphanenin SQLite yedek API'siyle alınmış,
    oturum dizininde `0054`'e kadar taşınmış kopyasında (taşımanın `0053` → `0054` adımında sayı 16'nın denetimleri,
    yani `rowid` / `id` / `text_sha256` / `text_source` eşitliği, FTS sorgusu ve `integrity-check`, `foreign_key_check`,
    DDL farkı ve tetiklerin SQL'i, tekrarlanır ve yazılır), planın indirdiği 53 kaynak
-   (`.local/archive/sw/sw-slice22-plan-2026-09-25/src/`) kopyanın `arxiv-sources/`'ına konarak (ağsız), ürünün kendi koduyla bir kuru
+   ([.local/archive/sw/sw-slice22-plan-2026-09-25/src/](../local-runs.md#run-archive-sw-sw-slice22-plan-2026-09-25)) kopyanın `arxiv-sources/`'ına konarak (ağsız), ürünün kendi koduyla bir kuru
    koşu betiği (`scripts/arxiv_source_report.py`) her uygun PDF için eşleme kuralını geçen adayları, gerçekten yerleşen
    blokları ve her yerleşmeme nedenini (KaTeX, `\ref` / `\cite`, uzunluk, tablo / OCR sayfası, `not_in_page_text`,
    `offsets_unresolved`) ayrı sayar; adayları planın 873 adayıyla (43 sürüm, 1.520 numara satırı, bütün sayfalar)

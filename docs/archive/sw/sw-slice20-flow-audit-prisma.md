@@ -29,7 +29,7 @@ disk farklıysa kod kökeni doğrulanmış gösterilmez. **Prompt:** sw-slice20-
 **Tür:** Kur. **Uygulayan:** Opus · high (satır 20 medium diyordu; denetim satırları D96'nın cevap yazıcısını, jetonunu ve
 geri almasını kullandığı ve yanıt koşusuna bir kod adımı eklendiği için köşe durumlarında yargı gerekir). **İnceleme:**
 toplu (Sol · high). **Plan:** Opus 5.5 · high (plan turunun kuralı Fable · high; bu oturum Opus'ta koştu). **Ölçüm:**
-`.local/archive/sw/sw-slice20-plan-2026-09-25/` (`protocol.md` önce yazıldı; `measure.py` → `measure.json`, `summary.py` →
+[.local/archive/sw/sw-slice20-plan-2026-09-25/](../local-runs.md#run-archive-sw-sw-slice20-plan-2026-09-25) (`protocol.md` önce yazıldı; `measure.py` → `measure.json`, `summary.py` →
 `summary.txt`, `extra.py` → `extra.json`, `item15.py` → `item15.json` (Sol'dan sonra), `result.md`; kopyalar oturum dizininde 0052'ye göç ettirildi, ürün kodu
 `d96e41d` ile okundu, silindi; model, ağ, port ve canlı veri dizini yok). **Kapsam:** SW11.8, SW11.12, SW11.13; PRISMA-S
 dökümü (SW belgesinde yok, sahibin 20 Eylül 2026 isteği, ana planın 20. maddesi); ana ekrandaki derinlik metni (satır
@@ -499,7 +499,7 @@ Uygulama bu iki cevap satır 20'de yazılı olmadan başlamaz.
    sayısı 16, başlık cümlesi), yanıtın altında akış satırı; fikstür bir `sw` yanıtına varamıyorsa yanıt satırı pytest'te
    ve bir `research_view` anlık görüntüsüyle sınanır ve bu yazılır. Ana ekran: `sw` sunucusunda derinlik açıklaması yeni
    sayılarla (M ya da H'ye tek iddia). Ekran görüntüsüyle masaüstü ve telefon genişliğinde kendim doğrularım.
-9. **Kabul** (model ve ağ yok; `.local/sw-slice20-acceptance-<tarih>/`). (a) Planın 46 kütüphanesinin oturum dizinindeki
+9. **Kabul** (model ve ağ yok; [.local/sw-slice20-acceptance-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree)). (a) Planın 46 kütüphanesinin oturum dizinindeki
    göç ettirilmiş kopyalarında ürünün kovaları `measure.json`'un `flow`'uyla eşit (ad eşlemesi: `included_by_agreement` →
    `included`, `not_met_by_agreement` → `not_met`, `person_confirmed` → `confirmed`, `candidate_no_fulltext` →
    `candidate_not_fetched`, `abstract_unresolved_other` → `abstract_open`, `survey_seed_pool` → `survey`,

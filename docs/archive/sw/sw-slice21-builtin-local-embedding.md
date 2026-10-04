@@ -45,7 +45,7 @@ kapandı; D79'un gömme sinyali ve kurtarma kolu ile D101'in "gömmenin öne ald
 **Tür:** Kur. **Uygulayan:** Opus · high (satır 21 medium diyordu; ayrı bir çalışma ortamı, kurulum işi, alt süreç
 protokolü, bir migration ve bütün sağlayıcılar için parti parti yazma aynı dilimde, köşe durumlarında yargı gerekir).
 **İnceleme:** toplu (Sol · high). **Plan:** Opus 5.5 · high (plan turunun kuralı Fable · high; bu oturum Opus'ta koştu).
-**Ölçüm:** `.local/archive/sw/sw-slice21-plan-2026-09-25/` (atılacak bir arm64 venv'de `fastembed` 0.8.1 + `onnxruntime` 1.30.0;
+**Ölçüm:** [.local/archive/sw/sw-slice21-plan-2026-09-25/](../local-runs.md#run-archive-sw-sw-slice21-plan-2026-09-25) (atılacak bir arm64 venv'de `fastembed` 0.8.1 + `onnxruntime` 1.30.0;
 `download.py` → `download.json`, `stored.py` → `stored.json`, `timing.py` → `timing.json`, `truncation.py` →
 `truncation.json`, `largest256.py` → `largest256.json`; saklı kütüphaneler salt okunur açıldı; ürünün venv'i ve
 `uv.lock` değişmedi; model, port ve canlı veri dizini yok; tek ağ erişimi modelin bir kez indirilmesi). **Kapsam:** SW8
@@ -606,7 +606,7 @@ aşağıda duruyor.
    yolu metni ve seçiliyken ücretsiz katman cümlesi; Türkçe soruyla araştırmada uyarı ve form, kaydedince satır değişir;
    Gemini seçiliyken yüklenmiş PDF'i olan dahil işte yanıt düğmesinin altındaki satır. Mevcut A–M senaryoları
    değişmeden geçer. Ekran görüntüsüyle masaüstü ve telefon genişliğinde.
-9. **Kabul** (`.local/sw-slice21-acceptance-<tarih>/`; model yok; ağ yalnız (a)'daki bir indirme). (a) Ürünün kurulum
+9. **Kabul** ([.local/sw-slice21-acceptance-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree); model yok; ağ yalnız (a)'daki bir indirme). (a) Ürünün kurulum
    işiyle oturum dizinindeki bir `DEIXIS_DATA_DIR`'e gerçek kurulum: dört adım, beş dosyanın baytı ve özeti sabitlerle
    aynı, `~/.cache/huggingface`'te, `~/.cache/uv`'de, `~/.local/share/uv/python`'da ve veri dizini dışında kurulum anından
    yeni ya da değişmiş dosya yok (öncesi / sonrası dosya listesi ve mtime), süre yazılır; kurulumu model indirmesinin

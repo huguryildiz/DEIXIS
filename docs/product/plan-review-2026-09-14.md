@@ -10,7 +10,7 @@ Fable P0 bulgusu bildirmedi; dört P1, beş P2 ve beş P3 maddesi sundu. Bunlar 
 - Claude Code sürümü: `2.1.270`. Araçlar kapalı, safe mode açık, ek MCP yok, oturum kalıcılığı kapalı. İnceleme sırasında repo okuma/yazma veya dış arama aracı verilmedi; sekiz belgenin numaralı sabit metni girdiye eklendi.
 - CLI başarıyla tamamlandı (`returncode=0`, `subtype=success`, `is_error=false`). Sonuç metadatasında `claude-fable-5-1` kullanım kaydı mevcut; otomatik fallback seçeneği verilmedi.
 - Aynı CLI metadatası ayrıca `claude-haiku-4-5-20251001` için kullanım kaydı bildiriyor. Bu kaydın işlevi eldeki metadatadan belirlenemiyor; ayrı bir ikinci denetim olarak sayılmıyor.
-- Tam girdi, orijinal plan kopyası, ham JSON/Markdown, CLI argümanları ve kullanım bilgileri gitignored `.local/plan-review-2026-09-14/` içinde saklandı. Bu paket yerel kanıttır; başka bir klonda kendiliğinden bulunmaz. Aşağıdaki ham rapor korunmuştur.
+- Tam girdi, orijinal plan kopyası, ham JSON/Markdown, CLI argümanları ve kullanım bilgileri gitignored [.local/plan-review-2026-09-14/](../archive/local-runs.md#historical-paths-absent-from-the-inspected-tree) içinde saklandı. Bu paket yerel kanıttır; başka bir klonda kendiliğinden bulunmaz. Aşağıdaki ham rapor korunmuştur.
 - Bu bir metin/plan incelemesidir. Uygulama, skill davranışı, vendor erişimi veya araştırma etkinliği testi değildir. Model görüşü kullanıcı yetkisi veya bilimsel doğrulama oluşturmaz.
 
 **Süre:** 328.817 saniye.

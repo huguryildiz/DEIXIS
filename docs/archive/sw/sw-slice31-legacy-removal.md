@@ -4,7 +4,7 @@
 `389c344` (`sw` varsayılan, `legacy` yalnız `DEIXIS_SEARCH_WORKFLOW=legacy` ile seçilebilir). **Sıra:** P6 dilim 1'in P9
 partisi `main`'e girdikten sonra, çünkü P9 `flow.py`, `domain/contracts.py`, `Transcript.tsx` ve `step-input.schema.json`
 dosyalarına dokunuyor. **Plan denetimi:** Sol (`gpt-6-sol` · high) dokuz tur; 1–8. turların yüksek bulguları
-belgeye işlendi, 9. tur "yüksek engel açısından uygulamaya hazır" (`.local/archive/sw/sw-slice31-plan-review/`).
+belgeye işlendi, 9. tur "yüksek engel açısından uygulamaya hazır" ([.local/archive/sw/sw-slice31-plan-review/](../local-runs.md#run-archive-sw-sw-slice31-plan-review)).
 
 ## Hedef
 

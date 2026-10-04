@@ -4,7 +4,7 @@
 [sw-status.md](sw-status.md). **Karar:** D95 (dilim yazar). **Önkoşul:** 14a (kapandı, `8f86f54`, D94). **Tür:** Kur.
 **Uygulayan:** Opus · high (satırdaki gibi; yeni istekler, yeni adımlar, planın dördüncü grubu). **İnceleme:** tam (Sol · high), çünkü dilim kütüphaneye kayıt ekliyor ve tam metin planına grup ekliyor.
 **Plan:** Opus · high, 23 Eylül 2026 (prompt Fable · high diyordu; bu oturum Opus'ta koştu). **Yeniden oynatma:**
-`.local/archive/sw/sw-slice15-chain-replay-2026-09-23/` (`protocol.md`, `result.md`, betikler, `cache/`).
+[.local/archive/sw/sw-slice15-chain-replay-2026-09-23/](../local-runs.md#run-archive-sw-sw-slice15-chain-replay-2026-09-23) (`protocol.md`, `result.md`, betikler, `cache/`).
 
 **Goal:** SW4 ve SW3.6 atıf zincirini kurar: aramadan sonra kodun seçtiği eserlerin referansları ve onlara atıf yapan
 eserler OpenAlex'ten alınır, geniş bir metin süzgecinden geçenler taranır. Yeniden oynatma üç şey gösterdi. Zincir,
@@ -15,7 +15,7 @@ içindeki kendi yeriyle kurar (karar 4). Asıl getirisi, anahtar sözcüğün hi
 
 > **Uygulama notu (24 Eylül 2026):** bu dosyadaki `CHAIN_PLAN_ROOM` 20 / 25 / 25, kabulün iki başarısız denemesinden
 > sonra, sonuç görüldükten sonra ve `gpt-6-sol` · medium ile ortak kararla 12 / 12 / 12 oldu (D95,
-> `.local/archive/sw/sw-slice15-acceptance-2026-09-23/`). Kabul bu değere aittir, aşağıdaki 20 / 25 / 25 tasarımına değil.
+> [.local/archive/sw/sw-slice15-acceptance-2026-09-23/](../local-runs.md#run-archive-sw-sw-slice15-acceptance-2026-09-23)). Kabul bu değere aittir, aşağıdaki 20 / 25 / 25 tasarımına değil.
 
 ## Elimizdeki sayılar
 
@@ -65,7 +65,7 @@ Hepsi yeniden oynatmadan: on üç kütüphane (kuantum on, paket üç), 407 Open
 ## Sahibin vereceği kararlar
 
 Öneriler `gpt-6-sol` · medium'un incelemesinden sonra ortak karara bağlandı (23 Eylül 2026; inceleme ve yanıt
-`.local/archive/sw/sw-slice15-chain-replay-2026-09-23/sol-review.md`). Sol altı kararın üçüne katıldı, üçüne (1, 2, 4) itiraz etti;
+[.local/archive/sw/sw-slice15-chain-replay-2026-09-23/sol-review.md](../local-runs.md#run-archive-sw-sw-slice15-chain-replay-2026-09-23)). Sol altı kararın üçüne katıldı, üçüne (1, 2, 4) itiraz etti;
 üçünde de düzeltme aşağıda. Sol'un itirazı üzerine P4 ayrı bir plan olarak yeniden oynatıldı (`p4.py` → `p4.json`):
 zincir kendi içinde tekilleştirildi, sabitler dilimin önerdiği boyda (20 / 20, 50 / 25, 50 / 25). Sonuç türetilmiş
 sayıyla aynı: `quick` 30 → 36 / 35, `standard` 20 → 25, `detailed` 41 → 41, paket 0 → 0.
@@ -241,11 +241,11 @@ Canlı koşudan önce yeni kodun saf işlevleri a14a `quick` kütüphanesinin bi
 - Düzen D94 kabulünün kampanyası: kendi sunucusu, boş veri dizini, `DEIXIS_SEARCH_WORKFLOW=sw`,
   `DEIXIS_FULLTEXT_FETCH=auto`, `DEIXIS_FULLTEXT_ADJUDICATION=auto`, `DEIXIS_SEARCH_QUERY=model`,
   `DEIXIS_CITATION_CHAINING=auto`, gömme `off`, onay `as_proposed`. Model `gpt-5.6-luna` · medium. Klasör
-  `.local/sw-slice15-acceptance-<tarih>/`. Beklenti ilk istekten önce `protocol.md`'ye yazılır.
+  [.local/sw-slice15-acceptance-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree). Beklenti ilk istekten önce `protocol.md`'ye yazılır.
 - Koşular (tam koşu, yanıt dahil): kuantum `quick`, `standard`, `detailed`; paket `quick`.
 - **Karşılaştırılan önceki koşular ve sayıları** (doğrulanmış eser: havuzda / planda / okunan; süre):
-  - kuantum `quick` ↔ D94 kabulü (`.local/archive/sw/sw-slice14a-acceptance-2026-09-23/`): 18 / 8 / 4; 9,8 dk.
-  - kuantum `standard` ↔ üçüncü D88 ölçümü (`.local/archive/sw/sw-measure-2026-09-24/`): 25 / 8 / 7; 17,9 dk.
+  - kuantum `quick` ↔ D94 kabulü ([.local/archive/sw/sw-slice14a-acceptance-2026-09-23/](../local-runs.md#run-archive-sw-sw-slice14a-acceptance-2026-09-23)): 18 / 8 / 4; 9,8 dk.
+  - kuantum `standard` ↔ üçüncü D88 ölçümü ([.local/archive/sw/sw-measure-2026-09-24/](../local-runs.md#run-archive-sw-sw-measure-2026-09-24)): 25 / 8 / 7; 17,9 dk.
   - kuantum `detailed` ↔ üçüncü D88 ölçümü: 30 / 19 / 17; 39,7 dk.
   - paket `quick` ↔ D94 kabulü: havuzda 1, planda 0; 8,4 dk.
 - **Kabul (K8):** tek koşu tek önceki koşuyla kıyaslanır. Havuz, plan ve okunan her biri en çok 2 eser eksik

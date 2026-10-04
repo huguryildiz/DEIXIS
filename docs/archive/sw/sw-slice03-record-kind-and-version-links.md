@@ -24,7 +24,7 @@ Değişecek: `backend/deixis/workflow/store.py` (`record_search`, `_join_if_same
 
 ## Task 1: `domain/record_identity.py`
 
-Kaynak: ölçümün kendi betikleri. Başlamadan önce oku: `.local/archive/early/quantum-dedup-2026-09-18/title_pairs.py` (`norm`, `grams`, `jac`), `classify.py` (`sur`, yazar örtüşmesi), `signals.py` (`PRE`, `ART`, `kind`).
+Kaynak: ölçümün kendi betikleri. Başlamadan önce oku: [.local/archive/early/quantum-dedup-2026-09-18/title_pairs.py](../local-runs.md#run-archive-early-quantum-dedup-2026-09-18) (`norm`, `grams`, `jac`), `classify.py` (`sur`, yazar örtüşmesi), `signals.py` (`PRE`, `ART`, `kind`).
 
 ```python
 TITLE_MERGE = 0.85          # SW6.3
@@ -198,7 +198,7 @@ def link_records(store, research_id: str, source_version_ids: list[str]) -> None
 
 ## Task 7: ikinci konunun 127 çifti (ürün kodu değil)
 
-`.local/sw-slice03-pairs-2026-09-20/check_pairs.py` (izlenmeyen dizin): `.local/archive/early/second-topic-packet-size-2026-09-20/staged.json`'daki `trigram_pairs` (127 çift) ve `records` okunur; yazarlar ve yıl OpenAlex'ten toplu alınır (`filter=openalex:W1|W2…`, 50'lik partiler, `select=id,authorships,publication_year`; anahtar `.env`'de varsa kullanılır; istek başarısız olursa yazarlar `unknown` kalır ve bu söylenir). Her çift `classify_pair`'den geçer; `pairs.csv` yazılır: iki başlık, iki DOI, iki tür, üç puan, yıl farkı, hüküm, kural. Son iletide hüküm ve kural başına sayılar verilir. **Gözle denetimi inceleme sohbeti yapar**; uygulayan sohbet yalnızca dosyayı üretir ve `merge = True` çıkan çiftlerin başlıklarını son iletiye yazar. Canlı kütüphaneye ve 8765 portuna dokunulmaz.
+[.local/sw-slice03-pairs-2026-09-20/check_pairs.py](../local-runs.md#historical-paths-absent-from-the-inspected-tree) (izlenmeyen dizin): [.local/archive/early/second-topic-packet-size-2026-09-20/staged.json](../local-runs.md#run-archive-early-second-topic-packet-size-2026-09-20)'daki `trigram_pairs` (127 çift) ve `records` okunur; yazarlar ve yıl OpenAlex'ten toplu alınır (`filter=openalex:W1|W2…`, 50'lik partiler, `select=id,authorships,publication_year`; anahtar `.env`'de varsa kullanılır; istek başarısız olursa yazarlar `unknown` kalır ve bu söylenir). Her çift `classify_pair`'den geçer; `pairs.csv` yazılır: iki başlık, iki DOI, iki tür, üç puan, yıl farkı, hüküm, kural. Son iletide hüküm ve kural başına sayılar verilir. **Gözle denetimi inceleme sohbeti yapar**; uygulayan sohbet yalnızca dosyayı üretir ve `merge = True` çıkan çiftlerin başlıklarını son iletiye yazar. Canlı kütüphaneye ve 8765 portuna dokunulmaz.
 
 ## Task 8: dilimi kapat
 

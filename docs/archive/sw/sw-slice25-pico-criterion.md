@@ -9,9 +9,9 @@ kalan yüksek bulgu sahibe gider. **Prompt:** sw-slice25-prompt.md. **Ana dosya:
 (en yüksek `0054`; yalnız PDF bulma sağlayıcı listesine `europepmc`, karar 3a). **Önkoşul:** 24a bitti (D105). **Tür:** 25a Kur, 25b Ölç. **Uygulayan:** 25a Opus · high; 25b
 Fable · high (dilim 24'ün kuralı: dondurma ve yorum muhakeme işidir), uzun koşan betik Sonnet arka plan ajanına
 verilebilir. **İnceleme:** 25a tam (Sol · high, yukarıdaki kuralla); 25b'nin sonucu sahibe. **Plan:** Opus 5.5 · high.
-**Ölçüm:** `.local/archive/sw/sw-slice25-plan-2026-09-26/`: `criteria.py` → `criteria.json`, `criteria.txt`; `includes.py` →
+**Ölçüm:** [.local/archive/sw/sw-slice25-plan-2026-09-26/](../local-runs.md#run-archive-sw-sw-slice25-plan-2026-09-26): `criteria.py` → `criteria.json`, `criteria.txt`; `includes.py` →
 `includes-tre.json`; `flips.py` → `flips-tre.json`; `baseline.py` → `baseline.json`. Hepsi dilim 24a'nın saklı
-kütüphanelerini (`.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/data-*`) `immutable=1` ile okur; model çağrısı ve sağlayıcı
+kütüphanelerini ([.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/data-*](../local-runs.md#run-archive-sw-sw-slice24-campaign-2026-09-26-134050)) `immutable=1` ile okur; model çağrısı ve sağlayıcı
 araması yok. SW21 için ayrıca `epmc_gain.py` → `epmc-gain.json`, `xml_check.py` → `xml-check.json`, `oa_pdf_check.py` →
 `oa-pdf-check.json`: Europe PMC ve PMC'ye salt okunur istekler (DOI başına bir arama, 1,2 sn arayla, ürünün
 User-Agent'ı, anahtar ve e-posta yok; toplam ~190 istek). Port 8765'e ve canlı kütüphaneye dokunulmadı. **Kapsam:** SW23,
@@ -358,7 +358,7 @@ R'nin boyu (tablolar açılmadı).
    2. **Yeniden oynatma** (salt okunur, model yok): 24a'nın 10 `sw` kütüphanesindeki saklı üç öneri yeni `consensus`'tan
       geçer; `criterion`, `parts`, `cue_phrases`, `exclusion_title_words`, `base_run`, `runs_ok`,
       `sought_term_in_criterion` saklı `criterion` adımının çıktısıyla bayt bayt aynı, iki yeni alan `[]`. 10/10 değilse dur.
-   3. **Kuru koşu** (F1): ürünün kendi ölçüt adımı (`flow._criterion`, `.local/archive/sw/sw-criterion-dry-run-2026-09-21/run.py`'nin
+   3. **Kuru koşu** (F1): ürünün kendi ölçüt adımı (`flow._criterion`, [.local/archive/sw/sw-criterion-dry-run-2026-09-21/run.py](../local-runs.md#run-archive-sw-sw-criterion-dry-run-2026-09-21)'nin
       yöntemi), Codex `gpt-5.6-luna` · medium, kendi veri dizini, sağlayıcı isteği yok; iki soru × iki kez × üç çağrı = 12
       çağrı. Geçme: tıpta iki uzlaşmanın ikisinde de `required_roles = ["comparator", "population"]`, iki öğenin `words`'ü
       sorunun sözcükleri, iki parçanın tanımı kendi katılımcısını ve kendi karşılaştırma grubunu soruyor. Kuantumda iki
@@ -366,7 +366,7 @@ R'nin boyu (tablolar açılmadı).
       25'e yaz: kuantumun sonuçları artık bu kodu anlatmıyor, sahip karar verir (kuantumun 7 araştırması da koşsun mu).
       Tek tek önerilerde rol yazan kuantum koşusu sayılır ve raporlanır, durdurmaz.
    4. **Europe PMC canlı denemesi** (salt okunur, kendi veri dizini, sağlayıcı araması yok). Örnek dondurulmuş
-      (`.local/archive/sw/sw-slice25-plan-2026-09-26/sample_epmc.py` → `epmc-sample.json`): aday kuralını geçen ve `fullTextXML`'i
+      ([.local/archive/sw/sw-slice25-plan-2026-09-26/sample_epmc.py](../local-runs.md#run-archive-sw-sw-slice25-plan-2026-09-26) → `epmc-sample.json`): aday kuralını geçen ve `fullTextXML`'i
       gövdeyle dönen 30 PMCID'den iki referans denemesi (PMC8157764, PMC10708421) çıkarılır, kalan 29 dizgi olarak
       sıralanır, `random.Random(2409263).sample(havuz, 5)`, sonra iki referans eklenir: **PMC7262456, PMC10609268,
       PMC8308240, PMC11279456, PMC6682944, PMC8157764, PMC10708421**. Ürünün `europepmc_lookup` + getirme + çizim +
@@ -382,7 +382,7 @@ R'nin boyu (tablolar açılmadı).
    sayfa yayıncının sayfası değildir ve MathML işaretlemesi düşer; ölçümler bir makine, bir model, iki soru.
 
 7. **25b, tıp sorusunun yeniden ölçümü.** Dilim 24a'nın dondurulmuş protokolü
-   (`.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/protocol.md`, plan `65a7ec8`) temeldir; aşağıdakiler dışında hiçbir şey
+   ([.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/protocol.md](../local-runs.md#run-archive-sw-sw-slice24-campaign-2026-09-26-134050), plan `65a7ec8`) temeldir; aşağıdakiler dışında hiçbir şey
    değişmez.
    1. **Aynen alınanlar.** Tıp sorusunun metni bayt bayt; 7 araştırmalık matris ve sıra (`sw` `standard` r1, `legacy`
       `standard` r1, `sw` `quick`, `sw` `detailed`, yerleşik gömmeli `sw` `standard`, `sw` `standard` r2, `legacy`
@@ -398,8 +398,8 @@ R'nin boyu (tablolar açılmadı).
       (b) Sınanan kod: 25a'nın commit'i (SW23, SW22 ve SW21); donma anında `git diff --stat <25a commit> -- backend apps/web contracts methods`
       boş. (c) `include`'suz yanıtın Kapı 1 ve 2'deki okuması (karar 9, D1): `measure25.py`, `gates25.py` ve onları
       çağıran koşucu `post25.py`. Başka her fark bir sapmadır ve sonuca yazılır.
-   3. **Klasör ve etkin işaretçi.** `.local/sw-slice25-remeasure-<YYYY-MM-DD>-<HHMMSS>/` (adı daha önce yok);
-      `.local/sw-slice25-active` yalnız o klasörün `protocol.md`'si yazıldıktan sonra yazılır; sürdürme ve yeniden
+   3. **Klasör ve etkin işaretçi.** [.local/sw-slice25-remeasure-<YYYY-MM-DD>-<HHMMSS>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree) (adı daha önce yok);
+      [.local/sw-slice25-active](../local-runs.md#historical-paths-absent-from-the-inspected-tree) yalnız o klasörün `protocol.md`'si yazıldıktan sonra yazılır; sürdürme ve yeniden
       başlatma dilim 24'ün karar 13'üyle aynı (bu dosya ve bu işaretçiyle).
    4. **Dondurma sırası.** Klasör; 24a dosyalarının kopyaları ve özet denetimi; karar 8'in R'si (`reference-tre.jsonl`,
       `comparator-differs-tre.jsonl`, `unknown-tre.jsonl`, her adımı `ledger.jsonl`'da); `measure25.py`, `gates25.py`,
@@ -578,7 +578,7 @@ Bunlar soru değil. Yalnız Luna kotası 25b'nin ilk gerçek çağrısında bite
    `rendition`'ı ve arayüz etiketi (karar 3a).
 6. Fikstürler, sahte model ve testler (karar 4).
 7. Kabul: sınamalar, yeniden oynatma, kuru koşu (karar 5); betikler ve çıktılar
-   `.local/sw-slice25-acceptance-<tarih>/`'e.
+   [.local/sw-slice25-acceptance-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree)'e.
 8. Belgeler: D106; `search-workflow-review-2026-09-18.md`'de SW21, SW22 ve SW23'ün durum satırları ("implemented in slice 25,
    D106") ve yeni SW26 (sonuç bildirmeyen deneme protokolünün `include` olması; sayı 3; hangi dilime dönüleceği: tam metin
    okumasının sonuç parçası); satır 25 `uygulandı, inceleme bekliyor (25a)`.
@@ -626,7 +626,7 @@ yanıtın canlı bir kişide nasıl okunduğu.
 
 ## Sol r1 bulguları ve yapılanlar
 
-`gpt-6-sol` · high r1 (`.local/archive/sw/sw-slice25-plan-2026-09-26/sol/answer-r1.md`), yalnız yüksek önem: "hazır değil", 4 bulgu.
+`gpt-6-sol` · high r1 ([.local/archive/sw/sw-slice25-plan-2026-09-26/sol/answer-r1.md](../local-runs.md#run-archive-sw-sw-slice25-plan-2026-09-26)), yalnız yüksek önem: "hazır değil", 4 bulgu.
 
 1. **Beklenmeyen XML türü aday yazımını düşürürdü.** `fetch_file`'ın `wrong_type`'ı `pdf_candidates.access_status`
    CHECK'inde yoktu. Migration `0055` onu ekler; çizimin iki reddi `failed` + ayrı hata koduyla; üçü de sınanır (karar
@@ -644,7 +644,7 @@ yanıtın canlı bir kişide nasıl okunduğu.
 
 ## Sol r2 bulguları ve yapılanlar
 
-`gpt-6-sol` · high r2 (`.local/archive/sw/sw-slice25-plan-2026-09-26/sol/answer-r2.md`): r1'in dört bulgusu kapalı; 2 yeni yüksek
+`gpt-6-sol` · high r2 ([.local/archive/sw/sw-slice25-plan-2026-09-26/sol/answer-r2.md](../local-runs.md#run-archive-sw-sw-slice25-plan-2026-09-26)): r1'in dört bulgusu kapalı; 2 yeni yüksek
 bulgu, "hazır değil".
 
 1. **25b'nin koşucusu `measure25.py`'yi atlıyordu.** Bayt bayt kopyalanan `post.py` eski `measure.py`'yi ve kopya
@@ -657,7 +657,7 @@ bulgu, "hazır değil".
 
 ## Sol r3 bulguları ve yapılanlar
 
-`gpt-6-sol` · high r3 (`.local/archive/sw/sw-slice25-plan-2026-09-26/sol/answer-r3.md`, son plan turu): r2'nin iki bulgusu kapalı;
+`gpt-6-sol` · high r3 ([.local/archive/sw/sw-slice25-plan-2026-09-26/sol/answer-r3.md](../local-runs.md#run-archive-sw-sw-slice25-plan-2026-09-26), son plan turu): r2'nin iki bulgusu kapalı;
 1 yeni yüksek bulgu, "hazır değil".
 
 1. **Dahil edilen olmayan yanıtın uyarısı kanıttan fazlasını söylüyordu.** "No source met the inclusion criterion"

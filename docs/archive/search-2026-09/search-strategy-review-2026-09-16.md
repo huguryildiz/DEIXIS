@@ -14,7 +14,7 @@ This is a design review of discovery, not an executed search or a claim of impro
 
 ## Fable 5.1 Medium consultation and disposition
 
-A tool-free, read-only Claude CLI call requested `claude-fable-5-1` with effort `medium`. The call completed successfully; usage metadata names canonical `claude-fable-5-1` and also a small `claude-haiku-4-5` usage entry whose role is not established. The model assessed the supplied technical summary; it did not independently inspect the repository. The full prompt and response are retained under ignored `.local/search-design-review-*`; prompt SHA-256: `cbbef44ba84c24b10736f1ff43576c525b117f9ef6a5fcb244e1e07ab7391206`; response JSON SHA-256: `4e704b682c7c0a3af714e68afdf2cfd3d58e86a474b56fb1e4e777f0aeab6a33`. This is a model design assessment, not a product or scientific validation.
+A tool-free, read-only Claude CLI call requested `claude-fable-5-1` with effort `medium`. The call completed successfully; usage metadata names canonical `claude-fable-5-1` and also a small `claude-haiku-4-5` usage entry whose role is not established. The model assessed the supplied technical summary; it did not independently inspect the repository. The full prompt and response are retained under ignored [.local/search-design-review-*](../local-runs.md#historical-paths-absent-from-the-inspected-tree); prompt SHA-256: `cbbef44ba84c24b10736f1ff43576c525b117f9ef6a5fcb244e1e07ab7391206`; response JSON SHA-256: `4e704b682c7c0a3af714e68afdf2cfd3d58e86a474b56fb1e4e777f0aeab6a33`. This is a model design assessment, not a product or scientific validation.
 
 | Fable finding | Disposition |
 | --- | --- |

@@ -25,7 +25,7 @@ Yani sorun yalnız yanıt adımında: tablo aynı PDF'leri okuyabiliyor, yanıt 
 |---|---|---|
 | D20 izlemesi (15 Eylül) | Kaynak başına bir formülasyon sayfası ayırınca 48 pasajın 46'sı özet, 2'si PDF sayfası oldu; iki sayfa da alıntılanmadı, alıntılanan eser sayısı 25'ten 18'e düştü. Değişiklik geri alındı. | Tek, stokastik karşılaştırma; iddia değil. O zaman dahil 84 kaynağın yalnız 4'ünde açık PDF vardı. |
 | D34 (P4 kapanışı) | 51 kaynakla yanıt 2'nin dayanakları: 35 özet, 0 PDF sayfası. Seçim 25 kaynağa indirilince yanıt 3'ün dayanakları: 32 özet, 14 PDF sayfası. | Seçimi elle daraltmak işe yaradı, ama 0,40 dakikalık bir ajan düzeltmesiydi. |
-| Pasaj seçimi tekrar oynatması (`.local/archive/early/passage-selection-2026-09-16`) | 25 kaynaklı girdide çeşitlilik (MMR) varyantı PDF'li kaynak sayısını 7'den 9'a çıkardı. | Model çağrısı yok; alıntılanan pasajlar etiket değil. |
+| Pasaj seçimi tekrar oynatması ([.local/archive/early/passage-selection-2026-09-16](../local-runs.md#run-archive-early-passage-selection-2026-09-16)) | 25 kaynaklı girdide çeşitlilik (MMR) varyantı PDF'li kaynak sayısını 7'den 9'a çıkardı. | Model çağrısı yok; alıntılanan pasajlar etiket değil. |
 | D55 (P5 ölçümü) | S1: 52 dahil, 6 PDF'li; girdi 48 kaynağa birer pasaj, dayanakların 20'si de özet. S2: 52 dahil, yalnız 1 PDF'li, dayanakların hepsi özet. S1'de üç yanıttan ikisi geçersiz kaldı (`missing_citation_anchor`). | Claude'un incelemesi. S2'de sorunun asıl kaynağı PDF'in hiç olmaması. |
 
 İki ayrı darboğaz var ve bu not yalnız birincisini çözer:
@@ -87,7 +87,7 @@ Her soruda önerim ilk seçenek. **Sahibin yanıtı (17 Eylül 2026): altısınd
 
 ## 8. Sonuç (17 Eylül 2026)
 
-Kod: `59759e2` (kısa kimlikler yanıt metninde kaynak başlığına çevrilir), `5826784` ve `f2ce474` (kota). Uygulamada koşul netleşti: kota, metni olan kaynak sayısı + PDF'li kaynak başına 2 sayfa pasaj sınırını aşınca devreye girer (S1'de metni olan tam 48 kaynak vardı). Backend: 520 geçti, 1 kaldı (bu makinede zaten kalan bellek sınırı testi). Çıktılar `.local/archive/early/answer-pdf-pages-2026-09-17/`.
+Kod: `59759e2` (kısa kimlikler yanıt metninde kaynak başlığına çevrilir), `5826784` ve `f2ce474` (kota). Uygulamada koşul netleşti: kota, metni olan kaynak sayısı + PDF'li kaynak başına 2 sayfa pasaj sınırını aşınca devreye girer (S1'de metni olan tam 48 kaynak vardı). Backend: 520 geçti, 1 kaldı (bu makinede zaten kalan bellek sınırı testi). Çıktılar [.local/archive/early/answer-pdf-pages-2026-09-17/](../local-runs.md#run-archive-early-answer-pdf-pages-2026-09-17).
 
 **Çevrimdışı tekrar oynatma (model yok, semantik sıralama kapalı, D55 kopyası):**
 
@@ -134,4 +134,4 @@ Beklenti (≥ 12 PDF sayfası) karşılandı.
 
 **İnceleme (Claude):** Kotalı koldaki 18 PDF sayfası atfının hiçbiri yanlış ya da ilgisiz değil; 12'si alıntı ve iddianın öteki dayanaklarıyla destekleniyor, 6'sında iddia alıntıların gösterdiğinden fazlasını söylüyor (biri akıllı şebeke çerçevesini başka bir makalenin sayfasına bağlıyor).
 
-**Okuma:** §5'teki beklentiler karşılandı: kotalı her S1 yanıtında PDF dayanaklı iddia var, geçerli yanıt oranı düşmedi. Örneklem kol başına 3 yanıt; oran ölçülmüş değil. Çıktılar `.local/archive/early/answer-salvage-2026-09-17/`.
+**Okuma:** §5'teki beklentiler karşılandı: kotalı her S1 yanıtında PDF dayanaklı iddia var, geçerli yanıt oranı düşmedi. Örneklem kol başına 3 yanıt; oran ölçülmüş değil. Çıktılar [.local/archive/early/answer-salvage-2026-09-17/](../local-runs.md#run-archive-early-answer-salvage-2026-09-17).

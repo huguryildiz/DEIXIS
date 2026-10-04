@@ -3,7 +3,7 @@
 **Tarih:** 24 Eylül 2026. **Durum:** yedi karar Claude ile `gpt-5.6-sol` · medium arasında ortak karara bağlandı (sahibin isteği, 24 Eylül 2026); 24 Eylül 2026'da uygulandı (D97); `gpt-6-sol` · high incelemesinin 11 bulgusu aynı gün düzeltildi, düzeltme denetimi bekliyor. **Prompt:** sw-slice17-prompt.md. **Ana dosya:** [sw-status.md](sw-status.md).
 **Karar:** D97 (dilim yazar). **Önkoşul:** 16 (kapandı, D96, `311d3ca`). **Tür:** Kur. **Uygulayan:** Opus · medium
 (satırdaki gibi). **İnceleme:** toplu (`gpt-5.6-sol` · high). **Plan:** Opus 5.5 · high, 24 Eylül 2026 (kural Fable ·
-high diyor; bu oturum Opus'ta koştu). **Ölçüm:** `.local/archive/sw/sw-slice17-plan-2026-09-24/` (`shape.py`, `shape.json`).
+high diyor; bu oturum Opus'ta koştu). **Ölçüm:** [.local/archive/sw/sw-slice17-plan-2026-09-24/](../local-runs.md#run-archive-sw-sw-slice17-plan-2026-09-24) (`shape.py`, `shape.json`).
 **İkinci görüş:** `gpt-5.6-sol` · medium, salt okunur (`sol-medium.md`). Sol birinci karara katıldı, ikinciye itiraz
 etti, beşini değişiklikle kabul etti; sekiz bulgusunun hepsi aşağıya işlendi. İtiraz ettiği karar 2 sahibe açık seçenek
 olarak bırakıldı. Onay turunda (`sol-approval.md`) Sol karar 1, 3, 4, 5, 7'yi onayladı, 2, 6 ve fikstür planını
@@ -288,8 +288,8 @@ Yedi karar yukarıdaki önerilerle alındı, şu dört değişiklikle:
 
 ## Task 5: kabul ve kapanış
 
-- **Görsel denetim, saklı canlı kütüphanede.** `.local/archive/sw/sw-slice16-acceptance-2026-09-24/data-q1-quick-luna-r2`'nin
-  bir kopyası `.local/sw-slice17-acceptance-<tarih>/` altına alınır ve 8765 dışında bir portta ayrı `DEIXIS_DATA_DIR`
+- **Görsel denetim, saklı canlı kütüphanede.** [.local/archive/sw/sw-slice16-acceptance-2026-09-24/data-q1-quick-luna-r2](../local-runs.md#run-archive-sw-sw-slice16-acceptance-2026-09-24)'nin
+  bir kopyası [.local/sw-slice17-acceptance-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree) altına alınır ve 8765 dışında bir portta ayrı `DEIXIS_DATA_DIR`
   ile servis edilir. Ürün veritabanına dokunulmaz, model çağrısı yapılmaz. 16 satırın her türünden en az biri açılır.
   1440 px ve 390 px, açık ve koyu temada ekran görüntüsü alınır, kanıt klasörüne konur.
 - Denetim listesi, `result.md`'ye yazılır:

@@ -4,7 +4,7 @@
 
 **Goal:** Üçüncü duman koşusunda `code:abstract_stage` 177 sn, `code:criterion` 89 sn sürdü; ikisi de olay döngüsü iş parçacığında eşzamanlı koşuyor, bu sürede API yanıt veremiyor (yoklamalar ~25 sn'de bir yanıtlandı) ve dilim 13'ün duraklamasına zemin hazırladı. `research_view` `fe7c31d` ile 37 → 7,2 sn'ye indi; kalan 7 sn'nin ~2,3'ü `views.py`'deki sürüm sıralama döngüsü (her kayıt için bütün listeyi tarayan iç içe döngü). Bu dilimden sonra: aynı veritabanında `code:abstract_stage` ≤ 20 sn, `code:criterion` ≤ 15 sn, `research_view` ≤ 3 sn (hedef; ölçülür ve yazılır), **çıktı bayt bayt aynı** (adım çıktısı, `stage_decisions`, `selections`).
 
-**Architecture:** Önce ölç, sonra değiştir. Uygulayan `.local/archive/sw/sw-smoke-2026-09-22/data-3/library.sqlite`'ın bir **kopyası** üzerinde (salt okunur açılır, kopyalanır) `cProfile` ile üç işlevi profiller ve ilk üç sıcak noktayı dilim satırına yazar. Bilinen adaylar: `_write_abstract_codes` her yazım için `decisions.current` + `decisions.record` + `store.source(svid)` ve iş başına `derive_selection` (binlerce kısa işlem); `views.research_view`'daki `ordered` döngüsü (O(n²)); `code:criterion`'daki sayım sorguları. Düzeltme yolu: araştırma genelinde birkaç sorguyla okuma, tek işlemde toplu yazma (`executemany`), `work_id` → kayıtlar sözlüğüyle sıralama. Yeni indeks gerekiyorsa migration `0048`.
+**Architecture:** Önce ölç, sonra değiştir. Uygulayan [.local/archive/sw/sw-smoke-2026-09-22/data-3/library.sqlite](../local-runs.md#run-archive-sw-sw-smoke-2026-09-22)'ın bir **kopyası** üzerinde (salt okunur açılır, kopyalanır) `cProfile` ile üç işlevi profiller ve ilk üç sıcak noktayı dilim satırına yazar. Bilinen adaylar: `_write_abstract_codes` her yazım için `decisions.current` + `decisions.record` + `store.source(svid)` ve iş başına `derive_selection` (binlerce kısa işlem); `views.research_view`'daki `ordered` döngüsü (O(n²)); `code:criterion`'daki sayım sorguları. Düzeltme yolu: araştırma genelinde birkaç sorguyla okuma, tek işlemde toplu yazma (`executemany`), `work_id` → kayıtlar sözlüğüyle sıralama. Yeni indeks gerekiyorsa migration `0048`.
 
 ## Global constraints
 
@@ -18,7 +18,7 @@ Değişecek: `backend/deixis/workflow/flow.py` (`_abstract_code_stage`, `_write_
 
 ## Task 1: ölç
 
-- Profil çıktıları `.local/sw-code-stage-2026-09-22/` altına; ilk üç sıcak nokta satıra.
+- Profil çıktıları [.local/sw-code-stage-2026-09-22/](../local-runs.md#historical-paths-absent-from-the-inspected-tree) altına; ilk üç sıcak nokta satıra.
 
 ## Task 2: düzelt, çıktı aynı kalarak
 

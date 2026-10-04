@@ -1,6 +1,8 @@
 # SW dilim 13 — Uçtan uca duman testi: koşu planı
 
-**Tarih:** 22 Eylül 2026. **Durum:** koşuldu (dört koşu; sonuç `.local/archive/sw/sw-smoke-2026-09-22/result.md` ve `result-run4.md`). **Ana dosya:** [sw-status.md](sw-status.md). **Ana plan:** [sw-implementation-plan.md](sw-implementation-plan.md) (§2 kuralları geçerlidir; kural 7'nin ikinci istisnası bu dilimdir). **Önkoşul:** 01–12 (hepsi kapandı). **Tür:** Duman. **Koşan:** Fable · high. **İnceleme:** yok; sonuç kaydı sahibe gider.
+Local run provenance and raw-data limits are recorded in the [local run catalogue](../local-runs.md). Local paths in commands, directory-layout examples and historical locator labels are retained as written; they are not proof that those artifacts still exist. The planned P9 raw-evidence target is `.local/archive/p9-evidence.tar.gz`, which was absent at the 4 October 2026 inspection.
+
+**Tarih:** 22 Eylül 2026. **Durum:** koşuldu (dört koşu; sonuç [.local/archive/sw/sw-smoke-2026-09-22/result.md](../local-runs.md#run-archive-sw-sw-smoke-2026-09-22) ve `result-run4.md`). **Ana dosya:** [sw-status.md](sw-status.md). **Ana plan:** [sw-implementation-plan.md](sw-implementation-plan.md) (§2 kuralları geçerlidir; kural 7'nin ikinci istisnası bu dilimdir). **Önkoşul:** 01–12 (hepsi kapandı). **Tür:** Duman. **Koşan:** Fable · high. **İnceleme:** yok; sonuç kaydı sahibe gider.
 
 **Sahibin kararları (22 Eylül 2026, plan sohbeti; sahip sorulan üç seçeneğe cevap vermedi, plan önerilen varsayılanları alır ve sahip başlamadan değiştirebilir):**
 
@@ -12,8 +14,8 @@
 
 ## Global constraints
 
-- **Canlı kütüphaneye dokunulmaz:** ayrı `DEIXIS_DATA_DIR` (`.local/archive/sw/sw-smoke-2026-09-22/data`), 8765 dışı port (`8799`), varsayılan veri dizini açılmaz. Kayıt kütüphaneye taşınmaz.
-- **Beklenti koşudan önce dondurulur:** `.local/archive/sw/sw-smoke-2026-09-22/protocol.md` ilk çağrıdan önce yazılır (Task 1) ve sonra düzenlenmez; sapma `result.md`'ye yazılır.
+- **Canlı kütüphaneye dokunulmaz:** ayrı `DEIXIS_DATA_DIR` ([.local/archive/sw/sw-smoke-2026-09-22/data](../local-runs.md#run-archive-sw-sw-smoke-2026-09-22)), 8765 dışı port (`8799`), varsayılan veri dizini açılmaz. Kayıt kütüphaneye taşınmaz.
+- **Beklenti koşudan önce dondurulur:** [.local/archive/sw/sw-smoke-2026-09-22/protocol.md](../local-runs.md#run-archive-sw-sw-smoke-2026-09-22) ilk çağrıdan önce yazılır (Task 1) ve sonra düzenlenmez; sapma `result.md`'ye yazılır.
 - **Kalite yargısı yok.** Etiketlerin doğruluğu, ifadelerin iyiliği, yanıtın kalitesi bu dilimin konusu değildir; "ölçülmedi" diye yazılır (dilim 24). Kaydedilen yalnızca: bitti mi, nerede durdu, aşama başına sayılar, model çağrısı ve token, süre.
 - **Hata bulunursa düzeltilir**, dilimin kendi kuralıyla: önce başarısız test (sahte modelle, `tests/`), sonra düzeltme, ayrı commit (`Smoke slice 13: …`), tam pytest yeşil. Düzeltme davranış değiştiriyorsa `D86` girdisi; değiştirmiyorsa karar kaydı yok. Düzeltmeden sonra koşu **baştan** yinelenir (yeni veri dizini, `data-2`), kısmi sürdürme sonuç sayılmaz.
 - **Duraklama gerçek üründeki gibi aşılır:** protokol onayı `ask` kalır; kart `awaiting_approval`'da durunca koşan, öneriyi **olduğu gibi** onaylar (`POST /api/runs/{id}/protocol-approval`, düzenleme yok) ve bunu kaydeder. `as_proposed` ayarı kullanılmaz: kartın gerçek yolu ilk kez burada koşar.
@@ -26,12 +28,12 @@
 
 - `git pull --ff-only`; `cd apps/web && npm ci && npm run build` (sunucu `dist/`i verir).
 - `.env`'de `DEEPSEEK_API_KEY` var mı: `GET /api/connections/deepseek` `ready: true` demeli; değilse dur ve sahibe sor (anahtar istenmez).
-- `.local/archive/sw/sw-smoke-2026-09-22/protocol.md`: tarih, commit hash'i, `skill_package_hash`, model / efor / soru / ayarlar, ve **beklenti**: (1) keşif koşusu onay duraklamasından sonra `completed`; (2) getirme koşusu kendiliğinden açılır ve `completed`; (3) okuma koşusu kendiliğinden açılır ve `completed`; (4) en az bir iş `included`, `origin = code_rule`; (5) yanıt koşusu `structurally_valid` bir yanıt verir ve her çapası saklı pasaja çözülür. Başka sayı tahmini yazılmaz.
-- Sunucu: `DEIXIS_DATA_DIR=<abs .local/…/data> DEIXIS_SEARCH_WORKFLOW=sw DEIXIS_FULLTEXT_FETCH=auto DEIXIS_FULLTEXT_ADJUDICATION=auto PYTHONPATH=backend uv run python -m deixis serve --port 8799 --no-browser`, arka planda, günlüğü `.local/…/server.log`.
+- [.local/archive/sw/sw-smoke-2026-09-22/protocol.md](../local-runs.md#run-archive-sw-sw-smoke-2026-09-22): tarih, commit hash'i, `skill_package_hash`, model / efor / soru / ayarlar, ve **beklenti**: (1) keşif koşusu onay duraklamasından sonra `completed`; (2) getirme koşusu kendiliğinden açılır ve `completed`; (3) okuma koşusu kendiliğinden açılır ve `completed`; (4) en az bir iş `included`, `origin = code_rule`; (5) yanıt koşusu `structurally_valid` bir yanıt verir ve her çapası saklı pasaja çözülür. Başka sayı tahmini yazılmaz.
+- Sunucu: `DEIXIS_DATA_DIR=<abs .local/…/data> DEIXIS_SEARCH_WORKFLOW=sw DEIXIS_FULLTEXT_FETCH=auto DEIXIS_FULLTEXT_ADJUDICATION=auto PYTHONPATH=backend uv run python -m deixis serve --port 8799 --no-browser`, arka planda, günlüğü [.local/…/server.log](../local-runs.md#historical-paths-absent-from-the-inspected-tree).
 
 ## Task 2: koşu
 
-API ile (CSRF: `GET /api/session` → `x-deixis-csrf`), her adım zaman damgasıyla `.local/…/log.md`'ye:
+API ile (CSRF: `GET /api/session` → `x-deixis-csrf`), her adım zaman damgasıyla [.local/…/log.md](../local-runs.md#historical-paths-absent-from-the-inspected-tree)'ye:
 
 1. `POST /api/researches`: soru, `effort: quick`, `model_connection: deepseek`, `requested_model: deepseek-flash`, `reasoning_effort: high`, `source_scope: academic`. Keşif koşusu kendiliğinden başlar.
 2. Koşuyu izle (`GET /api/researches/{id}`, olaylar). `awaiting_approval`'da: kartın gövdesini (dağarcık, ölçüt, parçalar, ifadeler, dışlama sözcükleri) `log.md`'ye kopyala, olduğu gibi onayla.
@@ -52,7 +54,7 @@ Sunucu durduktan sonra `library.sqlite` salt okunur açılır (`sqlite3 'file:�
 
 - `result.md`: beklentinin beş maddesi tek tek tuttu / tutmadı; nerede durdu; bulunan hatalar ve commit'leri; sayı tablosu; **ölçülmedi** listesi (etiket doğruluğu, ifade kalitesi, yanıt kalitesi, ikinci konu, `standard` / `detailed` efor, gömme açıkken davranış, limiter > 1 bütçe gediğinin ürünle tetiklenip tetiklenmediği — yalnızca gözlendiyse yazılır).
 - `sw-status.md` satır 13: `koşuldu` + tek cümle sonuç + `.local` yolu; düzeltme varsa hash'i. SW belgesine durum satırı eklenmez (tasarım kararı yok). Bu dilim tam pytest'i **yalnızca** düzeltme yaptıysa koşar.
-- Sunucu durdurulur; `.local/…/data` silinmez (kanıt), sahip isterse siler.
+- Sunucu durdurulur; [.local/…/data](../local-runs.md#historical-paths-absent-from-the-inspected-tree) silinmez (kanıt), sahip isterse siler.
 
 ## Son ileti
 

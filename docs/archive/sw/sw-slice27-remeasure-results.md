@@ -4,7 +4,7 @@
 `bc64236b893ac38d085375cee41d9bfc6d42ca7a` (plandaki "Frozen expectations" bölümü o commit'le dondu). **Prompt:**
 sw-slice27-prompt.md, Part B. **Sınanan kod:** `142dfa1` (25a ve 26),
 `skill_package_hash` `sha256:a633e9c7091ed3338b0a51d3c7bdb99e524678f5cc4bdb60e1049d8b4a68028a`. **Kuantum yarısı:** dilim
-24'ün klasöründen, `65a7ec8`. **Karar:** D108. **Klasör:** `.local/archive/sw/sw-slice27-remeasure-2026-09-27-043237/`
+24'ün klasöründen, `65a7ec8`. **Karar:** D108. **Klasör:** [.local/archive/sw/sw-slice27-remeasure-2026-09-27-043237/](../local-runs.md#run-archive-sw-sw-slice27-remeasure-2026-09-27-043237)
 (`protocol.md`, `ledger.jsonl`, `gates.json`, `gate2-one-unit.json`, `analyst-reading.jsonl`). **Makine ve model:** bir M1
 Pro, Python 3.12 arm64; her araştırmanın her rolünde Codex `gpt-5.6-luna` · medium. Her sayı tek koşudur.
 

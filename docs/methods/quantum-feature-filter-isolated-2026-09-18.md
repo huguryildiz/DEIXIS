@@ -1,5 +1,7 @@
 # Isolated question-feature query arm
 
+Local run provenance and raw-data limits are recorded in the [local run catalogue](../archive/local-runs.md). Local paths in commands, directory-layout examples and historical locator labels are retained as written; they are not proof that those artifacts still exist. The planned P9 raw-evidence target is `.local/archive/p9-evidence.tar.gz`, which was absent at the 4 October 2026 inspection.
+
 **Status:** opt-in, post-hoc development experiment. This does not change the DEIXIS product search planner or default. The quantum question, the six control DOIs, the Elicit rows, and two additional IEEE papers were already inspected before this arm was designed. Consequently, none is an independent evaluation target.
 
 ## Frozen comparison before provider requests

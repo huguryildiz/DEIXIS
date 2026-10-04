@@ -9,7 +9,7 @@ Opus'ta koştu). **İkinci görüş:** `gpt-6-sol` · high, salt okunur (`sol-pl
 koşmadı). Eşgüdümcünün hükmüyle 1–8 kabul edildi ve aşağıya işlendi; 9'un zamanlama ve test kısmı kabul, git kısmı
 reddedildi (uygulama promptunun pull / commit / push biçimi bu deponun standardı; prompt yalnız A–E cevaplandıktan
 sonra koşar). İkinci tur (`sol-plan-2.md`): "düzeltmeyle hazır", 3 bulgu, üçü de kabul ve işlendi (tekil sinyalde
-puanlanmamış kayıt ve eşitlik kuralı, gömme sonrası için zaman kuralı, ölçüm ekinin adları). **Ölçüm:** `.local/archive/sw/sw-slice19-plan-2026-09-25/` (`protocol.md` önce yazıldı; `measure.py` →
+puanlanmamış kayıt ve eşitlik kuralı, gömme sonrası için zaman kuralı, ölçüm ekinin adları). **Ölçüm:** [.local/archive/sw/sw-slice19-plan-2026-09-25/](../local-runs.md#run-archive-sw-sw-slice19-plan-2026-09-25) (`protocol.md` önce yazıldı; `measure.py` →
 `measure.json`, `summary.md`; `outcome_timing.py` → `outcome_timing.json`; `timing.py`, `result.md`; salt okunur,
 model ve ağ yok; `outcome_timing.py` oturum dizinindeki 0052'ye göç ettirilmiş kopyalarda koştu ve kopyaları sildi).
 **Kapsam:** SW13 (hepsi; 13.6'da kurulacak bir şey yok), SW1.8, SW7.6, SW8.7.
@@ -324,7 +324,7 @@ Uygulama bu beş cevap satır 19'da yazılı olmadan başlamaz.
    sinyal sayıları elle hesaplananla aynı; aynı girdiyle iki koşu bayt bayt aynı; kütüphane salt okunur açılır;
    referans kümesinde olup kütüphanede olmayan eser "havuzda yok"; başlıksız (`origin` / `completeness` yok) referans
    kümesi reddedilir; çıktıda aralık koşul cümlesi var.
-7. **Kabul** (model ve ağ yok; sonuçlar `.local/sw-slice19-acceptance-<tarih>/`).
+7. **Kabul** (model ve ağ yok; sonuçlar [.local/sw-slice19-acceptance-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree)).
    (a) Planın 25 izlenebilir kütüphanesinin oturum dizinindeki 0052'ye göç ettirilmiş kopyalarında: köken başına
    eser ve dahil sayıları (`by_origin`, ikinci tur ve zincir satırları) planın `measure.json`'undaki `arms`
    satırlarındaki eser ve `P_code` sayılarıyla **eşit**. Beklenen fark yok: iş düzeyi kural ham sayımla 25'inde aynı

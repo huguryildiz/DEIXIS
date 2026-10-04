@@ -2,7 +2,7 @@
 
 **Tarih:** 24 Eylül 2026. **Durum:** 18a uygulandı (D99; yayıncı PDF'iyle kabul yapılmadı, sahibin kararıyla commit edildi); 18b uygulandı (D100; bir yayıncı PDF'iyle canlı kabul yapıldı); `gpt-6-sol` · high'ın ikinci görüşü (`sol-plan.md`, "hazır değil", 11 bulgu) işlendi: dilim 18a ve 18b'ye bölündü; 18a uygulamaya hazır taslak, 18b'nin sözleşmesi kendi plan turunda kesinleşir. **Ana dosya:** [sw-status.md](sw-status.md).
 **Karar:** yeni D numarası (dilim yazar; en yüksek D98). **Önkoşul:** 10 (D83), 12 (D85), 17a (D98). **Tür:** Kur.
-**Kapsam:** SW10.4–5, SW11.9. **Plan:** Opus 5.5 · high. **Ölçüm:** `.local/archive/sw/sw-slice18-plan-2026-09-24/`
+**Kapsam:** SW10.4–5, SW11.9. **Plan:** Opus 5.5 · high. **Ölçüm:** [.local/archive/sw/sw-slice18-plan-2026-09-24/](../local-runs.md#run-archive-sw-sw-slice18-plan-2026-09-24)
 (`waiting.py`, `waiting.json`; salt okunur, model ve ağ yok).
 
 **Goal:** Bir `sw` araştırmasında açık kopyası bulunamayan işler bugün `no_fulltext` koduyla `unresolved` kalıyor ve
@@ -76,7 +76,7 @@ detailed sütunlarında da birer `r12` var (detailed'da 32'lik olan). Güncel yo
 ## Dilim 18b — ekleme sonrası
 
 **Plan turu:** 24 Eylül 2026, Opus 5.5 · high; ikinci görüş `gpt-6-sol` · high iki tur: ilki "hazır değil", 9 bulgu;
-ikincisi yine "hazır değil", 8 yeni bulgu; üçüncüsü "hazır değil", 6 bulgu; dördüncüsü 2 bulgu; beşincisi "düzeltmeyle hazır", 1 kısmi bulgu (`.local/archive/sw/sw-slice18b-plan-2026-09-24/`
+ikincisi yine "hazır değil", 8 yeni bulgu; üçüncüsü "hazır değil", 6 bulgu; dördüncüsü 2 bulgu; beşincisi "düzeltmeyle hazır", 1 kısmi bulgu ([.local/archive/sw/sw-slice18b-plan-2026-09-24/](../local-runs.md#run-archive-sw-sw-slice18b-plan-2026-09-24)
 `sol-plan.md` … `sol-plan-5.md`); hepsi aşağıda işlendi. İkinci turun dersi: okuma isteğini saklı karardan ve eski planlardan türetmek
 her bitiş yolunda ayrı bir kural istiyordu, bu yüzden istek kendi tablosuna taşındı. **Önkoşul:** 18a commit'i (D99). Bugünkü durum (koddan
 okundu; bu tur için ölçüm yapılmadı): 18a'nın onayı dosyayı ekliyor, olay yazıyor, başka hiçbir şey yazmıyor. İşin

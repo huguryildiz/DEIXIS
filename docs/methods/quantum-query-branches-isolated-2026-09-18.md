@@ -1,5 +1,7 @@
 # Isolated question-term and diverse-query comparison
 
+Local run provenance and raw-data limits are recorded in the [local run catalogue](../archive/local-runs.md). Local paths in commands, directory-layout examples and historical locator labels are retained as written; they are not proof that those artifacts still exist. The planned P9 raw-evidence target is `.local/archive/p9-evidence.tar.gz`, which was absent at the 4 October 2026 inspection.
+
 **Status:** opt-in development experiment. This protocol changes neither the DEIXIS product search planner nor its default query compiler. The previous quantum run is a development case with known misses, not an independent benchmark. Its frozen evidence remains untouched.
 
 ## Question and arms

@@ -95,4 +95,4 @@ Compare the trial with the saved Elicit audit on two distinct axes: exact DOI an
 - [PRISMA-S statement and 16-item checklist](https://www.prisma-statement.org/prisma-search); [explanation and elaboration](https://pmc.ncbi.nlm.nih.gov/articles/PMC8270366/).
 - [PRISMA 2020 flow diagram](https://www.prisma-statement.org/prisma-2020-flow-diagram).
 - [TARCiS citation-searching guidance](https://www.bmj.com/content/385/bmj-2023-078384.full) and its [correction](https://www.bmj.com/content/387/bmj.q2458).
-- Ignored development evidence: `.local/archive/early/citation-graph-elicit-2026-09-18/{protocol.md,result.md,error-followup-result.md,s2-paced-live-result.md}`. The pilot's 4/6 control overlap, incomplete forward/API branches, and unequal Elicit comparison do not validate this design.
+- Ignored development evidence: [.local/archive/early/citation-graph-elicit-2026-09-18/{protocol.md,result.md,error-followup-result.md,s2-paced-live-result.md}](../local-runs.md#run-archive-early-citation-graph-elicit-2026-09-18). The pilot's 4/6 control overlap, incomplete forward/API branches, and unequal Elicit comparison do not validate this design.

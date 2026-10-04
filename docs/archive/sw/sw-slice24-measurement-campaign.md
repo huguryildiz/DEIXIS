@@ -3,14 +3,14 @@
 **Tarih:** 26 Eylül 2026. **Durum:** plan hazır; A1, B1, C1, D1, E1, F1, G1, H1, I1 önerildiği gibi (sahip soru sorulmadan
 ilerlenmesini istedi). **İkinci görüş:** `gpt-6-sol` · high r1 "hazır değil", 9 bulgu ve 6 değişiklik; r2 "hazır
 değil", r1'in 4'ü kapandı, 5'i kısmen, 6 değişiklik; r3 "hazır değil", 4 madde; r4 "düzeltmeyle hazır", 2 düzeltme,
-işlendi (son dört bölüm); r5–r8 "düzeltmeyle hazır" (kampanya klasörünün adı ve `.local/sw-slice24-active`'in yazılma
+işlendi (son dört bölüm); r5–r8 "düzeltmeyle hazır" (kampanya klasörünün adı ve [.local/sw-slice24-active](../local-runs.md#historical-paths-absent-from-the-inspected-tree)'in yazılma
 anı, eşgüdümcü düzeltti); r9 "hazır". Sahibin kendi eli ya da parası gereken işler ayrı listede
 ("Sahibin yapacağı"); bunlar soru değil, yapılacak iştir. **Prompt:** sw-slice24-prompt.md.
 **Ana dosya:** [sw-status.md](sw-status.md). **Karar:** D105 (en yüksek D104). **Migration:** yok. **Önkoşul:** 23
 dışındaki bütün dilimler; satır 17, 18a, 18b ve 19'un durumu karar 2'de. **Tür:** Ölç. **Uygulayan:** Fable · high
 (ana dosyanın "Bir tur" notundaki kural: protokolü dondurmak ve sonucu yorumlamak muhakeme işidir); uzun koşan betik Sonnet arka plan
 ajanına verilebilir. **İnceleme:** 24a'nın sonucu sahibe gider; 24b toplu (Sol · high). **Plan:** Opus 5.5 · high.
-**Ölçüm:** `.local/archive/sw/sw-slice24-plan-2026-09-26/`: `cost_time.py` → `cost-time.json`, `truth_in_runs.py` →
+**Ölçüm:** [.local/archive/sw/sw-slice24-plan-2026-09-26/](../local-runs.md#run-archive-sw-sw-slice24-plan-2026-09-26): `cost_time.py` → `cost-time.json`, `truth_in_runs.py` →
 `truth-in-runs.json`, `k3_oa.py` → `k3-oa.json`, `elicit_vs_ledger.py` → `elicit-vs-ledger.json`, `elicit_in_runs.py`
 → `elicit-in-runs.json`, `queue.txt`, `legacy-live.txt`; kuantum Elicit dosyalarının salt okunur kopyaları
 `elicit-quantum/` (`SHA256SUMS`); tıp sorusunda sahibin yapıştırdığı Elicit cevabı ve tablo dışa aktarımı `elicit-tre/`
@@ -105,7 +105,7 @@ efor için örnek 2–5 koşu; hepsi tek soru, tek model. Dağılım değil, gö
    `candidate` sonucudur; özetin `unresolved` bırakıp tam metne yönlendirdiği işler (sözlük) bu sütunda yok. Sayılar
    referans eser sayısıdır, payda 31.
 3. **Elicit'in 9 eseri** (`elicit-vs-ledger.json`, `elicit-in-runs.json`). 9'un 9'u da 18 Eylül'deki 160 eserlik
-   karar defterimizde (`.local/archive/early/quantum-work-adjudication-2026-09-18/adjudication.jsonl`) var. 5'i 31'lik sette; Elicit bu
+   karar defterimizde ([.local/archive/early/quantum-work-adjudication-2026-09-18/adjudication.jsonl](../local-runs.md#run-archive-early-quantum-work-adjudication-2026-09-18)) var. 5'i 31'lik sette; Elicit bu
    beşini "Full text" diye işaretlemiş. Öbür 4'ünü Elicit "Abstract only" demiş; bizim defterde 3'ü
    `unresolved_access_or_extraction` (tam metne erişilemedi), 1'i `algorithmic_optimization_without_formulation`. Yani
    kuantumda Elicit, 18 Eylül'deki defterimizin görmediği bir eser getirmedi. Elicit'in "Full text" etiketi ile defterin
@@ -362,7 +362,7 @@ sayılar (sayı 2–6) bununla aynı değildir: plan oturumunun betikleri DOI **
    D∖E'nin her `include` eseri için bizim doğrulanmış alıntımız (Elicit'in yanlış olduğu anlamına gelmez); E'nin R'ye
    göre durumu (R'de mi, "karşılaştırıcı farklı" listesinde mi, hiçbirinde mi).
    - **Kuantum Elicit dosyaları.** Kaynakları `~/Desktop/Elicit/` (iki CSV) ve `~/Documents/ChatGPT/Miscellaneous/`
-     (rapor, arama günlüğü, tablo; 17 Eylül 2026). Plan oturumu beşini `.local/archive/sw/sw-slice24-plan-2026-09-26/elicit-quantum/`'a
+     (rapor, arama günlüğü, tablo; 17 Eylül 2026). Plan oturumu beşini [.local/archive/sw/sw-slice24-plan-2026-09-26/elicit-quantum/](../local-runs.md#run-archive-sw-sw-slice24-plan-2026-09-26)'a
      kopyaladı, yazmayı kapattı ve `SHA256SUMS` yazdı (iki CSV'nin özeti `968b5208…`, `e7e9e4b8…`). Kampanya kendi
      klasörüne yeniden kopyalar ve özetleri bu dosyayla karşılaştırır; tutmazsa durur. Git'e hiçbir Elicit dosyası girmez
      (`.local/` `.gitignore`'da, satır 8). Not: iki CSV'nin aynı baytları 17 Eylül'de `e3d6f26` commit'inde de var,
@@ -476,7 +476,7 @@ sayılar (sayı 2–6) bununla aynı değildir: plan oturumunun betikleri DOI **
     olur. Okuyan bir model oturumudur (plan yazarından başka), tek okuyucu. Sınır: dilim 22'nin 40 / 40'ı gibi bu da aynı
     makinede, benzer arXiv makalelerinde bir kabul kanıtıdır; genel bir güvenilirlik sınırı değildir.
 13. **Kesinti, sürdürme ve yeniden başlatma.** Part A yarıda durursa (kota, `model_call_failed`, makine) satır 24
-    `24a durdu: <nerede>` yazar. **Etkin klasör:** klasörün yolu ve `protocol.md`'deki plan commit'i `.local/sw-slice24-active`
+    `24a durdu: <nerede>` yazar. **Etkin klasör:** klasörün yolu ve `protocol.md`'deki plan commit'i [.local/sw-slice24-active](../local-runs.md#historical-paths-absent-from-the-inspected-tree)
     dosyasına (tek satır) yalnız bir yerde, dondurmanın sonunda `protocol.md` yazıldıktan sonra yazılır; sürdürme denetimi yalnız bu dosyanın gösterdiği klasöre
     uygulanır, başka `sw-slice24-campaign-*` klasörü hiç okunmaz; yeniden başlatma her zaman adı daha önce olmayan yeni bir klasör açar (`sw-slice24-campaign-<tarih>-<saat>`) ve dosyayı ona ancak yeni klasörün `protocol.md`'si yazıldıktan sonra taşır; işaretçi taşınmadan önceki bir çökmede işaretçi ya yoktur (Part A baştan koşar) ya da eski klasörü gösterir; o durumda eski klasör için sürdürme ya da yeniden başlatma denetimi yeniden yapılır.
     Dosya yoksa ya da gösterdiği klasörde `protocol.md` yoksa Part A baştan koşar. Süreç `24a durdu` yazamadan çökerse
@@ -488,7 +488,7 @@ sayılar (sayı 2–6) bununla aynı değildir: plan oturumunun betikleri DOI **
     yarıda çöken araştırma yeni bir veri dizininde baştan koşar ve eski dizini "yarım" diye saklanır. Özet ya da kod
     koşulu tutmazsa **yeniden başlatma**: yeni bir kampanya klasörü, yeni `protocol.md` ve dondurma; eski klasör olduğu gibi
     kalır ve sonuç ikisini de anar. Kapı başarısızlığı bir kesinti değildir: 24a biter (karar 11).
-14. **Sonucun yeri.** Ham veri `.local/sw-slice24-campaign-<tarih>-<saat>/` (izlenmez). İzlenen sonuç
+14. **Sonucun yeri.** Ham veri [.local/sw-slice24-campaign-<tarih>-<saat>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree) (izlenmez). İzlenen sonuç
     `docs/archive/sw/sw-slice24-results.md` (Türkçe): kısa özet, beklentiyle yan yana tablolar, kapıların hükmü, her
     ölçülmeyen şey. Değişmesi gereken her eşik ya da kural `search-workflow-review-2026-09-18.md`'ye yeni bir SW girişi
     olur (en yüksek bugün SW17, yani SW18'den başlar); girişte bulgu, sayı, hangi dilime dönüleceği. Satır 24, K4 ve K5
@@ -614,7 +614,7 @@ Bu bölüm koordinatörün commit'iyle donar. Dayanak sayı 1–8'dir; "dayanağ
 
 ## Global constraints
 
-- **Ürün kodu 24a'da değişmez.** Kampanya betikleri yalnız `.local/sw-slice24-campaign-<tarih>-<saat>/` altında; `scripts/`'e
+- **Ürün kodu 24a'da değişmez.** Kampanya betikleri yalnız [.local/sw-slice24-campaign-<tarih>-<saat>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree) altında; `scripts/`'e
   bir şey eklenmez.
 - **Kimse karar vermez.** Onay kartı olduğu gibi (`as_proposed`); kuyruk cevapsız; terim, ölçüt, seçim düzeltilmez.
 - **Referans küme doğruluk değildir, Elicit doğruluk değildir.** Sonuç "kaçırdık", "bulduk", "ikisi de" der; "doğru" ya
@@ -705,7 +705,7 @@ yeterli olup olmadığı; analist okumasının ikinci bir okuyucuda tutup tutmad
 
 ## Sol r1 bulguları ve yapılanlar
 
-`gpt-6-sol` · high r1 (`.local/archive/sw/sw-slice24-plan-2026-09-26/sol/answer-r1.md`), "hazır değil".
+`gpt-6-sol` · high r1 ([.local/archive/sw/sw-slice24-plan-2026-09-26/sol/answer-r1.md](../local-runs.md#run-archive-sw-sw-slice24-plan-2026-09-26)), "hazır değil".
 
 1. **TRE referans kümesi tek anlamlı değildi; kaynakça geri dönüşü dahil edilmemiş denemeleri katıyordu (yüksek).**
    Karar 6 yeniden yazıldı: harfi harfine `esearch` sorgusu, Entrez tarihi (`edat`), sıra ve eşitlik kuralı (aynı gün
@@ -742,7 +742,7 @@ yeterli olup olmadığı; analist okumasının ikinci bir okuyucuda tutup tutmad
 
 ## Sol r2 bulguları ve yapılanlar
 
-`gpt-6-sol` · high r2 (`.local/archive/sw/sw-slice24-plan-2026-09-26/sol/answer-r2.md`), "hazır değil": r1'in 1, 2, 3, 5 ve 7'si
+`gpt-6-sol` · high r2 ([.local/archive/sw/sw-slice24-plan-2026-09-26/sol/answer-r2.md](../local-runs.md#run-archive-sw-sw-slice24-plan-2026-09-26)), "hazır değil": r1'in 1, 2, 3, 5 ve 7'si
 kısmen kapanmıştı.
 
 1. **TRE uygunluğu tabloyu uygunluktan sonraya bırakıyordu; sayfalama, belirsiz Elicit etiketi ve bilinmiyor payı yoktu
@@ -788,5 +788,5 @@ Sol r4 (gpt-6-sol high) "düzeltmeyle hazır" dedi; iki düzeltme işlendi.
 
 1. **Paylaşılan yayın iki denemeyi birleştirebiliyordu.** Sözlükteki referans birimi: farklı kayıt numarası taşıyan
    satırlar PMID ya da DOI paylaşsa da birleştirilmez; paylaşılan yayın iki denemenin de listesine girer.
-2. **Sürdürülecek klasör tanımsızdı.** Karar 13: `.local/sw-slice24-active` etkin klasörü ve commit'i tutar; sürdürme
+2. **Sürdürülecek klasör tanımsızdı.** Karar 13: [.local/sw-slice24-active](../local-runs.md#historical-paths-absent-from-the-inspected-tree) etkin klasörü ve commit'i tutar; sürdürme
    denetimi yalnız ona uygulanır, yeniden başlatmada yeni klasöre taşınır.

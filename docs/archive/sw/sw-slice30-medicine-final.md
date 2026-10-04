@@ -4,7 +4,7 @@
 [sw-status.md](sw-status.md). **Decision:** D112 (the next free number after D111). **Migration:** none (highest stays
 `0055`). **Type:** measure; no product file changes. **Prerequisite:** slice 27 recorded (D108), slice 28 closed (D109),
 slice 29 recorded (D111). **Implementer:** Opus 5.5 (the run session). **Review:** Sol (`gpt-6-sol` · high), one plan
-round; a second round only if a high finding stays open. **Run folder:** `.local/archive/sw/sw-slice30-medicine-final-2026-09-28/`.
+round; a second round only if a high finding stays open. **Run folder:** [.local/archive/sw/sw-slice30-medicine-final-2026-09-28/](../local-runs.md#run-archive-sw-sw-slice30-medicine-final-2026-09-28).
 
 ## What this is and why
 
@@ -25,7 +25,7 @@ The result decides 24b, the switch of the default search workflow from `legacy` 
 ## The protocol: slice 27's, with these changes and nothing else
 
 Slice 27's plan ([sw-slice27-medicine-remeasure.md](sw-slice27-medicine-remeasure.md)) and its run's `protocol.md`
-(`.local/archive/sw/sw-slice27-remeasure-2026-09-27-043237/protocol.md`) apply as written: the question byte for byte; the seven
+([.local/archive/sw/sw-slice27-remeasure-2026-09-27-043237/protocol.md](../local-runs.md#run-archive-sw-sw-slice27-remeasure-2026-09-27-043237)) apply as written: the question byte for byte; the seven
 researches in the same order (`qtre-sw-standard-r1`, `qtre-legacy-standard-r1`, `qtre-sw-quick-r1`,
 `qtre-sw-detailed-r1`, `qtre-sw-standard-emb-r1`, `qtre-sw-standard-r2`, `qtre-legacy-standard-r2`), one at a time,
 2 minutes apart, ports 8858–8864, each in its own empty data directory; the server environment
@@ -66,12 +66,12 @@ Changes:
    `81299e154c8704a64560fdb5f9216847aca210d7d297d5f8fe9a1ba328999a71`, `check_reading30.py`
    `3e76d91aa59975ecd734d226355b5737c936372de083ed1c03765902e4008e41`.
 4. **Quantum stays from slice 24a (`65a7ec8`), as in slice 27 (F1).** Gates 1, 2, 3 and 4 read quantum from
-   `.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/`. The gap is wider than in slice 27: besides slices 25a and 26, the
+   [.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/](../local-runs.md#run-archive-sw-sw-slice24-campaign-2026-09-26-134050). The gap is wider than in slice 27: besides slices 25a and 26, the
    code now has D109 and SW19/SW20. What is known: D109's marker leaves 625 of 625 stored quantum reading StepInputs
    byte-identical and its guard changes 0 of 304 quantum reading codes (replay); in D109's dry run one quantum reading
    stayed unchanged and 3 of 3 quantum criterion proposals carried no role; SW19/SW20 keep the same threshold values.
    Not measured: a full quantum research at this commit. The results document says so beside each gate.
-5. **Names.** Run folder and marker `.local/sw-slice30-active` (written only after `protocol.md`); idempotency keys
+5. **Names.** Run folder and marker [.local/sw-slice30-active](../local-runs.md#historical-paths-absent-from-the-inspected-tree) (written only after `protocol.md`); idempotency keys
    prefixed `s30-`; row 30 and D112 in place of row 27 and D108. The results file is `sw-slice30-results.md`, in the
    shape of slice 27's.
 6. **PubMed.** Slice 27 lost PubMed from its second research on (D108). Before the first research the run sends one

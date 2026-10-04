@@ -125,7 +125,7 @@ Matris, P9'un tek teslimidir. Her satır bir iddia, o iddiayı hangi **kanıt t�
 söyler. Kanıt türleri: **S** sahte model/sentetik kayıt (pytest/Playwright), **G** gerçek süreç (alt süreç başlatılıp
 öldürülür, gerçek `uv`/`npm`), **A** gerçek ağ, modelsiz (örneğin OpenAlex'e anahtarsız istek), **M** gerçek model,
 **E** elle/insan. Matris `docs/product/p9-acceptance-record.md` (H8'de oluşur) ve `scripts/p9/run_matrix.sh` (H1'de
-başlar, her batch satır ekler) olarak tek komutla yeniden koşulabilir olur; ham çıktı `.local/p9-*` altında kalır
+başlar, her batch satır ekler) olarak tek komutla yeniden koşulabilir olur; ham çıktı [.local/p9-*](../archive/local-runs.md#historical-paths-absent-from-the-inspected-tree) altında kalır
 (izlenmez), kayda hash ve sayılar girer.
 
 **Satır kuralları.**
@@ -235,7 +235,7 @@ depoda sabitlemek: `apps/web/package.json`'a `engines`, bir `.node-version`, REA
 bağımlılık değişmez. (3) Kodda uygulanmış özellik listesini çıkarmak (hangi sağlayıcı, model bağlantısı, P7/P8 parçası var),
 matrisin kapsamı için. (4) Sahibin günlüğünü (S9) başlatmak.
 
-**Dosyalar.** `apps/web/package.json`, `.node-version`, `README.md` (yalnız ortam satırı); taban çizgisi `.local/p9-baseline/`.
+**Dosyalar.** `apps/web/package.json`, `.node-version`, `README.md` (yalnız ortam satırı); taban çizgisi [.local/p9-baseline/](../archive/local-runs.md#run-p9-baseline).
 
 **Testler/kontroller.** Tam takım bir kez; sayılar taban çizgisi dosyasına.
 
@@ -252,7 +252,7 @@ aşan ölçekli bir girdiyle, tepe RSS ve durdurma nedeniyle. İzleyici çalış
 işlemiyor) ve düzeltme `documents/pdf.py`'de yapılır; yalnız test kararsızsa test kararlı hâle getirilir ama F09 yine
 üretim eşiğiyle ayrıca kanıtlanır.
 
-**Dosyalar.** `documents/pdf.py` (gerekirse), `tests/test_documents.py`, `scripts/p9/` (ölçekli girdi üreteci), `.local/p9-h0b/`.
+**Dosyalar.** `documents/pdf.py` (gerekirse), `tests/test_documents.py`, `scripts/p9/` (ölçekli girdi üreteci), [.local/p9-h0b/](../archive/local-runs.md#run-p9-h0b).
 
 **Testler/kontroller.** Bilinen test tek başına seri (`-n 0`) ve `-n auto`; üretim eşiğinde süreç ölçümü (tepe RSS, geçen süre,
 hata metni); tam pytest.
@@ -415,7 +415,7 @@ kognitif erişilebilirlik.
 
 ### H7 — Günlük kullanım düzeltmeleri (S–M, sınırlı)
 
-**Kapsam.** Sahibin günlük kullanım günlüğü (S9: `.local/p9-daily-use-log.md`, izlenmez, sahip yazar, tarih + ne oldu + ekran
+**Kapsam.** Sahibin günlük kullanım günlüğü (S9: [.local/p9-daily-use-log.md](../archive/local-runs.md#historical-paths-absent-from-the-inspected-tree), izlenmez, sahip yazar, tarih + ne oldu + ekran
 görüntüsü yolu; ham içerik ve ekran görüntüleri izlenmeyen özel alanda kalır, belgelere yalnız kimliksizleştirilmiş hata özeti girer) ile H2–H6'nın bulguları ve §3.6'daki açık kalemler bir listede toplanır ve **ciddiyet** sırasıyla
 ele alınır: (a) veri kaybı veya kanıt anlamını bozan (AGENTS.md "Evidence Contract"), (b) iş akışını bloke eden, (c) yanıltıcı
 ya da anlaşılmaz metin, (d) kozmetik. En fazla **10** kalem kapatılır; her kalemin tekrar üretimi, düzeltmesi ve testi ayrı
@@ -463,7 +463,7 @@ ve RSS gibi değişken değerlerin aynen eşit olması beklenmez, eşikleri kar�
 **Kapsam.** Kapalı P16 serisinin dördüncü denemesi **değil**; yeni bir seri (P9-R), yeni bir korpus, tek koşu. Kuralı §7'de.
 
 **Dosyalar.** Yeni dondurma belgesi `docs/product/p9r-report-freeze.md`, sonuç belgesi `docs/product/p9r-report-results.md`;
-ölçüm kiti `scripts/p6_eval/` (D124–D128'de kullanılan sürüm, hash'iyle); ham kanıt `.local/p9r-*/`. Ürün, yöntem ve şema
+ölçüm kiti `scripts/p6_eval/` (D124–D128'de kullanılan sürüm, hash'iyle); ham kanıt [.local/p9r-*/](../archive/local-runs.md#historical-paths-absent-from-the-inspected-tree). Ürün, yöntem ve şema
 dosyaları bu batch'te **değişmez**.
 
 **Kuru kontrol (modelsiz, ölçümden önce).** Dondurma belgesinde adlandırılan ürün commit'inin dondurma commit'inin atası olduğu, çalıştırılan ürün/yöntem/şema dosyalarının
@@ -478,7 +478,7 @@ dondurulan değere eşit olduğu, kit hash'lerinin eşit olduğu, izole veri diz
 
 **Kapsam.** Tek gerçek Codex çağrısı sürerken sunucuyu öldürüp resume etmek; kuralı §7'de.
 
-**Dosyalar.** `scripts/p9/` (sürücü), `.local/p9-h10/`; ürün dosyası değişmez.
+**Dosyalar.** `scripts/p9/` (sürücü), [.local/p9-h10/](../archive/local-runs.md#historical-paths-absent-from-the-inspected-tree); ürün dosyası değişmez.
 
 **Kuru kontrol.** H2'nin F01 sonucu (sahte adapter ile aynı senaryo) geçmiş olmalı; model/bağlantı hazır ve kota var.
 
@@ -576,7 +576,7 @@ yalnız DEIXIS'in kaydettiği oturum sayısı yazılır ve öyle yazılır. Sonu
 ## 8. Ölçüm kayıtlarının biçimi
 
 - Her batch kendi sonucunu `docs/product/p9-acceptance-record.md`'ye tek bölüm olarak ekler (H8'de birleştirilir);
-  ham çıktı `.local/p9-<batch>/` (izlenmez). Kayda sayı, süre, hash, komut satırı **ve** özet gerekçe/açık sorun girer; özel
+  ham çıktı [.local/p9-<batch>/](../archive/local-runs.md#historical-paths-absent-from-the-inspected-tree) (izlenmez). Kayda sayı, süre, hash, komut satırı **ve** özet gerekçe/açık sorun girer; özel
   içerik, gerçek kütüphane içeriği ve ekran görüntüleri girmez.
 - "Geçti" yalnız **yürütme türü** ve **veri/model gerçekliği** ayrı iki alanla birlikte yazılır (§4 kural 4); tablodaki S/G/A/M/E
   kısaltması bunların özetidir. Bir satırın birden çok kanıtı varsa ayrı yazılır.
@@ -602,7 +602,7 @@ sahibin açık onayını ister; onay gelmezse ilgili satır "ölçülmedi" kalı
 | S6 | Şemadan yeni kitaplığı reddetme ve migration öncesi otomatik yedek eklensin mi? | Reddetme: evet (küçük, güvenlik; salt okunur ön kontrol, kümede olmayan her kimlik). Otomatik yedek: hayır; yalnız README'de "güncellemeden önce `deixis backup`" adımı. Açılışta yeni bir mesaj eklenmez (ayrı ürün kararı) | Reddetme sessiz veri bozulmasını önler; otomatik yedek disk ve süre getirir, ölçmeden eklenmez |
 | S7 | Kapasite eşikleri (ölçümden önce donar) | 1.000 eserde araştırma görünümü ≤ 2 s; görünüm kurulurken `/api/health` ≤ 500 ms; 5.000 eserde görünüm ≤ 10 s ve olay döngüsü 1 s'den uzun bloke olmaz; 10.000'de ölçüm yalnız "çalışıyor/çalışmıyor" kaydı; sunucu RSS 2 GB altı; yedek 5.000 eserde ≤ 2 dk | 7.769 eserde 37 s'lik gerçek olay (test_view_scaling) bir üst sınır gösteriyor; sayılar el ile seçilmiş başlangıç noktasıdır, türetilmemiştir ve H5 dondurma kaydında aynen yazılır |
 | S8 | I08 (temiz hesapta elle kurulum) kim yapsın? | Sahip, yeni bir macOS kullanıcı hesabında ya da yakın birinde, README'yi izleyerek, takıldığı yeri yazarak (15–30 dk). Yapılmazsa I08 "ölçülmedi" kalır ve **ikinci kullanıcı iddiası kurulmaz** (§1, §4 kural 2) | Geliştirici olmayan gözün yerine geçen tek yol |
-| S9 | Günlük kullanım günlüğü süresi ve sahibi | Sahip H0a ile birlikte 7 gün yazar (`.local/p9-daily-use-log.md`, izlenmez, serbest biçim; ekran görüntüleri de `.local/`); belgelere yalnız kimliksizleştirilmiş hata özeti girer; H7 kalem sınırı 10 | Gerçek kullanımda çıkan hatayı biz tahmin edemeyiz; özel içerik izlenen belgelere girmez; sınır H7'yi bitirilebilir tutar |
+| S9 | Günlük kullanım günlüğü süresi ve sahibi | Sahip H0a ile birlikte 7 gün yazar ([.local/p9-daily-use-log.md](../archive/local-runs.md#historical-paths-absent-from-the-inspected-tree), izlenmez, serbest biçim; ekran görüntüleri de `.local/`); belgelere yalnız kimliksizleştirilmiş hata özeti girer; H7 kalem sınırı 10 | Gerçek kullanımda çıkan hatayı biz tahmin edemeyiz; özel içerik izlenen belgelere girmez; sınır H7'yi bitirilebilir tutar |
 | S10 | H9 korpus konusu ve model | Konuyu sahip seçer (kendi alanı, kullanılmış konu listesinin dışında); yoksa Claude+Sol üç aday önerir, sahip birini seçer; model `gpt-5.6-luna` · medium, kota yoksa bekler | Model değişimi sessiz olamaz; bağımsızlık listesi §7'de |
 | S11 | H10 (SIGKILL sonrası gerçek çağrı) yapılsın mı? | Sahip açıkça isterse; aksi hâlde R02 "ölçülmedi" kalır | Çağrı başına küçük ama gerçek kota; bilgi değeri sınırlı (D121 davranışı zaten yazılı) |
 | S12 | CI (GitHub Actions, macOS arm64) eklensin mi? | Hayır. Tekrarlanabilirlik `run_matrix.sh` ile yerel; CI ayrı bir sahip kararı ve Chrome/uv/npm kurulum süresi ister | Şu an "CI yok" dürüst bir durum; P9 bunu değiştirmeden tekrarlanabilir kanıt üretir |

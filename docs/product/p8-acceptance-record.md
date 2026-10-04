@@ -1,6 +1,6 @@
 # P8 acceptance record
 
-**Date:** 3 October 2026. **Commit:** `dbec4fc` (main with D188) plus the uncommitted B8b files (D189). **Written by** batch B8b from design `p8-review-watch-design.md` (D180) section 13, decisions D181 to D189, one real-model run (`p8-b8b-results.md`) and `scripts/p9/run_matrix.sh --overlay-uncommitted` runs. Raw matrix output is under `.local/p9-matrix/p8b8b*` (ignored by Git).
+**Date:** 3 October 2026. **Commit:** `dbec4fc` (main with D188) plus the uncommitted B8b files (D189). **Written by** batch B8b from design `p8-review-watch-design.md` (D180) section 13, decisions D181 to D189, one real-model run (`p8-b8b-results.md`) and `scripts/p9/run_matrix.sh --overlay-uncommitted` runs. Raw matrix output is under [.local/p9-matrix/p8b8b*](../archive/local-runs.md#historical-paths-absent-from-the-inspected-tree) (ignored by Git).
 
 **What this record shows and does not show.** It shows that, on synthetic records, a scripted model, mocked providers and one macOS arm64 machine, every criterion of design section 13 has evidence that ran, and that two real-model runs on synthetic review targets behaved as described. It does not show review quality on real reports or real candidates, live provider recall, behavior in a browser other than Chrome, or any use outside one local user. A model-free pass shows workflow behavior, not review quality (design section 13, last line).
 

@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-18. **Status:** design review, not an implemented workflow or scientific validation. Reviewed document: [PRISMA-S hybrid-search design](prisma-s-hybrid-search-design-2026-09-18.md), before the revisions below.
 
-A read-only, tool-free Claude CLI call requested `claude-fable-5-1` at `medium` effort. It returned `subtype=success`, `is_error=false`, and `modelUsage` named `claude-fable-5-1`; a `claude-haiku-4-5-20251001` usage entry also appeared, with role undetermined. No fallback model was requested. Prompt SHA-256: `299ffffe605cef771f479acc3b11ee7e2b4ba595ba64e77e44f487b0713c4b62`; response JSON SHA-256: `d93c1f50d421177e42c89b4d1170962027c64dd60548e1bd867445ccc7569a94`. The complete prompt and response remain in ignored `.local/archive/early/prisma-s-design-review-2026-09-18/`. Fable saw the supplied document, not the repository or live providers.
+A read-only, tool-free Claude CLI call requested `claude-fable-5-1` at `medium` effort. It returned `subtype=success`, `is_error=false`, and `modelUsage` named `claude-fable-5-1`; a `claude-haiku-4-5-20251001` usage entry also appeared, with role undetermined. No fallback model was requested. Prompt SHA-256: `299ffffe605cef771f479acc3b11ee7e2b4ba595ba64e77e44f487b0713c4b62`; response JSON SHA-256: `d93c1f50d421177e42c89b4d1170962027c64dd60548e1bd867445ccc7569a94`. The complete prompt and response remain in ignored [.local/archive/early/prisma-s-design-review-2026-09-18/](../local-runs.md#run-archive-early-prisma-s-design-review-2026-09-18). Fable saw the supplied document, not the repository or live providers.
 
 | Finding | Disposition in the revised design |
 |---|---|

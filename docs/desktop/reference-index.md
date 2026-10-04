@@ -12,7 +12,7 @@ historical local evidence package below.
 
 ## Local evidence package
 
-[Open the package](../../local-reference/2026-09-14/README.md).
+Private package index: `local-reference/2026-09-14/README.md` (not present in this checkout).
 It contains 49 unchanged source-file copies (47 initial files and two later UI
 screenshots), plus its own README and transfer index.
 The [CSV index](../../local-reference/2026-09-14/transfer-index.csv) records original
@@ -34,8 +34,8 @@ original files will not automatically update these copies.
 
 - [Literature-search HTML](../../local-reference/2026-09-14/algae-reference/reports/2026-09-13-lit-search-biological-molecular-communication-or-milp-models.html)
 - [Research-gap HTML](../../local-reference/2026-09-14/algae-reference/reports/2026-09-13-research-gap-operations-research-molecular-communication.html)
-- [Methods literature report](../../local-reference/2026-09-14/algae-reference/reports/2026-09-13-top10-research-gap-papers.md)
-- [External Elicit-style evidence assessment](../../local-reference/2026-09-14/algae-reference/reports/external_ai/2026-09-14-elicit-evidence-gated-gap-assessment.md)
+- Methods literature report: `local-reference/2026-09-14/algae-reference/reports/2026-09-13-top10-research-gap-papers.md` (private; absent from this checkout).
+- External Elicit-style evidence assessment: `local-reference/2026-09-14/algae-reference/reports/external_ai/2026-09-14-elicit-evidence-gated-gap-assessment.md` (private; absent from this checkout).
 
 The two HTML reports were read during this conversation. They report constrained
 API access and bounded local-corpus coverage. Their figures, scores and recommendations

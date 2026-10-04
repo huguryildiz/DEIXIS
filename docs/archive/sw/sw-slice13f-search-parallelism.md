@@ -44,7 +44,7 @@ Değişecek: `backend/deixis/workflow/flow.py` (`_discovery`'nin iki arama döng
 ## Task 4: kapanış
 
 - D89'u `docs/decisions.md`'ye yaz (en üste; Status / Date / Context / Decision / Limits): sorgu başına ödenek, pay sonu yalnız o sorguyu bitirir, koşu geneli ödenekten sapma sayıyla, konak başına tek istek, `SEARCH_PARALLEL_HOSTS = 4`, yazım sırası sorgu dizini. D88'in "Measured" bölümüne dokunma.
-- Tam pytest; `git diff --check`; `skill_package_hash` aynı; satır 13f; tek commit; push. Yeniden ölçüm bu dilimin işi değildir (13ö'nün üçüncü koşusu: aynı konu, Luna medium, `.local/archive/sw/sw-measure-2026-09-22b/campaign.py` yeni bir klasörde).
+- Tam pytest; `git diff --check`; `skill_package_hash` aynı; satır 13f; tek commit; push. Yeniden ölçüm bu dilimin işi değildir (13ö'nün üçüncü koşusu: aynı konu, Luna medium, [.local/archive/sw/sw-measure-2026-09-22b/campaign.py](../local-runs.md#run-archive-sw-sw-measure-2026-09-22b) yeni bir klasörde).
 
 ## Sonraki adaylar (bu dilimde yok, ölçümden sonra)
 

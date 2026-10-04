@@ -14,10 +14,10 @@ changes then. **Type:** build, optional (main plan §23). **Implementer:** Opus 
 with the rule above): the slice lets code exclude a work without a model reading, the kind of decision the "Bir tur"
 section reviews in full. **Plan:** Opus 5.5 · high. **Scope:** SW15.6, SW16.2–4.
 
-**Measurement:** `.local/archive/sw/sw-slice23-plan-2026-09-27/`: `gate_measure.py` → `gate-measure.json`, `gate-measure.txt`;
+**Measurement:** [.local/archive/sw/sw-slice23-plan-2026-09-27/](../local-runs.md#run-archive-sw-sw-slice23-plan-2026-09-27): `gate_measure.py` → `gate-measure.json`, `gate-measure.txt`;
 `gate_split.py` → `gate-summary.txt`; `closed_titles.py` → `closed-titles.txt`. All read stored libraries with
-`immutable=1` URIs: slice 24a's ten `sw` libraries (`.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/data-*-sw-*`) and
-slice 27's five (`.local/archive/sw/sw-slice27-remeasure-2026-09-27-043237/data-qtre-sw-*`). The scripts import the product's pure
+`immutable=1` URIs: slice 24a's ten `sw` libraries ([.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/data-*-sw-*](../local-runs.md#run-archive-sw-sw-slice24-campaign-2026-09-26-134050)) and
+slice 27's five ([.local/archive/sw/sw-slice27-remeasure-2026-09-27-043237/data-qtre-sw-*](../local-runs.md#run-archive-sw-sw-slice27-remeasure-2026-09-27-043237)). The scripts import the product's pure
 `criterion_passages.compile_phrases` and `score` at HEAD (slice 28's working-tree changes do not touch that module). No
 model call, no provider request, no network. Port 8765 and the live library were not touched. One M1 Pro, Python 3.12
 arm64 through `uv`.
@@ -331,12 +331,12 @@ rule beyond the 95% bound its sample gives; anything about person-verified recor
       the minimums are not lowered for the fixture.
     - Every existing test passes unchanged; no expected value in an existing test is edited.
 
-13. **Acceptance** (scripts and outputs under `.local/sw-slice23-acceptance-<YYYY-MM-DD>/`).
+13. **Acceptance** (scripts and outputs under [.local/sw-slice23-acceptance-<YYYY-MM-DD>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree)).
     1. Full pytest (the known single failure apart:
        `tests/test_documents.py::test_extraction_is_stopped_when_it_exceeds_the_memory_limit`), `npm run build`,
        `npm run lint` (warnings not above 17), the full Playwright suite, `git diff --check`; highest migration `0056`;
        `uv.lock` unchanged; `skill_package_hash` unchanged.
-    2. **Replay (a), default unchanged.** Slice 26's reading replay (`.local/archive/sw/sw-slice26-plan-2026-09-27/replay_reading.py`
+    2. **Replay (a), default unchanged.** Slice 26's reading replay ([.local/archive/sw/sw-slice26-plan-2026-09-27/replay_reading.py](../local-runs.md#run-archive-sw-sw-slice26-plan-2026-09-27)
        logic, product functions) still reproduces 455 of 455 stored codes on slice 24a, and the same recomputation on
        slice 27's five `sw` libraries reproduces every stored reading code (the slice 28 plan counted 294); no product
        function this replay calls changed behaviour.

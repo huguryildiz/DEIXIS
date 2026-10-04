@@ -11,10 +11,10 @@ today"). **Prerequisite:** slice 25a closed (`1627b8e`). **Type:** build. **Impl
 (Sol · high, with the rule above): the slice changes when code includes a work, which is the kind of decision the
 "Bir tur" section reviews in full. **Plan:** Opus 5.5 · high. **Scope:** SW26 and SW25 only.
 
-**Measurement:** `.local/archive/sw/sw-slice26-plan-2026-09-27/`: `protocol_titles.py` → `protocol-titles.json`,
+**Measurement:** [.local/archive/sw/sw-slice26-plan-2026-09-27/](../local-runs.md#run-archive-sw-sw-slice26-plan-2026-09-27): `protocol_titles.py` → `protocol-titles.json`,
 `protocol-titles.txt`; `replay_reading.py` → `replay-reading.json`, `replay-reading.txt`; `verb_split.py` →
 `verb-split.json`, `verb-split.txt`. All read stored libraries with `immutable=1` URIs: slice 24a's 14 libraries
-(`.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/data-*`) and, for the wider title check, every other `library.sqlite`
+([.local/archive/sw/sw-slice24-campaign-2026-09-26-134050/data-*](../local-runs.md#run-archive-sw-sw-slice24-campaign-2026-09-26-134050)) and, for the wider title check, every other `library.sqlite`
 under `.local/`. No model call, no provider request, no network. Port 8765 and the live library were not touched. One
 M1 Pro, Python 3.12 arm64 through `uv`.
 
@@ -255,7 +255,7 @@ find more relevant records (no search was run; a later medicine re-measurement m
    - The determinism replay stages (`tests/determinism_stages.py`) stay byte-identical for inputs without a protocol
      title and without an inverted verb clause.
 
-5. **Acceptance** (scripts and outputs under `.local/sw-slice26-acceptance-<YYYY-MM-DD>/`).
+5. **Acceptance** (scripts and outputs under [.local/sw-slice26-acceptance-<YYYY-MM-DD>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree)).
    1. Full pytest (the known single failure apart:
       `tests/test_documents.py::test_extraction_is_stopped_when_it_exceeds_the_memory_limit`), `npm run build`,
       `npm run lint` (warnings not above 17), the full Playwright suite, `git diff --check`; highest migration `0055`;
@@ -411,7 +411,7 @@ documented keyless limit.
 ## Sol r1 findings and what changed
 
 Sol (`gpt-6-sol` · high), plan round 1, 27 September 2026: "hazır değil", two high findings, two medium
-(`.local/archive/sw/sw-slice26-plan-2026-09-27/sol-plan-answer-r1.md`).
+([.local/archive/sw/sw-slice26-plan-2026-09-27/sol-plan-answer-r1.md](../local-runs.md#run-archive-sw-sw-slice26-plan-2026-09-27)).
 
 - **High 1 — the method sentence and the exclusion path.** "The paper's own data" could make the model reject a
   result a review pools or a theoretical paper derives; and with the new sentence two runs can say `absent` for a result

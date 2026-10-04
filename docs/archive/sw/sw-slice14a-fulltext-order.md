@@ -5,7 +5,7 @@
 **Tür:** Kur. **Uygulayan:** Opus · medium öneriyorum (satırda Opus · high yazıyor; karar 2 onaylanırsa iş iki sabit ve
 testleri). **İnceleme:** toplu öneriyorum (satırda tam, Fable). **Plan:** Opus · high, 23 Eylül 2026 (prompt Fable ·
 high diyordu; bu oturum Opus'ta koştu). **Yeniden oynatma:**
-`.local/archive/sw/sw-slice14a-order-replay-2026-09-23/` (`protocol.md`, `result.md`, `replay.py`, `abstract_cut.py`).
+[.local/archive/sw/sw-slice14a-order-replay-2026-09-23/](../local-runs.md#run-archive-sw-sw-slice14a-order-replay-2026-09-23) (`protocol.md`, `result.md`, `replay.py`, `abstract_cut.py`).
 
 **Goal:** Üçüncü D88 ölçümünde özet aşamasını geçen 13 / 17 / 21 doğrulanmış kuantum eserinden yalnız 1 / 7 / 17'si
 tam metinde okundu. Satır 14a bunu sıranın kusuru saydı: tam metin planı inceleme sırasının başını alıyor, doğrulanmış
@@ -110,10 +110,10 @@ Hepsi yeniden oynatmadan, on bir kütüphaneden: kuantumda üçüncü ölçüm (
 
 ## Task 3: canlı kabul ve kapanış
 
-- Düzen üçüncü ölçümün kampanyası (`.local/archive/sw/sw-measure-2026-09-24/campaign.py`): kendi sunucusu ve boş veri dizini,
+- Düzen üçüncü ölçümün kampanyası ([.local/archive/sw/sw-measure-2026-09-24/campaign.py](../local-runs.md#run-archive-sw-sw-measure-2026-09-24)): kendi sunucusu ve boş veri dizini,
   `DEIXIS_SEARCH_WORKFLOW=sw`, `DEIXIS_FULLTEXT_FETCH=auto`, `DEIXIS_FULLTEXT_ADJUDICATION=auto`,
   `DEIXIS_SEARCH_QUERY=model`, gömme `off`, onay `as_proposed`. Model `gpt-5.6-luna` · medium. Klasör
-  `.local/sw-slice14a-acceptance-<tarih>/`. Beklenti ilk istekten önce `protocol.md`'ye yazılır.
+  [.local/sw-slice14a-acceptance-<tarih>/](../local-runs.md#historical-paths-absent-from-the-inspected-tree). Beklenti ilk istekten önce `protocol.md`'ye yazılır.
 - Koşular: kuantum `quick` (tam koşu, yanıt dahil) ve paket `quick` (tam koşu).
 - **Kabul (K8):**
   1. **Süre**, dilimin kendi etkisi: kuantum `quick` baştan sona ≤ 10,0 dk. 10,0 ile 11,0 arasındaysa koşu bir kez

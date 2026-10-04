@@ -2,6 +2,15 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D216 — P9 owed L9: discovery on the diffusion topic included one of three chain works, the queue pass failed on prompt size, and the corpus condition was not met
+
+**Status:** accepted (measured, not pushed); drivers by gpt-6.1-sol medium, reviewed by Claude; run by Claude Opus 5.5 under Ek L3.
+**Date:** 2026-10-04
+
+**Decision:** Record the single L9 preparation in `docs/product/p9-owed-measurements-results.md`. Discovery and full-text adjudication completed (121 model sessions, 19.2 min) and included 1 of 1,542 works (Nichol's iDDPM); DDPM was found and excluded, DDIM was not found. K0 reported no overlap within the recorded inventories. K1 failed (1 PDF-text row, 6 needed), so the lineage run was not started and Ek L2 was not written. The K03 queue pass sent one request that returned `prompt_too_long` (2.19 MB packet) and was not retried. The D141 funnel row for the new corpus is counted (1,542 works, 140 abstracts read, 1 included, 50 in the review queue, 67 PDFs extracted).
+
+**Limits:** One preparation, one topic, one application model (the queue request was a separate Claude request). The K1 row threshold was unmet after automatic preparation and the queue request failed, so the queue's effect on inclusion is unknown and no causal share is claimed; the frozen K1 gate itself was not fully executed (driver state `closed: false`). A completed preparation failing a gate is terminal under the freeze; a second one needs an explicit amendment. A second preparation needs a coordinator decision (packet size change, new library). No chain-recall or lineage claim is made; K0 shows only recorded-inventory overlap.
+
 ## D215 — P9 owed slice 4 rerun: five of eighteen operations measured on H9e's report with no invariant violated; the rest untested after an unusable model proposal
 
 **Status:** accepted (measured, not pushed); kit by gpt-6.1-sol medium, reviewed by Claude; run by Claude Opus 5.5 under Ek S2 (D214).

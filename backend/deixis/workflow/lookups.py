@@ -179,16 +179,22 @@ def plan_scopus(store: Store, research_id: str, scope_revision: int, words: tupl
     """Who Scopus is asked about: the records Semantic Scholar and Crossref left without an abstract (D91).
 
     The caller has already checked that this run's network is entitled to the complete view; `spent` counts that
-    check with the requests of the two sources before it, so all three stay within one limit.
+    check with the requests of the two sources before it, so all three stay within one limit. The limit counts
+    requests: one OR query carries up to `SCOPUS_LOOKUP_BATCH` DOIs, so each planned chunk is one request, and a DOI
+    that is not safe inside an OR query is its own chunk (asked alone, one request). `outside_limit` counts the
+    records in the chunks the limit left out.
     """
     wanted = [{"source_version_id": row["source_version_id"], "doi": row["doi"]}
               for row in _records(store, research_id, scope_revision)
               if _wanted(row, words) == "abstract" and not row["has_abstract"]
               and not answered(store, row["source_version_id"], "scopus")]
+    safe = [row for row in wanted if lookup.scopus_doi_is_safe(row["doi"])]
+    chunks = [safe[start:start + lookup.SCOPUS_LOOKUP_BATCH]
+              for start in range(0, len(safe), lookup.SCOPUS_LOOKUP_BATCH)]
+    chunks += [[row] for row in wanted if not lookup.scopus_doi_is_safe(row["doi"])]
     allowed = max(0, limit - spent)
-    asked, outside = wanted[:allowed], wanted[allowed:]
-    return {"chunks": [asked[start:start + CROSSREF_CHUNK] for start in range(0, len(asked), CROSSREF_CHUNK)],
-            "outside_limit": len(outside), "skipped": None}
+    return {"chunks": chunks[:allowed], "outside_limit": sum(len(chunk) for chunk in chunks[allowed:]),
+            "skipped": None}
 
 
 # ---- storing one answer -------------------------------------------------------------------------
@@ -403,33 +409,44 @@ async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any
 
 async def _scopus_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                        number: int, chunk: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES) -> None:
-    """One chunk of single-DOI Scopus requests; each answer is written before the next request is sent."""
+    """One planned chunk: one OR-query request for its safe DOIs and one single request per unsafe DOI.
+
+    Each request's answers are written before the next request is sent; usage is reserved per request.
+    """
     step = store.step(run["id"], f"record_lookup:scopus:{number}", "provider_lookup:scopus")
     if step["status"] == "succeeded":
         return
     store.start_step(step["id"])
-    added, asked, payloads = [], 0, {}
+    added, asked = [], 0
     api_key = CONNECTORS["scopus"].api_key()
-    for row in chunk:
-        if answered(store, row["source_version_id"], "scopus") or _has_abstract(store, row["source_version_id"]):
-            continue
-        asked += 1
+    rows = [row for row in chunk
+            if not answered(store, row["source_version_id"], "scopus")
+            and not _has_abstract(store, row["source_version_id"])]
+    safe = [row for row in rows if lookup.scopus_doi_is_safe(row["doi"])]
+    requests = [safe[start:start + lookup.SCOPUS_LOOKUP_BATCH]
+                for start in range(0, len(safe), lookup.SCOPUS_LOOKUP_BATCH)]
+    requests += [[row] for row in rows if not lookup.scopus_doi_is_safe(row["doi"])]
+    for group in requests:
+        asked += len(group)
         reserved = 1 + waits
         store.add_usage(run["id"], "lookup_requests", reserved)
-        dispatched = await facade.dispatch_lookup("scopus", "doi_lookup", http, (row["doi"],),
+        dois = tuple(dict.fromkeys(row["doi"] for row in group))
+        dispatched = await facade.dispatch_lookup("scopus", "doi_lookup", http, dois,
                                                    api_key, settings.contact_email, waits)
         settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
-        answer, outcome = dispatched.answers[row["doi"]], dispatched.outcome
+        outcome = dispatched.outcome
         payload_ref = None
         if outcome.raw_payload is not None:
-            payloads[row["doi"]] = outcome.raw_payload
-            # Values were sanitized by dispatch. Only the DOI keys remain raw;
-            # a second recursive pass would alter redaction markers.
-            clean_keys = [facade.sanitize(doi, (api_key,)) for doi in payloads]
-            envelope = ({"<omitted>": "secret_key_collision"} if len(set(clean_keys)) != len(clean_keys)
-                        else dict(zip(clean_keys, payloads.values())))
-            payload_ref = _write_payload(settings, step["id"], envelope)
-        added.append(store_answer(store, row["source_version_id"], "scopus", answer, step["id"], payload_ref))
+            # A single request keeps its DOI as the key; one OR query answers many DOIs and is keyed by its size.
+            # Each request gets a file of its own that is never overwritten, so a resumed run that asks again
+            # cannot replace the evidence of an answer already stored.
+            key = dois[0] if len(dois) == 1 else f"or_query:{len(dois)}_dois"
+            # Values were sanitized by dispatch; only the key can still hold the secret.
+            envelope = {facade.sanitize(key, (api_key,)): outcome.raw_payload}
+            payload_ref = _write_new_payload(settings, step["id"], envelope)
+        for row in group:
+            added.append(store_answer(store, row["source_version_id"], "scopus", dispatched.answers[row["doi"]],
+                                      step["id"], payload_ref))
     store.finish_step(step["id"], "succeeded", output=transport_output(store, step, _counts(added, asked=asked)
                                                                      | {"rate_limit_retries": waits}))
 
@@ -475,6 +492,20 @@ def _write_payload(settings: Settings, step_id: str, payload: Any) -> str | None
     settings.payloads_dir.mkdir(parents=True, exist_ok=True)
     (settings.payloads_dir / _payload_name(step_id)).write_text(dumps(payload), encoding="utf-8")
     return _payload_name(step_id)
+
+
+def _write_new_payload(settings: Settings, step_id: str, payload: Any) -> str:
+    """Write one request's payload to the first free name of this step; an existing file is never overwritten."""
+    settings.payloads_dir.mkdir(parents=True, exist_ok=True)
+    for attempt in range(10_000):
+        name = f"{step_id}.r{attempt}.json"
+        try:
+            with open(settings.payloads_dir / name, "x", encoding="utf-8") as handle:
+                handle.write(dumps(payload))
+            return name
+        except FileExistsError:
+            continue
+    raise OSError("no free payload name")
 
 
 # ---- the links a second source named ------------------------------------------------------------

@@ -594,12 +594,13 @@ def _screened_records(store, run_id):
 class WithScopus(Sources):
     """`Sources`, and Scopus answering the complete view when `entitled` (a campus network or VPN) and 401 when not.
 
-    `scopus` maps a DOI to the abstract Scopus holds for it; a DOI it does not name is an empty result set.
+    `scopus` maps a DOI to the abstract Scopus holds for it; the query may be one `DOI(x)` or an OR of them, and a
+    DOI it does not name has no entry (no entry at all is an empty result set).
     """
 
     def __init__(self, works, entitled, scopus=None, **answers):
         super().__init__(works, **answers)
-        self.entitled, self.scopus, self.elsevier = entitled, scopus or {}, []
+        self.entitled, self.scopus, self.elsevier, self.elsevier_counts = entitled, scopus or {}, [], []
 
     def __call__(self, request):
         if request.url.host != "api.elsevier.com":
@@ -609,11 +610,12 @@ class WithScopus(Sources):
         if params.get("view") != "COMPLETE" or not self.entitled:
             return httpx.Response(401, json={"service-error": {"status": {"statusCode": "AUTHORIZATION_ERROR"}}})
         query = params["query"]
-        doi = query[len("DOI("):-1].lower() if query.startswith("DOI(") else None
-        entry = ([{"dc:identifier": f"SCOPUS_ID:{doi}", "prism:doi": doi, "dc:title": "SYNTHETIC",
-                   "dc:description": self.scopus[doi]}] if doi in self.scopus else [{"error": "Result set was empty"}])
+        dois = [part[len("DOI("):-1].lower() for part in query.split(" OR ")] if query.startswith("DOI(") else []
+        self.elsevier_counts.append(params.get("count"))
+        entry = [{"dc:identifier": f"SCOPUS_ID:{doi}", "prism:doi": doi, "dc:title": "SYNTHETIC",
+                  "dc:description": self.scopus[doi]} for doi in dois if doi in self.scopus]
         return httpx.Response(200, json={"search-results": {
-            "opensearch:totalResults": str(len(entry) if doi in self.scopus else 0), "entry": entry}})
+            "opensearch:totalResults": str(len(entry)), "entry": entry or [{"error": "Result set was empty"}]}})
 
 
 def scopus_app(tmp_path, monkeypatch, sources):
@@ -728,3 +730,28 @@ def test_an_access_check_a_dead_run_already_sent_is_counted_against_the_lookup_l
         client.__exit__(None, None, None)
     assert plan["skipped"] == "request_limit"
     assert len(sources.elsevier) == checks_before
+
+
+def test_thirty_records_with_budget_for_two_scopus_requests_are_asked_in_two_or_queries(tmp_path, monkeypatch):
+    """Scopus counts requests, not DOIs: 25 DOIs share one OR query, the other 5 the next, and the budget of two
+    requests covers all 30 records."""
+    many = [work(i, doi=f"10.1/r{i:02d}") for i in range(1, 31)]
+    held = {f"10.1/r{i:02d}": f"SYNTHETIC scopus abstract {i}" for i in range(1, 31)}
+    # one Semantic Scholar batch + 30 Crossref requests + the access check + two Scopus requests
+    monkeypatch.setattr(lookups.ask_second_sources, "__defaults__", (34,))
+    sources = WithScopus(many, entitled=True, scopus=held)
+    app = scopus_app(tmp_path, monkeypatch, sources)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        store = app.state.store
+        plan = step_output(store, run_id, "lookup_plan:scopus")
+        usage = store.run(run_id)["usage"]
+        found = store.conn.execute("SELECT COUNT(*) FROM record_lookups WHERE provider = 'scopus' "
+                                   "AND status = 'found'").fetchone()[0]
+    finally:
+        client.__exit__(None, None, None)
+    queries = sources.elsevier[1:]  # the first is the access check
+    assert [len(chunk) for chunk in plan["chunks"]] == [25, 5] and plan["outside_limit"] == 0
+    assert [q.count("DOI(") for q in queries] == [25, 5] and sources.elsevier_counts[1:] == ["25", "25"]
+    assert found == 30 and usage["lookup_requests"] == 34

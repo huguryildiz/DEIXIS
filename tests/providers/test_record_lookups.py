@@ -11,7 +11,7 @@ import json
 import httpx
 import pytest
 
-from deixis.providers import common, crossref, lookup
+from deixis.providers import common, crossref, facade, lookup
 from deixis.providers.pacing import SerialRequestPacer
 
 DOI = "10.1109/synth.2026.1"
@@ -583,3 +583,108 @@ def test_a_scopus_answer_that_names_another_doi_is_not_taken_as_the_abstract():
         "opensearch:totalResults": "2", "entry": [{"prism:doi": "10.9/another", "dc:description": "SYNTHETIC other"},
                                                   {"prism:doi": DOI.upper(), "dc:description": ABSTRACT}]}}))
     assert (same.status, same.abstract) == ("found", ABSTRACT)
+
+
+# ---- Scopus in batches: one OR query for up to 25 DOIs (live probe 4 Oct 2026, see providers/lookup.py) -----------
+
+
+def scopus_batch(handler, dois):
+    seen = []
+
+    def record(request):
+        seen.append(request)
+        return handler(request)
+
+    async def ask():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(record)) as client:
+            return await lookup.scopus_abstracts(client, dois, "SYNTHETIC-scopus-key")
+    return (*asyncio.run(ask()), seen)
+
+
+def scopus_results(entries, total=None):
+    return lambda request: httpx.Response(200, json={"search-results": {
+        "opensearch:totalResults": str(len(entries) if total is None else total), "entry": entries}})
+
+
+def test_a_scopus_or_query_gives_each_entry_to_the_doi_it_names():
+    dois = ["10.1/a", "10.1/b", "10.1/c"]
+    answers, outcome, seen = scopus_batch(scopus_results([
+        {"prism:doi": "10.1/C", "dc:description": " third "}, {"prism:doi": "10.1/a", "dc:description": "first"}]), dois)
+    (request,) = seen
+    params = request.url.params
+    assert params["query"] == "DOI(10.1/a) OR DOI(10.1/b) OR DOI(10.1/c)"
+    assert params["view"] == "COMPLETE" and params["count"] == "25"
+    assert {d: (a.status, a.abstract) for d, a in answers.items()} == {
+        "10.1/a": ("found", "first"), "10.1/b": ("not_found", None), "10.1/c": ("found", "third")}
+    assert outcome.status == "completed" and outcome.error is None
+
+
+def test_a_scopus_or_query_ignores_an_entry_naming_a_doi_nobody_asked_about():
+    answers, outcome, _ = scopus_batch(scopus_results([
+        {"prism:doi": "10.9/foreign", "dc:description": ABSTRACT}, {"prism:doi": "10.1/a", "dc:description": "first"}]),
+        ["10.1/a", "10.1/b"])
+    assert (answers["10.1/a"].status, answers["10.1/b"].status) == ("found", "not_found")
+    assert "10.9/foreign" in outcome.error and all(a.abstract != ABSTRACT for a in answers.values())
+
+
+def test_a_scopus_or_query_with_no_entry_for_a_doi_says_not_found_and_an_empty_set_says_it_for_all():
+    answers, outcome, _ = scopus_batch(scopus_results([{"error": "Result set was empty"}], total=0),
+                                       ["10.1/a", "10.1/b"])
+    assert {a.status for a in answers.values()} == {"not_found"} and outcome.status == "zero_results"
+
+
+def test_a_truncated_scopus_answer_leaves_the_missing_dois_failed_not_not_found():
+    answers, outcome, _ = scopus_batch(scopus_results([{"prism:doi": "10.1/a", "dc:description": "first"}], total=3),
+                                       ["10.1/a", "10.1/b", "10.1/c"])
+    assert (answers["10.1/a"].status, answers["10.1/b"].status, answers["10.1/c"].status) == (
+        "found", "failed", "failed")
+    assert "truncated" in outcome.error
+
+
+def test_a_refused_or_unreadable_scopus_batch_fails_every_doi_and_never_names_the_key():
+    dois = ["10.1/a", "10.1/b"]
+    refused, outcome, _ = scopus_batch(lambda request: httpx.Response(401, json={"service-error": {}}), dois)
+    assert {a.status for a in refused.values()} == {"failed"} and set(refused) == set(dois)
+    assert "SYNTHETIC-scopus-key" not in outcome.request_description and "dois=2" in outcome.request_description
+    assert "10.1/a" not in outcome.request_description
+    broken, outcome, _ = scopus_batch(lambda request: httpx.Response(200, json={"unexpected": 1}), dois)
+    assert {a.status for a in broken.values()} == {"failed"} and outcome.status == "parse_error"
+
+
+def test_a_doi_that_could_break_a_scopus_query_is_asked_alone_and_never_put_in_an_or_batch():
+    for unsafe in ("10.1/a)b", '10.1/a"b', "10.1/a b", "10.1/a*", "10.1/{a}", "10.1/a&b"):
+        assert not lookup.scopus_doi_is_safe(unsafe)
+    assert lookup.scopus_doi_is_safe("10.1016/j.cell.2020.01.001") and lookup.scopus_doi_is_safe("10.1002/(sici)") is False
+    with pytest.raises(ValueError):
+        scopus_batch(scopus_results([]), ["10.1/a", "10.1/a)b"])
+
+    async def dispatch():
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(200, json={"search-results": {"opensearch:totalResults": "1", "entry": [
+                {"prism:doi": "10.1/a)b", "dc:description": ABSTRACT}]}})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await facade.dispatch_lookup("scopus", "doi_lookup", client, ("10.1/a)b",), "SYNTHETIC-scopus-key",
+                                                 None, 0), seen
+    dispatched, seen = asyncio.run(dispatch())
+    (request,) = seen
+    assert request.url.params["query"] == "DOI(10.1/a)b)" and request.url.params["count"] == "1"
+    assert dispatched.answers["10.1/a)b"].abstract == ABSTRACT
+
+
+def test_a_scopus_batch_matches_the_asked_dois_case_insensitively_and_answers_under_the_callers_key():
+    answers, outcome, _ = scopus_batch(scopus_results([
+        {"prism:doi": "10.1109/a", "dc:description": "first"}, {"prism:doi": "10.1109/B", "dc:description": "second"}]),
+        ["10.1109/A", "10.1109/b"])
+    assert {d: (a.status, a.abstract) for d, a in answers.items()} == {
+        "10.1109/A": ("found", "first"), "10.1109/b": ("found", "second")}
+    assert outcome.error is None
+
+
+def test_two_spellings_of_one_doi_in_a_scopus_batch_both_get_its_answer():
+    answers, _, _ = scopus_batch(scopus_results([{"prism:doi": "10.1109/a", "dc:description": "first"}]),
+                                 ["10.1109/A", "10.1109/a"])
+    assert {d: (a.status, a.abstract) for d, a in answers.items()} == {
+        "10.1109/A": ("found", "first"), "10.1109/a": ("found", "first")}

@@ -19,7 +19,13 @@ Endpoints verified against the provider documentation on 2026-09-21:
 
 - Scopus Search API, `GET /content/search/scopus` with `query=DOI(<doi>)` and `view=COMPLETE`: the complete view
   carries the abstract as `dc:description` and is entitled by the caller's IP range (`scopus.complete_view_entitled`);
-  an empty result set is one entry holding an `error` field (`providers/scopus.py`).
+  an empty result set is one entry holding an `error` field (`providers/scopus.py`). Up to 25 DOIs go in one request,
+  `query=DOI(a) OR DOI(b) OR ...` with `count=25`. Live probe, 4 Oct 2026, on an institutional VPN with a real key: a
+  25-DOI OR query in the complete view answered 200 in 0.8 s with `totalResults` 22 and 22 entries; all 22 matched an
+  asked DOI by `prism:doi`, all had `dc:description`, none named a foreign DOI, and five single-DOI requests showed
+  the same abstract presence. That is one probe on one network, not a measured recall. A DOI with a character that
+  has a meaning in Scopus query syntax (parentheses, quotes, braces, wildcards, whitespace; see `scopus_doi_is_safe`)
+  is not put in an OR query; it is asked alone with `scopus_abstract`.
 
 Every Semantic Scholar request goes through the shared `send`, so the process-wide one-request gate of D67 and the
 bounded 429 retries apply here exactly as they do to a search. A failed lookup is an answer like any other: it is
@@ -43,6 +49,10 @@ S2_BATCH_URL = "https://api.semanticscholar.org/graph/v1/paper/batch"
 S2_LOOKUP_FIELDS = "externalIds,abstract,referenceCount"
 S2_LOOKUP_BATCH = 200  # ids per request; the endpoint takes up to 500
 CROSSREF_WORK_URL = "https://api.crossref.org/works/"
+SCOPUS_LOOKUP_BATCH = 25  # DOIs per OR query; also the page size (`count`) asked for
+# A DOI that can sit inside `DOI(...)` of an OR query without meaning anything to Scopus's query parser. Everything
+# outside this set (parentheses, quotes, braces, wildcards `*` `?`, whitespace, `&`, `<`, ...) is asked alone.
+_SCOPUS_SAFE_DOI = re.compile(r"10\.[0-9]+/[A-Za-z0-9._;:/\-]+")
 ARXIV_DOI_PREFIX = "10.48550/arxiv."
 # The two directions of the Crossref preprint relation: the record's published version, and its preprint.
 IS_PREPRINT_OF = "is-preprint-of"
@@ -211,6 +221,71 @@ async def scopus_abstract(client: httpx.AsyncClient, doi: str, api_key: str,
             str(entry.get("prism:doi")) for entry in entries[:3])[:300]
         return LookupAnswer("not_found"), outcome
     return LookupAnswer("found", abstract=(mine[0].get("dc:description") or "").strip() or None), outcome
+
+
+def scopus_doi_is_safe(doi: str) -> bool:
+    """Whether this DOI may go into a Scopus OR query; any other is asked singly with `scopus_abstract`."""
+    return isinstance(doi, str) and _SCOPUS_SAFE_DOI.fullmatch(doi) is not None
+
+
+async def scopus_abstracts(client: httpx.AsyncClient, dois: list[str], api_key: str,
+                           max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
+                           ) -> tuple[dict[str, LookupAnswer], SearchOutcome]:
+    """Ask Scopus about up to 25 DOIs in one OR query in the complete view; every DOI comes back with an answer.
+
+    An entry is given only to the asked DOI its `prism:doi` names; an entry naming another DOI is ignored and noted
+    in `outcome.error`. An asked DOI with no entry is `not_found`, unless `opensearch:totalResults` says more
+    entries exist than came back: then the missing ones were cut off, not absent, and are `failed`. One failed
+    request leaves every DOI `failed`. A batch of one DOI (or of repeats of one) is the single-DOI request.
+    """
+    asked = list(dict.fromkeys(dois))
+    if len(asked) == 1:
+        answer, outcome = await scopus_abstract(client, asked[0], api_key, max_rate_limit_retries)
+        return {asked[0]: answer}, outcome
+    if not all(scopus_doi_is_safe(doi) for doi in asked):
+        raise ValueError("a DOI that is not safe in a Scopus OR query must be asked alone")
+    params = {"query": " OR ".join(f"DOI({doi})" for doi in asked), "count": SCOPUS_LOOKUP_BATCH, "view": "COMPLETE"}
+    description = f"GET {scopus.SEARCH_URL} query=DOI(<doi>) OR ... dois={len(asked)} view=COMPLETE access=api_key"
+    response, outcome = await send(client, scopus.SEARCH_URL, params,
+                                   {"X-ELS-APIKey": api_key, "Accept": "application/json"}, description, "api_key",
+                                   scopus.RATE_LIMIT_HEADERS, (api_key,), max_rate_limit_retries=max_rate_limit_retries)
+    if response is None:
+        return _all_failed(asked), outcome
+    try:
+        payload = response.json()
+        results = payload["search-results"]
+        entries = [entry for entry in results.get("entry") or [] if "error" not in entry]
+        total = results.get("opensearch:totalResults")
+        total = int(total) if total is not None else len(entries)
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError, ValueError) as exc:
+        outcome.status, outcome.error = "parse_error", str(exc)[:300]
+        return _all_failed(asked), outcome
+    outcome.status = "completed" if entries else "zero_results"
+    outcome.raw_payload = payload
+    # Matched on the normalized DOI and answered under every key the caller spelled it with.
+    wanted = {normalize_doi(doi) for doi in asked}
+    by_doi: dict[str, dict[str, Any]] = {}
+    foreign = []
+    for entry in entries:
+        named = normalize_doi(entry.get("prism:doi"))
+        if named in wanted:
+            by_doi.setdefault(named, entry)  # the first entry naming a DOI is its answer
+        else:
+            foreign.append(str(entry.get("prism:doi")))
+    if foreign:
+        outcome.error = "answer names another DOI: " + ", ".join(foreign[:3])[:300]
+    truncated = total > len(entries)
+    if truncated:
+        outcome.error = ((outcome.error + "; ") if outcome.error else "") + (
+            f"truncated: {len(entries)} of {total} entries returned")
+    answers = {}
+    for doi in asked:
+        entry = by_doi.get(normalize_doi(doi))
+        if entry is not None:
+            answers[doi] = LookupAnswer("found", abstract=(entry.get("dc:description") or "").strip() or None)
+        else:
+            answers[doi] = LookupAnswer("failed" if truncated else "not_found")
+    return answers, outcome
 
 
 def _relation_dois(relation: dict[str, Any], kind: str, doi: str) -> list[str]:

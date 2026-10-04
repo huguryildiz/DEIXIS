@@ -2,6 +2,12 @@
 
 Durable decisions, newest first. Each entry is short: status, what was decided, and the main limit. The full original text is in Git history at commit `d213395`. An entry does not turn an unimplemented proposal into a working feature. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D224 — Scopus abstracts are asked 25 DOIs per request
+Status: accepted (Claude wrote, gpt-6.1-sol medium reviewed in three rounds) · Date: 2026-10-04
+Context: D91 asked Scopus one DOI per request. Live check on 4 Oct over the university VPN with the configured key: one `view=COMPLETE` query of 25 DOIs joined with `OR` answered 200 in 0.8 s, 22 entries, each naming an asked DOI and each with an abstract; five single-DOI requests gave the same abstract presence.
+Decision: `lookup.scopus_abstracts` asks up to 25 DOIs in one request and gives each entry only to the asked DOI it names, compared normalized and answered under every key the caller used. An asked DOI with no entry is `not_found`, or `failed` when `totalResults` exceeds the entries returned. A DOI outside `10.\d+/[A-Za-z0-9._;:/-]+` is asked alone. `plan_scopus` counts the lookup budget in requests. Each request's payload goes to its own create-only file, so a resumed step never overwrites the evidence an earlier answer points at.
+Limits: One 25-DOI probe on one topic and one day. The safe-DOI pattern is ours, not Elsevier's documentation.
+
 ## D223 — The PDF is revalidated on every open; no viewer lock
 Status: accepted (Claude wrote, gpt-6.1-sol medium reviewed) · Date: 2026-10-04
 Context: R5 (D208) asked for a viewer lock or cache invalidation after a file restore.

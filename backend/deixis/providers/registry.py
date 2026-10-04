@@ -59,8 +59,7 @@ async def _s2_lookup(client, identifiers, api_key, contact_email, max_rate_limit
 
 
 async def _scopus_lookup(client, identifiers, api_key, contact_email, max_rate_limit_retries):
-    answer, outcome = await lookup.scopus_abstract(client, identifiers[0], api_key, **_retry_kwargs(max_rate_limit_retries))
-    return {identifiers[0]: answer}, outcome
+    return await lookup.scopus_abstracts(client, list(identifiers), api_key, **_retry_kwargs(max_rate_limit_retries))
 
 
 async def _openalex_lookup(client, identifiers, api_key, contact_email, max_rate_limit_retries):
@@ -174,7 +173,7 @@ CONNECTORS = {c.provider_id: c for c in (
               query_syntax=QuerySyntax(boolean_checks=True, unbalanced_suffix=" (it returns zero records instead of an error)")),
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,
               sw_searchable=False, host=_host(scopus.SEARCH_URL), adapter_revision=2, display_name="Scopus",
-              capabilities={"doi_lookup": CapabilityBinding(_scopus_lookup, 1)},
+              capabilities={"doi_lookup": CapabilityBinding(_scopus_lookup, lookup.SCOPUS_LOOKUP_BATCH)},
               query_syntax=QuerySyntax("field_group", wrapper="TITLE-ABS-KEY")),  # sw: last abstract source only (D91)
     # CORE and SerpApi are searched by a legacy research only: in the third D88 measurement neither brought a verified
     # work no other source brought, and SerpApi is paid (D93).

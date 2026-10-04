@@ -484,7 +484,7 @@ def test_lookup_trace_survives_payload_failure(dispatch_flow, monkeypatch, pid):
     client(flow, lambda r: httpx.Response(200, json=lookup_body(pid)))
     def fail(*args):
         raise OSError("SYNTHETIC payload failure")
-    monkeypatch.setattr(lookups, "_write_payload", fail)
+    monkeypatch.setattr(lookups, "_write_new_payload" if pid == "scopus" else "_write_payload", fail)
     with pytest.raises(OSError):
         asyncio.run(lookup_operation(pid)(flow.store, flow.deps.http, flow.deps.settings, run, 0, batch))
     step = flow.store.existing_step(run["id"], f"record_lookup:{pid}:0")
@@ -514,28 +514,59 @@ def test_settlement_and_trace_are_atomic(dispatch_flow, path):
 def test_resumed_chunk_appends_trace(dispatch_flow, monkeypatch, pid):
     flow, new_run = dispatch_flow
     run = new_run(("openalex", pid))
-    batch = lookup_sources(flow, run, [DOI, DOI+"b"])
+    # Scopus asks safe DOIs in one OR query, so its second request needs a DOI that is asked alone.
+    batch = lookup_sources(flow, run, [DOI, DOI+("(b)" if pid == "scopus" else "b")])
     seen = []
     def serve(request):
         seen.append(request)
         return httpx.Response(200, json=lookup_body(pid, batch[min(len(seen)-1, 1)]["doi"]))
     client(flow, serve)
-    original = lookups._write_payload
+    writer = "_write_new_payload" if pid == "scopus" else "_write_payload"
+    original = getattr(lookups, writer)
     def fail_second(*args):
         if len(seen) == 2:
             raise OSError("SYNTHETIC interrupted chunk")
         return original(*args)
-    monkeypatch.setattr(lookups, "_write_payload", fail_second)
+    monkeypatch.setattr(lookups, writer, fail_second)
     with pytest.raises(OSError):
         asyncio.run(lookup_operation(pid)(flow.store, flow.deps.http, flow.deps.settings, run, 0, batch))
     saved = flow.store.existing_step(run["id"], f"record_lookup:{pid}:0")
     assert len(saved["output"]["transport"]["dispatches"]) == 2
-    monkeypatch.setattr(lookups, "_write_payload", original)
+    monkeypatch.setattr(lookups, writer, original)
     asyncio.run(lookup_operation(pid)(flow.store, flow.deps.http, flow.deps.settings, run, 0, batch))
     trace = flow.store.existing_step(run["id"], f"record_lookup:{pid}:0")["output"]["transport"]
     assert len(seen) == trace["attempts"] == trace["sends"] == len(trace["dispatches"]) == 3
     assert trace["reserved"] == 9
     assert flow.store.run(run["id"])["usage"] == {"lookup_requests": 3, "lookup_sends": 3}
+
+
+def test_scopus_resume_never_overwrites_the_payload_an_answer_points_at(dispatch_flow, monkeypatch):
+    """One OR-query response answers two records; the run dies after storing the first. The resume asks again for
+    the second, and the first record's payload_ref must still hold the response that contained its abstract."""
+    flow, new_run = dispatch_flow
+    run = new_run(("openalex", "scopus"))
+    batch = lookup_sources(flow, run, [DOI, DOI+"b"])
+    def serve(request):
+        entries = [{"prism:doi": row["doi"], "dc:description": f"SYNTHETIC abstract of {row['doi']}"}
+                   for row in batch if f"DOI({row['doi']})" in request.url.params["query"]]
+        return httpx.Response(200, json={"search-results": {"opensearch:totalResults": str(len(entries)),
+                                                             "entry": entries}})
+    client(flow, serve)
+    original, calls = lookups.store_answer, []
+    def die_on_second(*args):
+        calls.append(args)
+        if len(calls) == 2:
+            raise OSError("SYNTHETIC interrupted between two records")
+        return original(*args)
+    monkeypatch.setattr(lookups, "store_answer", die_on_second)
+    with pytest.raises(OSError):
+        asyncio.run(lookups._scopus_step(flow.store, flow.deps.http, flow.deps.settings, run, 0, batch))
+    monkeypatch.setattr(lookups, "store_answer", original)
+    asyncio.run(lookups._scopus_step(flow.store, flow.deps.http, flow.deps.settings, run, 0, batch))
+    refs = dict(flow.store.conn.execute("SELECT source_version_id, payload_ref FROM passages WHERE kind = 'abstract'"))
+    assert len(refs) == 2 and len(set(refs.values())) == 2
+    first = (flow.deps.settings.payloads_dir / refs[batch[0]["source_version_id"]]).read_text()
+    assert f"SYNTHETIC abstract of {DOI}" in first
 
 
 @pytest.mark.parametrize("pid", ["semantic_scholar", "crossref", "scopus"])
@@ -585,8 +616,9 @@ def test_scopus_key_snapshot_per_chunk(dispatch_flow, monkeypatch):
     client(flow, serve)
     asyncio.run(lookups._scopus_step(flow.store, flow.deps.http, flow.deps.settings, run, 0, batch[:2]))
     asyncio.run(lookups._scopus_step(flow.store, flow.deps.http, flow.deps.settings, run, 1, batch[2:]))
-    assert seen == [KEY, KEY]
-    assert flow.store.run(run["id"])["usage"] == {"lookup_requests": 2, "lookup_sends": 2}
+    # Chunk 0 is one OR-query request (two DOIs); the key is gone by chunk 1, whose record fails unsent.
+    assert seen == [KEY]
+    assert flow.store.run(run["id"])["usage"] == {"lookup_requests": 1, "lookup_sends": 1}
     assert [r[0] for r in flow.store.conn.execute("SELECT status FROM record_lookups ORDER BY source_version_id")] .count("failed") == 1
 
 
@@ -622,7 +654,9 @@ def test_scopus_envelope_collision(dispatch_flow, monkeypatch):
         return httpx.Response(200, json=lookup_body("scopus", doi))
     client(flow, serve)
     asyncio.run(lookups._scopus_step(flow.store, flow.deps.http, flow.deps.settings, run, 0, batch))
-    assert next(flow.deps.settings.payloads_dir.glob("*.json")).read_text() == dumps({"<omitted>": "secret_key_collision"})
+    # Each request has a file of its own, so two keys that sanitize alike can no longer collide in one envelope.
+    texts = [path.read_text() for path in sorted(flow.deps.settings.payloads_dir.glob("*.json"))]
+    assert len(texts) == 2 and all("secret" not in text.replace("<redacted>", "") for text in texts)
 
 
 @pytest.mark.parametrize("pid", ["semantic_scholar", "scopus"])

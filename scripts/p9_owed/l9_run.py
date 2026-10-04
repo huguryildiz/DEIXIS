@@ -494,7 +494,16 @@ class Driver:
                                            "scientific_review": "not measured"})
         self.save()
 
-    def columns_fill(self, k0_path, returned=None):
+    def included_heads(self):
+        from deixis.workflow.store import Store
+        p = k6.safe_db(self.db)
+        with sqlite3.connect(p.as_uri() + "?mode=ro", uri=True) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only=ON")
+            conn.execute("BEGIN")
+            return Store(conn).included_works(self.current()["research_id"])
+
+    def columns_fill(self, k0_path, measurement_commit, returned=None):
         self.idle()
         a = self.current()
         if self.state["closed"] or not a.get("K1", {}).get("pass"):
@@ -503,6 +512,9 @@ class Driver:
             raise Refused("preparation already complete; no refill")
         table = self.api.get(self.tp())
         self.verify_rows(table)
+        k0 = load(k0_path)
+        k0_sha256 = file_hash(k0_path)
+        validate_k0_binding(k0, a, measurement_commit, self.included_heads())
         # Only this endpoint assigns the three lineage roles. Its frozen text
         # must equal Ek L1 before admitting the request and after the response.
         from deixis.workflow.tables import LINEAGE_ROLE_COLUMNS
@@ -519,21 +531,24 @@ class Driver:
             self.poll({"id": a["fill_run"]}, "fill", returned=returned)
         else:
             self.start(self.tp() + "/fill", {"expected_version": table["table"]["version"]}, "fill", returned)
-        a["preparation_complete"] = True
-        a["preparation_completed_at"] = self.clock()
-        self.save()
         table = self.api.get(self.tp())
         self.verify_rows(table)
         view = self.api.get(self.tp() + "/lineage")
         preview = self.api.get(self.tp() + "/lineage/plan")
         if preview.get("retry_failed"):
             raise Refused("retry_failed preview forbidden")
-        k0 = load(k0_path)
+        if file_hash(k0_path) != k0_sha256:
+            raise Refused("K0 file changed during columns/fill")
+        validate_k0_binding(k0, a, measurement_commit, self.included_heads())
+        a["preparation_complete"] = True
+        a["preparation_completed_at"] = self.clock()
+        self.save()
         checks = evaluate_gates(k0, a, view, preview, table)
         gates = {"version": 1, "research_id": a["research_id"], "table_id": a["table_id"], "rows": a["rows"],
                  "gates": checks, "counts": preview["counts"], "preview_fingerprint": preview["preview_fingerprint"],
                  "max_model_calls": preview["max_model_calls"], "k0_file": str(Path(k0_path).resolve()),
-                 "k0_sha256": file_hash(k0_path), "l1_sha256": self.state["l1_sha256"],
+                 "k0_sha256": k0_sha256, "measurement_commit": measurement_commit,
+                 "l1_sha256": self.state["l1_sha256"],
                  "table_response_hashes": {"rows": a["rows_table_sha256"], "filled": digest(table)}, "at": self.clock()}
         self.artifact("table-filled.json", table)
         self.artifact("lineage-preview.json", preview)
@@ -743,6 +758,51 @@ def reader_snapshot(db, attempt, run_id, view, g, out, state, stopped=None):
     write(out / "key.json", key)
 
 
+def validate_k0_binding(k0, attempt, measurement_commit, current_heads):
+    """Bind the recorded check projection; inventory summaries omit provenance."""
+    def fixed_labels(labels, expected):
+        return (isinstance(labels, list) and all(isinstance(label, str) for label in labels)
+                and len(labels) == len(expected) and set(labels) == set(expected))
+
+    def recorded_hash(value):
+        return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+    try:
+        if (not isinstance(measurement_commit, str)
+                or re.fullmatch(r"[0-9a-f]{40}", measurement_commit) is None
+                or k0["measurement_commit"] != measurement_commit):
+            raise Refused("K0 measurement commit differs from the requested full SHA")
+        if k0["status"] != "checked" or k0["K0"] != "no_overlap_detected":
+            raise Refused("K0 must be checked with no overlap detected")
+        required = independence.REQUIRED_INVENTORIES
+        if (not fixed_labels(k0["required_inventories"], required)
+                or not fixed_labels([i["label"] for i in k0["inventories"]], required)):
+            raise Refused("K0 inventory labels differ from the fixed set")
+        references = k0["reference_libraries"]
+        if (set(references) != set(required[1:])
+                or any(not recorded_hash(references[label]["recorded_manifest_sha256"])
+                       for label in required[1:])
+                or not recorded_hash(k0["provenance"]["manifest_sha256"])):
+            raise Refused("K0 requires recorded copy-manifest hashes for all four libraries")
+        exclusions = independence.L9_DOC_EXCLUSIONS
+        if (not fixed_labels(k0["exclude_path_prefixes"], exclusions)
+                or not fixed_labels([r["path"] for r in k0["excluded_paths"]], exclusions)):
+            raise Refused("K0 docs-inventory exclusions differ from the fixed two-file set")
+        researches = [r for r in k0["researches"] if r["research_id"] == attempt["research_id"]]
+        if len(researches) != 1:
+            raise Refused("K0 must contain exactly one check for the current research")
+        works = researches[0]["included_works"]
+        heads = [w["head_source_version_id"] for w in works]
+        if heads != [r["source_version_id"] for r in attempt["included"]]:
+            raise Refused("K0 included work heads differ from the current attempt")
+        if heads != current_heads:
+            raise Refused("K0 included works changed since the check")
+        if not works or any(w["matches"] or w["independence_unverified"] is not False for w in works):
+            raise Refused("K0 included works have overlap or unverified independence")
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise Refused("K0 binding field missing or malformed: " + str(exc)) from exc
+
+
 def evaluate_gates(k0, attempt, view, preview, table):
     required = set(independence.REQUIRED_INVENTORIES)
     research = next((r for r in k0.get("researches", []) if r["research_id"] == attempt["research_id"]), None)
@@ -774,6 +834,7 @@ def parser():
             command.add_argument("--new-attempt", action="store_true")
         if name == "columns-fill":
             command.add_argument("--k0", required=True, help="l9_independence check JSON")
+            command.add_argument("--measurement-commit", required=True, help="full SHA recorded by K0")
         if name == "lineage":
             command.add_argument("--l2", required=True, help="operator-written JSON equal to gates.json")
             command.add_argument("--l2-sha256", required=True)
@@ -799,7 +860,7 @@ def main(argv=None):
         elif args.command == "rows":
             driver.rows()
         elif args.command == "columns-fill":
-            driver.columns_fill(args.k0, args.connection_returned)
+            driver.columns_fill(args.k0, args.measurement_commit, args.connection_returned)
         else:
             driver.lineage(args.l2, args.l2_sha256, args.connection_returned)
         return 0

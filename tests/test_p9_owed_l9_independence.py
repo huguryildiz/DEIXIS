@@ -587,6 +587,31 @@ def test_check_records_three_reference_hashes(lib, tmp_path):
     assert all(r['recorded_manifest_sha256'] == 'b'*64 for r in result['reference_libraries'].values())
 
 
+def test_check_projection_binds_to_columns_fill(lib, tmp_path, monkeypatch):
+    from scripts.p9_owed import l9_run
+
+    monkeypatch.setattr(l9_run.k6, "ROOT", tmp_path)
+    paths = references(tmp_path)
+    lib.source('known', included=True)
+    lib.identifier('known', 'doi', '10.1234/new')
+    copy = lib.seal()
+    result = kit.check(copy, paths, COMMIT, expected_refs(paths))
+    attempt = {"research_id": lib.rid, "included": [{"source_version_id": "known"}]}
+    l9_run.validate_k0_binding(result, attempt, COMMIT, ["known"])
+    # check projects summaries, not full inventory provenance or a single research id.
+    assert all("provenance" not in i for i in result["inventories"])
+    assert "research_id" not in result
+    assert result["provenance"]["manifest_sha256"] == copies.manifest(copy)["sha256"]
+    driver = l9_run.Driver(object(), tmp_path / "driver", copy / "library.sqlite")
+    driver.state["attempts"] = [attempt]
+    assert driver.included_heads() == ["known"]
+    with sqlite3.connect(copy / "library.sqlite") as conn:
+        conn.execute("UPDATE selections SET state='excluded' WHERE research_id=?", (lib.rid,))
+    assert driver.included_heads() == []
+    with pytest.raises(l9_run.Refused, match="included works changed"):
+        l9_run.validate_k0_binding(result, attempt, COMMIT, driver.included_heads())
+
+
 def test_check_cli_requires_measurement_commit(tmp_path):
     with pytest.raises(SystemExit) as error:
         kit.main(['check','--library',str(tmp_path),'--inventories','none','--out',str(tmp_path/'out')])

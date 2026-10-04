@@ -13,6 +13,7 @@ from test_lineage_flow import factory, lib  # noqa: F401
 
 from scripts.p9_owed import l9_run as l9
 
+COMMIT = "a" * 40
 
 @pytest.fixture(autouse=True)
 def isolated_test_root(tmp_path, monkeypatch):
@@ -91,11 +92,21 @@ def driver(tmp_path, api=None, data=None):
                              "rows": [f"s{i}" for i in range(6)], "included": [{"source_version_id": f"s{i}"} for i in range(6)],
                              "rows_table_sha256": "rows-hash", "K1": {"pass": True, "pdf_text_rows": 6}}]
     d.save()
+    d.included_heads = lambda: [f"s{i}" for i in range(6)]
     return d
 
 
 def k0(d):
     return {"K0": "no_overlap_detected", "status": "checked", "required_inventories": list(l9.independence.REQUIRED_INVENTORIES),
+            "measurement_commit": COMMIT,
+            "inventories": [{"label": label} for label in l9.independence.REQUIRED_INVENTORIES],
+            "reference_libraries": {label: {"recorded_manifest_sha256": "b" * 64}
+                                    for label in l9.independence.REQUIRED_INVENTORIES[1:]},
+            "provenance": {"manifest_sha256": "c" * 64},
+            "exclude_path_prefixes": list(l9.independence.L9_DOC_EXCLUSIONS),
+            "excluded_paths": [{"path": p, "git_blob": "d" * 40,
+                                "reason": l9.independence.L9_DOC_EXCLUSION_REASON}
+                               for p in l9.independence.L9_DOC_EXCLUSIONS],
             "researches": [{"research_id": "res1", "included_works": [
                 {"head_source_version_id": sid, "matches": [], "independence_unverified": False} for sid in d.current()["rows"]]}]}
 
@@ -221,7 +232,7 @@ def test_k1_mismatch_no_columns_fill(tmp_path, monkeypatch):
         d.rows()
     assert [p[0] for p in api.posts] == ["/api/researches/res1/tables"]
     with pytest.raises(l9.Refused):
-        d.columns_fill(tmp_path / "absent")
+        d.columns_fill(tmp_path / "absent", COMMIT)
     assert d.state["closed"]
     assert l9.load(tmp_path / "outcome.json")["reason"] == "korpus koşulu karşılanmadı"
 
@@ -267,7 +278,7 @@ def test_columns_verbatim_rows_retained_and_l2_fields(tmp_path):
     d = driver(tmp_path)
     path = tmp_path / "k0.json"
     l9.write(path, k0(d))
-    gates = d.columns_fill(path)
+    gates = d.columns_fill(path, COMMIT)
     assert [c["instruction"] for c in d.api.table["columns"]] == [c["instruction"] for c in l9.load(l9.L1)["columns"]]
     assert [p[0] for p in d.api.posts] == [d.tp() + "/lineage/columns", d.tp() + "/fill"]
     assert gates["rows"] == [f"s{i}" for i in range(6)]
@@ -281,15 +292,83 @@ def test_no_manual_rows(tmp_path):
     d = driver(tmp_path)
     d.api.table["rows"].reverse()
     with pytest.raises(l9.Refused, match="rows"):
-        d.columns_fill("absent")
+        d.columns_fill("absent", COMMIT)
     assert not d.api.posts
+
+
+@pytest.mark.parametrize("problem", [
+    "commit", "missing-commit", "research", "duplicate-research", "heads",
+    "required-labels", "inventory-labels", "duplicate-label", "extra-label",
+    "missing-reference", "missing-hash", "invalid-hash", "new-copy-hash",
+    "exclusions", "excluded-paths", "duplicate-exclusion", "status", "overlap",
+])
+def test_columns_refuses_unbound_k0_before_posts(tmp_path, problem):
+    d = driver(tmp_path)
+    record = k0(d)
+    if problem == "commit": record["measurement_commit"] = "e" * 40
+    elif problem == "missing-commit": del record["measurement_commit"]
+    elif problem == "research": record["researches"][0]["research_id"] = "other"
+    elif problem == "duplicate-research": record["researches"] *= 2
+    elif problem == "heads": record["researches"][0]["included_works"].pop()
+    elif problem == "required-labels": record["required_inventories"].pop()
+    elif problem == "inventory-labels": record["inventories"][1]["label"] = "other"
+    elif problem == "duplicate-label": record["inventories"][1]["label"] = "tracked-docs"
+    elif problem == "extra-label": record["inventories"].append({"label": "other"})
+    elif problem == "missing-reference": del record["reference_libraries"]["H9 Q1"]
+    elif problem == "missing-hash": del record["reference_libraries"]["H9 Q1"]["recorded_manifest_sha256"]
+    elif problem == "invalid-hash": record["reference_libraries"]["H9 Q1"]["recorded_manifest_sha256"] = "not-a-hash"
+    elif problem == "new-copy-hash": del record["provenance"]["manifest_sha256"]
+    elif problem == "exclusions": record["exclude_path_prefixes"] = ["docs/"]
+    elif problem == "excluded-paths": record["excluded_paths"].pop()
+    elif problem == "duplicate-exclusion": record["excluded_paths"][1] = record["excluded_paths"][0]
+    elif problem == "status": record["status"] = "stopped"
+    elif problem == "overlap": record["researches"][0]["included_works"][0]["matches"] = [{}]
+    path = tmp_path / "k0.json"
+    l9.write(path, record)
+    with pytest.raises(l9.Refused, match="K0"):
+        d.columns_fill(path, COMMIT)
+    assert not d.api.posts
+    assert not d.current().get("preparation_complete")
+
+
+@pytest.mark.parametrize("heads", [[f"s{i}" for i in range(5)],
+                                      [f"s{i}" for i in range(7)],
+                                      ["replacement", *[f"s{i}" for i in range(1, 6)]]])
+def test_columns_rereads_included_heads_before_posts(tmp_path, heads):
+    d = driver(tmp_path)
+    path = tmp_path / "k0.json"
+    l9.write(path, k0(d))
+    d.included_heads = lambda: heads
+    with pytest.raises(l9.Refused, match="included works changed"):
+        d.columns_fill(path, COMMIT)
+    assert not d.api.posts
+
+
+def test_columns_rereads_heads_after_fill(tmp_path):
+    d = driver(tmp_path)
+    path = tmp_path / "k0.json"
+    l9.write(path, k0(d))
+    reads = iter([d.included_heads(), ["changed"]])
+    d.included_heads = lambda: next(reads)
+    with pytest.raises(l9.Refused, match="included works changed"):
+        d.columns_fill(path, COMMIT)
+    assert not (tmp_path / "gates.json").exists()
+    assert not d.current().get("preparation_complete")
+
+
+def test_columns_cli_requires_measurement_commit(tmp_path):
+    args = ["columns-fill", "--out", str(tmp_path), "--db", "unused", "--k0", "unused"]
+    with pytest.raises(SystemExit) as error:
+        l9.parser().parse_args(args)
+    assert error.value.code == 2
+    assert l9.parser().parse_args([*args, "--measurement-commit", COMMIT]).measurement_commit == COMMIT
 
 
 def test_bad_l2_hash_blocks_post(tmp_path):
     d = driver(tmp_path)
     path = tmp_path / "k0.json"
     l9.write(path, k0(d))
-    d.columns_fill(path)
+    d.columns_fill(path, COMMIT)
     l2 = tmp_path / "l2.json"
     l9.write(l2, l9.load(tmp_path / "gates.json"))
     before = len(d.api.posts)
@@ -461,7 +540,7 @@ def test_gate_failure_after_completed_fill_blocks_second_attempt(tmp_path):
     d.api.view["status"]["nodes_complete"] = 3
     path = tmp_path / "k0.json"
     l9.write(path, k0(d))
-    gates = d.columns_fill(path)
+    gates = d.columns_fill(path, COMMIT)
     assert not gates["gates"]["K2"]["pass"]
     assert d.current()["preparation_complete"]
     with pytest.raises(l9.Refused, match="closed"):
@@ -488,7 +567,7 @@ def test_lineage_pass_uses_l2_fingerprint_and_kit_snapshot(tmp_path, monkeypatch
     d = driver(tmp_path)
     path = tmp_path / "k0.json"
     l9.write(path, k0(d))
-    d.columns_fill(path)
+    d.columns_fill(path, COMMIT)
     l2 = tmp_path / "l2.json"
     l9.write(l2, l9.load(tmp_path / "gates.json"))
     d.api.base = "http://127.0.0.1:8873"
@@ -509,7 +588,7 @@ def test_changed_preview_before_lineage_no_post(tmp_path):
     d = driver(tmp_path)
     path = tmp_path / "k0.json"
     l9.write(path, k0(d))
-    d.columns_fill(path)
+    d.columns_fill(path, COMMIT)
     l2 = tmp_path / "l2.json"
     l9.write(l2, l9.load(tmp_path / "gates.json"))
     d.api.preview["preview_fingerprint"] = "b" * 64

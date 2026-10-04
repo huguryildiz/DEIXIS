@@ -22,3 +22,4 @@ apps/web/playwright-report/
 /AGENTS.md
 /.impeccable.md
 /CLAUDE.md
+.vscode/

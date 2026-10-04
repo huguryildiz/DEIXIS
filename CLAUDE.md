@@ -59,4 +59,4 @@ Every step is a row keyed by `operation_key`; a step that already `succeeded` re
 
 ## Decisions and docs
 
-Durable decisions go in [docs/decisions.md](docs/decisions.md) as `## DNN — title`, newest at the top, with Status/Date/Context/Decision/Limits (check the highest existing number; D27 is used twice). An accepted decision is not the same as a verified implementation. `docs/layout.md` says where each kind of file belongs; `docs/desktop/` is a dated handoff record and gets no new specifications. `docs/product/implementation-plan.md` is in Turkish.
+Durable decisions go in [docs/decisions.md](docs/decisions.md) as `## DNN — title`, newest at the top, with Status/Date/Context/Decision/Limits (check the highest existing number; D27 is used twice). An accepted decision is not the same as a verified implementation. `docs/layout.md` says where each kind of file belongs. Design records, plans and closed-phase archives live in the ignored `.local/docs/` (local only, not in git); do not add new ones to `docs/`.

@@ -11,7 +11,7 @@ Before changing code:
 2. Inspect the relevant implementation, tests, and current Git status.
 3. Read `.impeccable.md` before any interface or UX change.
 4. Read `docs/decisions.md` for durable product decisions that affect the task.
-5. Use `docs/README.md` and `docs/layout.md` to determine document authority and
+5. Use `docs/layout.md` to determine document authority and
    artifact placement.
 
 Do not infer current implementation status from an old plan, screenshot, README

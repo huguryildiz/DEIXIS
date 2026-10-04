@@ -12,13 +12,28 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen farklı şirketin modeli; Sol yazarsa 
 
 1. P10: macOS paketi. Rapor kalitesi çalışması (kanıt kesilmesi, çok parçalı iddialar) isteğe bağlı ve sahip kararıyla.
 
+## Tamamlanan fazlar
+
+Her faz için ne yapıldığı ve neyin ölçülmediği. Ayrıntı [karar kaydında](docs/decisions.md).
+
+- **P0 Plan ve denetim:** Uygulama planı yazıldı, Fable incelemesinden geçti, bulgular yanıtlandı. (D1)
+- **P1 Yöntem ve sözleşme:** Model adımlarına giden yöntem paketi (`methods/deixis-research/`) ve adım girdi/çıktı şemaları (`contracts/`) kuruldu.
+- **P2 Yerel temel:** FastAPI arka uç, worker, SQLite ve Codex bağlantısı çalışıyor; model, DEIXIS'e ait ayrı bir Codex dizininde açık model adıyla çağrılıyor. (D2, D3)
+- **P3 Arama ve kaynak işleme:** Akademik arama, PDF bulma ve sürüm kontrolü, pasaj sıralaması kuruldu. Uzun SW dilim serisinden sonra tek arama akışı `sw` oldu, eski akış kaldırıldı; aramanın bilimsel başarı ölçümleri geçmedi. (D119, D114)
+- **P4 İlk web dilimi:** Sorudan kaynaklı cevaba, vurgulanabilir atıfa ve araştırmayı yeniden açmaya kadar web arayüzü çalışıyor; dar bir gerçek kaynak ölçümüyle kapandı. (D34)
+- **P5 Kütüphane ve kanıt tablosu:** Kaynak sürümleri, kanıt tablosu hücre geçmişi, çöp kutusu ve OCR eklendi; iki soruluk gerçek model ölçümüyle kapandı, genelleme değil. (D55)
+- **P6 Sentez ve rapor:** Beş dilim uygulandı: kaynak bağlı rapor, gelişim çizgileri (lineage), aday fikir ve kill-search, rapor düzenleme, LaTeX. Kod tamam; gerçek modelde yararlılık ölçümleri P9'a taşındı ve çoğu hâlâ açık. (D142, D154, D157)
+- **P7 Bağlantı kapsamı:** Bütün akademik sağlayıcılar tek bir iç bağlayıcı sözleşmesinden geçiyor; istekler sayılıyor ve bütçeleniyor, kota ile hız sınırı ayrı. Canlı hata ve kota biçimleri ölçülmedi. (D201)
+- **P8 İnceleme ve takip:** Cevap, rapor ve aday fikirler başka bir modele incelettirilebiliyor; araştırmalar yeni yayınlar için zamanlanmış takipte tutulabiliyor. Sentetik vakalarda yerleştirilen hataların hepsi bulundu; gerçek raporda inceleme kalitesi ölçülmedi. (D189)
+- **P9 Web sağlamlaştırma:** Kurulum, çökme ve kurtarma, disk dolu, yedek/geri yükleme, erişilebilirlik ve kapasite sınandı; tam test matrisi iki kez üst üste geçti. Gerçek modelle ilk kez bir rapor baştan sona tamamlandı, ama kalitesi hedeflerin altında. (D218, D202)
+
 ## Açık işler
 
 Bütün eksikler burada; ayrı TODO dosyası yok. Parantezdeki D numaraları [karar kaydına](docs/decisions.md) gider.
 
 ### Ölçülmedi (gerçek model veya gerçek kullanım gerekiyor)
 
-- Rapor kalitesi: H9e'de R1a, R2, R4b, R5, R7 süre, R8, R11 aralık dışında. R2'de 4 yanlış atıf, 18 kısmi destek; iki model okudu, insan bakmadı. (D202, D218)
+- Rapor kalitesi: H9e'de R1a, R2, R4b, R5, R7 süre, R8, R11 aralık dışında. R2'de 4 yanlış atıf, 18 kısmi destek; iki model okudu, insan bakmadı. Gözlenen nedenler: bölüm girdisi tablo hücrelerinin çoğunu kesiyor (H9b B'de 117 hücre), çok parçalı iddialarda çapa alıntısı çoğu zaman tek parçayı taşıyor, özet ve sonuç gövdede olmayan ayrıntı ekliyor. Tek konu, tek koşu. (D202, D218)
 - Denklem, çift ve inceleme: R6'da denklem birimi yok, R9'un yedi çifti ölçülemedi, R10 hiç ölçülmedi. (D202, D218)
 - Rapor düzenleme E06–E18: 18 işlemden 5'i ölçüldü; kabul, kaldırma, geri yükleme, dışa aktarım, yedek/geri yükleme sınanmadı. (D215, D217)
 - Soy zinciri L9 (R12–R15): hiçbir korpusta ölçülmedi; yeniden hazırlanmayacak. (D216, D217)
@@ -37,7 +52,7 @@ Bütün eksikler burada; ayrı TODO dosyası yok. Parantezdeki D numaraları [ka
 
 ### Kod düzeltmeleri
 
-- `tests/hardening/test_capacity_script.py` içinde iki test kırık (4 Ekim'de görüldü, değişiklikten bağımsız).
+- `tests/hardening/test_capacity_script.py` içinde iki test kırık (4 Ekim'de görüldü, değişiklikten bağımsız). Neden: repo kökünde `.env` varken kapasite betiği `GuardError` ile reddediyor, testler beklediği hatadan önce bu korumaya takılıyor; test `.env`'den yalıtılmalı.
 - K03 sürücüsü: kuyruk geçişi prompt boyutunda düşüyor; bayt bütçesi eklenmedi. Paketleme engeli sayılmadı. (D216, D217)
 - Yeniden çıkarım R5: T10 arka plan okuyucuyu (D52) yürütmüyor; aday/soy güncellik görünümü ve Türkçe Zotero notları; görüntüleyici kilidi veya önbellek geçersizleştirme. (D208)
 - İlk cevap taslağı atıf çapası kurallarını hep bozuyor (9/9); onarım turu düzeltiyor ama cevap başına 46–134 s ekliyor. Nedeni bulunmadı.
@@ -55,4 +70,5 @@ Bütün eksikler burada; ayrı TODO dosyası yok. Parantezdeki D numaraları [ka
 - Kütüphaneden süreklilik: "bu kaynak X araştırmasına dahil edilmişti" gibi veritabanından hesaplanan ipuçları. Sohbet tarzı gizli "bellek" planlanmıyor.
 - PDF indirme teşhisi: HTML veya 403 dönen en fazla 20 açık erişim vakasını düz Chromium ile aç, nedeni sınıflandır (`citation_pdf_url`, JavaScript, çerez duvarı, bot engeli). Bot engelini aşmak planlanmıyor.
 - Sorgu örtüşme uyarısı: iki sorgunun terimleri büyük ölçüde örtüşüyorsa uyarı (onarım değil).
+- Tanıtım sayfası (landing page): tıklanabilir demo, yöntem, sınırlar, kurulum ve atıf blokları. Mockup `.local/docs/site/landing-mockup.html` (4 Eki). Örnek kayıtlar sentetik; BibTeX'te yazar adı yer tutucu. "Download" butonu imzalı macOS paketi (Apple Developer hesabı + notarization) çıkana kadar kaynaktan kurulumu gösteriyor. P10 sonrası yayın (GitHub Pages); yayından önce içerik kesinleşince bir `/impeccable` inceleme ve cila turu.
 - Kill-search: aday kartındaki iddia öğelerini RRF'de ayrı sinyal olarak kullanmak; Semantic Scholar snippet search'ü dördüncü yol olarak eklemek; `answer_review`'u geliştirirken kullanılmayan bir modelle değerlendirmek.

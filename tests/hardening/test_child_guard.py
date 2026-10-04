@@ -118,7 +118,11 @@ def test_early_guard_loss_ends_idle_child_with_distinct_code(tmp_path):
 def test_no_guard_remains_after_child_end_and_stdio_is_devnull(tmp_path, mode):
     log = tmp_path / "guard.jsonl"
     code = "from deixis.documents import pdf; import time,os; pdf._watch_memory(10**12); print('ready',flush=True); "
-    code += {"normal": "time.sleep(.2)", "crash": "os.abort()", "timeout": "time.sleep(30)", "child_sigkill": "time.sleep(30)"}[mode]
+    # Replace Python with a plain shell before SIGABRT so macOS does not open
+    # Python.app's crash reporter for this intentional lifecycle test.
+    code += {"normal": "time.sleep(.2)",
+             "crash": "os.execv('/bin/sh', ['/bin/sh', '-c', 'kill -ABRT $$'])",
+             "timeout": "time.sleep(30)", "child_sigkill": "time.sleep(30)"}[mode]
     proc = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True,
                             env={"PYTHONPATH": BACKEND, "DEIXIS_CHILD_GUARD_LOG": str(log)})
     try:
@@ -129,7 +133,10 @@ def test_no_guard_remains_after_child_end_and_stdio_is_devnull(tmp_path, mode):
             with pytest.raises(subprocess.TimeoutExpired): proc.wait(.1)
             proc.kill()
         if mode == "child_sigkill": proc.kill()
-        proc.wait(10)
+        if mode == "crash":
+            assert proc.wait(10) == -signal.SIGABRT
+        else:
+            proc.wait(10)
         wait_for(lambda: cg.process_info(ready["guard_pid"]) is None)
     finally:
         if proc.poll() is None: proc.kill()

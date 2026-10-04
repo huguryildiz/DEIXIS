@@ -13,7 +13,7 @@ from deixis.config import Settings
 from deixis.storage import db
 from deixis.workflow.review.store import ReviewStore
 from tests.fakes import FakeAdapter, valid_response
-from tests.test_api_flow import session
+from tests.app.test_api_flow import session
 
 
 def finding_response(payload):

@@ -13,7 +13,7 @@ Python 3.12 via `uv` (the venv must be native arm64 on Apple Silicon). Run from 
 ```sh
 uv sync
 PYTHONPATH=backend uv run pytest                                   # all deterministic tests (parallel by default, ~1–2 min; -n 0 for serial)
-PYTHONPATH=backend uv run pytest tests/test_contracts.py -k anchor # one file / one test
+PYTHONPATH=backend uv run pytest tests/contracts/test_contracts.py -k anchor # one file / one test
 PYTHONPATH=backend uv run python -m deixis serve                   # http://127.0.0.1:8765, serves apps/web/dist
 PYTHONPATH=backend uv run python -m deixis serve --dev --no-browser   # + (cd apps/web && npm run dev) → Vite on :5178 proxies /api
 
@@ -52,6 +52,7 @@ Every step is a row keyed by `operation_key`; a step that already `succeeded` re
 
 ## Tests
 
+- Test modules live in topic folders under `tests/` (`app`, `candidates`, `contracts`, `discovery`, `documents`, `hardening`, `lineage`, `measurement`, `models`, `providers`, `reextract`, `report`, `review`, `storage`, `watch`); shared helpers (`fakes.py`, `helpers.py`, `*_helpers.py`, `conftest.py`) stay at `tests/`. Every folder is on `pythonpath` in `pyproject.toml`, so `from test_api_flow import ...` works across folders; a new folder must be added there.
 - pytest tests are model-independent: `tests/fakes.py::FakeAdapter`, mocked `httpx` transports and a fake PDF fetcher injected through `create_app`; `tests/helpers.py::make_pdf` builds tiny PDFs. `conftest.py` strips model API keys and swaps in an in-memory keyring for every test.
 - The Playwright suite (`apps/web/e2e`) spawns `tests/acceptance/fixture_server.py`: the real app with a scripted model and mocked OpenAlex. Question markers such as `[rate-limit]`, `[model-down]` and `[invent-locator]` select failure scripts.
 - Fixture records are labeled SYNTHETIC. Passing tests shows workflow behavior, not model quality or live provider access; say which one a result measures.

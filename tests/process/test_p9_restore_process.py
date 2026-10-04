@@ -4,7 +4,7 @@
 SYNTHETIC records, a scripted model, single runs on one machine; the kills are SIGKILL on one PID, not power loss.
 The B03 tests start the production launcher (`python -m deixis serve`), not the fixture driver, so they write no call log
 and the `no_network` check does not apply to them; what they show is that the process exits before it binds a port. The
-view-JSON part of B01 (research views, citation anchors) is the in-process test's (`tests/test_p9_restore_matrix.py`); the
+view-JSON part of B01 (research views, citation anchors) is the in-process test's (`tests/hardening/test_p9_restore_matrix.py`); the
 tests here compare every table and every file with `p9_restore_compare`.
 """
 

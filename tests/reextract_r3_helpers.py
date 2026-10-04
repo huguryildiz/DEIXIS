@@ -17,7 +17,7 @@ from deixis.workflow.review.reader import ReviewReader
 from deixis.workflow.review.snapshot import build_snapshot
 from deixis.workflow.review.store import ReviewStore, resolve_finding
 from deixis.workflow.tables import TableStore
-from tests.test_report_assembly import COLUMN, _claim
+from tests.report.test_report_assembly import COLUMN, _claim
 from tests.reextract_r2a_helpers import head
 from tests.review_helpers import finding, step_payload, review_run
 

@@ -17,7 +17,7 @@ from deixis.providers import common, registry
 from deixis.storage import db
 from deixis.workflow.watch.store import WatchStore
 from tests.fakes import FakeAdapter
-from tests.test_api_flow import session
+from tests.app.test_api_flow import session
 
 
 @pytest.fixture(autouse=True)

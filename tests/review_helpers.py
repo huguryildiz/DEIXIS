@@ -11,8 +11,8 @@ from deixis.storage import db
 from deixis.workflow.review.reader import ReviewReader
 from deixis.workflow.review.snapshot import build_snapshot, review_step_input_parts
 from deixis.workflow.review.store import ReviewStore, resolve_finding
-from tests.test_report_assembly import report_with_sections
-from tests.test_report_edit_check import finish
+from tests.report.test_report_assembly import report_with_sections
+from tests.report.test_report_edit_check import finish
 
 INPUTS = json.loads((Path(__file__).parent / "fixtures/research/step-inputs.json").read_text())
 

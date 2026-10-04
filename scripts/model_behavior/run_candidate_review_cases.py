@@ -230,7 +230,7 @@ def provenance(hashes):
         return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout.rstrip()
     return {"sha256": hashes, "head": git("rev-parse", "HEAD"),
         "status_porcelain": git("status", "--porcelain", "--", "backend", "contracts", "methods",
-            "scripts/model_behavior", "tests/model_behavior", "tests/test_review_cases_b8b.py",
+            "scripts/model_behavior", "tests/model_behavior", "tests/review/test_review_cases_b8b.py",
             str(EXPECTATIONS.relative_to(REPO_ROOT))),
         "target_text_author": "gpt-6.1-sol (OpenAI)",
         "judgement_note": "Agent judgement pending; cross-vendor pairing is not independent validation."}

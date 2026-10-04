@@ -11,7 +11,7 @@ from deixis.workflow.candidates.hits import merge_and_cut
 from deixis.workflow.candidates.store import CandidateStore
 from deixis.workflow.review.snapshot import build_snapshot
 from tests.review_helpers import report_with_sections, review_lib
-from tests.test_candidate_store import provider_record
+from tests.candidates.test_candidate_store import provider_record
 from deixis.documents.pdf import Extraction, PageText, chunk_page
 from tests.helpers import make_pdf
 

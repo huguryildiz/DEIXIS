@@ -114,7 +114,7 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
 
   test('with every confirmed work found, the empty list says a search or the citation chain found them', async () => {
     // Slice 19, review 2: the research view is served with one confirmed work and an empty not-found list, the
-    // payload the backend derives when the citation chain alone found it (tests/test_probes.py
+    // payload the backend derives when the citation chain alone found it (tests/discovery/test_probes.py
     // test_a_confirmed_work_found_only_by_the_citation_chain_leaves_the_view_list_empty). The sentence must name the chain.
     const view = /\/api\/researches\/res_[^/?]+$/
     await page.route(view, async route => {

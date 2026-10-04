@@ -27,7 +27,7 @@ class MemoryKeyring(KeyringBackend):
 @pytest.fixture(autouse=True)
 def no_model_api_keys(monkeypatch):
     """Tests never use real model API keys; a test that needs one sets a fake key."""
-    for name in ("GEMINI_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"):
+    for name in ("GEMINI_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "MOONSHOT_API_KEY", "MISTRAL_API_KEY"):
         # setenv first records the original value, so a key a test saves through the app is removed afterwards too.
         monkeypatch.setenv(name, "unset")
         monkeypatch.delenv(name)
@@ -48,6 +48,7 @@ def memory_keychain(monkeypatch):
 def pytest_configure(config):
     config.addinivalue_line("markers", "field_distribution: the test's own transport answers the routing request (D93)")
     config.addinivalue_line("markers", "process: starts and kills real processes (P9 H2); run with -m process -n 0")
+    config.addinivalue_line("markers", "arxiv_pacing: the test keeps arXiv's real three-second request gap")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -58,6 +59,16 @@ def pytest_collection_modifyitems(config, items):
     if skipped:
         config.hook.pytest_deselected(items=skipped)
         items[:] = [item for item in items if item not in skipped]
+
+
+@pytest.fixture(autouse=True)
+def no_arxiv_pacing(request, monkeypatch):
+    """arXiv's three-second gap between searches is real time; a test that is not about it does not wait it out."""
+    if request.node.get_closest_marker("arxiv_pacing"):
+        return
+    from deixis.providers import arxiv
+
+    monkeypatch.setattr(arxiv, "MIN_INTERVAL_SECONDS", 0.0)
 
 
 @pytest.fixture(autouse=True)

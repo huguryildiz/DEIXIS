@@ -36,7 +36,7 @@ This is an **AI-assisted research workspace**, not an autonomous discovery syste
 
 New researches use the `sw` search workflow. Researches stored with the earlier `legacy` workflow remain readable and can answer from their existing corpus; their search and scope revision controls are closed.
 
-The current checkout includes OpenAlex, Semantic Scholar, Crossref, arXiv, bioRxiv (via OpenAlex), PubMed, IEEE Xplore, Scopus, CORE, and a supplementary SerpApi search connector. Some require keys or access entitlements. Model adapters include Codex, Claude Code, Gemini, and DeepSeek; availability depends on local authentication or configured credentials, not merely on an adapter being present. Zotero collection import, BibTeX/RIS export, PDF extraction, optional OCR/equation reading, and library backup/restore are also implemented. See [provider settings](docs/product/providers.env.example) and [decisions](docs/decisions.md) for conditions and boundaries.
+The current checkout includes OpenAlex, Semantic Scholar, Crossref, arXiv, bioRxiv (via OpenAlex), PubMed, IEEE Xplore, Scopus, CORE, and a supplementary SerpApi search connector. Some require keys or access entitlements. Model adapters include Codex, Claude Code, Gemini, DeepSeek, and, through one OpenAI-compatible adapter, Qwen, Kimi and Mistral (not yet verified against the live APIs); availability depends on local authentication or configured credentials, not merely on an adapter being present. Zotero collection import, BibTeX/RIS export, PDF extraction, optional OCR/equation reading, and library backup/restore are also implemented. See [provider settings](docs/product/providers.env.example) and [decisions](docs/decisions.md) for conditions and boundaries.
 
 ## Quickstart
 

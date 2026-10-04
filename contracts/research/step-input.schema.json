@@ -2086,6 +2086,9 @@
             "claude",
             "deepseek",
             "gemini",
+            "qwen",
+            "kimi",
+            "mistral",
             "ollama",
             "fake"
           ]

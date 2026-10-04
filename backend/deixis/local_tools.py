@@ -2,7 +2,7 @@
 
 Detection reads the PATH, app bundles, `--version` output and the model servers' loopback endpoints. An install runs
 the one package-manager command fixed for that tool id, never a command taken from a request. Codex and Claude Code run
-research steps; the other CLI is detected only, and a local server's embedding models can rank answer passages. Zotero
+research steps; the other CLIs are detected only (found is not supported), and a local server's embedding models can rank answer passages. Zotero
 is the one reference manager: its local API is where a collection import reads from (D16).
 """
 
@@ -50,6 +50,24 @@ TOOLS = {t.id: t for t in (
          "https://developers.openai.com/codex/cli", role="runs_steps"),
     Tool("gemini_cli", "Gemini CLI", "cli", "gemini", ("npm", "install", "-g", "@google/gemini-cli"),
          "https://github.com/google-gemini/gemini-cli"),
+    Tool("qwen_code", "Qwen Code", "cli", "qwen", ("npm", "install", "-g", "@qwen-code/qwen-code"),
+         "https://github.com/QwenLM/qwen-code"),
+    Tool("kimi_cli", "Kimi CLI", "cli", "kimi", ("uv", "tool", "install", "kimi-cli"),
+         "https://github.com/MoonshotAI/kimi-cli"),
+    Tool("mistral_vibe", "Mistral Vibe", "cli", "vibe", ("uv", "tool", "install", "mistral-vibe"),
+         "https://github.com/mistralai/mistral-vibe"),
+    Tool("copilot_cli", "GitHub Copilot CLI", "cli", "copilot", ("npm", "install", "-g", "@github/copilot"),
+         "https://github.com/github/copilot-cli"),
+    Tool("opencode", "OpenCode", "cli", "opencode", ("npm", "install", "-g", "opencode-ai"),
+         "https://opencode.ai"),
+    Tool("aider", "Aider", "cli", "aider", ("uv", "tool", "install", "aider-chat"),
+         "https://aider.chat"),
+    Tool("goose", "Goose", "cli", "goose", ("brew", "install", "block-goose-cli"),
+         "https://goose-docs.ai"),
+    Tool("amp", "Amp", "cli", "amp", ("npm", "install", "-g", "@sourcegraph/amp"),
+         "https://ampcode.com"),
+    Tool("cline", "Cline", "cli", "cline", ("npm", "install", "-g", "cline"),
+         "https://github.com/cline/cline"),
     Tool("ollama", "Ollama", "server", "ollama", ("brew", "install", "ollama"), "https://ollama.com/download",
          app="/Applications/Ollama.app", endpoint="http://127.0.0.1:11434"),
     Tool("lm_studio", "LM Studio", "server", "lms", ("brew", "install", "--cask", "lm-studio"), "https://lmstudio.ai/download",

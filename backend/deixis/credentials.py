@@ -21,6 +21,7 @@ from keyring.errors import KeyringError, PasswordDeleteError
 
 from deixis.models.gemini import API_URL as GEMINI_API_URL
 from deixis.models.gemini import error_message
+from deixis.models.openai_compat import BY_KEY_ENV as COMPAT_BY_KEY_ENV
 from deixis.storage.db import now
 
 SERVICE = "DEIXIS"
@@ -40,6 +41,9 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("GEMINI_API_KEY", "model", "gemini", testable=True),
     ManagedKey("OPENAI_API_KEY", "model", "openai", testable=True),
     ManagedKey("DEEPSEEK_API_KEY", "model", "deepseek", testable=True),
+    ManagedKey("DASHSCOPE_API_KEY", "model", "qwen", testable=True),
+    ManagedKey("MOONSHOT_API_KEY", "model", "kimi", testable=True),
+    ManagedKey("MISTRAL_API_KEY", "model", "mistral", testable=True),
     ManagedKey("OPENALEX_API_KEY", "source", "openalex"),
     ManagedKey("S2_API_KEY", "source", "semantic_scholar"),
     ManagedKey("NCBI_API_KEY", "source", "pubmed"),
@@ -157,13 +161,15 @@ def delete(env: str) -> None:
 
 
 async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, str]:
-    """One short request with the key: Gemini lists models; OpenAI embeds one word, which also shows missing credit."""
+    """One short request with the key: Gemini, DeepSeek, Qwen, Kimi and Mistral list models; OpenAI embeds one word, which also shows missing credit."""
     try:
         if env == "GEMINI_API_KEY":
             response = await client.get(f"{GEMINI_API_URL}/models", params={"pageSize": 1},
                                         headers={"x-goog-api-key": value}, timeout=20)
         elif env == "DEEPSEEK_API_KEY":
             response = await client.get(f"{DEEPSEEK_API_URL}/models", headers={"Authorization": f"Bearer {value}"}, timeout=20)
+        elif env in COMPAT_BY_KEY_ENV:
+            response = await client.get(f"{COMPAT_BY_KEY_ENV[env].base_url}/models", headers={"Authorization": f"Bearer {value}"}, timeout=20)
         else:
             response = await client.post(f"{OPENAI_API_URL}/embeddings", json={"model": "text-embedding-3-small", "input": ["test"]},
                                          headers={"Authorization": f"Bearer {value}"}, timeout=20)

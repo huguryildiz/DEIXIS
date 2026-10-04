@@ -35,6 +35,12 @@ def remote(request):
         if request.headers.get("authorization") == "Bearer deepseek-good-key":
             return httpx.Response(200, json={"object": "list", "data": []})
         return httpx.Response(401, json={"error": {"message": "invalid api key"}})
+    compat = {"https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models": "dashscope-good-key",
+              "https://api.moonshot.ai/v1/models": "moonshot-good-key", "https://api.mistral.ai/v1/models": "mistral-good-key"}
+    if url in compat:
+        if request.headers.get("authorization") == f"Bearer {compat[url]}":
+            return httpx.Response(200, json={"object": "list", "data": [{"id": "SYNTHETIC-model"}]})
+        return httpx.Response(401, json={"error": {"message": "invalid api key"}})
     if url == "http://127.0.0.1:11434/api/tags":
         return httpx.Response(200, json={"models": [{"name": "qwen3:8b", "size": 5_200_000_000},
                                                     {"name": "nomic-embed-text:latest", "size": 274_000_000}]})
@@ -97,6 +103,28 @@ def test_deepseek_key_is_verified_by_listing_models(client, memory_keychain):
     saved = client.put("/api/credentials/DEEPSEEK_API_KEY", json={"value": "deepseek-good-key"}).json()
     assert saved["test"]["status"] == "ok" and saved["key"]["service"] == "deepseek"
     assert memory_keychain.items == {("DEIXIS", "DEEPSEEK_API_KEY"): "deepseek-good-key"}
+
+
+@pytest.mark.parametrize("env,service,good", [("DASHSCOPE_API_KEY", "qwen", "dashscope-good-key"),
+                                               ("MOONSHOT_API_KEY", "kimi", "moonshot-good-key"),
+                                               ("MISTRAL_API_KEY", "mistral", "mistral-good-key")])
+def test_openai_compatible_keys_are_verified_by_listing_models(client, memory_keychain, env, service, good):
+    refused = client.put(f"/api/credentials/{env}", json={"value": "some-bad-key-1"})
+    assert refused.status_code == 422 and "some-bad-key-1" not in refused.text
+    saved = client.put(f"/api/credentials/{env}", json={"value": good}).json()
+    assert saved["test"]["status"] == "ok" and saved["key"]["service"] == service and saved["key"]["testable"] is True
+    assert memory_keychain.items == {("DEIXIS", env): good}
+
+
+def test_openai_compatible_connections_are_registered_and_report_a_missing_key(tmp_path, paths):
+    app = create_app(Settings(data_dir=tmp_path / "data2", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(remote)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        models = c.get("/api/connections").json()["models"]
+        for name, env in (("qwen", "DASHSCOPE_API_KEY"), ("kimi", "MOONSHOT_API_KEY"), ("mistral", "MISTRAL_API_KEY")):
+            assert (models[name]["ready"], models[name]["key_configured"]) == (False, False)
+            assert env in models[name]["reason"] and "not implemented" not in models[name]["reason"]
+        assert models["ollama"]["reason"] == "Adapter not implemented in this version"
 
 
 def test_one_model_connection_can_be_freshly_queried(client):
@@ -171,6 +199,49 @@ def test_local_tools_report_clis_running_servers_and_embedding_models(client, pa
     zotero = tools["zotero"]
     assert (zotero["kind"], zotero["role"], zotero["installed"], zotero["running"], zotero["local_api"]) == ("app", "imports", False, False, False)
     assert zotero["install"]["command"] == "brew install --cask zotero"
+
+
+NEW_CLIS = {
+    "qwen_code": ("qwen", "npm install -g @qwen-code/qwen-code"),
+    "kimi_cli": ("kimi", "uv tool install kimi-cli"),
+    "mistral_vibe": ("vibe", "uv tool install mistral-vibe"),
+    "copilot_cli": ("copilot", "npm install -g @github/copilot"),
+    "opencode": ("opencode", "npm install -g opencode-ai"),
+    "aider": ("aider", "uv tool install aider-chat"),
+    "goose": ("goose", "brew install block-goose-cli"),
+    "amp": ("amp", "npm install -g @sourcegraph/amp"),
+    "cline": ("cline", "npm install -g cline"),
+}
+
+
+def test_other_llm_clis_are_detected_only_with_a_fixed_install_command(client, paths, monkeypatch):
+    paths.update(qwen="/SYNTHETIC/bin/qwen", aider="/SYNTHETIC/bin/aider", uv="/SYNTHETIC/bin/uv")
+    monkeypatch.setattr(local_tools, "_command_output", lambda argv: "9.9.9" if argv[0].endswith(("qwen", "aider")) else None)
+    tools = {t["id"]: t for t in client.get("/api/local-tools?refresh=true").json()["tools"]}
+    for tool_id, (binary, command) in NEW_CLIS.items():
+        tool = tools[tool_id]
+        assert (tool["kind"], tool["role"], tool["install"]["command"]) == ("cli", "detected", command), tool_id
+        assert local_tools.TOOLS[tool_id].binary == binary
+    assert (tools["qwen_code"]["installed"], tools["qwen_code"]["version"], tools["qwen_code"]["path"]) == (True, "9.9.9", "/SYNTHETIC/bin/qwen")
+    assert tools["aider"]["installed"] is True and tools["kimi_cli"]["installed"] is False
+    # uv is on PATH here, npm and brew are not, so only the uv-installed tools can be installed.
+    assert tools["kimi_cli"]["install"]["available"] is True and tools["cline"]["install"]["available"] is False
+    assert "npm" in tools["cline"]["install"]["unavailable_reason"]
+    # Only the two step-running CLIs carry that role; none of the new ones does.
+    assert sorted(t["id"] for t in tools.values() if t["role"] == "runs_steps") == ["claude_code", "codex"]
+
+
+def test_installing_a_detected_cli_runs_only_its_fixed_command(client, paths, tmp_path):
+    uv = tmp_path / "uv"
+    uv.write_text('#!/bin/sh\necho "SYNTHETIC uv $@"\nexit 0\n')
+    uv.chmod(0o755)
+    paths["uv"] = str(uv)
+    started = client.post("/api/local-tools/kimi_cli/install")
+    assert started.status_code == 202 and started.json()["job"]["command"] == "uv tool install kimi-cli"
+    job = wait_job(client, "kimi_cli")
+    assert job["status"] == "succeeded" and "SYNTHETIC uv tool install kimi-cli" in job["output"]
+    paths["aider"] = "/SYNTHETIC/bin/aider"
+    assert client.post("/api/local-tools/aider/install").status_code == 409  # already installed
 
 
 def wait_job(client, tool_id, timeout=10):

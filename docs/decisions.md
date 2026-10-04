@@ -2,6 +2,12 @@
 
 Durable decisions, newest first. Each entry is short: status, what was decided, and the main limit. The full original text is in Git history at commit `d213395`. An entry does not turn an unimplemented proposal into a working feature. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D219 — Other LLMs: nine command-line tools are detected only, and one OpenAI-compatible adapter serves Qwen, Kimi and Mistral
+Status: accepted · Date: 2026-10-04
+Context: Users with other models asked to use DEIXIS. Two separate things were done. Qwen Code, Kimi CLI, Mistral Vibe, GitHub Copilot CLI, OpenCode, Aider, Goose, Amp and Cline are listed under Settings › On this computer as `role="detected"`, each with one fixed install command (npm, uv or brew) and a plain statement that finding a tool is not support. None of them runs a step. Separately, `models/openai_compat.py` is one adapter parametrised by connection id, name, base URL and key variable, modeled on the DeepSeek adapter: no tools, `json_object` mode, `enforces_schema=False`, no `reasoning_effort` sent or offered, 402/429 handled as DeepSeek's are, and `resolved_model` returned so the flow's `model_mismatch` rule applies. Connections: `qwen` (DashScope international compatible mode, `DASHSCOPE_API_KEY`), `kimi` (api.moonshot.ai, `MOONSHOT_API_KEY`), `mistral` (api.mistral.ai, `MISTRAL_API_KEY`). Keys are tested by listing models.
+Decision: The CLIs stay detected, not run. The three API connections are wired like DeepSeek (adapter map, managed keys, Settings, step-input `model.connection` enum, test key stripping, P9 key lists). `deepseek.py` is unchanged.
+Limits: Nothing was verified against the live providers: the tests use mocked httpx transports, so request shape and error handling are shown, not that these APIs accept JSON mode, return the same `model` string, or list models at `/models`. Package names were looked up in npm, PyPI and Homebrew but nothing was installed or run; the CLIs are detected by name on PATH only, so a `goose` database-migration binary would be reported as Goose. No model-quality claim for Qwen, Kimi or Mistral.
+
 ## D218 — P9 exit
 Status: accepted · Date: 2026-10-04
 P9 exit is recorded criterion by criterion. Final matrix pair: two consecutive full runs on `0af3216` (pytest 14,265 collected, 0 failed; process 45/45; Playwright 212/212; capacity K rows passed). Open debts carry past P9: H9 quality failures, R6/R9/R10, slice 4 E06-E18, L9 R12-R15, the deferred K03 driver fix.

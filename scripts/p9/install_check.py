@@ -223,7 +223,7 @@ def check_i07(connections: Dict[str, Any], audit_names: Iterable[str]) -> Tuple[
     for name in ("codex", "claude", "gemini"):
         if name in models and models[name].get("installed") is not False:
             reasons.append("%s: installed is %r, not false" % (name, models[name].get("installed")))
-    for name in ("gemini", "deepseek"):
+    for name in ("gemini", "deepseek", "qwen", "kimi", "mistral"):
         if name in models and models[name].get("key_configured") is not False:
             reasons.append("%s: key_configured is %r, not false" % (name, models[name].get("key_configured")))
     for command in sorted(set(audit_names) & set(BANNED_COMMANDS)):

@@ -325,8 +325,13 @@ export const connectionNames: Record<string, string> = { codex: 'Codex', claude:
 export const connectionName = (id: string) => connectionNames[id] ?? id
 export const isPlannedModel = (reason?: string | null) => reason === 'Adapter not implemented in this version'
 
-export const localToolNames: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex CLI', gemini_cli: 'Gemini CLI', ollama: 'Ollama', lm_studio: 'LM Studio', zotero: 'Zotero' }
-export const localToolIcon = (id: string) => (id === 'gemini_cli' ? 'gemini' : id)
+export const localToolNames: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex CLI', gemini_cli: 'Gemini CLI', qwen_code: 'Qwen Code', kimi_cli: 'Kimi CLI', mistral_vibe: 'Mistral Vibe', copilot_cli: 'GitHub Copilot CLI', opencode: 'OpenCode', aider: 'Aider', goose: 'Goose', amp: 'Amp', cline: 'Cline', ollama: 'Ollama', lm_studio: 'LM Studio', zotero: 'Zotero' }
+// Brand marks exist only for a few tools; the other command-line tools get a neutral terminal glyph.
+const localToolIcons: Record<string, string> = { gemini_cli: 'gemini', qwen_code: 'qwen', mistral_vibe: 'mistral', kimi_cli: 'kimi', copilot_cli: 'terminal', opencode: 'terminal', aider: 'terminal', goose: 'terminal', amp: 'terminal', cline: 'terminal' }
+export const localToolIcon = (id: string) => localToolIcons[id] ?? id
+
+// Model connections that share the OpenAI-compatible adapter: connection id -> its key variable.
+export const compatConnectionKeys: Record<string, string> = { qwen: 'DASHSCOPE_API_KEY', kimi: 'MOONSHOT_API_KEY', mistral: 'MISTRAL_API_KEY' }
 
 // What a scholarly source is used for: searched for records, or asked what a record whose DOI is known is (D87).
 export const providerRole = (role: string | undefined) => t(role === 'verification' ? 'Metadata verification' : 'Record search')

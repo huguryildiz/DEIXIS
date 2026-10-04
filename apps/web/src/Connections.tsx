@@ -8,7 +8,7 @@ import { ConnectionIcon } from './connectionIcons'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
-import { connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
+import { compatConnectionKeys, connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
 import { Notice } from './Notice'
 
 const providerNames: Record<string, string> = {
@@ -123,6 +123,7 @@ function LocalToolDetails({ tool, dark, onChanged }: { tool: LocalTool; dark: bo
       {tool.role === 'detected' && <><dt>{t('Role')}</dt><dd>{t('Detected only; it does not run steps')}</dd></>}
       {tool.role === 'imports' && <><dt>{t('Role')}</dt><dd>{t('Imports a collection into a research, read-only')}</dd></>}
     </dl>}
+    {tool.kind === 'cli' && tool.role === 'detected' && <p className="local-tool-note">{t('Detected only: DEIXIS found (or did not find) this tool, but it does not run research steps and no step is sent to it.')}</p>}
     {tool.kind === 'server' && tool.installed && (tool.running
       ? <>
         <p className="local-tool-note">{t('Running · {endpoint}', { endpoint: tool.endpoint ?? '' })}</p>
@@ -516,6 +517,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
       </p>}
       {toolsError && <Notice tone="error">{toolsError}</Notice>}
       <h3 className="connections-subhead with-icon"><SquareTerminal size={15} aria-hidden />{t('Command-line tools')}</h3>
+      <p className="legacy-mini-note">{t('Only Claude Code and Codex CLI run research steps. The other tools are detected only: finding one here does not mean DEIXIS supports it.')}</p>
       <div className="connection-grid">{cliTools.map(toolCard)}</div>
       <h3 className="connections-subhead with-icon"><Server size={15} aria-hidden />{t('Local model servers')}</h3>
       <div className="connection-grid">{serverTools.map(toolCard)}</div>
@@ -619,6 +621,13 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
                 {check(t('API key (DEEPSEEK_API_KEY)'), model.key_configured ? t('set') : t('not set'))}
               </div>
               {credentials && <KeyPanel env="DEEPSEEK_API_KEY" entry={deepseekKey} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
+            </>}
+            {selected && compatConnectionKeys[selected.id] && <>
+              <p className="source-byline">{t('DEIXIS calls the {name} API directly through its OpenAI-compatible endpoint with {env}, with no tools or instruction files and one new request per step. Not yet verified against the live API.', { name: modelNames[selected.id] ?? selected.id, env: compatConnectionKeys[selected.id] })}</p>
+              <div className="connection-checks">
+                {check(t('API key ({env})', { env: compatConnectionKeys[selected.id] }), model.key_configured ? t('set') : t('not set'))}
+              </div>
+              {credentials && <KeyPanel env={compatConnectionKeys[selected.id]} entry={credentials.keys.find(k => k.env === compatConnectionKeys[selected.id])} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
             </>}
             <ModelCatalogue model={model} />
           </>}

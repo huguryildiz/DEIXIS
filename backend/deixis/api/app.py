@@ -43,6 +43,7 @@ from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_R
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
 from deixis.models.deepseek import DeepSeekAdapter
+from deixis.models.openai_compat import CONNECTIONS as COMPAT_CONNECTIONS, OpenAICompatAdapter
 from deixis.models.gemini import GeminiAdapter
 from deixis.providers import scopus
 from deixis.providers import zotero
@@ -661,6 +662,7 @@ def create_app(
             "claude": ClaudeCodeAdapter(workspace=settings.data_dir / "claude-workspace"),
             "gemini": GeminiAdapter(client=http),
             "deepseek": DeepSeekAdapter(client=http),
+            **{name: OpenAICompatAdapter(spec, client=http) for name, spec in COMPAT_CONNECTIONS.items()},
         }
         package = skill.load_skill_package()
         equations = equation_service if equation_service is not None else EquationService(
@@ -941,8 +943,7 @@ def create_app(
         models = {}
         for name, adapter in request.app.state.adapters.items():
             models[name] = await adapter.health(refresh=refresh)
-        for name in ("kimi", "grok", "copilot", "glm", "muse_spark", "muse_glimmer",
-                     "ollama", "qwen", "mistral"):
+        for name in ("grok", "copilot", "glm", "muse_spark", "muse_glimmer", "ollama"):
             models.setdefault(name, {"connection": name, "ready": False, "reason": "Adapter not implemented in this version"})
         return {
             "models": models,

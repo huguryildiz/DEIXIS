@@ -52,7 +52,8 @@ RESTORED = "restored"
 FILE_FOLDERS = ("papers", "provider-payloads")
 ATTEMPTS = 3
 CONSENT = "--i-have-owner-consent"
-MODEL_KEYS = ("DEIXIS_CODEX_HOME", "GEMINI_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY")
+MODEL_KEYS = ("DEIXIS_CODEX_HOME", "GEMINI_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY",
+              "DASHSCOPE_API_KEY", "MOONSHOT_API_KEY", "MISTRAL_API_KEY")
 
 
 class Refused(Exception):

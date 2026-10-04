@@ -2,6 +2,12 @@
 
 Durable decisions, newest first. Each entry is short: status, what was decided, and the main limit. The full original text is in Git history at commit `d213395`. An entry does not turn an unimplemented proposal into a working feature. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D220 — Open-item fixes of 4 Oct: provisional title from the question, PDF request headers, capacity tests isolated, arXiv zero not reproduced
+Status: accepted (Claude wrote, gpt-6.1-sol medium reviewed) · Date: 2026-10-04
+Context: STATUS listed four small model-free items. The owner-level title choice was made jointly with Sol.
+Decision: A new research is named with the question's first 15 words, `…` when cut, until the model title replaces it (`store.provisional_title`); the scope keeps the full question. `fetch_pdf` sends `Accept: application/pdf, */*;q=0.1`, and every DEIXIS User-Agent adds `mailto:` when `DEIXIS_CONTACT_EMAIL` is set. Two capacity-script tests stub `guard_repo`, so a developer's repository `.env` no longer breaks them; the guard itself keeps its own test. arXiv: six run-like searches through the real connector on 4 Oct all returned records (five of 100, one of 5), so the earlier zeros are closed as not reproduced; no code changed.
+Limits: The arXiv check is one burst on one day from one network, not a discovery run. No publisher was asked whether the new headers change PDF success rates.
+
 ## D219 — Other LLMs: nine command-line tools are detected only, and one OpenAI-compatible adapter serves Qwen, Kimi and Mistral
 Status: accepted · Date: 2026-10-04
 Context: Users with other models asked to use DEIXIS. Two separate things were done. Qwen Code, Kimi CLI, Mistral Vibe, GitHub Copilot CLI, OpenCode, Aider, Goose, Amp and Cline are listed under Settings › On this computer as `role="detected"`, each with one fixed install command (npm, uv or brew) and a plain statement that finding a tool is not support. None of them runs a step. Separately, `models/openai_compat.py` is one adapter parametrised by connection id, name, base URL and key variable, modeled on the DeepSeek adapter: no tools, `json_object` mode, `enforces_schema=False`, no `reasoning_effort` sent or offered, 402/429 handled as DeepSeek's are, and `resolved_model` returned so the flow's `model_mismatch` rule applies. Connections: `qwen` (DashScope international compatible mode, `DASHSCOPE_API_KEY`), `kimi` (api.moonshot.ai, `MOONSHOT_API_KEY`), `mistral` (api.mistral.ai, `MISTRAL_API_KEY`). Keys are tested by listing models.

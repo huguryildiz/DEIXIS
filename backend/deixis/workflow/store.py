@@ -139,6 +139,15 @@ def legacy_research_read_only(scope: dict[str, Any]) -> bool:
     return scope.get("search_workflow") == "legacy"
 
 
+def provisional_title(question: str) -> str:
+    """The research's name until a model title replaces it: the question's first 15 words, with `…` when cut (D39).
+
+    The full question stays in the scope; only the shown name is short.
+    """
+    words = question.split()
+    return " ".join(words[:15]) + ("…" if len(words) > 15 else "")
+
+
 class Store:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
@@ -194,7 +203,7 @@ class Store:
         key_terms: str | None = None,
     ) -> str:
         rid, ts = new_id("res"), now()
-        title = question.strip().splitlines()[0][:160]
+        title = provisional_title(question)
         with transaction(self.conn):
             self.conn.execute(
                 "INSERT INTO researches (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)", (rid, title, ts, ts)

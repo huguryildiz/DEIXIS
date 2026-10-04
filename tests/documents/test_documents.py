@@ -272,6 +272,27 @@ def test_fetch_connects_to_the_checked_address_so_a_second_dns_answer_is_not_use
     assert result.final_url == "https://papers.example/a.pdf?x=1"
 
 
+def test_a_pdf_request_asks_for_a_pdf_and_names_the_contact_address(monkeypatch):
+    resolve, _ = resolver({"papers.example": ["93.184.216.34"]})
+    monkeypatch.setattr(fetch, "_resolve", resolve)
+    monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "owner@example.org")
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, content=make_pdf(["SYNTHETIC"]))
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler), headers={"User-Agent": fetch.user_agent()}) as client:
+            return await fetch.fetch_pdf("https://papers.example/a.pdf", client)
+
+    assert asyncio.run(run()).status == "ok"
+    assert seen[0].headers["accept"] == fetch.PDF_ACCEPT
+    assert seen[0].headers["user-agent"] == "DEIXIS/0.1 (local research workspace; mailto:owner@example.org)"
+    monkeypatch.delenv("DEIXIS_CONTACT_EMAIL")
+    assert fetch.user_agent() == fetch.USER_AGENT
+
+
 def test_redirect_to_a_private_address_is_blocked(monkeypatch):
     resolve, _ = resolver({"papers.example": ["93.184.216.34"], "intranet.example": ["10.0.0.7"]})
     monkeypatch.setattr(fetch, "_resolve", resolve)

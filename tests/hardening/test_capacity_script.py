@@ -471,6 +471,7 @@ def test_an_exception_in_a_repetition_still_writes_the_summary_and_prints_the_le
 
     monkeypatch.setattr(capacity, "run_rep", fake_run_rep)
     monkeypatch.setattr(capacity, "find_node", lambda: "node")
+    monkeypatch.setattr(capacity, "guard_repo", lambda: None)  # a developer's repository .env is not under test here
     args = argparse.Namespace(root=str(root), points="100", reps="3", out=str(out), pdf=False, control=False)
     try:
         with pytest.raises(RuntimeError, match="second repetition broke"):
@@ -640,6 +641,7 @@ def test_measure_refuses_stale_repetitions_before_starting(library, tmp_path, mo
     for rep in (1, 2, 3): (out / f"100-rep{rep}.json").write_text('{"rep":' + str(rep) + '}')
     monkeypatch.setattr(capacity, "guard_out", lambda _: out)
     monkeypatch.setattr(capacity, "find_node", lambda: "node")
+    monkeypatch.setattr(capacity, "guard_repo", lambda: None)  # a developer's repository .env is not under test here
     monkeypatch.setattr(capacity, "measure_passes", lambda *a: pytest.fail("must refuse before starting or merging old repetitions"))
     monkeypatch.setattr(capacity, "leftover", lambda _: [])
     with pytest.raises(capacity.GuardError, match="not empty"):

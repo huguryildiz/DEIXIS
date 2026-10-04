@@ -656,7 +656,7 @@ def create_app(
         store.recovery_dir = settings.recovery_dir
         store.link_published_versions()  # preprints flagged beside their published record before D48
         store.assign_source_keys()  # works stored before D59
-        http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.USER_AGENT})
+        http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent()})
         adapter_map = adapters if adapters is not None else {
             "codex": CodexAdapter(codex_home=settings.codex_home, workspace=settings.data_dir / "codex-workspace"),
             "claude": ClaudeCodeAdapter(workspace=settings.data_dir / "claude-workspace"),
@@ -978,7 +978,7 @@ def create_app(
         if cached and not refresh and cached[1] == route and time.monotonic() < cached[0]:
             return cached[2]
         # A fresh connection: a pooled one opened before the route changed could still answer over the old network.
-        async with (nullcontext(http_client) if http_client else httpx.AsyncClient(headers={"User-Agent": fetch_module.USER_AGENT})) as client:
+        async with (nullcontext(http_client) if http_client else httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent()})) as client:
             entitled = await scopus.complete_view_entitled(client, key)
         result = {"status": {True: "institutional", False: "none", None: "unknown"}[entitled], "via": "scopus"}
         ttl = INSTITUTIONAL_ACCESS_TTL_SECONDS if entitled is not None else INSTITUTIONAL_ACCESS_RETRY_SECONDS

@@ -52,17 +52,13 @@ Bütün eksikler burada; ayrı TODO dosyası yok. Parantezdeki D numaraları [ka
 
 ### Kod düzeltmeleri
 
-- `tests/hardening/test_capacity_script.py` içinde iki test kırık (4 Ekim'de görüldü, değişiklikten bağımsız). Neden: repo kökünde `.env` varken kapasite betiği `GuardError` ile reddediyor, testler beklediği hatadan önce bu korumaya takılıyor; test `.env`'den yalıtılmalı.
 - K03 sürücüsü: kuyruk geçişi prompt boyutunda düşüyor; bayt bütçesi eklenmedi. Paketleme engeli sayılmadı. (D216, D217)
 - Yeniden çıkarım R5: T10 arka plan okuyucuyu (D52) yürütmüyor; aday/soy güncellik görünümü ve Türkçe Zotero notları; görüntüleyici kilidi veya önbellek geçersizleştirme. (D208)
 - İlk cevap taslağı atıf çapası kurallarını hep bozuyor (9/9); onarım turu düzeltiyor ama cevap başına 46–134 s ekliyor. Nedeni bulunmadı.
-- arXiv hiç kayıt döndürmüyor (üç ölçümde sıfır, hep `rate_limited`); nedeni bilinmiyor. Durumu 23 Eylül'den beri yeniden kontrol edilmedi.
-- `sw` araştırmada kaynak eklenene kadar kısa başlık yok (`_research_title`, D39); sorudan mı başlık üretilsin, karar bekliyor. (D119)
 - Protokol kaydı derlenen sorguları arama bitmeden donduruyor; iptal edilen koşu hiç gönderilmeyen sorguyu kayıtta tutuyor.
 - Scopus özet okuması DOI başına bir istek atıyor; `DOI(a) OR DOI(b)` ile 25'lik gruplar istek sayısını ~25 kat azaltabilir (`COMPLETE` görünümüyle denenmedi).
 - `detailed` süre: tam metin alma ve okuma tek başına 20 dakika hedefini aşıyor (23 Eylül ölçümü).
 - Test borcu: dilim 31'den kalan uçtan uca iddialar tam karşılanmadı; aralıklı paralel test hataları; CI yok. (D119, D175)
-- PDF indirici `User-Agent`'ında iletişim adresi yok, `Accept: application/pdf` gönderilmiyor.
 
 ### Ertelenmiş fikirler (sahip kararı bekler)
 

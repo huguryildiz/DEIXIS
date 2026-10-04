@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import os
 import socket
 import weakref
 from dataclasses import dataclass
@@ -26,6 +27,13 @@ MAX_BYTES = 30 * 1024 * 1024
 TIMEOUT_SECONDS = 30.0
 MAX_REDIRECTS = 5
 USER_AGENT = "DEIXIS/0.1 (local research workspace)"
+PDF_ACCEPT = "application/pdf, */*;q=0.1"
+
+
+def user_agent() -> str:
+    """USER_AGENT with the contact address publishers can write to, when DEIXIS_CONTACT_EMAIL is set."""
+    email = os.environ.get("DEIXIS_CONTACT_EMAIL")
+    return f"DEIXIS/0.1 (local research workspace; mailto:{email})" if email else USER_AGENT
 
 
 @dataclass
@@ -107,7 +115,7 @@ def _pinned_request(url: str, address: str) -> tuple[str, dict[str, str], dict[s
 
 async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None) -> FetchResult:
     own_client = client is None
-    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}, trust_env=False)
+    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": user_agent()}, trust_env=False)
     try:
         current = url
         for _ in range(MAX_REDIRECTS + 1):
@@ -118,6 +126,7 @@ async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None) -> FetchR
                 except BlockedUrl as exc:
                     return FetchResult("blocked_url", final_url=current, error=str(exc))
                 target, headers, extensions = _pinned_request(current, address)
+                headers["Accept"] = PDF_ACCEPT
                 async with client.stream("GET", target, headers=headers, extensions=extensions, follow_redirects=False) as response:
                     if response.is_redirect:
                         location = response.headers.get("location")
@@ -162,7 +171,7 @@ async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, c
     `asyncio.timeout(deadline)`; the gate's wait before the first hop is outside it. Past the deadline the stream is
     closed and the result is `timeout`. fetch_pdf has no such deadline and calls no gate."""
     own_client = client is None
-    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}, trust_env=False)
+    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": user_agent()}, trust_env=False)
     current = url
     try:
         if gate is not None:

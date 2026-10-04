@@ -6,7 +6,7 @@
  "claims": [
   {
    "key": "C1",
-   "claim_statement": "Integrating a control barrier function into a Lyapunov-based stabilizing MPC for a differential-drive mobile robot yields both closed-loop stability and safety among static and moving obstacles.",
+   "claim_statement": "Lyapunov-based stabilizing MPC integrated with a control barrier function is reported to provide stability and safety for a differential-drive mobile robot navigating among static and moving obstacles, with simulation evaluation.",
    "elements": [
     {
      "text": "A stabilizing MPC built with Lyapunov stability theory on the robot's kinematic model",
@@ -31,7 +31,7 @@
    "nearest_simple_explanation": "A plain MPC with a distance-based collision penalty already avoids obstacles without any barrier function.",
    "critical_assumption": "The barrier constraint stays feasible together with the Lyapunov-based stabilizing terms at every step.",
    "validation_plan": "Find a report that combines a Lyapunov-based stabilizing MPC with a CBF for a differential-drive robot and states stability and safety with moving obstacles.",
-   "payload_sha256": "9cd3e7382c2cfaa8c93140d4b70e7985f405dfc577eb78262fdf055fcbff91a6",
+   "payload_sha256": "5bc39e32761bc0c75de12fcb3cb0deaf52bc86938221e897a04e3a7a15364014",
    "N": [
     {
      "openalex_id": "W4416799054",
@@ -60,7 +60,7 @@
   },
   {
    "key": "C2",
-   "claim_statement": "Supplying deep-learning multimodal predictions of dynamic-obstacle positions to a nonlinear MPC enables collision-free trajectory tracking for a mobile robot and outperforms non-deep-learning methods in complex scenarios.",
+   "claim_statement": "Deep-learning multimodal predictions of dynamic-obstacle positions supplied to nonlinear MPC enable collision-free mobile-robot trajectory tracking; the integrated prediction-and-control approach is reported to outperform non-deep-learning methods in complex scenarios.",
    "elements": [
     {
      "text": "Deep-learning multimodal prediction of several plausible future positions of dynamic obstacles",
@@ -88,8 +88,8 @@
    ],
    "nearest_simple_explanation": "A constant-velocity obstacle prediction inside the same MPC already avoids most dynamic obstacles.",
    "critical_assumption": "The learned predictor generalizes to the obstacle motion seen at run time.",
-   "validation_plan": "Find a report that couples a learned multimodal obstacle predictor to an NMPC and compares it with non-learning predictors.",
-   "payload_sha256": "773f892980efeb36d3fe9d47e2c615cb0c6c13106b2bed6636b8d83e766eaf8b",
+   "validation_plan": "Find a report that couples a learned multimodal obstacle predictor to an NMPC and compares it with non-deep-learning methods.",
+   "payload_sha256": "cf82eed39a869b860e126cb97a5476c4ac18503561815883a5e5b9b14db3b673",
    "N": [
     {
      "openalex_id": "W4384519478",
@@ -118,7 +118,7 @@
   },
   {
    "key": "C3",
-   "claim_statement": "A scenario-tree prediction of dynamic-obstacle trajectories in a multi-stage NMPC avoids collisions with dynamic obstacles, is less conservative than a nominal NMPC with the predicted scenarios added as constraints, costs more computation, and both strategies run in real time.",
+   "claim_statement": "Scenario-tree prediction of dynamic-obstacle trajectories supports collision avoidance through multi-stage NMPC, reported as less conservative than nominal NMPC with predicted obstacle scenarios added as constraints, at greater computational effort; both strategies are reported to operate in real time.",
    "elements": [
     {
      "text": "Scenario-tree prediction of the dynamic obstacle's trajectories",
@@ -147,7 +147,7 @@
    "nearest_simple_explanation": "Adding one worst-case obstacle prediction as a constraint to a nominal NMPC is enough.",
    "critical_assumption": "The scenario set covers the obstacle's actual motion.",
    "validation_plan": "Find a report that compares multi-stage scenario-tree NMPC with nominal NMPC with scenario constraints for mobile robots.",
-   "payload_sha256": "41d2f474f501d9cf9a7df9843ad3a75ab19dc1e10a86162d28a65334facfab7d",
+   "payload_sha256": "889317f180bb9fda43fdd005ad19a1e809578eda7fa417c9c4846aaa800c7c18",
    "N": [
     {
      "openalex_id": "W2896154143",

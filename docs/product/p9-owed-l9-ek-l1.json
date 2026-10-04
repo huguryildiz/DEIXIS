@@ -4,13 +4,16 @@
  "language": "en",
  "columns": [
   {
-   "role": "problem_addressed"
+   "role": "problem_addressed",
+   "instruction": "The problem or question this work takes up, in its own terms, in one or two sentences."
   },
   {
-   "role": "established_or_changed"
+   "role": "established_or_changed",
+   "instruction": "What this work states it established, showed or changed relative to earlier work. If the passages make no comparison, say so; do not infer one."
   },
   {
-   "role": "uncertainty_left"
+   "role": "uncertainty_left",
+   "instruction": "An uncertainty, limitation or open question the work itself names as remaining or as future work. Prefer the stated next step when the source separates a limitation from a next step."
   }
  ],
  "columns_text_source": "docs/product/p6-slice2-chain-of-ideas.md:280-284",
@@ -21,7 +24,7 @@
     "openalex_id": "W3036167779",
     "doi": "10.48550/arxiv.2006.11239",
     "title": "Denoising Diffusion Probabilistic Models",
-    "first_author": "Ho, Jonathan",
+    "first_author": "ho",
     "year": 2020,
     "match": "denoising diffusion probabilistic models",
     "first_author_surname": "ho",
@@ -30,14 +33,15 @@
      2021
     ],
     "provider_abstract_sha256": "32321d7b1a4e3cac46cbc2845090e9dc00c14650ec92679e2c74e7ee08a3e19b",
-    "provider_abstract_fault": "OpenAlex abstract is an unrelated DiffuCpG repository text; recorded, never repaired"
+    "provider_abstract_fault": "OpenAlex abstract is an unrelated DiffuCpG repository text; recorded, never repaired",
+    "first_author_full": "Ho, Jonathan"
    },
    {
     "key": "ddim",
     "openalex_id": "W3092442149",
     "doi": "10.48550/arxiv.2010.02502",
     "title": "Denoising Diffusion Implicit Models",
-    "first_author": "Jiaming Song",
+    "first_author": "song",
     "year": 2020,
     "match": "denoising diffusion implicit models",
     "first_author_surname": "song",
@@ -46,14 +50,15 @@
      2021
     ],
     "provider_abstract_sha256": "6a175e159d1540d25a04e3ac7b9642f46c2c82aba58ff549cde9f1991bc5c104",
-    "provider_abstract_fault": null
+    "provider_abstract_fault": null,
+    "first_author_full": "Jiaming Song"
    },
    {
     "key": "iddpm",
     "openalex_id": "W3122887982",
     "doi": "10.48550/arxiv.2102.09672",
     "title": "Improved Denoising Diffusion Probabilistic Models",
-    "first_author": "Alex Nichol",
+    "first_author": "nichol",
     "year": 2021,
     "match": "improved denoising diffusion probabilistic models",
     "first_author_surname": "nichol",
@@ -61,7 +66,8 @@
      2021
     ],
     "provider_abstract_sha256": "99bd21fc5542c738894f8350076c24afcd01b007dc165ead686abdfc0645d1c9",
-    "provider_abstract_fault": null
+    "provider_abstract_fault": null,
+    "first_author_full": "Alex Nichol"
    }
   ],
   "pairs": [

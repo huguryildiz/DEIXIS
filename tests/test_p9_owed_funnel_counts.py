@@ -220,7 +220,7 @@ def test_nonempty_wal_fails_closed_instead_of_ignoring_committed_data(library, t
     before = kit.manifest(target)
     kit.write_json(kit.copy_record_path(target), {
         "usable": True, "source": str(library.path), "destination": str(target.resolve()),
-        "source_manifest": before, "copy_manifest": before,
+        "source_manifest": before, "source_after_manifest": before, "copy_manifest": before,
     })
     result = kit.count(target, label="wal", product_commit="abc", prep_rule="copied uncheckpointed WAL")
     assert result["status"] == kit.UNMEASURED and "WAL" in result["reason"]
@@ -551,7 +551,8 @@ def test_count_refuses_original_without_copy_record(library, monkeypatch, tmp_pa
 
 
 @pytest.mark.parametrize("defect", ["malformed", "nonobject", "usable", "destination", "source",
-                                   "source_manifest", "source_after_manifest", "copy_manifest", "changed_directory"])
+                                   "source_manifest", "source_after_manifest", "missing_source_after_manifest",
+                                   "copy_manifest", "changed_directory"])
 def test_count_refuses_invalid_copy_evidence(library, monkeypatch, defect):
     library.source("source")
     library.seal()
@@ -563,6 +564,9 @@ def test_count_refuses_invalid_copy_evidence(library, monkeypatch, defect):
         path.write_text("[]")
     elif defect == "changed_directory":
         (library.path / "added").write_text("SYNTHETIC mutation")
+    elif defect == "missing_source_after_manifest":
+        del record["source_after_manifest"]
+        kit.write_json(path, record)
     else:
         record[defect] = {"usable": False, "destination": "wrong", "source": str(library.path)}.get(defect, {})
         kit.write_json(path, record)
@@ -594,12 +598,18 @@ def test_source_changed_after_cp_makes_copy_unusable(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("different", [False, True])
-def test_trusted_manifest_comparison_is_recorded_without_blocking_copy(monkeypatch, tmp_path, different):
+@pytest.mark.parametrize("format", ["kit", "h9b"])
+def test_trusted_manifest_comparison_is_recorded_without_blocking_copy(monkeypatch, tmp_path, different, format):
     src = tmp_path / "src"
     src.mkdir()
     (src / "library.sqlite").write_text("SYNTHETIC old")
     (src / "removed").write_text("SYNTHETIC removed")
     trusted = kit.manifest(src)
+    if format == "h9b":
+        trusted = [{"path": row["path"], "size": row["byte_size"], "nlink": row["nlink"], "sha256": row["sha256"]}
+                   for row in reversed(trusted["files"])]
+    else:
+        trusted = {"files": list(reversed(trusted["files"]))}
     path = tmp_path / "trusted.json"
     kit.write_json(path, trusted)
     if different:
@@ -614,7 +624,27 @@ def test_trusted_manifest_comparison_is_recorded_without_blocking_copy(monkeypat
     differences = record["trusted_manifest_differences"]
     assert [row["path"] for row in differences] == (["added", "library.sqlite", "removed"] if different else [])
     if different:
+        assert [row["change"] for row in differences] == ["added", "changed", "removed"]
         assert differences[0]["trusted"] is None and differences[0]["source"] is not None
         assert differences[1]["trusted"]["sha256"] != differences[1]["source"]["sha256"]
         assert differences[2]["source"] is None and differences[2]["trusted"] is not None
     assert json.loads(kit.copy_record_path(dst).read_text()) == record
+
+
+@pytest.mark.parametrize("key,value", [("size", 999), ("sha256", "0" * 64), ("nlink", 2)])
+def test_trusted_manifest_compares_each_normalized_key(monkeypatch, tmp_path, key, value):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "library.sqlite").write_text("SYNTHETIC bytes")
+    trusted = list(kit.normalized_manifest_files(kit.manifest(src)).values())
+    trusted[0][key] = value
+    path = tmp_path / "trusted.json"
+    kit.write_json(path, trusted)
+    monkeypatch.setattr(kit, "library_idle", lambda _: {"synthetic": True})
+    dst = tmp_path / "dst"
+    assert kit.main(["copy", str(src), str(dst), "--trusted-manifest", str(path)]) == 0
+    record = json.loads(kit.copy_record_path(dst).read_text())
+    assert record["trusted_manifest_equal"] is False
+    assert record["trusted_manifest_differences"] == [{
+        "path": "library.sqlite", "change": "changed", "trusted": trusted[0],
+        "source": kit.normalized_manifest_files(record["source_manifest"])["library.sqlite"]}]

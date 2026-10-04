@@ -171,7 +171,7 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 
 ## Ek K (4 Ekim 2026): K6 kill-search, 2. dondurma noktası
 
-**Durum:** koşudan önce dondurulacak; `gpt-6.1-sol` medium incelemesi (en çok 3 tur) ve koordinatör push'u sonrası geçerli. Kararı Claude Opus 5.5 ve `gpt-6.1-sol` medium ortak verdi (4 Ekim 2026, sahip adına; sahip tek tek onaylamadı). Bu ek §6'nın kurallarını değiştirmez.
+**Durum:** koşudan önce dondurulacak; `gpt-6.1-sol` incelemesi (en çok 3 tur; sahibin 4 Ekim kuralıyla her Codex çağrısı medium efordadır, §0.3'ün “high”i bu kalemler için medium olarak değiştirildi, koordinatör mesajıyla) ve koordinatör push'u sonrası geçerli. Kararı Claude Opus 5.5 ve `gpt-6.1-sol` medium ortak verdi (4 Ekim 2026, sahip adına; sahip tek tek onaylamadı). Bu ek §6'nın kurallarını değiştirmez.
 
 **Sabitlenen ürün commit'i:** `7188ec8` (RF6; H9e'de ölçülen kod, paket hash'i `ccff02a1…`). K6 bu commit'te kendi ayrık worktree'sinde (`../DEIXIS-owed-k6`) koşar; origin/main'in sonraki commit'leri yalnız belge ve ölçüm kitidir ve ürün kodunu değiştirmemelidir (koşu öncesi `git diff 7188ec8 HEAD -- backend methods contracts` boş olmalı; boş değilse ek yeniden dondurulur).
 
@@ -185,7 +185,7 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 
 ## Ek L1 (4 Ekim 2026): L9 gelişim çizgileri, keşiften önce dondurulacak girdiler
 
-**Durum:** `gpt-6.1-sol` medium incelemesi ve push sonrası geçerli; Claude + Sol medium ortak kararı (4 Ekim 2026). Ek L2 (lineage isteğinden önce) ayrıdır ve henüz yok.
+**Durum:** `gpt-6.1-sol` incelemesi (medium, sahibin 4 Ekim kuralı; §0.3'ün “high”inin yerine) ve push sonrası geçerli; Claude + Sol medium ortak kararı (4 Ekim 2026). Ek L2 (lineage isteğinden önce) ayrıdır ve henüz yok.
 
 **Konu ve soru:** görüntü üretiminde difüzyon modelleri (tamamen yeni; dilim 2, H9, H9b, K5 ve K6 korpuslarının dışında). Soru (İngilizce): *“How did denoising diffusion generative models develop after the original denoising diffusion probabilistic model, in sampling speed, likelihood and sample quality?”* Üç geliştirme sütunu: dilim 2'nin metni, `docs/product/p6-slice2-chain-of-ideas.md:280-284`, kelimesi kelimesine. Seçim kuralları §7'deki gibi; elle ekleme/çıkarma/sıralama yok.
 
@@ -197,9 +197,9 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 
 ## Ek S (4 Ekim 2026): dilim 4 / D157 için H9e raporunun kullanılması, koordinatör değişikliği önerisi
 
-**Karar (Claude + `gpt-6.1-sol` medium):** dilim 4 H9e'nin kabul edilmiş raporunda (`rpt_Rmd2soa3YuCZBBSyQJCF`; ürün `7188ec8`) ölçülür; borç adlandırılmış borç olarak ertelenmez. Gerekçe: §5 “B tamamladıysa B” der; H9e B'nin kendi korpusunda (Q3, `e/data` = `b/data`'nın doğrulanmış kopyası) tamamlanan tek rapordur ve ürün kodu RF6 sonrasıdır. §5'in B'yi adlandırması H9b'nin üç B koşusunu varsaydı; H9e Ek G ile eklendi, bu yüzden açık bir koordinatör değişikliği gerekir: **bu ek, koordinatör push edip onaylamadan geçerli değildir** (sahip kuralı: koordinatör iznini bu ekle birlikte alır; “go” ayrıca verilir).
+**Karar (Claude + `gpt-6.1-sol` medium, review-b turunda AGREE, kapılar için bir değişiklik istedi ve alındı):** dilim 4 H9e'nin kabul edilmiş raporunda (`rpt_Rmd2soa3YuCZBBSyQJCF`; ürün `7188ec8`) ölçülür; borç adlandırılmış borç olarak ertelenmez. Gerekçe: §5 “B tamamladıysa B” der; H9e B'nin kendi korpusunda (Q3, `e/data` = `b/data`'nın doğrulanmış kopyası) tamamlanan tek rapordur ve ürün kodu RF6 sonrasıdır. §5'in B'yi adlandırması H9b'nin üç B koşusunu varsaydı; H9e Ek G ile eklendi, bu yüzden açık bir koordinatör değişikliği gerekir: **bu ek, koordinatör push edip onaylamadan geçerli değildir** (sahip kuralı: koordinatör iznini bu ekle birlikte alır; “go” ayrıca verilir).
 
-**Ek kapılar (§5'in üstüne):** (1) Ön koşul: H9e sonucu push edilmiş (`09aa2cf`) ✓, H9 zinciri kapalı ✓. (2) Ortam: `e/data` bayt kopyası (§1.10), H9e'nin son snapshot ve okurları bitmiş olarak; ürün worktree'si `7188ec8`'de ayrık. (3) Kit `measure_edit.py` henüz **yok**: Sol yazar, Claude inceler; deterministik testleri ölçümden önce geçer; hash'leri bu ekin sonraki bir güncellemesinde donar. (4) Ek E (belirleyici işlem listesi ve başlangıç hash'leri) rapor oluştuktan sonra, ilk düzenlemeden önce donar; kuralları §5 aynen. (5) En çok 10 yeni oturum / 60 dk, yalnız `cell_recheck`; R20 ve bölüm yeniden yazma ölçülmez. (6) Koşu K6/L9 gibi koordinatörün “go”'sunu bekler; K6, L9 ve dilim 4 aynı anda koşmaz.
+**Ek kapılar (§5'in üstüne):** (1) Ön koşul: H9e sonucu push edilmiş (`09aa2cf`) ✓, H9 zinciri kapalı ✓. (2) Ortam: `e/data` bayt kopyası (§1.10), H9e'nin son snapshot ve okurları bitmiş olarak; ürün worktree'si `7188ec8`'de ayrık. (3) Kit `measure_edit.py` henüz **yok**: Sol yazar, Claude inceler; deterministik testleri ve hash'leri bu ekin güncellemesinde, koşudan önce donar. (4) Ek E (belirleyici işlem listesi ve başlangıç hash'leri) rapor artık var olduğundan şimdi yazılabilir; koşudan (ilk düzenleme) önce donar ve Sol medium incelemesi alır. Kit ve Ek E tamamlanıp incelenmeden “go” istenmez. (5) En çok 10 yeni oturum / 60 dk, yalnız `cell_recheck`; R20 ve bölüm yeniden yazma ölçülmez. (6) Koşu K6/L9 gibi koordinatörün “go”'sunu bekler; K6, L9 ve dilim 4 aynı anda koşmaz.
 
 **Sınır:** hâlâ tek rapor, tek korpus; kod davranışının gerçek rapordaki sınaması, anlam desteği iddiası değil.
 
@@ -207,7 +207,7 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 
 | Dosya | SHA-256 |
 |---|---|
-| `scripts/p9_owed/funnel_counts.py` | `e1864ae92fe2bb8089d519f50556f417ba73837d6285c358f2f4aef52c158745` |
+| `scripts/p9_owed/funnel_counts.py` | `ea3fc2ee9401a15134b3100904245cb9e95eb9de52f907338d0bb4cddb58de31` |
 | `scripts/p9_owed/prep_lookup.py` | `20c1785c95159a1d92b5845f13de2ab83e732f2b12c35094a87c066a6944bab6` |
 | `scripts/p6_eval/measure_lineage.py` | `a335b3835d571bb3643969510634ab7728e762d1e1c81e5f3b785b023dc40751` |
 | `scripts/p6_eval/measure_fill.py` | `8db4e90616eff3712c0d5a1ba1581358982ebf048b2456332afd9ee21512e7ad` |
@@ -215,12 +215,11 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 | `backend/deixis/providers/query_compiler.py` | `d47afa94809553357700cf2acaa59241a3c2c7c3b5c001311330bfd71a725aea` |
 | `backend/deixis/workflow/candidates/terms.py` | `1337ad58619f06fd04ea1272d60aa08674982e94259af1e5313e6d568e0c0527` |
 | `methods/deixis-research/references/candidate-check.md` | `7e4222f3932a2905897a79d744addd4f4ce8a74efa880b51f2fd180d46401ffe` |
-| `docs/product/p9-owed-k6-ek-k.json` | `5bc88f47cdb5b3e6634a89c16083833dda5b2bff4a67dbe0fdc7d3977eb89b12` |
-| `docs/product/p9-owed-l9-ek-l1.json` | `b2940985779b60a72f2caafd80bbb0d306e0833d9b595baaf44d4885c8066aba` |
+| `docs/product/p9-owed-k6-ek-k.json` | `4a5a3598f8fed9a36632a630105f687f67b9fe5b19f1ab60564fa452bb7e7420` |
+| `docs/product/p9-owed-l9-ek-l1.json` | `1786d1ff3d2b76a4e5be31fb9bc52c182d7083ef9b78b336481a187391f19f1a` |
 
 Runtime paket hash'i: `sha256:ccff02a169ea72690a594b3277c09c0975537f45ed20f9a6203a364d0c2b132c` (H9e'nin ölçtüğü paketle aynı önek `ccff02a1`).
 
-**Kitler (henüz yok, koşudan önce yazılır, Sol yazar / Claude inceler, hash'leri bu ekin güncellemesinde donar):** K6 ölçüm kiti (S1-S6; iddia oluşturma, kill-search, matris ve alıntı yeri sayımı), `measure_edit.py` (dilim 4), L9 için `measure_lineage.py`'ye envanter tabanlı `independence` yolu ve K0 envanterleri. Hazır olanlar: `funnel_counts.py` ve `prep_lookup.py` (Sol medium düzeltmelerinden sonra 93 test geçti).
+**Kitler (henüz yok, koşudan önce yazılır, Sol yazar / Claude inceler, hash'leri bu ekin güncellemesinde donar):** K6 ölçüm kiti (S1-S6; iddia oluşturma, kill-search, matris ve alıntı yeri sayımı), `measure_edit.py` (dilim 4), L9 için `measure_lineage.py`'ye envanter tabanlı `independence` yolu ve K0 envanterleri. Hazır olanlar: `funnel_counts.py` ve `prep_lookup.py` (Sol medium düzeltmelerinden sonra 99 test geçti).
 
 **Hazırlık sağlayıcı istekleri:** toplam 13 / 60 (K6 9, L9 4; hepsi OpenAlex, anahtarsız, yeniden deneme yok); defter `.local/p9-owed/prep/ledger.jsonl`. Model oturumu 0; sunucu başlatılmadı; 8765'e dokunulmadı.
-

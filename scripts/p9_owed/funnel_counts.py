@@ -145,6 +145,28 @@ def copy_record_path(dst: Path) -> Path:
     return dst.with_name(dst.name + ".copy-record.json")
 
 
+def normalized_manifest_files(value: Any) -> dict[str, dict[str, Any]]:
+    """Compare kit and H9b entries without wrapper metadata or file type."""
+    rows = value.get("files") if isinstance(value, dict) else value
+    if not isinstance(rows, list):
+        raise MeasurementRefused("manifest must contain a file list")
+    files = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise MeasurementRefused("manifest file must be an object")
+        path = row.get("path")
+        size = row.get("byte_size", row.get("size"))
+        sha256, nlink = row.get("sha256"), row.get("nlink")
+        if (not isinstance(path, str) or not path or path in files
+                or type(size) is not int or size < 0
+                or not isinstance(sha256, str) or re.fullmatch(r"[0-9a-f]{64}", sha256) is None
+                or type(nlink) is not int or nlink < 1
+                or ("byte_size" in row and "size" in row and row["size"] != size)):
+            raise MeasurementRefused("invalid or duplicate manifest file entry")
+        files[path] = {"path": path, "size": size, "sha256": sha256, "nlink": nlink}
+    return files
+
+
 def copy_library(src: Path, dst: Path, *, trusted_manifest: Path | None = None) -> dict[str, Any]:
     """Only lsof metadata, manifest hashing and cp -Rp access the source.
 
@@ -164,11 +186,13 @@ def copy_library(src: Path, dst: Path, *, trusted_manifest: Path | None = None) 
         if trusted_manifest is not None:
             trusted = json.loads(outside(trusted_manifest, src, dst).read_text(encoding="utf-8"))
             record["trusted_manifest"] = trusted
-            record["trusted_manifest_equal"] = trusted == record["source_manifest"]
-            trusted_files = {row["path"]: row for row in trusted["files"]}
-            source_files = {row["path"]: row for row in record["source_manifest"]["files"]}
+            trusted_files = normalized_manifest_files(trusted)
+            source_files = normalized_manifest_files(record["source_manifest"])
+            record["trusted_manifest_equal"] = trusted_files == source_files
             record["trusted_manifest_differences"] = [
-                {"path": path, "trusted": trusted_files.get(path), "source": source_files.get(path)}
+                {"path": path,
+                 "change": "added" if path not in trusted_files else "removed" if path not in source_files else "changed",
+                 "trusted": trusted_files.get(path), "source": source_files.get(path)}
                 for path in sorted(trusted_files.keys() | source_files.keys())
                 if trusted_files.get(path) != source_files.get(path)
             ]
@@ -495,8 +519,8 @@ def count(data_dir: Path, *, label: str, product_commit: str, prep_rule: str,
                 or record.get("destination") != str(root)
                 or record.get("source") == str(root)
                 or record.get("source_manifest") != record.get("copy_manifest")
-                or ("source_after_manifest" in record
-                    and record["source_after_manifest"] != record.get("copy_manifest"))
+                or "source_after_manifest" not in record
+                or record["source_after_manifest"] != record.get("copy_manifest")
                 or manifest(root) != record.get("copy_manifest")):
             raise MeasurementRefused("copy record/manifest does not establish a usable copy")
         with open_readonly(root) as conn:

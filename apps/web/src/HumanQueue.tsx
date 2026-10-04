@@ -20,6 +20,9 @@ import { scrollBehavior } from './motion'
 
 const KIND_ORDER = Object.keys(queueKindLabels) as Exclude<QueueKind, 'look_again'>[]
 const ANSWERS: QueueAnswer[] = ['include', 'criterion_not_met', 'not_sure', 'pdf_wrong']
+// The one question of a row is "Is this paper a source for the question?": yes records `include`, no records
+// `criterion_not_met` (the button says so). A PDF-identity row keeps the original labels. The answers keep their stored meaning; only the words on the buttons are the question's.
+const answerWords: Record<QueueAnswer, string> = { ...queueAnswerLabels, include: 'Yes', criterion_not_met: 'No, it does not meet the criterion' }
 const toastText: Record<QueueAnswer, string> = {
   include: 'Included. Your choice shows in the sources as your own selection.',
   criterion_not_met: 'Recorded as not meeting the criterion.',
@@ -377,9 +380,9 @@ export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources 
           {note.open || note.text ? <label className="queue-note"><span>{t('Note')}<small>{t('{n} of 1000 characters', { n: note.text.length })}</small></span>
             <textarea value={note.text} maxLength={1000} rows={2} onChange={e => setNote({ work: selectedWork, text: e.target.value, open: true })} /></label>
             : <button type="button" className="queue-note-toggle" onClick={() => setNote({ work: selectedWork, text: '', open: true })}><NotebookPen size={14} aria-hidden />{t('Add a note')}</button>}
-          {current && <div className="queue-answers" role="group" aria-label={t('Your answer')}>
+          {current && <div className="queue-answers" role="group" aria-label={t(current.kind === 'confirm_pdf' ? 'Is this PDF the work named here?' : 'Is this paper a source for the question?')}>
             {(current.kind === 'confirm_pdf' ? ['pdf_confirmed' as const, ...ANSWERS] : ANSWERS).map(choice =>
-              <Button key={choice} variant={choice === 'pdf_confirmed' ? 'default' : 'outline'} disabled={busy || !answerable} onClick={() => void answer(current, choice)}>{t(queueAnswerLabels[choice])}</Button>)}
+              <Button key={choice} variant={choice === 'pdf_confirmed' ? 'default' : 'outline'} disabled={busy || !answerable} onClick={() => void answer(current, choice)}>{t((current.kind === 'confirm_pdf' ? queueAnswerLabels : answerWords)[choice])}</Button>)}
           </div>}
           <p className="queue-foot-note">{t('Semantic support not checked. Your answer is recorded as your decision; DEIXIS does not say whether it is right.')}</p>
         </footer>}
@@ -407,12 +410,14 @@ function RowDetail({ row, rowView, detailError, titleRef, onOpenPage, onOpenPart
   const choice = detail ? rowPage(row, detail) : null
   const kind = kindText(row)
   const part = row.question?.part
-  const question = row.question
-    ? t('Does this paper have the part “{part}”?', { part: row.question.part })
-    : row.kind === 'confirm_pdf' ? t('Is this PDF the work named here?')
+  // One question for every paper; the part, the protocol title or the versions the reading stopped at come second.
+  const question = row.kind === 'confirm_pdf' ? t('Is this PDF the work named here?') : t('Is this paper a source for the question?')
+  const context = row.question
+    ? t('The reading could not settle the part “{part}”.', { part: row.question.part })
     : row.kind === 'confirm_results' ? t('The title names a study protocol. Does this paper report results for every part, rather than only planning to measure them?')
     : row.kind === 'choose_version' ? t('The versions of this work were read to opposite decisions. Which one holds?')
-    : t('You decided this work under an earlier question. Does your decision still hold?')
+    : row.kind === 'look_again' ? t('You decided this work under an earlier question. Does your decision still hold?')
+    : null
   const unverified = detail ? detail.runs.flatMap(run => run.parts.filter(p => p.part === part && p.label === 'present' && p.quote_verified === false && p.quote)
     .map(p => ({ run: run.run_no, part: p }))) : []
   return <>
@@ -428,6 +433,7 @@ function RowDetail({ row, rowView, detailError, titleRef, onOpenPage, onOpenPart
     </div>
     <section className="queue-question">
       <p className="queue-question-text">{question}</p>
+      {context && <p className="queue-question-context">{context}</p>}
       {row.question?.definition && <p className="queue-question-definition">{row.question.definition}</p>}
       <p className="queue-why"><span>{t('Why it is here:')}</span> {queueReasonText(row.reason_code)} <code>{row.reason_code}</code></p>
     </section>

@@ -119,7 +119,7 @@ test.describe.serial('R: a work whose title names a study protocol is a queue ro
       await expect(detail(narrow)).toContainText(REASON)
       expect(await noSideScroll(narrow)).toBe(true)
       await shot(narrow, 'R-queue-protocol-title-390')
-      await detail(narrow).getByRole('button', { name: 'Include', exact: true }).click()
+      await detail(narrow).getByRole('button', { name: 'Yes', exact: true }).click()
       await expect.poll(async () => ((await (await api.context.get(`/api/researches/${rid}/queue`)).json()).rows as Row[])
         .some(r => r.title.startsWith(PROTOCOL))).toBe(false)
     } finally { await narrow.close() }

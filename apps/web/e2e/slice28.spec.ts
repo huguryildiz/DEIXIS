@@ -20,7 +20,7 @@ mkdirSync(OUT, { recursive: true })
 
 const QUESTION = '[queue] [comparator] How do SYNTHETIC molecular relays and greenhouse irrigation schedule their releases compared with a fixed release?'
 const WORK = 'SYNTHETIC relay release bursts beside a fixed schedule'
-const ASKED = 'Does this paper have the part “measured outcome”?'
+const ASKED = 'The reading could not settle the part “measured outcome”.'
 const REASON = 'Both runs found parts missing, but the criterion has a comparison group, so the reading did not exclude this work.'
 
 class Slice28Server {
@@ -120,7 +120,7 @@ test.describe.serial('S: a work both runs find no part of, on a comparator crite
       await expect(detail(narrow)).toContainText(REASON)
       expect(await noSideScroll(narrow)).toBe(true)
       await shot(narrow, 'S-queue-comparator-withheld-390')
-      await detail(narrow).getByRole('button', { name: 'Does not meet the criterion', exact: true }).click()
+      await detail(narrow).getByRole('button', { name: 'No, it does not meet the criterion', exact: true }).click()
       await expect.poll(async () => ((await (await api.context.get(`/api/researches/${rid}/queue`)).json()).rows as Row[])
         .some(r => r.title.startsWith(WORK))).toBe(false)
     } finally { await narrow.close() }

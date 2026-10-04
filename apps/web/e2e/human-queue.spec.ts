@@ -134,7 +134,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await openQueue(page, server, rid)
     await option(page, TITLES.choose_run).click()
     await expect(detail(page).getByRole('heading', { name: TITLES.choose_run })).toBeVisible()
-    await expect(detail(page)).toContainText('Does this paper have the part “method of its own”?')
+    await expect(detail(page)).toContainText('Is this paper a source for the question?')
     await expect(detail(page)).toContainText('The two reading runs came to different readings of the text.')
     await expect(detail(page).locator('.queue-run')).toHaveCount(2)
     await shot(page, 'J-queue-choose-run-1440')
@@ -167,13 +167,13 @@ test.describe.serial('J: the human queue of an sw research', () => {
 
   test('a row whose part has no cue says so', async () => {
     await option(page, TITLES.find_part).click()
-    await expect(detail(page)).toContainText('Does this paper have the part “measured outcome”?')
+    await expect(detail(page)).toContainText('The reading could not settle the part “measured outcome”.')
     await expect(detail(page)).toContainText('This part’s phrases do not occur in the text.')
   })
 
   test('an answer to a row that changed since it was shown is refused, the row is read again and the note is kept', async () => {
     await option(page, TITLES.confirm_quote).click()
-    await expect(detail(page).getByRole('button', { name: 'Include', exact: true })).toBeEnabled()
+    await expect(detail(page).getByRole('button', { name: 'Yes', exact: true })).toBeEnabled()
     await detail(page).getByRole('button', { name: 'Add a note' }).click()
     await detail(page).getByRole('textbox').fill('SYNTHETIC note kept through a refusal')
     // The event stream is held back, so the screen still shows the row as it was.
@@ -181,12 +181,12 @@ test.describe.serial('J: the human queue of an sw research', () => {
     const row = await rowOf(api, rid, 'confirm_quote')
     const answered = await (await post(api, `/api/researches/${rid}/queue/${row.source_version_id}/decision`, { decision: 'include', note: null, row_token: row.row_token })).json()
     expect((await post(api, `/api/researches/${rid}/queue/${row.source_version_id}/undo`, { row_token: answered.undo_token })).ok()).toBe(true)
-    await detail(page).getByRole('button', { name: 'Include', exact: true }).click()
+    await detail(page).getByRole('button', { name: 'Yes', exact: true }).click()
     await expect(detail(page)).toContainText('This row changed after it was shown; its current state is loaded. Your answer was not saved.')
     await expect(option(page, TITLES.confirm_quote)).toHaveAttribute('aria-selected', 'true')
     await expect(detail(page).getByRole('textbox')).toHaveValue('SYNTHETIC note kept through a refusal')
     // The answers wait for the row read again under the new list, then take the note.
-    await expect(detail(page).getByRole('button', { name: 'Include', exact: true })).toBeEnabled()
+    await expect(detail(page).getByRole('button', { name: 'Yes', exact: true })).toBeEnabled()
     await page.unroute('**/events/stream**')
   })
 
@@ -299,7 +299,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
     let release = () => {}
     const held = new Promise<void>(resolve => { release = resolve })
     await page.route('**/queue/*/decision', async route => { await held; await route.continue() })
-    await detail(page).getByRole('button', { name: 'Include', exact: true }).click()
+    await detail(page).getByRole('button', { name: 'Yes', exact: true }).click()
     await page.waitForTimeout(300)
     await expect(option(page, TITLES.choose_run)).toHaveCount(1)
     await expect(option(page, TITLES.choose_run)).toHaveAttribute('aria-selected', 'true')
@@ -311,7 +311,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await toast.getByRole('button', { name: 'Undo' }).click()
     await expect(option(page, TITLES.choose_run)).toHaveCount(1)
     await option(page, TITLES.choose_run).click()
-    await detail(page).getByRole('button', { name: 'Include', exact: true }).click()
+    await detail(page).getByRole('button', { name: 'Yes', exact: true }).click()
     await expect(option(page, TITLES.choose_run)).toHaveCount(0)
     await expect(page.getByRole('tab', { name: 'Awaiting your decision 3' })).toBeVisible()
     await page.getByRole('tab', { name: /^Sources/ }).click()

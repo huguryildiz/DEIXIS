@@ -1128,7 +1128,8 @@ button.chat-step-title svg{color:var(--muted)}
 .queue-panel .queue-question{display:grid;gap:6px;padding:16px 0;border-bottom:1px solid var(--line)}
 .queue-panel .queue-question p{margin:0}
 .queue-panel .queue-question-text{color:var(--ink);font-size:15px;font-weight:600;line-height:1.45}
-.queue-panel .queue-question-definition{max-width:76ch;color:var(--ink);font-family:'Newsreader Variable',serif;font-size:15px;line-height:1.55}
+.queue-panel .queue-question-context{color:var(--muted);font-size:13px;line-height:1.5}
+.queue-panel .queue-question-definition{max-width:76ch;color:var(--muted);font-family:'Newsreader Variable',serif;font-size:14px;line-height:1.55}
 .queue-panel .queue-why{color:var(--muted);font-size:12.5px;line-height:1.55}
 .queue-panel .queue-why span{color:var(--ink);font-weight:550}
 .queue-panel .queue-why code{margin-left:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--muted)}

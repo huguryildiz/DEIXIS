@@ -2022,7 +2022,9 @@ def create_app(
         path = (root / asset["storage_path"]).resolve()
         if not path.is_relative_to(root) or not path.exists():
             raise HTTPException(404, "File missing")
-        return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": "inline"})
+        # A file restore replaces the bytes atomically under the same name (D208); no-cache makes the browser check the
+        # ETag on every open, so a copy it read before the restore is never shown from its cache.
+        return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": "inline", "Cache-Control": "no-cache"})
 
     @app.get("/api/researches/{research_id}/assets/{asset_id}/text")
     async def get_asset_text(research_id: str, asset_id: str, request: Request,

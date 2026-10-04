@@ -2,6 +2,12 @@
 
 Durable decisions, newest first. Each entry is short: status, what was decided, and the main limit. The full original text is in Git history at commit `d213395`. An entry does not turn an unimplemented proposal into a working feature. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D223 — The PDF is revalidated on every open; no viewer lock
+Status: accepted (Claude wrote, gpt-6.1-sol medium reviewed) · Date: 2026-10-04
+Context: R5 (D208) asked for a viewer lock or cache invalidation after a file restore.
+Decision: The asset response sends `Cache-Control: no-cache`, so the browser checks Starlette's ETag (mtime and size) before reusing a copy and never shows one read before a restore. No lock: files are stored as `<sha256>.pdf` and a restore swaps them with `os.replace`, so a reader sees the old or the new file, never half of one.
+Limits: A viewer already open during a restore keeps the document it loaded until it is closed and reopened. Atomic replacement does not promise one version across separate Range requests of one viewing session.
+
 ## D222 — Zotero notes are English templates the UI translates
 Status: accepted (Claude wrote, gpt-6.1-sol medium reviewed) · Date: 2026-10-04
 Context: R5 (D208) left the Zotero import and Zotero-PDF notes as fixed English sentences, so the Turkish UI showed them in English.

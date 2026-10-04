@@ -5,7 +5,9 @@ show workflow/persistence behavior (A–G deterministic parts), not model qualit
 live provider access.
 """
 
+import hashlib
 import json
+import os
 import time
 
 import httpx
@@ -1128,3 +1130,27 @@ def test_dropped_pdfs_are_matched_to_included_sources_by_doi_or_title_and_not_at
         assert [(m["filename"], m["source_version_id"]) for m in response.json()["matches"]] == expected
         after = client.get(f"/api/researches/{rid}").json()
         assert not any(s["access"]["assets"] for s in after["sources"])  # a match attaches nothing
+
+
+def test_the_pdf_is_revalidated_on_every_open_so_a_restored_file_is_not_shown_from_the_browser_cache(tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app) as raw:
+        client = session(raw)
+        rid = create(client, source_scope="attached")
+        uploaded = client.post(f"/api/researches/{rid}/uploads", files={"file": (
+            "notes.pdf", make_pdf(["SYNTHETIC first copy"]), "application/pdf")})
+        asset_id = uploaded.json()["sources"][0]["access"]["assets"][0]["id"]
+        first = client.get(f"/api/researches/{rid}/assets/{asset_id}")
+        assert first.headers["cache-control"] == "no-cache" and first.headers["etag"]
+        # A restore replaces the bytes under the same name (D208). The ETag is Starlette's mtime-and-size tag, so it
+        # changes with them; the revalidated open returns the new bytes.
+        restored = make_pdf(["SYNTHETIC restored copy, longer"])
+        stored = next(tmp_path.rglob(f"{hashlib.sha256(first.content).hexdigest()}.pdf"))
+        os.replace(_write(tmp_path / "staged.pdf", restored), stored)
+        second = client.get(f"/api/researches/{rid}/assets/{asset_id}", headers={"if-none-match": first.headers["etag"]})
+        assert second.content == restored and second.headers["etag"] != first.headers["etag"]
+
+
+def _write(path, data):
+    path.write_bytes(data)
+    return path
